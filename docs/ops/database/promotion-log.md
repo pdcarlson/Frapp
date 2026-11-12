@@ -31,13 +31,23 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-12: Ask diagnostics window (#4315, on `ai-integration`)
 
-### 20261112190000_ai_ask_diagnostics.sql
+### 20261112200000_ai_ask_diagnostics.sql
 
 - **Purpose**: Adds the two tables behind Ask Frapp's 14-day beta diagnostics window ([`spec/behavior/ai.md` § Stored AI text](../../../spec/behavior/ai.md#stored-ai-text)). `ai_diagnostics_windows` holds a row only while a window is open: a unique index on a constant allows one row on the whole platform, and a check holds `ends_at` to at most 14 days after `started_at`. `ai_diagnostics_exchanges` holds one sealed question and answer per row (`sealed` is AES-256-GCM ciphertext written by the API; the database never holds the words), with cascading foreign keys to its window, its chapter, the asker's `members` row and the asker's `users` row. RLS on, no policies on either (API only, service role). Writes no row.
 - **Checks**: After `db push`, `select count(*) from ai_diagnostics_windows;` and `select count(*) from ai_diagnostics_exchanges;` both return `0`, `select relname, relrowsecurity from pg_class where relname in ('ai_diagnostics_windows', 'ai_diagnostics_exchanges');` returns `true` for both, and `select count(*) from pg_policies where tablename in ('ai_diagnostics_windows', 'ai_diagnostics_exchanges');` returns `0`.
 - **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`. Nothing writes either table unless the server has `AI_ENABLED=true`, `AI_DIAGNOSTICS_CHAPTER_ID` naming a chapter, `AI_STORED_TEXT_KEY` set, and that chapter's president has turned saving on in Chapter settings. The sweep that deletes a window at its end date runs every 10 minutes whether or not AI is on, and deletes nothing while the table is empty. The foreign keys take brief `SHARE ROW EXCLUSIVE` locks on `chapters`, `users` and `members` while the tables are created. `if not exists` makes re-applying idempotent. Verified in PGlite (`scripts/pglite/tiers/ai-ask-diagnostics.mjs`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ask-diagnostics-window-20261112190000) § Rollback Ask diagnostics window.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-ask-diagnostics-window-20261112200000) § Rollback Ask diagnostics window.
+
+## 2026-11-12: Suggested tasks from minutes (#4313, on `ai-integration`)
+
+### 20261112190000_meeting_task_suggestions.sql
+
+- **Purpose**: Adds `ai_suggestions.dedupe_key` (nullable text, 1 to 200 characters): a fingerprint of the thing in its source a suggestion was made from, which for a suggested task is one action item of posted minutes. The unique index `idx_ai_suggestions_source_dedupe` on `(source_type, source_id, kind, dedupe_key) where dedupe_key is not null` makes one proposal per item, whatever became of the first. Adds the trigger `meetings_drop_ai_suggestions` (`after delete on meetings`, running the existing `ai_suggestions_drop_for_source('meeting')`), so a meeting's waiting suggestions go with its minutes. Writes no row on apply. The rule is [`meetings.md` § Suggested tasks](../../../spec/behavior/meetings.md#suggested-tasks).
+- **Checks**: After `db push`, `select count(*) from pg_indexes where indexname = 'idx_ai_suggestions_source_dedupe';` returns `1`, `select tgname from pg_trigger where tgname = 'meetings_drop_ai_suggestions';` returns 1 row, and `select count(*) from ai_suggestions where dedupe_key is not null;` returns `0`.
+- **Promoter notes**: Ships with the AI build-out's one PR from `ai-integration` into `main`, not on its own. Must sort after `20261112130001_ai_suggestions.sql` and `20261112120400_meetings.sql`. The older API never writes the column; the newer API with `AI_ENABLED` unset proposes nothing. `ai_suggestions` and `meetings` arrive empty in the same release, so the column's check, the index build and the trigger's lock are milliseconds. `if not exists` and `drop trigger if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-suggested-tasks-from-minutes-20261112190000) § Rollback suggested tasks from minutes.
 
 ## 2026-11-12: Minutes drafted from notes (#4312, on `ai-integration`)
 

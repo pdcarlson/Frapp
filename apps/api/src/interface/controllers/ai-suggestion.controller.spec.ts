@@ -31,6 +31,7 @@ const row = (overrides: Partial<AiSuggestion> = {}): AiSuggestion => ({
   decided_by: null,
   decided_at: null,
   result_id: null,
+  dedupe_key: null,
   notified_at: null,
   expires_at: '2026-11-26T12:00:00.000Z',
   created_at: '2026-11-12T12:00:00.000Z',

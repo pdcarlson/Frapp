@@ -157,6 +157,56 @@ console.log("\n=== Functional: ai_suggestions (20261112130001) ===");
       { afterChannel },
     );
 
+    // Suggested tasks from minutes (20261112190000, #4313).
+    const MTG = "a4309000-0000-4000-8000-0000000000d1";
+    await db.query(
+      `insert into meetings (id, chapter_id, event_name, event_start_time, meeting_type)
+       values ($1, $2, 'Chapter meeting', now(), 'chapter')`,
+      [MTG, CH],
+    );
+    const keyed = (ordinal, key, status = "pending") =>
+      db.query(
+        `insert into ai_suggestions
+           (chapter_id, batch_id, ordinal, kind, source_type, source_id, payload,
+            quote, required_permission, status, decided_at, expires_at, dedupe_key)
+         values ($1, $2, $3, 'task', 'meeting', $4, $5::jsonb, $6, 'tasks:manage',
+                 $7, $8, now() + interval '14 days', $9)`,
+        [
+          CH,
+          BATCH,
+          ordinal,
+          MTG,
+          status === "pending" ? '{"title":"Book the bus"}' : "{}",
+          status === "pending" ? "Book the bus" : null,
+          status,
+          status === "pending" ? null : new Date(),
+          key,
+        ],
+      );
+    await keyed(10, "k-bus", "dismissed");
+    await keyed(11, "k-invoice");
+    check(
+      "an action item already decided can't be proposed again",
+      await refused(() => keyed(12, "k-bus")),
+      {},
+    );
+    check(
+      "the same action item can't wait twice",
+      await refused(() => keyed(13, "k-invoice")),
+      {},
+    );
+    await db.query(`delete from meetings where id = $1`, [MTG]);
+    const afterMeeting = await rows(
+      `select ordinal from ai_suggestions where batch_id = $1 and ordinal >= 10 order by ordinal`,
+      [BATCH],
+    );
+    check(
+      "deleting minutes deletes their waiting suggestions and keeps the decided one",
+      JSON.stringify(afterMeeting.map((r) => r.ordinal)) ===
+        JSON.stringify([10]),
+      { afterMeeting },
+    );
+
     const [grant] = await rows(
       `select has_function_privilege('authenticated',
          'public.ai_suggestions_drop_for_source()', 'execute') as ok`,

@@ -1,6 +1,6 @@
 # Stored AI text: the Ask diagnostics window
 
-Frapp keeps no prompt or answer text, with the exceptions in [`spec/behavior/ai.md` § Stored AI text](../../spec/behavior/ai.md#stored-ai-text). This page is how the one that is built works in operation: the 14-day beta diagnostics window on Ask Frapp (#4315, ADR-28 decision 8). The rules are the spec's; the table shapes are the migration's (`20261112190000_ai_ask_diagnostics.sql`).
+Frapp keeps no prompt or answer text, with the exceptions in [`spec/behavior/ai.md` § Stored AI text](../../spec/behavior/ai.md#stored-ai-text). This page is how the one that is built works in operation: the 14-day beta diagnostics window on Ask Frapp (#4315, ADR-28 decision 8). The rules are the spec's; the table shapes are the migration's (`20261112200000_ai_ask_diagnostics.sql`).
 
 ## What has to be true before anything is kept
 

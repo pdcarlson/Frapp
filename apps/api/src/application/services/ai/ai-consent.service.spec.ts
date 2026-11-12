@@ -345,6 +345,20 @@ describe('AiConsentService', () => {
   });
 
   describe('the chapter switches', () => {
+    it('chapterSwitchOn is true only for a switch the president turned on (#4313)', async () => {
+      await expect(
+        service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
+      ).resolves.toBe(false);
+      await turnOn(CHAPTER, { ask_enabled: true });
+      await expect(
+        service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
+      ).resolves.toBe(false);
+      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      await expect(
+        service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
+      ).resolves.toBe(true);
+    });
+
     it('are all off for a chapter that never changed one', async () => {
       await expect(
         service.getChapterSettings(CHAPTER, ['role-member']),

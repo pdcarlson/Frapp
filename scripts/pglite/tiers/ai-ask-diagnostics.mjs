@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: Ask diagnostics window (20261112190000, #4315) ─────────────
+// ─── Functional: Ask diagnostics window (20261112200000, #4315) ─────────────
 //
 // The one place Ask keeps text. It checks:
 //
@@ -12,7 +12,7 @@ import { db, miss } from "../harness.mjs";
 //   - RLS is on with no policies, so no client role reads either table.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: Ask diagnostics window (20261112190000) ===");
+console.log("\n=== Functional: Ask diagnostics window (20261112200000) ===");
 {
   const CH = "a4315000-0000-4000-8000-00000000000a";
   const CH2 = "a4315000-0000-4000-8000-00000000000b";

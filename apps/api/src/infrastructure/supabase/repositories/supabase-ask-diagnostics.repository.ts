@@ -13,7 +13,7 @@ const FOREIGN_KEY_VIOLATION = '23503';
 
 /**
  * `ai_diagnostics_windows` and `ai_diagnostics_exchanges` through the
- * service role (#4315, `20261112190000_ai_ask_diagnostics.sql`).
+ * service role (#4315, `20261112200000_ai_ask_diagnostics.sql`).
  *
  * Every window read and write is keyed by chapter. Two writes are not, on
  * purpose: a person's answer on the AI sheet covers every chapter, so a No

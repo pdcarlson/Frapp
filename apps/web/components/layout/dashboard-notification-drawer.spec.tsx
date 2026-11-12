@@ -69,6 +69,8 @@ const {
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
+    AI_SUGGESTIONS_NOTIFICATION_SCREEN:
+      actual.AI_SUGGESTIONS_NOTIFICATION_SCREEN,
     CHAT_REPORTS_NOTIFICATION_SCREEN: actual.CHAT_REPORTS_NOTIFICATION_SCREEN,
     DISCORD_IMPORT_NOTIFICATION_SCREEN:
       actual.DISCORD_IMPORT_NOTIFICATION_SCREEN,
@@ -318,6 +320,42 @@ describe("DashboardNotificationDrawer — a Discord import that ended", () => {
     expect(
       screen.getByRole("link", { name: /Discord import finished/ }),
     ).toHaveAttribute("href", "/discord-import");
+  });
+});
+
+describe("DashboardNotificationDrawer: suggested tasks to review (#4313)", () => {
+  it("opens the minutes they came from, or the Tasks board without one", () => {
+    const fromMinutes = notification(
+      "n-suggested",
+      "ai_suggestions",
+      "2026-11-12T10:00:00Z",
+      "5 suggested tasks to review",
+    );
+    notifications.value = [
+      {
+        ...fromMinutes,
+        data: {
+          target: {
+            screen: "ai_suggestions",
+            sourceType: "meeting",
+            sourceId: "mtg-1",
+          },
+        },
+      },
+      notification(
+        "n-suggested-bare",
+        "ai_suggestions",
+        "2026-11-12T09:00:00Z",
+        "1 suggested task to review",
+      ),
+    ];
+    renderDrawer();
+    expect(
+      screen.getByRole("link", { name: /5 suggested tasks to review/ }),
+    ).toHaveAttribute("href", "/meetings/mtg-1");
+    expect(
+      screen.getByRole("link", { name: /1 suggested task to review/ }),
+    ).toHaveAttribute("href", "/tasks");
   });
 });
 

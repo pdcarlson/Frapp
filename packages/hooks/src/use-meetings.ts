@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { aiSuggestionKeys } from "./use-ai-suggestions";
 
 /** One row of `GET /v1/meetings`. */
 export type MeetingSummary = components["schemas"]["MeetingSummaryDto"];
@@ -154,6 +155,12 @@ export function useUpdateMeeting() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // Suggested tasks follow the action items of posted minutes (#4313).
+      if (data.status === "posted") {
+        void queryClient.invalidateQueries({
+          queryKey: aiSuggestionKeys.all(chapterId),
+        });
+      }
       return queryClient.invalidateQueries({
         queryKey: meetingsKey(chapterId),
         // The open minutes were just set from the answer.
@@ -188,6 +195,10 @@ export function usePostMeeting() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // Posting is what turns the action items into suggested tasks (#4313).
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
       return queryClient.invalidateQueries({
         queryKey: meetingsKey(chapterId),
         predicate: (query) => query.queryKey[2] !== "one",
@@ -214,6 +225,10 @@ export function useDeleteMeeting() {
     },
     onSuccess: (id) => {
       queryClient.removeQueries({ queryKey: meetingKey(chapterId, id) });
+      // Its suggested tasks went with it (#4313).
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
       return queryClient.invalidateQueries({
         queryKey: meetingsKey(chapterId),
       });

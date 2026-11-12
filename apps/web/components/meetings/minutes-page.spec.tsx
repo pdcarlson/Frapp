@@ -54,6 +54,13 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
+// The list has its own spec; here only where the page puts it.
+vi.mock("@/components/ai/suggested-tasks", () => ({
+  SuggestedTasks: ({ source }: { source: { type: string; id: string } }) => (
+    <div data-testid="suggested-tasks">{`${source.type}:${source.id}`}</div>
+  ),
+}));
+
 vi.mock("@/components/ai/ai-consent-sheet", () => ({
   useAiConsentGate: () => ({
     ensureConsent: mocks.ensureConsent,
@@ -207,6 +214,21 @@ describe("MinutesPage", () => {
     // A member who can't edit gets no Edit or Delete.
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("lists suggested tasks under posted minutes, and never beside a draft or the editor", () => {
+    loaded(minutes({ can_edit: true }));
+    const { unmount } = render(<MinutesPage id="m-1" />);
+    expect(screen.getByTestId("suggested-tasks").textContent).toBe(
+      "meeting:m-1",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+    unmount();
+
+    loaded(minutes({ status: "draft", posted_at: null, can_edit: true }));
+    render(<MinutesPage id="m-1" />);
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
   });
 
   it("says the minutes aren't here on a 404, without a retry", () => {

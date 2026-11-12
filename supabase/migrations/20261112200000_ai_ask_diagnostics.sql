@@ -52,7 +52,7 @@ create index if not exists ai_diagnostics_windows_ends_at
 alter table public.ai_diagnostics_windows enable row level security;
 
 comment on table public.ai_diagnostics_windows is
-  'The open Ask diagnostics window; a row exists only while questions are being kept, and at most one row exists. API only. See 20261112190000_ai_ask_diagnostics.sql.';
+  'The open Ask diagnostics window; a row exists only while questions are being kept, and at most one row exists. API only. See 20261112200000_ai_ask_diagnostics.sql.';
 
 -- 2. ------------------------------------------------------------------------
 
@@ -80,4 +80,4 @@ create index if not exists ai_diagnostics_exchanges_user
 alter table public.ai_diagnostics_exchanges enable row level security;
 
 comment on table public.ai_diagnostics_exchanges is
-  'Sealed Ask questions and answers kept under the open diagnostics window; deleted with the window. API only. See 20261112190000_ai_ask_diagnostics.sql.';
+  'Sealed Ask questions and answers kept under the open diagnostics window; deleted with the window. API only. See 20261112200000_ai_ask_diagnostics.sql.';

@@ -70,6 +70,13 @@ export interface AiSuggestion {
   decided_at: string | null;
   /** The id of what accepting made (a task id for a task suggestion). */
   result_id: string | null;
+  /**
+   * Which thing in its source it was made from (an action item of the
+   * minutes), as a fingerprint and never the words, so the same thing is not
+   * proposed twice: unique per source and kind, and kept once decided. Null
+   * for a proposal with nothing to tell it apart by.
+   */
+  dedupe_key: string | null;
   /** When its batch push went out; null while it is still owed. */
   notified_at: string | null;
   expires_at: string;
