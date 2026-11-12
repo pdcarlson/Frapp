@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isCardReadMiss } from "./card-read-miss";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { invalidatePointReads } from "./use-points";
 
 /**
  * `userId` is not a convenience — on this endpoint it is the difference between
@@ -201,8 +202,10 @@ export function useReviewServiceEntry() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { body }) => {
       queryClient.invalidateQueries({ queryKey: ["service-entries"] });
+      // Approval awards the submitter's SERVICE points in the same transaction.
+      if (body.status === "APPROVED") void invalidatePointReads(queryClient);
     },
   });
 }
