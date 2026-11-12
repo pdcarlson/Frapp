@@ -1,14 +1,22 @@
-import { db, miss } from "../harness.mjs";
-import { F, READ_SCENARIOS } from "../chat-read-fixtures.mjs";
-import { canReadAs } from "../probe.mjs";
+import { db, miss } from "./harness.mjs";
+import { F, READ_SCENARIOS } from "./chat-read-fixtures.mjs";
+import { canReadAs } from "./probe.mjs";
+
+// Not under `tiers/`, because it is not a tier of its own: it seeds the rows
+// `tiers/chat-black-box.mjs` reads, so it has to run right before that tier,
+// with nothing in between. That tier imports it, which runs this module's body
+// first, wherever `chat-black-box.mjs` falls in the tier order. Under `tiers/`,
+// its file name would decide nothing (it runs once, at whichever turn comes
+// first), so it would run at its own turn only if it sorted first, and a tier
+// sorting between the two could then change the rows.
 
 // ─── chat_message_actions read enforcement (FRA-38) ─────────────────────────
 //
 // The membership-scoped SELECT policy delegates to can_read_chat_message(). The
-// black-box tiers (`chat-black-box.mjs`) stand up an `rls_probe` role because
+// black-box tiers (`tiers/chat-black-box.mjs`) stand up an `rls_probe` role because
 // RLS does not apply to superusers or table owners — a non-owner is required to
 // be subject to a policy at all. That role is deliberately GRANTED `authenticated` (see the
-// grant in `chat-black-box.mjs`); without that membership every `TO authenticated` policy stops
+// grant in `tiers/chat-black-box.mjs`); without that membership every `TO authenticated` policy stops
 // applying to it and every read silently falls back to default-deny, so the
 // visibility-set assertions would pass on empty results for the wrong reason.
 // Real-JWT enforcement (claims beyond `sub`/`role`) still lives in the NestJS

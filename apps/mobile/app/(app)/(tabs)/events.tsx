@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
 import {
   useActiveChapterId,
@@ -43,6 +44,9 @@ import {
 import { EventsCalendar } from "@/components/events/events-calendar";
 import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry";
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
+import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
+import { CalendarPlusGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import {
   selectAllEventRows,
   selectEventList,
@@ -101,6 +105,10 @@ export default function EventsScreen() {
   const view = useEventsView();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  // Subscribe (#3322): the sheet asks for the member's calendar link only
+  // while it is up.
+  const subscribeSheet = useRef<BottomSheetModal>(null);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   // One `now` per render so every row agrees on what "today" and "open" mean,
   // and it ticks so a check-in window opens and closes on a tab that never
@@ -341,6 +349,19 @@ export default function EventsScreen() {
     <ScreenShell
       title="Events"
       refresh={refresh}
+      headerAction={
+        chapterId ? (
+          <IconButton
+            label="Subscribe to events in your calendar"
+            onPress={() => {
+              setSubscribeOpen(true);
+              subscribeSheet.current?.present();
+            }}
+          >
+            <CalendarPlusGlyph color={tokens.color.text.foreground} />
+          </IconButton>
+        ) : null
+      }
     >
       {chapterId ? (
         <Segmented
@@ -354,6 +375,11 @@ export default function EventsScreen() {
       {renderBody()}
 
       {chapterId ? <SuggestedEventsEntry /> : null}
+      <CalendarSubscribeSheet
+        ref={subscribeSheet}
+        open={subscribeOpen}
+        onDismiss={() => setSubscribeOpen(false)}
+      />
     </ScreenShell>
   );
 }

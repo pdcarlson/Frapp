@@ -15,7 +15,7 @@ import {
   useStudySessions,
 } from "@repo/hooks";
 import Link from "next/link";
-import { can } from "@repo/validation";
+import { can, studyZoneRulesLine } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -611,7 +611,7 @@ export function StudyPage() {
             </h2>
             <p className="text-caption text-muted-foreground">
               {activeGeofence
-                ? `${activeGeofence.points_per_interval} pt every ${activeGeofence.minutes_per_point} min (min ${activeGeofence.min_session_minutes} min).`
+                ? studyZoneRulesLine(activeGeofence)
                 : "Live session in progress."}
             </p>
           </div>

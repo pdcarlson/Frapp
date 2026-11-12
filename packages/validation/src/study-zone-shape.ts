@@ -124,21 +124,43 @@ export function isValidZoneCircle(value: unknown): value is ZoneCircle {
 
 const METERS_PER_FOOT = 0.3048;
 
-/**
- * A radius in the words a US chapter uses: feet up to a quarter mile, then
- * miles. Stored in meters; shown in feet because that is what an officer
- * pacing out a library thinks in.
- */
-export function formatZoneRadius(meters: number): string {
-  const feet = meters / METERS_PER_FOOT;
-  if (feet < 1320) return `${Math.round(feet / 5) * 5} ft`;
-  return `${(feet / 5280).toFixed(1)} mi`;
-}
-
 export function feetToMeters(feet: number): number {
   return feet * METERS_PER_FOOT;
 }
 
 export function metersToFeet(meters: number): number {
   return meters / METERS_PER_FOOT;
+}
+
+/**
+ * What a study zone pays, in words a member would say: "5 points an hour ·
+ * 30 min minimum", "1 point every 30 min". The one line every zone list and
+ * the live session card show, on web and phone, so the three never word it
+ * three ways. The pause grace and the shape stay in the editor; a list row
+ * says what the place is for, as a Places list in Life360 or Google Maps
+ * gives one line.
+ *
+ * A rule the row does not carry drops out of the line rather than printing a
+ * default (page grammar, "An absent value is absent").
+ */
+export function studyZoneRulesLine(zone: {
+  points_per_interval?: number | null;
+  minutes_per_point?: number | null;
+  min_session_minutes?: number | null;
+}): string {
+  const points = zone.points_per_interval;
+  const minutes = zone.minutes_per_point;
+  const amount =
+    points != null ? `${points} ${points === 1 ? "point" : "points"}` : null;
+  const rate =
+    amount && minutes != null
+      ? minutes === 60
+        ? `${amount} an hour`
+        : `${amount} every ${minutes} min`
+      : null;
+  const minSession =
+    zone.min_session_minutes != null && zone.min_session_minutes > 0
+      ? `${zone.min_session_minutes} min minimum`
+      : null;
+  return [rate, minSession].filter(Boolean).join(" · ");
 }

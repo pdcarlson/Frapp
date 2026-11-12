@@ -105,7 +105,7 @@ export function messageRowDescription(state: MessageRowState): string | null {
 
 export const MESSAGE_CHECKING_BLOCK_LIST = "Checking your block list first.";
 /** A read that failed, whether a retry can run now or waits for the network. */
-export const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
+const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
 
 /**
  * The channel id out of a `POST /v1/channels/dm` response, or `null` when the

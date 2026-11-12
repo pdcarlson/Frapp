@@ -146,7 +146,7 @@ export function ActivityListRow({
  * ("Tomorrow · 7:00 PM") and names the person, and a poll's poster is in the
  * row's label (`ActivityListRow`).
  */
-export function ActivityRowLead({ row }: { row: ActivityRow }) {
+function ActivityRowLead({ row }: { row: ActivityRow }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
   const faceFor = useContext(ActivityFaces);

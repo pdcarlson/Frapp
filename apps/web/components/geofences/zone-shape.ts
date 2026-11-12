@@ -1,6 +1,5 @@
 import {
   circleToPolygon,
-  formatZoneRadius,
   isValidZoneCircle,
   outlineCenter,
   ZONE_OUTLINE_MAX_POINTS,
@@ -44,7 +43,7 @@ export function emptyZoneDraft(): ZoneDraft {
  * hand edit) leaves a stale `circle` behind, and the outline is what members
  * are checked against, so the outline wins.
  */
-export function zoneCircle(zone: ZoneShapeRow): ZoneCircle | null {
+function zoneCircle(zone: ZoneShapeRow): ZoneCircle | null {
   if (!isValidZoneCircle(zone.circle)) return null;
   const points = Array.isArray(zone.coordinates) ? zone.coordinates : [];
   const derived = circleToPolygon(zone.circle);
@@ -132,17 +131,4 @@ export function draftPolygon(draft: ZoneDraft): ZonePoint[] {
       : [];
   }
   return draft.points;
-}
-
-/**
- * The zone's shape in a few words, for its row in the list: "245 ft circle"
- * or "Outline, 6 corners". Never coordinates (principles.md P2).
- */
-export function zoneShapeLine(zone: ZoneShapeRow): string {
-  const circle = zoneCircle(zone);
-  if (circle) return `${formatZoneRadius(circle.radius_m)} circle`;
-  const corners = Array.isArray(zone.coordinates)
-    ? zone.coordinates.length
-    : 0;
-  return `Outline, ${corners} corners`;
 }

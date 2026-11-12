@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
  * Rules and words: `@repo/hooks` `calendar-tasks.ts`.
  */
 
-export function TaskMark({
+function TaskMark({
   state,
   className,
 }: {
@@ -63,7 +63,7 @@ export function TaskMark({
 }
 
 /** A finished task's title steps back, so what is still open stands out. */
-export function taskTitleClassName(state: CalendarTaskState): string {
+function taskTitleClassName(state: CalendarTaskState): string {
   if (state === "confirmed") return "text-muted-foreground line-through";
   if (state === "waiting") return "text-muted-foreground";
   return "text-foreground";
@@ -74,7 +74,7 @@ export function taskTitleClassName(state: CalendarTaskState): string {
  * viewer's own: who it went to ("Julian"), or for a task handed to many,
  * how many are done ("8/20").
  */
-export function assignedTrailing(
+function assignedTrailing(
   item: CalendarTask,
   nameOf: (userId: string) => string,
 ): string | null {
@@ -108,7 +108,7 @@ function dueLabel(day: string): string {
  * task the viewer assigned, where each assignee stands. The Tasks page is
  * where it is worked, so the card ends with the way there.
  */
-export function CalendarTaskPopover({
+function CalendarTaskPopover({
   item,
   nameOf,
   children,

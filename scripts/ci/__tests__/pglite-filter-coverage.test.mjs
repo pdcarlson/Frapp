@@ -1,11 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { basename, dirname, join } from "node:path";
 
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
+import { runTiers, tierFiles } from "../../pglite/tier-list.mjs";
 
 // `pglite-migrations` is a REQUIRED check (#2538) that is path-gated on PRs by a
 // job-level `if:` on `changes.pglite`. A job skipped that way reports Success,
@@ -45,10 +56,18 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // A path read through any other form (a module constant joined onto a local
 // root, say) is invisible here. The one such input today, the chapter directory
 // seed, is imported from its module below rather than restated.
+//
+// The tiers are the one computed import. `tier-list.mjs` finds them by
+// filename and imports each through `TIER_IMPORT`, so the derivation finds them
+// the same way: it calls that module's own `tierFiles()` and follows every
+// file it returns. `TIER_IMPORT` is accepted in that module only, written
+// exactly so; any other computed import still fails.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const HARNESS = "scripts/pglite";
 const ENTRY = `${HARNESS}/run.mjs`;
+const TIER_LOADER = `${HARNESS}/tier-list.mjs`;
+const TIER_IMPORT = "import(new URL(file, dir).href)";
 
 // Inputs the job depends on that the forms above cannot derive: the job's own
 // definition, the npm script it runs, the lockfile, and the seed CSV that
@@ -273,7 +292,7 @@ function literal(arg) {
  * The repo paths one module reads (`found`) and the JavaScript modules it pulls
  * in (`follow`), both repo-relative. `file` is the module's repo-relative path.
  */
-export function scan(src, file) {
+export function scan(src, file, { computedImport = null } = {}) {
   const masked = mask(src);
   const found = [];
   const follow = [];
@@ -410,13 +429,14 @@ export function scan(src, file) {
       }),
     ),
     // Dynamic: the first argument is the specifier; a second is its attributes.
-    ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g).map(
-      ({ call, args }) => {
+    // The caller vouches for `computedImport` and follows what it loads.
+    ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g)
+      .filter(({ call }) => call !== computedImport)
+      .map(({ call, args }) => {
         const target = literal(args[0] ?? "");
         assert.ok(target !== null, unresolved(call));
         return target;
-      },
-    ),
+      }),
   ];
   for (const specifier of specifiers) {
     // ESM resolves only `./`, `../` and `/` as paths; anything else is a package.
@@ -438,30 +458,15 @@ function inputs() {
     found.add(file);
     const abs = join(REPO, file);
     assert.ok(existsSync(abs), `${file} is referenced but does not exist`);
-    const result = scan(readFileSync(abs, "utf8"), file);
+    const loader = file === TIER_LOADER;
+    const result = scan(readFileSync(abs, "utf8"), file, {
+      computedImport: loader ? TIER_IMPORT : null,
+    });
     for (const path of result.found) found.add(path);
     queue.push(...result.follow);
+    if (loader) queue.push(...tierFiles().map((name) => `${HARNESS}/tiers/${name}`));
   }
   return [...found];
-}
-
-/**
- * The tiers `run.mjs` runs: each `await import("./tiers/<name>.mjs")` in its
- * live code, as harness-relative paths. Read from the masked source, so an
- * import inside a comment or string is no import, and an `import()` that is not
- * awaited does not count: `run.mjs` reads the failure count and closes the
- * database once its last await returns, so an unawaited tier could still be
- * running then.
- */
-function awaitedTiers(src) {
-  return callArgs(src, mask(src), /\bawait\s+import\s*\(/g)
-    .map(({ call, args }) => {
-      const target = literal(args[0] ?? "");
-      assert.ok(target !== null, `run.mjs: cannot resolve \`${call}\``);
-      return target;
-    })
-    .filter((target) => target.startsWith("./tiers/"))
-    .map((target) => target.slice(2));
 }
 
 /** Every `.mjs` under `scripts/pglite/`, harness-relative and `/`-separated. */
@@ -550,23 +555,83 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
   });
 });
 
-// A tier runs only when `run.mjs` imports it: each tier's body executes on
-// import, and `run.mjs` lists them by hand, in order (#3226). A tier file that
-// is never imported, or whose import line is deleted, commented out or left
-// unawaited, stops running without failing anything: the job reports fewer
-// assertions and stays green. `chat-read-surface-ledger.spec.ts` also resolves a
-// `{ pglite: '<name>' }` proof by finding that `name:` in any module here, so an
-// orphaned module would keep a proof alive. These hold every module loaded. They
-// cannot prove a loaded module's code runs every scenario it names.
+// A tier runs only when it is imported: each tier's body executes on import.
+// `run.mjs` awaits `runTiers()` in `tier-list.mjs`, which imports every `.mjs`
+// file directly in `tiers/`, in filename order, so adding a file is all it
+// takes. What still stops a module
+// running without failing anything (the job reports fewer assertions and stays
+// green): a tier in a subfolder of `tiers/`, which the loader does not read; a
+// loader or `run.mjs` that stops awaiting, so the database closes under a tier
+// still running; and a module nothing loads. `chat-read-surface-ledger.spec.ts`
+// also resolves a `{ pglite: '<name>' }` proof by finding that `name:` in any
+// module here, so an orphaned module would keep a proof alive. These hold every
+// module loaded. They cannot prove a loaded module's code runs every scenario it
+// names.
 describe("pglite-migrations: every module under scripts/pglite is loaded", () => {
-  it("run.mjs awaits every tier", () => {
-    const awaited = new Set(awaitedTiers(readFileSync(join(REPO, ENTRY), "utf8")));
+  it("every module under tiers/ is a tier the loader finds", () => {
     const tiers = harnessModules().filter((rel) => rel.startsWith("tiers/"));
     assert.ok(tiers.length > 0, "found no tiers — re-point this test");
     assert.deepEqual(
-      tiers.filter((rel) => !awaited.has(rel)),
+      tiers,
+      tierFiles().map((name) => `tiers/${name}`),
+      "only .mjs files directly in scripts/pglite/tiers/ run: move these up to tiers/ or out beside harness.mjs",
+    );
+  });
+
+  it("run.mjs awaits the loader", () => {
+    assert.match(
+      mask(readFileSync(join(REPO, ENTRY), "utf8")),
+      /(?<![.\w$])await\s+runTiers\s*\(\s*\)/,
+      "run.mjs no longer awaits runTiers(), so it can close the database under a running tier",
+    );
+  });
+
+  it("the loader runs every tier, one at a time, in filename order", async () => {
+    // Stand-in tiers that log when they start and finish, with a wait between,
+    // so a loader that skips a file, reorders, or starts the next tier before
+    // the last one finished (`forEach(async ...)`, `Promise.all`) logs
+    // something else.
+    const dir = mkdtempSync(join(tmpdir(), "pglite-run-tiers-"));
+    const names = ["b.mjs", "a.mjs", "00-first.mjs"];
+    try {
+      for (const name of names) {
+        writeFileSync(
+          join(dir, name),
+          [
+            `globalThis.__tierLog.push("start ${name}");`,
+            "await new Promise((done) => setTimeout(done, 20));",
+            `globalThis.__tierLog.push("end ${name}");`,
+          ].join("\n"),
+        );
+      }
+      globalThis.__tierLog = [];
+      await runTiers(pathToFileURL(`${dir}/`));
+      assert.deepEqual(
+        globalThis.__tierLog,
+        ["00-first.mjs", "a.mjs", "b.mjs"].flatMap((name) => [
+          `start ${name}`,
+          `end ${name}`,
+        ]),
+      );
+    } finally {
+      delete globalThis.__tierLog;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no tier imports another tier", () => {
+    // An imported tier's body runs at its importer's turn, so its file name no
+    // longer says when it runs.
+    const offenders = tierFiles().flatMap((name) => {
+      const rel = `${HARNESS}/tiers/${name}`;
+      return scan(readFileSync(join(REPO, rel), "utf8"), rel)
+        .follow.filter((path) => path.startsWith(`${HARNESS}/tiers/`))
+        .map((path) => `${rel} imports ${path}`);
+    });
+    assert.deepEqual(
+      offenders,
       [],
-      'these tiers never run: add `await import("./tiers/<name>.mjs");` to scripts/pglite/run.mjs, in order',
+      "move what both tiers share out of tiers/, beside harness.mjs",
     );
   });
 
@@ -579,17 +644,38 @@ describe("pglite-migrations: every module under scripts/pglite is loaded", () =>
     );
   });
 
-  it("counts an awaited import in live code, and nothing else", () => {
-    const src = [
-      '// run.mjs replays `supabase/migrations/*.sql` (an opener with no closer)',
-      'await import("./tiers/on.mjs"); // await import("./tiers/trailing.mjs");',
-      '/* await import("./tiers/block.mjs"); */',
-      'import("./tiers/unawaited.mjs");',
-      'const s = \'await import("./tiers/string.mjs")\';',
-      'await import("./tiers/last.mjs");',
-      "/** a doc comment after the list */",
-    ].join("\n");
-    assert.deepEqual(awaitedTiers(src), ["tiers/on.mjs", "tiers/last.mjs"]);
+  it("orders tiers by code unit, and skips anything that is not a file ending .mjs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pglite-tiers-"));
+    try {
+      for (const name of ["b.mjs", "a.mjs", "00-first.mjs", "Z.mjs", "notes.md", "a.mjs.bak"]) {
+        writeFileSync(join(dir, name), "");
+      }
+      mkdirSync(join(dir, "nested"));
+      writeFileSync(join(dir, "nested", "c.mjs"), "");
+      mkdirSync(join(dir, "folder.mjs"));
+      // A locale sort would put `a` before `Z`; a code-unit sort, the same on
+      // every machine, puts digits, then capitals, then lower case.
+      assert.deepEqual(tierFiles(dir), ["00-first.mjs", "Z.mjs", "a.mjs", "b.mjs"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts the tier import only where the caller vouches for it", () => {
+    const src = `for (const file of tierFiles()) await ${TIER_IMPORT};`;
+    const at = TIER_LOADER;
+    assert.throws(() => scan(src, at), /cannot resolve/);
+    assert.deepEqual(scan(src, at, { computedImport: TIER_IMPORT }), {
+      found: [],
+      follow: [],
+    });
+    // Reworded, it is just another computed import.
+    assert.throws(
+      () => scan("await import(new URL(f, dir).href);", at, {
+        computedImport: TIER_IMPORT,
+      }),
+      /cannot resolve/,
+    );
   });
 });
 

@@ -229,7 +229,7 @@ export type ReplyTarget = Pick<ChatMessage, 'sender_id' | 'is_deleted'>;
  * drops a recipient who blocked the sender, and the unread counts skip a
  * blocked member's messages.
  */
-export function replyPingTarget(
+function replyPingTarget(
   senderId: string,
   replyTo: ReplyTarget | null,
 ): string | null {

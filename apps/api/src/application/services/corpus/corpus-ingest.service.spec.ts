@@ -254,7 +254,13 @@ describe('CorpusIngestService', () => {
           promptVersion: 'corpus.index@v1',
           purpose: 'document',
         }),
-        { chapterId: CHAPTER, actingUserId: UPLOADER, runId: RUN },
+        {
+          chapterId: CHAPTER,
+          actingUserId: UPLOADER,
+          runId: RUN,
+          // The chapter's upkeep: never charged to a member's day (#4504).
+          chapterUpkeep: true,
+        },
       );
       expect(corpus.writeChunks).toHaveBeenCalledWith(
         SOURCE,

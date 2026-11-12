@@ -49,10 +49,10 @@ const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
  * measured literal instead: the foreground minus on it reads 6.33:1, and the
  * badge's 2px `surface1` ring separates it from whatever is under the disc.
  */
-export const REMOVE_BADGE_FILL = "#5A5A5A";
+const REMOVE_BADGE_FILL = "#5A5A5A";
 
 /** The round tile each action sits on. */
-export const QUICK_ACTION_DISC = 58;
+const QUICK_ACTION_DISC = 58;
 const GLYPH_SIZE = 26;
 /** Disc, the 8pt gap and the 13pt label's line. */
 const CELL_HEIGHT = QUICK_ACTION_DISC + 8 + 18;

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 
 /**
  * "View as a role" (#4072): the role an officer is previewing the dashboard
@@ -34,6 +35,14 @@ export function activePreview(
   activeChapterId: string | null,
 ): RolePreview | null {
   return preview && preview.chapterId === activeChapterId ? preview : null;
+}
+
+/** Whether the officer is viewing the active chapter as a role right now. */
+export function useIsRolePreviewActive(): boolean {
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  return useRolePreviewStore(
+    (s) => activePreview(s.preview, activeChapterId) !== null,
+  );
 }
 
 /**

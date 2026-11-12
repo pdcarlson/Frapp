@@ -24,7 +24,7 @@ export interface EditableTask {
 }
 
 /** The form's draft for a task as it stands. */
-export function taskDraftFromTask(task: EditableTask): TaskDraft {
+function taskDraftFromTask(task: EditableTask): TaskDraft {
   return {
     title: task.title,
     assigneeId: task.assignee_id,

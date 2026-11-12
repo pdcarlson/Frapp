@@ -22,7 +22,7 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  */
 export const LINK_TITLE_BATCH = 10;
 /** How long a read that failed on the way waits before it is tried again. */
-export const LINK_TITLE_RETRY_AFTER_MS = 60 * 60 * 1000;
+const LINK_TITLE_RETRY_AFTER_MS = 60 * 60 * 1000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

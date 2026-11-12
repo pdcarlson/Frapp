@@ -26,7 +26,7 @@ interface Moment {
   pill?: string;
 }
 
-export const SIGN_IN_MOMENTS: readonly Moment[] = [
+const SIGN_IN_MOMENTS: readonly Moment[] = [
   {
     key: "meeting",
     badge: null,

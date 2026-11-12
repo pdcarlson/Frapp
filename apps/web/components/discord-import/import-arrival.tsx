@@ -24,7 +24,7 @@ import type { ImportRow } from "./import-progress";
 import type { CategoryTile } from "./category-progress";
 
 /** Where a browser remembers that an import's landing has played. */
-export function arrivalKey(importId: string): string {
+function arrivalKey(importId: string): string {
   return `frapp:discord-import-landed:${importId}`;
 }
 
@@ -57,7 +57,7 @@ function reducedMotion(): boolean {
  * admin here). An import that finished before it, such as every import
  * already done on the day this shipped, rests from the first frame.
  */
-export const ARRIVAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ARRIVAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function recent(completedAt: string | null | undefined, now: number): boolean {
   if (!completedAt) return false;
@@ -71,7 +71,7 @@ function recent(completedAt: string | null | undefined, now: number): boolean {
  * check mark hold their first frame instead of showing the end and then
  * jumping back to start.
  */
-export const ARRIVAL_WAIT_MS = 1000;
+const ARRIVAL_WAIT_MS = 1000;
 
 /**
  * The landing's state. It may play on an import that completed within

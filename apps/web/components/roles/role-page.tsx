@@ -29,6 +29,7 @@ import { PermissionSwitchList } from "@/components/roles/permission-switch-list"
 import { RoleOverrideList } from "@/components/roles/role-override-list";
 import { useRolePermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { useRolesData } from "@/components/roles/use-roles-data";
+import { CANT_GIVE, lockedReasonFor } from "@repo/hooks/use-roles-data";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -256,13 +257,7 @@ function RoleBody({
   const count = memberCounts?.get(role.id) ?? (memberCounts ? 0 : null);
   const lockedReason = wildcard
     ? "This role can do everything. That only moves through Transfer presidency."
-    : !canManage
-      ? "Your role can't change permissions."
-      : !reach.known
-        ? "Checking what your role can change."
-        : !editable
-          ? "This role ranks at or above yours, so your role can't change it."
-          : null;
+    : lockedReasonFor({ canManage, reach }, editable, "role");
 
   return (
     <div className="space-y-10">
@@ -477,7 +472,7 @@ function RoleBody({
             lockedReason={lockedReason}
             rowLockedReason={(permission, on) =>
               !on && !mayGrant(reach, permission)
-                ? "You can't give this, because your role doesn't have it."
+                ? CANT_GIVE
                 : null
             }
             pendingPermission={

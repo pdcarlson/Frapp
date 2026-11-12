@@ -49,7 +49,7 @@ export const DEV_LOG_ENV = {
 } as const;
 
 /** The one repository posts link to. The caller sends numbers, never URLs. */
-export const DEV_LOG_REPO_URL = 'https://github.com/pdcarlson/Frapp';
+const DEV_LOG_REPO_URL = 'https://github.com/pdcarlson/Frapp';
 
 export const DEV_LOG_EVENTS = [
   'work_started',

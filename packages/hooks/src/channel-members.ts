@@ -1,3 +1,5 @@
+import { EVERYONE_MEMBER_LIST_HEADING } from "@repo/validation";
+
 /**
  * The order Chat's member list draws a channel's readers in (#3536), shared
  * so the web column and the mobile sheet cannot drift apart.
@@ -50,13 +52,14 @@ export const NO_ROLE_GROUP_LABEL = "No role";
  * never a row's place.
  *
  * At real scale the groups stay few: a chapter's system roles (President,
- * Treasurer, Vice President, Secretary, Member, New Member, Alumni) rank above
+ * Treasurer, Vice President, Secretary, Everyone, New Member, Alumni) rank above
  * any imported Discord role, so a 109-role chapter still draws about seven
  * headings. Readers with no role come last under {@link NO_ROLE_GROUP_LABEL}.
  *
- * An API older than the role fields sends no `role_id` at all; then the rows
- * come back as one "Members" list in the old order rather than every member
- * landing under "No role".
+ * Everyone's group comes headed "Members" from the API
+ * (`EVERYONE_MEMBER_LIST_HEADING`). An API older than the role fields sends
+ * no `role_id` at all; then the rows come back as one list under that same
+ * heading in the old order rather than every member landing under "No role".
  */
 export function groupChannelMembersByRole<T extends GroupableChannelMember>(
   rows: readonly T[],
@@ -69,7 +72,7 @@ export function groupChannelMembersByRole<T extends GroupableChannelMember>(
     return [
       {
         key: "all",
-        label: "Members",
+        label: EVERYONE_MEMBER_LIST_HEADING,
         rows: [...rows].sort(compareChannelMembers),
       },
     ];

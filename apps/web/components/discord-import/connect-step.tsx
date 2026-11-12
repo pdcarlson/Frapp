@@ -35,7 +35,7 @@ import { DISCORD_IMPORT_SETTINGS_PATH } from "@/components/settings/settings-pat
  * it against its own configured app origin on the way back, so it cannot be
  * turned into an off-site redirect.
  */
-export const DISCORD_CONNECT_RETURN_PATH = `${DISCORD_IMPORT_SETTINGS_PATH}&wizard=bot`;
+const DISCORD_CONNECT_RETURN_PATH = `${DISCORD_IMPORT_SETTINGS_PATH}&wizard=bot`;
 
 /**
  * Link the chapter's Discord server.

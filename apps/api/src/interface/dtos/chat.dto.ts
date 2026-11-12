@@ -314,7 +314,7 @@ export class ChannelMemberDto {
     type: String,
     nullable: true,
     description:
-      "That role's name, the group's heading, or null when they hold no role.",
+      "The group's heading: that role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role.",
   })
   role_name: string | null;
 }
@@ -953,7 +953,7 @@ export class ClearedKindNotificationPreferenceDto {
 }
 
 /** Bounds one request to roughly one page of distinct message authors (#1231). */
-export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
+const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
 
 export class ResolveAuthorAvatarsDto {
   @ApiProperty({

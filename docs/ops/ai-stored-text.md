@@ -65,7 +65,7 @@ The order matters, because the row in Chapter settings is drawn only for the cha
 1. The president stops the window in Chapter settings, AI. Everything kept is deleted at once.
 2. Then unset `AI_DIAGNOSTICS_CHAPTER_ID` in Infisical, or point it at the next chapter, and redeploy the API.
 
-If the variable was changed while a window was still open, nothing more is kept for the old chapter and the sweep still deletes its rows at the end date. Its president no longer sees the row, so to delete sooner run `delete from public.ai_diagnostics_windows where chapter_id = '<chapter id>';`. Until that row is gone the new chapter's president cannot start a window (the table holds one window at a time, and the API answers `ai.ask.diagnostics.already_on`). `POST /v1/ai/ask/diagnostics/stop` itself still works for the old chapter's president while its window exists and `AI_ENABLED` is on.
+If the variable was changed while a window was still open, nothing more is kept for the old chapter and the sweep still deletes its rows at the end date. Its president no longer sees the row, so to delete sooner run `delete from public.ai_diagnostics_windows where chapter_id = '<chapter id>';`. Until that row is gone the new chapter's president cannot start a window (the table holds one window at a time, and the API answers `ai.ask.diagnostics.already_on`). `DELETE /v1/ai/ask/diagnostics` still works for the old chapter's president while its window exists, whether or not `AI_ENABLED` is on (#4504).
 
 ### Setting the key
 

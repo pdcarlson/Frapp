@@ -27,10 +27,13 @@ const {
   chapterScopeRef,
   tasksPending,
   suggestionsPending,
+  suggestionsFailures,
   updateTaskMutate,
 } = vi.hoisted(() => ({
   // The suggested-tasks read still in flight (#4313).
   suggestionsPending: { current: false },
+  // Failed tries on that read so far (#4504).
+  suggestionsFailures: { current: 0 },
   updateTaskMutate: vi.fn(),
   mockCurrentChapter: vi.fn(),
   createTaskMutate: vi.fn(),
@@ -132,6 +135,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       suggestionsPending.current && (options?.enabled ?? true)
         ? "fetching"
         : "idle",
+    // Failed tries so far; the default retry repeats a failed read.
+    failureCount: suggestionsFailures.current,
   }),
   useMyPermissions: () => ({
     data:
@@ -149,6 +154,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: options?.enabled ? eventsRef.current : undefined };
   },
   useCurrentUser: () => ({ data: currentUserRef.current }),
+  // The List / Grid pick is kept under the viewer's id (`lib/list-layout.ts`).
+  useViewerUserId: () => "viewer-1",
   useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -206,6 +213,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 const { TasksBoard } = await import("./tasks-board");
+const { resetListLayoutForTests } = await import("@/lib/list-layout");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -221,6 +229,8 @@ const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete /i });
 
 beforeEach(() => {
+  window.localStorage.clear();
+  resetListLayoutForTests();
   permissionsRef.current = ["tasks:manage"];
   permissionsFailed.current = false;
   eventsRef.current = [];
@@ -256,6 +266,21 @@ describe("TasksBoard suggested tasks (#4313)", () => {
       ).toBeNull();
     } finally {
       suggestionsPending.current = false;
+    }
+  });
+
+  it("stops waiting once the suggestions read has failed, rather than sit out its retries (#4504)", () => {
+    chapter.active();
+    suggestionsPending.current = true;
+    suggestionsFailures.current = 1;
+    try {
+      render(<TasksBoard />);
+      expect(
+        screen.getByRole("button", { name: /^add a task$/i }),
+      ).toBeInTheDocument();
+    } finally {
+      suggestionsPending.current = false;
+      suggestionsFailures.current = 0;
     }
   });
 
@@ -605,6 +630,88 @@ describe("TasksBoard overdue affordances", () => {
     // Still readable, and Delete still offered — only the ambiguous
     // lifecycle transition is withheld.
     expect(screen.getByText(/submit the ride-share list/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * List or Grid (#4175). The board of status columns was the page's only view,
+ * so it is Grid and stays the default; List draws the same groups as rows,
+ * with the same controls, Edit and Delete included.
+ */
+describe("TasksBoard List / Grid", () => {
+  // A confirmed task, so the Confirmed list under the groups is drawn too.
+  const CONFIRMED_TASK = {
+    ...TASKS[2]!,
+    id: "task-confirmed",
+    title: "Order the composite frames",
+    points_awarded: true,
+    confirmed_at: "2026-08-12T00:00:00Z",
+  };
+
+  beforeEach(() => {
+    chapter.active();
+    currentUserRef.current = { id: "u-admin" };
+    tasksRef.current = [...TASKS, CONFIRMED_TASK];
+  });
+
+  const todoRegion = () => screen.getByRole("region", { name: /to do/i });
+  const confirmedList = () =>
+    screen.getByRole("region", { name: /confirmed/i }).querySelector("ul");
+  /** The task the specs read, by its title. */
+  const sweepItem = () =>
+    within(todoRegion()).getByText("Sweep the chapter room").closest("li");
+
+  const layoutChoice = (name: "List" | "Grid") =>
+    within(screen.getByRole("radiogroup", { name: "Layout" })).getByRole(
+      "radio",
+      { name },
+    );
+
+  it("opens on the board, as Grid, until the person picks", () => {
+    render(<TasksBoard />);
+    expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
+    // Lanes side by side, each task a framed tile, Confirmed as a grid.
+    expect(todoRegion().parentElement).toHaveClass("@4xl:grid-cols-4");
+    expect(todoRegion().querySelector("ul")).not.toHaveClass("divide-y");
+    expect(sweepItem()).toHaveClass("rounded-[14px]", "border");
+    expect(confirmedList()).toHaveClass("@4xl:grid-cols-4");
+  });
+
+  it("draws the same groups as rows in List, keeping Edit and Delete, and remembers it", async () => {
+    const user = userEvent.setup();
+    const { container, unmount } = render(<TasksBoard />);
+    await user.click(layoutChoice("List"));
+
+    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
+    const todo = todoRegion();
+    // Groups stacked, not lanes; each task a flush row, not a framed tile;
+    // the Confirmed list rows too.
+    expect(todo.parentElement).not.toHaveClass("grid");
+    expect(todo.querySelector("ul")).toHaveClass("divide-y");
+    expect(sweepItem()).toHaveClass("py-3");
+    expect(sweepItem()).not.toHaveClass("border");
+    expect(confirmedList()).toHaveClass("divide-y");
+    expect(confirmedList()).not.toHaveClass("grid");
+    expect(
+      within(todo).getByRole("button", {
+        name: /^edit sweep the chapter room$/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(todo).getByRole("button", {
+        name: /^delete sweep the chapter room$/i,
+      }),
+    ).toBeInTheDocument();
+    // The same four groups and Confirmed, and the page stays flush.
+    expect(screen.getAllByRole("region")).toHaveLength(5);
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(window.localStorage.getItem("frapp.tasks.layout.viewer-1")).toBe(
+      "list",
+    );
+
+    unmount();
+    render(<TasksBoard />);
+    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
   });
 });
 

@@ -23,7 +23,7 @@ export const ORG_WORKFLOWS_SEED = 'ORG_WORKFLOWS_SEED';
 
 /** Workflow keys wired into runtime enforcement (subset of WORKFLOWS_SEED). */
 export const WORKFLOW_HOURS_RECEIPT = 'wf_hours_receipt';
-export const WORKFLOW_DUES_GRACE = 'wf_dues_grace';
+const WORKFLOW_DUES_GRACE = 'wf_dues_grace';
 
 /**
  * Upper bound on the dues grace period. The zod/DTO validation only requires

@@ -740,6 +740,22 @@ describe('AiGatewayService', () => {
       );
     });
 
+    // #4504: indexing is the chapter's upkeep. The flag rides the call to the
+    // spend seam and the ledger record, which charge it to no member's day.
+    it('carries the chapter’s-upkeep flag to the spend hold and the record', async () => {
+      const h = harness();
+      await h.gateway.embed(
+        'corpus.embed',
+        { texts: ['bylaws'], promptVersion: 'i@v1', purpose: 'document' },
+        { ...CONTEXT, runId: 'run-9', chapterUpkeep: true },
+      );
+      expect(h.spend.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ chapterUpkeep: true, runId: 'run-9' }),
+        expect.anything(),
+      );
+      expect(h.records[0]).toMatchObject({ chapterUpkeep: true });
+    });
+
     // The consent rule (#4308): indexing a chapter's own records needs only
     // the chapter's switch, and a question needs the asker's own Yes. The
     // two embedding tasks sit in different families so that rule can tell

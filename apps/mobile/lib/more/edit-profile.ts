@@ -41,7 +41,7 @@ export type ProfilePatchResult =
 export const NAME_REQUIRED_MESSAGE = "Your name can't be empty.";
 // The year refusal is `@repo/validation`'s, shared with an officer's correction.
 export { GRADUATION_YEAR_MESSAGE };
-export const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} characters.`;
+const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} characters.`;
 
 /** What the sheet opens on: the profile as it stands, blanks for unset. */
 export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {

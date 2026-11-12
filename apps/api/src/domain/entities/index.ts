@@ -5,6 +5,7 @@ export * from './ai-run.entity';
 export * from './ai-suggestion.entity';
 export * from './ask-diagnostics.entity';
 export * from './backwork.entity';
+export * from './calendar-feed.entity';
 export * from './chapter-activation-milestone.entity';
 export * from './chapter-audit-log.entity';
 export * from './chapter-custom-field.entity';

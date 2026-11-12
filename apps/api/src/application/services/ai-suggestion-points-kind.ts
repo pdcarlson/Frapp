@@ -28,7 +28,7 @@ import { PointsService } from './points.service';
 export const POINTS_SUGGESTION_MAX_MEMBERS = 300;
 
 /** A points proposal is stale by the next day (the acting agent, #718). */
-export const POINTS_SUGGESTION_EXPIRY_DAYS = 1;
+const POINTS_SUGGESTION_EXPIRY_DAYS = 1;
 
 /** Adjustments made side by side while a proposal is carried out. */
 const COMMIT_CONCURRENCY = 5;

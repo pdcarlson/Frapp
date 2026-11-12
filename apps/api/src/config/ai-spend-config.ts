@@ -19,7 +19,7 @@ type Env = Record<string, unknown>;
  * chapter can run up a bill. A cap the treasurer sets per chapter (#1310)
  * replaces this default for that chapter.
  */
-export const AI_SPEND_CAP_DEFAULTS_USD = {
+const AI_SPEND_CAP_DEFAULTS_USD = {
   AI_CHAPTER_MONTHLY_CAP_USD: 25,
   AI_MEMBER_DAILY_CAP_USD: 2,
   AI_ANTHROPIC_MONTHLY_CAP_USD: 150,

@@ -4,10 +4,8 @@ import { StudyGeofenceController } from '../../interface/controllers/study.contr
 import { StudySessionController } from '../../interface/controllers/study.controller';
 import { SupabaseStudyGeofenceRepository } from '../../infrastructure/supabase/repositories/supabase-study-geofence.repository';
 import { SupabaseStudySessionRepository } from '../../infrastructure/supabase/repositories/supabase-study-session.repository';
-import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
 import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '#domain/repositories/study.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '#domain/repositories/point-transaction.repository.interface';
 import { RbacModule } from '../rbac/rbac.module';
 
 // Imports `RbacModule` so `StudyService` can resolve the Alumni lifecycle role
@@ -24,10 +22,6 @@ import { RbacModule } from '../rbac/rbac.module';
     {
       provide: STUDY_SESSION_REPOSITORY,
       useClass: SupabaseStudySessionRepository,
-    },
-    {
-      provide: POINT_TRANSACTION_REPOSITORY,
-      useClass: SupabasePointTransactionRepository,
     },
   ],
   // Activity's standing reads a member's own sessions through it.

@@ -45,10 +45,10 @@ import {
   type CorpusSourceAdapter,
 } from './corpus-source';
 
-export const CORPUS_INDEX_RUN_KIND = 'corpus_index';
+const CORPUS_INDEX_RUN_KIND = 'corpus_index';
 const EMBED_TASK = 'corpus.embed';
 /** Stamped on the ledger row of every indexing embed call. */
-export const CORPUS_INDEX_PROMPT_VERSION = 'corpus.index@v1';
+const CORPUS_INDEX_PROMPT_VERSION = 'corpus.index@v1';
 
 /** Sources handed to the queue per sweep. */
 const SWEEP_LIMIT = 25;
@@ -107,6 +107,8 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
   readonly kind = CORPUS_INDEX_RUN_KIND;
   readonly label = 'Indexing for search';
   readonly actsForMember = true;
+  // Whoever it acts for didn't ask for it: it isn't listed as theirs (#4504).
+  readonly chapterUpkeep = true;
 
   private readonly logger = new Logger(CorpusIngestService.name);
   /** No sweep before this time: the server said AI is off or has no provider. */
@@ -270,6 +272,9 @@ export class CorpusIngestService implements AiRunHandler, OnModuleInit {
           // The queue refuses a member-reading run without one.
           actingUserId: run.acting_user_id as string,
           runId: run.id,
+          // The acting member is whoever the chapter's indexing acts for,
+          // not someone who asked: the cost is the chapter's (#4504).
+          chapterUpkeep: true,
         },
       );
       if (embedded.status !== 'ok') {

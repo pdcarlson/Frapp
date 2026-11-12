@@ -120,7 +120,7 @@ export function EventTypePicker({
 }
 
 /** "10 points, required for everyone": a type's chip title and editor row. */
-export function describeEventType(type: {
+function describeEventType(type: {
   point_value: number;
   is_mandatory: boolean;
 }): string {

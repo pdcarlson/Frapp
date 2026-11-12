@@ -60,10 +60,10 @@ interface OriginState {
   alertedAt: number;
 }
 
-export const DEFAULT_SPIKE_THRESHOLD = 20;
-export const DEFAULT_SPIKE_WINDOW_MS = 5 * 60_000;
-export const DEFAULT_SPIKE_COOLDOWN_MS = 15 * 60_000;
-export const DEFAULT_MAX_TRACKED_ORIGINS = 10_000;
+const DEFAULT_SPIKE_THRESHOLD = 20;
+const DEFAULT_SPIKE_WINDOW_MS = 5 * 60_000;
+const DEFAULT_SPIKE_COOLDOWN_MS = 15 * 60_000;
+const DEFAULT_MAX_TRACKED_ORIGINS = 10_000;
 
 export interface SpikeTrip {
   /** Failures counted in the window at the moment it tripped. */
@@ -83,7 +83,7 @@ export interface SpikeTrip {
  * a 401 the auth guard didn't raise. The one name for "no reason", which the
  * spec documents.
  */
-export const UNATTRIBUTED = 'other';
+const UNATTRIBUTED = 'other';
 
 export class AuthFailureSpikeDetector {
   private readonly threshold: number;

@@ -54,6 +54,7 @@ vi.mock("@repo/hooks", () => ({
   // A server with AI off: no AI row (#4308).
   useAiConsent: () => ({ data: null }),
   aiAvailableFrom: () => ai.available,
+  isFirstAiReadInFlight: () => false,
   useCurrentChapter: () => ({
     data: currentChapter.current,
     isPending: false,
