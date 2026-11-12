@@ -35,6 +35,37 @@ function stockStyle(): StyleSpecification {
         paint: { "text-color": "rgb(101,101,101)" },
       },
       {
+        id: "highway_path",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        paint: { "line-color": "rgb(27 ,27 ,29)" },
+      },
+      {
+        id: "highway_minor",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        paint: { "line-color": "#181818" },
+      },
+      {
+        id: "highway_major_inner",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        paint: { "line-color": "hsl(0,0%,7%)" },
+      },
+      {
+        id: "landcover_wood",
+        type: "fill",
+        source: "openmaptiles",
+        "source-layer": "landcover",
+        paint: {
+          "fill-color": "rgb(32,32,32)",
+          "fill-pattern": "wood-pattern",
+        },
+      },
+      {
         id: "something_new",
         type: "background",
         paint: { "background-color": "red" },
@@ -93,6 +124,55 @@ describe("readableDarkStyle", () => {
     expect(layer(style, "something_new")?.paint).toEqual({
       "background-color": "red",
     });
+  });
+
+  it("steps roads up from the ground: paths, then minor, then major", () => {
+    const style = readableDarkStyle(stockStyle());
+    const ground = luminance(
+      layer(style, "background")?.paint?.["background-color"],
+    );
+    const [path, minor, major] = [
+      "highway_path",
+      "highway_minor",
+      "highway_major_inner",
+    ].map((id) => luminance(layer(style, id)?.paint?.["line-color"]));
+    expect(path).toBeGreaterThan(ground * 1.5);
+    expect(minor).toBeGreaterThan(path!);
+    expect(major).toBeGreaterThan(minor!);
+  });
+
+  it("tints woods instead of drawing the light map's wood pattern", () => {
+    const paint = layer(
+      readableDarkStyle(stockStyle()),
+      "landcover_wood",
+    )?.paint;
+    expect(paint?.["fill-pattern"]).toBeUndefined();
+    expect(paint?.["fill-color"]).toMatch(/^#/);
+  });
+
+  it("leaves a layer stock when upstream changes its type", () => {
+    const stock = stockStyle();
+    stock.layers = stock.layers.map((l) =>
+      l.id === "building"
+        ? {
+            id: "building",
+            type: "fill-extrusion",
+            source: "openmaptiles",
+            "source-layer": "building",
+            paint: { "fill-extrusion-color": "#111" },
+          }
+        : l,
+    );
+    expect(layer(readableDarkStyle(stock), "building")?.paint).toEqual({
+      "fill-extrusion-color": "#111",
+    });
+  });
+
+  it("adds no names layer to a style without OpenFreeMap's source", () => {
+    const stock = stockStyle();
+    stock.sources = { composite: { type: "vector", url: "https://x/y" } };
+    const ids = readableDarkStyle(stock).layers.map((l) => l.id);
+    expect(ids).not.toContain("poi_name");
   });
 
   it("does not change the style it was given", () => {

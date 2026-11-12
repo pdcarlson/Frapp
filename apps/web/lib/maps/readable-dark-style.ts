@@ -10,68 +10,92 @@ import type {
  *
  * As served, the style is a near-black poster: buildings (rgb 10) are darker
  * than the ground (rgb 12), minor roads sit 12 steps above it, labels are
- * rgb 80 to 101, and it has no place names below the city. Picking a study
- * zone means finding one building on a campus, so this follows what Google
- * Maps and Apple Maps do in dark mode instead: ground darkest, buildings a
- * clear step lighter with an edge, roads lighter again by importance, water
- * and green space faintly tinted, and building and place names (the library,
- * the union) in readable gray.
+ * rgb 80 to 101, and it names no buildings or places on campus (only towns
+ * and suburbs). Picking a study zone means finding one building, so this
+ * follows what Google Maps and Apple Maps do in dark mode instead: ground
+ * darkest, buildings a clear step lighter with an edge, roads lighter again
+ * by importance, water and green space faintly tinted, and building and place
+ * names (the library, the union) in readable gray.
  *
- * Colors are paint overrides keyed by the style's layer ids. A layer id that
- * stops existing upstream is skipped, so an OpenFreeMap update degrades to
- * the stock look instead of breaking the map.
+ * The grays are neutral, like Signet's surface ladder (the owner picked
+ * neutral over a blue-tinted ladder, spec/ui/design-system/foundations.md);
+ * the ground sits a notch above Signet's base so the map reads as a surface.
+ *
+ * Colors are paint overrides keyed by the style's layer ids and types. A
+ * layer that stops existing upstream, or changes type, is left stock, so an
+ * OpenFreeMap update degrades to the stock look instead of breaking the map.
+ * This is written against OpenFreeMap's layer ids and its `openmaptiles`
+ * source: swapping MAP_STYLE_URL to another provider means redoing it.
  */
 
 /** Ground, buildings, roads: each step lighter than the one under it. */
 const INK = {
-  ground: "#141517",
-  residential: "#17181b",
-  green: "#17221b",
-  water: "#16212e",
-  building: "#2b2d32",
-  buildingEdge: "#4a4d55",
-  path: "#30333a",
-  minor: "#3a3d44",
-  majorCasing: "#5c5f68",
-  major: "#4b4e56",
-  motorwayCasing: "#6b6e77",
-  motorway: "#575a63",
-  rail: "#3a3d44",
-  roadLabel: "#b4b7bf",
-  placeLabel: "#a3a6ae",
-  poiLabel: "#d3d5db",
-  halo: "#141517",
+  ground: "#141414",
+  green: "#162019",
+  water: "#141d27",
+  building: "#2c2c2c",
+  buildingEdge: "#4a4a4a",
+  path: "#313131",
+  minor: "#3b3b3b",
+  majorCasing: "#5e5e5e",
+  major: "#4c4c4c",
+  motorwayCasing: "#6c6c6c",
+  motorway: "#585858",
+  rail: "#3b3b3b",
+  roadLabel: "#b6b6b6",
+  placeLabel: "#a5a5a5",
+  poiLabel: "#d4d4d4",
+  halo: "#141414",
 } as const;
 
 type Paint = Record<string, unknown>;
+type Override = {
+  /** The stock layer's type; a layer of another type is left alone. */
+  type: LayerSpecification["type"];
+  paint: Paint;
+  /** Stock paint properties to drop, such as a pattern that hides the color. */
+  drop?: readonly string[];
+};
 
-const PAINT: Record<string, Paint> = {
-  background: { "background-color": INK.ground },
-  water: { "fill-color": INK.water },
-  waterway: { "line-color": INK.water },
-  water_name: {
-    "text-color": "#6f8296",
+const line = (paint: Paint): Override => ({ type: "line", paint });
+const fill = (paint: Paint): Override => ({ type: "fill", paint });
+const label = (color: string): Override => ({
+  type: "symbol",
+  paint: {
+    "text-color": color,
     "text-halo-color": INK.halo,
+    "text-halo-width": 1.5,
   },
-  landuse_residential: {
-    "fill-color": INK.residential,
-    "fill-opacity": 1,
+});
+
+const OVERRIDES: Record<string, Override> = {
+  background: {
+    type: "background",
+    paint: { "background-color": INK.ground },
   },
-  landuse_park: { "fill-color": INK.green },
-  landcover_wood: { "fill-color": INK.green },
-  building: {
+  water: fill({ "fill-color": INK.water }),
+  waterway: line({ "line-color": INK.water }),
+  water_name: label("#7a8794"),
+  landuse_park: fill({ "fill-color": INK.green }),
+  // The stock wood pattern is drawn for a light map and hides the color.
+  landcover_wood: {
+    type: "fill",
+    paint: { "fill-color": INK.green },
+    drop: ["fill-pattern"],
+  },
+  building: fill({
     "fill-color": INK.building,
     "fill-outline-color": INK.buildingEdge,
-  },
-  road_area_pier: { "fill-color": INK.ground },
-  road_pier: { "line-color": INK.ground },
-  highway_path: { "line-color": INK.path, "line-opacity": 1 },
-  highway_minor: { "line-color": INK.minor, "line-opacity": 1 },
-  highway_major_casing: { "line-color": INK.majorCasing },
-  highway_major_inner: { "line-color": INK.major },
-  highway_major_subtle: { "line-color": INK.major },
-  highway_motorway_casing: { "line-color": INK.motorwayCasing },
-  highway_motorway_inner: {
+  }),
+  road_area_pier: fill({ "fill-color": INK.ground }),
+  road_pier: line({ "line-color": INK.ground }),
+  highway_path: line({ "line-color": INK.path, "line-opacity": 1 }),
+  highway_minor: line({ "line-color": INK.minor, "line-opacity": 1 }),
+  highway_major_casing: line({ "line-color": INK.majorCasing }),
+  highway_major_inner: line({ "line-color": INK.major }),
+  highway_major_subtle: line({ "line-color": INK.major }),
+  highway_motorway_casing: line({ "line-color": INK.motorwayCasing }),
+  highway_motorway_inner: line({
     "line-color": [
       "interpolate",
       ["linear"],
@@ -81,32 +105,20 @@ const PAINT: Record<string, Paint> = {
       6,
       INK.motorway,
     ],
-  },
-  highway_motorway_subtle: { "line-color": INK.motorway },
-  railway: { "line-color": INK.rail },
-  railway_minor: { "line-color": INK.rail },
-  railway_transit: { "line-color": INK.rail },
-  railway_dashline: { "line-color": INK.ground },
-  railway_minor_dashline: { "line-color": INK.ground },
-  railway_transit_dashline: { "line-color": INK.ground },
-  highway_name_other: {
-    "text-color": INK.roadLabel,
-    "text-halo-color": INK.halo,
-    "text-halo-width": 1.5,
-  },
-  highway_name_motorway: {
-    "text-color": INK.roadLabel,
-    "text-halo-color": INK.halo,
-    "text-halo-width": 1.5,
-  },
+  }),
+  highway_motorway_subtle: line({ "line-color": INK.motorway }),
+  railway: line({ "line-color": INK.rail }),
+  railway_minor: line({ "line-color": INK.rail }),
+  railway_transit: line({ "line-color": INK.rail }),
+  railway_dashline: line({ "line-color": INK.ground }),
+  railway_minor_dashline: line({ "line-color": INK.ground }),
+  railway_transit_dashline: line({ "line-color": INK.ground }),
+  highway_name_other: label(INK.roadLabel),
+  highway_name_motorway: label(INK.roadLabel),
 };
 
-const PLACE_LABEL: Paint = {
-  "text-color": INK.placeLabel,
-  "text-halo-color": INK.halo,
-  "text-halo-width": 1.5,
-  "text-halo-blur": 0,
-};
+/** Every `place_*` label (town, suburb, village...). */
+const PLACE_LABEL = label(INK.placeLabel);
 
 const POI_LAYER_ID = "poi_name";
 
@@ -142,18 +154,24 @@ const POI_LAYER: SymbolLayerSpecification = {
   },
 };
 
-function withPaint(layer: LayerSpecification): LayerSpecification {
+function overrideFor(layer: LayerSpecification): Override | undefined {
   if (layer.type === "symbol" && layer.id.startsWith("place_")) {
-    return { ...layer, paint: { ...layer.paint, ...PLACE_LABEL } };
+    return PLACE_LABEL;
   }
-  const paint = PAINT[layer.id];
-  if (!paint) return layer;
-  // The overrides are written against the stock layer types; the cast is the
-  // one place that trusts the id to still name a layer of the same type.
-  return {
-    ...layer,
-    paint: { ...(layer as { paint?: Paint }).paint, ...paint },
-  } as LayerSpecification;
+  return OVERRIDES[layer.id];
+}
+
+function withPaint(layer: LayerSpecification): LayerSpecification {
+  const override = overrideFor(layer);
+  // A changed type would make the paint invalid, and MapLibre refuses the
+  // whole style for one invalid property.
+  if (!override || override.type !== layer.type) return layer;
+  const paint: Paint = {
+    ...(layer as { paint?: Paint }).paint,
+    ...override.paint,
+  };
+  for (const key of override.drop ?? []) delete paint[key];
+  return { ...layer, paint } as LayerSpecification;
 }
 
 export function readableDarkStyle(
