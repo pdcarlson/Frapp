@@ -85,7 +85,7 @@ create index if not exists idx_meeting_drafts_requested_at
   on public.meeting_drafts (requested_at);
 
 comment on table public.meeting_drafts is
-  'One meeting''s draft-from-notes request: the officer''s notes, the AI run, and what it wrote. Kept only while the minutes are a draft. See 20261112150000_meeting_drafts.sql.';
+  'One meeting''s draft-from-notes request: the officer''s notes, the AI run, and what it wrote. Kept only while the minutes are a draft. See 20261112180000_meeting_drafts.sql.';
 
 -- 2. ------------------------------------------------------------------------
 -- Posting the minutes removes the notes and the draft they produced.

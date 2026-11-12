@@ -40,6 +40,8 @@ const source = (overrides: Partial<CorpusSource> = {}): CorpusSource => ({
   source_at: null,
   decays: false,
   chunk_count: 0,
+  left_out_count: 0,
+  left_out_author_ids: null,
   indexed_at: null,
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
@@ -65,6 +67,11 @@ function setup(read: CorpusSourceRead = okRead('Dues are $225.')) {
     writeChunks: jest.fn().mockResolvedValue(true),
     finishSource: jest.fn().mockResolvedValue(true),
     match: jest.fn(),
+    readChatWindow: jest.fn(),
+    chatWindowChannels: jest.fn(),
+    requeueChatByAuthors: jest.fn(),
+    chatCorpusChapters: jest.fn(),
+    chatCorpusAuthors: jest.fn(),
   };
   const adapter: jest.Mocked<CorpusSourceAdapter> = {
     type: 'chapter_document',
@@ -273,6 +280,8 @@ describe('CorpusIngestService', () => {
         decays: false,
         chunkCount: 1,
         skipReason: null,
+        leftOutCount: 0,
+        leftOutAuthorIds: [],
       });
     });
 
@@ -427,6 +436,85 @@ describe('CorpusIngestService', () => {
         source({ source_type: 'chat_message' }),
       );
       await expect(run()).rejects.toMatchObject({ retryable: false });
+    });
+
+    it('writes the passages a chat window cut itself, with their authors and first message, and records what it left out (#4314)', async () => {
+      const passage = {
+        heading: 'November 9, 2026',
+        content: 'Sam: who has the van keys?\nLee: I do.',
+        authorIds: ['sam', 'lee'],
+        anchorId: 'msg-1',
+        anchorAt: '2026-11-09T22:00:00.000Z',
+        messageCount: 2,
+      };
+      const { run, corpus, embed } = setup({
+        status: 'ok',
+        content: {
+          title: '#general',
+          sourceAt: '2026-11-09T22:00:00.000Z',
+          decays: true,
+          sections: [],
+          passages: [passage],
+          leftOut: { count: 3, authorIds: ['quiet-member'] },
+        },
+      });
+      await run();
+      expect(embed).toHaveBeenCalledWith(
+        'corpus.embed',
+        expect.objectContaining({
+          texts: [
+            '#general › November 9, 2026\nSam: who has the van keys?\nLee: I do.',
+          ],
+        }),
+        expect.anything(),
+      );
+      expect(corpus.writeChunks).toHaveBeenCalledWith(
+        SOURCE,
+        2,
+        true,
+        'gemini-embedding-001',
+        [
+          expect.objectContaining({
+            chunk_index: 0,
+            heading: 'November 9, 2026',
+            author_ids: ['sam', 'lee'],
+            anchor_id: 'msg-1',
+            anchor_at: '2026-11-09T22:00:00.000Z',
+            message_count: 2,
+          }),
+        ],
+      );
+      expect(corpus.finishSource).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chunkCount: 1,
+          skipReason: null,
+          leftOutCount: 3,
+          leftOutAuthorIds: ['quiet-member'],
+        }),
+      );
+    });
+
+    it('records what a chat window left out even when nothing in it was left to index', async () => {
+      const { run, corpus, embed } = setup({
+        status: 'ok',
+        content: {
+          title: '#general',
+          sourceAt: '2026-11-09T22:00:00.000Z',
+          decays: true,
+          sections: [],
+          passages: [],
+          leftOut: { count: 2, authorIds: ['quiet-member'] },
+        },
+      });
+      await run();
+      expect(embed).not.toHaveBeenCalled();
+      expect(corpus.finishSource).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skipReason: 'no_text',
+          leftOutCount: 2,
+          leftOutAuthorIds: ['quiet-member'],
+        }),
+      );
     });
   });
 });

@@ -3867,9 +3867,51 @@ drop table if exists public.corpus_chunks;
 drop table if exists public.corpus_sources;
 ```
 
-## Rollback minutes drafted from notes (20261112150000)
+## Rollback chat in the AI index (20261112170000)
 
-* **Migration**: `20261112150000_meeting_drafts.sql`
+* **Migration**: `20261112170000_ai_corpus_chat.sql`
+
+One new table, `corpus_chat_windows`, new columns on `corpus_sources` and `corpus_chunks`, four triggers (three on `chat_messages`, one on `chapter_ai_settings`) and new functions; four corpus functions were redefined. No chat message, setting or consent row changed. Everything it wrote is derived and can be rebuilt by turning a chapter's chat switch off and on.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` stops indexing and retrieval; a president turning "chat as a source" off deletes that chapter's chat index at once. To take the schema out, run the block below, then re-run sections "Indexing" and "Retrieval" and the grants block of `20261112140000_ai_corpus.sql` to restore the earlier `claim_corpus_sources`, `write_corpus_chunks`, `finish_corpus_source` and `match_corpus_chunks`, and deploy an API without the chat source.
+
+```sql
+drop trigger if exists trg_chat_messages_corpus_insert on public.chat_messages;
+drop trigger if exists trg_chat_messages_corpus_update on public.chat_messages;
+drop trigger if exists trg_chat_messages_corpus_delete on public.chat_messages;
+drop trigger if exists trg_chapter_ai_settings_chat_corpus on public.chapter_ai_settings;
+delete from public.corpus_sources where source_type = 'chat_message';
+drop table if exists public.corpus_chat_windows;
+drop function if exists public.corpus_follow_chat_messages();
+drop function if exists public.corpus_follow_chat_switch();
+drop function if exists public.corpus_drop_chat_windows();
+drop function if exists public.note_chat_corpus_windows(uuid[], timestamptz[], uuid[], boolean);
+drop function if exists public.enrol_chat_corpus(uuid);
+drop function if exists public.requeue_chat_corpus_by_authors(uuid[], uuid);
+drop function if exists public.chat_corpus_chapters();
+drop function if exists public.chat_corpus_authors(uuid);
+drop function if exists public.read_chat_corpus_window(uuid, uuid);
+drop function if exists public.chat_corpus_window_channels(uuid, uuid[]);
+drop function if exists public.corpus_chat_day(timestamptz);
+drop function if exists public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text, integer, uuid[]);
+drop function if exists public.match_corpus_chunks(uuid, uuid, text, text, text, integer);
+alter table public.corpus_chunks
+  drop column if exists author_ids,
+  drop column if exists anchor_id,
+  drop column if exists anchor_at,
+  drop column if exists message_count;
+alter table public.corpus_sources
+  drop constraint if exists corpus_sources_left_out,
+  drop column if exists left_out_count,
+  drop column if exists left_out_author_ids;
+alter table public.corpus_sources drop constraint if exists corpus_sources_type_allowed;
+alter table public.corpus_sources add constraint corpus_sources_type_allowed
+  check (source_type in ('chapter_document', 'meeting_minutes'));
+```
+
+## Rollback minutes drafted from notes (20261112180000)
+
+* **Migration**: `20261112180000_meeting_drafts.sql`
 
 One new table, `meeting_drafts`, and two trigger functions: one fired when minutes are posted, one when an account is deleted. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
 
@@ -3884,4 +3926,3 @@ drop function if exists public.meeting_drafts_drop_on_post();
 drop function if exists public.meeting_drafts_drop_for_deleted_user();
 drop table if exists public.meeting_drafts;
 ```
-

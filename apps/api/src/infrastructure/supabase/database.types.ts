@@ -261,8 +261,54 @@ export interface Database {
           p_decays: boolean;
           p_chunk_count: number;
           p_skip_reason: string | null;
+          /** `20261112170000` (#4314): what a chat window left out, and whose. */
+          p_left_out_count?: number;
+          p_left_out_author_ids?: string[] | null;
         };
         Returns: boolean;
+      };
+      /**
+       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * conversation first; one row with a null `message_id` when it holds
+       * none, no row when it is gone or its channel is a DM.
+       */
+      read_chat_corpus_window: {
+        Args: { p_chapter_id: string; p_window_id: string };
+        Returns: {
+          channel_id: string;
+          channel_name: string;
+          day: string;
+          message_id: string | null;
+          sender_id: string | null;
+          sender_name: string | null;
+          content: string | null;
+          created_at: string | null;
+          thread_root_id: string | null;
+          conversation_at: string | null;
+        }[];
+      };
+      /** `20261112170000` (#4314) — each chat window's channel, DMs refused. */
+      chat_corpus_window_channels: {
+        Args: { p_chapter_id: string; p_window_ids: string[] };
+        Returns: { window_id: string; channel_id: string }[];
+      };
+      /**
+       * `20261112170000` (#4314) — reads again every chat window that holds or
+       * left out one of `p_user_ids`; returns how many.
+       */
+      requeue_chat_corpus_by_authors: {
+        Args: { p_user_ids: string[]; p_chapter_id: string | null };
+        Returns: number;
+      };
+      /** `20261112170000` (#4314) — chapters that hold chat windows. */
+      chat_corpus_chapters: {
+        Args: Record<string, never>;
+        Returns: string[];
+      };
+      /** `20261112170000` (#4314) — who the chapter's chat index holds or left out. */
+      chat_corpus_authors: {
+        Args: { p_chapter_id: string };
+        Returns: { user_id: string; indexed: boolean }[];
       };
       /**
        * `20261112140000` (#720) — retrieval candidates for one chapter, for a
