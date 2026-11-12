@@ -24,6 +24,7 @@ describe("selectViewerProfile", () => {
       displayName: "Paul Carlson",
       initials: "PC",
       email: "pdcarlson@rpi.edu",
+      phone: null,
       graduationYear: 2027,
       major: null,
       currentCity: "Troy",

@@ -19,8 +19,22 @@ function profile(overrides: Record<string, unknown> = {}) {
     current_company: "Acme Inc.",
     email: "ada@example.edu",
     custom_fields: [
-      { field_id: "f-1", key: "shirt_size", label: "Shirt size", type: "text", visibility: "chapter", value: "M" },
-      { field_id: "f-2", key: "vaccinated", label: "Vaccinated", type: "boolean", visibility: "chapter", value: "true" },
+      {
+        field_id: "f-1",
+        key: "shirt_size",
+        label: "Shirt size",
+        type: "text",
+        visibility: "chapter",
+        value: "M",
+      },
+      {
+        field_id: "f-2",
+        key: "vaccinated",
+        label: "Vaccinated",
+        type: "boolean",
+        visibility: "chapter",
+        value: "true",
+      },
     ],
     ...overrides,
   };
@@ -34,8 +48,11 @@ describe("selectMemberDetail", () => {
       userId: "u-1",
       avatarUrl: null,
       displayName: "Ada Lovelace",
+      storedName: "Ada Lovelace",
       initials: "AL",
       email: "ada@example.edu",
+      phone: null,
+      graduationYear: 2027,
       bio: "Loves a good algorithm.",
       meta: "Acme Inc. · Chicago · '27",
       joinedLabel: "August 21, 2026",
@@ -47,7 +64,20 @@ describe("selectMemberDetail", () => {
       pledgeClassId: null,
       orderNumber: null,
       canRemove: false,
+      canEditProfile: false,
     });
+  });
+
+  it("carries the phone and the API's viewer_can_edit_profile (#3711, #4367)", () => {
+    const detail = selectMemberDetail(
+      profile({ phone: "(518) 555-0142", viewer_can_edit_profile: true }),
+    );
+    expect(detail?.phone).toBe("(518) 555-0142");
+    expect(detail?.canEditProfile).toBe(true);
+    expect(
+      selectMemberDetail(profile({ viewer_can_edit_profile: "true" }))
+        ?.canEditProfile,
+    ).toBe(false);
   });
 
   it("carries the API's viewer_can_remove, and only a literal true", () => {
@@ -74,7 +104,11 @@ describe("selectMemberDetail", () => {
 
   it("omits meta parts that are unset, without a dangling separator", () => {
     const detail = selectMemberDetail(
-      profile({ current_company: null, current_city: null, graduation_year: null }),
+      profile({
+        current_company: null,
+        current_city: null,
+        graduation_year: null,
+      }),
     );
     expect(detail?.meta).toBeNull();
   });
@@ -105,7 +139,12 @@ describe("selectMemberDetail", () => {
     const detail = selectMemberDetail(
       profile({
         custom_fields: [
-          { field_id: "f-1", label: "Vaccinated", type: "boolean", value: "false" },
+          {
+            field_id: "f-1",
+            label: "Vaccinated",
+            type: "boolean",
+            value: "false",
+          },
           { field_id: "f-2", label: "Notes", type: "text", value: null },
         ],
       }),

@@ -13,6 +13,13 @@ import { GRADUATION_YEAR_MIN } from "./field-limits";
 export const PROFILE_FIELD_COPY = {
   displayName: { label: "Name", placeholder: "First and last name" },
   major: { label: "Major", placeholder: "e.g. Mechanical Engineering" },
+  // Optional, and the member's alone (#3711): leaving it empty keeps it off
+  // their profile, which the hint under the field says.
+  phone: {
+    label: "Phone",
+    placeholder: "(518) 555-0142",
+    hint: "Members of your chapter see it on your profile.",
+  },
   // "Grad year" fits beside Major on a phone; the full name is what a screen
   // reader announces.
   graduationYear: {

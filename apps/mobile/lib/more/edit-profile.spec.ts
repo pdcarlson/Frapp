@@ -10,6 +10,7 @@ import {
   type ProfileDraft,
 } from "./edit-profile";
 import type { ViewerProfile } from "./profile";
+import { PHONE_INVALID_MESSAGE } from "@repo/validation";
 
 /** #3387. s15's Edit sheet: what it opens on, and what a save sends. */
 
@@ -17,6 +18,7 @@ const PROFILE: ViewerProfile = {
   displayName: "Alex Rivera",
   initials: "AR",
   email: "alex@example.test",
+  phone: null,
   graduationYear: 2027,
   major: "Computer Science",
   currentCity: "Troy, NY",
@@ -35,6 +37,7 @@ describe("draftFromProfile (#3387)", () => {
   it("opens on the profile as it stands, with blanks for unset fields", () => {
     expect(ORIGINAL).toEqual({
       displayName: "Alex Rivera",
+      phone: "",
       major: "Computer Science",
       bio: "CS, intramural soccer.",
       graduationYear: "2027",
@@ -46,6 +49,7 @@ describe("draftFromProfile (#3387)", () => {
   it("opens on blanks before the profile has loaded", () => {
     expect(draftFromProfile(null)).toEqual({
       displayName: "",
+      phone: "",
       major: "",
       bio: "",
       graduationYear: "",
@@ -115,6 +119,7 @@ describe("profilePatch (#3387)", () => {
 describe("applyEdit and rebaseEdits (#3387)", () => {
   const ORIGINAL = {
     displayName: "Alex Rivera",
+    phone: "",
     major: "",
     bio: "",
     graduationYear: "2027",
@@ -168,5 +173,30 @@ describe("applyEdit and rebaseEdits (#3387)", () => {
 
   it("keeps no edits as no edits", () => {
     expect(rebaseEdits(null, ORIGINAL, MOVED)).toBeNull();
+  });
+});
+
+// #3711: the member's own phone.
+describe("profilePatch phone (#3711)", () => {
+  it("sends a phone number as typed, trimmed", () => {
+    expect(
+      profilePatch(ORIGINAL, edited({ phone: " (518) 555-0142 " })),
+    ).toEqual({ ok: true, patch: { phone: "(518) 555-0142" } });
+  });
+
+  it("clears it with null", () => {
+    const withPhone = { ...ORIGINAL, phone: "518 555 0142" };
+    expect(profilePatch(withPhone, { ...withPhone, phone: "  " })).toEqual({
+      ok: true,
+      patch: { phone: null },
+    });
+  });
+
+  it("refuses something that isn't a phone number", () => {
+    expect(profilePatch(ORIGINAL, edited({ phone: "call me" }))).toEqual({
+      ok: false,
+      field: "phone",
+      message: PHONE_INVALID_MESSAGE,
+    });
   });
 });

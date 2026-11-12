@@ -31,6 +31,7 @@ const PROFILE: ViewerProfile = {
   displayName: "Alex Rivera",
   initials: "AR",
   email: "alex@example.test",
+  phone: null,
   graduationYear: 2027,
   major: null,
   currentCity: "Troy, NY",
