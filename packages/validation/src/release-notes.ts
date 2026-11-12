@@ -156,7 +156,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Sign-up sheets in chat now read like a poll, with one tap per slot, a bar showing how full it is, and who took it named underneath.",
       "Activity now opens with how your semester is going: your points and rank, the required events you made, your service hours, and this week's study time.",
       "Officers can now type @here in chat to notify only the people in a channel who are online right now.",
-      "On your phone, swiping to Messages from Chat no longer also opens the channel your finger started on.",
       "When an officer shows the check-in code from their phone, you check in by scanning it from within about 100 yards, and the event card's Check in button asks you to scan instead.",
     ],
     web: [
@@ -199,6 +198,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Tap any line of your profile to change it.",
       "Officers can now change what each tier and role can do from More, Chapter settings, which also holds the chapter accent and chat background.",
       "Officers can now choose who can see and post in a channel, and move whole categories.",
+      "Swiping to Messages from Chat no longer also opens the channel your finger started on.",
     ],
   },
   {
