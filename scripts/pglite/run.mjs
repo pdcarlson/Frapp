@@ -178,80 +178,63 @@ if (failed.length > 0) {
 // imports. Several tiers open and roll back their own transaction, and the
 // chat read-enforcement fixtures stay seeded across the two chat tiers, so
 // reordering them is a behaviour change, not a tidy-up.
-const ORDERED_TIERS = [
-  "schema-and-rls-smoke",
-  "policy-inventory",
-  "anonymize-user",
-  "chat-read-enforcement",
-  "chat-black-box",
-  "attachment-backfill",
-  "chapter-directory-seed",
-  "demo-seed",
-  "security-definer-search-path",
-  "points-leaderboard",
-  "subscription-webhook-cas",
-  "hide-direct-message",
-  "private-channel-members",
-  "sidebar-section-fold",
-  "unread-counts-blocked-sender",
-  "unread-counts-skip-audit-mirror",
-  "unread-counts-filters",
-  "channel-latest-messages",
-  "message-threads",
-  "thread-last-reply",
-  "discord-author-links",
-  "discord-import-purge",
-  "discord-import-merge-target",
-  "discord-import-channel-groups",
-  "discord-import-category-progress",
-  "dm-one-per-pair",
-  "document-one-row-per-object",
-  "default-channel-descriptions",
-  "backwork-search",
-  "chat-search-filter-only",
-  "members-keep-base-role",
-  "transfer-presidency-keeps-member-access",
-  "check-in-once",
-  "activity-links",
-  "role-tiers",
-  "fold-custom-roles",
-  "document-stars",
-  "channel-order",
-  "event-types",
-  "activity-item-reads",
-  "chat-channel-access-lists",
-  "role-tier-reorder",
-  "ai-runs",
-  "ai-usage-ledger",
-  "ai-suggestions",
-  "ai-corpus",
-  "ai-corpus-chat",
-  "ai-ask-diagnostics",
-  "ai-reports",
-  "request-context",
-  "member-social-trust-defaults",
-  "everyone-role",
-  "clear-deleted-message-payloads",
-  "merge-backwork-department-case-variants",
-  "notifications-forget-deleted-message",
-  "service-awarded-points",
-  "signup-card-claims",
-];
-
-// Tiers added since 2026-11-12 are NOT listed above: every migration PR
-// appending a line here conflicted with every other open one. Any
-// `tiers/*.mjs` the list does not name runs after it, in filename order. So a
-// new tier must stand alone: roll back or clean up what it seeds, and read
-// nothing another unlisted tier leaves behind. Only a tier that must run at a
-// particular point belongs in the list.
-const listed = new Set(ORDERED_TIERS);
-const unlisted = readdirSync(new URL("./tiers/", import.meta.url))
-  .filter((file) => file.endsWith(".mjs") && !listed.has(file.slice(0, -4)))
-  .map((file) => file.slice(0, -4))
-  .sort();
-for (const tier of [...ORDERED_TIERS, ...unlisted]) {
-  await import(`./tiers/${tier}.mjs`);
-}
+await import("./tiers/schema-and-rls-smoke.mjs");
+await import("./tiers/policy-inventory.mjs");
+await import("./tiers/anonymize-user.mjs");
+await import("./tiers/chat-read-enforcement.mjs");
+await import("./tiers/chat-black-box.mjs");
+await import("./tiers/attachment-backfill.mjs");
+await import("./tiers/chapter-directory-seed.mjs");
+await import("./tiers/demo-seed.mjs");
+await import("./tiers/security-definer-search-path.mjs");
+await import("./tiers/points-leaderboard.mjs");
+await import("./tiers/subscription-webhook-cas.mjs");
+await import("./tiers/hide-direct-message.mjs");
+await import("./tiers/private-channel-members.mjs");
+await import("./tiers/sidebar-section-fold.mjs");
+await import("./tiers/unread-counts-blocked-sender.mjs");
+await import("./tiers/unread-counts-skip-audit-mirror.mjs");
+await import("./tiers/unread-counts-filters.mjs");
+await import("./tiers/channel-latest-messages.mjs");
+await import("./tiers/message-threads.mjs");
+await import("./tiers/thread-last-reply.mjs");
+await import("./tiers/discord-author-links.mjs");
+await import("./tiers/discord-import-purge.mjs");
+await import("./tiers/discord-import-merge-target.mjs");
+await import("./tiers/discord-import-channel-groups.mjs");
+await import("./tiers/discord-import-category-progress.mjs");
+await import("./tiers/dm-one-per-pair.mjs");
+await import("./tiers/document-one-row-per-object.mjs");
+await import("./tiers/default-channel-descriptions.mjs");
+await import("./tiers/backwork-search.mjs");
+await import("./tiers/chat-search-filter-only.mjs");
+await import("./tiers/members-keep-base-role.mjs");
+await import("./tiers/transfer-presidency-keeps-member-access.mjs");
+await import("./tiers/check-in-once.mjs");
+await import("./tiers/activity-links.mjs");
+await import("./tiers/role-tiers.mjs");
+await import("./tiers/fold-custom-roles.mjs");
+await import("./tiers/document-stars.mjs");
+await import("./tiers/channel-order.mjs");
+await import("./tiers/event-types.mjs");
+await import("./tiers/activity-item-reads.mjs");
+await import("./tiers/chat-channel-access-lists.mjs");
+await import("./tiers/role-tier-reorder.mjs");
+await import("./tiers/ai-runs.mjs");
+await import("./tiers/ai-usage-ledger.mjs");
+await import("./tiers/ai-suggestions.mjs");
+await import("./tiers/ai-corpus.mjs");
+await import("./tiers/ai-corpus-chat.mjs");
+await import("./tiers/ai-ask-diagnostics.mjs");
+await import("./tiers/ai-reports.mjs");
+await import("./tiers/request-context.mjs");
+await import("./tiers/member-social-trust-defaults.mjs");
+await import("./tiers/everyone-role.mjs");
+await import("./tiers/clear-deleted-message-payloads.mjs");
+await import("./tiers/merge-backwork-department-case-variants.mjs");
+await import("./tiers/notifications-forget-deleted-message.mjs");
+await import("./tiers/service-awarded-points.mjs");
+await import("./tiers/signup-card-claims.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

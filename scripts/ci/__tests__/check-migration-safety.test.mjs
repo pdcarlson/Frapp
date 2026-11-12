@@ -30,6 +30,7 @@ import {
   executableSql,
   executableSqlHash,
   isLedgerPage,
+  LEDGER_PAGE_PLACEHOLDER,
   ledgerPageEntries,
   MIGRATION_DOCS,
   RATCHET_VERSION_CEILING,
@@ -122,7 +123,41 @@ test("a ledger page missing a section is reported, not counted", () => {
     { name: "20260101000000_x.md", text: "# x\n\n## Promotion\n\nwe will write the rollback later\n" },
   ]);
   assert.equal(covered.size, 0);
-  assert.deepEqual(malformed, [{ page: "20260101000000_x.md", missing: ["## Rollback"] }]);
+  assert.deepEqual(malformed, [
+    { page: "20260101000000_x.md", missing: ["the line `## Rollback`"] },
+  ]);
+});
+
+test("an untouched migration:new scaffold is not an entry", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    {
+      name: "20260101000000_x.md",
+      text: `# x\n\n## Promotion\n\n- **Purpose**: ${LEDGER_PAGE_PLACEHOLDER} say what\n\n## Rollback\n\nreal recipe\n`,
+    },
+  ]);
+  assert.equal(covered.size, 0);
+  assert.equal(malformed.length, 1);
+  assert.match(malformed[0].missing[0], /TODO\(migration:new\)/);
+});
+
+test("the scaffold's placeholder is the one the gate refuses", async () => {
+  const { PLACEHOLDER } = await import("../../migration.mjs");
+  assert.equal(PLACEHOLDER, LEDGER_PAGE_PLACEHOLDER);
+});
+
+test("a ledger page whose migration is gone is history, not an orphan", () => {
+  const stem = "29990101000002_gone_probe";
+  const page = join(REPO_ROOT, "docs", "ops", "database", "migrations", `${stem}.md`);
+  const cleanup = () => rmSync(page, { force: true });
+  exitCleanups.add(cleanup);
+  writeFileSync(page, `# ${stem}.sql\n\n## Promotion\n\nfixture\n\n## Rollback\n\nfixture\n`);
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 0, out);
+  } finally {
+    cleanup();
+    exitCleanups.delete(cleanup);
+  }
 });
 
 test("the shipped gate passes a migration whose only entry is its ledger page", () => {
@@ -575,6 +610,12 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
         out,
       );
     }
+    assert.ok(
+      out.includes(
+        "- 29990101000000_ledger_probe.sql has no ledger page: write docs/ops/database/migrations/29990101000000_ledger_probe.md",
+      ),
+      out,
+    );
   } finally {
     removeProbe();
     exitCleanups.delete(removeProbe);

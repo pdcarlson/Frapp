@@ -21,7 +21,8 @@ template, with a version after both the clock and everything on `main`. Fill in:
   [§ 3) Undo one migration](../../db-rollback-playbook.md#3-undo-one-migration)) rather than copying it.
 
 `check:migration-safety` reads the two heading lines `## Promotion` and
-`## Rollback`; a page missing either is reported by name. The two shared docs
+`## Rollback`, and refuses a page that still has the template's
+`TODO(migration:new)` text; either problem is reported by the page's name. The two shared docs
 still count for older migrations and for a PR opened before this page existed.
 
 ## When `main` moves past your migration
@@ -39,4 +40,5 @@ their order) and rewrites references in the files the branch changed. A bare
 version left in a file the branch only edited (an anchor in a shared doc) is
 listed for you to check, because it may be `main`'s migration of the same
 version. `--dry-run` shows the plan first. Never renumber a migration that is on
-`main`: hosted databases have applied it.
+`main`, or one you applied to a hosted database by hand: that database keeps a
+ledger row no file explains, and every later `db push` there refuses.

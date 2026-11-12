@@ -149,8 +149,9 @@ match their DTOs.
 `npm run check:migration-safety` (`scripts/check-migration-safety.mjs`) checks only:
 
 - filenames match `{14-digit-timestamp}_{snake_case}.sql`, with no duplicate timestamps;
-- a migration change also updates one of the runbooks in `MIGRATION_DOCS`, and every migration has
-  an entry in both runbooks, with a shrink-only `UNLEDGERED` allowlist for older migrations;
+- a migration change also updates a ledger, and every migration has a ledger page in
+  `docs/ops/database/migrations/` (with no `TODO(migration:new)` left) or, for older ones, an entry
+  in both runbooks in `MIGRATION_DOCS`, with a shrink-only `UNLEDGERED` allowlist;
 - with a commit range, no migration already on the base has its executable SQL edited, or is
   removed, unless `EDITED_MIGRATION_EXCEPTIONS` records it (#2751).
 

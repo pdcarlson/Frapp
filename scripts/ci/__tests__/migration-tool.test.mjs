@@ -3,7 +3,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { freshVersion, nextVersion, planRenames, versionOf } from "../../migration.mjs";
+import {
+  freshVersion,
+  nextVersion,
+  planRenames,
+  rewriteReferences,
+  versionOf,
+} from "../../migration.mjs";
 
 const NOW = new Date(Date.UTC(2026, 10, 12, 19, 30, 5));
 
@@ -64,4 +70,42 @@ test("planRenames splits two of the branch's own migrations that share a version
     NOW,
   );
   assert.equal(new Set(renames.map((r) => r.to.slice(0, 14))).size, 2);
+});
+
+test("nextVersion steps past a version whose day is 00 instead of rolling back", () => {
+  const after = nextVersion("20261100120000");
+  assert.ok(after > "20261100120000", after);
+});
+
+test("rewriteReferences renames each stem once, even when one rename's target is another's source", () => {
+  const renames = [
+    { from: "20991112200000_a.sql", to: "20991112200001_a.sql" },
+    { from: "20991112200001_b.sql", to: "20991112200002_b.sql" },
+  ];
+  const { text } = rewriteReferences("# 20991112200000_a.sql, after 20991112200001_b.sql", renames);
+  assert.equal(text, "# 20991112200001_a.sql, after 20991112200002_b.sql");
+});
+
+test("rewriteReferences keeps two same-version migrations apart", () => {
+  const renames = [
+    { from: "20261112150000_a.sql", to: "20261112193005_a.sql" },
+    { from: "20261112150000_b.sql", to: "20261112193006_b.sql" },
+  ];
+  assert.equal(
+    rewriteReferences("# 20261112150000_b.sql", renames).text,
+    "# 20261112193006_b.sql",
+  );
+});
+
+test("rewriteReferences leaves main's same-version migration alone and reports the bare version", () => {
+  const renames = [{ from: "20261112150000_mine.sql", to: "20261112193005_mine.sql" }];
+  const { text, stale } = rewriteReferences(
+    "20261112150000_mine.sql runs after 20261112150000_users_phone.sql (#rollback-20261112150000)",
+    renames,
+  );
+  assert.equal(
+    text,
+    "20261112193005_mine.sql runs after 20261112150000_users_phone.sql (#rollback-20261112150000)",
+  );
+  assert.deepEqual(stale, ["20261112150000"]);
 });

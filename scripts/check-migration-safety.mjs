@@ -195,6 +195,13 @@ export function isLedgerPage(file) {
 export const LEDGER_PAGE_SECTIONS = Object.freeze(["## Promotion", "## Rollback"]);
 
 /**
+ * The marker `npm run migration:new` writes on each line of its template that
+ * still needs the author's words. A page carrying it is not an entry yet: the
+ * headings alone would otherwise let an untouched scaffold pass for a recipe.
+ */
+export const LEDGER_PAGE_PLACEHOLDER = "TODO(migration:new)";
+
+/**
  * What a directory of ledger pages records.
  *
  * @param {Array<{ name: string, text: string }>} pages the directory's files
@@ -210,7 +217,12 @@ export function ledgerPageEntries(pages) {
     const match = LEDGER_PAGE.exec(name);
     if (!match) continue;
     const lines = new Set(text.split(/\r?\n/).map((line) => line.trimEnd()));
-    const missing = LEDGER_PAGE_SECTIONS.filter((heading) => !lines.has(heading));
+    const missing = LEDGER_PAGE_SECTIONS.filter((heading) => !lines.has(heading)).map(
+      (heading) => `the line \`${heading}\``,
+    );
+    if (text.includes(LEDGER_PAGE_PLACEHOLDER)) {
+      missing.push(`its own words where the template says ${LEDGER_PAGE_PLACEHOLDER}`);
+    }
     if (missing.length > 0) malformed.push({ page: name, missing });
     else covered.add(`${match[1]}.sql`);
   }
@@ -660,10 +672,14 @@ function validateLedgerCoverage(migrations) {
     }),
   );
 
-  // A ledger page stands in for an entry in BOTH shared docs.
+  // A ledger page stands in for an entry in BOTH shared docs. Only for a
+  // migration on disk, though: a page is a promotion record, so like the
+  // promotion log it may outlive its file (a revert, or a hand rename), and
+  // must not be reported as an orphan in a playbook that never held it.
   const pages = ledgerPageEntries(readLedgerPages());
+  const onDisk = new Set(migrations);
   for (const entries of entriesByDoc.values()) {
-    for (const migration of pages.covered) entries.add(migration);
+    for (const migration of pages.covered) if (onDisk.has(migration)) entries.add(migration);
   }
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
@@ -671,6 +687,7 @@ function validateLedgerCoverage(migrations) {
 
   const remedy = {
     missing: (doc) => `needs an entry in ${doc}`,
+    // Shown once per migration, below the per-doc lines.
     covered: (doc) =>
       `is now recorded in ${doc}: delete its line from UNLEDGERED in scripts/check-migration-safety.mjs`,
     absent: (doc) =>
@@ -684,8 +701,13 @@ function validateLedgerCoverage(migrations) {
 
   console.error("Migration safety check failed: ledger coverage.");
   for (const { page, missing } of pages.malformed) {
+    console.error(`- ${MIGRATION_LEDGER_DIR}/${page} is not an entry yet: it needs ${missing.join(" and ")}.`);
+  }
+  const unpaged = [...new Set(problems.filter((p) => p.kind === "missing").map((p) => p.migration))];
+  for (const migration of unpaged) {
     console.error(
-      `- ${MIGRATION_LEDGER_DIR}/${page} is missing the line(s) ${missing.map((h) => `\`${h}\``).join(" and ")}.`,
+      `- ${migration} has no ledger page: write ${MIGRATION_LEDGER_DIR}/${migration.replace(/\.sql$/, ".md")} ` +
+        "(after a hand rename, rename its page too; `npm run migration:renumber` does both).",
     );
   }
   for (const { kind, doc, migration } of problems) {

@@ -71,7 +71,7 @@ Hosted projects never ran either script, so their table stayed empty until
 as a migration — the one path that reaches staging and production. A changed CSV
 ships the same way: `node scripts/load-chapter-directory.mjs --migration` into a new
 migration (`--migration` leaves out the `begin`/`commit` that `db push` already
-supplies), with promotion-log and rollback-playbook entries; the local bootstrap's
+supplies), with its ledger page (`npm run migration:new`); the local bootstrap's
 own run then finds nothing left to do.
 
 Three things about it are load-bearing:
