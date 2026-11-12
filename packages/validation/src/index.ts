@@ -175,7 +175,6 @@ export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle
 // is stored as (map picker, Pick study zones on a map).
 export * from "./study-zone-shape";
-export * from "./zone-geometry";
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export * from "./subscription";
@@ -204,3 +203,5 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+// Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
+export * from "./zone-geometry";
