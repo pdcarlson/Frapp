@@ -4746,7 +4746,7 @@
             "bearer": []
           }
         ],
-        "summary": "Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)",
+        "summary": "Record a reaction / vote / sign-up claim / card action (hot path; atomic dedup; vote and sign-up claim UPSERT; 409 on a full sign-up slot)",
         "tags": [
           "Chat"
         ]
@@ -17906,7 +17906,8 @@
               "hours",
               "rush",
               "system_audit",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -17960,7 +17961,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -18384,7 +18386,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -18583,7 +18586,8 @@
               "system_audit",
               "imported",
               "loading",
-              "announcement"
+              "announcement",
+              "signup"
             ]
           },
           "payload": {
@@ -18659,7 +18663,7 @@
         "properties": {
           "action_type": {
             "type": "string",
-            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions."
+            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions."
           },
           "payload": {
             "type": "object"

@@ -27,15 +27,15 @@ import { ServiceHoursGlyph } from "./card-glyphs";
 
 /**
  * The composer's **+** on the phone (#3865): Photo, then a row per form the
- * member can open here (Poll, Event, Task, Service hours), in web's + menu
+ * member can open here (Poll, Sign-up sheet, Event, Task, Service hours), in web's + menu
  * order. What it offers, greys and explains is `plusMenuModel` in
  * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
  *
  * - a row the role can't use, or whose module the chapter turned off, is left
  *   out, and a line at the bottom says why;
  * - a row that can't work this second (offline, a photo or a reply staged) is
- *   greyed with the reason beside it. A poll queues like a message, so
- *   offline doesn't grey it.
+ *   greyed with the reason beside it. A poll and a sign-up sheet queue like
+ *   a message, so offline doesn't grey them.
  *
  * It always opens, even with Photo alone, so that line can show. Points has no
  * phone form yet, so the host doesn't list it.
@@ -58,6 +58,7 @@ export interface ComposerPlusSheetProps {
 
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
   poll: PollGlyph,
+  signup: SignupGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceHoursGlyph,
@@ -202,6 +203,33 @@ function PhotoGlyph(props: TabGlyphProps) {
       />
       <Path
         d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * Sign-up sheet (#3926): web's `SignupGlyph` path data, a clipboard, its
+ * board filled, the clip and a ticked line stroke-only.
+ */
+function SignupGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Path
+        d="M6.6 5h10.8a1.6 1.6 0 011.6 1.6v12.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 19.4V6.6A1.6 1.6 0 016.6 5z"
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M9.4 3.4h5.2v3.2H9.4zM8.8 12.2l1.6 1.6 3-3M8.8 16.8h6.4"
         fill="none"
         stroke={stroke}
         strokeWidth={STROKE_WIDTH}

@@ -1598,7 +1598,12 @@ export function Composer({
   const openPlusMenuForm = useCallback(
     (name: PlusMenuCommand) => {
       const command = getSlashCommand(name);
-      if (!command) return;
+      // A sign-up sheet (#3926) has no slash command and nothing to check
+      // first: its form just opens.
+      if (!command) {
+        showPlusForm(name);
+        return;
+      }
       if (onOpenCommandForm?.(command, "") === "opened") showPlusForm(name);
     },
     [onOpenCommandForm, showPlusForm],

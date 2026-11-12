@@ -3,6 +3,7 @@ import {
   PLUS_MENU_COMMANDS,
   plusMenuForms,
   plusMenuModel,
+  plusMenuShortcut,
   type PlusMenuContext,
 } from "./plus-menu";
 
@@ -173,6 +174,59 @@ describe("plusMenuModel (#3865)", () => {
   });
 });
 
+describe("the sign-up sheet row (#3926)", () => {
+  const withSignup = (overrides: Partial<PlusMenuContext> = {}) =>
+    ctx({
+      forms: [
+        { command: "poll", roleAllows: true },
+        { command: "signup", roleAllows: true },
+        { command: "event", roleAllows: true },
+      ],
+      ...overrides,
+    });
+
+  it("sits under Poll", () => {
+    expect(plusMenuModel(withSignup()).rows.map((row) => row.label)).toEqual([
+      "Poll",
+      "Sign-up sheet",
+      "Event",
+    ]);
+  });
+
+  it("works offline, since it queues like a poll", () => {
+    const row = plusMenuModel(withSignup({ offline: true })).rows[1]!;
+    expect(row).toEqual({
+      command: "signup",
+      label: "Sign-up sheet",
+      disabledReason: null,
+    });
+  });
+
+  it("needs no module, so the module read never holds it back or hides it", () => {
+    for (const moduleStatus of ["loading", "offline", "error"] as const) {
+      expect(
+        plusMenuModel(withSignup({ moduleStatus })).rows[1]!.disabledReason,
+      ).toBeNull();
+    }
+    expect(
+      plusMenuModel(withSignup({ isModuleEnabled: () => false })).rows.map(
+        (row) => row.command,
+      ),
+    ).toEqual(["signup"]);
+  });
+
+  it("still waits for a staged file or reply, as every form does", () => {
+    expect(
+      plusMenuModel(withSignup({ replying: true })).rows[1]!.disabledReason,
+    ).toBe("Not while replying");
+  });
+
+  it("has no typed shortcut; the others show theirs", () => {
+    expect(plusMenuShortcut("signup")).toBeNull();
+    expect(plusMenuShortcut("poll")).toBe("/poll");
+  });
+});
+
 describe("plusMenuForms", () => {
   it("checks each form against its route's grants", () => {
     const forms = plusMenuForms(
@@ -182,6 +236,8 @@ describe("plusMenuForms", () => {
     );
     expect(forms).toEqual([
       { command: "poll", roleAllows: true },
+      // A sign-up sheet needs no grant (#3926).
+      { command: "signup", roleAllows: true },
       { command: "event", roleAllows: false },
       // `tasks:manage` alone isn't enough: the route also needs `members:view`.
       { command: "task", roleAllows: false },
@@ -196,6 +252,15 @@ describe("plusMenuForms", () => {
     ]);
     expect(plusMenuForms(["poll"], undefined, true)).toEqual([
       { command: "poll", roleAllows: "unknown" },
+    ]);
+  });
+
+  it("never holds back a form that needs no grant", () => {
+    expect(plusMenuForms(["signup"], undefined, false)).toEqual([
+      { command: "signup", roleAllows: true },
+    ]);
+    expect(plusMenuForms(["signup"], undefined, true)).toEqual([
+      { command: "signup", roleAllows: true },
     ]);
   });
 });

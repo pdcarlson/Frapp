@@ -314,6 +314,7 @@ function ChannelThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    sendSignup,
     postTask,
     postHours,
     trackEventCard,
@@ -1223,7 +1224,14 @@ function ChannelThreadScreen() {
 
   const composerPlus = useComposerPlus({
     channelId,
-    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    channel: {
+      sendPoll,
+      sendSignup,
+      postTask,
+      postHours,
+      trackEventCard,
+      photos,
+    },
     replying: staging.context?.kind === "reply",
     offline: appOffline,
     onPhoto: handleAttach,
@@ -1720,7 +1728,7 @@ function ChannelThreadScreen() {
               // An edit changes text only, so the staged photos and the + stand
               // aside until it is saved or cancelled.
               photos={staging.isEditing ? undefined : photos}
-              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // The + (#3865): Photo, Poll, Sign-up sheet, Event, Task and Service hours, in
               // a sheet that greys what can't work this second and says why
               // (offline Photo among them: an upload has no outbox).
               onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
