@@ -504,6 +504,26 @@ export interface Database {
         Returns: boolean;
       };
       /**
+       * `20261113040001` — finish a study session behind a compare-and-set on
+       * status, watermark and pause, and write its STUDY award in the same
+       * transaction. Empty when the compare-and-set lost.
+       */
+      finish_study_session: {
+        Args: {
+          p_session_id: string;
+          p_chapter_id: string;
+          p_expected_last_heartbeat_at: string;
+          p_expected_paused_at: string | null;
+          p_status: 'COMPLETED' | 'PAUSED_EXPIRED';
+          p_end_time: string;
+          p_last_heartbeat_at: string;
+          p_total_foreground_minutes: number;
+          p_points: number;
+          p_description: string;
+        };
+        Returns: StudySession[];
+      };
+      /**
        * `20261106210000`. Each channel's latest message that is not deleted
        * and not from a member the caller blocked, for Chat home's previews.
        * Rows for every channel in the chapter: the service filters by access.
