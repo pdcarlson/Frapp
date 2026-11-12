@@ -34,8 +34,8 @@
 //   non-material on 2026-11-04 too (#3399), so it moved only the Privacy pin.
 //   Naming the service-hour proof photo (s20, 2026-11-05) moved only the
 //   Privacy pin as well, on that precedent. Naming the location of an
-//   officer's phone showing a check-in code (#4532, 2026-11-12) moved only the
-//   Privacy pin too; whether each of these is material, and
+//   officer's phone showing a check-in code (#4532) was ruled non-material by
+//   the owner on 2026-11-12, so it moved only the Privacy pin too; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
