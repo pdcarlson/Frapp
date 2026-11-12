@@ -46,10 +46,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
-import {
-  safeObjectFilename,
-  storedFilename,
-} from '#domain/constants/storage';
+import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
 import {
   applyNicknameEdit,
   courseEditRefusal,
