@@ -3415,9 +3415,12 @@ export function ChatShell({
         so the timeline does not lose 240px a beat after first paint; it only
         goes away if the channel turns out to be a 1:1 DM.
       */}
-      {memberColumnMounted && !threadBeside ? (
+      {memberColumnMounted ? (
         <aside
           aria-label="Members"
+          // Hidden, not unmounted, under a thread beside the chat (#4297), so
+          // the list's search is still there when the thread closes.
+          hidden={threadBeside}
           className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
         >
           {/*

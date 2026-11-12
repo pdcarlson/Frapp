@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   applyBlockList,
@@ -118,6 +124,32 @@ export interface ThreadPanelProps extends Pick<
 }
 
 /**
+ * Unsent replies, by thread, for this tab (#4297). The panel remounts when it
+ * moves between beside the chat and over it (the window crossing 1280px, a
+ * tool page opening), and a reply being typed survives that, and closing and
+ * reopening the thread, as Slack's and Discord's thread drafts do. Cleared
+ * when sent.
+ */
+const threadDrafts = new Map<string, string>();
+
+export function resetThreadDraftsForTests(): void {
+  threadDrafts.clear();
+}
+
+/**
+ * Beside the chat the panel is outside the chat column's drop target, so it
+ * refuses a file dragged from the desktop itself, as that target does for a
+ * thread over the column: otherwise the browser opens the file in place of
+ * the app. A thread reply takes no files.
+ */
+function refuseFileDrop(event: DragEvent<HTMLElement>) {
+  const types = event.dataTransfer?.types;
+  if (!types || !Array.from(types).includes("Files")) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "none";
+}
+
+/**
  * A message thread (#3785, `spec/behavior/chat/README.md` § Message threads):
  * the parent at the top, a reply divider, the replies, Follow and a
  * "Reply in thread…" composer. On a wide window it is a column beside the
@@ -163,7 +195,18 @@ export function ThreadPanel({
   const thread = useMessageThread(channelId, rootId, viewerId);
   const { toast } = useToast();
   const { isOffline } = useNetwork();
-  const [draft, setDraft] = useState("");
+  const draftKey = `${channelId}:${rootId}`;
+  const [draft, setDraftState] = useState(
+    () => threadDrafts.get(draftKey) ?? "",
+  );
+  const setDraft = useCallback(
+    (value: string) => {
+      setDraftState(value);
+      if (value) threadDrafts.set(draftKey, value);
+      else threadDrafts.delete(draftKey);
+    },
+    [draftKey],
+  );
   const [followBusy, setFollowBusy] = useState(false);
   const [olderError, setOlderError] = useState(false);
 
@@ -426,6 +469,8 @@ export function ThreadPanel({
         className,
       )}
       onKeyDown={onPanelKey}
+      onDragOver={beside ? refuseFileDrop : undefined}
+      onDrop={beside ? refuseFileDrop : undefined}
     >
       <ChatBackground channelId={channelId} />
       <header

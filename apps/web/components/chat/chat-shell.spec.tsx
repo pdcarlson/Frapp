@@ -917,6 +917,7 @@ const displayLockState = vi.hoisted(() => ({
 const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
 const mockChapterRoster = vi.hoisted(() => vi.fn());
 
+const mockDropAttach = vi.fn();
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
@@ -935,8 +936,10 @@ vi.mock("./composer", () => ({
     renderPlusForm,
     plusDrafts,
     isAuditLog,
+    dropAttachRef,
   }: {
     channelId: string;
+    dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
       card: { close: () => void; back: () => void },
@@ -966,6 +969,8 @@ vi.mock("./composer", () => ({
     onCancelReply?: () => void;
     onRestoreReply?: (messageId: string) => void;
   }) => {
+    // The live composer is what a file dropped on the column attaches to.
+    if (dropAttachRef) dropAttachRef.current = mockDropAttach;
     // The + card the real composer opens when the shell answers "opened":
     // its form is whatever the shell renders for that command.
     const [plusView, setPlusView] = useState<string | null>(null);
@@ -4697,17 +4702,19 @@ describe("ChatShell thread beside the chat", () => {
     document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
   });
 
+  /** The chat column: the section that holds the channel's timeline. */
+  const chatColumn = () =>
+    screen.getByTestId("message-timeline").closest("section")!;
+
   it("opens beside the timeline from 1280px, in the members column's place", () => {
     stubWide(true);
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
 
-    expect(screen.getByTestId("thread-panel")).toHaveAttribute(
-      "data-beside",
-      "true",
-    );
-    // The channel stays: its timeline, and no members column beside both.
-    expect(screen.getByTestId("message-timeline")).toBeInTheDocument();
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "true");
+    // Its own column, outside the chat column, which stays as it was.
+    expect(chatColumn().contains(panel)).toBe(false);
     expect(
       screen.queryByRole("complementary", { name: "Members" }),
     ).not.toBeInTheDocument();
@@ -4740,10 +4747,37 @@ describe("ChatShell thread beside the chat", () => {
     stubWide(false);
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
-    expect(screen.getByTestId("thread-panel")).toHaveAttribute(
-      "data-beside",
-      "false",
-    );
+    const panel = screen.getByTestId("thread-panel");
+    expect(panel).toHaveAttribute("data-beside", "false");
+    expect(chatColumn().contains(panel)).toBe(true);
+  });
+
+  it("keeps the members list (and its search) mounted under it", () => {
+    stubWide(true);
+    render(<ChatShell initialChannelId="chan-general" />);
+    const list = screen.getByTestId("channel-member-list");
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    // Hidden, the same element: its local state survives the thread.
+    expect(list).toBeInTheDocument();
+    expect(list.closest("aside")).toHaveAttribute("hidden");
+  });
+
+  it("still takes files dropped on the channel beside it, and refuses them under one covering it", () => {
+    const dragOver = () => {
+      const transfer = { types: ["Files"], dropEffect: "" };
+      fireEvent.dragOver(chatColumn(), { dataTransfer: transfer });
+      return transfer.dropEffect;
+    };
+    stubWide(true);
+    const wide = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("copy");
+    wide.unmount();
+
+    stubWide(false);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(dragOver()).toBe("none");
   });
 });
 
