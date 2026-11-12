@@ -1078,3 +1078,72 @@ export {
 } from "./chat-message-flags";
 export type { ChatMessageFlag } from "./chat-message-flags";
 export { withoutObjectReplacement } from "./message-text";
+
+// ── Meeting minutes (#4312) ──────────────────────────────────────────────────
+export {
+  DEFAULT_MEETING_SECTIONS,
+  EMPTY_MEETING_CONTENT,
+  MEETING_ITEM_TEXT_MAX_LENGTH,
+  MEETING_LIST_MAX_ITEMS,
+  MEETING_OTHER_LABEL_MAX_LENGTH,
+  MEETING_SECTIONS,
+  MEETING_SECTION_KEYS,
+  MEETING_STATUSES,
+  MEETING_TEXT_MAX_LENGTH,
+  MEETING_TEXT_SECTIONS,
+  MEETING_TYPES,
+  MEETING_TYPE_LABELS,
+  MEETING_VOTE_MAX,
+  MeetingActionItemSchema,
+  MeetingContentSchema,
+  MeetingDecisionSchema,
+  MeetingVoteSchema,
+  STANDARDS_MEETING_NOTE,
+  STANDARDS_MEETING_REFUSAL,
+  STANDARDS_MEETING_TYPE,
+  isMeetingContentEmpty,
+  isMeetingSectionKey,
+  isMeetingType,
+  meetingSectionHasContent,
+  meetingTypeLabel,
+  normalizeMeetingSections,
+  readMeetingContent,
+  shownMeetingSections,
+  type MeetingActionItem,
+  type MeetingContent,
+  type MeetingDecision,
+  type MeetingSectionKey,
+  type MeetingStatus,
+  type MeetingTextSection,
+  type MeetingType,
+  type MeetingVote,
+} from "./meetings";
+// Minutes drafted from notes (#4312): the model's output schema, the draft's
+// states and the words each failure shows.
+export * from "./meeting-draft";
+// The words and date labels the minutes screens share on web and mobile.
+export * from "./meeting-copy";
+// Suggested tasks (#4313): the words web and mobile share.
+export * from "./ai-suggestion-copy";
+export * from "./meeting-recording";
+
+// Ask Frapp (#450): the request, the versioned stream format, and its copy.
+export * from "./ask";
+export * from "./act";
+// Catch me up (#3946): a channel's new messages or a thread, summarized.
+export * from "./chat-catch-up";
+export * from "./last-year";
+
+// Report this (#4315): the reasons, the request, and the words about what a
+// report keeps.
+export * from "./ai-report";
+
+export {
+  AI_CONSENT_COPY,
+  AI_SETTINGS_COPY,
+  AI_SWITCHES,
+  formatAiAnswerDate,
+  joinNames,
+  type AiChapterSwitchKey,
+  type AiSwitchCopy,
+} from "./ai-copy";

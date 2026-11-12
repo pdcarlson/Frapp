@@ -44,6 +44,18 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // Renaming the Everyone role or moving it out of its tier (#4191). Its role
   // page draws both locked and never sends a change.
   "role.everyone_fixed",
+  // Changes for one kind of suggestion sent to accept another kind. The
+  // review screen sends a suggestion's edits under its own kind (#4309).
+  "ai.suggestion.edits_kind",
+  // Catch me up asked for on a DM or an audit log (#3946). No client offers
+  // it there.
+  "ai.catch_up.not_a_channel",
+  // Minutes typed Standards (#4312). No minutes screen offers the type, so
+  // only a client that skipped its own type list sends it.
+  "meeting.standards_refused",
+  // A recording upload without the officer's "the room was told" (#712).
+  // The upload step can't be submitted without it.
+  "meeting.recording_notice_required",
 ] as const;
 
 export const MEMBER_CAUSED_ERROR_CODES = [
@@ -61,8 +73,74 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // An officer named a role so it reads as @everyone (#4191).
   "role.everyone_name",
   "chat.since_not_found",
+  // An AI route while `AI_ENABLED` is off on the server (#4310, and
+  // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a
+  // client learns to hide its AI entry points.
+  "ai.not_available",
+  // AI consent (#4308). The chapter has not turned the feature on, or the
+  // member has not said yes on the AI sheet: states a member is in, which
+  // the client answers with the sheet or by hiding the entry point.
+  "ai.chapter_off",
+  "ai.consent.required",
+  // The AI sheet changed between being shown and being answered.
+  "ai.consent.stale_sheet",
+  // A member who is not the president tried an AI switch, as when the
+  // presidency changed hands in another tab.
+  "ai.settings.president_only",
   "legal.acceptance_required",
   "service_entry.receipt_required",
+  // AI suggestions (#4309): one another officer decided first, one that
+  // expired or whose source went away, a caller whose permission or access
+  // changed since the list loaded, and a task accepted before its owner or
+  // day was picked.
+  "ai.suggestion.not_found",
+  "ai.suggestion.forbidden",
+  "ai.suggestion.expired",
+  "ai.suggestion.decided",
+  "ai.suggestion.accepting",
+  "ai.suggestion.incomplete",
+  // The acting agent (#718): a member without `ai:act`, a points proposal
+  // for more members than the chapter's hourly limit leaves, and one whose
+  // members have all left the chapter.
+  "ai.act.forbidden",
+  "ai.suggestion.points.over_limit",
+  "ai.suggestion.points.no_members",
+  // A points proposal whose Confirm landed for some members and failed for
+  // the rest. It is a 503, so its status reports it as a server fault
+  // whatever this list says; it is here because every dotted code is listed.
+  "ai.suggestion.points.partial",
+  // Two officers started minutes for one event at once, or one saved over
+  // the other's newer version (#4312).
+  "meeting.already_started",
+  "meeting.stale",
+  // Ask's beta diagnostics window (#4315): it is already on, this chapter
+  // is not the one it is offered to, or the caller is not the president.
+  "ai.ask.diagnostics.already_on",
+  "ai.ask.diagnostics.not_offered",
+  "ai.ask.diagnostics.president_only",
+  // A draft from notes asked for on minutes that were posted meanwhile.
+  "meeting.draft_posted",
+  // "Use the draft" on a draft that is no longer waiting.
+  "meeting.draft_not_waiting",
+  // A recording Frapp doesn't take (#712): the wrong kind of file, too
+  // large, too short or too long. The upload step checks first, but the
+  // server's limits follow the provider it is set up with.
+  "meeting.recording_format",
+  "meeting.recording_too_large",
+  "meeting.recording_too_short",
+  "meeting.recording_too_long",
+  // No transcription provider is set up on this server.
+  "meeting.recording_unavailable",
+  // The upload was replaced or removed from another tab, or its file never
+  // reached storage.
+  "meeting.recording_replaced",
+  "meeting.recording_incomplete",
+  // Report this (#4315): the draft or suggestion is gone or out of the
+  // member's sight since the button was drawn, the answer is past its 7 days,
+  // or its receipt no longer opens (a rotated key, another member's answer).
+  "ai.report.not_found",
+  "ai.report.too_old",
+  "ai.report.receipt_invalid",
 ] as const;
 
 export type ClientContractErrorCode =

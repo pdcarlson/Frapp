@@ -51,6 +51,13 @@ export const SystemPermissions = {
 
   TASKS_MANAGE: 'tasks:manage',
 
+  // Meeting minutes (#4312, `spec/behavior/meetings.md` § Permissions).
+  // Whoever started a meeting's minutes may edit and post them without
+  // `meetings:edit`; the service checks that.
+  MEETINGS_RECORD: 'meetings:record',
+  MEETINGS_EDIT: 'meetings:edit',
+  MEETINGS_DELETE: 'meetings:delete',
+
   // Recruitment (#4070). `RUSH_NOTES`, `RUSH_VIEW_RESULTS` and `RUSH_MANAGE`
   // gate no route yet: notes, delete and export are not built, and the vote
   // count still travels with the prospect (#4084).
@@ -70,6 +77,16 @@ export const SystemPermissions = {
 
   SEMESTER_ROLLOVER: 'semester:rollover',
 
+  // AI (ADR-28). `AI_USE` is in every starting tier (#4308), so a chapter
+  // created today lets every active member use the AI features the president
+  // turns on, once that member says yes on the AI sheet; Alumni, outside the
+  // tiers, do not hold it. `AI_ACT` is held by no seeded role. `AI_USE` gates
+  // Ask, channel summaries and Report this; `AI_ACT` gates nothing until the acting agent
+  // (#718). Left out of the permissions catalog while
+  // the server switch is off (`RbacService.getPermissionsCatalog`).
+  AI_USE: 'ai:use',
+  AI_ACT: 'ai:act',
+
   REPORTS_EXPORT: 'reports:export',
 
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
@@ -80,6 +97,12 @@ export const SystemPermissions = {
   // `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` owns the value.
   ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
+
+/** Shown in the catalog only on a server with `AI_ENABLED` on. */
+export const AI_PERMISSIONS: ReadonlySet<string> = new Set([
+  SystemPermissions.AI_USE,
+  SystemPermissions.AI_ACT,
+]);
 
 /** One row of `GET /v1/roles/permissions-catalog`. */
 export interface PermissionCatalogEntry extends PermissionDefinition {
@@ -203,6 +226,10 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.ROLES_MANAGE,
       SystemPermissions.CHAPTER_CONFIG_VIEW,
       SystemPermissions.CHAPTER_CONFIG_MANAGE,
+      SystemPermissions.AI_USE,
+      // The exec board writes minutes (`meetings.md` § Permissions); migration
+      // `20261112165010_meetings.sql` gives existing chapters' top tier the same.
+      SystemPermissions.MEETINGS_RECORD,
     ],
   },
   {
@@ -210,17 +237,19 @@ export const STARTING_ROLE_TIERS = [
     permissions: [
       ...MEMBER_DEFAULT_PERMISSIONS,
       ...OFFICER_DEFAULT_PERMISSIONS,
+      SystemPermissions.AI_USE,
     ],
   },
   {
     name: 'Members',
-    permissions: MEMBER_DEFAULT_PERMISSIONS,
+    permissions: [...MEMBER_DEFAULT_PERMISSIONS, SystemPermissions.AI_USE],
   },
   {
     name: 'New members',
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.BACKWORK_UPLOAD,
+      SystemPermissions.AI_USE,
     ],
   },
 ] as const satisfies readonly {

@@ -75,6 +75,27 @@ export class SupabaseTaskRepository implements ITaskRepository {
     });
   }
 
+  async findSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<Task[]> {
+    return fetchAllPages<Task>(
+      (from, to) =>
+        this.supabase
+          .from('tasks')
+          .select('*')
+          .eq('chapter_id', chapterId)
+          .or(
+            `due_date.gte.${since.dueFrom},created_at.gte."${since.createdFrom}"`,
+          )
+          // A total order: `id` breaks ties, so no row repeats across pages.
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: 1000 },
+    );
+  }
+
   async countByChapter(
     chapterId: string,
     query: TaskListFilter = {},

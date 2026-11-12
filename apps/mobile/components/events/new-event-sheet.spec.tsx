@@ -106,6 +106,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewEventSheet, WhenRow } from "./new-event-sheet";
+import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
 
@@ -730,6 +731,7 @@ describe("New event from a chat's + (#3865)", () => {
       }),
     );
     expect(onCreated).toHaveBeenCalledWith({
+      id: null,
       name: "Formal",
       cardKeptOut: false,
       cardLost: false,
@@ -801,6 +803,55 @@ describe("New event from a chat's + (#3865)", () => {
     expect(mutateAsync.mock.calls.at(-1)![0]).not.toHaveProperty("channel_id");
     expect(onCreated).toHaveBeenCalledWith(
       expect.objectContaining({ cardKeptOut: true }),
+    );
+    act(() => tree.unmount());
+  });
+});
+
+describe("opened on a template (This time last year, #3930)", () => {
+  const TEMPLATE_START = local(21, 18);
+  function renderTemplate(onCreated = vi.fn()): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewEventSheet
+            now={NOW}
+            onCreated={onCreated}
+            template={{
+              ...emptyEventDraft(),
+              name: "Winter Formal 2026",
+              location: "Hilton ballroom",
+              start: TEMPLATE_START,
+              end: local(21, 21),
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("opens filled in, and hands back the id of the event it created", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options.onSuccess as (created: unknown) => void)({ id: "evt-new" }),
+    );
+    const onCreated = vi.fn();
+    const tree = renderTemplate(onCreated);
+    expect(byLabel(tree, "Event name").props.value).toBe("Winter Formal 2026");
+    // Nothing is created by opening it.
+    expect(mutate).not.toHaveBeenCalled();
+
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).toEqual(
+      expect.objectContaining({
+        name: "Winter Formal 2026",
+        location: "Hilton ballroom",
+        start_time: TEMPLATE_START.toISOString(),
+      }),
+    );
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "evt-new", name: "Winter Formal 2026" }),
     );
     act(() => tree.unmount());
   });

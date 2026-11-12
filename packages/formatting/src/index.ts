@@ -46,6 +46,12 @@ export {
 } from "./date-entry";
 export { nextUpLine } from "./next-up";
 export {
+  lastYearBareDay,
+  lastYearDay,
+  nameForThisYear,
+  sameWeekdayThisYear,
+} from "./last-year";
+export {
   CURRENCY_AMOUNT,
   neutralizeFormulaCell,
   toCsvCell,

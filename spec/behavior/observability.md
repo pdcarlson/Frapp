@@ -25,7 +25,7 @@ Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an a
 
 **Correction (2026-09-10):** `apps/mobile` PostHog RN has the same URL-shaped gap on capture/identify (current-route and deep-link query strings such as `/join?token=` and OAuth `state`). `posthog-react-native` inherits core `before_send` with the same CaptureEvent envelope as posthog-js; `buildMobilePostHogInitOptions` points it at the same `sanitizeIdentifiedPostHogCapture` helper (DOM-free: no `window` / `document`); since #3382 it runs behind an opt-out gate, `mobilePostHogBeforeSend` ([§ Route views](#route-views)). RN has no `property_denylist`; those keys are dropped in the sanitizer. Replay stays off. Landing still uses `sanitizeAnonymousPostHogCapture` (drops `$set`).
 
-LLM telemetry is allowed only at a real consumed server AI adapter. The mobile Ask mock (`apps/mobile/lib/ask/corpus.ts`) must not emit LLM analytics.
+LLM telemetry is allowed only at a real consumed server AI adapter. The clients' Ask surfaces (web's panel, the phone's sheet) emit no LLM analytics, and no question, answer or source text; `apps/mobile/lib/observability/wiring.spec.ts` holds the phone to that.
 
 ### Route views
 
@@ -158,7 +158,7 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 **"All" includes denials, which makes the placement load-bearing.** The id is assigned by `requestIdMiddleware` (`apps/api/src/interface/middleware/request-id.middleware.ts`), registered as Express middleware ahead of the Nest pipeline. It cannot be an interceptor: Nest runs middleware → guards → interceptors, so a request rejected by a guard never reaches one, and every 401/403/429 would carry `"requestId": "unknown"` — precisely the requests a tracing id is most useful for. The same middleware binds a request-scoped AsyncLocalStorage store (request id only) so Nest `Logger` calls from services see the id, and tags the Sentry isolation scope `request_id` so a trace can be joined to the correlation id without becoming it.
 
-On the API, Sentry owns tracing (ADR-22). `Sentry.init` lives in `apps/api/src/instrument.ts`, imported first from `main.ts`. Under SDK v11 it registers no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`): spans come from Sentry's own instrumentation. Do not install `@opentelemetry/sdk-node` (or any other global tracer). Traces use `traceLifecycle: 'static'`, because v11's default (`'stream'`) skips `beforeSendTransaction` and with it the transaction scrubber. HTTP spans do not collect request bodies (`maxRequestBodySize: 'none'`). Fetch spans do not copy headers onto attributes. Span attributes that leave the process still pass the scrubber allowlist (`http.request.method`, `http.response.status_code`, `db.system`, `sentry.source`, and the push worker's three fan-out counts `chat.push.recipients`, `chat.push.sent` and `chat.push.presence_channels`); `http.url`, `url.query`, and `db.statement` do not.
+On the API, Sentry owns tracing (ADR-22). `Sentry.init` lives in `apps/api/src/instrument.ts`, imported first from `main.ts`. Under SDK v11 it registers no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`): spans come from Sentry's own instrumentation. Do not install `@opentelemetry/sdk-node` (or any other global tracer). Traces use `traceLifecycle: 'static'`, because v11's default (`'stream'`) skips `beforeSendTransaction` and with it the transaction scrubber. HTTP spans do not collect request bodies (`maxRequestBodySize: 'none'`). Fetch spans do not copy headers onto attributes. Span attributes that leave the process still pass the scrubber allowlist (`http.request.method`, `http.response.status_code`, `db.system`, `sentry.source`, the push worker's three fan-out counts `chat.push.recipients`, `chat.push.sent` and `chat.push.presence_channels`, and the AI gateway's six: `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`); `http.url`, `url.query`, and `db.statement` do not. No `gen_ai.*` key is on the list, so a prompt or an answer an AI integration put on a span would be dropped ([§ AI call telemetry](#ai-call-telemetry)).
 
 ## Health Check
 
@@ -485,6 +485,43 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 
+## AI call telemetry
+
+Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28](../architecture/adr/adr-28.md) decisions 1 and 12), and each call that reaches a provider leaves two records. Neither holds any text of the prompt, the sources or the answer.
+
+- **A Sentry span**, `ai.gateway.call` (op `ai.gateway`), with `ai.task`, `ai.provider`, `ai.model`, `ai.outcome`, `ai.input_tokens` and `ai.output_tokens`. A streamed call has no span of its own yet, and its counts are put on no span. Sentry's own Anthropic and Google AI integrations are left out of the SDK's integration list (their stream wrapper reports the provider's raw error, which can quote the request), and `dataCollection.genAI` is off too (`sentry-options.ts`, [#3280](https://github.com/pdcarlson/Frapp/issues/3280)).
+- **A PostHog event**, `ai-call-finished`, sent by `AiTelemetryService` and attributed to the acting member and chapter like any server event:
+
+| Property | Meaning |
+| --- | --- |
+| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`), and what it returns (`structured`, `cited`, `embedding`, or `transcription` for a recording sent through `AiTranscriptionService`) |
+| `provider`, `model` | From the model catalog (`domain/constants/ai-model-catalog.ts`) |
+| `prompt_version` | The calling feature's prompt version, such as `ask@v1` |
+| `outcome`, `error_kind` | `completed`, `refused` (the provider declined), `invalid_output` (the reply did not match the schema) or `error`; for an error, its kind, such as `rate_limited` |
+| `input_tokens`, `output_tokens`, `cached_input_tokens` | As the provider reported them |
+| `audio_seconds` | For a transcription, the recording's length as the provider measured it; 0 on every other call |
+| `cost_micro_usd` | The catalog's price for those tokens, or for that audio, in millionths of a US dollar. An estimate, not the invoice |
+| `latency_ms` | Wall time of the provider call |
+| `citations_kept`, `citations_dropped` | For a cited task, how many quotes passed the word-for-word check and how many were dropped |
+| `is_background_run` | Whether an AI run made the call |
+
+A call the gateway stops before the provider (the server switch, no credential, consent, a spend cap) sends nothing. A provider error is thrown as a `LanguageModelError`, which carries the error's kind, HTTP status and request id and never the provider's message, because a provider's 400 can quote the request back. `ai-gateway.service.spec.ts` asserts that no prompt, source or answer text reaches a log line, a Sentry envelope or the event, on a call that succeeds and one that fails.
+
+## AI Suggestion Events
+
+AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run, or by the save of posted minutes ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks), #4313), and expired by an hourly sweep, none of which is a request to the suggestion routes, so they are not feature events. `AiSuggestionService` sends five events itself, through `AnalyticsService`:
+
+| Event | Sent when | Keyed by | Properties |
+| --- | --- | --- | --- |
+| `ai-suggestions-proposed` | A run saves a batch | Chapter (`trackForChapter`) | `kind`, `count` |
+| `ai-suggestion-accepted` | A member accepts one, with or without changes | The member (`track`, chapter group) | `kind`, `edited` |
+| `ai-suggestion-dismissed` | A member dismisses one | The member | `kind`, and `reason` (`already_doing`) when they said the chapter is already on it (#3930) |
+| `ai-suggestions-expired` | The sweep expires a chapter's waiting ones | Chapter | `kind`, `count` |
+| `ai-suggestions-withdrawn` | A source that changed takes back waiting ones (#4313): the action item was removed, or its owner or day changed and it is proposed again. Also when a thing raised from this time last year has since shown up on this year's record (#3930) | Chapter | `kind`, `count` |
+| `ai-act-proposed` | An officer's typed request became a card to confirm (#718) | The member | `action`, `open_notes` |
+
+`kind` is a closed set (`task`, `event`, `points`, `new_event`). `action` is a closed set (`give_points`, `create_task`, `create_event`), and `open_notes` counts what the card flagged for the officer. No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. An accepted `event` is never `edited`: the officer makes the event in its own form, and what they changed there is not the suggestion's to know. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
+
 ## Member Onboarding Funnel
 
 The activation funnel follows a chapter. This one follows a member, from the
@@ -555,6 +592,15 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `task-status-changed` | The assignee or an officer moves a task to a new status | `status` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back | — |
+
+**Meetings (`meetings`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `meeting-started` | An officer starts minutes ([`meetings.md`](meetings.md#writing-minutes-by-hand)). `meeting_type` is the type picked; `from_new_event` is `true` when the meeting wasn't on the calendar and got its event then | `meeting_type`, `from_new_event` |
+| `meeting-posted` | An officer posts minutes. Posting minutes that are already posted changes nothing, and still counts the request | `meeting_type`, `has_decisions`, `has_action_items` |
+| `meeting-draft-requested` | An officer asks for minutes drafted from their notes ([`meetings.md`](meetings.md#drafting-from-notes)). The model call itself is the gateway's `ai-call-finished` | — |
+| `meeting-recording-uploaded` | An officer's recording finished uploading and its transcription was queued ([`meetings.md`](meetings.md#uploading-a-recording)). Nothing about the file is sent; the transcription itself is the gateway's `ai-call-finished` | — |
 
 **Polls (`polls`)**
 

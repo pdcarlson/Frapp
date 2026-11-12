@@ -211,6 +211,57 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     expect(body).not.toHaveProperty("optional_role_ids");
   });
 
+  it("opens a copy of last year's event filled in, never repeating, and reports the event it made (#3930)", async () => {
+    createMutate.mockResolvedValue({ id: "evt-new" });
+    const onCreated = vi.fn();
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        template={{
+          id: "evt-old",
+          name: "Winter Formal 2026",
+          description: "Buses leave at 8:15.",
+          location: "Hilton Ballroom",
+          point_value: 15,
+          // Last year's repeat is not this year's plan.
+          recurrence_rule: "WEEKLY",
+        }}
+        initialStartAt="2026-12-05T21:00"
+        initialEndAt="2026-12-06T01:00"
+        onCreated={onCreated}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("Event name") as HTMLInputElement).value,
+    ).toBe("Winter Formal 2026");
+    expect(
+      (screen.getByLabelText("Starts, day") as HTMLInputElement).value,
+    ).toContain("December 5");
+    expect(
+      (screen.getByLabelText("Starts, time") as HTMLInputElement).value,
+    ).toBe("21:00");
+    // Nothing is made until the officer saves.
+    expect(createMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const body = createMutate.mock.calls[0]![0];
+    expect(body).toMatchObject({
+      name: "Winter Formal 2026",
+      location: "Hilton Ballroom",
+      point_value: 15,
+    });
+    expect(body.recurrence_rule ?? null).toBeNull();
+    expect(body).not.toHaveProperty("id");
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("evt-new"));
+  });
+
   it("sends no role list on create when nothing differs", async () => {
     renderCreate();
     fillRequiredFields();

@@ -737,3 +737,85 @@ describe("New task from a chat's + (#3865)", () => {
     act(() => tree.unmount());
   });
 });
+
+describe("Accepting a suggested task through the form (#4313)", () => {
+  const accept = vi.fn();
+  function renderSuggestion(assigneeId: string | null = null) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            suggestion={{
+              title: "Book the hall",
+              assigneeId,
+              dueDay: "2026-10-02",
+              dueAt: null,
+              subtasks: ["Call the venue"],
+              accept,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+  const acceptButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) => node.props.label === "Accept" && typeof node.type === "function",
+    );
+
+  beforeEach(() => {
+    accept.mockReset();
+    accept.mockResolvedValue(undefined);
+  });
+
+  it("starts from what the minutes said, under its own title and button", () => {
+    const tree = renderSuggestion("user-2");
+    expect(screenText(tree)).toContain("Change before accepting");
+    expect(screenText(tree)).not.toContain("New task");
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    expect(title.props.value).toBe("Book the hall");
+    act(() => tree.unmount());
+  });
+
+  it("accepts through the suggestion, never the board's create", async () => {
+    const tree = renderSuggestion("user-2");
+    await act(async () => acceptButton(tree).props.onPress());
+    expect(mutate).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(accept.mock.calls[0]![0]).toMatchObject({
+      title: "Book the hall",
+      assignee_id: "user-2",
+      due_date: "2026-10-02",
+      subtasks: ["Call the venue"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("doesn't hand a task nobody was named for to whoever opened the form", async () => {
+    const tree = renderSuggestion(null);
+    if (!acceptButton(tree).props.disabled) {
+      await act(async () => acceptButton(tree).props.onPress());
+    }
+    for (const [body] of accept.mock.calls) {
+      expect((body as { assignee_id?: string }).assignee_id).not.toBe("user-1");
+    }
+    act(() => tree.unmount());
+  });
+
+  it("says why a suggestion can't be accepted any more, and withdraws Accept", async () => {
+    accept.mockRejectedValue({ code: "ai.suggestion.decided" });
+    const tree = renderSuggestion("user-2");
+    await act(async () => acceptButton(tree).props.onPress());
+    expect(acceptButton(tree).props.disabled).toBe(true);
+    expect(screenText(tree)).toContain(
+      "Another officer already decided this one.",
+    );
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    act(() => tree.unmount());
+  });
+});

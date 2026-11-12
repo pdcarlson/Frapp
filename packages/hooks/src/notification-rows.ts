@@ -144,6 +144,8 @@ const SCREEN_TILES: Record<string, NotificationTileKind> = {
   billing: "billing",
   points: "points",
   service: "service",
+  // Suggested tasks to review (#4313) are task business.
+  ai_suggestions: "tasks",
   chat_reports: "reports",
   discord_import: "import",
 };

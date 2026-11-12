@@ -305,6 +305,16 @@ type EventEditorDialogProps = {
   initialLocation?: string;
   initialPointValue?: number;
   /**
+   * An earlier event a fresh create starts as a copy of (#3930, "this time
+   * last year"): its name, description, location, points, who it is for,
+   * notes, type and check-in zone. Never its schedule or its repeat, which
+   * come from `initialStartAt` / `initialEndAt` and the officer. Ignored in
+   * edit mode.
+   */
+  template?: EventRecord | null;
+  /** Told the new event's id after a create, before `onSaved`. */
+  onCreated?: (eventId: string) => Promise<void> | void;
+  /**
    * The chat channel a create came from. The event's card posts there, as the
    * `/event` one-liner's does, unless the event keeps anyone out: the API
    * refuses a card for those, so they are created without one and the toast
@@ -336,6 +346,8 @@ export function EventEditorDialog({
   initialName,
   initialLocation,
   initialPointValue,
+  template,
+  onCreated,
   postToChannelId,
   trackChatCard,
 }: EventEditorDialogProps) {
@@ -468,6 +480,41 @@ export function EventEditorDialog({
       return;
     }
 
+    if (template) {
+      const text = (value: unknown) => (typeof value === "string" ? value : "");
+      const zone = zoneToDrafts(template.check_in_zone);
+      setName(text(template.name));
+      setDescription(text(template.description));
+      setLocation(text(template.location));
+      setStartAt(initialStartAt ?? "");
+      // As the other two branches do: without it a start move here would be
+      // measured from whatever the dialog last held (#4473).
+      lastWholeStart.current = parseInstant(
+        localInputToIso(initialStartAt ?? ""),
+      );
+      setEndAt(initialEndAt ?? "");
+      setPointValue(
+        String(
+          typeof template.point_value === "number" ? template.point_value : 10,
+        ),
+      );
+      setAttendance(attendanceFromEvent(attendanceFieldsOf(template)));
+      setRecurrenceRule("NONE");
+      setNotes(text(template.notes));
+      setEventTypeId(
+        typeof template.event_type_id === "string"
+          ? template.event_type_id
+          : null,
+      );
+      setTypeFilledName(null);
+      setCheckInZone(zone);
+      setCheckInZoneName(text(template.check_in_zone_name));
+      // Open, so nothing copied from last year is saved unseen.
+      setShowMore(true);
+      setShowZone(zone.length > 0);
+      return;
+    }
+
     setName(initialName ?? "");
     setDescription("");
     setLocation(initialLocation ?? "");
@@ -487,6 +534,7 @@ export function EventEditorDialog({
     setShowMore(false);
     setShowZone(false);
   }, [
+    template,
     event,
     mode,
     open,
@@ -687,7 +735,7 @@ export function EventEditorDialog({
                 lost: () => undefined,
               })
             : null;
-        let created: { card_posted?: boolean } | undefined;
+        let created: { id?: string; card_posted?: boolean } | undefined;
         try {
           created = await createEventMutation.mutateAsync({
             ...payload,
@@ -724,6 +772,14 @@ export function EventEditorDialog({
         const cardLost = card !== null && created?.card_posted === false;
         if (cardLost) card.lost();
         toast(createdToast(payload.name, { cardKeptOut, cardLost }));
+        if (created?.id && onCreated) {
+          // The event exists whatever this does, so it never fails the save.
+          try {
+            await onCreated(created.id);
+          } catch {
+            // The caller reports its own failure.
+          }
+        }
       } else {
         if (!eventId) return;
         await updateEventMutation.mutateAsync({

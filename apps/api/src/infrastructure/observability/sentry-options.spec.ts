@@ -5,6 +5,7 @@ import {
   buildSentryOptions,
   SENTRY_HTTP_INTEGRATION_OPTIONS,
   SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
+  SENTRY_REMOVED_INTEGRATION_NAMES,
   SENTRY_REPLACED_INTEGRATION_NAMES,
   withSafeSentryIntegrations,
 } from './sentry-options';
@@ -83,21 +84,57 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     expect(fetch.mock.calls).toEqual([[SENTRY_NODE_FETCH_INTEGRATION_OPTIONS]]);
   });
 
+  it('leaves the Anthropic and Google AI integrations out', () => {
+    // #3280. Recording switched off would not be enough: the Anthropic
+    // wrapper reports a failed stream's raw provider error itself, and a
+    // provider's 400 can quote the prompt back.
+    const nest = { name: 'Nest' };
+    const out = withSafeSentryIntegrations([
+      { name: 'Anthropic_AI' },
+      nest,
+      { name: 'Google_GenAI' },
+    ]);
+    expect(out).toEqual([nest]);
+  });
+
+  it('turns model input and output collection off for every AI integration', () => {
+    // The layer under the removal: the AI integrations this file leaves in
+    // (OpenAI, LangChain, Vercel AI and the rest are in the default set too)
+    // fall back to this, and so would a renamed one.
+    expect(options().dataCollection?.genAI).toEqual({
+      inputs: false,
+      outputs: false,
+    });
+  });
+
   it("replaces integrations the SDK's real default set still contains", () => {
     // The swap matches by `name`. If the SDK renames or splits one of these
     // (v11 already calls the server half `Http.Server`), the `switch` in
     // `withSafeSentryIntegrations` matches nothing and the unconfigured
     // default ships silently. This is the test that notices. The synthetic
     // list above cannot, because it spells the names itself.
-    const defaults = Sentry.getDefaultIntegrations({})!;
+    // Built with tracing on, as production is: the AI SDK integrations are
+    // in the default set only then.
+    const defaults = Sentry.getDefaultIntegrations({ tracesSampleRate: 1 })!;
     const out = withSafeSentryIntegrations(defaults);
     const names = defaults.map((integration) => integration.name);
+    const kept = new Map(
+      out.map((integration) => [integration.name, integration]),
+    );
     for (const name of SENTRY_REPLACED_INTEGRATION_NAMES) {
       expect(names).toContain(name);
-      const index = names.indexOf(name);
-      expect(out[index]?.name).toBe(name);
-      expect(out[index]).not.toBe(defaults[index]);
+      expect(kept.get(name)).toBeDefined();
+      expect(kept.get(name)).not.toBe(defaults[names.indexOf(name)]);
     }
+    // The same guard for the removal: a renamed AI integration would match
+    // nothing and ship, error capture and all.
+    for (const name of SENTRY_REMOVED_INTEGRATION_NAMES) {
+      expect(names).toContain(name);
+      expect(kept.has(name)).toBe(false);
+    }
+    expect(out).toHaveLength(
+      defaults.length - SENTRY_REMOVED_INTEGRATION_NAMES.length,
+    );
   });
 
   it('wires the safe-integrations mapper as the production integrations hook', () => {

@@ -107,32 +107,67 @@ AI features ([`ai.md`](ai.md), meeting summarization in [`meetings.md`](meetings
 
 ### Monthly allowance
 
-- The paid tier includes a monthly AI allowance, sized so that ~90% of chapters never overage. **The number is still `TBD`, and the blocker is not the analysis — it is that every input to the analysis is missing.** There is no `ai` module under `apps/api/src/modules/`, no metering table anywhere in `supabase/migrations/` (no `tokens_in`, `transcription_seconds`, or `upstream_cost_cents` column exists), and no LLM or transcription provider is referenced anywhere in the API. The only AI surface that exists is the mobile s17 mock, which answers from a keyword table and is off by default. So there is no usage to analyse and no upstream unit cost to normalise against.
+- The paid tier includes a monthly AI allowance, sized so that ~90% of chapters never overage. **The number is still `TBD`, and the blocker is now usage, not plumbing.** The metering ledger exists since 2026-11-12 (`ai_usage_events`, #714, below), and the AI gateway writes a row for every provider call (#4306). No feature calls the gateway yet and AI is off everywhere (`AI_ENABLED`), so there is still no usage to analyse.
 - **Do not set a launch number by estimate.** An allowance is a dollar promise against provider costs that no chapter has run up yet (the providers were chosen on 2026-11-11, [ADR-28](../architecture/adr/adr-28.md); the usage is still unmeasured); a guess here converts directly into either margin loss or a treasurer's surprise bill, which is the exact failure this model exists to prevent. The allowance is also **not on the critical path for billing** — it is a future line item with no Stripe object, so `STRIPE_PRICE_ID` and the flat subscription ship without it.
-- **What has to exist first, in order:** (1) the AI features and their chosen provider/model, (2) the metering row this spec already mandates below — `(chapter_id, feature, tokens_in, tokens_out, transcription_seconds, upstream_cost_cents, billed_at)`, written before the response returns, and (3) roughly a quarter of real multi-chapter usage. The allowance is then read off the 90th percentile of observed monthly cost, not chosen. Until (1) and (2) land, this stays `TBD: blocked on AI metering`.
+- **What has to exist first, in order:** (1) the AI features and their chosen provider/model, (2) the metering row (built, below), and (3) roughly a quarter of real multi-chapter usage. The allowance is then read off the 90th percentile of observed monthly cost, not chosen. Until (3), the chapter cap below stands in for it.
 - Allowance covers LLM tokens (Q&A, summarization) and transcription minutes, normalized to a dollar equivalent of upstream provider cost.
-- Allowance resets on the chapter's monthly billing anniversary.
+- Allowance resets on the chapter's monthly billing anniversary. **Built today on the calendar month in UTC instead** (#714, 2026-11-12): `chapters` stores no billing period yet ([#3281](https://github.com/pdcarlson/Frapp/issues/3281)), and dues and billing are off for the beta. When #3281 lands, the chapter's period replaces the calendar month in `reserve_ai_spend` and `AiSpendLedgerService.chapterUsage`.
 - Unused allowance does **not** roll over.
+
+### Caps
+
+Built 2026-11-12 (#714). Every call is held against three caps **before** it is made ([ADR-28](../architecture/adr/adr-28.md) decision 1). The gateway works out the call's worst case (its estimated input plus its whole output ceiling, at the [model catalog](../../apps/api/src/domain/constants/ai-model-catalog.ts)'s prices) and `reserve_ai_spend` holds that amount in one transaction, under a lock per chapter and per provider, so two calls at once can't both take the last of a cap. A call that would cross a cap is not made: the gateway answers `unavailable: spend_cap`, naming the cap.
+
+| Cap | Period | Default | Variable | Stops |
+| --- | --- | --- | --- | --- |
+| Chapter | calendar month, UTC | $25 | `AI_CHAPTER_MONTHLY_CAP_USD` | one chapter's AI until the month turns ("monthly cap reached — contact treasurer") |
+| Member | day, UTC, in one chapter | $2 | `AI_MEMBER_DAILY_CAP_USD` | one member, or a runaway script, from spending the chapter's month |
+| Platform, per provider | calendar month, UTC, every chapter | Anthropic $150, Google $50, AssemblyAI $25 | `AI_ANTHROPIC_MONTHLY_CAP_USD`, `AI_GOOGLE_MONTHLY_CAP_USD`, `AI_ASSEMBLYAI_MONTHLY_CAP_USD` | Frapp from overspending a provider account |
+
+- The defaults are guards for the beta, not prices (`apps/api/src/config/ai-spend-config.ts`). The chapter's is the research's 90th-percentile month on Sonnet (#714, 2026-10-08); the platform's leave room under the provider credits ADR-28 plans on, after the evals' share. Each is overridable per environment; a malformed value fails boot rather than falling back.
+- The chapter cap is the allowance plus the overage cap. With the overage cap at $0 (the default below), it is the allowance alone, and no chapter can run up a bill. A cap the treasurer sets per chapter (#1310) replaces the default for that chapter: it is an argument to `reserve_ai_spend`, not a new table.
+- Scripted calls (local runs, tests) are held against the chapter and member caps at catalog prices, and against no platform cap, since they cost nothing.
+- A hold that lands exactly on a cap is granted. A member's cap is per chapter.
+- Holds count at their full amount until settled. After the call, `settle_ai_spend` replaces the hold with the call's real cost, before the gateway returns, which frees what the call did not use.
+- A hold nobody settled (the process died mid-call) expires after an hour and keeps counting at its full amount, because the call may have run and been billed. A sweep tick that expires any reports a warning to Sentry.
+- Sentry hears when a provider's month reaches 50% and 75% of its platform cap (warning) and 90% (error), once per line per month from each API process, and when a call is refused at the platform cap (error). Only error-level production issues email Paul ([`alert-routing.md`](../../docs/ops/alert-routing.md)), so 90% and the refusal reach his inbox, the first time each happens or when its issue regresses; 50% and 75% are for looking up in Sentry.
+
+### Abandoned and unanswered calls
+
+Decided 2026-11-12 (#714): **a call that failed without the provider saying what it used is charged its whole hold, marked as an estimate** (`cost_estimated`), unless the failure proves the provider turned it away at the door.
+
+- Charged the hold: a stream the member stopped reading before its end (the gateway records `error` / `aborted` with no counts, because counts arrive only with the stream's end), a time-out, a dropped connection, an overload and an unknown error, each with no counts. Any of them can come after the provider had already written, and billed, part of an answer, and the usage record can't tell a stream that had produced text from one that had not.
+- Why the hold and not zero: zero lets a client spend without limit by closing every stream early, and the caps exist to make that impossible. The hold is the most the call could have cost, so the caps are never under-counted. The price is that a call that failed before any work also uses a cap's room for its hold.
+- Charged what the provider reported, which is nothing: `rate_limited`, `auth`, `invalid_request` and `unsupported`, which the provider answers before doing any work. A failure that reported counts is charged those counts.
+- One known gap: the Anthropic SDK retries a time-out or a dropped connection itself (twice, by default), so one hold can cover up to three attempts. Reconciliation against the provider's bill ([#3284](https://github.com/pdcarlson/Frapp/issues/3284)) is where that shows.
+- The usage query reports estimated cost on its own (`estimated_cost_micro_usd`), so reconciliation against the provider's bill ([#3284](https://github.com/pdcarlson/Frapp/issues/3284)) can replace it, and an overage invoice can leave it out if Paul prefers.
 
 ### At-cost overage
 
-**Blocked on the same thing as the allowance above — none of this is built.** There is no metering table, no `ai` module and no overage cap column; the bullets below state the intended model, not a shipped surface.
+**The caps are built; the overage charge is not.** The bullets below state the intended model, not a shipped surface.
 
 - Usage past the monthly allowance bills the chapter at the actual upstream provider cost — zero markup.
-- The treasurer sees a real-time usage dashboard per chapter: allowance used / remaining / projected overage if current pace continues.
-- Two more caps sit under the chapter's, and no one configures them: a daily cap per member, so one person can't spend the chapter's month, and a cap per provider across all chapters, so Frapp can't overspend a provider account. All three are reserved before the model call, not checked after it ([ADR-28](../architecture/adr/adr-28.md) decision 1).
+- The treasurer sees a real-time usage dashboard per chapter: allowance used / remaining / projected overage if current pace continues ([#1310](https://github.com/pdcarlson/Frapp/issues/1310); its data is `AiSpendLedgerService.chapterUsage`).
 - A configurable hard cap (default: $0 overage allowed, configurable by the treasurer) prevents runaway costs. When the cap is reached, AI features return a "monthly cap reached — contact treasurer" error rather than continuing to bill.
-- Alerts fire at 75%, 90%, and 100% of allowance + at 75%, 90%, 100% of any configured overage cap.
+- Alerts fire at 75%, 90%, and 100% of allowance + at 75%, 90%, 100% of any configured overage cap (to the treasurer, with #1310; Paul's platform alerts are above).
+
+**How overage will reach Stripe** (recorded 2026-11-12 in #714, pending Paul; nothing is built, and no Stripe object exists):
+
+1. **Now: no Stripe mechanism.** The overage cap defaults to $0, so overage never accrues, and dues and billing are off for the beta. Nothing is charged for AI.
+2. **When a treasurer first allows overage:** a Stripe Billing Meter (`sum`) with a metered Price on a second subscription item. A daily job reads each chapter's overage for its period from the ledger (spend over the allowance, never the whole usage) and sends Stripe only the change since its last report, with an idempotent identifier per chapter, period and report. Stripe never decides whether a call may go ahead: the caps above do.
+3. **Rejected:** an invoice item per chapter per period (it must land while the renewal invoice is a draft, about an hour, or the overage slides to the next month), and Stripe credit grants for the allowance (Stripe would hold the allowance as a balance, which the invariant below forbids).
+4. This changes "one Price, one line item" for chapters with overage on, and existing subscriptions get the metered item added once. Who absorbs Stripe's fee on overage (about 3.6%, or gross it up) is Paul's call when this is built.
 
 ### Member-facing UX
 
-Members **never see a meter or "this costs X" prompt at the point of using an AI feature.** The allowance + overage cost is a chapter-level concern surfaced only to the treasurer (`billing:view`/`billing:manage`). Member-facing prompts about cost would create perverse incentives against using the feature that the chapter is already paying for.
+Members **never see a meter or "this costs X" prompt at the point of using an AI feature.** The allowance + overage cost is a chapter-level concern surfaced only to the treasurer (`billing:view`/`billing:manage`). Member-facing prompts about cost would create perverse incentives against using the feature that the chapter is already paying for. A member who reaches their daily cap is told the feature is not available right now, never what it cost.
 
 ### Implementation invariants
 
-- Every AI request is metered: `(chapter_id, feature, tokens_in, tokens_out, transcription_seconds, upstream_cost_cents, billed_at)`. The metering row is written before the response is returned to the client.
+- Every AI provider call is metered: one `ai_usage_events` row per call ([`spec/architecture/README.md`](../architecture/README.md)), with the chapter, the acting member, the task (the "feature"), provider, model, prompt version, input, output and cached input tokens, and the cost in micro-USD (millionths of a dollar: a cached read costs less than a cent, so cents would round it to zero). The row is settled before the response is returned to the client, failed and refused calls included. A transcription is one row too (#712, built 2026-11-12): no tokens, `audio_seconds` as the provider measured them, and the cost at the catalog's price per hour of audio. Its hold is the recording's stated length (at least a minute) at that price. A try that dies while the provider works is counted twice against the caps, once as its unsettled hold and once when the next try resumes the same provider job and settles: the safe side of the error.
 - Allowance and overage are computed from the meter, not from a separate balance. There is no mutable "balance" column.
 - The hard cap is enforced server-side; clients never compute "should this request go through" locally.
+- The ledger has no text column ([`ai.md`](ai.md) § Stored AI text).
 
 ## Chat Integration
 

@@ -23,7 +23,7 @@ describe("webAppOrigin", () => {
 
   // babel-preset-expo inlines only a static `process.env.EXPO_PUBLIC_*`
   // member read; through an alias the value is undefined on device, which
-  // vitest on Node can't show (lib/ask/flag.ts).
+  // vitest on Node can't show (lib/secure-store.web.ts).
   it("reads the build's value with the static form a build inlines", () => {
     const source = readFileSync(
       fileURLToPath(new URL("./invite-link.ts", import.meta.url)),

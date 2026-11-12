@@ -240,6 +240,7 @@ updates:
       # (#2329), like the React family above.
       - dependency-name: "expo-apple-authentication"
       - dependency-name: "expo-application"
+      - dependency-name: "expo-audio"
       - dependency-name: "expo-blur"
       - dependency-name: "expo-camera"
       - dependency-name: "expo-clipboard"

@@ -30,6 +30,7 @@ All meeting summaries use a **single global template** with toggleable sections 
 
 - Attendees (default ON)
 - Summary / Overview (default ON)
+- Announcements (default ON)
 - Decisions (default ON)
 - Action items with owner + due date (default ON)
 - Discussion log (default OFF — verbose)
@@ -37,7 +38,9 @@ All meeting summaries use a **single global template** with toggleable sections 
 - New business (default OFF)
 - Officer reports (default OFF)
 
-Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)). The template is the same across all meeting types — type only affects AI summarization behavior.
+Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)), on the Meetings page's Rules. The template is the same across all meeting types — type only affects AI summarization behavior. The sections always show in the order above. A section switched off keeps what minutes already wrote in it, and those minutes still show it.
+
+> **Added 2026-11-12 (#4312).** Announcements joined the list: the Chapter type's minutes above name announcements, and there was no section to hold them. The list and its defaults are `MEETING_SECTIONS` in `@repo/validation`.
 
 Per-meeting-type template variants are deferred to v2+ pending real usage signal that chapters want them.
 
@@ -48,14 +51,14 @@ There are three ways to start, and they end in the same review screen.
 | Way in | What the officer does | Needs |
 | --- | --- | --- |
 | Notes | Types, pastes or dictates rough notes after the meeting. | Nothing new, which is why it is built first. |
-| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. | A transcription provider. |
-| In-app recorder | Records on the phone during the meeting. | A new store build, because the app ships without microphone access today. |
+| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider. |
+| In-app recorder | Records on the phone during the meeting. Built 2026-11-12: [Recording in the app](#recording-in-the-app). | A store build at native version 0.12.0 or later, the first with microphone access, and a transcription provider. |
 
 1. An officer with the meeting permission starts minutes, selects the meeting type, and links the meeting's event. The event's check-ins fill the Attendees section without any AI. A meeting with no event gets one when minutes are started, with the audience the officer picks, because the event is what says who the minutes are for ([Who can read minutes](#who-can-read-minutes)).
 2. For a recording, the audio is transcribed on the server by a transcription provider behind Frapp's own interface. The vendor is chosen by a bake-off on a real meeting ([#712](https://github.com/pdcarlson/Frapp/issues/712)). Transcription is its own step: a general model is not asked to listen.
 3. The summarizer drafts the templated minutes from the notes or the transcript, using the meeting type as context. It is given the roster's names, who holds each role, and who checked in, so "the treasurer will send the invoice" resolves to a person.
 4. The officer reviews and edits the draft before posting. With a recording, each drafted line links to its moment in the audio, so checking a line takes seconds.
-5. The same screen lists suggested tasks, under the rules in [Suggested tasks](#suggested-tasks).
+5. Once the minutes are posted, the same screen lists suggested tasks, under the rules in [Suggested tasks](#suggested-tasks).
 6. On post, the minutes are saved to the meeting and its audience is notified. The officer can also drop a link to them in a channel. The link opens only for the audience, and the minutes' text is never copied into a chat message: a chat message is read by everyone in its channel, and is a chat source for AI under the channel's rules, not the meeting's.
 7. Posted minutes, and the transcript when there is one, are indexed for AI Q&A (see [`ai.md`](ai.md)). An answer draws on them only for a member in the meeting's audience; a `chapter_id` match alone is not enough.
 
@@ -68,33 +71,120 @@ A meeting's **audience** is the members its event invites, by the event's own ru
 - Minutes and a transcript are readable by the audience, in the app and through AI alike. There is no second, wider rule for AI.
 - An Exec meeting is an event that invites the exec roles. Its minutes are then exec-only without any setting on the minutes themselves.
 - Changing who the event invites changes who can read the minutes, from that moment.
-- An event already has a notes field that officers use for minutes ([`events.md` § Event Creation](events.md#event-creation), "Meeting minutes"). Drafted minutes must not become a second place for the same meeting's minutes. How the two are stored is settled with the meetings schema ([#3290](https://github.com/pdcarlson/Frapp/issues/3290)).
+- **A draft is its author's.** Until minutes are posted, only the officer who started them and holders of `meetings:edit` can read them. Posting is what shows them to the audience. The author is held to the event's audience like anyone else: an author the event no longer shows itself to can't read, change, post or delete the minutes until it does.
+- **Minutes outlive their event.** Deleting an event keeps its minutes, which then have no audience: only holders of `meetings:edit` can read them, and they still say the event's name and date. Removing them takes `meetings:delete`.
+
+### Where minutes live
+
+Settled 2026-11-12 with the meetings schema (#4312, [#3290](https://github.com/pdcarlson/Frapp/issues/3290)'s storage question). Minutes are their own record (`meetings`), at most one per event, not the event's notes field. The notes field stays the event's own notes ([`events.md` § Event Creation](events.md#event-creation)): while the meetings module is on, the event sheet labels it "Notes" and shows the event's minutes beside it. Starting minutes copies the event's notes into the Summary once, so nothing typed there is typed twice; after that the two are separate. A chapter with the module off keeps using the notes field as before.
+
+## Writing minutes by hand
+
+The Notes way in, without the AI draft: an officer writes the minutes themselves. The AI draft ([ADR-28](../architecture/adr/adr-28.md) decision 6) fills the same sections later, and the officer reviews it on the same page.
+
+- **Start from the event.** The event sheet's Minutes row offers Write minutes to a holder of `meetings:record`, which starts them in one tap with the type the event's name suggests ("Exec meeting" opens on Exec), and Open minutes to anyone who can read them. The Meetings page's New minutes lists the last month of events, newest first.
+- **A meeting that isn't on the calendar** gets an event when its minutes start, by an officer who also holds `events:create`: its name, date and times, and who reads the minutes (everyone, or only some roles). That event requires nobody, earns no points and sends no new-event push, so writing up a meeting after the fact never pings the chapter or changes anyone's attendance record.
+- **Writing.** The minutes page is the document and its editor, as a shared doc is: the author's draft opens ready to type, and posted minutes open to read with Edit for whoever may change them. Attendees come from the event's check-ins (present, late, excused) and aren't typed. A decision may carry a vote count (for, against, abstaining), only when the meeting took one. An action item names someone only when the meeting did, and takes a due date. Empty decision and action rows are dropped on save.
+- **Two people editing.** A save carries the version it was made on. If someone saved since, the save is refused, the officer's typing stays on screen, and the page offers to load the other version. Nothing is overwritten silently.
+- **Posting** asks first, then shows the minutes to the audience and tells each member of it once, except the officer who posted: "Minutes posted", "The minutes from {event} are up." in the `events` notification category. Posting again tells nobody, and edits after posting tell nobody.
+- **Who changes them.** The author edits their own minutes, draft or posted, while the event still shows itself to them; a holder of `meetings:edit` edits anyone's. The author deletes their own unposted draft; a holder of `meetings:delete` deletes any minutes.
+- **Off by default during the beta.** The `meetings` module is in `BETA_OFF_MODULES`, so no chapter sees Meetings in the nav or its settings page, and every write is refused, until it is taken out of that list.
+
+## Drafting from notes
+
+The officer who takes the minutes pastes or types what they wrote down during the meeting and asks for a draft ([ADR-28](../architecture/adr/adr-28.md) decision 6). The draft lands in the same sections as hand-written minutes, for them to fix and post. Web first (#4312); the recording path reuses the same draft, and so does the phone (#4415): an officer who may edit a draft pastes notes in a tall sheet, uses the draft and posts, and changes a section by hand on the web, because the section editor has no phone twin yet. The phone offers Write minutes on an event only where drafting is offered, so it never leaves an empty draft it can't fill.
+
+- **Where it is.** A "Your notes" box sits above the sections of a draft the officer may edit. It shows only to a holder of `meetings:record`, when the server has AI on and the president has turned meeting notes on ([`ai.md` § Consent](ai.md#consent)). An officer who has not answered the AI sheet sees the box with one plain line saying so, and can't ask until they have.
+- **Asking** needs the right to edit these minutes as well. Typing in the sections is saved first. If the sections already hold something, the page asks before the draft replaces them. Attendees are never touched.
+- **While it is written,** the sections wait and can't be typed in, Save and Post wait, and the box offers Stop. Stopping keeps the notes, in the box and stored, and nothing is put into the minutes.
+- **It never overwrites a save.** The draft goes into the minutes only if they are still at the version it was asked on. If someone saved meanwhile, the draft waits and the officer chooses Use the draft, which asks before replacing what is written and goes onto the newest version by the same rule. While a draft is being put in, the page never shows it as waiting.
+- **Only what the notes say.** Every decision and action item must come with the line of the notes it was drawn from, word for word: one line, never two joined, and enough of it to be that line (a single word or number backs nothing). An item whose line isn't in the notes is dropped, and the officer is told how many were. A vote count is kept only when its numbers are in that line. An owner is kept only when that line names exactly one member, by name or by a role only one member holds; a line that names two members names no owner. Otherwise the item shows "Nobody named". A due date is kept only when that line says when (a number, a weekday, "tomorrow"). An award of points ("give Jake 50 points") is never an action item, and isn't counted as dropped.
+- **Honest gaps.** What the notes leave unsaid is listed under "To fill in" (who is doing something, a vote with no count), not guessed. Each drafted decision and action item shows the line it came from until the officer rewrites it.
+- **Notes are text, not instructions.** A line in the notes addressed to the AI is not followed.
+- **Nothing is posted.** The draft is an unposted draft like any other. Posting is the officer's own step, and action items stay as written for the officer; turning them into suggested tasks is [Suggested tasks](#suggested-tasks).
+- **When it can't be done,** the box says why in plain words and keeps the notes: the chapter's AI limit was reached, drafting is unavailable, the provider declined, or the draft didn't come through and can be asked for again.
+- **Standards.** A Standards meeting has no minutes in Frapp, so there is nothing to draft into. Minutes whose type is changed to Standards are refused by the server before any text leaves ([Standards meetings](#standards-meetings)).
+- **How long the notes are kept.** The notes are kept only while the minutes are an unposted draft, so "Draft again" works and the box is as the officer left it. With them is what the officer checks the draft against: the "To fill in" list, and each drafted decision and action item beside the line it came from. The drafted sections themselves are kept apart from the minutes only while a draft waits to be used. They are deleted when the minutes are posted or deleted, when the officer clears them, when the officer deletes their account, and 30 days after the draft was asked for whatever else happened.
+
+> **Added 2026-11-12 (#4312, the drafting session's, Paul's to change).** Keeping the notes and the check list while the minutes are a draft (which [ADR-28](../architecture/adr/adr-28.md) decision 8 did not foresee, and is noted there), the 30-day limit, and replacing the sections rather than merging into them were not stated before. The conservative choice in each case: the shortest keep that still lets the officer ask again, and a replace the page asks about first.
+
+## Uploading a recording
+
+The officer who recorded the meeting on their phone uploads the file on web and comes back to a transcript in "Your notes", ready for [Drafting from notes](#drafting-from-notes) ([ADR-28](../architecture/adr/adr-28.md) decisions 1 and 7). Built 2026-11-12 ([#712](https://github.com/pdcarlson/Frapp/issues/712)); web only, off unless the server has AI on, a transcription provider is set up and the president has turned meeting notes on.
+
+- **Where it is.** One row at the top of the "Your notes" box, for the same officers who see the box. It always says what the recording is doing and offers the one thing to do about it.
+- **Before anything is sent,** the upload step shows the [Recording notice](#recording-notice): the script that should have been read out, what happens to the file, and the Standards rule. The officer picks the file and ticks "Everyone in the room was told this meeting was being recorded, and nobody objected." The server refuses an upload without that tick, and keeps when it was given.
+- **What it takes.** M4A, MP3, WAV, AAC, OGG or FLAC, up to 200 MB and 2 hours, and at least 10 seconds: what a phone's recorder makes of a chapter meeting. A provider with tighter limits narrows them, and the step says the real ones. The file is checked the moment it is picked, so a wrong file never starts uploading.
+- **The upload is resumable** and goes straight from the browser to a private bucket (`meeting-audio`), signed for that one file. A dropped connection picks up where it left off. The row shows the percent sent and asks the officer to keep the page open; closing it loses the upload, and the row then says it was interrupted.
+- **Transcribing takes minutes and needs nobody watching.** It is an AI run (`meeting_transcription`), so the row survives a reload or a closed tab, and Stop removes the recording. The provider is given the roster's names so it spells them right, and nothing else about the chapter.
+- **The transcript lands in the notes.** One line per speaker turn, opened by "Speaker 1", "Speaker 2" in the order each voice is first heard ([Voices](#voices)). Empty notes are filled; notes the officer already typed are never written over, and the row offers "Add to your notes" to put the transcript below them. From there it is notes: the officer fixes names, and asks for a draft.
+- **The audio is deleted as soon as it has been used:** when the transcript is written, when the transcription fails for good, when the officer removes or replaces the recording, and by a sweep every half hour for anything those missed (an upload nobody finished within six hours, a meeting posted or deleted mid-transcription). A provider that keeps a copy is told to delete it once the transcript is read.
+- **The members who were at the meeting are told,** once per meeting, when transcription starts: a notification saying a recording was uploaded to write the minutes, that it is deleted once transcribed, and to tell the secretary if they object. "Who was there" is the event's check-ins; with no check-ins it is the members the event invites.
+- **When it can't be done,** the row says why in plain words and what to do next: the file couldn't be read as audio, no speech was heard, it is too long, the chapter's AI limit was reached, or the transcript didn't come through. In every case the audio is already deleted.
+- **Standards.** A recording can't be uploaded for a Standards meeting, by the same server check as a draft, made before the upload is signed and again before the audio is sent to the provider ([Standards meetings](#standards-meetings)).
+- **What it costs** is the recording's length at the provider's price per hour, held against the chapter's and the member's AI caps before the provider is called and settled at the length the provider measured ([`billing.md`](billing.md)).
+- **How long the transcript is kept.** By the notes' rule: only while the minutes are an unposted draft, removed when they are posted or deleted, when the officer removes the recording (Clear notes on the web removes it with the notes), when the uploader deletes their account, and after 30 days at most. Neither the audio, its link, the file's name nor the transcript is ever written to a log, an error report or an analytics event.
+
+> **Added 2026-11-12 (#712, the build session's, Paul's to change).** Four things here were not decided before and took the conservative choice. (1) The audio is deleted when the transcript is written, not when the minutes are posted as [Retention](#retention) used to say: nothing built plays it back, so keeping it would hold a recording of a room for no use. Linking each drafted line to its moment in the audio (Workflow step 4) is therefore not built, and would need the audio kept. (2) The transcript is treated as the officer's notes, kept only while the minutes are a draft, and is not indexed for AI Q&A (Workflow step 7 is not built for transcripts). (3) The provider is AssemblyAI in the model catalog, because it is the only candidate that takes a whole meeting with speaker labels in one request; Google's transcription model is built as the challenger and caps a request at 30 minutes. The vendor is still Paul's pick after a bake-off on a real meeting, and no key exists yet. (4) Whether the tick and the notification are enough in a state that requires everyone's agreement is counsel's question ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)); the wording is working copy. The notes box's limit rose from 40,000 to 160,000 characters so a two-hour transcript fits.
+
+## Recording in the app
+
+The secretary opens the meeting's draft minutes on their phone, sets the phone on the table and taps Record. One or two hours later they tap Stop. The recording uploads, is transcribed the same way an uploaded file is, and lands in "Your notes" ([Uploading a recording](#uploading-a-recording) owns everything from the upload on: transcription, the attendees' notification, deletion, cost, Standards). Built 2026-11-12 for iOS and Android; it needs a store build at native version 0.12.0 or later, and is offered only where the upload is: AI on, a transcription provider set up, meeting notes on, and a draft the officer may edit.
+
+It is used once a week by one person, in a chapter room with weak wifi, with the phone locked for most of it. So the rules are about not losing two hours of a meeting:
+
+- **Record is one row on the minutes screen,** above Draft minutes. It always says what the recorder is doing in one line and offers at most two buttons. Its height never changes, and its place is held while the server's answer is out, so Draft minutes and Post never move under it. While the phone holds a recording for this meeting the row is there whatever the server says: with no connection, with transcription turned off since, or with the minutes posted from another device, the officer can still stop, upload or delete it.
+- **The notice comes first, every time.** Record opens the [Recording notice](#recording-notice) as a sheet: the rule, the script to read aloud, what happens to the audio, the Standards rule, and one tick, "Everyone in the room has been told this meeting is being recorded, and nobody objected." Only Start recording with the box ticked opens the microphone, and the tick does not carry over to the next meeting. An officer who has not answered the AI question is asked it before the notice. The upload later carries the tick to the server as the upload step's does.
+- **Before the microphone opens** the phone checks three things and says which one failed: microphone permission (with a way to Settings), on Android permission to show the notification that keeps a recording alive with the screen off, and free space for a whole meeting (about 120 MB).
+- **While recording** the row shows a red dot, "Recording" and a running clock, with Pause and Stop. Stop asks first. On every other screen a pill at the top of the window says "Recording 1:02:33"; a tap opens the minutes. Recording continues with the screen locked and with Frapp in the background (iOS's audio background mode; on Android a foreground service with a system notification).
+- **A phone call, Siri or another app taking the microphone** pauses the recording. The row and the pill say "Paused", not "Recording", and the row says why. iOS hands the microphone back by itself after most interruptions and recording then carries on; when it doesn't, the phone asks again every few seconds, and the officer can tap Resume. A pause the officer made themselves stays a pause through a call: the phone does not start recording again when the call ends. Nothing recorded before the interruption is lost.
+- **The recording stops by itself** at the longest the server takes (2 hours), and when the phone has under 25 MB free. Either way what was recorded is kept and the row says why it stopped. It does not upload by itself then: the officer taps Upload.
+- **Stop uploads at once,** through the same signed, resumable upload as the web's, in pieces, with the real percent on the row and on the pill. The officer is asked to keep Frapp open. A dropped connection is retried, then the row says the upload didn't finish; Try again carries on from what was already sent. Cancel stops it and keeps the file.
+- **The recording stays on the phone until the server has it.** It is deleted from the phone the moment the server confirms the upload, when the officer taps Delete (which asks first), and otherwise after 7 days. Nothing else removes it: not a failed upload, not signing out, not closing the app.
+- **If the app is closed or killed while recording,** what was written up to that moment is still a playable file. On the next launch the pill says a recording hasn't been uploaded, and the row says one was kept and how long it is, and offers Upload or Delete. The same on a launch after a failed upload.
+- **One recording at a time for each member.** While the phone holds the officer's recording for one meeting, another meeting's row points to it instead of offering Record.
+- **A recording belongs to the member who made it, in the chapter they made it in.** Another member signing in on the same phone, or the same member in another chapter, is not shown it, can't upload it, and doesn't remove it by recording a meeting of their own. It waits for its owner to sign back in, and goes when its 7 days pass.
+- **The transcript goes into "Your notes"** on the phone as on the web: into an empty box by itself, behind "Add the transcript" when the officer has already typed. Clearing the notes removes it.
+- **Standards.** The notice says never to record a Standards hearing, and the server refuses the upload for one before anything is stored, as it does on the web. The row then says so and keeps the file for the officer to delete.
+- **Nothing about a recording is logged.** No audio, file path, link, file name or transcript goes to a log, an error report or an analytics event, and what the phone writes down to find the file again is where it is, whose it is (the member and the chapter), the meeting and its event's name, when it started, how long it is and why it stopped: nothing said in the meeting and no upload signature.
+- **Expo Go and the web build of the app have no recorder.** The row then shows only what was uploaded elsewhere.
+
+> **Added 2026-11-12 (the build session's, Paul's to change).** Choices made here that nobody had decided. (1) The file is one channel of AAC at 64 kbps in an ADTS container (`.aac`), about 58 MB for two hours. ADTS rather than the usual `.m4a` because an `.m4a` cut off by a crash can't be read at all. (2) A recording left on a phone is deleted after 7 days. (3) An existing audio file can't be picked on the phone: that needs a second native module (`expo-document-picker`, [#3401](https://github.com/pdcarlson/Frapp/issues/3401)), so uploading a file stays on the web. (4) A killed app's upload starts again from the beginning, because the upload's signature is not written to the phone's storage. (5) Android's recording notification reads "Recording audio", the audio library's fixed wording. (6) The microphone permission text in `app.json` is a draft for Paul to approve before a store build. (7) On Android the two-hour stop is checked by the app's clock, which Android may hold while the screen is off; a meeting that ran past two hours is still uploaded and transcribed, declared to the server as two hours. For the same reason a recording stopped from Android's notification is measured by its file's size, not by the clock. None of this has run on a device: the list of what to check on one is in the PR that added this section.
 
 ## Suggested tasks
 
-Minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal.
+Posted minutes produce suggested tasks, as [`ai.md` § Suggestions](ai.md#suggestions) describes for every proposal. Web first (#4313); the phone reads the same list (#4415; [`../ui/mobile/screens.md`](../ui/mobile/screens.md), the Suggested row), one suggestion at a time: it has no Accept all.
 
-- **The officer creates them, not the AI.** The review screen lists each suggested task with its title, owner, due date and the line it came from. The officer unticks, edits, and confirms. Tasks are then created under that officer's own permission.
-- **An owner only when one was named.** A task gets an owner only when a name or a role was said or written for it. Otherwise it shows "Who?" with a member picker. A wrong owner is worse than a blank one.
+- **When.** Posting minutes turns each action item into a suggested task. A draft suggests nothing: its action items are still being written, and a draft is its author's. Hand-written minutes are treated exactly as drafted ones are.
+- **No model is asked.** By the time minutes post, an action item already holds what a task needs: its words, an owner only when one was named, a day only when one was said. A drafted item got those from the notes under the checks in [Drafting from notes](#drafting-from-notes), and the officer read it before posting. So a suggested task is the action item as posted, and nothing leaves Frapp to make it.
+- **The officer creates them, not the AI.** Each suggested task shows its title, its owner and its due date, and an officer accepts it, changes it first, or dismisses it. Accepting makes the task under that officer's own permission, as the task form would, and its assignee is told as for any task. Nothing is a task until then.
+- **Where.** Under the posted minutes, and in a Suggested list at the top of the Tasks board, grouped by the minutes each came from with a link back to them. Only someone who may manage tasks and may read those minutes sees either. With nothing waiting, neither place shows anything.
+- **An owner only when one was named.** A task gets an owner only when the minutes name one for it. Otherwise it shows "Who?" with a member picker. A wrong owner is worse than a blank one. The same goes for the day. Accept asks for whichever is missing, in place.
 - **Two members with the same first name are the officer's pick,** never a guess.
-- **A suggested task never carries points.** "Give Jake 50 points" spoken in a meeting is not an instruction. The officer adds points by hand.
+- **A suggested task never carries points.** "Give Jake 50 points" spoken in a meeting is not an instruction. The officer adds points by hand, on the task.
+- **Accepting several.** Accept all sits under the list and takes only the ones that already say who and when.
+- **Each action item is suggested once.** Editing posted minutes follows them: a new action item is suggested, a removed one's waiting suggestion is taken back, and a changed owner or day replaces the waiting suggestion. An item an officer already accepted or dismissed is never suggested again, and neither is one whose capitals, spacing or punctuation were tidied. Rewording an item makes it a new item.
+- **Who is told.** The officer who posted the minutes gets one notification for all of them, and only if they could accept one. Edits after posting tell nobody.
+- **Off unless** the server has AI on and the president has meeting notes on ([`ai.md` § Consent](ai.md#consent)). No member's answer on the AI sheet is asked for, because nothing is sent to a provider.
+
+> **Changed 2026-11-12 (#4313, the drafting session's, Paul's to change).** This section used to put the review on the draft's screen and show each task beside the line of the officer's notes it came from. Suggestions are now made when the minutes post, from the posted action items, with no second model call: the action items are already structured and already read by the officer, and the notes are private to their author and deleted at posting ([Drafting from notes](#drafting-from-notes)), so a line of them is not copied onto a suggestion other officers read. The line a suggested task shows is the action item in the minutes. Matching an item by its words, so that rewording one after it was decided suggests it again, is also this session's choice.
 
 ## Standards meetings
 
 A Standards meeting (a standards board or member-conduct hearing) is never recorded, never transcribed and never sent to a model.
 
 - **None of the three ways offers the type.** Notes are covered as much as recordings: an officer can't paste hearing notes into the drafter and pick Standards.
-- **The server refuses it too.** A request to draft minutes for a meeting typed Standards is rejected before any text is sent anywhere. The check does not live only in the app.
+- **The server refuses it too.** A request to draft minutes for a meeting typed Standards is rejected before any text is sent anywhere. The check does not live only in the app. Hand-written minutes can't be typed Standards either: `POST /v1/meetings` answers 400 `meeting.standards_refused`, and the table's own check refuses the type.
 - **An officer writes Standards minutes by hand,** and they are stored in the [vault](vault.md), which the AI never reads. Until the vault exists they are kept outside Frapp.
-- **Filing a hearing under another type to get a draft breaks this rule,** and the product can't detect it. The notes screen says so in one line where the type is picked.
+- **Filing a hearing under another type to get a draft breaks this rule,** and the product can't detect it. The notes screen says so in one line where the type is picked, as the hand-written minutes' type picker already does.
 
 ## Recording notice
 
 A meeting is recorded only after the room has been told.
 
 - **The officer reads a short script aloud before recording starts,** for example: "This meeting is being recorded and transcribed by Frapp. Tell the secretary if you object."
-- **Frapp posts a notice to the meeting's attendees.**
-- **The recording phone shows a visible indicator for as long as it records.**
+- **Frapp posts a notice to the meeting's attendees.** For an uploaded recording that is a notification when the upload finishes, and the officer confirms in the upload step that the script was read ([Uploading a recording](#uploading-a-recording)). For a recording made in the app the officer confirms before the microphone opens, and the same notification goes out when the phone's upload finishes ([Recording in the app](#recording-in-the-app)).
+- **The recording phone shows a visible indicator for as long as it records:** the row on the meeting's minutes, a pill at the top of every other screen in the app, and outside the app the system's own mark (iOS's microphone indicator, Android's recording notification).
 - **Anyone present may object, and the officer then doesn't record, or pauses.**
 
 Apple requires explicit consent and a visible indication for any recording (App Review Guideline 2.5.14). Several states require every person present to agree, so a chapter in one of them should confirm the script with counsel first.
@@ -105,12 +195,16 @@ Frapp stores no voiceprint and never recognises a member by voice. Speaker label
 
 ## Permissions
 
-- Starting minutes, by notes, upload or recording, requires the `meetings:record` permission. Default seeds: President, Secretary, exec roles.
-- Editing a posted summary requires `meetings:edit` (default: original recorder + President).
-- Deleting a meeting record requires `meetings:delete` (default: President only).
+- Starting minutes, by notes, upload or recording, requires the `meetings:record` permission. Default seeds: President, Secretary, exec roles. It is on the Exec board tier, so every role in the chapter's top tier holds it ([`rbac.md`](rbac.md)).
+- Editing someone else's minutes requires `meetings:edit` (default: President). The officer who started them always edits their own.
+- Deleting minutes requires `meetings:delete` (default: President only). The officer who started them may delete their own unposted draft.
+- Reading needs no meetings permission: the audience rule above decides it.
 
 ## Retention
 
-- **Raw audio is deleted when the minutes are posted.** A recording whose minutes are never posted is deleted after 30 days. Audio can't be anonymised when a member deletes their account, so it must already be gone.
+- **Raw audio is deleted as soon as its transcript is written,** or its transcription has failed for good ([Uploading a recording](#uploading-a-recording)). Audio can't be anonymised when a member deletes their account, so it must already be gone.
+  - Changed in #712 by the build session, 2026-11-12, pending Paul: this line used to read "deleted when the minutes are posted. A recording whose minutes are never posted is deleted after 30 days."
+- **A recording's transcript** is kept as the officer's notes are: only while the minutes are unposted, and never more than 30 days.
 - **Transcripts and posted minutes** follow the chapter's general [data retention](data-retention.md) policy. When a member deletes their account, their name on a speaker label becomes "Deleted User", as it does on their chat messages.
+- **An officer's notes for a draft** are kept only while the minutes are unposted, and never more than 30 days ([Drafting from notes](#drafting-from-notes)).
 - **Standards minutes** in the vault follow the vault retention rules.

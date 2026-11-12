@@ -113,6 +113,10 @@ export function DocumentsGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.documents} {...props} />;
 }
 
+export function MeetingsGlyph(props: NavGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.meetings} {...props} />;
+}
+
 export function BackworkGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.backwork} {...props} />;
 }

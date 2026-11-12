@@ -19,6 +19,7 @@ import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.inte
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import {
   ALUMNI_ROLE_NAME,
+  AI_PERMISSIONS,
   SystemPermissions,
   SystemRoleKeys,
 } from '#domain/constants/permissions';
@@ -1413,11 +1414,50 @@ describe('RbacService', () => {
     });
   });
 
+  describe('the AI permissions in the catalog', () => {
+    const original = process.env.AI_ENABLED;
+    afterEach(() => {
+      if (original === undefined) delete process.env.AI_ENABLED;
+      else process.env.AI_ENABLED = original;
+    });
+
+    it('are left out while the server AI switch is off', () => {
+      delete process.env.AI_ENABLED;
+      const permissions = service
+        .getPermissionsCatalog()
+        .map((row) => row.permission);
+      expect(permissions).not.toContain('ai:use');
+      expect(permissions).not.toContain('ai:act');
+      expect(permissions).toHaveLength(
+        Object.keys(SystemPermissions).length - 2,
+      );
+    });
+
+    it('are offered once it is on', () => {
+      process.env.AI_ENABLED = 'true';
+      const catalog = service.getPermissionsCatalog();
+      expect(catalog.map(({ key, permission }) => [key, permission])).toEqual(
+        Object.entries(SystemPermissions),
+      );
+      expect(catalog.find((row) => row.permission === 'ai:use')).toMatchObject({
+        key: 'AI_USE',
+        module: 'chapter',
+        label: 'Use AI',
+      });
+    });
+  });
+
   it('should return permissions catalog', () => {
+    // The catalog depends on the AI switch; pin it off whatever the shell has.
+    const aiEnabled = process.env.AI_ENABLED;
+    delete process.env.AI_ENABLED;
     const result = service.getPermissionsCatalog();
+    if (aiEnabled !== undefined) process.env.AI_ENABLED = aiEnabled;
 
     expect(result.map(({ key, permission }) => [key, permission])).toEqual(
-      Object.entries(SystemPermissions),
+      Object.entries(SystemPermissions).filter(
+        ([, permission]) => !AI_PERMISSIONS.has(permission),
+      ),
     );
     expect(
       result.some((r) => r.key === 'WILDCARD' && r.permission === '*'),

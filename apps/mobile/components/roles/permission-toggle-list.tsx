@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
 import { groupPermissionsByModule } from "@repo/validation";
 import { permissionRows } from "@repo/hooks/role-tiers";
+import { useIsPermissionHidden } from "@/lib/roles/hidden-permissions";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { Toggle } from "@/components/toggle";
@@ -46,9 +47,10 @@ export function PermissionToggleList({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const isHidden = useIsPermissionHidden();
   const groups = useMemo(
-    () => groupPermissionsByModule(permissionRows(extraPermissions)),
-    [extraPermissions],
+    () => groupPermissionsByModule(permissionRows(extraPermissions, isHidden)),
+    [extraPermissions, isHidden],
   );
 
   return (

@@ -3748,6 +3748,331 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
+## Rollback meeting minutes (20261112165010)
+
+* **Migration**: `20261112165010_meetings.sql`
+
+Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
+
+**Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping the tables loses every set of minutes, so do it only before any chapter has written some, and export them first otherwise. In a later migration:
+
+```sql
+drop table if exists public.meeting_templates;
+drop table if exists public.meetings;
+update public.role_tiers
+   set permissions = array_remove(permissions, 'meetings:record')
+ where 'meetings:record' = any(permissions);
+```
+
+Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
+
+## Rollback the AI run queue (20261112165000)
+
+* **Migration**: `20261112165000_ai_runs.sql`
+
+One new table, `ai_runs`, with four indexes, and three functions: `ai_run_ref_is_ids_only` (the table's ids-only check), `enqueue_ai_run` and `claim_ai_run`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops the worker from claiming and makes `/v1/ai/runs` answer 404 `ai.not_available`; runs left queued wait, untouched, until it is on again. Reverting the API code removes the worker and the routes the same way.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every run's status and outcome, which features read by reference, so remove the features that enqueue runs first:
+
+```sql
+drop function if exists public.claim_ai_run(text, timestamptz, integer, text[]);
+drop function if exists public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer);
+drop table if exists public.ai_runs;
+drop function if exists public.ai_run_ref_is_ids_only(jsonb);
+```
+
+## Rollback the AI usage ledger (20261112165020)
+
+* **Migration**: `20261112165020_ai_usage_ledger.sql`
+
+One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops every AI call, and with it every hold. Reverting the API code alone is not enough while `AI_ENABLED` is on: the gateway's seams would fall back to no caps at all, so turn AI off before reverting.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses the spend record every allowance, overage and reconciliation is computed from, so export it first if any chapter has used AI:
+
+```sql
+drop function if exists public.ai_chapter_usage(uuid, timestamptz, timestamptz);
+drop function if exists public.expire_ai_spend_holds(timestamptz);
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz);
+-- Since 20261112210000_meeting_recordings.sql the function takes a 19th argument (p_audio_seconds):
+drop function if exists public.settle_ai_spend(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, integer, integer, integer, bigint, boolean, integer, timestamptz, integer);
+drop function if exists public.reserve_ai_spend(uuid, uuid, uuid, text, text, text, text, text, bigint, bigint, bigint, bigint, timestamptz);
+drop table if exists public.ai_usage_events;
+drop function if exists public.ai_usage_charge(text, bigint, bigint);
+```
+
+## Rollback AI suggestions (20261112165030)
+
+* **Migration**: `20261112165030_ai_suggestions.sql`
+
+One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
+
+To remove it all, in a later forward migration. Since `20261112165040_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
+
+```sql
+drop trigger if exists events_drop_ai_suggestions on public.events;
+drop trigger if exists chat_channels_drop_ai_suggestions on public.chat_channels;
+drop function if exists public.ai_suggestions_drop_for_source();
+drop table if exists public.ai_suggestions;
+```
+
+## Rollback AI consent (20261112165040)
+
+* **Migration**: `20261112165040_ai_consent.sql`
+
+Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents` and clear the member's quotes from `ai_suggestions`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API makes every AI route answer 404 `ai.not_available` and stops every model call. Switches and answers stay as they were, and hold again when it is on. Do not roll back to an API whose consent seam allows every call while `AI_ENABLED` is on: that build sends member data to a model without the chapter's switch or the member's Yes.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's switches and every member's answer, so every chapter starts with AI off and every member is asked again. First redefine `anonymize_user` without its `user_ai_consents` delete (the `20261112150000_users_phone.sql` body, which keeps the `phone = null` line, plus the `ai_suggestions` quote update if that table stays; corrected 2026-11-12, it named the older `20261111235900` body, which would stop clearing phone numbers), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.user_ai_consents;
+drop table if exists public.chapter_ai_settings;
+```
+
+## Rollback AI search index (20261112165050)
+
+* **Migration**: `20261112165050_ai_corpus.sql`
+
+Two new tables, `corpus_sources` and `corpus_chunks`, four functions the API calls, and two triggers, one on `chapter_documents` and one on `meetings`. On apply it wrote one waiting `corpus_sources` row per existing document and per posted meeting. No existing row changed. Everything in both tables is derived: it can be deleted and rebuilt from the documents and minutes at the cost of embedding them again.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` in Infisical and redeploying the API stops the indexer and every retrieval. The triggers keep writing `corpus_sources` rows on document and minutes changes, which is harmless and is what lets indexing resume where it left off.
+
+**If a trigger is what is failing** (a document upload or a minutes post errors inside `corpus_follow_chapter_document` or `corpus_follow_meeting`), drop the triggers alone in a forward migration. Uploads and posts work again at once; the index stops following changes, so also clear it, or retrieval could return a passage of a document that has since been deleted:
+
+```sql
+drop trigger if exists trg_chapter_documents_corpus on public.chapter_documents;
+drop trigger if exists trg_meetings_corpus on public.meetings;
+delete from public.corpus_sources;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's indexer and retrieval call the functions by name). The `vector` extension stays: other work may come to use it, and dropping it is not needed to undo this.
+
+```sql
+drop trigger if exists trg_chapter_documents_corpus on public.chapter_documents;
+drop trigger if exists trg_meetings_corpus on public.meetings;
+drop function if exists public.corpus_follow_chapter_document();
+drop function if exists public.corpus_follow_meeting();
+drop function if exists public.match_corpus_chunks(uuid, uuid, text, text, text, integer);
+drop function if exists public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text);
+drop function if exists public.write_corpus_chunks(uuid, bigint, boolean, text, jsonb);
+drop function if exists public.claim_corpus_sources(text, timestamptz, integer);
+drop function if exists public.drop_corpus_source(uuid, text, uuid);
+drop function if exists public.note_corpus_source(uuid, text, uuid, uuid);
+drop table if exists public.corpus_chunks;
+drop table if exists public.corpus_sources;
+```
+
+## Rollback chat in the AI index (20261112170000)
+
+* **Migration**: `20261112170000_ai_corpus_chat.sql`
+
+One new table, `corpus_chat_windows`, new columns on `corpus_sources` and `corpus_chunks`, four triggers (three on `chat_messages`, one on `chapter_ai_settings`) and new functions; four corpus functions were redefined. No chat message, setting or consent row changed. Everything it wrote is derived and can be rebuilt by turning a chapter's chat switch off and on.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` stops indexing and retrieval; a president turning "chat as a source" off deletes that chapter's chat index at once. To take the schema out, run the block below, then re-run sections "Indexing" and "Retrieval" and the grants block of `20261112165050_ai_corpus.sql` to restore the earlier `claim_corpus_sources`, `write_corpus_chunks`, `finish_corpus_source` and `match_corpus_chunks`, and deploy an API without the chat source.
+
+```sql
+drop trigger if exists trg_chat_messages_corpus_insert on public.chat_messages;
+drop trigger if exists trg_chat_messages_corpus_update on public.chat_messages;
+drop trigger if exists trg_chat_messages_corpus_delete on public.chat_messages;
+drop trigger if exists trg_chapter_ai_settings_chat_corpus on public.chapter_ai_settings;
+delete from public.corpus_sources where source_type = 'chat_message';
+drop table if exists public.corpus_chat_windows;
+drop function if exists public.corpus_follow_chat_messages();
+drop function if exists public.corpus_follow_chat_switch();
+drop function if exists public.corpus_drop_chat_windows();
+drop function if exists public.note_chat_corpus_windows(uuid[], timestamptz[], uuid[], boolean);
+drop function if exists public.enrol_chat_corpus(uuid);
+drop function if exists public.requeue_chat_corpus_by_authors(uuid[], uuid);
+drop function if exists public.chat_corpus_chapters();
+drop function if exists public.chat_corpus_authors(uuid);
+drop function if exists public.read_chat_corpus_window(uuid, uuid);
+drop function if exists public.chat_corpus_window_channels(uuid, uuid[]);
+drop function if exists public.corpus_chat_day(timestamptz);
+drop function if exists public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text, integer, uuid[]);
+drop function if exists public.match_corpus_chunks(uuid, uuid, text, text, text, integer);
+alter table public.corpus_chunks
+  drop column if exists author_ids,
+  drop column if exists anchor_id,
+  drop column if exists anchor_at,
+  drop column if exists message_count;
+alter table public.corpus_sources
+  drop constraint if exists corpus_sources_left_out,
+  drop column if exists left_out_count,
+  drop column if exists left_out_author_ids;
+alter table public.corpus_sources drop constraint if exists corpus_sources_type_allowed;
+alter table public.corpus_sources add constraint corpus_sources_type_allowed
+  check (source_type in ('chapter_document', 'meeting_minutes'));
+```
+
+## Rollback minutes drafted from notes (20261112180000)
+
+* **Migration**: `20261112180000_meeting_drafts.sql`
+
+One new table, `meeting_drafts`, and two trigger functions: one fired when minutes are posted, one when an account is deleted. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every draft route answers 404 and nothing writes the table. Minutes already drafted are ordinary `meetings` rows and stay. Rows left in `meeting_drafts` hold officers' pasted notes: the daily sweep deletes each 30 days after it was asked for, with the switch on or off.
+
+To remove it all, in a later forward migration:
+
+```sql
+drop trigger if exists meetings_drop_draft_on_post on public.meetings;
+drop trigger if exists users_drop_meeting_drafts on public.users;
+drop function if exists public.meeting_drafts_drop_on_post();
+drop function if exists public.meeting_drafts_drop_for_deleted_user();
+drop table if exists public.meeting_drafts;
+```
+
+## Rollback suggested tasks from minutes (20261112190000)
+
+* **Migration**: `20261112190000_meeting_task_suggestions.sql`
+
+One nullable column and its unique index on `ai_suggestions`, and a delete trigger on `meetings`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset, or the chapter's meeting notes switch off, posting minutes proposes nothing. Suggestions already waiting expire after 14 days as any do, and tasks already accepted are ordinary `tasks` rows and stay.
+
+To remove it all, in a later forward migration (the API from this release must be rolled back first, because it writes the column):
+
+```sql
+drop trigger if exists meetings_drop_ai_suggestions on public.meetings;
+drop index if exists public.idx_ai_suggestions_source_dedupe;
+alter table public.ai_suggestions drop column if exists dedupe_key;
+```
+
+## Rollback this time last year (20261112230000)
+
+* **Migration**: `20261112230000_last_year_suggestions.sql`
+
+Two widened checks and one index on `ai_suggestions`, and a delete trigger on `tasks`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset, or the chapter's Ask switch off, no weekly check is queued and nothing is proposed. Suggestions already waiting expire after 14 days as any do, and events and tasks already made from one are ordinary rows and stay.
+
+To remove it all, in a later forward migration (the API from this release must be rolled back first, because it writes both new values). The deletes come first: the narrower checks refuse rows that hold `event` or `task`.
+
+```sql
+drop trigger if exists tasks_drop_ai_suggestions on public.tasks;
+drop index if exists public.idx_ai_suggestions_chapter_dedupe;
+delete from public.ai_suggestions where kind = 'event' or source_type = 'task';
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_kind_check;
+alter table public.ai_suggestions add constraint ai_suggestions_kind_check
+  check (kind in ('task'));
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_source_type_check;
+alter table public.ai_suggestions add constraint ai_suggestions_source_type_check
+  check (source_type in ('meeting', 'event', 'channel'));
+```
+
+## Rollback Ask diagnostics window (20261112200000)
+
+* **Migration**: `20261112200000_ai_ask_diagnostics.sql`
+
+Two new tables, `ai_diagnostics_windows` and `ai_diagnostics_exchanges`. No existing row or function changed. What they hold is sealed text that exists only to be deleted within 14 days, so nothing in them needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). To delete what was kept at once, the chapter's president turns saving off in Chapter settings **before** the setting is unset, because unsetting it hides the row. Then unsetting `AI_DIAGNOSTICS_CHAPTER_ID` in Infisical and redeploying the API stops anything more being kept and hides the setting. If the setting is already unset, nothing more is kept and the sweep still deletes what was kept at the window's end date; to delete it sooner, run:
+
+```sql
+delete from public.ai_diagnostics_windows;
+```
+
+The exchanges go with the window (a cascade).
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_diagnostics_windows` every 10 minutes):
+
+```sql
+drop table if exists public.ai_diagnostics_exchanges;
+drop table if exists public.ai_diagnostics_windows;
+```
+## Rollback meeting recording upload (20261112210000)
+
+* **Migration**: `20261112210000_meeting_recordings.sql`
+
+One new bucket (`meeting-audio`), one new table (`meeting_recordings`) with two trigger functions, an `audio_seconds` column on `ai_usage_events`, `assemblyai` in that table's provider check, `settle_ai_spend` and `ai_chapter_usage` recreated to carry the seconds, and a wider length check on `meeting_drafts.notes`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every `/v1/meetings/{id}/recording` route answers 404 and nothing is uploaded or transcribed. The two sweeps keep running with the switch off: one, every 30 minutes, deletes the audio of every ended recording and any file no row names, and ends an upload or a transcription left unfinished once it is six hours old, so audio caught mid-upload when the switch went off can sit in the bucket that long; the other deletes each `meeting_recordings` row 30 days after its upload. The ledger changes are additive, and the API from before this migration works against them unchanged.
+
+To remove the recording table and bucket, in a later forward migration. Empty the bucket first (the audio sweep does, or delete its objects through the Storage API; a bucket with objects cannot be deleted, and deleting `storage.objects` rows in SQL orphans the files):
+
+```sql
+drop trigger if exists meetings_drop_recording_on_post on public.meetings;
+drop trigger if exists users_drop_meeting_recordings on public.users;
+drop function if exists public.meeting_recordings_drop_on_post();
+drop function if exists public.meeting_recordings_drop_for_deleted_user();
+drop table if exists public.meeting_recordings;
+```
+
+Then remove the `meeting-audio` bucket through the Storage API or the dashboard, not in SQL: a raw `delete from storage.buckets` is refused by `protect_buckets_delete` (42501) and would abort the migration with it (corrected 2026-11-12; the block used to end with that delete).
+
+Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112165020_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
+
+
+## Rollback Report this (20261112220000)
+
+* **Migration**: `20261112220000_ai_reports.sql`
+
+One new table, `ai_reports`, with an insert trigger of its own, and one trigger on `users`. No existing row or function changed. What the table holds is sealed text that exists only to be deleted within 30 days, so nothing in it needs saving.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides every Report this button and refuses the route; the hourly sweep still deletes reports at their date. To delete every report at once, run:
+
+```sql
+delete from public.ai_reports;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped (the API's sweep reads `ai_reports` every hour):
+
+```sql
+drop trigger if exists users_drop_ai_reports on public.users;
+drop function if exists public.ai_reports_drop_for_deleted_user();
+drop table if exists public.ai_reports;
+drop function if exists public.ai_reports_refuse_deleted_users();
+```
+
+
+## Rollback Report this on a channel summary (20261112233000)
+
+* **Migration**: `20261112233000_ai_reports_chat_summary.sql`
+
+One check constraint on `ai_reports` allows a fourth subject, `chat_summary`. No column, table or function changed.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` hides Catch me up and its Report this, so no such report is written. Leaving the wider check in place harms nothing.
+
+**To narrow the check again**, in a later forward migration after the code revert has shipped. It can only be narrowed once no report names a summary, so delete those first (they are sealed text that exists only to be deleted within 30 days):
+
+```sql
+delete from public.ai_reports where subject_type = 'chat_summary';
+alter table public.ai_reports drop constraint if exists ai_reports_subject_type_allowed;
+alter table public.ai_reports
+  add constraint ai_reports_subject_type_allowed
+  check (subject_type in ('ask_answer', 'meeting_draft', 'ai_suggestion')) not valid;
+alter table public.ai_reports validate constraint ai_reports_subject_type_allowed;
+```
+
+## Rollback AI act suggestions (20261112240000)
+
+* **Migration**: `20261112240000_ai_act_suggestions.sql`
+
+Two checks on `ai_suggestions` widened: `kind` also allows `points` and `new_event`, and `source_type` also allows `request`. It writes nothing on apply.
+
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every `/v1/ai/act` route answers 404 and no row with the new values is written. Taking `ai:act` away from every role does the same for one chapter. A card that was waiting expires within a day and the hourly sweep clears it. Points, tasks and events made by confirming a card are ordinary rows and stay.
+
+To narrow the checks again, in a later forward migration after the code revert has shipped, delete the rows that use the new values first (they are unconfirmed proposals, or decided rows that hold no text):
+
+```sql
+delete from public.ai_suggestions
+ where kind in ('points', 'new_event') or source_type = 'request';
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_kind_check;
+alter table public.ai_suggestions
+  add constraint ai_suggestions_kind_check check (kind in ('task', 'event'));
+alter table public.ai_suggestions drop constraint if exists ai_suggestions_source_type_check;
+alter table public.ai_suggestions
+  add constraint ai_suggestions_source_type_check
+    check (source_type in ('meeting', 'event', 'channel', 'task'));
+```
+
 ## Rollback service entry awarded points (20261112153700)
 
 * **Migration**: `20261112153700_service_entry_awarded_points.sql`
@@ -3861,18 +4186,19 @@ One nullable column on `users` (`phone`) with its length check, and `anonymize_u
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects named columns and never reads or writes `phone`, so the stored numbers sit unused. That is safe to leave.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line (the `20261111235900_chat_important_seen.sql` body), or account deletion fails once the column is gone:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's phone number. First redefine `anonymize_user` without its `phone = null` line, or account deletion fails once the column is gone. Start from the newest body, not `20261111235900_chat_important_seen.sql`: once `20261112165040_ai_consent.sql` is applied the function also deletes `user_ai_consents` rows and clears `ai_suggestions` quotes, and those two statements must stay (corrected 2026-11-12):
 
 ```sql
--- Re-create anonymize_user from 20261111235900_chat_important_seen.sql, verbatim.
+-- Re-create anonymize_user from its newest body (20261112165040_ai_consent.sql once
+-- that is applied, else 20261111235900_chat_important_seen.sql), minus `phone = null`.
 alter table public.users
   drop constraint if exists users_phone_length,
   drop column if exists phone;
 ```
 
-## Rollback the Everyone role (20261112160000)
+## Rollback the Everyone role (20261112241000)
 
-- **Migration**: `20261112160000_everyone_role.sql`
+- **Migration**: `20261112241000_everyone_role.sql`
 
 Renames each chapter's seeded Member role to Everyone and switches off its mentions, renames any other role reading as `@everyone` to "<name> (role)" (its pending invites following it), and points pending invites for the Member role at "Everyone". No permission, tier, holder or id changes, so there is nothing to restore for access. The API from #4191 on refuses to rename Everyone, so a rollback is only needed together with an API rollback past #4191.
 

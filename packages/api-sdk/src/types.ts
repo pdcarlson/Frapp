@@ -2053,6 +2053,78 @@ export interface paths {
         patch: operations["EventTypeController_update_v1"];
         trace?: never;
     };
+    "/v1/meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
+        get: operations["MeetingController_list_v1"];
+        put?: never;
+        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The sections the chapter’s minutes show */
+        get: operations["MeetingController_getTemplate_v1"];
+        /** Choose the sections the chapter’s minutes show */
+        put: operations["MeetingController_setTemplate_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One meeting’s minutes */
+        get: operations["MeetingController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Delete minutes: someone who can delete minutes, or the author of an unposted draft */
+        delete: operations["MeetingController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Save minutes: their author, or someone who can edit any minutes. 409 `meeting.stale` when someone saved since */
+        patch: operations["MeetingController_update_v1"];
+        trace?: never;
+    };
+    "/v1/meetings/{id}/post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post minutes to the members their event invites, who are each told once */
+        post: operations["MeetingController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -2884,6 +2956,162 @@ export interface paths {
         head?: never;
         /** Check off or uncheck a subtask (assignee or admin, #4003) */
         patch: operations["TaskController_updateSubtask_v1"];
+        trace?: never;
+    };
+    "/v1/ai/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Suggested list: waiting suggestions the caller could accept, newest first */
+        get: operations["AiSuggestionController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them. */
+        post: operations["AiSuggestionController_accept_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a suggestion */
+        post: operations["AiSuggestionController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome. */
+        post: operations["AiSuggestionController_decide_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the AI sheet and the caller’s answer
+         * @description The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.
+         */
+        get: operations["AiConsentController_getConsent_v1"];
+        /**
+         * Answer the AI sheet
+         * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
+         */
+        put: operations["AiConsentController_answerConsent_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the chapter’s AI switches
+         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.
+         */
+        get: operations["AiChapterSettingsController_getSettings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Turn the chapter’s AI features on or off
+         * @description President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.
+         */
+        patch: operations["AiChapterSettingsController_updateSettings_v1"];
+        trace?: never;
+    };
+    "/v1/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's AI runs
+         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
+         */
+        get: operations["AiRunController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one AI run
+         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
+         */
+        get: operations["AiRunController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/pledge-classes": {
@@ -4133,6 +4361,211 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Ask needs to know before the first question
+         * @description Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.
+         */
+        get: operations["AskController_status_v1"];
+        put?: never;
+        /**
+         * Ask a question; the answer is streamed
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         */
+        post: operations["AskController_ask_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn on the beta diagnostics window (president only)
+         * @description The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.
+         */
+        post: operations["AskController_startDiagnostics_v1"];
+        /**
+         * Turn off the beta diagnostics window (president only)
+         * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
+         */
+        delete: operations["AskController_stopDiagnostics_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/act": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The actions the caller can ask for
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.
+         */
+        get: operations["ActController_status_v1"];
+        put?: never;
+        /**
+         * Ask for something to be done; the answer is a proposal
+         * @description Reads the request into one action and its details and answers with a proposal to confirm. Nothing is changed. Only the request text is shown to a model when the action is chosen. A new request replaces the caller’s earlier unconfirmed proposal.
+         */
+        post: operations["ActController_act_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/act/event-audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the event whose attendees a points proposal is for
+         * @description The follow-up to a `needs_event` answer. No model is called. Answers with the proposal, or 404 when the event is not one the caller can see in this chapter.
+         */
+        post: operations["ActController_eventAudience_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/catch-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Summarize a channel's new messages, or one thread
+         * @description Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.
+         */
+        post: operations["ChatCatchUpController_catchUp_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a report keeps, for the sheet to say before it is sent */
+        get: operations["AiReportController_policy_v1"];
+        put?: never;
+        /**
+         * Report something the AI made
+         * @description Keeps that one exchange, encrypted, for 30 days, for the Frapp team; then it is deleted. Without a sealing key on the server, only the reason and note are kept. A second report of the same thing by the same member keeps nothing new (`already_reported`).
+         */
+        post: operations["AiReportController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against */
+        get: operations["MeetingDraftController_get_v1"];
+        put?: never;
+        /** Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
+        post: operations["MeetingDraftController_request_v1"];
+        /** Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
+        delete: operations["MeetingDraftController_discard_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
+        post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the recording stands: none, uploading, transcribing, ready (with the transcript) or failed, and what this server takes */
+        get: operations["MeetingRecordingController_get_v1"];
+        put?: never;
+        /** Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored */
+        post: operations["MeetingRecordingController_start_v1"];
+        /** Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends */
+        delete: operations["MeetingRecordingController_remove_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/recording/uploaded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed */
+        post: operations["MeetingRecordingController_uploaded_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4575,7 +5008,7 @@ export interface components {
              * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
              * @enum {string}
              */
-            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "meetings" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
             /** @description The module's display name. */
             module_label: string;
             /** @description What the permission lets a role do. */
@@ -5765,6 +6198,153 @@ export interface components {
             point_value?: number;
             is_mandatory?: boolean;
         };
+        MeetingSummaryDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MeetingTemplateDto: {
+            /** @description The sections the chapter’s minutes show, in order. */
+            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+        };
+        MeetingVoteDto: {
+            for: number;
+            against: number;
+            abstain: number;
+        };
+        MeetingDecisionDto: {
+            text: string;
+            /** @description The count, when the meeting recorded one. Never a guess. */
+            vote: components["schemas"]["MeetingVoteDto"] | null;
+        };
+        MeetingActionItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description Only when someone was named for it.
+             */
+            owner_user_id: string | null;
+            /**
+             * Format: date
+             * @description A calendar day, YYYY-MM-DD.
+             */
+            due_date: string | null;
+        };
+        MeetingContentDto: {
+            summary: string;
+            announcements: string;
+            decisions: components["schemas"]["MeetingDecisionDto"][];
+            action_items: components["schemas"]["MeetingActionItemDto"][];
+            officer_reports: string;
+            old_business: string;
+            new_business: string;
+            discussion_log: string;
+        };
+        MeetingAttendeesDto: {
+            present: string[];
+            late: string[];
+            excused: string[];
+        };
+        MeetingDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            event_end_time: string | null;
+            content: components["schemas"]["MeetingContentDto"];
+            /** @description The chapter’s template, in order. */
+            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            /** @description The event’s check-ins; null when the event is gone. */
+            attendees: components["schemas"]["MeetingAttendeesDto"] | null;
+            /** Format: uuid */
+            updated_by: string | null;
+            /** Format: uuid */
+            posted_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            can_edit: boolean;
+            can_delete: boolean;
+        };
+        NewMeetingEventDto: {
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone. */
+            role_ids?: string[];
+        };
+        StartMeetingDto: {
+            /**
+             * @description The meeting type. `standards` is refused with a 400: a Standards meeting is never kept in Frapp.
+             * @enum {string}
+             */
+            meeting_type: "chapter" | "exec" | "committee" | "other" | "standards";
+            /** @description A name for an Other meeting. */
+            other_label?: string | null;
+            /**
+             * Format: uuid
+             * @description The meeting’s event. Send this or new_event.
+             */
+            event_id?: string;
+            /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
+            new_event?: components["schemas"]["NewMeetingEventDto"];
+        };
+        MeetingContentPatchDto: {
+            summary?: string;
+            announcements?: string;
+            decisions?: components["schemas"]["MeetingDecisionDto"][];
+            action_items?: components["schemas"]["MeetingActionItemDto"][];
+            officer_reports?: string;
+            old_business?: string;
+            new_business?: string;
+            discussion_log?: string;
+        };
+        UpdateMeetingDto: {
+            /**
+             * Format: date-time
+             * @description The `updated_at` the editor loaded. A save over newer minutes answers 409 `meeting.stale`.
+             */
+            expected_updated_at: string;
+            /** @enum {string} */
+            meeting_type?: "chapter" | "exec" | "committee" | "other" | "standards";
+            other_label?: string | null;
+            content?: components["schemas"]["MeetingContentPatchDto"];
+        };
+        PostMeetingDto: {
+            /** Format: date-time */
+            expected_updated_at: string;
+        };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
             token?: string;
@@ -6186,6 +6766,312 @@ export interface components {
         UpdateTaskSubtaskDto: {
             /** @description True to check it off, false to uncheck it. */
             done: boolean;
+        };
+        AiSuggestionSourceDto: {
+            /** @enum {string} */
+            type: "meeting" | "event" | "channel" | "task" | "request";
+            /** Format: uuid */
+            id: string;
+        };
+        TaskSuggestionDto: {
+            title: string;
+            description: string | null;
+            /**
+             * Format: uuid
+             * @description Null when no name or role was said for it: the screen shows "Who?".
+             */
+            assignee_id: string | null;
+            /** Format: date */
+            due_date: string | null;
+            /** Format: date-time */
+            due_at: string | null;
+            subtasks: string[];
+            /**
+             * Format: date
+             * @description Present on a "this time last year" suggestion: the day last year's task, its source, was due.
+             */
+            last_year_on?: string;
+        };
+        EventSuggestionDto: {
+            name: string;
+            /**
+             * Format: date-time
+             * @description When the source event started, last year.
+             */
+            last_year_at: string | null;
+            /** @description How many times it was held around then (a weekly series). */
+            times: number;
+        };
+        PointsSuggestionDto: {
+            /** @description Points for each member. Negative takes away. */
+            amount: number;
+            reason: string;
+            /** @description The members it is for. */
+            target_user_ids: string[];
+            /**
+             * Format: uuid
+             * @description The event whose attendance the members were read from, when it was.
+             */
+            event_id: string | null;
+            /** @description That event's name, for the card to say whose attendance it is. */
+            event_name: string | null;
+            /**
+             * Format: date-time
+             * @description When that event started.
+             */
+            event_start_time: string | null;
+        };
+        NewEventSuggestionDto: {
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Null leaves the chapter’s usual amount. */
+            point_value: number | null;
+            is_mandatory: boolean;
+        };
+        AiSuggestionDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "task" | "event" | "points" | "new_event";
+            /** @enum {string} */
+            status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
+            source: components["schemas"]["AiSuggestionSourceDto"];
+            /**
+             * Format: uuid
+             * @description Suggestions made together (one push) share it.
+             */
+            batch_id: string;
+            /** @description The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text). */
+            task: components["schemas"]["TaskSuggestionDto"] | null;
+            /** @description The suggested event, while it waits. Null for another kind, and once decided or expired. */
+            event?: components["schemas"]["EventSuggestionDto"] | null;
+            /** @description The proposed points change, while it waits. Null for another kind, and once decided or expired. */
+            points: components["schemas"]["PointsSuggestionDto"] | null;
+            /** @description The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired. */
+            new_event: components["schemas"]["NewEventSuggestionDto"] | null;
+            /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
+            quote: string | null;
+            /** @description Accepted with changes. */
+            edited: boolean;
+            /**
+             * Format: uuid
+             * @description What accepting made (a task id), once accepted.
+             */
+            result_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        AiSuggestionListDto: {
+            items: components["schemas"]["AiSuggestionDto"][];
+            /** @description More waiting suggestions exist than one list returns. */
+            has_more: boolean;
+        };
+        TaskSuggestionEditsDto: {
+            title?: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description Who the task is for. Required to accept when none was suggested.
+             */
+            assignee_id?: string | null;
+            /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
+            due_date?: string | null;
+            /**
+             * Format: date-time
+             * @description The moment it is due, or null for no time. A new `due_date` sent without it clears the time.
+             */
+            due_at?: string | null;
+            subtasks?: string[];
+        };
+        PointsSuggestionEditsDto: {
+            /** @description Points for each member. Negative takes points away. Not 0. */
+            amount?: number;
+            reason?: string;
+            /** @description The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted. */
+            target_user_ids?: string[];
+        };
+        EventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this suggestion. It must be in the chapter and made by the caller.
+             */
+            event_id: string;
+        };
+        AcceptAiSuggestionDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
+        };
+        AiSuggestionOutcomeDto: {
+            /** @description A points change: how many members’ points were changed. */
+            adjusted?: number;
+            /** @description A points change: how many members were left out (no longer in the chapter). */
+            skipped?: number;
+        };
+        AiSuggestionResultDto: {
+            /** @enum {string} */
+            kind: "task" | "event" | "points" | "new_event";
+            /**
+             * Format: uuid
+             * @description What was made (the first one, when it made several).
+             */
+            id: string;
+            /** @description Counts, when accepting made more than one change. */
+            outcome?: components["schemas"]["AiSuggestionOutcomeDto"];
+        };
+        AiSuggestionDecisionDto: {
+            suggestion: components["schemas"]["AiSuggestionDto"];
+            /** @description What accepting made. Null for a dismissal. */
+            result: components["schemas"]["AiSuggestionResultDto"] | null;
+        };
+        DismissAiSuggestionDto: {
+            /**
+             * @description `already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.
+             * @enum {string}
+             */
+            reason?: "already_doing";
+        };
+        AiSuggestionDecideItemDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "accept" | "dismiss";
+        };
+        DecideAiSuggestionsDto: {
+            items: components["schemas"]["AiSuggestionDecideItemDto"][];
+        };
+        AiSuggestionDecideOutcomeDto: {
+            /** Format: uuid */
+            id: string;
+            ok: boolean;
+            decision?: components["schemas"]["AiSuggestionDecisionDto"];
+            /** @description The HTTP status the single-item route would have answered. */
+            status?: number;
+            /** @description Why it was refused, e.g. ai.suggestion.decided. */
+            code?: string;
+            message?: string;
+        };
+        AiSuggestionDecideResponseDto: {
+            outcomes: components["schemas"]["AiSuggestionDecideOutcomeDto"][];
+        };
+        AiConsentSheetProviderDto: {
+            /** @enum {string} */
+            key: "anthropic" | "google" | "assemblyai";
+            /**
+             * @description The company's own name, shown as is.
+             * @example Anthropic
+             */
+            name: string;
+        };
+        AiConsentSheetDataKindDto: {
+            /** @enum {string} */
+            key: "questions" | "chapter_records" | "roster" | "channel_messages" | "meetings";
+            /**
+             * @description What is sent, in words a client shows as is.
+             * @example Questions you ask
+             */
+            label: string;
+        };
+        AiConsentSheetDto: {
+            /**
+             * @description The sheet version. Send it back with the answer; a new version asks everyone again.
+             * @example 1
+             */
+            version: number;
+            /** @description Every provider member data is sent to. */
+            providers: components["schemas"]["AiConsentSheetProviderDto"][];
+            /** @description Every kind of data that is sent. */
+            data: components["schemas"]["AiConsentSheetDataKindDto"][];
+        };
+        AiConsentStateDto: {
+            sheet: components["schemas"]["AiConsentSheetDto"];
+            /**
+             * @description The answer on the current version. Null when not answered, which counts as No.
+             * @enum {string|null}
+             */
+            answer: "yes" | "no" | null;
+            /** Format: date-time */
+            answered_at: string | null;
+            /** @description True when the caller answered an earlier version but not this one, so the sheet changed since. */
+            sheet_changed: boolean;
+        };
+        AnswerAiConsentDto: {
+            /**
+             * @description The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.
+             * @example 1
+             */
+            sheet_version: number;
+            /** @enum {string} */
+            answer: "yes" | "no";
+        };
+        AiChapterSettingsDto: {
+            /** @description Ask Frapp is on for the chapter. */
+            ask: boolean;
+            /** @description Drafting minutes, and tasks suggested from them, is on. */
+            meeting_notes: boolean;
+            /** @description Messages in chapter channels, from members who said yes, are a source. */
+            chat_source: boolean;
+            /**
+             * Format: date-time
+             * @description When a switch last changed. Null when none ever has.
+             */
+            updated_at: string | null;
+            /** @description Whether the caller may change the switches: they hold the chapter's President role. A hint for drawing the page; PATCH checks again. */
+            can_change: boolean;
+        };
+        UpdateAiChapterSettingsDto: {
+            ask?: boolean;
+            meeting_notes?: boolean;
+            chat_source?: boolean;
+        };
+        AiRunDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The run kind, `snake_case`.
+             * @example minutes_draft
+             */
+            kind: string;
+            /**
+             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
+             * @example Drafting minutes
+             */
+            label: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Tries so far, the one in progress included. */
+            attempt_count: number;
+            max_attempts: number;
+            /** @enum {string|null} */
+            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
+            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
+            failure_message: string | null;
+            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
+            result_ref: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -7136,6 +8022,335 @@ export interface components {
              * @enum {string}
              */
             status: "posted" | "duplicate";
+        };
+        AskDiagnosticsDto: {
+            /** @description Whether this chapter is the one the beta diagnostics window may be turned on for. */
+            offered: boolean;
+            /** @description Whether the caller may turn it on or off: the chapter’s president. */
+            can_change: boolean;
+            /**
+             * Format: date-time
+             * @description When the open window ends, or null when nothing is being kept.
+             */
+            ends_at: string | null;
+        };
+        AskStatusDto: {
+            /**
+             * Format: date-time
+             * @description While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept.
+             */
+            saved_until: string | null;
+            diagnostics: components["schemas"]["AskDiagnosticsDto"];
+        };
+        AskRequestDto: {
+            /**
+             * @description The question, in the member’s own words.
+             * @example What do the bylaws say about quorum?
+             */
+            question: string;
+            /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
+            saved_notice_shown?: boolean;
+        };
+        ActStatusDto: {
+            /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
+            actions: string[];
+        };
+        ActRequestDto: {
+            /**
+             * @description What to do, in the member’s own words.
+             * @example Give 5 points to everyone who came to chapter tonight
+             */
+            request: string;
+        };
+        ActNoteDto: {
+            /** @description What the card says beside the proposal: `matched_name`, `unmatched_name`, `ambiguous_name`, `role_members`, `self_left_out`. Open. */
+            type: string;
+            /** @description The name as the member typed it. */
+            name?: string;
+            /** @description The members a name was matched to, or could be. */
+            user_ids?: string[];
+            count?: number;
+        };
+        ActEventChoiceDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        ActEventChoiceSetDto: {
+            amount: number;
+            /** @description Empty when no reason was said. */
+            reason: string;
+            events: components["schemas"]["ActEventChoiceDto"][];
+        };
+        ActResponseDto: {
+            /** @description `proposed` (a card waits in `suggestion`), `needs_event`, `unclear`, `no_action`, `refused` or `unavailable`. Open. */
+            status: string;
+            /** @description The action the request was read as, when one was. */
+            action: string | null;
+            /** @description The proposal, when `proposed`. Nothing has changed: confirm it with `POST /v1/ai/suggestions/{id}/accept`, or cancel it with `.../dismiss`. */
+            suggestion: components["schemas"]["AiSuggestionDto"] | null;
+            notes: components["schemas"]["ActNoteDto"][];
+            /** @description When `needs_event`: the events to pick from. Send the pick to `POST /v1/ai/act/event-audience`. */
+            event_choice: components["schemas"]["ActEventChoiceSetDto"] | null;
+            /** @description When `unclear`: what was not said. Open. */
+            missing: string | null;
+            /** @description When `unavailable`: why. Open. */
+            reason: string | null;
+            /** @description When `no_action`: what the caller could ask for instead. */
+            available_actions: string[];
+        };
+        ActEventAudienceDto: {
+            /**
+             * Format: uuid
+             * @description The event whose attendees the points are for.
+             */
+            event_id: string;
+            /** @description As the `needs_event` answer carried it. */
+            amount: number;
+            /** @description As the `needs_event` answer carried it. Empty names the event instead. */
+            reason?: string;
+        };
+        ChatCatchUpUnreadDto: {
+            /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
+            count: number;
+            /**
+             * Format: date-time
+             * @description When the member opened the channel.
+             */
+            as_of: string;
+        };
+        ChatCatchUpRequestDto: {
+            /**
+             * Format: uuid
+             * @description The channel to summarize in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Summarize one thread: its first message and every reply. Exactly one of `thread_root_id`, `since` and `unread` is given.
+             */
+            thread_root_id?: string;
+            /**
+             * Format: date-time
+             * @description Summarize the channel's messages from this moment on. No further back than 30 days.
+             */
+            since?: string;
+            /** @description Summarize what was new when the member opened the channel. Opening a channel marks it read, so the client says how many messages were new and when it opened; the server finds where that stretch starts. */
+            unread?: components["schemas"]["ChatCatchUpUnreadDto"];
+        };
+        ChatCatchUpPointDto: {
+            /**
+             * @description What the point is. One of for_you, decision, date, topic today; a client shows a kind it does not know with the last group.
+             * @example decision
+             */
+            kind: string;
+            /** @description One sentence, plain text. */
+            text: string;
+            /**
+             * Format: uuid
+             * @description The message the point rests on, which the point opens.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when that message is a thread reply: the thread to open.
+             */
+            thread_root_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who wrote the message.
+             */
+            author_id: string | null;
+            /** Format: date-time */
+            sent_at: string;
+            /** @description The words of that message the point rests on. The server found them in the message, word for word. */
+            quote: string;
+        };
+        ChatCatchUpDto: {
+            /**
+             * @description How the request ended: summarized, nothing_new, too_little, not_found, refused, unavailable. `summarized` carries points; every other status carries none.
+             * @example summarized
+             */
+            status: string;
+            /** @description Why nothing was attempted, when `status` is `unavailable`: consent_required, chapter_off, chat_off, chapter_limit, member_limit, not_available. */
+            reason: string | null;
+            points: components["schemas"]["ChatCatchUpPointDto"][];
+            /** @description Messages the summary read. */
+            messages_read: number;
+            /** @description Messages in the stretch the summary could have read. More than `messages_read` when the stretch was longer than one summary reads; the newest were read. */
+            messages_total: number;
+            /** @description Messages left out because their author has not agreed to AI reading their messages. A count, never who. */
+            left_out_messages: number;
+            /** @description Points dropped because their quote was not in the message they named. */
+            unverified_points: number;
+            /** Format: date-time */
+            covers_from: string | null;
+            /** Format: date-time */
+            covers_to: string | null;
+            /**
+             * Format: uuid
+             * @description This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary.
+             */
+            summary_id?: string | null;
+            /** @description The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text. */
+            report_receipt?: string | null;
+        };
+        AiReportPolicyDto: {
+            /** @description Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so. */
+            keeps_text: boolean;
+            /**
+             * @description How many days a report is kept.
+             * @example 30
+             */
+            retention_days: number;
+        };
+        CreateAiReportDto: {
+            /**
+             * @description What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary.
+             * @enum {string}
+             */
+            subject: "ask_answer" | "meeting_draft" | "ai_suggestion" | "chat_summary";
+            /**
+             * Format: uuid
+             * @description The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`.
+             */
+            subject_id: string;
+            /** @enum {string} */
+            reason: "wrong" | "harmful" | "private" | "other";
+            /** @description The member’s own words, if they add any. */
+            note?: string;
+            /** @description An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients. */
+            receipt?: string;
+        };
+        AiReportOutcomeDto: {
+            /** @description This member had already reported this; nothing new was kept. */
+            already_reported: boolean;
+            /** @description Whether the text itself was kept, sealed, or only the reason and note. */
+            kept_text: boolean;
+            /**
+             * Format: date-time
+             * @description When what was kept is deleted.
+             */
+            expires_at: string;
+        };
+        MeetingDraftSourceDto: {
+            /** @enum {string} */
+            kind: "decision" | "action_item";
+            /** @description The drafted text, as it went into the minutes. */
+            text: string;
+            /** @description The line of the notes it came from, word for word. */
+            quote: string;
+        };
+        MeetingDraftReviewDto: {
+            /** @description What the notes leave unsaid, for the officer to fill in. */
+            gaps: string[];
+            sources: components["schemas"]["MeetingDraftSourceDto"][];
+            /** @description Drafted lines left out because the line they named is not in the notes. */
+            left_out: number;
+        };
+        MeetingDraftDto: {
+            /** @enum {string} */
+            status: "none" | "drafting" | "ready" | "applied" | "failed";
+            /** @description The notes the draft was asked from, or "". */
+            notes: string;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "refused" | "not_permitted" | "stopped" | "failed" | null;
+            failure_message: string | null;
+            /** @description The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it. */
+            content: components["schemas"]["MeetingContentPatchDto"] | null;
+            review: components["schemas"]["MeetingDraftReviewDto"];
+            /** Format: date-time */
+            requested_at: string | null;
+            /**
+             * @description Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+        };
+        RequestMeetingDraftDto: {
+            /** @description The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft. */
+            notes: string;
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version.
+             */
+            expected_updated_at: string;
+            /**
+             * @description The meeting’s calendar day where the officer is, so "by Friday" in the notes becomes the right date.
+             * @example 2026-11-09
+             */
+            meeting_date?: string;
+        };
+        UseMeetingDraftDto: {
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
+             */
+            expected_updated_at: string;
+        };
+        MeetingRecordingUploadDto: {
+            /** Format: uuid */
+            upload_id: string;
+            /** @description The private bucket the file goes to. */
+            bucket: string;
+            /** @description Where in the bucket the file goes. */
+            path: string;
+            /** @description Signs this one resumable upload (`x-signature`). Good for two hours. */
+            token: string;
+            /** @description The type to store the file under. */
+            content_type: string;
+        };
+        MeetingRecordingDto: {
+            /** @enum {string} */
+            status: "none" | "uploading" | "transcribing" | "ready" | "failed";
+            /** Format: uuid */
+            upload_id: string | null;
+            file_name: string | null;
+            size_bytes: number | null;
+            /** @description Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`. */
+            duration_seconds: number | null;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "not_permitted" | "upload_incomplete" | "unreadable" | "too_long" | "no_speech" | "failed" | null;
+            failure_message: string | null;
+            /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
+            transcript: string | null;
+            speaker_count: number | null;
+            /** Format: date-time */
+            uploaded_at: string | null;
+            /** @description False when this server has no transcription provider set up: the upload step is not offered. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
+            /** @description Only in the answer to starting an upload. */
+            upload: components["schemas"]["MeetingRecordingUploadDto"] | null;
+        };
+        StartMeetingRecordingDto: {
+            /** @description The file’s own name, shown back to the officer. */
+            file_name: string;
+            /** @description The browser’s name for the file’s type. May be empty; the file’s extension decides then. */
+            mime_type?: string | null;
+            /** @description The file’s size in bytes. */
+            size_bytes: number;
+            /** @description The recording’s length in seconds, as the browser read it. */
+            duration_seconds: number;
+            /** @description The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused. */
+            notice_confirmed: boolean;
+        };
+        ConfirmMeetingRecordingDto: {
+            /**
+             * Format: uuid
+             * @description The upload that finished.
+             */
+            upload_id: string;
         };
     };
     responses: never;
@@ -11915,6 +13130,255 @@ export interface operations {
             };
         };
     };
+    MeetingController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only the minutes of this event. */
+                event_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingSummaryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_setTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingTemplateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AttendanceController_checkIn_v1: {
         parameters: {
             query?: never;
@@ -13726,6 +15190,377 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TaskSubtaskDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only suggestions drawn from this source. Send with `source_id`. */
+                source_type?: "meeting" | "event" | "channel" | "task" | "request";
+                source_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_accept_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptAiSuggestionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissAiSuggestionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideAiSuggestionsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecideResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_getConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_answerConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerAiConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_getSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAiChapterSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.settings.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only runs of this kind (`minutes_draft`). */
+                kind?: string;
+                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"][];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"];
+                };
+            };
+            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -16397,6 +18232,703 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskStatusDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_ask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequestDto"];
+            };
+        };
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_startDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A window is already on (`ai.ask.diagnostics.already_on`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_stopDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActStatusDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_act_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_eventAudience_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActEventAudienceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the event was not found for this caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatCatchUpController_catchUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCatchUpRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatCatchUpDto"];
+                };
+            };
+            /** @description Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_policy_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportPolicyDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAiReportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportOutcomeDto"];
+                };
+            };
+            /** @description A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestMeetingDraftDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_discard_v1: {
+        parameters: {
+            query?: {
+                keep_notes?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_use_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseMeetingDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_remove_v1: {
+        parameters: {
+            query?: {
+                upload_id?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_uploaded_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
             };
             /** @description Error */
             default: {

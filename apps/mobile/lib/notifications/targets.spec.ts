@@ -37,6 +37,31 @@ describe("resolveNotificationTarget", () => {
     });
   });
 
+  it("opens the suggested tasks list for a new batch (#4313)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({
+          screen: "ai_suggestions",
+          batchId: "b1",
+          sourceType: "meeting",
+          sourceId: "m1",
+        }),
+      ),
+    ).toEqual({ pathname: "/suggested-tasks" });
+  });
+
+  it("opens the minutes, not the event, for a minutes-posted push (#4312)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "events", eventId: "e1", meetingId: "m1" }),
+      ),
+    ).toEqual({ pathname: "/minutes-details", params: { id: "m1" } });
+    // Only an events target names minutes this way.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", meetingId: "m1" })),
+    ).toEqual({ pathname: "/tasks" });
+  });
+
   it("sends points to the task board, which absorbed it", () => {
     // C3 folded points into s08; there is no points route to send anyone to.
     expect(resolveNotificationTarget(payload({ screen: "points" }))).toEqual({

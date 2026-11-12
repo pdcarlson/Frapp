@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Image as ImageIcon, MoreHorizontal } from "lucide-react";
+import {
+  ChevronLeft,
+  Image as ImageIcon,
+  ListCollapse,
+  MoreHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -36,6 +41,7 @@ import {
 } from "./chat-background-picker";
 import {
   CHAT_BACKGROUND_LABELS,
+  CHAT_CATCH_UP_COPY,
   type ChatBackgroundKey,
 } from "@repo/validation";
 import { channelDensityDetail } from "@repo/chat-core/density";
@@ -94,6 +100,9 @@ import {
  * the open channel in the member's own sidebar and closes the menu. It is here
  * as well as on the rail row because the row's control appears only on hover,
  * which a touch screen never has.
+ *
+ * **Catch me up** (#3946) is the other: it opens the summary panel beside the
+ * channel (`catch-up-panel.tsx`) and closes the menu.
  */
 
 type View =
@@ -150,6 +159,12 @@ type ChannelMenuProps = {
     name: string;
     onHide: () => void;
   };
+  /**
+   * Catch me up (#3946): opens the summary panel beside the channel. Passed
+   * only where summaries are on and the channel is one a summary may read;
+   * absent, no row.
+   */
+  catchUp?: { onStart: () => void };
   /** Pin or unpin the open channel in the member's sidebar. Absent, no row. */
   pinToTop?: {
     pinned: boolean;
@@ -228,6 +243,7 @@ export function ChannelMenu({
   onChangeNotificationLevel,
   hideConversation,
   pinToTop,
+  catchUp,
   displayLock,
   background,
 }: ChannelMenuProps) {
@@ -389,6 +405,29 @@ export function ChannelMenu({
       >
         {view === "menu" ? (
           <ul className="divide-y divide-border">
+            {/*
+              First, because it is about what the member just walked into,
+              and like Pin to top it opens no view here: the summary is a
+              panel beside the channel, so the menu gets out of its way.
+            */}
+            {catchUp ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    close();
+                    catchUp.onStart();
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card-hover"
+                >
+                  <ListCollapse
+                    className="h-5 w-5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  {CHAT_CATCH_UP_COPY.name}
+                </button>
+              </li>
+            ) : null}
             {rows.map(({ view: target, label, Glyph, count, detail }) => (
               <li key={target}>
                 <button

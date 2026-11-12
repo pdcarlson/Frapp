@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import {
   type OrgDues,
   useCurrentChapter,
+  aiAvailableFrom,
+  useAiConsent,
   useMyPermissions,
   useOrgConfig,
   usePatchOrgConfig,
@@ -55,6 +57,7 @@ import {
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
+import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
   PointsRules,
@@ -73,6 +76,7 @@ import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
+import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsClassesTab } from "@/components/settings/settings-classes-tab";
 import {
@@ -123,6 +127,9 @@ function SettingsPageContent() {
     enabled: !!activeChapterId,
   });
   const isModuleEnabled = useChapterModuleGate();
+  // Whether this server has AI: the AI row shows only on `true` (#4308).
+  const aiConsent = useAiConsent();
+  const aiAvailable = aiAvailableFrom(aiConsent);
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
   const uploadLogo = useUploadChapterLogo();
@@ -287,6 +294,15 @@ function SettingsPageContent() {
       ) : (
         <SettingsBodySkeleton />
       );
+  } else if (aiConsent.isPending && aiConsent.fetchStatus === "fetching") {
+    /*
+      The same hold for the AI row (#4308): drawn without it and then
+      inserted, it pushed every row below Privacy down and sent `?tab=ai` to
+      the first tab. The read runs beside the permissions read, so the wait
+      is rarely longer. A failed or paused read stops waiting and leaves the
+      row out, as with AI off.
+    */
+    stateBanner = <SettingsBodySkeleton />;
   }
 
   if (stateBanner) {
@@ -517,6 +533,9 @@ function SettingsPageContent() {
         </div>,
       );
     }
+    if (key === "meetings") {
+      return <MeetingSectionsRules canManage={canManage} />;
+    }
     return undefined;
   }
 
@@ -541,8 +560,11 @@ function SettingsPageContent() {
     if (enabledModules) return isStoredModuleEnabled(enabledModules, key);
     return isModuleEnabled ? isModuleEnabled(key) : true;
   };
-  const visibleTabs = SETTINGS_TABS.filter((tab) =>
-    isSettingsTabVisible(tab.value, permissions, isModuleEnabled),
+  const visibleTabs = SETTINGS_TABS.filter(
+    (tab) =>
+      isSettingsTabVisible(tab.value, permissions, isModuleEnabled) &&
+      // The AI row waits for the server to say it has AI (#4308).
+      (tab.value !== "ai" || aiAvailable === true),
   ).map((tab) => {
     if (tab.value === "classes") return { ...tab, label: classTerm };
     if (isModuleSettingsTab(tab.value)) {
@@ -750,6 +772,9 @@ function SettingsPageContent() {
               />
             </TabsContent>
           ))}
+          <TabsContent value="ai" className="mt-0">
+            <SettingsAiTab />
+          </TabsContent>
           <TabsContent value="privacy" className="mt-0">
             {renderConfigGated(
               <SettingsPrivacyTab
