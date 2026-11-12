@@ -4,7 +4,6 @@ import * as React from "react";
 import { Upload } from "lucide-react";
 import { formatBytes } from "@repo/formatting";
 import { DocumentsGlyph } from "@/components/layout/nav-glyphs";
-import { DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { FOCUS_RING_OFFSET_WITHIN } from "@/components/ui/focus";
 import { Label } from "@/components/ui/label";
 import { dashboardToolbarHeightClassName } from "@/components/shared/table-controls";
@@ -28,11 +27,11 @@ import { cn } from "@/lib/utils";
  * comment dropped that clause from the quote, which made the board look vaguer
  * about the ladder than it is.
  *
- * The sheet chrome's one consumer now is `/backwork`; `/documents` moved to a
- * panel (2026-11-06) and borrows only the fields and the file well, which is
- * why those stay a module rather than a recipe copied into both. They previously carried two spellings
- * of the same dialog, and the pair had already drifted — one capped its body
- * height and scrolled, the other did not.
+ * The sheet chrome itself (container, title row, body, footer) is gone:
+ * `/documents` (2026-11-06) and then `/backwork` (2026-11-12, #4593) moved to
+ * a `Panel` docked in place of their page, which carries its own. Both still
+ * borrow the fields, the file well and the footer buttons' size from here,
+ * which is why those stay a module rather than a recipe copied into both.
  *
  * **What this is not.** It is chrome only, in the sense the board's own label
  * says. The signed-URL request, the wire field names and the storage path are
@@ -74,113 +73,6 @@ export const UPLOAD_FIELD_CLASS = dashboardToolbarHeightClassName;
  */
 export const UPLOAD_SHEET_BUTTON_CLASS =
   "h-9 px-4 text-label pointer-coarse:h-11";
-
-/**
- * The sheet container.
- *
- * `p-0` and `gap-0`: `DialogContent`'s own `p-6`/`gap-4` is the page-dialog
- * rhythm, and the board gives the sheet three bands with different insets — a
- * 56px title row at `0 12px 0 20px`, a body at `4px 20px 20px`, and a footer
- * that sits at the body's inset. The bands carry their own padding below, so
- * the container carries none.
- *
- * The 56px title row is also what puts `DialogContent`'s built-in close button
- * where the board draws it: that control is a 26px box (a 16px glyph, `p-1`
- * and a 1px border) pinned at `top-4`, so its centre sits at 29px, a pixel
- * under the 56px row's centre.
- *
- * **`aria-describedby={undefined}` is load-bearing, not a tidy-up.** The board
- * deletes the instructional paragraph, so there is no `DialogDescription` to
- * point at, and Radix warns on every open for a `Content` that references a
- * description id nothing renders. Every constraint that paragraph used to
- * carry is now field help inside `UploadFileField`, where it describes the
- * control it constrains instead of the dialog as a whole.
- */
-export const UploadSheetContent = React.forwardRef<
-  React.ElementRef<typeof DialogContent>,
-  React.ComponentPropsWithoutRef<typeof DialogContent>
->(({ className, ...props }, ref) => (
-  <DialogContent
-    ref={ref}
-    aria-describedby={undefined}
-    className={cn(
-      "max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-[520px]",
-      className,
-    )}
-    {...props}
-  />
-));
-UploadSheetContent.displayName = "UploadSheetContent";
-
-/**
- * The 56px title row. 18/700 is the board's "Sheet title" role from its token
- * sheet (`3a`), one step under the 28/700 page title and one over the top
- * bar's 15/700.
- *
- * `pr-14` clears the close button rather than letting a long title run under
- * it.
- */
-export function UploadSheetTitle({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className="flex h-14 shrink-0 items-center pl-5 pr-14">
-      <DialogTitle className={cn("truncate text-lg font-bold", className)}>
-        {children}
-      </DialogTitle>
-    </div>
-  );
-}
-
-/**
- * The sheet body: the `<form>` itself, so the fields inside it submit.
- *
- * Scrolls rather than growing past the viewport. `/backwork` capped its dialog
- * at `max-h-[80vh]` and `/documents` did not, which is the drift a shared
- * module exists to end — and the cap belongs on the scrolling band, not on the
- * container, or the footer scrolls away with the fields.
- */
-export function UploadSheetBody({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"form">) {
-  return (
-    <form
-      className={cn(
-        "flex min-h-0 flex-col gap-3 overflow-y-auto px-5 pb-5 pt-1",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
-/**
- * The footer. Sits at the body's inset, right-aligned, and is outside the
- * scrolling band so Cancel and Upload stay reachable on a long form.
- *
- * Not `DialogFooter`: that one stacks `flex-col-reverse` below `sm`, which put
- * the primary action at the top of a phone-width sheet. The board draws one
- * row at every width.
- */
-export function UploadSheetFooter({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
-  return (
-    <div
-      className={cn(
-        "flex shrink-0 flex-wrap items-center justify-end gap-2 px-5 pb-5",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
 
 /**
  * Label and control. The plain field of the sheet.
