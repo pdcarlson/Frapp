@@ -61,6 +61,8 @@ type PanelDock = {
   onClose: () => void;
   backLabel: string;
   titleId: string;
+  /** The id `PanelDescription` takes, read as the panel's description. */
+  descriptionId: string;
 };
 
 const PanelDockContext = React.createContext<PanelDock | null>(null);
@@ -90,6 +92,7 @@ export function Panel({
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
+  const descriptionId = React.useId();
   useOpenerTracking(docked);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
@@ -100,8 +103,13 @@ export function Panel({
   );
 
   const dock = React.useMemo<PanelDock>(
-    () => ({ onClose: () => onOpenChange(false), backLabel, titleId }),
-    [onOpenChange, backLabel, titleId],
+    () => ({
+      onClose: () => onOpenChange(false),
+      backLabel,
+      titleId,
+      descriptionId,
+    }),
+    [onOpenChange, backLabel, titleId, descriptionId],
   );
 
   // Docked with no tool column to land in (a page outside the shell, a
@@ -199,6 +207,7 @@ function DockedPanel({
   React.useEffect(() => {
     closeFocus.current = onCloseAutoFocus;
   }, [onCloseAutoFocus]);
+  const descriptionId = dock.descriptionId;
   React.useEffect(() => {
     const box = ref.current;
     const column = box?.parentElement;
@@ -211,6 +220,13 @@ function DockedPanel({
         child !== box && child instanceof HTMLElement && !child.inert,
     );
     for (const child of covered) child.inert = true;
+    // A `PanelDescription` is the panel's description, as a sheet's is its
+    // dialog's, so a screen reader reads it with the title when focus lands.
+    // Set before the focus, and only when one is drawn, so the id never
+    // points at nothing.
+    if (box.querySelector(`[id="${descriptionId}"]`)) {
+      box.setAttribute("aria-describedby", descriptionId);
+    }
     box.focus({ preventScroll: true });
 
     // Focus that was in the panel and fell to `<body>` comes back to it. A
@@ -258,7 +274,7 @@ function DockedPanel({
       if (event.defaultPrevented) return;
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
     };
-  }, []);
+  }, [descriptionId]);
 
   return (
     <section
@@ -460,7 +476,8 @@ export function PanelTitle({
 /**
  * A line under the title that says what the panel is for. As a sheet it is
  * the dialog's description; docked there is no dialog, so it is a plain
- * paragraph in the same style.
+ * paragraph in the same style, which the docked panel names as its own
+ * description.
  */
 export function PanelDescription({
   className,
@@ -472,7 +489,10 @@ export function PanelDescription({
   const dock = React.useContext(PanelDockContext);
   if (dock) {
     return (
-      <p className={cn("text-sm text-muted-foreground", className)}>
+      <p
+        id={dock.descriptionId}
+        className={cn("text-sm text-muted-foreground", className)}
+      >
         {children}
       </p>
     );

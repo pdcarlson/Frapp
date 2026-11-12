@@ -465,6 +465,11 @@ describe("ChatAdminPage — the create panel docked (#4593)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     const region = screen.getByRole("region", { name: "Create a channel" });
     expect(region.parentElement).toHaveAttribute("data-tool-column");
+    // The line under the title is the panel's description, as it was the
+    // sheet's.
+    expect(region).toHaveAccessibleDescription(
+      /Choose who can see the channel/,
+    );
     fireEvent.change(within(region).getByLabelText("Name"), {
       target: { value: "rush-planning" },
     });
