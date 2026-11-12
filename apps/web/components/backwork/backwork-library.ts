@@ -132,7 +132,7 @@ export const NO_FILTERS: LibraryFilters = {
 };
 
 /** Shorthand people type for words the library spells out. */
-export const BACKWORK_SEARCH_ALIASES: Readonly<Record<string, string>> = {
+const BACKWORK_SEARCH_ALIASES: Readonly<Record<string, string>> = {
   hw: "homework",
   hwk: "homework",
   mt: "midterm",

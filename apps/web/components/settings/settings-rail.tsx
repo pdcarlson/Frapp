@@ -40,7 +40,7 @@ const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10
 /** The rail's groups, in order. */
 export type SettingsTabGroup = "chapter" | "people" | "modules";
 
-export const SETTINGS_TAB_GROUP_LABELS: Readonly<
+const SETTINGS_TAB_GROUP_LABELS: Readonly<
   Record<SettingsTabGroup, string>
 > = {
   chapter: "Chapter",
@@ -116,7 +116,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
  * bookmarks keep working. `?tab=modules&module=<key>` opens that module's
  * page instead (`settings-page.tsx`).
  */
-export const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
+const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
   theme: "org",
   danger: "billing",
   modules: "events",

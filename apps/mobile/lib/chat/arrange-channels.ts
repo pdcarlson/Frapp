@@ -32,7 +32,7 @@ export type ArrangeEntry =
     };
 
 /** The default group's heading, as Chat home names it. */
-export const DEFAULT_GROUP_LABEL = "Channels";
+const DEFAULT_GROUP_LABEL = "Channels";
 
 export function arrangeEntries(
   channels: readonly ChannelSummary[],

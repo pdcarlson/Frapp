@@ -40,7 +40,7 @@ export function listLayoutStorageKey(
   return `frapp.${screen}.layout.${userId}`;
 }
 
-export function parseListLayout(raw: unknown): ListLayout | null {
+function parseListLayout(raw: unknown): ListLayout | null {
   return raw === "list" || raw === "grid" ? raw : null;
 }
 

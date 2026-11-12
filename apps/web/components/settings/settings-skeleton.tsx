@@ -48,7 +48,7 @@ function TabCards() {
  * fields, chapter roles): title, description, then the bordered item rows the
  * loaded card draws, each a name line over its meta or capability chips.
  */
-export function SettingsListCard({ rows = 3 }: { rows?: number }) {
+function SettingsListCard({ rows = 3 }: { rows?: number }) {
   return (
     <div
       aria-hidden="true"

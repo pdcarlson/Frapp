@@ -638,7 +638,7 @@ type CourseState =
  * trimmed and case-insensitively. The label keeps the department's stored
  * spelling.
  */
-export function describeCourse(
+function describeCourse(
   departmentCode: string,
   courseNumber: string,
   departments: readonly BackworkDepartment[],

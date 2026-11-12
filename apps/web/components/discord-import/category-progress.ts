@@ -13,7 +13,7 @@ export type CategoryProgress =
   components["schemas"]["DiscordImportCategoryProgressDto"];
 
 /** What a channel in no Discord category is grouped under. */
-export const NO_CATEGORY = "No category";
+const NO_CATEGORY = "No category";
 
 /** One tile on a running import: a category, or the ones past the cap. */
 export interface CategoryTile {
@@ -27,7 +27,7 @@ export interface CategoryTile {
 }
 
 /** How many tiles a running import draws, the last one summing the rest. */
-export const MAX_CATEGORY_TILES = 8;
+const MAX_CATEGORY_TILES = 8;
 
 function tile(
   key: string,

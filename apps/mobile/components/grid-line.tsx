@@ -8,7 +8,7 @@ import { useFrappTheme } from "@/lib/theme";
  * Documents' and Tasks' alike, so every screen the List/Grid toggle switches
  * lays out the same way. One place to change it.
  */
-export const GRID_COLUMNS = 2;
+const GRID_COLUMNS = 2;
 
 /** Items in lines of {@link GRID_COLUMNS}, the last one possibly short. */
 export function toGridChunks<T>(items: readonly T[]): T[][] {

@@ -10,7 +10,7 @@ type RevealableMessage = Pick<ChatMessage, "id" | "client_message_id">;
  * server `id` is not stable across the optimistic → confirmed transition on
  * its own — `client_message_id` is, per `packages/chat-core/src/types.ts`).
  */
-export function messageRevealKey(message: RevealableMessage): string {
+function messageRevealKey(message: RevealableMessage): string {
   return message.client_message_id ?? message.id;
 }
 

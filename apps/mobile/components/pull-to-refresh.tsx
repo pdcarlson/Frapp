@@ -65,7 +65,7 @@ export function useRefetchAll(
  * focus or reconnect refetch running underneath must not put the spinner up
  * on its own, and it stays up until every read the pull sent has settled.
  */
-export function usePullToRefresh(refresh: ScreenRefresh): {
+function usePullToRefresh(refresh: ScreenRefresh): {
   refreshing: boolean;
   onRefresh: () => void;
 } {

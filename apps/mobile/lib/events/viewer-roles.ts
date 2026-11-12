@@ -9,7 +9,7 @@ import {
  * The viewer's role ids in the active chapter, from the memberships list the
  * app already holds. Empty while it loads.
  */
-export function useViewerRoleIds(): readonly string[] {
+function useViewerRoleIds(): readonly string[] {
   const chapterId = useActiveChapterId();
   const chapters = useListChapters();
   return useMemo(

@@ -39,7 +39,7 @@ const TYPE_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
  * One key per spelling family: case and punctuation dropped, so "By-Laws",
  * "bylaws" and "BYLAWS" are the same type.
  */
-export function typeKey(type: string): string {
+function typeKey(type: string): string {
   return type.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 

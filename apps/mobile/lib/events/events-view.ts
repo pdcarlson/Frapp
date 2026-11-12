@@ -13,7 +13,7 @@ export type EventsView = "list" | "calendar";
 
 export const EVENTS_VIEW_STORAGE_KEY = "frapp.events.view";
 
-export function parseEventsView(raw: unknown): EventsView {
+function parseEventsView(raw: unknown): EventsView {
   return raw === "calendar" ? "calendar" : "list";
 }
 
@@ -23,7 +23,6 @@ const preference = createStoredPreference<EventsView>({
   fallback: "list",
 });
 
-export const hydrateEventsView = preference.hydrate;
 export const useEventsView = preference.use;
 export const setEventsView = preference.set;
 export const resetEventsViewForTests = preference.resetForTests;

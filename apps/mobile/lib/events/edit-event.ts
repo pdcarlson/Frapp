@@ -276,7 +276,7 @@ export function isEmptyPatch(patch: EventEditPatch): boolean {
 }
 
 /** Whether the event has started: the server never edits it with the series. */
-export function hasStarted(event: EventDetail, now: Date): boolean {
+function hasStarted(event: EventDetail, now: Date): boolean {
   return new Date(event.start_time).getTime() <= now.getTime();
 }
 

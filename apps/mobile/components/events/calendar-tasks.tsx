@@ -23,7 +23,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * confirmed. Rules and words: `@repo/hooks/calendar-tasks`.
  */
 
-export function TaskMark({
+function TaskMark({
   state,
   size = 18,
 }: {

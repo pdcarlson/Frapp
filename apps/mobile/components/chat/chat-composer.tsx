@@ -106,7 +106,7 @@ export interface ComposerContext {
 }
 
 /** The strip's cancel, spoken. */
-export function composerCancelLabel(kind: ComposerContext["kind"]): string {
+function composerCancelLabel(kind: ComposerContext["kind"]): string {
   return kind === "reply" ? "Cancel reply" : "Cancel edit";
 }
 
