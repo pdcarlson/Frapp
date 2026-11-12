@@ -65,6 +65,7 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
+  lastChannelLandingId,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
   useReorderCategories,
@@ -905,22 +906,26 @@ export function ChatShell({
       effect below) over messages the member never saw, then jump a render
       later. A selection or a link above never waits.
 
-      Read fresh, not once at mount: a fallback later in the visit (hiding
-      the open DM, the open channel deleted) reads the channel that was just
-      open, which `landingChannelId` skips as hidden or missing, so it lands
-      on `#general` rather than on a channel from page load.
+      Read fresh, not once at mount: a fallback later in the visit (the open
+      channel deleted, the open DM hidden) reads the conversation that was
+      just open, which the landing skips as hidden or missing, so Chat lands
+      on `#general` and Direct messages on none, rather than on one from page
+      load.
 
-      Shared with the first-chunk cache, which pins this channel's tail
-      against eviction: the two rules have to be one rule or the cache
-      misses here.
+      Shared with the first-chunk cache, which pins both lists' landings
+      against eviction (`evictOldestTails`): the rules have to be one rule or
+      the cache misses here.
     */
     if (!userId) return null;
     // Each list lands in its own half, on its own last conversation (#3774).
-    // A DM list has no default or `#general`, so it opens on its first row.
-    return landingChannelId(
-      railChannels,
-      readLastChannel(userId, lastChannelChapter, view),
-    );
+    // Direct messages open only the one the member had open: there is no
+    // default to fall back to, and opening one they didn't pick would mark
+    // its messages read, a direct message's red count gone unseen. With none,
+    // the thread column asks them to pick one.
+    const last = readLastChannel(userId, lastChannelChapter, view);
+    return directView
+      ? lastChannelLandingId(railChannels, last)
+      : landingChannelId(railChannels, last);
   }, [
     selectedChannelId,
     channels,
@@ -929,6 +934,7 @@ export function ChatShell({
     userId,
     lastChannelChapter,
     view,
+    directView,
   ]);
   /*
     On a chapter switch the new chapter id lands one commit before the old
@@ -2592,13 +2598,29 @@ export function ChatShell({
   // Direct messages with none to open: the member has never had one, or has
   // hidden every one. The thread column says how to start one instead of
   // drawing a timeline for no conversation.
-  const directEmpty =
+  //
+  // Only once there is nothing left to wait for: the viewer's id (landing
+  // waits for it) and a requested conversation the list doesn't hold yet (a
+  // link into a DM made moments ago, while the list is refetched).
+  const selectionPending =
+    selectedChannelId !== null &&
+    !channels.some(
+      (ch) => ch.id === selectedChannelId || ch.name === selectedChannelId,
+    );
+  const directNoneOpen =
     directView &&
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
+    !selectionPending &&
+    userId !== null &&
     activeChannelId === null;
+  // Nothing to pick at all: the member has never had a DM, or hid every one.
+  const directEmpty =
+    directNoneOpen && !railChannels.some((ch) => !ch.hidden);
   const timelineReady =
-    channelsPaneState === "ready" && !requestedChannelMissing && !directEmpty;
+    channelsPaneState === "ready" &&
+    !requestedChannelMissing &&
+    !directNoneOpen;
   const memberColumnMounted =
     !membersHidden &&
     !toolBeside &&
@@ -3128,19 +3150,32 @@ export function ChatShell({
             </InlineNote>
           </div>
         ) : null}
-        {directEmpty ? (
+        {directNoneOpen ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {/*
-              A DM starts from a member, on web as on the phone, so the way in
-              is the Directory's Message action.
-            */}
-            <InlineNote>
-              {"No direct messages yet. "}
-              <Link href="/members" className={inlineNoteActionClassName}>
-                Find someone in the Directory
-              </Link>
-              {" and choose Message."}
-            </InlineNote>
+            {directEmpty ? (
+              /*
+                A DM starts from a member, on web as on the phone, so the way
+                in is the Directory's Message action.
+              */
+              <InlineNote>
+                {"No direct messages yet. "}
+                <Link href="/members" className={inlineNoteActionClassName}>
+                  Find someone in the Directory
+                </Link>
+                {" and choose Message."}
+              </InlineNote>
+            ) : (
+              <InlineNote>
+                {"Pick a conversation"}
+                <span className="lg:hidden">
+                  {" from "}
+                  <InlineNoteAction onClick={() => setNarrowPane("channels")}>
+                    your direct messages
+                  </InlineNoteAction>
+                </span>
+                .
+              </InlineNote>
+            )}
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (

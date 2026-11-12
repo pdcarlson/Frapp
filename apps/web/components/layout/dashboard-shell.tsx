@@ -208,10 +208,16 @@ export function DashboardShell({
 
   /*
     Arriving at a chat URL opens chat: a `/chat` link, a notification, a Find
-    result, the directory's Message action. The one arrival that must not is
-    the shell's own, closing a tool (`closeTool`), which goes to `/chat`
-    meaning "no tool" and leaves chat as it was. Adjusted during render, keyed
-    on the URL, so there is no frame of the home view first.
+    result, the directory's Message action. The arrivals that must not are
+    the shell's own: closing a tool (`closeTool`), which goes to `/chat`
+    meaning "no tool" and leaves chat as it was, and dropping a stale `?view=`
+    (`dropUrlView`). Adjusted during render, keyed on the URL, so there is no
+    frame of the home view first.
+
+    The list follows the URL too (#3774). A `?view=` names it. A bare `/chat`
+    is Chat's own link, so arriving there (Back from `/chat?view=direct`, say)
+    shows channels. A link to a conversation names no list: the panel follows
+    the conversation's kind.
   */
   const url = `${pathname}?${searchParams?.toString() ?? ""}`;
   const [seenUrl, setSeenUrl] = useState(url);
@@ -219,18 +225,24 @@ export function DashboardShell({
   // link that opens chat paints it in place. Cleared when the entrance ends,
   // so a later remount (the window narrowing and widening) does not replay it.
   const [animateOpen, setAnimateOpen] = useState(false);
-  const [closingTool, setClosingTool] = useState(false);
+  const [shellNavigating, setShellNavigating] = useState(false);
   if (seenUrl !== url) {
     setSeenUrl(url);
-    if (closingTool) setClosingTool(false);
+    if (shellNavigating) setShellNavigating(false);
     else {
       if (onChatRoute && !chatOpen) {
         setChatOpen(true);
         // A link paints chat in place; only the Chat row plays the entrance.
         setAnimateOpen(false);
       }
-      // A chat link that names its list; one that doesn't leaves it be.
       if (urlView) setChatView(parseChatView(urlView));
+      else if (
+        onChatRoute &&
+        !searchParams?.get(CHAT_CHANNEL_PARAM) &&
+        !searchParams?.get(CHAT_MESSAGE_PARAM)
+      ) {
+        setChatView("channels");
+      }
     }
   }
   // The cookies follow the state, whichever way it changed.
@@ -272,16 +284,40 @@ export function DashboardShell({
     toolColumnRef.current?.focus();
   }, [chatOpen, toggleChat]);
   const closeTool = useCallback(() => {
-    setClosingTool(true);
+    setShellNavigating(true);
     router.push("/chat");
   }, [router]);
 
   /*
+    A `?view=` the list has since left: the address would name the other list,
+    so a reload put it back, and below the side-by-side width the row linking
+    to that address would be a link to the page already open, which does
+    nothing. Dropped in place, as the shell's own move.
+  */
+  const dropUrlView = useCallback(
+    (view: ChatView) => {
+      if (!urlView || parseChatView(urlView) === view) return;
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.delete(CHAT_VIEW_PARAM);
+      const query = params.toString();
+      setShellNavigating(true);
+      router.replace(query ? `${pathname}?${query}` : (pathname ?? "/chat"));
+    },
+    [urlView, searchParams, router, pathname],
+  );
+  /** The panel opened a conversation of the other kind (`ChatShell`). */
+  const followPanelView = useCallback(
+    (view: ChatView) => {
+      setChatView(view);
+      dropUrlView(view);
+    },
+    [dropUrlView],
+  );
+
+  /*
     The Chat and Direct messages rows, from the side-by-side width up
     (#3774). One panel: the row for the list on screen closes it, the other
-    row switches it in place, and either opens it when it is closed. A `?view=`
-    left in the address would put the other list back on the next reload, so
-    switching drops it.
+    row switches it in place, and either opens it when it is closed.
   */
   const selectChatView = useCallback(
     (view: ChatView) => {
@@ -291,14 +327,9 @@ export function DashboardShell({
       }
       setChatView(view);
       if (!chatOpen) toggleChat();
-      if (urlView) {
-        const params = new URLSearchParams(searchParams?.toString() ?? "");
-        params.delete(CHAT_VIEW_PARAM);
-        const query = params.toString();
-        router.replace(query ? `${pathname}?${query}` : (pathname ?? "/chat"));
-      }
+      dropUrlView(view);
     },
-    [chatOpen, chatView, toggleChat, urlView, searchParams, router, pathname],
+    [chatOpen, chatView, toggleChat, dropUrlView],
   );
 
   /*
@@ -629,7 +660,7 @@ export function DashboardShell({
                     defaultMembersHidden={defaultMembersHidden}
                     toolBeside={hasTool}
                     view={chatView}
-                    onViewChange={setChatView}
+                    onViewChange={followPanelView}
                     onClose={
                       hasTool && split === true ? closeChatPanel : undefined
                     }

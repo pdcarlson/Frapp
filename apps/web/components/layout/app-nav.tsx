@@ -78,8 +78,9 @@ type AppNavProps = {
    */
   onCloseTool?: () => void;
   /**
-   * Ids of rows with something new for the member (today Chat's unread,
-   * `use-chat-has-unread.ts`; the only row the app counts). A highlighted row
+   * Ids of rows with something new for the member (today Chat's unread
+   * channels, `use-chat-has-unread.ts`; Direct messages carries a count
+   * instead, `counts` below). A highlighted row
    * draws bright and semibold with a dot, on every route and in the drawer,
    * until the count clears (#3824).
    */

@@ -724,6 +724,50 @@ describe("DashboardShell", () => {
         ).toBeInTheDocument();
       });
 
+      it("follows the address below the side-by-side width: a row's link, and Back to a bare /chat", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+        // Following the Direct messages row's link.
+        mockSearch.value = "view=direct";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        // Back to `/chat`, which is Chat's own link.
+        mockSearch.value = "";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("channels");
+      });
+
+      it("keeps the list for a link to a conversation, which names none", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=direct";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        mockSearch.value = "channel=d1";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        // The panel follows the conversation's kind itself (`ChatShell`).
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+      });
+
+      it("drops a ?view= the panel has left, so the other row's link still works", () => {
+        setWindowWidth(1024);
+        mockPathname.value = "/chat";
+        mockSearch.value = "view=channels";
+        const { rerender } = render(<DashboardShell>{null}</DashboardShell>);
+        // A search hit or a bookmark into a DM, from inside the panel.
+        fireEvent.click(screen.getByRole("button", { name: "Open a DM link" }));
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(routerReplace).toHaveBeenCalledWith("/chat");
+        // The shell's own move to `/chat` keeps the list it followed to.
+        mockSearch.value = "";
+        rerender(<DashboardShell>{null}</DashboardShell>);
+        expect(screen.getByTestId("chat-view")).toHaveTextContent("direct");
+        expect(
+          within(nav()).getByRole("link", { name: "Chat" }),
+        ).toHaveAttribute("href", "/chat?view=channels");
+      });
+
       it("drops a stale ?view= from the address when the rows switch lists", () => {
         setWindowWidth(1440);
         mockPathname.value = "/chat";

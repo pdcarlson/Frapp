@@ -175,15 +175,17 @@ export function TopBar({
 /**
  * The drawer trigger, the only route to navigation below `lg`. It carries the
  * nav's unread mark (#3900): the Chat row lights on every page when a message
- * arrives (#3824), but below `lg` that row sits in a closed drawer, so without
- * a mark here a message landing while the member is on Events showed nothing.
+ * arrives (#3824), and the Direct messages row counts unread conversations
+ * (#3774), but below `lg` both sit in a closed drawer, so without a mark here
+ * a message landing while the member is on Events showed nothing.
  * Slack's and Discord's phone layouts mark the collapsed nav the same way, on
  * the menu button.
  *
  * - **The same mark as the row it leads to**: a plain dot in `foreground`, not
  *   a count. Red stays reserved for direct address and gold for the
- *   notifications badge beside it (foundations §5), and the drawer then shows
- *   the same dot on the Chat row, so the trail reads as one thing.
+ *   notifications badge beside it (foundations §5). It stands for both chat
+ *   rows, so a direct message lights it too, and the drawer then shows the
+ *   Chat row's dot, the Direct messages row's red count, or both.
  * - **8px, not the row's 6px, with a 2px cutout** in the bar's own surface.
  *   It sits on the glyph's corner, over the top line's end, and the cutout is
  *   what keeps it a separate mark rather than a blob on the line; it tracks

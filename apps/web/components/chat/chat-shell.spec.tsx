@@ -501,6 +501,7 @@ vi.mock("@repo/hooks", async () => ({
         IMPORTANT_STRIP_DISMISS_LABEL,
         importantStripLabel,
         landingChannelId,
+        lastChannelLandingId,
         lastChannelStorageKey,
         resolveAuthorName,
         SETUP_CHECKLIST_TITLE,
@@ -520,6 +521,7 @@ vi.mock("@repo/hooks", async () => ({
         IMPORTANT_STRIP_DISMISS_LABEL,
         importantStripLabel,
         landingChannelId,
+        lastChannelLandingId,
         lastChannelStorageKey,
         resolveAuthorName,
         SETUP_CHECKLIST_TITLE,
@@ -5611,6 +5613,10 @@ describe("ChatShell's two lists (#3774)", () => {
   });
 
   it("drops a channel picked on the other list when the nav switches lists", async () => {
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1.direct",
+      "chan-dm",
+    );
     channelsQueryState.value = { data: [...CHANNELS, DM] };
     const onViewChange = vi.fn();
     const { rerender } = render(
@@ -5655,6 +5661,42 @@ describe("ChatShell's two lists (#3774)", () => {
     await waitFor(() => {
       expect(onViewChange).toHaveBeenCalledWith("channels");
     });
+  });
+
+  it("opens no DM the member didn't pick, so none is marked read unseen", () => {
+    // No remembered DM: a first visit, or the remembered one since hidden.
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    render(<ChatShell view="direct" />);
+    expect(screen.getByText(/Pick a conversation/)).toBeInTheDocument();
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    expect(screen.queryByText(/No direct messages yet/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the chapter's order and setup checklist out of Direct messages", () => {
+    // An officer who can reorder, in a chapter still being set up: both
+    // show on Chat, and neither on Direct messages.
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    railReorder.value = undefined;
+    const { unmount } = render(<ChatShell />);
+    expect(railReorder.value).toBeDefined();
+    expect(
+      screen.getByRole("region", { name: "Set up your chapter" }),
+    ).toBeInTheDocument();
+    unmount();
+
+    railReorder.value = undefined;
+    render(<ChatShell view="direct" />);
+    expect(railReorder.value).toBeUndefined();
+    expect(
+      screen.queryByRole("region", { name: "Set up your chapter" }),
+    ).not.toBeInTheDocument();
   });
 
   it("says how to start one when the member has no direct messages", () => {
