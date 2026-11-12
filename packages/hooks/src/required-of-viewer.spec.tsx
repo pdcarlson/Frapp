@@ -9,8 +9,11 @@ import { describe, expect, it, vi } from "vitest";
  */
 
 let roleIds: string[] = [];
-vi.mock("@repo/hooks", () => ({
+vi.mock("./use-frapp-client", () => ({
   useActiveChapterId: () => "chapter-1",
+  useFrappClient: () => ({}),
+}));
+vi.mock("./use-chapters", () => ({
   useListChapters: () => ({
     data: [
       { chapter_id: "chapter-0", role_ids: ["officer"] },
@@ -19,7 +22,7 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
-import { useRequiredOfViewer } from "./viewer-roles";
+import { useRequiredOfViewer } from "./use-event-excuses";
 
 const requiredOf = (ids: string[]) => {
   roleIds = ids;

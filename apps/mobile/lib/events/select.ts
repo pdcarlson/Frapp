@@ -43,7 +43,7 @@ export interface EventRow {
   check_in_opens_minutes: number;
   /**
    * Who's coming, by role. Whether it is required of the viewer depends on
-   * their roles, so a screen asks `useRequiredOfViewer` (`viewer-roles.ts`).
+   * their roles, so a screen asks `useRequiredOfViewer` (`@repo/hooks`).
    */
   attendance: EventAttendanceFields;
   /**
@@ -84,6 +84,11 @@ export interface EventDetail extends EventRow {
   hasCheckInZone: boolean;
   /** The chapter's event type it was made as (#3730), or `null`. */
   event_type_id: string | null;
+  /**
+   * Who made it, or `null`: the event's excuse receiver
+   * (`spec/behavior/events.md` § Excuses), who sees its Excuses list.
+   */
+  created_by: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -396,5 +401,6 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
     event_type_id: str(data, "event_type_id"),
+    created_by: str(data, "created_by"),
   };
 }
