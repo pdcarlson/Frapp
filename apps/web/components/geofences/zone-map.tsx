@@ -17,6 +17,7 @@ import {
   type ZonePoint,
 } from "@repo/validation";
 import { MAP_STYLE_URL } from "@/lib/maps/map-provider";
+import { readableDarkStyle } from "@/lib/maps/readable-dark-style";
 import {
   clampRadius,
   draftPolygon,
@@ -176,6 +177,8 @@ export function ZoneMap({
       map = new MapLibreMap({
         container,
         style: MAP_STYLE_URL,
+        // The stock dark style buries buildings and names; this re-inks it.
+        transformStyle: (_previous, next) => readableDarkStyle(next),
         center: FALLBACK_VIEW.center,
         zoom: FALLBACK_VIEW.zoom,
         attributionControl: { compact: true },
@@ -280,8 +283,7 @@ export function ZoneMap({
   // The other zones, once the style is in.
   useEffect(() => {
     const source = mapRef.current?.getSource(OTHERS_SOURCE) as
-      | GeoJSONSource
-      | undefined;
+      GeoJSONSource | undefined;
     source?.setData(otherFeatures(otherZones));
   }, [otherZones, ready]);
 
@@ -315,7 +317,11 @@ export function ZoneMap({
       centerMarker.on("drag", () => {
         const at = centerMarker.getLngLat();
         const next = { lat: at.lat, lng: at.lng };
-        const nextEdge = destinationPoint(next, latest.current.draft.radius_m, 90);
+        const nextEdge = destinationPoint(
+          next,
+          latest.current.draft.radius_m,
+          90,
+        );
         radiusMarker.setLngLat([nextEdge.lng, nextEdge.lat]);
         (map.getSource(DRAFT_SOURCE) as GeoJSONSource | undefined)?.setData(
           draftFeatures({ ...latest.current.draft, center: next }),
@@ -333,7 +339,9 @@ export function ZoneMap({
       });
       const radiusFrom = () => {
         const at = radiusMarker.getLngLat();
-        return clampRadius(distanceMeters(center, { lat: at.lat, lng: at.lng }));
+        return clampRadius(
+          distanceMeters(center, { lat: at.lat, lng: at.lng }),
+        );
       };
       radiusMarker.on("drag", () => {
         (map.getSource(DRAFT_SOURCE) as GeoJSONSource | undefined)?.setData(
