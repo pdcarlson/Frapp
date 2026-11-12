@@ -64,9 +64,6 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.not_available",
   "legal.acceptance_required",
   "service_entry.receipt_required",
-  // AI is off on this server (AI_ENABLED unset). Members of a chapter can
-  // reach an AI route from an installed build before it learns the switch.
-  "ai.disabled",
   // AI suggestions (#4309): one another officer decided first, one that
   // expired or whose source went away, a caller whose permission or access
   // changed since the list loaded, and a task accepted before its owner or

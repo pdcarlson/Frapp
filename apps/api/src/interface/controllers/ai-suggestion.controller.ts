@@ -56,7 +56,7 @@ function taskEdits(
  * Every member reaches the routes; what each one sees and may decide is
  * narrowed in the service to the suggestions they could accept now (the
  * kind's permission, its module on, its source open to them). Off, with 404
- * `ai.disabled`, unless the server's `AI_ENABLED` is on.
+ * `ai.not_available`, unless the server's `AI_ENABLED` is on.
  */
 @ApiTags('AI suggestions')
 @ApiBearerAuth()

@@ -8,19 +8,29 @@ describe('AiEnabledGuard', () => {
     else process.env.AI_ENABLED = original;
   });
 
-  it.each([undefined, '', 'false', '1', 'TRUE', 'yes'])(
-    'answers 404 ai.disabled when AI_ENABLED is %p',
+  it.each([undefined, '', 'false', '0', 'TRUE', 'yes'])(
+    'answers 404 ai.not_available when AI_ENABLED is %p',
     (value) => {
       if (value === undefined) delete process.env.AI_ENABLED;
       else process.env.AI_ENABLED = value;
       expect(() => new AiEnabledGuard().canActivate()).toThrow(
         NotFoundException,
       );
+      try {
+        new AiEnabledGuard().canActivate();
+      } catch (error) {
+        expect((error as NotFoundException).getResponse()).toMatchObject({
+          code: 'ai.not_available',
+        });
+      }
     },
   );
 
-  it('lets the request through only when AI_ENABLED is exactly true', () => {
-    process.env.AI_ENABLED = 'true';
-    expect(new AiEnabledGuard().canActivate()).toBe(true);
-  });
+  it.each(['true', '1'])(
+    'lets the request through when AI_ENABLED is %p, as the job queue does',
+    (value) => {
+      process.env.AI_ENABLED = value;
+      expect(new AiEnabledGuard().canActivate()).toBe(true);
+    },
+  );
 });
