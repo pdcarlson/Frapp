@@ -112,6 +112,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now edit a task from its card in chat and in Activity, not only from the Tasks page, on the web and on your phone.",
       "On the web, Chat admin, Discord import and Reports now open right inside Chapter settings, so you never lose your place.",
       "On the web, a message you send now always shows up at the bottom of the chat, and a down arrow takes you back to the newest messages after you scroll up.",
+      "Taking back a reaction now sticks, so it no longer comes back after you reload.",
+      "Tasks can now show as a list or as a grid of cards, on the web and on your phone, and it remembers which one you picked.",
     ],
   },
   {
