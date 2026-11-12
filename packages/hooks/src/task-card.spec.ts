@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   actionStatus,
+  canEditCardTask,
   canReadCardTask,
+  readEditableCardTask,
   isTaskStatus,
   readLiveTask,
   taskDueLine,
@@ -317,5 +319,64 @@ describe("taskDueLine (#4133, #4135)", () => {
     });
     expect(taskDueLine(null, "TODO", NOW)).toBeNull();
     expect(taskDueLine("banana", "TODO", NOW)).toBeNull();
+  });
+});
+
+describe("canEditCardTask (#4512)", () => {
+  it("offers Edit to a tasks:manage holder until the task is confirmed", () => {
+    expect(canEditCardTask({ live: live(), canManage: true })).toBe(true);
+    expect(
+      canEditCardTask({
+        live: live({ status: "COMPLETED", stored_status: "COMPLETED" }),
+        canManage: true,
+      }),
+    ).toBe(true);
+    expect(
+      canEditCardTask({
+        live: live({ points_awarded: true }),
+        canManage: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("offers nothing to anyone else, or before the task is read", () => {
+    expect(canEditCardTask({ live: live(), canManage: false })).toBe(false);
+    expect(canEditCardTask({ live: null, canManage: true })).toBe(false);
+  });
+});
+
+describe("readEditableCardTask", () => {
+  const raw = {
+    id: "task-1",
+    title: "Sweep",
+    description: null,
+    assignee_id: "u1",
+    due_date: "2026-11-14",
+    due_at: "2026-11-14T22:00:00.000Z",
+    point_reward: 5,
+    status: "TODO",
+    stored_status: "TODO",
+    subtasks: [],
+  };
+
+  it("reads what the edit form opens on", () => {
+    expect(readEditableCardTask(raw)).toEqual({
+      id: "task-1",
+      title: "Sweep",
+      description: null,
+      assignee_id: "u1",
+      due_date: "2026-11-14",
+      due_at: "2026-11-14T22:00:00.000Z",
+      point_reward: 5,
+      status: "TODO",
+      stored_status: "TODO",
+      subtasks: [],
+    });
+  });
+
+  it("is null without a field the form needs", () => {
+    expect(readEditableCardTask(undefined)).toBeNull();
+    expect(readEditableCardTask({ ...raw, assignee_id: null })).toBeNull();
+    expect(readEditableCardTask({ ...raw, due_date: "" })).toBeNull();
   });
 });
