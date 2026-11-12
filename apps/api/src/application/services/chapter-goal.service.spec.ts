@@ -42,7 +42,7 @@ function build(rows: ChapterGoalRow[] = [], roles: Role[] = ROLES) {
     ),
   };
   return {
-    service: new ChapterGoalService(goalRepo as never, roleRepo as never),
+    service: new ChapterGoalService(goalRepo, roleRepo as never),
     goalRepo,
     roleRepo,
   };

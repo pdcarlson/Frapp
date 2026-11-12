@@ -6,11 +6,12 @@ import {
   IsIn,
   IsInt,
   IsUUID,
+  Max,
   Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { GOAL_ROLE_LIMIT } from '@repo/validation';
+import { GOAL_ROLE_LIMIT, GOAL_TARGET_MAX } from '@repo/validation';
 import {
   GOAL_METRICS,
   type GoalMetric,
@@ -18,6 +19,13 @@ import {
   type RoleGoal,
 } from '#domain/entities/chapter-goal.entity';
 import type { ChapterGoals } from '../../application/services/chapter-goal.service';
+
+/**
+ * The largest target any measure takes. The DTO can't see which measure the
+ * path names, so it caps at the widest; `ChapterGoalService.setGoals` then
+ * holds each measure to its own ceiling (`GOAL_TARGET_MAX`).
+ */
+const TARGET_CEILING = Math.max(...Object.values(GOAL_TARGET_MAX));
 
 export class GoalMetricParamDto {
   @ApiProperty({ enum: GOAL_METRICS })
@@ -36,6 +44,7 @@ export class RoleGoalDto implements RoleGoal {
   })
   @IsInt()
   @Min(1)
+  @Max(TARGET_CEILING)
   target!: number;
 }
 
@@ -49,6 +58,7 @@ export class GoalSetDto implements GoalSet {
   @ValidateIf((_object, value) => value !== null)
   @IsInt()
   @Min(1)
+  @Max(TARGET_CEILING)
   everyone!: number | null;
 
   @ApiProperty({

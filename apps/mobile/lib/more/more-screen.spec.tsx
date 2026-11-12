@@ -32,6 +32,8 @@ let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
+/** The member's weekly study goal in minutes, from the Activity standing. */
+let studyGoal: number | null = null;
 /** `GET /v1/activity`: `undefined` is "not answered yet". */
 let activity: { needs_you_count: number; unavailable: string[] } | undefined;
 const activityReread = vi.hoisted(() => vi.fn());
@@ -61,6 +63,9 @@ afterEach(() => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useOwnAvatarTint: () => null,
+  useActivityStanding: () => ({
+    data: { study: { minutes: 0, week_start: "", goal_minutes: studyGoal } },
+  }),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({
@@ -222,6 +227,25 @@ describe("More hub clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("0.0 hrs");
     expect(screenText(tree)).not.toContain("2.0 hrs");
+  });
+
+  it("reads the week against the member's study goal when the chapter sets one (#1062)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    studyGoal = 360;
+    sessions = [
+      {
+        id: "session-1",
+        status: "COMPLETED",
+        start_time: new Date(2026, 9, 3, 10, 0).toISOString(),
+        end_time: new Date(2026, 9, 3, 14, 0).toISOString(),
+        total_foreground_minutes: 240,
+      },
+    ];
+    try {
+      expect(screenText(render())).toContain("4.0 / 6.0 hrs");
+    } finally {
+      studyGoal = null;
+    }
   });
 });
 

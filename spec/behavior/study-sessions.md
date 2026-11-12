@@ -51,6 +51,11 @@ a screen that does not exist:
   Both are derivable from data the client already holds if they are wanted.
 - Minimal UI. **Not shipped as specified**: Canvas draws the week summary and a
   recent-session list below the timer card, and that is what the screen renders.
+- A weekly study goal. Officers set one for everyone, or a different one per
+  role, in Chapter settings → Service hours; the week is Sunday to Saturday,
+  local time, as this screen counts it. The week summary reads "4.5 of 6.0
+  hrs" over a meter when the member has one. Rules:
+  [`activity.md` § Goals](activity.md#goals) (#1062).
 
 ## Points Award
 

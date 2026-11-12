@@ -118,11 +118,16 @@ describe("a module page's goals", () => {
       study: none,
     };
     render(<ModuleGoals metrics={["points"]} canManage={false} />);
-    const section = screen.getByText("Goals").closest("section") ?? document.body;
-    expect(within(section as HTMLElement).getByLabelText("Points goal")).toBeDisabled();
+    const section =
+      screen.getByText("Goals").closest("section") ?? document.body;
+    expect(
+      within(section as HTMLElement).getByLabelText("Points goal"),
+    ).toBeDisabled();
     expect(
       screen.queryByRole("button", { name: "Different goal for a role" }),
     ).toBeNull();
-    expect(screen.getByText("Your role can't change these.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Your role can't change these."),
+    ).toBeInTheDocument();
   });
 });

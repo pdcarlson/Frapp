@@ -59,7 +59,7 @@ The board's Notifications row is not in the app's More: the inbox opens from the
 | ----- | --- | ----------- | --------------- |
 | — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
 | Chapter tools | Activity | `activity.tsx` ([`screens.md`](screens.md), supporting routes) | the count of things waiting on the member (`needs_you_count`), as a warning-hue chip, drawn only when there is one |
-| | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs", or "4.0 / 6.0 hrs" against the member's weekly goal when the chapter sets one (#1062) |
 | | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
 | | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
 | | Documents | `documents.tsx` (s12) | — |

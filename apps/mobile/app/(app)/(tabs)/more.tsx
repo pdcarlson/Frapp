@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
   useActivity,
+  useActivityStanding,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
@@ -48,7 +49,11 @@ import {
   selectInvoiceRows,
   selectNextDueInvoice,
 } from "@/lib/dues/invoices";
-import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
+import {
+  formatHoursLabel,
+  formatHoursValue,
+  startOfWeek,
+} from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -210,13 +215,21 @@ export default function MoreScreen() {
   // narrows and sorts the whole session list, and the answer only changes once a
   // week.
   const weekStart = startOfWeek(now).getTime();
+  // With a weekly goal (#1062) the row reads "4.0 / 6.0 hrs", as the board
+  // draws it; the goal comes from the Activity standing, which Activity and
+  // Study also read.
+  const studyGoal =
+    useActivityStanding({ enabled: !hiddenFeatures.has("study") }).data?.study
+      ?.goal_minutes ?? null;
   const studyThisWeek = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const minutes = selectSessionHistory(sessionsQuery.data)
       .filter((row) => Date.parse(row.startTime) >= weekStart)
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
-    return formatHoursLabel(minutes);
-  }, [sessionsQuery.data, weekStart]);
+    return studyGoal
+      ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
+      : formatHoursLabel(minutes);
+  }, [sessionsQuery.data, weekStart, studyGoal]);
 
   // The Activity row's count: what is waiting on the member right now
   // (`needs_you_count`, counted server-side before the list cap). Nothing is

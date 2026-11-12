@@ -15,6 +15,7 @@ import { drawnText } from "@/test/screen-text";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { SkeletonLines } from "@/components/state-block";
 import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
+import { WeekSummary } from "@/components/study/week-summary";
 import { SessionCard } from "@/components/study/session-card";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 import { readForegroundPermission } from "@/lib/location";
@@ -116,9 +117,14 @@ const refetchSessions = vi.fn();
 
 /** The viewer's permissions: a member unless a test says so. */
 let permissions: string[] = [];
+/** The member's weekly study goal in minutes (#1062), from the Activity standing. */
+let studyGoal: number | null = null;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useActivityStanding: () => ({
+    data: { study: { minutes: 0, week_start: "", goal_minutes: studyGoal } },
+  }),
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   usePermissionList: () => permissions,
   useGeofences: () => ({
@@ -243,6 +249,25 @@ const showsModuleOff = (tree: ReactTestRenderer) =>
   [MODULE_OFF_COPY.start, MODULE_OFF_COPY.runningSession].some((copy) =>
     screenText(tree).includes(copy),
   );
+
+describe("Study's weekly goal (#1062)", () => {
+  afterEach(() => {
+    studyGoal = null;
+  });
+
+  it("hands THIS WEEK the member's goal from the Activity standing", () => {
+    studyGoal = 360;
+    const tree = render();
+    const [summary] = tree.root.findAllByType(WeekSummary);
+    expect(summary!.props.goalMinutes).toBe(360);
+  });
+
+  it("hands it no goal when the chapter sets none", () => {
+    const tree = render();
+    const [summary] = tree.root.findAllByType(WeekSummary);
+    expect(summary!.props.goalMinutes).toBeNull();
+  });
+});
 
 describe("Study Start on a subscription refusal (#2297)", () => {
   it("explains the refusal and withdraws Start", async () => {
