@@ -42,7 +42,7 @@ export interface GoogleVertexEnvSettings {
   credentials: Record<string, unknown>;
 }
 
-export const GOOGLE_VERTEX_DEFAULT_LOCATION = 'global';
+const GOOGLE_VERTEX_DEFAULT_LOCATION = 'global';
 
 /** A variable's trimmed value, or null when it is unset or blank. */
 export function envSetting(env: Env, name: string): string | null {

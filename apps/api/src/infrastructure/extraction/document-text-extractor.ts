@@ -12,7 +12,7 @@ export const EXTRACT_MAX_BYTES = MAX_UPLOAD_BYTES;
 /** A PDF with more pages than this is skipped, not half read. */
 export const EXTRACT_MAX_PAGES = 500;
 /** About 375,000 tokens: more text than this from one file is skipped. */
-export const EXTRACT_MAX_CHARS = 1_500_000;
+const EXTRACT_MAX_CHARS = 1_500_000;
 
 const DOCX_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';

@@ -31,7 +31,7 @@ import {
  * rule both profile forms apply before sending (#3711).
  */
 @ValidatorConstraint({ name: 'phoneNumber', async: false })
-export class PhoneNumberConstraint implements ValidatorConstraintInterface {
+class PhoneNumberConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     return typeof value === 'string' && isPhoneNumber(value);
   }

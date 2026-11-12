@@ -9,10 +9,10 @@ import type { AiSuggestionKindHandler } from './ai-suggestion-kinds';
 import { EventService } from './event.service';
 
 /** An event name longer than this is cut, not refused. */
-export const EVENT_SUGGESTION_NAME_MAX_LENGTH = 200;
+const EVENT_SUGGESTION_NAME_MAX_LENGTH = 200;
 
 /** How long a suggested event waits for an officer (spec: ai.md § Suggestions). */
-export const EVENT_SUGGESTION_EXPIRY_DAYS = 14;
+const EVENT_SUGGESTION_EXPIRY_DAYS = 14;
 
 /**
  * A suggested event, as stored and as listed (#3930, "this time last year").
