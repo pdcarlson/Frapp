@@ -1,10 +1,13 @@
 "use client";
 
 import {
+  REPEAT_DAY_LETTERS,
+  REPEAT_DAY_NAMES,
   REPEAT_PRESETS,
   REPEAT_PRESET_LABELS,
   WEEKDAY_CODES,
   editRepeatDraft,
+  monthlyByFor,
   monthlyChoices,
   pickRepeatEnd,
   pickRepeatPreset,
@@ -13,32 +16,13 @@ import {
   toggleRepeatDay,
   type MonthlyBy,
   type RepeatDraft,
-  type WeekdayCode,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
-
-const DAY_LETTER: Record<WeekdayCode, string> = {
-  SU: "S",
-  MO: "M",
-  TU: "T",
-  WE: "W",
-  TH: "T",
-  FR: "F",
-  SA: "S",
-};
-const DAY_NAME: Record<WeekdayCode, string> = {
-  SU: "Sunday",
-  MO: "Monday",
-  TU: "Tuesday",
-  WE: "Wednesday",
-  TH: "Thursday",
-  FR: "Friday",
-  SA: "Saturday",
-};
 
 /**
  * The event editor's Repeat section (#4488, #3662): a preset row, and under a
@@ -54,6 +38,7 @@ export function RepeatOptions({
   onChange,
   disabled = false,
   showLength,
+  series,
 }: {
   draft: RepeatDraft;
   /** The series' first meeting, or `null` while the start isn't readable. */
@@ -62,6 +47,8 @@ export function RepeatOptions({
   disabled?: boolean;
   /** Whether to say how long the series runs (not for one already saved). */
   showLength: boolean;
+  /** On an edit, the series the change applies to (`repeatCaption`). */
+  series?: RepeatEditSeries;
 }) {
   const unit =
     draft.preset === "DAILY"
@@ -69,7 +56,7 @@ export function RepeatOptions({
       : draft.preset === "WEEKLY"
         ? "week"
         : "month";
-  const caption = start ? repeatCaption(draft, start) : null;
+  const caption = start ? repeatCaption(draft, start, series) : null;
   const line = caption?.problem || showLength ? caption : null;
   const choices = start ? monthlyChoices(draft, start) : [];
   const days = start ? repeatDays(draft, start) : (draft.byDay ?? []);
@@ -104,8 +91,8 @@ export function RepeatOptions({
                     key={code}
                     type="button"
                     aria-pressed={on}
-                    aria-label={DAY_NAME[code]}
-                    title={DAY_NAME[code]}
+                    aria-label={REPEAT_DAY_NAMES[code]}
+                    title={REPEAT_DAY_NAMES[code]}
                     disabled={disabled || !start}
                     onClick={() => {
                       if (start) onChange(toggleRepeatDay(draft, code, start));
@@ -118,7 +105,7 @@ export function RepeatOptions({
                       FOCUS_RING,
                     )}
                   >
-                    {DAY_LETTER[code]}
+                    {REPEAT_DAY_LETTERS[code]}
                   </button>
                 );
               })}
@@ -155,11 +142,7 @@ export function RepeatOptions({
                   value: choice.by,
                   label: choice.label,
                 }))}
-                value={
-                  choices.some((c) => c.by === draft.monthlyBy)
-                    ? draft.monthlyBy
-                    : "date"
-                }
+                value={monthlyByFor(draft, choices)}
                 onChange={(monthlyBy) =>
                   onChange(editRepeatDraft(draft, { monthlyBy }))
                 }

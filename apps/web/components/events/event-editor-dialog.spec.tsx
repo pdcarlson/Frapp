@@ -204,9 +204,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       is_mandatory: false,
       others_invited: true,
       required_role_ids: ["r1"],
-      recurrence_rule: expect.stringMatching(
-        /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2};COUNT=13;TZID=/,
-      ),
+      // Weekly on the start's day at its default length is the legacy
+      // token, which shipped phones read (#4488).
+      recurrence_rule: "WEEKLY",
     });
     expect(body).not.toHaveProperty("optional_role_ids");
   });
@@ -226,12 +226,95 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     fireEvent.click(screen.getByRole("radio", { name: "On date" }));
     // Offered the day the 13 meetings would have ended on.
     expect(screen.getByText(/meetings, the last on/)).toBeTruthy();
+    // A picked end date says its own length, and is the one sent.
+    fireEvent.change(screen.getByLabelText("Ends on"), {
+      target: { value: "2026-07-15" },
+    });
+    expect(
+      screen.getByText(/^\d meetings, the last on Jul 1\d\./),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
     expect(createMutate.mock.calls[0]![0].recurrence_rule).toMatch(
-      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2},[A-Z]{2};UNTIL=\d{8};TZID=/,
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2},[A-Z]{2};UNTIL=20260715;TZID=/,
     );
+  });
+
+  describe("Repeat on an edit (#4488)", () => {
+    // A Monday series whose first meeting is still ahead.
+    const RULE =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=10;TZID=America/New_York";
+    const head = {
+      id: "h1",
+      name: "Chapter",
+      start_time: "2027-07-05T23:00:00.000Z",
+      end_time: "2027-07-06T00:00:00.000Z",
+      recurrence_rule: RULE,
+    };
+    const renderEdit = (event: Record<string, unknown>) =>
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={event}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+    const saved = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      return updateMutate.mock.calls[0]![0].body as Record<string, unknown>;
+    };
+
+    it("leaves an untouched series alone, with no length line", async () => {
+      renderEdit(head);
+      expect(screen.queryByText(/meetings, the last on/)).toBeNull();
+      fireEvent.change(screen.getByLabelText("Event name"), {
+        target: { value: "Chapter meeting" },
+      });
+      const body = await saved();
+      expect(body).not.toHaveProperty("recurrence_rule");
+      expect(body).not.toHaveProperty("scope");
+    });
+
+    it("sends a changed rule to the whole series", async () => {
+      renderEdit(head);
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "6" },
+      });
+      expect(screen.getByText(/^6 meetings, the last on Aug 9/)).toBeTruthy();
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("COUNT=10", "COUNT=6"),
+        scope: "series",
+      });
+    });
+
+    it("ends the series with Doesn't repeat", async () => {
+      renderEdit(head);
+      fireEvent.click(screen.getByRole("radio", { name: "Doesn't repeat" }));
+      const body = await saved();
+      expect(body).toMatchObject({ recurrence_rule: null, scope: "series" });
+    });
+
+    it("doesn't offer Repeat on a generated occurrence", async () => {
+      renderEdit({
+        ...head,
+        id: "o1",
+        recurrence_rule: null,
+        parent_event_id: "h1",
+      });
+      expect(screen.getByText(/Part of a repeating series/)).toBeTruthy();
+      expect(
+        screen.queryByRole("radio", { name: "Doesn't repeat" }),
+      ).toBeNull();
+      const body = await saved();
+      expect(body).not.toHaveProperty("recurrence_rule");
+      expect(body).not.toHaveProperty("scope");
+    });
   });
 
   it("keeps Create from sending a series it can't make", async () => {

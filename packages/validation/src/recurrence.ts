@@ -32,8 +32,10 @@
  *   a head clamped to Feb 28 still hands on the 31st; without either, on the
  *   first meeting's day of the month. A weekly rule must name its days.
  *
- * The API accepts and steps a structured rule today; the Repeat controls send
- * one from #4488's UI PR. Until then every client writes a legacy token.
+ * Both Repeat controls send a structured rule for any pattern a token can't
+ * say, and still send the token for exactly the three a token says (with its
+ * own length), because shipped phone builds read only tokens
+ * (`repeat-draft.ts` § legacy tokens).
  *
  * The head row is always the series' first meeting; the rule makes the
  * meetings after it.
@@ -752,6 +754,38 @@ function nthWeekdayAt(
   const n: NthWeek =
     week >= 5 || (preferLast && inLastWeek) ? -1 : (week as NthWeek);
   return { n, day: WEEKDAY_CODES[weekday]! };
+}
+
+/** A calendar day as a wall clock in some zone reads it. */
+export interface ZonedCalendarDay {
+  year: number;
+  month: number;
+  day: number;
+  weekday: WeekdayCode;
+  /** Days since 1970-01-01, for day arithmetic. */
+  dayNumber: number;
+  daysInMonth: number;
+}
+
+/**
+ * The calendar day `at` falls on in `timeZone`, through the cached formatter
+ * the series stepping uses, so a Repeat control reading it on every render
+ * builds no formatter of its own.
+ */
+export function zonedCalendarDay(
+  at: Date | number,
+  timeZone: string,
+): ZonedCalendarDay {
+  const clock = wallClockAt(new Date(at).getTime(), timeZone);
+  const n = dayNumber(clock.year, clock.month, clock.day);
+  return {
+    year: clock.year,
+    month: clock.month,
+    day: clock.day,
+    weekday: WEEKDAY_CODES[weekdayOf(n)]!,
+    dayNumber: n,
+    daysInMonth: daysInMonth(clock.year, clock.month),
+  };
 }
 
 /** The day number of `instant` on the wall clock of `timeZone`. */

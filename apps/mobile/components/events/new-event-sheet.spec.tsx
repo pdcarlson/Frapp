@@ -251,10 +251,10 @@ describe("New event", () => {
       point_value: 25,
       is_mandatory: true,
       optional_role_ids: ["role-alumni"],
-      // The weekday follows the start, moved to Saturday.
-      recurrence_rule: expect.stringMatching(
-        /^FREQ=WEEKLY;INTERVAL=1;BYDAY=SA;COUNT=13;TZID=/,
-      ),
+      // Weekly on the start's day at the default length is exactly the
+      // legacy token, which shipped phones read; it steps from the start, so
+      // the weekday follows it to Saturday.
+      recurrence_rule: "WEEKLY",
     });
     expect(successHaptic).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
@@ -281,6 +281,26 @@ describe("New event", () => {
       (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
         .recurrence_rule,
     ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=/);
+    act(() => tree.unmount());
+  });
+
+  it("ends a series on a picked date, and says so before saving (#4488)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    act(() => byLabel(tree, "More options").props.onPress());
+    act(() => chip(tree, "Weekly").props.onPress());
+    act(() => chip(tree, "On date").props.onPress());
+    // Offered the day the 13 meetings would end on.
+    expect(screenText(tree)).toContain(
+      "13 meetings, the last on Jan 28, 2027.",
+    );
+    pick(tree, "Ends on", local(26, 12));
+    expect(screenText(tree)).toContain("4 meetings, the last on Nov 26.");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
+        .recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=TH;UNTIL=20261126;TZID=/);
     act(() => tree.unmount());
   });
 

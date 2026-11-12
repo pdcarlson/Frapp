@@ -4,8 +4,9 @@ import {
   attendanceToWire,
   isRepeatRule,
   repeatDraftFromRule,
-  repeatRuleOf,
+  repeatRuleForEdit,
   type EventAttendanceWire,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 import {
@@ -92,9 +93,9 @@ export function isInSeries(event: EventDetail): boolean {
 }
 
 /**
- * The series rule an edit form should show for this event. Legacy tokens only
- * until the Repeat control reads structured rules (#4488's UI PR); a
- * structured rule shows as none and is left as it is.
+ * The series rule an edit form should show for this event: the parent's on a
+ * generated occurrence, the event's own otherwise. Any rule the API accepts,
+ * a legacy token or a structured one; anything else reads as none.
  */
 export function seriesRuleOf(
   event: EventDetail,
@@ -203,9 +204,12 @@ export function validateEventEdit(
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
-  // A rule steps from the series' first meeting, which is the parent's start
-  // on a generated occurrence, and the event's own otherwise.
-  const repeat = repeatRuleOf(draft.repeat, repeatAnchor(target, start));
+  // A changed rule steps from the meeting that is the series' first once
+  // this save lands (`repeatEditAnchor`).
+  const repeat = repeatRuleForEdit(
+    draft.repeat,
+    repeatEditSeriesOf(target, start, now),
+  );
   if (!repeat.ok) errors.repeat = repeat.error;
 
   if (Object.keys(errors).length > 0 || opens === null || !repeat.ok) {
@@ -246,14 +250,24 @@ export function validateEventEdit(
 }
 
 /**
- * The first meeting of the series the Repeat control describes: the parent's
- * on a generated occurrence (when it could be read), else the event's own
- * start as the draft holds it.
+ * The series a Repeat change applies to. Its head is the parent on a
+ * generated occurrence (when it could be read), else the event itself; a
+ * series save shifts the head by the same as the edited meeting's start
+ * (`saveRequestFor`).
  */
-export function repeatAnchor(target: EventEditTarget, start: Date): Date {
-  return target.event.parent_event_id && target.parent
-    ? new Date(target.parent.start_time)
-    : start;
+export function repeatEditSeriesOf(
+  target: EventEditTarget,
+  start: Date,
+  now: Date,
+): RepeatEditSeries {
+  const { event, parent, seriesRule } = target;
+  const head = event.parent_event_id && parent ? parent : event;
+  return {
+    headStart: new Date(head.start_time),
+    headRule: seriesRule,
+    shiftMs: start.getTime() - new Date(event.start_time).getTime(),
+    now,
+  };
 }
 
 /** Whether the patch writes nothing. */

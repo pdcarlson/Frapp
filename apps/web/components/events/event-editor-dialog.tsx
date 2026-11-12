@@ -38,12 +38,17 @@ import {
   emptyAttendanceDraft,
   eventLimitsAudience,
   eventRequiresAnyone,
+  isRepeatRule,
   noRepeatDraft,
+  REPEAT_PRESET_LABELS,
   repeatDraftFromRule,
+  repeatEditAnchor,
+  repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
   type EventAttendanceDraft,
   type RepeatDraft,
+  type RepeatEditSeries,
 } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -407,6 +412,39 @@ export function EventEditorDialog({
   const canSetRequirements = canManageTypes;
 
   const eventId = typeof event?.id === "string" ? event.id : "";
+
+  // The series an edit's Repeat change applies to. Web edits a series only
+  // from its first meeting: a generated occurrence's own rule is empty, and
+  // a series edit from one has to go to its parent as a shift, which waits
+  // for web's "this event or all upcoming" question (#3667). The phone does
+  // both today.
+  const editSeries = useMemo(() => {
+    if (mode !== "edit" || !event) return null;
+    const headStart = parseInstant(event.start_time);
+    if (!headStart) return null;
+    return {
+      headStart,
+      headRule: isRepeatRule(event.recurrence_rule)
+        ? event.recurrence_rule
+        : null,
+      occurrence:
+        typeof event.parent_event_id === "string" &&
+        event.parent_event_id.length > 0,
+    };
+  }, [mode, event]);
+  const repeatLocked = editSeries?.occurrence ?? false;
+  const repeatSeriesAt = (
+    start: Date,
+    now: Date,
+  ): RepeatEditSeries | undefined =>
+    editSeries && !editSeries.occurrence
+      ? {
+          headStart: editSeries.headStart,
+          headRule: editSeries.headRule,
+          shiftMs: start.getTime() - editSeries.headStart.getTime(),
+          now,
+        }
+      : undefined;
   const isSubmitting =
     createEventMutation.isPending || updateEventMutation.isPending;
 
@@ -642,10 +680,15 @@ export function EventEditorDialog({
       return;
     }
 
-    // The rule steps from the event's own start: only a series' first meeting
-    // carries one. An untouched draft gives back the stored rule, which the
-    // server reads as unchanged rather than rebuilding the series.
-    const repeatResult = repeatRuleOf(repeat, new Date(startIso));
+    // On create the rule steps from the event's start. On an edit it steps
+    // from the meeting that is the series' first once the save lands
+    // (`repeatEditAnchor`); an untouched draft gives back the stored rule.
+    const editRepeatSeries = repeatSeriesAt(new Date(startIso), new Date());
+    const repeatResult = repeatLocked
+      ? ({ ok: true, rule: null } as const)
+      : editRepeatSeries
+        ? repeatRuleForEdit(repeat, editRepeatSeries)
+        : repeatRuleOf(repeat, new Date(startIso));
     if (!repeatResult.ok) {
       setShowMore(true);
       toast({
@@ -664,7 +707,6 @@ export function EventEditorDialog({
       end_time: endIso,
       point_value: canSetRequirements ? pointValueNumber : 0,
       is_mandatory: wire.is_mandatory,
-      recurrence_rule: repeatResult.rule ?? undefined,
       notes: notes.trim() || undefined,
     };
     // Sent on create only when one is picked, so a plain event still creates
@@ -702,6 +744,9 @@ export function EventEditorDialog({
         try {
           created = await createEventMutation.mutateAsync({
             ...payload,
+            ...(repeatResult.rule
+              ? { recurrence_rule: repeatResult.rule }
+              : {}),
             ...(typeField as { event_type_id?: string }),
             ...(card
               ? {
@@ -737,10 +782,19 @@ export function EventEditorDialog({
         toast(createdToast(payload.name, { cardKeptOut, cardLost }));
       } else {
         if (!eventId) return;
+        // A Repeat change is about the series: sent with `series` scope, so
+        // the API rebuilds the upcoming meetings (and the rest of this save
+        // reaches them too), and "Doesn't repeat" as `null`, which ends it.
+        // An unchanged rule isn't sent, so nothing is rebuilt.
+        const repeatChanged =
+          !repeatLocked && repeatResult.rule !== (editSeries?.headRule ?? null);
         await updateEventMutation.mutateAsync({
           id: eventId,
           body: {
             ...payload,
+            ...(repeatChanged
+              ? { recurrence_rule: repeatResult.rule, scope: "series" as const }
+              : {}),
             ...typeField,
             required_role_ids: wire.required_role_ids,
             optional_role_ids: wire.optional_role_ids,
@@ -794,6 +848,12 @@ export function EventEditorDialog({
   }
 
   const repeatStart = parseInstant(localInputToIso(startAt));
+  const repeatSeries = repeatStart
+    ? repeatSeriesAt(repeatStart, new Date())
+    : undefined;
+  const repeatAnchorStart = repeatSeries
+    ? repeatEditAnchor(repeatSeries)
+    : repeatStart;
   const moreSummary = [
     ...(canSetRequirements
       ? [
@@ -802,11 +862,13 @@ export function EventEditorDialog({
         ]
       : []),
     describeAttendance(attendance, roleName),
-    repeatStart
-      ? repeatSummary(repeat, repeatStart)
-      : repeat.preset === "NONE"
-        ? "Doesn't repeat"
-        : "Repeats",
+    repeatLocked
+      ? "Part of a series"
+      : repeatStart
+        ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart)
+        : repeat.preset === "NONE"
+          ? REPEAT_PRESET_LABELS.NONE
+          : "Repeats",
   ].join(" · ");
 
   return (
@@ -936,15 +998,28 @@ export function EventEditorDialog({
                   />
                 </section>
 
-                <RepeatOptions
-                  draft={repeat}
-                  start={repeatStart}
-                  onChange={setRepeat}
-                  disabled={usingPreviewData}
-                  // An existing series' length was set when it was made; the
-                  // line comes back once the officer changes Repeat.
-                  showLength={!(mode === "edit" && repeat.pristine)}
-                />
+                {repeatLocked ? (
+                  <section className="grid gap-1" aria-label="Repeat">
+                    <span className="text-sm font-semibold leading-none">
+                      Repeat
+                    </span>
+                    <p className="text-caption text-muted-foreground">
+                      Part of a repeating series. Change how it repeats from its
+                      first meeting, or in the Frapp app.
+                    </p>
+                  </section>
+                ) : (
+                  <RepeatOptions
+                    draft={repeat}
+                    start={repeatAnchorStart}
+                    onChange={setRepeat}
+                    disabled={usingPreviewData}
+                    // An existing series' length was set when it was made;
+                    // the line comes back once the officer changes Repeat.
+                    showLength={!(mode === "edit" && repeat.pristine)}
+                    series={repeatSeries}
+                  />
+                )}
 
                 {canSetRequirements ? (
                   <div className="grid content-start gap-1">

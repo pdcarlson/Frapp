@@ -33,6 +33,7 @@ import {
   EVENT_CREATE_PERMISSIONS,
   describeAttendance,
   eventLimitsAudience,
+  repeatEditAnchor,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -77,7 +78,7 @@ import {
   isEmptyPatch,
   leavesAfterSave,
   offersSeriesChoice,
-  repeatAnchor,
+  repeatEditSeriesOf,
   saveRequestFor,
   saveScopeFor,
   validateEventEdit,
@@ -316,9 +317,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     );
 
     function setStart(next: Date) {
+      // A repeat refusal was about the old start (an end date before the
+      // second meeting, say), and would hide the caption that now applies.
       update({ start: next, end: shiftEnd({ start, end }, next) }, [
         "start",
         "end",
+        "repeat",
       ]);
     }
     function setEnd(next: Date) {
@@ -573,7 +577,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
     // An existing series' length was set when it was made; the line comes
     // back only when the officer changes Repeat and the series is rebuilt.
-    const repeatStart = editing ? repeatAnchor(editing, start) : start;
+    const repeatSeries = editing
+      ? repeatEditSeriesOf(editing, start, at)
+      : undefined;
+    const repeatStart = repeatSeries ? repeatEditAnchor(repeatSeries) : start;
     const showRepeatLength = !(editing && draft.repeat.pristine);
     const repeatUnknown =
       !!editing?.event.parent_event_id && editing.parent === null;
@@ -811,6 +818,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     disabled={pending}
                     error={errors.repeat}
                     showCaption={showRepeatLength}
+                    series={repeatSeries}
                   />
                 )}
 

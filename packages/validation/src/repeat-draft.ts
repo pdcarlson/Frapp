@@ -15,6 +15,7 @@
  */
 
 import {
+  LEGACY_CHILD_COUNT,
   MAX_REPEAT_INTERVAL,
   MAX_SERIES_MEETINGS,
   RECURRENCE_REPEAT_LABELS,
@@ -26,10 +27,13 @@ import {
   nthWeekdayPhrase,
   parseRepeatRule,
   seriesChildStarts,
+  zonedCalendarDay,
   type NthWeek,
   type RepeatFrequency,
+  type RecurrenceRule,
   type RepeatRule,
   type WeekdayCode,
+  type ZonedCalendarDay,
 } from "./recurrence";
 import { localTimeZone } from "./time-zone";
 
@@ -44,10 +48,32 @@ export const REPEAT_PRESET_LABELS: Record<RepeatPreset, string> = {
   MONTHLY: "Monthly",
 };
 
+/** The weekday chips' letters and their spoken names, Sunday first. */
+export const REPEAT_DAY_LETTERS: Record<WeekdayCode, string> = {
+  SU: "S",
+  MO: "M",
+  TU: "T",
+  WE: "W",
+  TH: "T",
+  FR: "F",
+  SA: "S",
+};
+export const REPEAT_DAY_NAMES: Record<WeekdayCode, string> = {
+  SU: "Sunday",
+  MO: "Monday",
+  TU: "Tuesday",
+  WE: "Wednesday",
+  TH: "Thursday",
+  FR: "Friday",
+  SA: "Saturday",
+};
+
 /**
  * How many meetings a new series holds when the officer doesn't say, its
  * first included: weekly and monthly keep the lengths the legacy `WEEKLY`
- * and `MONTHLY` tokens make (12 and 6 after the first), daily a week.
+ * and `MONTHLY` tokens make (12 and 6 after the first), daily a week. So an
+ * untouched Weekly or Monthly is exactly a token and is sent as one
+ * ({@link repeatRuleOf}).
  */
 export const REPEAT_DEFAULT_COUNT: Record<RepeatFrequency, number> = {
   DAILY: 7,
@@ -187,7 +213,10 @@ export function pickRepeatPreset(
 
 /**
  * Choosing how it ends. Switching to a date the first time offers the day
- * the current count would end on, as Google Calendar does.
+ * the current count would end on, as Google Calendar does, or the first
+ * meeting's own day when the count can't say (the caption then asks for a
+ * later one). Never no day: a date picker shows some day, and one the
+ * draft doesn't hold couldn't be picked (iOS reports only a change).
  */
 export function pickRepeatEnd(
   draft: RepeatDraft,
@@ -197,7 +226,7 @@ export function pickRepeatEnd(
   if (endKind === draft.endKind) return draft;
   let until = draft.until;
   if (endKind === "until" && until === "") {
-    until = defaultUntil(draft, start) ?? "";
+    until = defaultUntil(draft, start) ?? dayString(start, draft.timeZone);
   }
   return { ...draft, endKind, until, pristine: false };
 }
@@ -218,50 +247,20 @@ export function toggleRepeatDay(
 
 /** The weekly days the chips show on. */
 export function repeatDays(draft: RepeatDraft, start: Date): WeekdayCode[] {
-  return draft.byDay ?? [zonedDay(start, draft.timeZone).weekday];
+  return draft.byDay ?? [zonedCalendarDay(start, draft.timeZone).weekday];
 }
 
 // ---------------------------------------------------------------------------
 // The first meeting's day, in the series' zone
 // ---------------------------------------------------------------------------
 
-interface ZonedDay {
-  year: number;
-  month: number;
-  day: number;
-  weekday: WeekdayCode;
-}
-
-function zonedDay(at: Date, timeZone: string): ZonedDay {
-  const read: Record<string, string> = {};
-  for (const part of new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    weekday: "short",
-  }).formatToParts(at)) {
-    read[part.type] = part.value;
-  }
-  const year = Number(read.year);
-  const month = Number(read.month);
-  const day = Number(read.day);
-  const weekday =
-    WEEKDAY_CODES[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]!;
-  return { year, month, day, weekday };
-}
-
 /**
- * Which weeks of its month `start` falls in: the nth (1 to 5; a fifth has no
+ * Which week of its month a day is in: the nth (1 to 5; a fifth has no
  * "every month" equivalent but "last"), and whether it is the month's last
  * such weekday.
  */
-function daysInMonth(day: ZonedDay): number {
-  return new Date(Date.UTC(day.year, day.month, 0)).getUTCDate();
-}
-
-function weekOfMonth(day: ZonedDay): { n: number; isLast: boolean } {
-  return { n: Math.ceil(day.day / 7), isLast: day.day + 7 > daysInMonth(day) };
+function weekOfMonth(day: ZonedCalendarDay): { n: number; isLast: boolean } {
+  return { n: Math.ceil(day.day / 7), isLast: day.day + 7 > day.daysInMonth };
 }
 
 /**
@@ -269,9 +268,9 @@ function weekOfMonth(day: ZonedDay): { n: number; isLast: boolean } {
  * first meeting is that day of, or clamped to (the 31st, on Feb 28), else
  * the first meeting's own day.
  */
-function monthDayFor(draft: RepeatDraft, day: ZonedDay): number {
+function monthDayFor(draft: RepeatDraft, day: ZonedCalendarDay): number {
   const kept = draft.monthDay;
-  return kept !== null && Math.min(kept, daysInMonth(day)) === day.day
+  return kept !== null && Math.min(kept, day.daysInMonth) === day.day
     ? kept
     : day.day;
 }
@@ -292,7 +291,7 @@ export function monthlyChoices(
   draft: RepeatDraft,
   start: Date,
 ): MonthlyChoice[] {
-  const day = zonedDay(start, draft.timeZone);
+  const day = zonedCalendarDay(start, draft.timeZone);
   const { n, isLast } = weekOfMonth(day);
   const choices: MonthlyChoice[] = [
     { by: "date", label: `day ${monthDayFor(draft, day)}` },
@@ -313,11 +312,16 @@ export function monthlyChoices(
 }
 
 /**
- * The monthly choice that applies: one the first meeting no longer offers
- * (it moved off the last week, say) falls back to the day of the month.
+ * The monthly choice that applies, of `choices` (the first meeting's
+ * {@link monthlyChoices}): one the first meeting no longer offers (it moved
+ * off the last week, say) falls back to the day of the month. Both controls
+ * show this one as picked, so the chip lit is the rule saved.
  */
-function monthlyByFor(draft: RepeatDraft, start: Date): MonthlyBy {
-  return monthlyChoices(draft, start).some((c) => c.by === draft.monthlyBy)
+export function monthlyByFor(
+  draft: RepeatDraft,
+  choices: readonly MonthlyChoice[],
+): MonthlyBy {
+  return choices.some((c) => c.by === draft.monthlyBy)
     ? draft.monthlyBy
     : "date";
 }
@@ -339,9 +343,50 @@ function wholeNumber(text: string): number | null {
 }
 
 /**
+ * The legacy token a rule says exactly, if one does: weekly on the first
+ * meeting's weekday or every 2 weeks, or monthly on its day of the month,
+ * each with the token's own length. Shipped phone builds read only tokens
+ * (they show anything else raw as the cadence and treat the head as
+ * one-time), so a client sends a token whenever one says the same series
+ * (#4488). A token steps in UTC: a monthly one is used only where the
+ * first meeting's day is the same in UTC and is one every month has, so
+ * the meetings it makes are the rule's.
+ */
+function legacyTokenFor(
+  rule: RepeatRule,
+  start: Date,
+  day: ZonedCalendarDay,
+): RecurrenceRule | null {
+  if (rule.end.kind !== "count") return null;
+  const children = rule.end.count - 1;
+  if (rule.freq === "WEEKLY") {
+    if (rule.byDay.length !== 1 || rule.byDay[0] !== day.weekday) return null;
+    if (rule.interval === 1 && children === LEGACY_CHILD_COUNT.WEEKLY) {
+      return "WEEKLY";
+    }
+    if (rule.interval === 2 && children === LEGACY_CHILD_COUNT.BIWEEKLY) {
+      return "BIWEEKLY";
+    }
+    return null;
+  }
+  if (
+    rule.freq === "MONTHLY" &&
+    rule.interval === 1 &&
+    rule.nthWeekday === null &&
+    rule.monthDay === day.day &&
+    day.day <= 28 &&
+    start.getUTCDate() === day.day &&
+    children === LEGACY_CHILD_COUNT.MONTHLY
+  ) {
+    return "MONTHLY";
+  }
+  return null;
+}
+
+/**
  * The `recurrence_rule` the draft says, or why it can't be saved yet. `null`
  * for a one-time event; the stored rule unchanged while the draft is
- * untouched.
+ * untouched; a legacy token where one says the same series.
  */
 export function repeatRuleOf(
   draft: RepeatDraft,
@@ -377,9 +422,9 @@ export function repeatRuleOf(
     end = { kind: "until", until: draft.until };
   }
 
-  const day = zonedDay(start, draft.timeZone);
-  const monthlyBy = monthlyByFor(draft, start);
-  const rule = formatRepeatRule({
+  const day = zonedCalendarDay(start, draft.timeZone);
+  const monthlyBy = monthlyByFor(draft, monthlyChoices(draft, start));
+  const structured: RepeatRule = {
     freq: draft.preset,
     interval,
     byDay: draft.preset === "WEEKLY" ? repeatDays(draft, start) : [],
@@ -396,7 +441,9 @@ export function repeatRuleOf(
         : null,
     end,
     timeZone: draft.timeZone,
-  });
+  };
+  const rule =
+    legacyTokenFor(structured, start, day) ?? formatRepeatRule(structured);
 
   const problem = checkSeriesLength(rule, start);
   if (problem) return { ok: false, field: "until", error: problem };
@@ -411,11 +458,16 @@ export function repeatRuleOf(
 export function repeatCaption(
   draft: RepeatDraft,
   start: Date,
+  /** On an edit, the series the change applies to: says what it will save. */
+  series?: RepeatEditSeries,
 ): { text: string; problem: boolean } | null {
-  const result = repeatRuleOf(draft, start);
+  const result = series
+    ? repeatRuleForEdit(draft, series)
+    : repeatRuleOf(draft, start);
   if (!result.ok) return { text: result.error, problem: true };
   if (!result.rule) return null;
-  const text = describeSeriesLength(start, result.rule);
+  const from = series ? repeatEditAnchor(series) : start;
+  const text = describeSeriesLength(from, result.rule);
   return text ? { text, problem: false } : null;
 }
 
@@ -457,6 +509,93 @@ function defaultUntil(draft: RepeatDraft, start: Date): string | null {
   const starts = rule ? seriesChildStarts(rule, start) : null;
   const last = starts?.[starts.length - 1];
   if (!last) return null;
-  const day = zonedDay(last, draft.timeZone);
+  return dayString(last, draft.timeZone);
+}
+
+/** `YYYY-MM-DD` of `at` in `timeZone`. */
+function dayString(at: Date, timeZone: string): string {
+  const day = zonedCalendarDay(at, timeZone);
   return `${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Editing a series
+// ---------------------------------------------------------------------------
+
+/** The series an edit's Repeat change applies to, as the editor knows it. */
+export interface RepeatEditSeries {
+  /** The series' first meeting (its head) as stored. */
+  headStart: Date;
+  /** The head's stored rule; `null` for a one-time event. */
+  headRule: string | null;
+  /**
+   * How far this save moves the series: the edited meeting's new start
+   * less its stored one. A series save shifts the head by the same.
+   */
+  shiftMs: number;
+  now: Date;
+}
+
+/**
+ * The meeting a changed rule steps from once the save lands, which the API
+ * takes the rule as sent from (`EventSeriesService.updateSeries`): the head
+ * moved by the save's shift, or, when the head has already started and the
+ * API splits it off, the series' next meeting moved by the same shift. The
+ * next meeting is read from the stored rule's pattern; one moved by hand
+ * since isn't known here, and the API checks the rule against the real one.
+ */
+export function repeatEditAnchor(series: RepeatEditSeries): Date {
+  const { headStart, headRule, shiftMs, now } = series;
+  if (headStart.getTime() > now.getTime() || !headRule) {
+    return new Date(headStart.getTime() + shiftMs);
+  }
+  const next = seriesChildStarts(headRule, headStart, now.getTime())?.[0];
+  return new Date((next ?? headStart).getTime() + shiftMs);
+}
+
+function sameDays(a: readonly WeekdayCode[], b: readonly WeekdayCode[]) {
+  return a.length === b.length && a.every((code) => b.includes(code));
+}
+
+/**
+ * The rule an edit sends, as {@link repeatRuleOf} from the meeting the rule
+ * will step from ({@link repeatEditAnchor}). An untouched draft gives back the
+ * stored rule, which the API shifts with a moved start itself. A changed one
+ * is taken as sent, so weekdays the officer left as stored move with the
+ * start here, as the API would have moved them: a Monday series moved to
+ * Tuesday whose count changed in the same save meets on Tuesdays.
+ */
+export function repeatRuleForEdit(
+  draft: RepeatDraft,
+  series: RepeatEditSeries,
+): RepeatRuleResult {
+  const anchor = repeatEditAnchor(series);
+  if (draft.preset === "NONE" || (draft.pristine && draft.source)) {
+    return repeatRuleOf(draft, anchor);
+  }
+  const stored = parseRepeatRule(draft.source);
+  let moved = draft;
+  if (series.shiftMs !== 0 && draft.byDay && stored && !stored.legacy) {
+    const from = zonedCalendarDay(series.headStart, draft.timeZone);
+    const to = zonedCalendarDay(
+      series.headStart.getTime() + series.shiftMs,
+      draft.timeZone,
+    );
+    const days = to.dayNumber - from.dayNumber;
+    if (days !== 0 && sameDays(draft.byDay, stored.byDay)) {
+      const shifted = new Set(
+        draft.byDay.map(
+          (code) =>
+            WEEKDAY_CODES[
+              (((WEEKDAY_CODES.indexOf(code) + days) % 7) + 7) % 7
+            ]!,
+        ),
+      );
+      moved = {
+        ...draft,
+        byDay: WEEKDAY_CODES.filter((code) => shifted.has(code)),
+      };
+    }
+  }
+  return repeatRuleOf(moved, anchor);
 }

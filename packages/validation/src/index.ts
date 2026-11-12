@@ -930,6 +930,7 @@ export {
   seriesChildStarts,
   seriesExtent,
   shiftRepeatRule,
+  zonedCalendarDay,
 } from "./recurrence";
 export type {
   NthWeek,
@@ -939,14 +940,18 @@ export type {
   RepeatFrequency,
   RepeatRule,
   WeekdayCode,
+  ZonedCalendarDay,
 } from "./recurrence";
 // The Repeat control's state, read and written the same way by the web
 // editor and the phone's New event sheet (#4488).
 export {
+  REPEAT_DAY_LETTERS,
+  REPEAT_DAY_NAMES,
   REPEAT_DEFAULT_COUNT,
   REPEAT_PRESETS,
   REPEAT_PRESET_LABELS,
   editRepeatDraft,
+  monthlyByFor,
   monthlyChoices,
   noRepeatDraft,
   pickRepeatEnd,
@@ -954,6 +959,8 @@ export {
   repeatCaption,
   repeatDays,
   repeatDraftFromRule,
+  repeatEditAnchor,
+  repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
   toggleRepeatDay,
@@ -962,6 +969,7 @@ export type {
   MonthlyBy,
   MonthlyChoice,
   RepeatDraft,
+  RepeatEditSeries,
   RepeatField,
   RepeatPreset,
   RepeatRuleResult,

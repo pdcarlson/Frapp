@@ -219,7 +219,10 @@ describe("the More options summary", () => {
   });
 
   it("says a structured cadence", () => {
-    const weekly = pickRepeatPreset(emptyEventDraft().repeat, "WEEKLY");
+    const weekly = editRepeatDraft(
+      pickRepeatPreset(emptyEventDraft().repeat, "WEEKLY"),
+      { countInput: "20" },
+    );
     expect(
       moreOptionsSummary(
         { ...emptyEventDraft(), repeat: weekly },
@@ -394,7 +397,12 @@ describe("a member who can't edit events", () => {
 
   it("sees no points in the More options summary", () => {
     expect(
-      moreOptionsSummary(emptyEventDraft(), () => undefined, local(10, 20), false),
+      moreOptionsSummary(
+        emptyEventDraft(),
+        () => undefined,
+        local(10, 20),
+        false,
+      ),
     ).not.toMatch(/pts/);
   });
 });

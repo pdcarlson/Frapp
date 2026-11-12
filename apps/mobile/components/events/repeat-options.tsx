@@ -12,11 +12,15 @@ import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
 import { SignetTokens } from "@repo/theme/signet";
+import { parseBareDateLocalNoon, localIsoDate } from "@repo/formatting";
 import {
+  REPEAT_DAY_LETTERS,
+  REPEAT_DAY_NAMES,
   REPEAT_PRESETS,
   REPEAT_PRESET_LABELS,
   WEEKDAY_CODES,
   editRepeatDraft,
+  monthlyByFor,
   monthlyChoices,
   pickRepeatEnd,
   pickRepeatPreset,
@@ -24,8 +28,8 @@ import {
   repeatDays,
   toggleRepeatDay,
   type RepeatDraft,
+  type RepeatEditSeries,
   type RepeatPreset,
-  type WeekdayCode,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -46,6 +50,7 @@ export function RepeatOptions({
   disabled,
   error,
   showCaption,
+  series,
   platform = Platform.OS,
 }: {
   draft: RepeatDraft;
@@ -57,6 +62,8 @@ export function RepeatOptions({
   error?: string;
   /** Whether to say how long the series runs. */
   showCaption: boolean;
+  /** On an edit, the series the change applies to (`repeatCaption`). */
+  series?: RepeatEditSeries;
   platform?: string;
 }) {
   const { tokens } = useFrappTheme();
@@ -64,7 +71,9 @@ export function RepeatOptions({
   const styles = createStyles(tokens, brand.accent);
   const [focused, setFocused] = useState<"interval" | "count" | null>(null);
 
-  const caption = repeatCaption(draft, start);
+  const caption = repeatCaption(draft, start, series);
+  const choices =
+    draft.preset === "MONTHLY" ? monthlyChoices(draft, start) : [];
   // A problem the officer can see as they type is said at once; the length
   // only once the series differs from the one saved.
   const line =
@@ -109,11 +118,11 @@ export function RepeatOptions({
                   return (
                     <Chip
                       key={code}
-                      label={DAY_LETTER[code]}
+                      label={REPEAT_DAY_LETTERS[code]}
                       on={on}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: on, disabled }}
-                      accessibilityLabel={DAY_NAME[code]}
+                      accessibilityLabel={REPEAT_DAY_NAMES[code]}
                       onPress={() => {
                         if (!disabled) {
                           onChange(toggleRepeatDay(draft, code, start));
@@ -157,17 +166,11 @@ export function RepeatOptions({
                 <Text style={styles.rowLabel}>On</Text>
                 <View style={styles.chips}>
                   <FilterChips
-                    chips={monthlyChoices(draft, start).map((choice) => ({
+                    chips={choices.map((choice) => ({
                       value: choice.by,
                       label: choice.label,
                     }))}
-                    selected={
-                      monthlyChoices(draft, start).some(
-                        (c) => c.by === draft.monthlyBy,
-                      )
-                        ? draft.monthlyBy
-                        : "date"
-                    }
+                    selected={monthlyByFor(draft, choices)}
                     onSelect={(value) => {
                       if (disabled || value === null) return;
                       onChange(
@@ -257,37 +260,6 @@ export function RepeatOptions({
   );
 }
 
-const DAY_LETTER: Record<WeekdayCode, string> = {
-  SU: "S",
-  MO: "M",
-  TU: "T",
-  WE: "W",
-  TH: "T",
-  FR: "F",
-  SA: "S",
-};
-const DAY_NAME: Record<WeekdayCode, string> = {
-  SU: "Sunday",
-  MO: "Monday",
-  TU: "Tuesday",
-  WE: "Wednesday",
-  TH: "Thursday",
-  FR: "Friday",
-  SA: "Saturday",
-};
-
-/** `YYYY-MM-DD` as a local Date at noon, clear of any DST edge. */
-function dateOfDay(day: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
-}
-
-function dayOfDate(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-}
-
 /** The series' last day: iOS's compact date pill, else a pill. */
 function UntilPicker({
   value,
@@ -305,7 +277,9 @@ function UntilPicker({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand.accent);
-  const date = dateOfDay(value) ?? minimum;
+  // `pickRepeatEnd` always sets a day, so the date shown is the one saved:
+  // iOS's pill reports only a change, and a stand-in day couldn't be picked.
+  const date = parseBareDateLocalNoon(value) ?? minimum;
   const label = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -325,7 +299,7 @@ function UntilPicker({
             minimumDate={minimum}
             disabled={disabled}
             accessibilityLabel={`Ends on, ${label}`}
-            onValueChange={(_event, picked) => onChange(dayOfDate(picked))}
+            onValueChange={(_event, chosen) => onChange(localIsoDate(chosen))}
           />
         </View>
       </>
@@ -345,7 +319,7 @@ function UntilPicker({
             value: date,
             mode: "date",
             minimumDate: minimum,
-            onValueChange: (_event, picked) => onChange(dayOfDate(picked)),
+            onValueChange: (_event, chosen) => onChange(localIsoDate(chosen)),
           });
         }}
         style={styles.pill}
