@@ -614,6 +614,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
             sizeBytes: recording.size_bytes,
             durationSeconds: recording.duration_seconds,
           },
+          maxSeconds: this.limits().max_seconds,
           vocabulary,
           promptVersion: MEETING_TRANSCRIPTION_VERSION,
           resumeJobId: recording.provider_job_id,
