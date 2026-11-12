@@ -2747,7 +2747,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List tasks (own or all for admins) */
+        /**
+         * List tasks (own or all for admins)
+         * @description Newest first, by `created_at` then `id`. Send `limit` (and, for the next page, `before` and `before_id` from the last task received) to page; a page shorter than `limit` is the last. With neither, every task is returned, as before paging existed.
+         */
         get: operations["TaskController_list_v1"];
         put?: never;
         /** Create a task */
@@ -3368,7 +3371,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
+        /** Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -5137,7 +5140,7 @@ export interface components {
              * @enum {string|null}
              */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | null;
-            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text. */
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
             /** Format: uuid */
@@ -6539,7 +6542,7 @@ export interface components {
             closes_at: string | null;
             /**
              * Format: date-time
-             * @description Set when its creator closed it early.
+             * @description Set when it was closed early, by its creator or a channels:manage holder.
              */
             closed_at: string | null;
             is_closed: boolean;
@@ -13270,7 +13273,14 @@ export interface operations {
     };
     TaskController_list_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task. */
+                limit?: number;
+                /** @description Cursor: the `created_at` of the last task of the previous page, fed back exactly as received. Tasks come newest first, by `created_at` then `id`. Requires `before_id`. */
+                before?: string;
+                /** @description Cursor: the `id` of the last task of the previous page. Requires `before`. */
+                before_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

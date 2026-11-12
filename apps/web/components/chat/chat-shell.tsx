@@ -2352,6 +2352,21 @@ export function ChatShell({
     [activeChannel],
   );
   const closeThread = useCallback(() => setOpenThread(null), []);
+  // On a wide window the open thread is a column of its own beside the chat
+  // (#4297, as Discord and Slack do on a computer), so the channel stays in
+  // view and usable; it takes the members column's place while open, as
+  // Discord's does. Narrower, or beside a tool page, it covers the chat
+  // column instead (#3785).
+  const threadBeside = isWideChat && threadRootId !== null;
+  // The members toggle while a thread is beside the chat: the members come
+  // back, so the thread closes.
+  const showMembersOverThread = () => {
+    setOpenThread(null);
+    if (membersHidden) {
+      setMembersHidden(false);
+      persistMembersHidden(false);
+    }
+  };
   // The thread panel's row writes (#4034): the timeline's own, each told
   // which thread a reply belongs to.
   const {
@@ -2805,6 +2820,50 @@ export function ChatShell({
     </>
   );
 
+  // The members column is on screen: a wide window, not hidden, and no
+  // thread beside the chat in its place.
+  const membersBeside = isWideChat && !membersHidden && !threadBeside;
+  // The open thread (#3785), drawn over the chat column or beside it.
+  const threadPanel =
+    activeChannel && threadRootId ? (
+      <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+        <ThreadPanel
+          key={threadRootId}
+          className={
+            threadBeside
+              ? "w-96 shrink-0 border-l border-border"
+              : "absolute inset-0 z-10"
+          }
+          beside={threadBeside}
+          onClosePanel={onClose}
+          channelId={activeChannel.id}
+          channelName={activeChannel.name ?? null}
+          rootId={threadRootId}
+          viewerId={userId}
+          nameFor={nameFor}
+          avatarFor={avatarFor}
+          roleColorFor={roleColorFor}
+          blockState={blockState}
+          heldRoot={heldThreadRoot}
+          writes={threadWrites}
+          onUnblock={handleUnblock}
+          onReloadMasked={handleReloadMasked}
+          maskedRefresh={maskedRefresh}
+          bookmarkedMessageIds={bookmarkedMessageIds}
+          onToggleBookmark={handleToggleBookmark}
+          canManageChannel={canManageChannel}
+          onReport={handleReport}
+          onBlock={handleBlock}
+          onOpenProfile={openProfile}
+          isMember={isMember}
+          canReply={channelAllowsThreadReplies(activeChannel)}
+          // An edit authorizes as a post (#2775), the timeline's gate.
+          canPost={activeChannel.can_post !== false}
+          onClose={closeThread}
+        />
+      </MentionChipTargetsContext.Provider>
+    ) : null;
+
   return (
     /*
       Flush columns, 100vh, independent scroll (`1b` — the board counts the app
@@ -2906,8 +2965,9 @@ export function ChatShell({
               ? activeChannelName
               : `#${activeChannelName}`
           }
-          // A thread covers the column, and its replies take no files.
-          disabled={!!threadRootId}
+          // A thread covering the column takes no files: its replies have
+          // none. Beside the chat, the channel's composer is still there.
+          disabled={!!threadRootId && !threadBeside}
         />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
@@ -2952,17 +3012,12 @@ export function ChatShell({
                 variant="ghost"
                 size="icon"
                 className={compactControlClassName}
-                onClick={toggleMembers}
-                aria-label={
-                  isWideChat && !membersHidden ? "Hide members" : "Show members"
-                }
-                aria-pressed={isWideChat ? !membersHidden : undefined}
+                onClick={threadBeside ? showMembersOverThread : toggleMembers}
+                aria-label={membersBeside ? "Hide members" : "Show members"}
+                aria-pressed={isWideChat ? membersBeside : undefined}
                 aria-haspopup={isWideChat ? undefined : "dialog"}
               >
-                <MembersGlyph
-                  className="h-5 w-5"
-                  active={isWideChat && !membersHidden}
-                />
+                <MembersGlyph className="h-5 w-5" active={membersBeside} />
               </Button>
             ) : null}
             <ChannelMenu
@@ -3558,42 +3613,17 @@ export function ChatShell({
         {/*
           A message thread (#3785) replaces the message list inside the chat
           column, and Back returns to it. Drawn over the column rather than in
-          its place, so the timeline keeps its scroll position underneath.
+          its place, so the timeline keeps its scroll position underneath. On
+          a wide window it is a column beside the chat instead (below).
         */}
-        {activeChannel && threadRootId ? (
-          <MentionChipTargetsContext.Provider value={mentionChipTargets}>
-            <ThreadPanel
-              key={threadRootId}
-              className="absolute inset-0 z-10"
-              onClosePanel={onClose}
-              channelId={activeChannel.id}
-              channelName={activeChannel.name ?? null}
-              rootId={threadRootId}
-              viewerId={userId}
-              nameFor={nameFor}
-              avatarFor={avatarFor}
-              roleColorFor={roleColorFor}
-              blockState={blockState}
-              heldRoot={heldThreadRoot}
-              writes={threadWrites}
-              onUnblock={handleUnblock}
-              onReloadMasked={handleReloadMasked}
-              maskedRefresh={maskedRefresh}
-              bookmarkedMessageIds={bookmarkedMessageIds}
-              onToggleBookmark={handleToggleBookmark}
-              canManageChannel={canManageChannel}
-              onReport={handleReport}
-              onBlock={handleBlock}
-              onOpenProfile={openProfile}
-              isMember={isMember}
-              canReply={channelAllowsThreadReplies(activeChannel)}
-              // An edit authorizes as a post (#2775), the timeline's gate.
-              canPost={activeChannel.can_post !== false}
-              onClose={closeThread}
-            />
-          </MentionChipTargetsContext.Provider>
-        ) : null}
+        {threadBeside ? null : threadPanel}
       </section>
+
+      {/*
+        The open thread beside the chat on a wide window (#4297), in the
+        members column's place.
+      */}
+      {threadBeside ? threadPanel : null}
 
       {/*
         Members, 240px on the right from 1280px (#3536), the same step as the
@@ -3607,6 +3637,9 @@ export function ChatShell({
       {memberColumnMounted ? (
         <aside
           aria-label="Members"
+          // Hidden, not unmounted, under a thread beside the chat (#4297), so
+          // the list's search is still there when the thread closes.
+          hidden={threadBeside}
           className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
         >
           {/*

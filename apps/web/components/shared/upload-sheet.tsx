@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
  *
  * **Nothing here defines a token.** The board's `#2A2621` sheet is
  * `bg-popover`, its `#1A1A1A` field is `bg-surface-1`, its `#F85149` error
- * border is `border-destructive` and its `#FF7B72` error text is
+ * border is `border-destructive` and its lifted `#FF7B72` error text is
  * `text-destructive-text`. The one place the board's raw value is *not* taken
  * is the file well's `rgba(255,255,255,.2)` dashed hairline, which is
  * `border-input` (`.14`) instead: `components.md` §2's "a hairline's alpha is

@@ -20,9 +20,13 @@ export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
 
-/** The filter chips: everything, or one kind of thing. */
+/**
+ * The filter chips: everything, only what is waiting on the member (the
+ * Needs you group, #4402), or one kind of thing.
+ */
 export const ACTIVITY_FILTERS = [
   { value: "all", label: "All" },
+  { value: "waiting", label: "Needs you" },
   { value: "task", label: "Tasks" },
   { value: "poll", label: "Polls" },
   { value: "event", label: "Events" },
@@ -31,14 +35,48 @@ export const ACTIVITY_FILTERS = [
 ] as const;
 export type ActivityKind = Exclude<
   (typeof ACTIVITY_FILTERS)[number]["value"],
-  "all"
+  "all" | "waiting"
 >;
 /**
  * A chip's value, or `confirm`: what the To confirm tile narrows to (the
  * tasks waiting on the member's confirm), which has no chip of its own
  * since the Tasks chip already covers it (#4173).
  */
-export type ActivityFilter = "all" | ActivityKind | "confirm";
+export type ActivityFilter = "all" | "waiting" | ActivityKind | "confirm";
+
+/** The chapter module each kind belongs to; Links and Needs you belong to none. */
+const FILTER_MODULE: Partial<Record<ActivityFilter, string>> = {
+  task: "tasks",
+  confirm: "tasks",
+  poll: "polls",
+  event: "events",
+  hours: "hours",
+};
+
+/**
+ * Whether a filter can show anything in this chapter: not a kind whose
+ * module the chapter has off (#4402). A client leaves that chip out, as the
+ * summary leaves out its tile, and opens on All rather than on a stored
+ * chip for it. With the module switch unknown, everything is available.
+ */
+export function activityFilterAvailable(
+  filter: ActivityFilter,
+  isModuleEnabled?: (module: string) => boolean,
+): boolean {
+  const module = FILTER_MODULE[filter];
+  return !module || (isModuleEnabled?.(module) ?? true);
+}
+
+/**
+ * The chip a member last picked, as stored on their device (#4402), or
+ * `null` for anything that isn't one. The To confirm tile's narrowing is a
+ * moment's shortcut and isn't remembered.
+ */
+export function parseActivityFilter(raw: unknown): ActivityFilter | null {
+  return ACTIVITY_FILTERS.some((option) => option.value === raw)
+    ? (raw as ActivityFilter)
+    : null;
+}
 
 /** How many rows each list of the read carries at most (`activity.md`). */
 export const ACTIVITY_LIST_LIMIT = 25;
@@ -498,8 +536,11 @@ export function activityGroups(
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
   const filtered = filter !== "all";
+  // Needs you narrows by group, not kind: its rows are all kept, and every
+  // other group is emptied below.
+  const waiting = filter === "waiting";
   const keep = (rows: ActivityRow[]) =>
-    !filtered
+    !filtered || waiting
       ? rows
       : filter === "confirm"
         ? rows.filter((row) => row.glyph === "confirm")
@@ -509,7 +550,8 @@ export function activityGroups(
   const downFor = (sections: ActivitySection[], kinds: ActivityKind[]) =>
     sections.filter(
       (section, index) =>
-        down.has(section) && (!filtered || kindFilter === kinds[index]),
+        down.has(section) &&
+        (!filtered || waiting || kindFilter === kinds[index]),
     );
   // Under a chip the member asked for that kind, so nothing is held back.
   const cap = (limit: number) => (filtered ? null : limit);
@@ -564,7 +606,7 @@ export function activityGroups(
     ),
   );
 
-  return [
+  const groups: ActivityGroup[] = [
     {
       id: "needs-you",
       label: "Needs you",
@@ -663,6 +705,14 @@ export function activityGroups(
             },
     },
   ];
+  // Under Needs you only that group stays; the page leaves out the rest.
+  return waiting
+    ? groups.map((group) =>
+        group.id === "needs-you"
+          ? group
+          : { ...group, rows: [], parts: [], unavailable: [], archive: null },
+      )
+    : groups;
 }
 
 /** One count tile at the top of the page (#4173). */

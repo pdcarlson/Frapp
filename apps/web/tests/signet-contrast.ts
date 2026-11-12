@@ -272,10 +272,11 @@ export function accentRolesFor(seed: string) {
 }
 
 /**
- * `--accent-subtle-hover` is a `color-mix(in srgb, var(--accent-border) 22%,
- * var(--accent-subtle))` in `signet.css`. CSS resolves it at paint time; here it
- * is recomputed from the same two roles and the same 22%, so a change to the mix
- * in the stylesheet has to be mirrored here to keep the guards green.
+ * `--accent-subtle-hover` is a `color-mix(in srgb, var(--accent-border) 15%,
+ * var(--accent-subtle))` in `signet.css` (22% until #3826). CSS resolves it at
+ * paint time; here it is recomputed from the same two roles and the same 15%,
+ * so a change to the mix in the stylesheet has to be mirrored here to keep the
+ * guards green.
  */
 export const accentFour = (roles: Record<string, string>) =>
-  mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.22);
+  mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.15);

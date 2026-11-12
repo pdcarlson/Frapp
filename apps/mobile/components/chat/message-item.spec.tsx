@@ -964,7 +964,7 @@ describe("reply quote (#1727)", () => {
 });
 
 describe("delivery status (#1910)", () => {
-  const DESTRUCTIVE = "#F85149";
+  const DESTRUCTIVE = "#FF665C";
 
   it("renders an unconfirmed row as a muted note, not as delivered", () => {
     const flat = JSON.stringify(

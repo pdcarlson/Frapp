@@ -46,7 +46,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
-import { safeObjectFilename } from '#domain/constants/storage';
+import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -248,6 +248,14 @@ export class BackworkService {
     return created;
   }
 
+  /**
+   * The resource with a signed link to its file, good for an hour. The link
+   * forces a download saved under the stored filename, like every backwork
+   * link the app hands out (#3867): nothing on `/backwork` previews a file,
+   * so the app never opens one as a page. That is what the app does, not a
+   * boundary: the `download` parameter sits outside the signature, so anyone
+   * holding the link can drop it. The gate is the bucket's allowed types.
+   */
   async findById(
     id: string,
     chapterId: string,
@@ -260,6 +268,8 @@ export class BackworkService {
     const downloadUrl = await this.storageProvider.getSignedDownloadUrl(
       BACKWORK_BUCKET,
       resource.storage_path,
+      undefined,
+      storedFilename(resource.storage_path),
     );
 
     return { ...resource, downloadUrl };
