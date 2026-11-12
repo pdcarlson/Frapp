@@ -245,14 +245,18 @@ merged source. The script:
 2. takes `main`'s side of a conflict in those two files;
 3. stops if any other file conflicts and lists it. Resolve each, `git add` it, then run
    `npm run merge:main -- --continue`, not `git commit`, or the contract stays `main`'s;
-4. regenerates the contract whenever both sides changed it since they split, conflict or not (two
-   exports merged line by line are not an export), with the same commands as
-   `check:api-contract`, then commits the merge. A compile error leaves the merge in progress for
+4. regenerates the contract when both sides changed the API or the contract since they split
+   (`isApiRelated` in `check-api-contract-drift.mjs` decides), conflict or not: two exports merged
+   line by line are not an export, and a value `main` moved can change what the branch's DTO
+   emits. It uses the same commands as `check:api-contract`, after `npm ci` when the merge changed
+   `package-lock.json` (a generator bump changes the output), then commits the merge. A compile
+   error, or a commit the pre-commit secret scan refuses, leaves the merge in progress for
    `--continue`;
-5. runs `npm run migration:renumber`, which does nothing unless `main` now has a migration that
-   sorts after one of the branch's. Its renames are left uncommitted for the session to read
-   (it lists any bare old version it could not safely rewrite) and commit.
+5. runs `npm run migration:renumber` against the commit it merged, which does nothing unless that
+   commit has a migration that sorts after one of the branch's. Its renames are left uncommitted
+   for the session to read (it lists any bare old version it could not safely rewrite) and commit.
 
+A branch cut before the script existed doesn't have it yet: merge `origin/main` by hand that once.
 Other generated or shared files (`package-lock.json`, the shipped-builds registry) are left to the
 session or the sweep below. CI's `check:api-contract` still checks the merged contract against the
 source. Tests: `scripts/ci/__tests__/merge-main.test.mjs`, against a throwaway repository.
@@ -282,7 +286,8 @@ next sweep's order, so a deferred PR rotates to the front instead of being starv
 busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeable` flag:
 
 - **Conflicted** → one `<!-- frapp-base-sync -->` wake comment telling the watching agent session
-  to `git fetch origin main && git merge origin/main`, resolve, and push. The one exception is a
+  to run `npm run merge:main` (the [section above](#merging-main-into-a-pr-npm-run-mergemain); a branch
+  that predates it runs `git fetch origin main && git merge origin/main`), resolve, and push. The one exception is a
   conflict whose resolution is mechanical (#3783): a PR whose only change is new
   `apps/mobile/store/shipped-builds.json` entries, as every Deploy production record PR is. With
   the app token minted, the sweep pushes that merge itself (`main`'s registry plus the branch's new

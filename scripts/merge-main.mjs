@@ -16,12 +16,13 @@
 //   2. resolves a conflict in those generated files by taking main's side;
 //   3. stops there if any other file conflicts, for the session to resolve, then
 //      picks up again at `--continue`;
-//   4. regenerates the contract whenever both sides changed it since they split
-//      (a clean textual merge of two exports is not an export either), and
-//      commits the merge;
-//   5. runs `migration:renumber`, which does nothing unless the branch adds a
-//      migration that main's now sort after. Its renames are left uncommitted,
-//      for the session to read and commit.
+//   4. regenerates the contract when both sides changed something it is built
+//      from (a clean textual merge of two exports is not an export either),
+//      running `npm ci` first if the merge changed the lockfile, and commits the
+//      merge;
+//   5. runs `migration:renumber` against the commit it merged, which does
+//      nothing unless the branch adds a migration that main's now sort after.
+//      Its renames are left uncommitted, for the session to read and commit.
 //
 // CI's `check:api-contract` still checks the result against the source, so a
 // mistake here fails a check instead of merging.
@@ -30,12 +31,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONTRACT_ARTIFACTS, regenerateContract } from "./check-api-contract-drift.mjs";
+import { CONTRACT_ARTIFACTS, isApiRelated, regenerateContract } from "./check-api-contract-drift.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const CONTINUE_HINT = "npm run merge:main -- --continue";
+const LOCKFILE = "package-lock.json";
 
 function gitIn(cwd) {
   return (args, { allowFail = false } = {}) => {
@@ -67,9 +69,14 @@ export function partitionConflicts(unmerged, generated = CONTRACT_ARTIFACTS) {
   };
 }
 
-/** Whether `files` changed between `from` and `to` (both commits). */
-function changed(git, from, to, files) {
-  return git(["diff", "--name-only", from, to, "--", ...files]).out !== "";
+/**
+ * Whether the merged contract needs a fresh export: both sides changed a file it
+ * is built from, or the contract itself (`isApiRelated` covers both). One side
+ * alone carries a contract that already matches its own source; two sides can
+ * each be right and still merge into a contract neither export would write.
+ */
+export function needsRegeneration(oursChanged, theirsChanged, related = isApiRelated) {
+  return oursChanged.some(related) && theirsChanged.some(related);
 }
 
 function mergeInProgress(git) {
@@ -80,29 +87,64 @@ function unmergedPaths(git) {
   return lines(git(["diff", "--name-only", "--diff-filter=U"]).out);
 }
 
+/** Runs the renumber step, and turns a failure into an outcome rather than a stack trace. */
+function renumberAfter(sha, { renumber, log }) {
+  try {
+    renumber(sha);
+    return true;
+  } catch (error) {
+    log(
+      "\nThe merge is done, but `migration:renumber` failed. Run `npm run migration:renumber` " +
+        "yourself before pushing, or `migration-order` fails in CI.",
+    );
+    log(String(error?.message ?? error));
+    return false;
+  }
+}
+
 /**
  * Finish a merge whose conflicts are all resolved: regenerate the contract when
- * both sides changed it, stage it, and commit. Returns the outcome name.
+ * both sides changed what it is built from, stage it, and commit. Returns the
+ * outcome name.
  */
-function finish(git, { regenerate, generated, log }) {
+function finish(git, { regenerate, install, generated, related, log }) {
   const ours = git(["rev-parse", "HEAD"]).out;
   const theirs = git(["rev-parse", "MERGE_HEAD"]).out;
   const base = git(["merge-base", ours, theirs]).out;
-  if (changed(git, base, ours, generated) && changed(git, base, theirs, generated)) {
-    log("Both sides changed the API contract; regenerating it from the merged source.");
+  const since = (tip) => lines(git(["diff", "--name-only", base, tip]).out);
+
+  if (needsRegeneration(since(ours), since(theirs), related)) {
+    log("Both sides changed the API or its contract; regenerating the contract from the merged source.");
     try {
+      // The export runs on node_modules, so it has to match the merged lockfile
+      // (a generator bump on main changes the output), as CI's `npm ci` makes it.
+      if (git(["diff", "--cached", "--name-only", ours, "--", LOCKFILE]).out) {
+        log("The merge changed package-lock.json; installing it first.");
+        install();
+      }
       regenerate();
     } catch (error) {
       log(
-        "\nRegenerating the contract failed, so the merged source doesn't compile. " +
-          `The merge is still in progress: fix the error, \`git add\` the fix, then run \`${CONTINUE_HINT}\`.`,
+        "\nRegenerating the contract failed. Usually the merged source doesn't compile; if main " +
+          "changed dependencies, `npm ci` may be what's missing. The merge is still in progress: " +
+          `fix it, \`git add\` the fix, then run \`${CONTINUE_HINT}\`.`,
       );
       log(String(error?.message ?? error));
       return "regenerate-failed";
     }
     git(["add", "--", ...generated]);
   }
-  git(["commit", "--no-edit"]);
+
+  // Runs the pre-commit hook (the secret scan), which a clean `git merge` would not.
+  const committed = git(["commit", "--no-edit"], { allowFail: true });
+  if (!committed.ok) {
+    log(
+      "\n`git commit` failed, so the merge is still in progress with everything staged. " +
+        `Fix what it reports, then run \`${CONTINUE_HINT}\`.`,
+    );
+    log(committed.out);
+    return "commit-failed";
+  }
   log(`Committed the merge of ${theirs.slice(0, 12)}.`);
   return "merged";
 }
@@ -115,17 +157,21 @@ function finish(git, { regenerate, generated, log }) {
  * @param {string} options.base the ref to merge, e.g. origin/main
  * @param {boolean} options.resume `--continue`: finish a merge this script stopped
  * @param {() => void} options.regenerate rewrites the generated files from source
- * @param {() => void} options.renumber moves the branch's migrations after the base's
+ * @param {() => void} options.install brings node_modules in line with the lockfile
+ * @param {(sha: string) => void} options.renumber moves the branch's migrations
+ *   after those of the commit just merged
  * @returns {string} what happened: up-to-date, fast-forward, merged, conflicts,
- *   regenerate-failed, or refused
+ *   regenerate-failed, commit-failed, renumber-failed, or refused
  */
 export function mergeMain({
   cwd,
   base = "origin/main",
   resume = false,
   regenerate,
+  install,
   renumber,
   generated = CONTRACT_ARTIFACTS,
+  related = isApiRelated,
   log = console.log,
 }) {
   const git = gitIn(cwd);
@@ -177,8 +223,7 @@ export function mergeMain({
         return "up-to-date";
       }
       log(`Fast-forwarded to ${base}.`);
-      renumber();
-      return "fast-forward";
+      return renumberAfter(after, { renumber, log }) ? "fast-forward" : "renumber-failed";
     }
 
     const { generated: contract, other } = partitionConflicts(unmergedPaths(git), generated);
@@ -187,7 +232,7 @@ export function mergeMain({
       git(["add", "--", file]);
     }
     if (contract.length > 0) {
-      log(`Took ${base}'s side of ${contract.join(", ")}; it is regenerated below.`);
+      log(`Took ${base}'s side of ${contract.join(", ")}; it is regenerated before the commit.`);
     }
     if (other.length > 0) {
       log("\nThese files conflict. Resolve each and `git add` it:");
@@ -200,9 +245,13 @@ export function mergeMain({
     }
   }
 
-  const outcome = finish(git, { regenerate, generated, log });
-  if (outcome === "merged") renumber();
-  return outcome;
+  // Read before the commit consumes it: renumber against the commit actually
+  // merged, so it neither re-fetches a base that moved meanwhile nor, after
+  // `--continue`, guesses which ref the first run merged.
+  const merging = git(["rev-parse", "MERGE_HEAD"]).out;
+  const outcome = finish(git, { regenerate, install, generated, related, log });
+  if (outcome !== "merged") return outcome;
+  return renumberAfter(merging, { renumber, log }) ? "merged" : "renumber-failed";
 }
 
 function getArg(name) {
@@ -211,16 +260,17 @@ function getArg(name) {
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  const base = getArg("--base") ?? "origin/main";
   const outcome = mergeMain({
     cwd: REPO_ROOT,
-    base,
+    base: getArg("--base") ?? "origin/main",
     resume: process.argv.includes("--continue"),
     regenerate: regenerateContract,
-    renumber: () => {
-      // Prints "This branch adds no migrations." and stops when there is nothing to move.
+    install: () => execFileSync("npm", ["ci"], { cwd: REPO_ROOT, stdio: "inherit" }),
+    renumber: (sha) => {
+      // A bare SHA is never fetched. Prints "This branch adds no migrations." and
+      // stops when there is nothing to move.
       if (!existsSync(join(REPO_ROOT, "supabase/migrations"))) return;
-      execFileSync(process.execPath, [join(REPO_ROOT, "scripts/migration.mjs"), "renumber", "--base", base], {
+      execFileSync(process.execPath, [join(REPO_ROOT, "scripts/migration.mjs"), "renumber", "--base", sha], {
         cwd: REPO_ROOT,
         stdio: "inherit",
       });
