@@ -5,6 +5,7 @@ export * from "./channel-members";
 export * from "./document-download";
 export * from "./put-signed-upload";
 export * from "./chapter-query-keys";
+export * from "./chat-record-writes";
 export * from "./use-members";
 export * from "./member-avatar-color";
 export * from "./use-pledge-classes";
