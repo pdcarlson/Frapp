@@ -104,6 +104,24 @@ export class MeetingSuggestionSource implements AiSuggestionSourceAccess {
 }
 
 /**
+ * A member's own request to the acting agent (#718). The proposal it made is
+ * theirs alone: `source_id` is the member who asked, and nobody else can
+ * open, accept or dismiss it, whatever they hold.
+ */
+@Injectable()
+export class RequestSuggestionSource implements AiSuggestionSourceAccess {
+  readonly sourceType = 'request' as const;
+
+  filterOpenable(
+    _chapterId: string,
+    userId: string,
+    sourceIds: readonly string[],
+  ): Promise<Set<string>> {
+    return Promise.resolve(new Set(sourceIds.filter((id) => id === userId)));
+  }
+}
+
+/**
  * An earlier task (last year's, #3930), by the task list's own rule
  * (`TaskController.list`): a member who manages tasks reads every task in
  * the chapter, and anyone else only the ones assigned to them.

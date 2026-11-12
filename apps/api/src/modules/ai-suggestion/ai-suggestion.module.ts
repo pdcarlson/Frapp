@@ -3,12 +3,15 @@ import { AiSuggestionService } from '../../application/services/ai-suggestion.se
 import { AiSuggestionConsentListener } from '../../application/services/ai-suggestion-consent.listener';
 import { AI_SUGGESTION_KIND_HANDLERS } from '../../application/services/ai-suggestion-kinds';
 import { TaskSuggestionKind } from '../../application/services/ai-suggestion-task-kind';
+import { NewEventSuggestionKind } from '../../application/services/ai-suggestion-new-event-kind';
+import { PointsSuggestionKind } from '../../application/services/ai-suggestion-points-kind';
 import { EventSuggestionKind } from '../../application/services/ai-suggestion-event-kind';
 import {
   AI_SUGGESTION_SOURCE_ACCESS,
   ChannelSuggestionSource,
   EventSuggestionSource,
   MeetingSuggestionSource,
+  RequestSuggestionSource,
   TaskSuggestionSource,
 } from '../../application/services/ai-suggestion-sources';
 import { AiSuggestionExpiryService } from '../../application/workers/ai-suggestion-expiry.service';
@@ -22,6 +25,7 @@ import { RbacModule } from '../rbac/rbac.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
+import { PointsModule } from '../points/points.module';
 import { EventModule } from '../event/event.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
@@ -46,6 +50,8 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     AnalyticsModule,
     NotificationModule,
     TaskModule,
+    // A confirmed points change goes through the points service (#718).
+    PointsModule,
     EventModule,
     ChannelAccessModule,
     // The read rule for minutes, and the moment minutes post (#4313).
@@ -62,21 +68,31 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     AiSuggestionExpiryService,
     AiEnabledGuard,
     TaskSuggestionKind,
+    NewEventSuggestionKind,
+    PointsSuggestionKind,
     EventSuggestionKind,
     EventSuggestionSource,
     ChannelSuggestionSource,
     MeetingSuggestionSource,
+    RequestSuggestionSource,
     TaskSuggestionSource,
     MeetingTaskSuggestionsService,
     LastYearSuggestionsService,
     LastYearSweepService,
     {
       provide: AI_SUGGESTION_KIND_HANDLERS,
-      useFactory: (task: TaskSuggestionKind, event: EventSuggestionKind) => [
-        task,
-        event,
+      useFactory: (
+        task: TaskSuggestionKind,
+        event: EventSuggestionKind,
+        points: PointsSuggestionKind,
+        newEvent: NewEventSuggestionKind,
+      ) => [task, event, points, newEvent],
+      inject: [
+        TaskSuggestionKind,
+        EventSuggestionKind,
+        PointsSuggestionKind,
+        NewEventSuggestionKind,
       ],
-      inject: [TaskSuggestionKind, EventSuggestionKind],
     },
     {
       provide: AI_SUGGESTION_SOURCE_ACCESS,
@@ -85,12 +101,14 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
         channel: ChannelSuggestionSource,
         meeting: MeetingSuggestionSource,
         task: TaskSuggestionSource,
-      ) => [event, channel, meeting, task],
+        request: RequestSuggestionSource,
+      ) => [event, channel, meeting, task, request],
       inject: [
         EventSuggestionSource,
         ChannelSuggestionSource,
         MeetingSuggestionSource,
         TaskSuggestionSource,
+        RequestSuggestionSource,
       ],
     },
     {
@@ -104,6 +122,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
   ],
+  // The acting agent saves its proposals here (#718).
   // Report this reads one suggestion the reporter can see (#4315).
   exports: [AiSuggestionService],
 })

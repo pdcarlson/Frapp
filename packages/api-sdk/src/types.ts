@@ -4386,6 +4386,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/act": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The actions the caller can ask for
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.
+         */
+        get: operations["ActController_status_v1"];
+        put?: never;
+        /**
+         * Ask for something to be done; the answer is a proposal
+         * @description Reads the request into one action and its details and answers with a proposal to confirm. Nothing is changed. Only the request text is shown to a model when the action is chosen. A new request replaces the caller’s earlier unconfirmed proposal.
+         */
+        post: operations["ActController_act_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/act/event-audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the event whose attendees a points proposal is for
+         * @description The follow-up to a `needs_event` answer. No model is called. Answers with the proposal, or 404 when the event is not one the caller can see in this chapter.
+         */
+        post: operations["ActController_eventAudience_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/catch-up": {
         parameters: {
             query?: never;
@@ -6638,7 +6682,7 @@ export interface components {
         };
         AiSuggestionSourceDto: {
             /** @enum {string} */
-            type: "meeting" | "event" | "channel" | "task";
+            type: "meeting" | "event" | "channel" | "task" | "request";
             /** Format: uuid */
             id: string;
         };
@@ -6671,11 +6715,42 @@ export interface components {
             /** @description How many times it was held around then (a weekly series). */
             times: number;
         };
+        PointsSuggestionDto: {
+            /** @description Points for each member. Negative takes away. */
+            amount: number;
+            reason: string;
+            /** @description The members it is for. */
+            target_user_ids: string[];
+            /**
+             * Format: uuid
+             * @description The event whose attendance the members were read from, when it was.
+             */
+            event_id: string | null;
+            /** @description That event's name, for the card to say whose attendance it is. */
+            event_name: string | null;
+            /**
+             * Format: date-time
+             * @description When that event started.
+             */
+            event_start_time: string | null;
+        };
+        NewEventSuggestionDto: {
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Null leaves the chapter’s usual amount. */
+            point_value: number | null;
+            is_mandatory: boolean;
+        };
         AiSuggestionDto: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            kind: "task" | "event";
+            kind: "task" | "event" | "points" | "new_event";
             /** @enum {string} */
             status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
             source: components["schemas"]["AiSuggestionSourceDto"];
@@ -6688,6 +6763,10 @@ export interface components {
             task: components["schemas"]["TaskSuggestionDto"] | null;
             /** @description The suggested event, while it waits. Null for another kind, and once decided or expired. */
             event?: components["schemas"]["EventSuggestionDto"] | null;
+            /** @description The proposed points change, while it waits. Null for another kind, and once decided or expired. */
+            points: components["schemas"]["PointsSuggestionDto"] | null;
+            /** @description The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired. */
+            new_event: components["schemas"]["NewEventSuggestionDto"] | null;
             /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
             quote: string | null;
             /** @description Accepted with changes. */
@@ -6724,6 +6803,13 @@ export interface components {
             due_at?: string | null;
             subtasks?: string[];
         };
+        PointsSuggestionEditsDto: {
+            /** @description Points for each member. Negative takes points away. Not 0. */
+            amount?: number;
+            reason?: string;
+            /** @description The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted. */
+            target_user_ids?: string[];
+        };
         EventSuggestionAcceptDto: {
             /**
              * Format: uuid
@@ -6734,14 +6820,27 @@ export interface components {
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
             /** @description Required to accept a suggested event. */
             event?: components["schemas"]["EventSuggestionAcceptDto"];
         };
+        AiSuggestionOutcomeDto: {
+            /** @description A points change: how many members’ points were changed. */
+            adjusted?: number;
+            /** @description A points change: how many members were left out (no longer in the chapter). */
+            skipped?: number;
+        };
         AiSuggestionResultDto: {
             /** @enum {string} */
-            kind: "task" | "event";
-            /** Format: uuid */
+            kind: "task" | "event" | "points" | "new_event";
+            /**
+             * Format: uuid
+             * @description What was made (the first one, when it made several).
+             */
             id: string;
+            /** @description Counts, when accepting made more than one change. */
+            outcome?: components["schemas"]["AiSuggestionOutcomeDto"];
         };
         AiSuggestionDecisionDto: {
             suggestion: components["schemas"]["AiSuggestionDto"];
@@ -6758,6 +6857,8 @@ export interface components {
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
             /** @description Required to accept a suggested event. */
             event?: components["schemas"]["EventSuggestionAcceptDto"];
             /** Format: uuid */
@@ -7862,6 +7963,67 @@ export interface components {
             question: string;
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
+        };
+        ActStatusDto: {
+            /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
+            actions: string[];
+        };
+        ActRequestDto: {
+            /**
+             * @description What to do, in the member’s own words.
+             * @example Give 5 points to everyone who came to chapter tonight
+             */
+            request: string;
+        };
+        ActNoteDto: {
+            /** @description What the card says beside the proposal: `matched_name`, `unmatched_name`, `ambiguous_name`, `role_members`, `self_left_out`. Open. */
+            type: string;
+            /** @description The name as the member typed it. */
+            name?: string;
+            /** @description The members a name was matched to, or could be. */
+            user_ids?: string[];
+            count?: number;
+        };
+        ActEventChoiceDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        ActEventChoiceSetDto: {
+            amount: number;
+            /** @description Empty when no reason was said. */
+            reason: string;
+            events: components["schemas"]["ActEventChoiceDto"][];
+        };
+        ActResponseDto: {
+            /** @description `proposed` (a card waits in `suggestion`), `needs_event`, `unclear`, `no_action`, `refused` or `unavailable`. Open. */
+            status: string;
+            /** @description The action the request was read as, when one was. */
+            action: string | null;
+            /** @description The proposal, when `proposed`. Nothing has changed: confirm it with `POST /v1/ai/suggestions/{id}/accept`, or cancel it with `.../dismiss`. */
+            suggestion: components["schemas"]["AiSuggestionDto"] | null;
+            notes: components["schemas"]["ActNoteDto"][];
+            /** @description When `needs_event`: the events to pick from. Send the pick to `POST /v1/ai/act/event-audience`. */
+            event_choice: components["schemas"]["ActEventChoiceSetDto"] | null;
+            /** @description When `unclear`: what was not said. Open. */
+            missing: string | null;
+            /** @description When `unavailable`: why. Open. */
+            reason: string | null;
+            /** @description When `no_action`: what the caller could ask for instead. */
+            available_actions: string[];
+        };
+        ActEventAudienceDto: {
+            /**
+             * Format: uuid
+             * @description The event whose attendees the points are for.
+             */
+            event_id: string;
+            /** @description As the `needs_event` answer carried it. */
+            amount: number;
+            /** @description As the `needs_event` answer carried it. Empty names the event instead. */
+            reason?: string;
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -14910,7 +15072,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Only suggestions drawn from this source. Send with `source_id`. */
-                source_type?: "meeting" | "event" | "channel" | "task";
+                source_type?: "meeting" | "event" | "channel" | "task" | "request";
                 source_id?: string;
             };
             header?: never;
@@ -18104,6 +18266,140 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActStatusDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_act_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_eventAudience_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActEventAudienceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the event was not found for this caller. */
             404: {
                 headers: {
                     [name: string]: unknown;

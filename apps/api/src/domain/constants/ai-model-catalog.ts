@@ -113,6 +113,29 @@ export const AI_MODEL_CATALOG = {
     effort: 'low',
   },
   /**
+   * An officer's request, read into one action and its details (#718). It is
+   * shown the request and the actions that officer may take, and nothing
+   * else. Small; a cheaper model is the bake-off's call.
+   */
+  'act.plan': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 600,
+    effort: 'low',
+  },
+  /**
+   * A name the roster lookup could not place, matched to a member of the
+   * chapter or to nobody (#718). Runs only when a typed name is left over.
+   */
+  'act.match': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 400,
+    effort: 'low',
+  },
+  /**
    * Catch me up (#3946): a channel's new messages or one thread in, a few
    * points out, each naming the message it rests on with a quote the caller
    * checks. In the `ask` family: a summary is the member's own use of AI, so

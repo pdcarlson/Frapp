@@ -10058,7 +10058,8 @@
                 "meeting",
                 "event",
                 "channel",
-                "task"
+                "task",
+                "request"
               ]
             }
           },
@@ -14707,6 +14708,156 @@
           }
         ],
         "summary": "Turn off the beta diagnostics window (president only)",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/act": {
+      "get": {
+        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.",
+        "operationId": "ActController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActStatusDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The actions the caller can ask for",
+        "tags": [
+          "AI"
+        ]
+      },
+      "post": {
+        "description": "Reads the request into one action and its details and answers with a proposal to confirm. Nothing is changed. Only the request text is shown to a model when the action is chosen. A new request replaces the caller’s earlier unconfirmed proposal.",
+        "operationId": "ActController_act_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask for something to be done; the answer is a proposal",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/act/event-audience": {
+      "post": {
+        "description": "The follow-up to a `needs_event` answer. No model is called. Answers with the proposal, or 404 when the event is not one the caller can see in this chapter.",
+        "operationId": "ActController_eventAudience_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActEventAudienceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off (`ai.not_available`), or the event was not found for this caller."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pick the event whose attendees a points proposal is for",
         "tags": [
           "AI"
         ]
@@ -21342,7 +21493,8 @@
               "meeting",
               "event",
               "channel",
-              "task"
+              "task",
+              "request"
             ]
           },
           "id": {
@@ -21425,6 +21577,91 @@
           "times"
         ]
       },
+      "PointsSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Points for each member. Negative takes away."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "target_user_ids": {
+            "description": "The members it is for.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "event_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The event whose attendance the members were read from, when it was."
+          },
+          "event_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That event's name, for the card to say whose attendance it is."
+          },
+          "event_start_time": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When that event started."
+          }
+        },
+        "required": [
+          "amount",
+          "reason",
+          "target_user_ids",
+          "event_id",
+          "event_name",
+          "event_start_time"
+        ]
+      },
+      "NewEventSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number",
+            "nullable": true,
+            "description": "Null leaves the chapter’s usual amount."
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory"
+        ]
+      },
       "AiSuggestionDto": {
         "type": "object",
         "properties": {
@@ -21436,7 +21673,9 @@
             "type": "string",
             "enum": [
               "task",
-              "event"
+              "event",
+              "points",
+              "new_event"
             ]
           },
           "status": {
@@ -21477,6 +21716,26 @@
               }
             ]
           },
+          "points": {
+            "nullable": true,
+            "description": "The proposed points change, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionDto"
+              }
+            ]
+          },
+          "new_event": {
+            "nullable": true,
+            "description": "The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventSuggestionDto"
+              }
+            ]
+          },
           "quote": {
             "type": "string",
             "nullable": true,
@@ -21508,6 +21767,8 @@
           "source",
           "batch_id",
           "task",
+          "points",
+          "new_event",
           "quote",
           "edited",
           "result_id",
@@ -21572,6 +21833,29 @@
           }
         }
       },
+      "PointsSuggestionEditsDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000,
+            "description": "Points for each member. Negative takes points away. Not 0."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "target_user_ids": {
+            "maxItems": 300,
+            "description": "The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "EventSuggestionAcceptDto": {
         "type": "object",
         "properties": {
@@ -21596,6 +21880,14 @@
               }
             ]
           },
+          "points": {
+            "description": "Changes to a proposed points change, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionEditsDto"
+              }
+            ]
+          },
           "event": {
             "description": "Required to accept a suggested event.",
             "allOf": [
@@ -21606,6 +21898,19 @@
           }
         }
       },
+      "AiSuggestionOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "adjusted": {
+            "type": "number",
+            "description": "A points change: how many members’ points were changed."
+          },
+          "skipped": {
+            "type": "number",
+            "description": "A points change: how many members were left out (no longer in the chapter)."
+          }
+        }
+      },
       "AiSuggestionResultDto": {
         "type": "object",
         "properties": {
@@ -21613,12 +21918,23 @@
             "type": "string",
             "enum": [
               "task",
-              "event"
+              "event",
+              "points",
+              "new_event"
             ]
           },
           "id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "What was made (the first one, when it made several)."
+          },
+          "outcome": {
+            "description": "Counts, when accepting made more than one change.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionOutcomeDto"
+              }
+            ]
           }
         },
         "required": [
@@ -21668,6 +21984,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/TaskSuggestionEditsDto"
+              }
+            ]
+          },
+          "points": {
+            "description": "Changes to a proposed points change, for edit-then-accept.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PointsSuggestionEditsDto"
               }
             ]
           },
@@ -24645,6 +24969,197 @@
         },
         "required": [
           "question"
+        ]
+      },
+      "ActStatusDto": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "description": "The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "ActRequestDto": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "What to do, in the member’s own words.",
+            "example": "Give 5 points to everyone who came to chapter tonight",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "ActNoteDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "What the card says beside the proposal: `matched_name`, `unmatched_name`, `ambiguous_name`, `role_members`, `self_left_out`. Open."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name as the member typed it."
+          },
+          "user_ids": {
+            "description": "The members a name was matched to, or could be.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ActEventChoiceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "start_time"
+        ]
+      },
+      "ActEventChoiceSetDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Empty when no reason was said."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActEventChoiceDto"
+            }
+          }
+        },
+        "required": [
+          "amount",
+          "reason",
+          "events"
+        ]
+      },
+      "ActResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`proposed` (a card waits in `suggestion`), `needs_event`, `unclear`, `no_action`, `refused` or `unavailable`. Open."
+          },
+          "action": {
+            "type": "string",
+            "nullable": true,
+            "description": "The action the request was read as, when one was."
+          },
+          "suggestion": {
+            "nullable": true,
+            "description": "The proposal, when `proposed`. Nothing has changed: confirm it with `POST /v1/ai/suggestions/{id}/accept`, or cancel it with `.../dismiss`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiSuggestionDto"
+              }
+            ]
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActNoteDto"
+            }
+          },
+          "event_choice": {
+            "nullable": true,
+            "description": "When `needs_event`: the events to pick from. Send the pick to `POST /v1/ai/act/event-audience`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActEventChoiceSetDto"
+              }
+            ]
+          },
+          "missing": {
+            "type": "string",
+            "nullable": true,
+            "description": "When `unclear`: what was not said. Open."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "When `unavailable`: why. Open."
+          },
+          "available_actions": {
+            "description": "When `no_action`: what the caller could ask for instead.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "action",
+          "suggestion",
+          "notes",
+          "event_choice",
+          "missing",
+          "reason",
+          "available_actions"
+        ]
+      },
+      "ActEventAudienceDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event whose attendees the points are for."
+          },
+          "amount": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000,
+            "description": "As the `needs_event` answer carried it."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "As the `needs_event` answer carried it. Empty names the event instead."
+          }
+        },
+        "required": [
+          "event_id",
+          "amount"
         ]
       },
       "ChatCatchUpUnreadDto": {

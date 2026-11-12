@@ -4,15 +4,21 @@ import {
   IsArray,
   IsDateString,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
+  NotEquals,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
@@ -36,6 +42,11 @@ import {
   readTaskPayload,
   TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH,
 } from '../../application/services/ai-suggestion-task-kind';
+import {
+  POINTS_SUGGESTION_MAX_MEMBERS,
+  readPointsPayload,
+} from '../../application/services/ai-suggestion-points-kind';
+import { readNewEventPayload } from '../../application/services/ai-suggestion-new-event-kind';
 
 function eventOf(row: AiSuggestion): EventSuggestionDto {
   const { name, last_year_at, times } = readEventPayload(row.payload);
@@ -122,6 +133,42 @@ export class TaskSuggestionEditsDto {
 }
 
 /**
+ * An officer's changes to a proposed points change before confirming it
+ * (#718). Omitted fields stay as proposed.
+ */
+export class PointsSuggestionEditsDto {
+  @ApiPropertyOptional({
+    minimum: -POINTS_ADJUSTMENT_MAX,
+    maximum: POINTS_ADJUSTMENT_MAX,
+    description: 'Points for each member. Negative takes points away. Not 0.',
+  })
+  @IsOptional()
+  @IsInt()
+  @NotEquals(0)
+  @Min(-POINTS_ADJUSTMENT_MAX)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  amount?: number;
+
+  @ApiPropertyOptional({ maxLength: POINTS_REASON_MAX_LENGTH })
+  @IsOptional()
+  @IsString()
+  @MaxLength(POINTS_REASON_MAX_LENGTH)
+  reason?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: POINTS_SUGGESTION_MAX_MEMBERS,
+    description:
+      'The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(POINTS_SUGGESTION_MAX_MEMBERS)
+  @IsUUID(undefined, { each: true })
+  target_user_ids?: string[];
+}
+
+/**
  * How a suggested event is accepted (#3930): the officer adds the event
  * through the ordinary event form and route, then names it here. The accept
  * records it; it never makes an event.
@@ -161,6 +208,15 @@ export class AcceptAiSuggestionDto {
   @ValidateNested()
   @Type(() => TaskSuggestionEditsDto)
   task?: TaskSuggestionEditsDto;
+
+  @ApiPropertyOptional({
+    type: PointsSuggestionEditsDto,
+    description: 'Changes to a proposed points change, for edit-then-accept.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PointsSuggestionEditsDto)
+  points?: PointsSuggestionEditsDto;
 
   @ApiPropertyOptional({
     type: EventSuggestionAcceptDto,
@@ -247,6 +303,70 @@ export class EventSuggestionDto {
   times: number;
 }
 
+export class PointsSuggestionDto {
+  @ApiProperty({ description: 'Points for each member. Negative takes away.' })
+  amount: number;
+
+  @ApiProperty()
+  reason: string;
+
+  @ApiProperty({ type: [String], description: 'The members it is for.' })
+  target_user_ids: string[];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description:
+      'The event whose attendance the members were read from, when it was.',
+  })
+  event_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "That event's name, for the card to say whose attendance it is.",
+  })
+  event_name: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description: 'When that event started.',
+  })
+  event_start_time: string | null;
+}
+
+/** An event the acting agent proposes to create (#718). */
+export class NewEventSuggestionDto {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  description: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  location: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  start_time: string;
+
+  @ApiProperty({ format: 'date-time' })
+  end_time: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Null leaves the chapter’s usual amount.',
+  })
+  point_value: number | null;
+
+  @ApiProperty()
+  is_mandatory: boolean;
+}
+
 export class AiSuggestionSourceDto {
   @ApiProperty({ enum: AI_SUGGESTION_SOURCE_TYPES })
   type: AiSuggestionSourceType;
@@ -291,6 +411,22 @@ export class AiSuggestionDto {
   event?: EventSuggestionDto | null;
 
   @ApiProperty({
+    type: PointsSuggestionDto,
+    nullable: true,
+    description:
+      'The proposed points change, while it waits. Null for another kind, and once decided or expired.',
+  })
+  points: PointsSuggestionDto | null;
+
+  @ApiProperty({
+    type: NewEventSuggestionDto,
+    nullable: true,
+    description:
+      'The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired.',
+  })
+  new_event: NewEventSuggestionDto | null;
+
+  @ApiProperty({
     type: String,
     nullable: true,
     description:
@@ -325,7 +461,15 @@ export class AiSuggestionDto {
       batch_id: row.batch_id,
       task:
         waiting && row.kind === 'task' ? readTaskPayload(row.payload) : null,
+      points:
+        waiting && row.kind === 'points'
+          ? readPointsPayload(row.payload)
+          : null,
       event: waiting && row.kind === 'event' ? eventOf(row) : null,
+      new_event:
+        waiting && row.kind === 'new_event'
+          ? readNewEventPayload(row.payload)
+          : null,
       quote: waiting ? row.quote : null,
       edited: row.edited,
       result_id: row.result_id,
@@ -345,12 +489,34 @@ export class AiSuggestionListDto {
   has_more: boolean;
 }
 
+export class AiSuggestionOutcomeDto {
+  @ApiPropertyOptional({
+    description: 'A points change: how many members’ points were changed.',
+  })
+  adjusted?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'A points change: how many members were left out (no longer in the chapter).',
+  })
+  skipped?: number;
+}
+
 export class AiSuggestionResultDto {
   @ApiProperty({ enum: AI_SUGGESTION_KINDS })
   kind: AiSuggestionKind;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({
+    format: 'uuid',
+    description: 'What was made (the first one, when it made several).',
+  })
   id: string;
+
+  @ApiPropertyOptional({
+    type: AiSuggestionOutcomeDto,
+    description: 'Counts, when accepting made more than one change.',
+  })
+  outcome?: AiSuggestionOutcomeDto;
 }
 
 export class AiSuggestionDecisionDto {

@@ -2064,4 +2064,39 @@ describe('PointsService', () => {
       expect(tooHigh).toHaveLength(5);
     });
   });
+
+  describe('adjustmentBudget (#718)', () => {
+    it('answers what is left of the chapter limit this hour', async () => {
+      mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(40);
+      const budget = await service.adjustmentBudget('chapter-1', 'admin-1');
+      expect(budget.used).toBe(40);
+      expect(budget.remaining).toBe(budget.limit - 40);
+      const [admin, chapter, since] =
+        mockPointTxnRepo.countRecentAdjustments.mock.calls.at(-1) as [
+          string,
+          string,
+          Date,
+        ];
+      expect([admin, chapter]).toEqual(['admin-1', 'chapter-1']);
+      expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(3_599_000);
+      expect(Date.now() - since.getTime()).toBeLessThan(3_660_000);
+    });
+
+    it('never answers less than nothing left', async () => {
+      mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(9_999);
+      const budget = await service.adjustmentBudget('chapter-1', 'admin-1');
+      expect(budget.remaining).toBe(0);
+    });
+  });
+
+  describe('landedKeys (#718)', () => {
+    it('answers the keys the ledger already holds', async () => {
+      mockPointTxnRepo.findByClientMessageId.mockImplementation(
+        async (_chapter: string, key: string) =>
+          key === 'k2' ? ({ id: 'txn' } as PointTransaction) : null,
+      );
+      const landed = await service.landedKeys('chapter-1', ['k1', 'k2', 'k3']);
+      expect([...landed]).toEqual(['k2']);
+    });
+  });
 });
