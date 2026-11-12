@@ -105,7 +105,9 @@ export function ChannelAccessField({
   );
   const chosen = value ?? [];
   const chosenSet = new Set(chosen);
-  const remaining = options.filter((option) => !chosenSet.has(option.entry));
+  const remaining = options.filter(
+    (option) => !chosenSet.has(option.entry) && !option.hidden,
+  );
   const label = QUESTION_LABEL[question];
 
   function remove(entry: string) {

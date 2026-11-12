@@ -75,9 +75,9 @@ export interface InvitePreview {
   invited_by: string | null;
   /**
    * The invite's own role, which the redeem grants (`resolveRedeemRole`);
-   * the redeem may add Member beside it (`resolveRedeemRoles`). Null when
-   * it would grant none: the invite's role is gone and the chapter has no
-   * seeded Member role to fall back to.
+   * the redeem may add Everyone beside it (`resolveRedeemRoles`). Null when
+   * it would grant none (the invite's role is gone and the chapter has no
+   * Everyone role to fall back to), or only Everyone, which no card names.
    */
   role: string | null;
   expires_at: string;
@@ -188,6 +188,9 @@ async function mapWithConcurrency<T, R>(
   );
   return results;
 }
+
+/** The seeded Everyone role's name before #4191, which older builds send. */
+const LEGACY_MEMBER_ROLE_NAME = 'Member';
 
 @Injectable()
 export class InviteService {
@@ -319,6 +322,19 @@ export class InviteService {
     requested?: string,
   ): Promise<string> {
     const explicit = requested?.trim();
+    if (explicit === LEGACY_MEMBER_ROLE_NAME) {
+      // Mobile builds already in the stores send "Member", the seeded role's
+      // name before it became Everyone (#4191). Stored as sent, a role
+      // created later under that freed name would capture the invite at
+      // redeem, unchecked against the inviter's rank, so it names the
+      // Everyone role instead, unless a role still carries that name.
+      const roles = await this.roleRepo.findByChapter(chapterId);
+      if (roles.some((r) => r.name === explicit)) return explicit;
+      const everyone = roles.find(
+        (r) => r.system_key === SystemRoleKeys.MEMBER,
+      );
+      return everyone?.name ?? explicit;
+    }
     if (explicit) return explicit;
 
     // Independent reads, so they overlap rather than stack: this path only
@@ -334,11 +350,11 @@ export class InviteService {
       const configured = roles.find((r) => r.id === defaultRoleId);
       // A configured id that no longer resolves should not be possible —
       // `on delete set null` clears it — but a stale read races a concurrent
-      // role delete, and falling through to Member beats issuing an invite
+      // role delete, and falling through to Everyone beats issuing an invite
       // whose role name is `undefined`.
       if (configured) return configured.name;
       this.logger.warn(
-        `Chapter ${chapterId} has default_invite_role_id ${defaultRoleId} that resolves to no role; falling back to the Member role.`,
+        `Chapter ${chapterId} has default_invite_role_id ${defaultRoleId} that resolves to no role; falling back to the Everyone role.`,
       );
     }
 
@@ -348,7 +364,7 @@ export class InviteService {
     throw new BadRequestException({
       code: 'invite.role_unresolved',
       message:
-        'No role was named, this chapter has no default invite role configured, and it has no seeded Member role to fall back to.',
+        'No role was named, this chapter has no default invite role configured, and it has no seeded Everyone role to fall back to.',
     });
   }
 
@@ -629,7 +645,10 @@ export class InviteService {
       mark_text: chapterTextMark(branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
-      role: role?.name ?? null,
+      // Joining with only the Everyone role (#4191) joins as nobody in
+      // particular: the card says no role, as it does for none.
+      role:
+        role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null,
       expires_at: invite.expires_at,
     };
   }

@@ -207,6 +207,19 @@ describe("attendanceRows", () => {
       attendanceRows(roles, [], "new mem", "Removed role").map((r) => r.id),
     ).toEqual(["n"]);
   });
+
+  it("offers a hidden role (Everyone, #4191) only once it is set apart", () => {
+    const withEveryone = [
+      ...roles,
+      { id: "e", name: "Everyone", hidden: true },
+    ];
+    expect(
+      attendanceRows(withEveryone, [], "", "Removed role").map((r) => r.id),
+    ).toEqual(["a", "b", "n", "o"]);
+    expect(
+      attendanceRows(withEveryone, ["e"], "", "Removed role").map((r) => r.id),
+    ).toEqual(["e", "a", "b", "n", "o"]);
+  });
 });
 
 describe("attendanceChoices", () => {

@@ -570,6 +570,64 @@ describe('MemberService', () => {
       expect(result).toEqual(updated);
     });
 
+    describe('the Everyone role (#4191)', () => {
+      const everyone = roleFixture({
+        id: 'role-everyone',
+        chapter_id: 'chapter-1',
+        name: 'Everyone',
+        system_key: 'MEMBER',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 5,
+      });
+      const alumni = roleFixture({
+        id: 'role-alumni',
+        chapter_id: 'chapter-1',
+        name: 'Alumni',
+        system_key: 'ALUMNI',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 7,
+      });
+      const roles = [presidentRole, everyone, alumni, customRole];
+      const save = async (held: string[], requested: string[]) => {
+        mockRepo.findById.mockResolvedValue({
+          ...existingMember,
+          role_ids: held,
+        });
+        mockRoleRepo.findByChapter.mockResolvedValue(roles);
+        mockRepo.update.mockImplementation(
+          (_id: string, data: { role_ids: string[] }) =>
+            Promise.resolve({ ...existingMember, ...data }),
+        );
+        await service.updateRoles(
+          'member-1',
+          requested,
+          'chapter-1',
+          'user-actor',
+        );
+        return mockRepo.update.mock.calls.at(-1)?.[1];
+      };
+
+      it('keeps it when a save leaves it off, as a shipped build may', async () => {
+        await expect(save(['role-everyone'], ['role-2'])).resolves.toEqual({
+          role_ids: ['role-2', 'role-everyone'],
+        });
+      });
+
+      it('takes it away from a member made Alumni', async () => {
+        await expect(
+          save(['role-everyone'], ['role-everyone', 'role-alumni']),
+        ).resolves.toEqual({ role_ids: ['role-alumni'] });
+      });
+
+      it('gives it to a member left with no role granting access', async () => {
+        await expect(save(['role-2'], [])).resolves.toEqual({
+          role_ids: ['role-everyone'],
+        });
+      });
+    });
+
     it('throws when member is not found', async () => {
       mockRepo.findById.mockResolvedValue(null);
 

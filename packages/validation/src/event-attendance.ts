@@ -317,7 +317,9 @@ export function attendanceOfRole(
  * while the officer sets it. An id in `pinned` that no longer names a role (a
  * role deleted since) keeps a row, named by `missingName`, so it can be reset.
  */
-export function attendanceRows<T extends { id: string; name: string }>(
+export function attendanceRows<
+  T extends { id: string; name: string; hidden?: boolean },
+>(
   options: readonly T[],
   pinned: readonly string[],
   query: string,
@@ -336,8 +338,10 @@ export function attendanceRows<T extends { id: string; name: string }>(
   const top = pinned
     .map((id) => ({ id, name: known.get(id)?.name ?? missingName }))
     .sort(byName);
+  // A `hidden` role (the chapter's Everyone role, #4191) is offered only
+  // where the event already sets it apart: "Everyone else" is its row.
   const rest = options
-    .filter((role) => !pinnedSet.has(role.id))
+    .filter((role) => !pinnedSet.has(role.id) && !role.hidden)
     .map((role) => ({ id: role.id, name: role.name }))
     .sort(byName);
   return [...top, ...rest].filter((row) => matches(row.name));

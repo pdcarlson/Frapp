@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, Eye, Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDeleteRole, useUpdateRole } from "@repo/hooks";
-import { roleColorOrNull, type RoleColorHex } from "@repo/validation";
+import {
+  isEveryoneRole,
+  roleColorOrNull,
+  type RoleColorHex,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -148,6 +152,9 @@ function RoleBody({
   const { permissionsOf, toggle, pending } = useRolePermissionToggle(holders);
 
   const tier = tiers.find((candidate) => candidate.id === role.tier_id) ?? null;
+  // The Everyone role (#4191): its permissions and @everyone switch are
+  // edited here; its name and tier are fixed, as the API holds them.
+  const everyone = isEveryoneRole(role);
   const wildcard = isWildcardRole(role);
   const editable = canManage && reachesRole(reach, role, tiers);
 
@@ -308,6 +315,14 @@ function RoleBody({
             ? null
             : ` · ${count} ${count === 1 ? "member" : "members"}`}
         </p>
+        {everyone ? (
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            What members get when no role of theirs gives them access: whoever
+            joins with no role, and new members once they&apos;re made members.
+            It isn&apos;t offered in any list, and its name and {words.singular}{" "}
+            stay as they are.
+          </p>
+        ) : null}
       </header>
 
       <ProfileSection id="role-details" title="Details">
@@ -318,7 +333,7 @@ function RoleBody({
               id="role-name"
               value={name}
               maxLength={60}
-              disabled={!editable}
+              disabled={!editable || everyone}
               onChange={(event) => setName(event.target.value)}
             />
           </div>
@@ -327,7 +342,7 @@ function RoleBody({
             <Select
               value={placement}
               onValueChange={setPlacement}
-              disabled={!editable}
+              disabled={!editable || everyone}
             >
               <SelectTrigger id="role-tier">
                 <SelectValue />
@@ -387,14 +402,17 @@ function RoleBody({
           <div className="flex items-start justify-between gap-4 md:col-span-2">
             <div className="grid gap-1">
               <Label htmlFor="role-mentionable">
-                Anyone can @mention this role
+                {everyone
+                  ? "Anyone can use @everyone"
+                  : "Anyone can @mention this role"}
               </Label>
               <p
                 id="role-mentionable-description"
                 className="text-sm text-muted-foreground"
               >
-                When off, only officers who manage channels or roles can ping
-                everyone in it.
+                {everyone
+                  ? "@everyone pings the whole chapter. When off, only officers who manage channels or roles can use it."
+                  : "When off, only officers who manage channels or roles can ping everyone in it."}
               </p>
             </div>
             <Switch

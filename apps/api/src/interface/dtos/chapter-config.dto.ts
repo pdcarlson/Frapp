@@ -392,7 +392,7 @@ export class PatchChapterConfigDto {
     format: 'uuid',
     nullable: true,
     description:
-      'Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).',
+      'Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).',
   })
   @ValidateIf((_object, value) => value !== null)
   @IsOptional()

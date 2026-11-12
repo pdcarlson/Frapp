@@ -4212,6 +4212,19 @@ alter table public.users
   drop column if exists phone;
 ```
 
+## Rollback the Everyone role (20261112251000)
+
+- **Migration**: `20261112251000_everyone_role.sql`
+
+Renames each chapter's seeded Member role to Everyone and switches off its mentions, renames any other role reading as `@everyone` to "<name> (role)" (its pending invites following it), and points pending invites for the Member role at "Everyone". No permission, tier, holder or id changes, so there is nothing to restore for access. The API from #4191 on refuses to rename Everyone, so a rollback is only needed together with an API rollback past #4191.
+
+To undo it, from the rows the promoter saved before the push (promotion log § The Member role becomes Everyone):
+
+1. `update roles set name = <saved name>, mentionable = <saved mentionable> where id = <saved id>;` for each saved role, the Member role (`system_key` MEMBER) first: it holds "Everyone", which a renamed role's old name may be, and the renamed roles' current "<name> (role)" names never block it. A role created since under the Member role's old name blocks that chapter's restore (`unique (chapter_id, name)`); rename one of them by hand.
+2. `update invites set role = <saved role> where id = <saved id>;` for each saved invite still unused.
+
+Without the saved rows, `update roles m set name = 'Member' where m.system_key = 'MEMBER' and not exists (select 1 from roles x where x.chapter_id = m.chapter_id and x.name = 'Member');` restores the seeded name in every chapter where it is still free (every chapter but one that renamed its Member role had it). It leaves the `@everyone` switch off, the renamed roles' "(role)" suffix and the invites as they are, since nothing records what they were. Keep the migration file either way ([§ 3) Undo one migration](#3-undo-one-migration)).
+
 ## Rollback member defaults for existing chapters (20261112152000)
 
 * **Migration**: `20261112152000_member_social_trust_defaults.sql`

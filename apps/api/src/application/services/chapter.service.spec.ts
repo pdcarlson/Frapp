@@ -484,8 +484,15 @@ describe('ChapterService', () => {
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
       color: roleDef.color ?? null,
+      // Every seeded role can be pinged but Everyone, which only officers
+      // may use until the chapter opens it (#4191).
+      mentionable: roleDef.system_key !== SystemRoleKeys.MEMBER,
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
+    expect(
+      expectedRolesData.find((r) => r.system_key === SystemRoleKeys.MEMBER)
+        ?.name,
+    ).toBe('Everyone');
     expect(result).toEqual(chapter);
   });
 

@@ -194,9 +194,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
         await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
       ).getByRole("radio", { name: "Required" }),
     );
-    // The app's Select (Radix), not a native one.
-    fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
     expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -206,9 +204,158 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       is_mandatory: false,
       others_invited: true,
       required_role_ids: ["r1"],
+      // Weekly on the start's day at its default length is the legacy
+      // token, which shipped phones read (#4488).
       recurrence_rule: "WEEKLY",
     });
     expect(body).not.toHaveProperty("optional_role_ids");
+  });
+
+  it("makes a twice-a-week series that ends on a date (#4488, #3662)", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
+    // The start's weekday is on; one more chip makes it twice a week.
+    const pressed = screen
+      .getAllByRole("button", { pressed: true })
+      .map((chip) => chip.getAttribute("aria-label"));
+    expect(pressed).toHaveLength(1);
+    const other = pressed[0] === "Monday" ? "Thursday" : "Monday";
+    fireEvent.click(screen.getByRole("button", { name: other }));
+    fireEvent.click(screen.getByRole("radio", { name: "On date" }));
+    // Offered the day the 13 meetings would have ended on.
+    expect(screen.getByText(/meetings, the last on/)).toBeTruthy();
+    // A picked end date says its own length, and is the one sent.
+    fireEvent.change(screen.getByLabelText("Ends on"), {
+      target: { value: "2026-07-15" },
+    });
+    expect(
+      screen.getByText(/^\d meetings, the last on Jul 1\d\./),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2},[A-Z]{2};UNTIL=20260715;TZID=/,
+    );
+  });
+
+  describe("Repeat on an edit (#4488)", () => {
+    // A Monday series whose first meeting is still ahead.
+    const RULE =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=10;TZID=America/New_York";
+    const head = {
+      id: "h1",
+      name: "Chapter",
+      start_time: "2027-07-05T23:00:00.000Z",
+      end_time: "2027-07-06T00:00:00.000Z",
+      recurrence_rule: RULE,
+    };
+    const renderEdit = (event: Record<string, unknown>) =>
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={event}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+    const saved = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      return updateMutate.mock.calls[0]![0].body as Record<string, unknown>;
+    };
+
+    it("leaves an untouched series alone, with no length line", async () => {
+      renderEdit(head);
+      expect(screen.queryByText(/meetings, the last on/)).toBeNull();
+      fireEvent.change(screen.getByLabelText("Event name"), {
+        target: { value: "Chapter meeting" },
+      });
+      const body = await saved();
+      // Sent back as stored, for the API's check of a moved head, with no
+      // series scope: nothing is rebuilt.
+      expect(body.recurrence_rule).toBe(RULE);
+      expect(body).not.toHaveProperty("scope");
+    });
+
+    it("moves stored weekdays with a start moved in the same save", async () => {
+      renderEdit(head);
+      // Monday Jul 5 → Tuesday Jul 6, same time, and 8 meetings.
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: "2027-07-06" },
+      });
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "8" },
+      });
+      // The chip lit is the day saved.
+      expect(screen.getByRole("button", { name: "Tuesday" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Monday" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("MO;COUNT=10", "TU;COUNT=8"),
+        scope: "series",
+      });
+    });
+
+    it("sends a changed rule to the whole series", async () => {
+      renderEdit(head);
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "6" },
+      });
+      expect(screen.getByText(/^6 meetings, the last on Aug 9/)).toBeTruthy();
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("COUNT=10", "COUNT=6"),
+        scope: "series",
+      });
+    });
+
+    it("ends the series with Doesn't repeat", async () => {
+      renderEdit(head);
+      fireEvent.click(screen.getByRole("radio", { name: "Doesn't repeat" }));
+      const body = await saved();
+      expect(body).toMatchObject({ recurrence_rule: null, scope: "series" });
+    });
+
+    it("doesn't offer Repeat on a generated occurrence", async () => {
+      renderEdit({
+        ...head,
+        id: "o1",
+        recurrence_rule: null,
+        parent_event_id: "h1",
+      });
+      expect(screen.getByText(/Part of a repeating series/)).toBeTruthy();
+      expect(
+        screen.queryByRole("radio", { name: "Doesn't repeat" }),
+      ).toBeNull();
+      const body = await saved();
+      expect(body).not.toHaveProperty("recurrence_rule");
+      expect(body).not.toHaveProperty("scope");
+    });
+  });
+
+  it("keeps Create from sending a series it can't make", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("radio", { name: "Monthly" }));
+    fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+      target: { value: "1" },
+    });
+    expect(screen.getByText("A series holds 2 to 120 meetings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
   });
 
   it("opens a copy of last year's event filled in, never repeating, and reports the event it made (#3930)", async () => {

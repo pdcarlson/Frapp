@@ -151,7 +151,7 @@ export const MemberRolesSheet = forwardRef<
       .filter((o): o is RoleOption => !!o);
     // A role created while the sheet is open goes at the end.
     const seen = new Set(orderedIds);
-    return [...known, ...options.filter((o) => !seen.has(o.id))];
+    return [...known, ...options.filter((o) => !seen.has(o.id) && !o.everyone)];
   }, [options, orderedIds]);
   const visible = useMemo(
     () => filterRoleOptions(ordered, search),
@@ -248,7 +248,6 @@ export const MemberRolesSheet = forwardRef<
         ? "Saved"
         : // A no-break space holds the line, so "Saving…" never shifts the list.
           "\u00a0";
-
 
   return (
     <BottomSheetModal

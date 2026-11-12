@@ -837,7 +837,7 @@ describe("the invite step (#238)", () => {
 
     await waitFor(() =>
       expect(emailInvitesMutate).toHaveBeenCalledWith({
-        role: "Member",
+        role: "Everyone",
         emails: ["a@example.com", "b@example.com"],
       }),
     );
@@ -863,7 +863,7 @@ describe("the invite step (#238)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
     await waitFor(() =>
-      expect(createInviteMutate).toHaveBeenCalledWith({ role: "Member" }),
+      expect(createInviteMutate).toHaveBeenCalledWith({ role: "Everyone" }),
     );
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(

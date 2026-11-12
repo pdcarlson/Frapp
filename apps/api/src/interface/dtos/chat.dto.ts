@@ -761,6 +761,12 @@ export class ChannelAccessOptionDto {
       'The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice.',
   })
   user_ids: string[];
+
+  @ApiProperty({
+    description:
+      'True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option.',
+  })
+  hidden: boolean;
 }
 
 export class ChannelUnreadCountDto {
