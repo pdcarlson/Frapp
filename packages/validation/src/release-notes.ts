@@ -165,6 +165,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now make groups like Third floor or Live-ins on the web, and anyone can @mention a group or a tier to reach everyone in it.",
       "Study sessions on your phone have a focus timer (25 minutes on, a short break) and a switch to keep the screen on while you study.",
       "Study hours on your phone now says how far you are from each study zone before you start, and picks the one you're in.",
+      "You can now send GIFs in chat: click GIF beside the emoji button on the web, or tap GIF in the + menu on your phone.",
     ],
     web: [
       "Officers can now confirm a finished task or approve service hours straight from its row on the Activity page.",
