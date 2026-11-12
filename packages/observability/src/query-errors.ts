@@ -58,7 +58,8 @@ import { httpStatusClass } from "./sentry-http";
  * (`4xx`, `5xx`), then the API's `code` when there is one: one Sentry issue
  * per feature and kind of failure. A dead fetch (`network`) is grouped by kind
  * alone, with the root as a tag: one dropped connection fails every query in
- * flight at once, and per root it opened an issue for each (#3746). A client-contract failure ends
+ * flight at once, and per root it opened an issue for each (#3746). Its rate
+ * limit stays per root, so those reads are events in one issue. A client-contract failure ends
  * its fingerprint with `client-contract`, so it opens an issue of its own at
  * `error` level rather than joining a `warning` one an older build opened. An `exception` keeps Sentry's
  * own grouping (`{{ default }}`) ahead of the kind and root, so two different
@@ -318,7 +319,9 @@ function buildReport(
     // One issue per kind, not per root: a dropped connection fails every
     // query in flight at once, so a per-root fingerprint opened one Sentry
     // issue per screen's read for a single drop (14 from one resume, #3746).
-    // The root stays a tag.
+    // The root stays a tag, and stays in the rate key, so a route whose
+    // fetches keep dying (a CORS fault) still reports while other roots'
+    // drops are being reported.
     const fingerprint = ["react-query", kind, "network"];
     return {
       report: {
@@ -330,7 +333,7 @@ function buildReport(
         fingerprint,
         tags,
       },
-      rateKey: fingerprint.join("\u0000"),
+      rateKey: [...fingerprint, root].join("\u0000"),
     };
   }
 

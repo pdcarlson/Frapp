@@ -111,12 +111,10 @@ describe("mobile query-error reporting", () => {
 
   it("reports expo/fetch's dropped connection as a network failure (#3746)", async () => {
     // expo/fetch's FetchError keeps the name Error and prefixes the native
-    // message with "fetch failed: ". The client-policy client, because the
-    // product client already spent its one network report on the test above
-    // (one per kind per 10 minutes, whatever the root).
+    // message with "fetch failed: ".
     await failQuery(
-      clientPolicyQueryClient,
-      CLIENT_POLICY_QUERY_KEY,
+      queryClient,
+      ["tasks"],
       new Error(
         "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
       ),
@@ -126,18 +124,26 @@ describe("mobile query-error reporting", () => {
       fingerprint: ["react-query", "query", "network"],
       tags: expect.objectContaining({
         query_failure: "network",
-        query_key_root: "client-policy",
+        query_key_root: "tasks",
       }),
     });
   });
 
   it("does not report expo/fetch's already-aborted rejection", async () => {
+    // A root no other test reports under, so the rate limit can't be what
+    // keeps it out: the same root's dead fetch right after does report.
     await failQuery(
       queryClient,
-      ["tasks"],
+      ["aborted-root"],
       new Error("fetch failed: The operation was aborted."),
     );
     expect(captureException).not.toHaveBeenCalled();
+    await failQuery(
+      queryClient,
+      ["aborted-root"],
+      new Error("fetch failed: UnexpectedException: cancelled"),
+    );
+    expect(captureException).toHaveBeenCalledTimes(1);
   });
 
   it("does not report a query TanStack cancelled", async () => {

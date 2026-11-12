@@ -337,9 +337,23 @@ describe('ChatBackgroundService (#3973)', () => {
     it('announces a default photo in the oldest open public channel when there is no default or #general (a Discord import)', async () => {
       const { service, messageRepo, chapterRepo } = setup({
         channels: [
-          channel({ id: 'gated', name: 'announcements', type: 'ROLE_GATED' }),
-          channel({ id: 'ro', name: 'rules', is_read_only: true }),
-          channel({ id: 'officers', name: 'notes', who_can_post: ['role-1'] }),
+          channel({
+            id: 'gated',
+            name: 'announcements',
+            type: 'ROLE_GATED',
+            who_can_see: ['role:role-1'],
+          }),
+          channel({
+            id: 'ro',
+            name: 'rules',
+            is_read_only: true,
+            who_can_post: [],
+          }),
+          channel({
+            id: 'officers',
+            name: 'notes',
+            who_can_post: ['role:role-1'],
+          }),
           channel({ id: 'academics', name: 'academics' }),
           channel({ id: 'anyone', name: 'anyone' }),
         ],
@@ -354,11 +368,33 @@ describe('ChatBackgroundService (#3973)', () => {
       );
     });
 
+    it('prefers #general over an older open public channel', async () => {
+      const { service, messageRepo } = setup({
+        channels: [
+          channel({ id: 'academics', name: 'academics' }),
+          channel({ id: 'gen', name: 'general' }),
+        ],
+      });
+      await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
+      expect(messageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channel_id: 'gen' }),
+      );
+    });
+
     it('refuses a default photo when there is nowhere to announce it', async () => {
       const { service, chapterRepo } = setup({
         channels: [
-          channel({ name: 'house', type: 'ROLE_GATED' }),
-          channel({ id: 'ro', name: 'rules', is_read_only: true }),
+          channel({
+            name: 'house',
+            type: 'ROLE_GATED',
+            who_can_see: ['role:role-1'],
+          }),
+          channel({
+            id: 'ro',
+            name: 'rules',
+            is_read_only: true,
+            who_can_post: [],
+          }),
         ],
       });
       await expect(

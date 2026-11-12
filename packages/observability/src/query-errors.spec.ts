@@ -294,16 +294,22 @@ describe("createQueryErrorReporter", () => {
       expect(h.reports).toHaveLength(0);
     });
 
-    it("files one drop across many query roots as one report", () => {
+    it("files one drop across many query roots under one fingerprint, each root still reported", () => {
       const h = harness();
-      for (const root of ["user", "tasks", "points", "channels", "events"]) {
-        h.reporter.onQueryError(
+      const roots = ["user", "tasks", "points", "channels", "events"];
+      for (const root of roots) {
+        h.query(
           new ExpoFetchError("UnexpectedException: The network connection was lost."),
-          { queryKey: [root, "chapter-1"], queryHash: `["${root}","chapter-1"]` },
+          [root, CHAPTER_ID],
         );
       }
-      expect(h.reports).toHaveLength(1);
-      expect(h.reports[0]!.fingerprint).toEqual(["react-query", "query", "network"]);
+      expect(new Set(h.reports.map((r) => r.fingerprint.join(" ")))).toEqual(
+        new Set(["react-query query network"]),
+      );
+      expect(h.reports.map((r) => r.tags.query_key_root)).toEqual(roots);
+      // The rate limit is per root: the same root again inside the window is held.
+      h.query(new ExpoFetchError("UnexpectedException: cancelled"), ["user", CHAPTER_ID]);
+      expect(h.reports).toHaveLength(roots.length);
     });
 
     it("keeps an Error named otherwise with that prefix an exception", () => {
