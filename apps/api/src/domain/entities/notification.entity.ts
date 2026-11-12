@@ -5,6 +5,12 @@ export interface Notification {
   title: string;
   body: string;
   data: Record<string, unknown>;
+  /**
+   * The chat message a single-message chat row quotes (#4418). Deleting the
+   * message deletes the row (a trigger), and an edit rewrites its body. Null
+   * on every other row, a burst bundle included.
+   */
+  chat_message_id?: string | null;
   read_at: string | null;
   created_at: string;
 }

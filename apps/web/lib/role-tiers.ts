@@ -10,6 +10,8 @@ export type TieredRole = {
   color: string | null;
   permissions: string[];
   is_system: boolean;
+  /** The seeded role's rename-proof key (`MEMBER`, `PRESIDENT`), or `null`. */
+  system_key: string | null;
   display_order: number;
   mentionable: boolean;
   /** The role's tier, or `null` for a role outside the tiers. */
@@ -39,6 +41,7 @@ export function normalizeTieredRoles(data: unknown): TieredRole[] {
         ? role.permissions.map(String)
         : [],
       is_system: Boolean(role.is_system),
+      system_key: typeof role.system_key === "string" ? role.system_key : null,
       display_order: Number(role.display_order ?? 0),
       mentionable: role.mentionable !== false,
       tier_id: typeof role.tier_id === "string" ? role.tier_id : null,
@@ -72,6 +75,27 @@ export function normalizeTiers(data: unknown): TierRow[] {
 /** Roles in list order: the order officers set, then by name. */
 export function byDisplayOrder(a: TieredRole, b: TieredRole): number {
   return a.display_order - b.display_order || a.name.localeCompare(b.name);
+}
+
+/**
+ * What "View as a role" (#4072) previews: a member holding only this role,
+ * with the chapter's Member role beside it when joining into the role would
+ * add it. That mirrors the redeem (`lacksBaseAccess` in the API's
+ * `invite.service.ts`): a role the chapter made that grants neither
+ * `members:view` nor `*` comes with Member, because on its own it opens no
+ * screen at all.
+ */
+export function previewPermissions(
+  role: TieredRole,
+  roles: readonly TieredRole[],
+): string[] {
+  const own = role.permissions;
+  const comesWithMember =
+    !role.is_system && !own.includes("*") && !own.includes("members:view");
+  const member = comesWithMember
+    ? roles.find((candidate) => candidate.system_key === "MEMBER")
+    : undefined;
+  return [...new Set([...own, ...(member?.permissions ?? [])])];
 }
 
 export function isWildcardRole(role: Pick<TieredRole, "permissions">): boolean {

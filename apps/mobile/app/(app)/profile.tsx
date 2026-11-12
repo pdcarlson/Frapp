@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -14,8 +14,6 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
-import { PencilGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 import {
@@ -35,7 +33,6 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import {
@@ -61,28 +58,29 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## The detail rows
  *
- * Canvas draws Email, Phone, Pledge class and Big brother. No phone or
- * big-brother column exists, so those two are omitted. The rows are Email,
- * four of the fields the API's `UpdateUserDto` lets a member edit (major,
- * graduation year, city, company), and after Graduation the member's pledge
- * class and order number (#3939), which live on the membership and are drawn
- * only when an officer has set them. Display name heads the screen and bio
- * gets its own card.
+ * Canvas draws Email, Phone, Pledge class and Big brother. No big-brother
+ * column exists, so that one is omitted. The rows are Email, Phone (#3711),
+ * four more of the fields the API's `UpdateUserDto` lets a member edit
+ * (major, graduation year, city, company), and after Graduation the member's
+ * pledge class and order number (#3939), which live on the membership and are
+ * drawn only when an officer has set them. Display name heads the screen and
+ * bio gets its own card.
  *
  * ## Editing
  *
- * Canvas draws an Edit action at the far end of the `‹ More` row, and that is
- * where it sits: it opens `EditProfileSheet` for the name, major, graduation
- * year, bio, city and company (#3387). The photo edits in place (#732):
- * `ProfilePhoto` picks, uploads and confirms it. Edit appears only once the
- * profile has loaded, because a sheet opened on the loading or error state
- * would prefill blanks over fields the member has already set.
+ * Tap what you want to change (#3711, Paul 2026-11-07: "The pencil button
+ * isn't obvious; drop it"). Your name, the bio card, and every row that is
+ * yours to set (Phone, Major, Graduation, City, Company, and Bio while it is
+ * empty) open `EditProfileSheet` (#3387). Email is the account's address and
+ * the pledge class rows are an officer's, so those don't. The photo edits in
+ * place (#732): `ProfilePhoto` picks, uploads and confirms it. The rows are
+ * drawn only once the profile has loaded, because a sheet opened on the
+ * loading or error state would prefill blanks over fields already set.
  */
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
   // Your initials wear the color the chapter sees on them (#3860).
   const ownTint = useOwnAvatarTint();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const { email: sessionEmail } = useAuthSession();
   const chapterId = useActiveChapterId();
@@ -131,6 +129,7 @@ export default function ProfileScreen() {
   // resolves, and it is the same address — so the row never sits blank while
   // the profile loads.
   const email = profile?.email ?? sessionEmail ?? null;
+  const openEditor = () => editSheetRef.current?.present();
 
   if (userQuery.isPending) {
     return (
@@ -158,22 +157,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScreenShell
-      back={BACK_TO_MORE}
-      backAction={
-        // A pencil, not the board's "Edit" word: the same back-row slot
-        // Documents fills with its upload glyph (components.md § Icon-only
-        // actions).
-        <IconButton
-          label="Edit profile"
-          hint="Opens a sheet to edit your name and details."
-          onPress={() => editSheetRef.current?.present()}
-        >
-          <PencilGlyph color={accent} />
-        </IconButton>
-      }
-      title="Profile"
-    >
+    <ScreenShell back={BACK_TO_MORE} title="Profile">
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}
@@ -181,9 +165,17 @@ export default function ProfileScreen() {
           initials={profile?.initials ?? "?"}
           avatarTint={ownTint}
         />
-        <Text style={styles.name}>
-          {profile?.displayName ?? "Your profile"}
-        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Edits your profile"
+          onPress={openEditor}
+          hitSlop={8}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
+        >
+          <Text style={styles.name}>
+            {profile?.displayName ?? "Your profile"}
+          </Text>
+        </Pressable>
         {profile?.major ||
         profile?.graduationYear ||
         profile?.currentCompany ? (
@@ -237,8 +229,17 @@ export default function ProfileScreen() {
         <ListRow variant="detail" label="Email" value={email ?? "Not set"} />
         <ListRow
           variant="detail"
+          label="Phone"
+          value={profile?.phone ?? "Not set"}
+          accessibilityHint={EDIT_HINT}
+          onPress={openEditor}
+        />
+        <ListRow
+          variant="detail"
           label="Major"
           value={profile?.major ?? "Not set"}
+          accessibilityHint={EDIT_HINT}
+          onPress={openEditor}
         />
         <ListRow
           variant="detail"
@@ -246,6 +247,8 @@ export default function ProfileScreen() {
           value={
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
+          accessibilityHint={EDIT_HINT}
+          onPress={openEditor}
         />
         {classRows.map((row) => (
           <ListRow
@@ -259,20 +262,41 @@ export default function ProfileScreen() {
           variant="detail"
           label="City"
           value={profile?.currentCity ?? "Not set"}
+          accessibilityHint={EDIT_HINT}
+          onPress={openEditor}
         />
         <ListRow
           variant="detail"
           label="Company"
           value={profile?.currentCompany ?? "Not set"}
+          accessibilityHint={EDIT_HINT}
+          onPress={openEditor}
         />
+        {profile?.bio ? null : (
+          <ListRow
+            variant="detail"
+            label="Bio"
+            value="Not set"
+            accessibilityHint={EDIT_HINT}
+            onPress={openEditor}
+          />
+        )}
       </ListSection>
 
       {profile?.bio ? (
         <>
           <SectionHeader>Bio</SectionHeader>
-          <View style={styles.bioCard}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint={EDIT_HINT}
+            onPress={openEditor}
+            style={({ pressed }) => [
+              styles.bioCard,
+              pressed ? styles.pressed : null,
+            ]}
+          >
             <Text style={styles.bioText}>{profile.bio}</Text>
-          </View>
+          </Pressable>
         </>
       ) : null}
 
@@ -281,12 +305,16 @@ export default function ProfileScreen() {
   );
 }
 
+/** What a screen reader hears on every row a tap edits. */
+const EDIT_HINT = "Opens a sheet to edit your profile";
+
 /**
- * The Details rows every profile draws: Email, Major, Graduation, City,
- * Company. The pledge class and order number rows are left out of the count:
- * most members have neither, and they arrive with a second read.
+ * The Details rows every profile draws: Email, Phone, Major, Graduation,
+ * City, Company. The pledge class and order number rows are left out of the
+ * count: most members have neither, and they arrive with a second read. So
+ * is the empty-bio row, which most members' profiles don't draw.
  */
-const DETAIL_ROWS = 5;
+const DETAIL_ROWS = 6;
 
 /**
  * The screen's loading state, on the loaded screen's own styles: the photo's
@@ -389,6 +417,9 @@ function createStyles(tokens: SignetTokens) {
     bioText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    pressed: {
+      opacity: 0.6,
     },
   });
 }

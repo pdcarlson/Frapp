@@ -76,7 +76,8 @@
     /* ── Semantic status (foundations §5; status-only, never decorative) ──
      * Foregrounds are for text ON a solid semantic fill; measured against
      * WCAG AA — near-black wins on every one of these hues (white loses on
-     * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
+     * success 2.28:1, warning 2.24:1 and destructive 2.87:1; figures in
+     * foundations §5). On dark surfaces, prefer the
      * tint recipe (the `--*-tint` fills below + hue text) over solid fills. */
     /* `--success` and `--destructive` are their hues lifted in lightness for
      * the 2026-11-12 surface ladder (#3826), where the 2026-11-05 solids

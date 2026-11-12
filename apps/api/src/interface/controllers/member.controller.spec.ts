@@ -3,6 +3,8 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   DismissOpsNudgeDto,
   UpdateMemberRolesDto,
@@ -23,6 +25,7 @@ describe('MemberController', () => {
       searchByChapterAndName: jest.fn(),
       findAlumniByChapter: jest.fn(),
       updateRoles: jest.fn(),
+      correctProfile: jest.fn(),
       updateOnboarding: jest.fn(),
       dismissOpsNudge: jest.fn(),
       remove: jest.fn(),
@@ -206,6 +209,34 @@ describe('MemberController', () => {
         controller.updateRoles('chapter-1', 'user-1', 'member-1', dto),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(memberService.updateRoles).not.toHaveBeenCalled();
+    });
+  });
+
+  // #4367: officers fix a member's name and graduation year.
+  describe('correctProfile', () => {
+    it('is gated on roles:manage, the officers who set roles and classes', () => {
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          MemberController.prototype.correctProfile,
+        ),
+      ).toEqual([SystemPermissions.ROLES_MANAGE]);
+    });
+
+    it('passes only the two correctable fields to the service', async () => {
+      memberService.correctProfile.mockResolvedValue({ id: 'member-1' } as any);
+
+      await controller.correctProfile('chapter-1', 'user-1', 'member-1', {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+
+      expect(memberService.correctProfile).toHaveBeenCalledWith(
+        'member-1',
+        'chapter-1',
+        'user-1',
+        { display_name: 'John Smith', graduation_year: 2027 },
+      );
     });
   });
 

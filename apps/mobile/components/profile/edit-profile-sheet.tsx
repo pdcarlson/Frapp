@@ -8,6 +8,7 @@ import {
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
   MAJOR_MAX_LENGTH,
+  PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   showsAfterGraduation,
@@ -41,7 +42,8 @@ import type { ViewerProfile } from "@/lib/more/profile";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s15's Edit sheet (#3387): the member's name, major, graduation year, bio,
+ * s15's Edit sheet (#3387): the member's name, phone (#3711), major,
+ * graduation year, bio,
  * and, from their graduation year on, city and company (`showsAfterGraduation`
  * in @repo/validation), saved through `PATCH /v1/users/me`. The photo stays on the screen
  * itself (`components/profile/profile-photo.tsx`), where it already edits.
@@ -225,7 +227,11 @@ export const EditProfileSheet = forwardRef<
     options: {
       placeholder: string;
       multiline?: boolean;
-      keyboardType?: "number-pad";
+      keyboardType?: "number-pad" | "phone-pad";
+      /** iOS autofill: the phone field offers the member's own number. */
+      textContentType?: "telephoneNumber";
+      /** A quiet line under the field, replaced by its refusal when there is one. */
+      hint?: string;
       autoCapitalize?: "words" | "sentences";
       maxLength?: number;
       /** What a screen reader announces, when the label is abbreviated. */
@@ -260,6 +266,7 @@ export const EditProfileSheet = forwardRef<
         placeholderTextColor={tokens.color.text.muted}
         accessibilityLabel={options.accessibleLabel ?? label}
         keyboardType={options.keyboardType}
+        textContentType={options.textContentType}
         autoCapitalize={options.autoCapitalize}
         maxLength={options.maxLength}
         multiline={options.multiline}
@@ -278,6 +285,8 @@ export const EditProfileSheet = forwardRef<
         <Text accessibilityRole="alert" style={styles.error}>
           {shownRefusal.message}
         </Text>
+      ) : options.hint ? (
+        <Text style={styles.hint}>{options.hint}</Text>
       ) : null}
     </View>
   );
@@ -313,6 +322,13 @@ export const EditProfileSheet = forwardRef<
         {field("displayName", copy.displayName.label, {
           placeholder: copy.displayName.placeholder,
           autoCapitalize: "words",
+        })}
+        {field("phone", copy.phone.label, {
+          placeholder: copy.phone.placeholder,
+          keyboardType: "phone-pad",
+          textContentType: "telephoneNumber",
+          maxLength: PHONE_MAX_LENGTH,
+          hint: copy.phone.hint,
         })}
         <View style={styles.row}>
           {field("major", copy.major.label, {
@@ -432,6 +448,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
+    },
+    hint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

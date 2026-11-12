@@ -9,7 +9,7 @@ import type { INotificationRepository } from '#domain/repositories/notification.
 import type { Notification } from '#domain/entities/notification.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeFilterValue } from '../supabase.utils';
-import { IN_FILTER_CHAR_BUDGET } from '#domain/utils/chunk-ids';
+import { IN_FILTER_CHAR_BUDGET, chunkIds } from '#domain/utils/chunk-ids';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -20,6 +20,7 @@ function toNotificationInsert(
     title: data.title,
     body: data.body,
     data: data.data ?? {},
+    ...(data.chat_message_id ? { chat_message_id: data.chat_message_id } : {}),
   };
 }
 
@@ -30,12 +31,16 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async create(data: TablesInsert<'notifications'>): Promise<Notification> {
+  async create(
+    data: TablesInsert<'notifications'>,
+  ): Promise<Notification | null> {
+    // `maybeSingle`: a chat row about a message deleted meanwhile is dropped
+    // by a trigger, and the insert then returns no row rather than failing.
     const { data: created, error } = await this.supabase
       .from('notifications')
       .insert(toNotificationInsert(data))
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new SupabaseQueryError(error);
     return created;
@@ -179,6 +184,28 @@ export class SupabaseNotificationRepository implements INotificationRepository {
 
     if (error) throw new SupabaseQueryError(error);
     return data?.length ?? 0;
+  }
+
+  async rewriteChatMessageBody(
+    chapterId: string,
+    messageId: string,
+    body: string,
+    userIds: readonly string[],
+  ): Promise<void> {
+    const patch: TablesUpdate<'notifications'> = { body };
+    // A channel's readers can be a whole chapter, so the list is chunked to
+    // keep each request's URL inside the `in (...)` budget.
+    for (const chunk of chunkIds([...userIds])) {
+      const { error } = await this.supabase
+        .from('notifications')
+        .update(patch)
+        .eq('chapter_id', chapterId)
+        .eq('chat_message_id', messageId)
+        .in('user_id', chunk)
+        .neq('body', body);
+
+      if (error) throw new SupabaseQueryError(error);
+    }
   }
 }
 

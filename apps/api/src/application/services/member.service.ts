@@ -31,7 +31,7 @@ import {
   SystemRoleKeys,
 } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
-import { RbacService } from './rbac.service';
+import { RbacService, type RankContext } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { allowedVisibilities } from './custom-field-visibility';
@@ -67,6 +67,11 @@ export interface MemberProfile {
   current_city: string | null;
   current_company: string | null;
   email: string;
+  /**
+   * `users.phone` (#3711): the member's own number, as they typed it, or null.
+   * Only they set it (`PATCH /v1/users/me`).
+   */
+  phone: string | null;
   /** `members.pledge_class_id` (#3939): one of the chapter's classes, or null. */
   pledge_class_id: string | null;
   /** `members.order_number` (#3939): set by officers, or null. */
@@ -95,9 +100,35 @@ export interface MemberProfile {
    * chapter only where the API would allow it.
    */
   viewer_can_remove?: boolean;
+  /**
+   * Whether the requesting viewer may fix this member's name and graduation
+   * year (`PATCH /v1/members/{id}/profile`, #4367): see
+   * {@link MemberService.profileEditRefusal}. Present only on single-member
+   * reads, so a client offers the editor only where the API would allow it.
+   */
+  viewer_can_edit_profile?: boolean;
+}
+
+/**
+ * The fields an officer may fix on another member's profile (#4367): the two
+ * a chapter keeps its records by, and the two a member most often gets wrong
+ * or never fills in. Everything else on the profile (photo, phone, bio, major,
+ * city, company) is the member's own. `spec/behavior/members.md` § Profiles
+ * (Officer corrections).
+ */
+export interface MemberProfileCorrection {
+  display_name?: string;
+  graduation_year?: number | null;
 }
 
 export type MemberSummary = MemberProfile;
+
+/**
+ * Why an officer can't fix the name or year of someone in two chapters: both
+ * live on the one `users` row every chapter shows (#4367).
+ */
+const IN_ANOTHER_CHAPTER_REFUSAL =
+  'This member is also in another chapter, so only they can change their name and graduation year.';
 
 /**
  * One roster row: enough to render a name and an avatar, and nothing else.
@@ -609,25 +640,42 @@ export class MemberService {
   private async removalRefusal(
     member: Member,
     actorUserId: string,
-  ): Promise<string | null> {
-    if (member.user_id === actorUserId) {
-      return "You can't remove yourself from the chapter.";
-    }
-    const { reach, roles, positions } = await this.rbacService.getRankContext(
-      member.chapter_id,
+    rankContext: () => Promise<RankContext> = this.rankContextFor(
+      member,
       actorUserId,
-    );
-    if (reach.memberId === member.id) {
-      return "You can't remove yourself from the chapter.";
+    ),
+  ): Promise<string | null> {
+    switch (
+      rankBlock(
+        member,
+        actorUserId,
+        await rankContextOrSkip(member, actorUserId, rankContext),
+      )
+    ) {
+      case 'self':
+        return "You can't remove yourself from the chapter.";
+      case 'not-below':
+        return 'You can only remove members ranked below you.';
+      default:
+        return null;
     }
-    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
-    const held = member.role_ids
-      .map((id) => byId.get(id.toLowerCase()))
-      .filter((role): role is Role => role !== undefined);
-    if (!canReach(reach, holderRank(held, positions))) {
-      return 'You can only remove members ranked below you.';
-    }
-    return null;
+  }
+
+  /**
+   * One read of `actorUserId`'s rank context in `member`'s chapter, shared by
+   * every check that asks for it. A profile read checks both removal and
+   * correction for the same viewer, so it reads the context once.
+   */
+  private rankContextFor(
+    member: Member,
+    actorUserId: string,
+  ): () => Promise<RankContext> {
+    let pending: Promise<RankContext> | undefined;
+    return () =>
+      (pending ??= this.rbacService.getRankContext(
+        member.chapter_id,
+        actorUserId,
+      ));
   }
 
   private async assertRemovable(
@@ -636,6 +684,148 @@ export class MemberService {
   ): Promise<void> {
     const refusal = await this.removalRefusal(member, actorUserId);
     if (refusal) throw new ForbiddenException(refusal);
+  }
+
+  /**
+   * Why `actorUserId` may not fix `member`'s name or graduation year
+   * (`PATCH /v1/members/{id}/profile`, #4367), or `null` when they may. The
+   * route's guard is `roles:manage`, the officers who already set a member's
+   * roles and pledge class; this narrows it the way removal is narrowed:
+   *
+   * - not your own profile: you change yours from your profile, where the
+   *   rest of it lives;
+   * - only members ranked below you (#4071, `spec/behavior/rbac.md` § Rank),
+   *   so a chair can't rename the President;
+   * - only a member of this chapter alone. The name and year live on `users`,
+   *   shared by every chapter a person is in, and one chapter's officers must
+   *   not change what another chapter shows. A member in two chapters keeps
+   *   both fields to themselves.
+   */
+  private async profileEditRefusal(
+    member: Member,
+    actorUserId: string,
+    rankContext: () => Promise<RankContext> = this.rankContextFor(
+      member,
+      actorUserId,
+    ),
+  ): Promise<string | null> {
+    const [context, inAnotherChapter] = await Promise.all([
+      rankContextOrSkip(member, actorUserId, rankContext),
+      this.isInAnotherChapter(member),
+    ]);
+    switch (rankBlock(member, actorUserId, context)) {
+      case 'self':
+        return 'Change your own name and graduation year from your profile.';
+      case 'not-below':
+        return 'You can only edit the profiles of members ranked below you.';
+    }
+    if (inAnotherChapter) return IN_ANOTHER_CHAPTER_REFUSAL;
+    return null;
+  }
+
+  /** Whether `member`'s person also belongs to a chapter other than this one. */
+  private async isInAnotherChapter(member: Member): Promise<boolean> {
+    const memberships = await this.memberRepo.findByUser(member.user_id);
+    return memberships.some((other) => other.chapter_id !== member.chapter_id);
+  }
+
+  /**
+   * `viewer_can_edit_profile` for a profile read: {@link profileEditRefusal}'s
+   * answer, skipped where the permissions already settle it. A failed read
+   * answers `false` rather than failing the profile: the write re-checks.
+   */
+  private async viewerCanEditProfile(
+    member: Member,
+    viewerUserId: string,
+    permissions: readonly string[],
+    rankContext: () => Promise<RankContext>,
+  ): Promise<boolean> {
+    if (member.user_id === viewerUserId) return false;
+    const wildcard = permissions.includes(SystemPermissions.WILDCARD);
+    if (!wildcard && !permissions.includes(SystemPermissions.ROLES_MANAGE)) {
+      return false;
+    }
+    try {
+      // A `*` holder outranks everyone but themselves, so only the
+      // other-chapter rule is left to read.
+      if (wildcard) return !(await this.isInAnotherChapter(member));
+      return (
+        (await this.profileEditRefusal(member, viewerUserId, rankContext)) ===
+        null
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Read for viewer_can_edit_profile failed (chapter ${member.chapter_id}, member ${member.id})`,
+        error,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * An officer fixes another member's name or graduation year (#4367): a
+   * typo'd name, or the class year a new member never filled in. Writes the
+   * member's `users` row, which is why {@link profileEditRefusal} limits it to
+   * members of this chapter alone, and records the old and new values in the
+   * chapter audit log. A field left out is unchanged; an unchanged value
+   * writes nothing.
+   */
+  async correctProfile(
+    memberId: string,
+    chapterId: string,
+    actorUserId: string,
+    changes: MemberProfileCorrection,
+  ): Promise<MemberProfile> {
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
+    if (member.chapter_id !== chapterId) {
+      throw new ForbiddenException('Member not in current chapter');
+    }
+    const refusal = await this.profileEditRefusal(member, actorUserId);
+    if (refusal) throw new ForbiddenException(refusal);
+
+    const user = await this.userRepo.findById(member.user_id);
+    if (!user || user.deleted_at) {
+      throw new NotFoundException('User not found');
+    }
+
+    // One `{ from, to }` pair per changed field, the audit line's convention
+    // (`SystemAuditPayload.diff`), so `#chapter-audit` reads "Paul edited a
+    // member's profile · display name".
+    const patch: MemberProfileCorrection = {};
+    const diff: Record<string, { from: unknown; to: unknown }> = {};
+    if (
+      changes.display_name !== undefined &&
+      changes.display_name !== user.display_name
+    ) {
+      patch.display_name = changes.display_name;
+      diff.display_name = { from: user.display_name, to: changes.display_name };
+    }
+    if (
+      changes.graduation_year !== undefined &&
+      changes.graduation_year !== user.graduation_year
+    ) {
+      patch.graduation_year = changes.graduation_year;
+      diff.graduation_year = {
+        from: user.graduation_year,
+        to: changes.graduation_year,
+      };
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await this.userRepo.update(user.id, patch);
+      await this.auditLogService.record({
+        chapterId,
+        actorUserId,
+        action: 'member_profile_corrected',
+        targetType: 'member',
+        targetId: member.id,
+        diff,
+      });
+    }
+    return this.buildProfile(member, chapterId, actorUserId);
   }
 
   async findProfileById(
@@ -664,12 +854,15 @@ export class MemberService {
     member: Member,
     viewerUserId: string,
     permissions: readonly string[],
+    rankContext: () => Promise<RankContext>,
   ): Promise<boolean> {
     if (member.user_id === viewerUserId) return false;
     if (permissions.includes(SystemPermissions.WILDCARD)) return true;
     if (!permissions.includes(SystemPermissions.MEMBERS_REMOVE)) return false;
     try {
-      return (await this.removalRefusal(member, viewerUserId)) === null;
+      return (
+        (await this.removalRefusal(member, viewerUserId, rankContext)) === null
+      );
     } catch (error) {
       logThrowable(
         this.logger,
@@ -704,20 +897,29 @@ export class MemberService {
       permissions,
       member.user_id === viewerUserId,
     );
-    const [customFields, viewerCanRemove] = await Promise.all([
-      this.customFieldService.findVisibleValuesForMember(
-        chapterId,
-        member.id,
-        allowed,
-      ),
-      this.viewerCanRemove(member, viewerUserId, permissions),
-    ]);
+    const rankContext = this.rankContextFor(member, viewerUserId);
+    const [customFields, viewerCanRemove, viewerCanEditProfile] =
+      await Promise.all([
+        this.customFieldService.findVisibleValuesForMember(
+          chapterId,
+          member.id,
+          allowed,
+        ),
+        this.viewerCanRemove(member, viewerUserId, permissions, rankContext),
+        this.viewerCanEditProfile(
+          member,
+          viewerUserId,
+          permissions,
+          rankContext,
+        ),
+      ]);
 
     return this.photoUrls.signRow(
       {
         ...this.mergeMemberWithUser(member, user, alumniRoleId),
         custom_fields: customFields,
         viewer_can_remove: viewerCanRemove,
+        viewer_can_edit_profile: viewerCanEditProfile,
       },
       member.user_id,
     );
@@ -914,6 +1116,38 @@ export class MemberService {
       current_city: user.current_city,
       current_company: user.current_company,
       email: user.email,
+      phone: user.phone ?? null,
     };
   }
+}
+
+/**
+ * Whether the rank rules (#4071, `spec/behavior/rbac.md` § Rank) let
+ * `actorUserId` act on `member`: `'self'` for their own membership,
+ * `'not-below'` when `member` doesn't rank below them, `null` when they may.
+ * Removal and correction share it, so they never disagree on who ranks below
+ * whom. A `null` context means the self check already answered.
+ */
+function rankBlock(
+  member: Member,
+  actorUserId: string,
+  context: RankContext | null,
+): 'self' | 'not-below' | null {
+  if (!context || member.user_id === actorUserId) return 'self';
+  const { reach, roles, positions } = context;
+  if (reach.memberId === member.id) return 'self';
+  const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+  const held = member.role_ids
+    .map((id) => byId.get(id.toLowerCase()))
+    .filter((role): role is Role => role !== undefined);
+  return canReach(reach, holderRank(held, positions)) ? null : 'not-below';
+}
+
+/** The rank context, or `null` without a read when `member` is the actor. */
+function rankContextOrSkip(
+  member: Member,
+  actorUserId: string,
+  rankContext: () => Promise<RankContext>,
+): Promise<RankContext | null> {
+  return member.user_id === actorUserId ? Promise.resolve(null) : rankContext();
 }

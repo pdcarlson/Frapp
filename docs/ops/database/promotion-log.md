@@ -29,6 +29,26 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-12: A member's phone number (#3711)
+
+### 20261112150000_users_phone.sql
+
+- **Purpose**: Adds `users.phone text` (nullable) with the check `users_phone_length` (`phone is null or char_length(phone) <= 32`, added `not valid` then validated; every existing row is null). Redefines `anonymize_user` as written in `20261111235900_chat_important_seen.sql` with one more line, `phone = null`, so account deletion erases it. The member sets it through `PATCH /v1/users/me`; profile reads return it. The rule is [`spec/behavior/members.md` § Profiles](../../../spec/behavior/members.md#profiles).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'phone';` returns `1`, `select convalidated from pg_constraint where conname = 'users_phone_length';` returns `true`, and `select prosrc like '%phone = null%' from pg_proc where proname = 'anonymize_user';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never names the column. The newer API against an unmigrated database fails every profile read and `PATCH /v1/users/me` that names it, so don't deploy the API first. Adding a nullable column is metadata-only, and validating the check scans `users` once (a few hundred rows). `if not exists`, `drop constraint if exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-a-members-phone-number-20261112150000) § Rollback a member's phone number.
+
+## 2026-11-12: Deleting a chat message deletes its notifications (#4418)
+
+### 20261112140000_notifications_chat_message_id.sql
+
+- **Purpose**: Adds `notifications.chat_message_id` (uuid, nullable, `references chat_messages(id) on delete cascade`) and the partial index `idx_notifications_chat_message`. Adds two `security definer` trigger functions, EXECUTE revoked from `public`, `anon` and `authenticated`: `chat_messages_forget_notifications` (after `is_deleted` turns true, deletes the rows that quote the message) and `notifications_skip_deleted_message` (before insert, drops a row whose message is deleted or gone). Changes no row on apply; deletes notification rows only as messages are deleted afterwards, which Paul approved on #4418.
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'notifications' and column_name = 'chat_message_id';` returns 1 row, and `select tgname from pg_trigger where tgname in ('chat_messages_forget_notifications', 'notifications_skip_deleted_message');` returns 2 rows.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never writes the column, so it runs unchanged against the migrated database. The newer API against an unmigrated database fails every single-message chat notification insert (unknown column), so the order matters. `add column` with no default is a catalog-only change; the index is built with a plain `create index` over a table of about 700 rows on production. Rows written before it carry no message id (576 single-message chat rows on production on 2026-11-12, none about a deleted message). Verified in PGlite (`scripts/pglite/tiers/notifications-forget-deleted-message.mjs`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-deleted-chat-messages-take-their-notifications-20261112140000) § Rollback deleted chat messages take their notifications.
+
 ## 2026-11-12: Chat search with a filter and no text, per channel (#3965)
 
 ### 20261112131300_chat_search_filter_only.sql
