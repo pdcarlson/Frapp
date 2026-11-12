@@ -1227,6 +1227,8 @@ export function MembersDirectory() {
         userId={activeUserId}
         initialMember={activeMember}
         points={activeMember ? pointsOf(activeMember) : null}
+        docked
+        backLabel="Back to directory"
       />
     </section>
   );

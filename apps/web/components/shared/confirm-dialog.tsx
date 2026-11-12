@@ -155,14 +155,19 @@ export function useConfirmDialog(): {
       opener.focus({ preventScroll: true });
       return;
     }
-    // A dialog still open under this one (the Terms prompt, a detail sheet):
+    // A dialog still open under this one (the Terms prompt, a detail sheet,
+    // a docked panel):
     // focus goes back into it, because the page's landmark sits behind it,
     // hidden from assistive tech. Found by what is open, not by the opener's
     // ancestors, since the opener may be gone. The closing confirmation has
     // already left the document (FocusScope calls this after unmount), so it
     // can't match; the last open one is the topmost.
+    //
+    // A docked panel (`panel.tsx`) counts: it is no dialog, but it is where
+    // the confirmation came from, and it sits in the page, before every
+    // portalled dialog in document order, so one stacked over it still wins.
     const stillOpen = document.querySelectorAll<HTMLElement>(
-      '[role="dialog"][data-state="open"]',
+      '[data-docked-panel], [role="dialog"][data-state="open"]',
     );
     const under = stillOpen[stillOpen.length - 1];
     if (under) {
