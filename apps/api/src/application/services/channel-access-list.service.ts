@@ -96,6 +96,22 @@ export class ChannelAccessListService {
   ) {}
 
   /**
+   * Refuses a category that isn't the chapter's. `chat_channels.category_id`
+   * references `chat_channel_categories(id)` only, so without this a
+   * `channels:manage` holder could file a channel under another chapter's
+   * category, and a new channel's lists would silently fall back to everyone
+   * (`forNewChannel` copies nothing from a category it can't find).
+   */
+  async assertCategoryInChapter(
+    chapterId: string,
+    categoryId: string | null | undefined,
+  ): Promise<void> {
+    if (!categoryId) return;
+    const category = await this.categoryRepo.findById(categoryId, chapterId);
+    if (!category) throw new NotFoundException('Category not found');
+  }
+
+  /**
    * The access a new channel is written with. A PRIVATE channel is its
    * members' (`member_ids`) and takes no lists. Any other channel takes the
    * lists sent, and copies its category's for a list left out (a channel
