@@ -38,12 +38,17 @@
 
 @layer base {
   :root {
-    /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
-    --background: #0A0A0A;
-    --surface-1: #111111;
-    --card: #171717;
+    /* ── Surface ladder (fixed for every chapter; foundations §2) ──
+     * Each step is at least 1.15:1 from the one below it, the contrast
+     * fixture's `INDISTINGUISHABLE` bound, so a column, a card and a menu
+     * each read as their own surface (#3826, #2399). The 2026-11-05 ladder
+     * (#0A0A0A / #111111 / #171717 / #1E1E1E) stepped at 1.05 / 1.05 / 1.08.
+     * `elevation-contrast.spec.ts` holds the floor. */
+    --background: #050505;
+    --surface-1: #1A1A1A;
+    --card: #262626;
     --card-foreground: #F5F5F5;
-    --popover: #1E1E1E;
+    --popover: #313131;
     --popover-foreground: #F5F5F5;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
@@ -54,15 +59,18 @@
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
-     * favor: `--muted` is muted TEXT (#9E9E9E), not a fill. Subtle
+     * favor: `--muted` is muted TEXT (#A8A8A8), not a fill. Subtle
      * fills use the surface ladder (`--surface-1`, `--card`) instead;
      * the web reskin retargeted the `bg-muted` call sites accordingly, and
      * the 2026-11-09 text lift (#3826) retargeted the five text-bearing ones
-     * it had missed to `--card-hover`: on `#9E9E9E`, foreground text is
-     * 2.46:1. `elevation-call-sites.spec.ts` keeps them out. */
+     * it had missed to `--card-hover`: on a grey that light, foreground
+     * text is about 2.5:1. `elevation-call-sites.spec.ts` keeps them out. */
     --foreground: #F5F5F5;
     --muted-foreground: #C4C4C4;
-    --muted: #9E9E9E;
+    /* #A8A8A8 since the 2026-11-12 surface ladder (#3826): at #9E9E9E it
+     * fell to 4.05:1 on `--card-hover`, where a hovered row's metadata
+     * sits. Now 4.57:1 there and 5.47:1 on `--popover`. */
+    --muted: #A8A8A8;
     --disabled: #6B6B6B;
 
     /* ── Semantic status (foundations §5; status-only, never decorative) ──
@@ -70,23 +78,28 @@
      * WCAG AA — near-black wins on every one of these hues (white loses on
      * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
      * tint recipe (the `--*-tint` fills below + hue text) over solid fills. */
-    --success: #3FB950;
+    /* `--success` and `--destructive` are their hues lifted in lightness for
+     * the 2026-11-12 surface ladder (#3826), where the 2026-11-05 solids
+     * (#3FB950, #F85149) fell under 4.5:1 as text on `--popover` and on
+     * their own tints. Same hue (OKLCH), lighter: #4BC262 is the board's
+     * own lifted success. Both now clear 4.5:1 as text on every step, and
+     * near-black on each as a fill is 6.9:1 or more. */
+    --success: #4BC262;
     --success-foreground: #0A0A0A;
     --warning: #E5A000;
     --warning-foreground: #0A0A0A;
-    --destructive: #F85149;
+    --destructive: #FF665C;
     --destructive-foreground: #0A0A0A;
     /* The AA-lifted tone for danger text ON a danger tint, which components.md
      * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
      * contrast, but the hue is the fixed semantic") and the reference already
-     * does for success and info (#4BC262, #4C93F8). Solid #F85149 is below the
-     * 4.5:1 release gate (design-system README §6) on the surfaces destructive
-     * badges and buttons sit on, and the greenfield ladder widened that gap:
-     * it now measures 4.95:1 over --card and 4.48:1 over --popover before any
-     * tint is composited. #FF7B72 is the same hue lifted and measures 6.58:1
-     * over --card and 5.96:1 over --popover. The solid `--destructive` stays
-     * the fill and the border. */
-    --destructive-text: #FF7B72;
+     * does for success and info (#4BC262, #4C93F8). The tint is the solid hue
+     * at 13% (20% hovered), so text on it needs more than the solid clears on
+     * a plain surface. #FF958A is the same hue lifted once more and holds
+     * 4.63:1 on the 20% hover tint over `--popover`, the worst case; #FF7B72,
+     * its value before the 2026-11-12 surface ladder, fell to 4.11:1 there.
+     * The solid `--destructive` stays the fill and the border. */
+    --destructive-text: #FF958A;
     /* The §5 tint recipe as tokens (#2376): the fixed semantic hue at 13%
      * alpha (20% for the destructive hover), written as `rgba()` so it needs
      * nothing newer than CSS2. Never write the recipe at a call site as an
@@ -100,18 +113,22 @@
      * --destructive; signet.css.spec.ts holds them to those hues, and
      * apps/web/components/shared/status-tint-contrast.spec.ts measures every
      * label on them, reading the alpha from here. */
-    --success-tint: rgba(63, 185, 80, 0.13);
+    --success-tint: rgba(75, 194, 98, 0.13);
     --warning-tint: rgba(229, 160, 0, 0.13);
-    --destructive-tint: rgba(248, 81, 73, 0.13);
-    --destructive-tint-hover: rgba(248, 81, 73, 0.2);
+    --destructive-tint: rgba(255, 102, 92, 0.13);
+    --destructive-tint-hover: rgba(255, 102, 92, 0.2);
     --info: #2F81F7;
     --info-foreground: #0A0A0A;
     /* The same AA lift components.md §5 sanctions for danger, applied to info
-     * for the same reason: the lighter ladder puts solid `--info` at 4.43:1 over
-     * --card and 4.01:1 over --popover, under the 4.5:1 gate on the two surfaces
-     * info badges actually sit on. #4C93F8 is the reference's own lifted info
-     * tone and clears 5.40:1 / 4.89:1 there. The solid stays the fill and border. */
-    --info-text: #4C93F8;
+     * for the same reason: solid `--info` is under the 4.5:1 gate as text on
+     * --card and --popover. #4C93F8 was the reference's own lifted info tone.
+     * The 2026-11-12 surface ladder (#3826) took it to 4.23:1 on --popover and
+     * under the gate on its own tint, which mobile's StatusChip draws on a
+     * card (an in-progress task), so it is lifted to #61A7FF: 4.56:1 or more
+     * on the 13% info tint over every step, 5.25:1 on plain --popover. Also
+     * `signetDarkTokens.color.semantic.infoText` since then. The solid stays
+     * the fill and border. */
+    --info-text: #61A7FF;
     /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
      * chapter accent, never any other status. White foreground is locked by
      * foundations §5. */
@@ -165,17 +182,27 @@
 
     /* `--card-hover` is the hover of a card-filled control: the
      * Secondary button (components.md §3) and a card-filled row or tile.
-     * It is `--popover` lifted 6% toward white, so it sits ABOVE the
-     * top of the ladder and stays distinct from every step a control can
-     * sit on, a dialog included, where the old elevated-step hover was
-     * the dialog's own fill. An opaque literal rather than a white alpha
-     * (which composites over the container, so on `--background` it
-     * landed on the card rest fill) or a `color-mix()` (which has a
-     * browser floor). It is never a resting surface: elevation is still
-     * the four steps above. `elevation-contrast.spec.ts` derives it from
-     * `--popover`, so a ladder change fails there instead of leaving
-     * this value behind. */
-    --card-hover: #2C2C2C;
+     * It sits ABOVE the top of the ladder, so it stays distinct from
+     * every step a control can sit on, a dialog included, where the old
+     * elevated-step hover was the dialog's own fill. An opaque literal
+     * rather than a white alpha (which composites over the container, so
+     * on `--background` it landed on the card rest fill) or a
+     * `color-mix()` (which has a browser floor). It is not an elevation
+     * step: elevation is still the four steps above. Since 2026-11-09 it
+     * is also the quiet fill under text where `--muted` used to be one
+     * (components.md §1).
+     *
+     * It is the lowest neutral still a perceptible step (1.15:1,
+     * `INDISTINGUISHABLE`) over `--popover`: #3B3B3B, 1.16:1. Until the
+     * 2026-11-12 surface ladder (#3826) it was `--popover` lifted 6%
+     * toward white; on the lighter `--popover` that would be #3D3D3D,
+     * and every tone drawn on it as text reads better the lower it sits.
+     * Two role colours, which a hovered member row draws names in, still
+     * miss 4.5:1 on it (Rose 4.49, Violet 4.42; role-colors-contrast.spec.ts
+     * records the exception and #4387 tracks it).
+     * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder
+     * change fails there instead of leaving this value behind. */
+    --card-hover: #3B3B3B;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
      * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
@@ -184,7 +211,7 @@
     --primary-hover: #D2AD37;
     --primary-foreground: #292109;
     --ring: #796938;
-    --accent-subtle: #272213;
+    --accent-subtle: #332A10;
     --accent-border: #5F522C;
     --accent-text: #E7C86B;
 
@@ -193,7 +220,7 @@
      * above, so a chapter that overrides the slot at runtime moves
      * these with it and nothing has to be re-derived or re-persisted.
      * They exist because §3's state table names two steps the engine
-     * does not emit — the engine's seven roles are accent 3/7/8/9/10/11
+     * does not emit — the engine's seven roles are accent 4/7/8/9/10/11
      * plus the contrast color (accent-engine.md §2).
      *
      * `--primary-pressed` is §3's "fill accent-10 + 8% black overlay".
@@ -201,18 +228,26 @@
      * on it can fall under 4.5:1 (#2604), so it is only ever the
      * momentary pointer-down shade, never a held state
      * (accent-engine.md §8).
-     * `--accent-subtle-hover` is the Tinted hover, which §3 calls
-     * accent-4: a fifth of the way from accent-3 toward accent-7,
-     * which lands between the two steps rather than on a named one.
+     * `--accent-subtle-hover` is the Tinted hover: 15% of the way from
+     * the subtle step toward accent-7, which lands between two steps
+     * rather than on a named one. (Until the 2026-11-12 surface ladder,
+     * #3826, the subtle step was accent-3 and this mix was 22%, which
+     * §3 called accent-4. The engine now takes the subtle step from
+     * accent-4 itself, and a lighter hover would put a hovered mention
+     * row's role-coloured names and timestamp under AA.)
      * Both are stated as approximations here rather than pretending
      * to a scale step the generator never produced. */
     --primary-pressed: color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover));
-    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 22%, var(--accent-subtle));
+    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 15%, var(--accent-subtle));
 
     /* ── House gold (brand-identity.md; never retints per chapter) ── */
     --gold-house: #EFB63B;
     --gold-on-house: #2C2000;
-    --gold-ask-fill: #251E0E;
+    /* Re-pitched with the 2026-11-12 surface ladder (#3826): #251E0E sat
+     * 1.05:1 on the `--surface-1` top bar the Ask pill lives in, a fill
+     * darker than the bar. #2C2515 is the same hue at 1.15:1 above it, the
+     * lift it had before; the Ask text on it is 9.81:1. */
+    --gold-ask-fill: #2C2515;
     --gold-ask-border: #6B5619;
     --gold-ask-text: #F4CB63;
 
@@ -258,8 +293,11 @@
      * RE-PITCHED 2026-11-05 with the neutral ladder (foundations.md §2):
      * `--popover` is now #1E1E1E, and #2B2B2B measures 1.1774:1 on it, the
      * pre-greenfield amplitude again, and neutral like the ladder. The
-     * board's warm pair is history. */
-    --skeleton-highlight: #2B2B2B;
+     * board's warm pair is history.
+     *
+     * RE-PITCHED 2026-11-12 with the surface ladder (#3826): `--popover` is
+     * #313131, and #3C3C3C measures 1.18:1 on it, the same amplitude. */
+    --skeleton-highlight: #3C3C3C;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because

@@ -30,7 +30,7 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * geometry), both at rest in the inactive tab's muted paint: the shape says
  * at a glance whether a row is an event or a task (a dot said neither). The
  * event's trailing time is the foreground text; an imminent task due date is
- * `semantic.destructive`, which is the drawn `#F85149` — **not** the mention red
+ * `semantic.destructive`, which is the drawn danger red — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
  * The two rows render independently: a chapter with events but no open tasks

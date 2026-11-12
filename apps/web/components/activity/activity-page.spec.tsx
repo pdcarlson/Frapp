@@ -780,9 +780,10 @@ describe("ActivityPage", () => {
     render(<ActivityPage />);
     const tiles = screen.getByRole("group", { name: "Needs you by kind" });
     expect(within(tiles).getAllByRole("button")).toHaveLength(1);
-    expect(
-      within(tiles).getByRole("button", { name: /Your tasks/ }).className,
-    ).toContain("opacity-60");
+    const zeroTile = within(tiles).getByRole("button", { name: /Your tasks/ });
+    // Quiet by its count's tone on the text ladder, not by fading the button.
+    expect(zeroTile.className).not.toContain("opacity-");
+    expect(within(zeroTile).getByText("0").className).toContain("text-muted");
     mockModuleGate.mockReturnValue(undefined);
   });
 
