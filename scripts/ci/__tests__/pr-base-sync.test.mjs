@@ -10,6 +10,7 @@ import {
   UPDATE_BRANCH_STALLS_BEFORE_STOP,
   buildBehindComment,
   buildConflictComment,
+  buildRenumberComment,
   compareBehindBy,
   fetchPrWithMergeable,
   CHECKS_START_GRACE_MS,
@@ -2087,7 +2088,8 @@ test("rule off: a behind, clean PR is left as is, with no update, no compare and
   });
   assert.deepEqual(results, [{ number: 12, verdict: "clean", action: "none" }]);
   assert.ok(!calls.some((c) => c.method === "PUT"), "no update-branch");
-  assert.ok(!calls.some((c) => c.url.includes("/compare/")), "behind or not doesn't matter");
+  // The only compare is the migration-order read (#4558), which is against the base's sha.
+  assert.ok(!calls.some((c) => c.url.includes(`/compare/${BASE_REF}...`)), "behind or not doesn't matter");
   assert.equal(commentPosts(calls).length, 0);
   assert.equal(filedIssues(calls).length, 0, "nothing blocked, so no alert");
 });
@@ -2206,4 +2208,240 @@ test("rule off: a slot sweep does nothing at all", async () => {
   });
   assert.deepEqual(results, []);
   assert.deepEqual(calls, [], "not even the PR list");
+});
+
+// ── Migrations that no longer sort after main's (#4558 item 6) ──────────────
+
+// main took 160000 while the PR's 150000 waited, so the PR's sorts before it.
+const MIG = "supabase/migrations/20261112150000_add_widgets.sql";
+const MIG_PAGE = "docs/ops/database/migrations/20261112150000_add_widgets.md";
+const MAIN_MIG = "20261112160000_main_took_this.sql";
+// NOW is before main's newest version, so the fresh version is one second after it.
+const MOVED = "20261112160001_add_widgets";
+const blobOf = (text) => ({ content: Buffer.from(text).toString("base64") });
+
+function renumberRoutes(pr, {
+  files = [
+    { filename: MIG, status: "added" },
+    { filename: MIG_PAGE, status: "added" },
+    { filename: "apps/api/src/widgets.ts", status: "modified" },
+  ],
+  texts = {
+    [MIG]: "-- add widgets\ncreate table widgets ();\n",
+    [MIG_PAGE]: "# 20261112150000_add_widgets.sql\n\n## Promotion\n\n## Rollback\n",
+    "apps/api/src/widgets.ts": "// schema: 20261112150000_add_widgets\nexport const x = 1;\n",
+  },
+  baseMigrations = [MAIN_MIG],
+  parents = [BASE_SHA, pr.head.sha],
+  listed = true,
+} = {}) {
+  const merge = pr.merge_commit_sha;
+  const paths = Object.keys(texts);
+  return [
+    ...(listed ? [listRoute([pr]), detailRoute(pr)] : []),
+    { method: "GET", path: `/compare/${BASE_SHA}...${pr.head.sha}?per_page=1`, body: { files } },
+    {
+      method: "GET",
+      path: "/contents/supabase/migrations?ref=",
+      body: baseMigrations.map((name) => ({ name })),
+    },
+    { method: "GET", path: `/git/commits/${merge}`, body: { tree: { sha: "mergetree" }, parents: parents.map((sha) => ({ sha })) } },
+    {
+      method: "GET",
+      path: "/git/trees/mergetree?recursive=1",
+      body: {
+        truncated: false,
+        tree: [
+          ...paths.map((path, i) => ({ path, mode: "100644", type: "blob", sha: `blob${i}` })),
+          { path: `supabase/migrations/${MAIN_MIG}`, mode: "100644", type: "blob", sha: "mainblob" },
+        ],
+      },
+    },
+    ...paths.map((path, i) => ({ method: "GET", path: `/git/blobs/blob${i}`, body: blobOf(texts[path]) })),
+    { method: "POST", path: "/git/trees", body: { sha: "newtree" } },
+    { method: "POST", path: "/git/commits", body: { sha: "8".repeat(40) } },
+    { method: "PATCH", path: "/git/refs/heads/", body: {} },
+    emptyCommentsRoute,
+    { method: "POST", path: `/issues/${pr.number}/comments`, status: 201, body: { id: 1 } },
+  ];
+}
+const migrationPr = (number, overrides = {}) => makePr(number, { merge_commit_sha: "7".repeat(40), ...overrides });
+const gitWrites = (calls) => calls.filter((c) => c.method !== "GET" && c.url.includes("/git/"));
+
+test("a clean PR whose migration sorts before main's is merged and renumbered with the app token, with no wake", async () => {
+  const pr = migrationPr(50);
+  const { logger, lines } = capture();
+  const { results, calls } = await sweep({
+    routes: renumberRoutes(pr),
+    updateToken: "pat",
+    requireUpToDate: false,
+    logger,
+  });
+  assert.deepEqual(results, [{ number: 50, verdict: "migration-order", action: "renumbered" }]);
+  assert.equal(commentPosts(calls).length, 0, "no wake");
+
+  const tree = JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/git/trees")).body);
+  assert.equal(tree.base_tree, "mergetree", "built on GitHub's test merge, so main's changes come along");
+  const byPath = new Map(tree.tree.map((e) => [e.path, e]));
+  assert.equal(byPath.get(MIG).sha, null, "the old migration is removed");
+  assert.equal(byPath.get(MIG_PAGE).sha, null, "and its old ledger page");
+  assert.equal(byPath.get(`supabase/migrations/${MOVED}.sql`).sha, "blob0", "an unchanged file moves by blob");
+  assert.match(byPath.get(`docs/ops/database/migrations/${MOVED}.md`).content, new RegExp(`^# ${MOVED}\\.sql`));
+  assert.match(byPath.get("apps/api/src/widgets.ts").content, new RegExp(`schema: ${MOVED}\\n`));
+  assert.ok(!byPath.has(`supabase/migrations/${MAIN_MIG}`), "main's migration is not touched");
+
+  const commit = JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/git/commits")).body);
+  assert.deepEqual(commit.parents, [pr.head.sha, BASE_SHA], "a merge of main into the branch");
+  assert.match(commit.message, /20261112150000_add_widgets\.sql -> 20261112160001_add_widgets\.sql/);
+  const ref = calls.find((c) => c.method === "PATCH");
+  assert.ok(ref.url.endsWith(`/git/refs/heads/${pr.head.ref}`));
+  assert.deepEqual(JSON.parse(ref.body), { sha: "8".repeat(40), force: false });
+  // Reads stay on GITHUB_TOKEN; only the git writes use the App's.
+  for (const c of calls) assert.equal(c.token, gitWrites([c]).length ? "pat" : "t", `${c.method} ${c.url}`);
+  assert.ok(lines.some((l) => /#50: migrations sorted before main's — merged main and renumbered 20261112150000->20261112160001/.test(l)));
+});
+
+test("a PR whose migrations still sort after main's is left as it is", async () => {
+  const pr = migrationPr(51);
+  const { results, calls } = await sweep({
+    routes: renumberRoutes(pr, { baseMigrations: ["20261112140000_older.sql"] }),
+    updateToken: "pat",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, [{ number: 51, verdict: "clean", action: "none" }]);
+  assert.equal(gitWrites(calls).length, 0);
+  assert.ok(!calls.some((c) => c.url.includes("/git/")), "nothing past the listing is read");
+  assert.equal(commentPosts(calls).length, 0);
+});
+
+test("a PR that adds no migration costs one compare, and the base's list is never read", async () => {
+  const pr = migrationPr(52);
+  const { results, calls } = await sweep({
+    routes: renumberRoutes(pr, { files: [{ filename: "apps/web/page.tsx", status: "modified" }] }),
+    updateToken: "pat",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results, [{ number: 52, verdict: "clean", action: "none" }]);
+  assert.ok(!calls.some((c) => c.url.includes("/contents/")));
+});
+
+test("without the app token the PR gets the exact command, and nothing touches git", async () => {
+  const pr = migrationPr(53);
+  const { results, calls } = await sweep({ routes: renumberRoutes(pr), requireUpToDate: false });
+  assert.deepEqual(results, [{ number: 53, verdict: "migration-order", action: "commented" }]);
+  assert.equal(gitWrites(calls).length, 0);
+  const body = JSON.parse(commentPosts(calls)[0].body).body;
+  assert.ok(body.startsWith(BASE_SYNC_MARKER));
+  assert.match(body, /npm run migration:renumber/);
+  assert.match(body, /no app token/);
+  assert.match(body, /`20261112150000_add_widgets\.sql`/);
+});
+
+for (const [name, options, reason] of [
+  ["GitHub's test merge is of an older base", { parents: ["0".repeat(40), "50".padStart(40, "0")] }, /test merge is not of this head and the new base/],
+  ["the branch changes a workflow", { files: [{ filename: MIG, status: "added" }, { filename: ".github/workflows/ci.yml", status: "modified" }] }, /\.github\/workflows/],
+  [
+    "a changed file still names the old version on its own",
+    {
+      texts: {
+        [MIG]: "-- add widgets\n",
+        [MIG_PAGE]: "# 20261112150000_add_widgets.sql\n\nselect * from ledger where version = '20261112150000';\n",
+      },
+    },
+    /still names an old version on its own, which may be main's migration: docs\/ops\/database\/migrations\/20261112150000_add_widgets\.md \(20261112150000\)/,
+  ],
+]) {
+  test(`no push, and the exact command instead, when ${name}`, async () => {
+    const pr = migrationPr(54);
+    const { results, calls } = await sweep({ routes: renumberRoutes(pr, options), updateToken: "pat", requireUpToDate: false });
+    assert.equal(results[0].action, "commented");
+    assert.equal(gitWrites(calls).length, 0);
+    assert.match(JSON.parse(commentPosts(calls)[0].body).body, reason);
+  });
+}
+
+test("a fork's PR is never pushed to; it gets the command", async () => {
+  const pr = migrationPr(55, { head: { ref: "feature", sha: "55".padStart(40, "0"), repo: { full_name: "someone/Frapp" } } });
+  const { results, calls } = await sweep({ routes: renumberRoutes(pr), updateToken: "pat", requireUpToDate: false });
+  assert.equal(results[0].action, "commented");
+  assert.ok(!calls.some((c) => c.url.includes("/git/")), "nothing of the fork's is read or written");
+  assert.match(JSON.parse(commentPosts(calls)[0].body).body, /lives in a fork/);
+});
+
+test("a refused renumber push falls back to the command, and proves nothing about the token", async () => {
+  const pr = migrationPr(56);
+  const routes = renumberRoutes(pr).map((r) =>
+    r.method === "PATCH" ? { ...r, status: 403, body: { message: "Resource not accessible by integration" } } : r,
+  );
+  const { results, calls } = await sweep({ routes, updateToken: "pat", requireUpToDate: false });
+  assert.deepEqual(results, [{ number: 56, verdict: "migration-order", action: "commented", renumberRefused: true }]);
+  assert.match(JSON.parse(commentPosts(calls)[0].body).body, /GitHub refused the push: PATCH .* \(HTTP 403/);
+});
+
+test("two PRs renumbered in one sweep get different versions", async () => {
+  const a = migrationPr(57);
+  const b = migrationPr(58, { merge_commit_sha: "6".repeat(40) });
+  const { results, calls } = await sweep({
+    routes: [
+      listRoute([a, b]),
+      detailRoute(a),
+      detailRoute(b),
+      ...renumberRoutes(a, { listed: false }),
+      ...renumberRoutes(b, { listed: false, parents: [BASE_SHA, b.head.sha] }),
+    ],
+    updateToken: "pat",
+    requireUpToDate: false,
+  });
+  assert.deepEqual(results.map((r) => r.action), ["renumbered", "renumbered"]);
+  const moved = calls
+    .filter((c) => c.method === "POST" && c.url.endsWith("/git/trees"))
+    .map((c) => JSON.parse(c.body).tree.find((e) => e.path.startsWith("supabase/migrations/") && e.sha !== null).path);
+  assert.deepEqual(moved, [`supabase/migrations/${MOVED}.sql`, "supabase/migrations/20261112160002_add_widgets.sql"]);
+});
+
+test("a compare that can't be read leaves the PR on its usual path", async () => {
+  const pr = migrationPr(59);
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), { method: "GET", path: `/compare/${BASE_SHA}`, status: 500, body: {} }, emptyCommentsRoute],
+    updateToken: "pat",
+    requireUpToDate: false,
+    logger,
+  });
+  assert.deepEqual(results, [{ number: 59, verdict: "clean", action: "none" }]);
+  assert.ok(lines.some((l) => /#59: could not check its migrations' order/.test(l)));
+});
+
+test("with the up-to-date rule on, a renumber is an update: it takes the slot", async () => {
+  const pr = migrationPr(60, { auto_merge: { merge_method: "squash" } });
+  const { results, calls } = await sweep({
+    routes: [
+      ...renumberRoutes(pr),
+      compareRoute(pr.head.sha, 1),
+      { method: "GET", path: "/check-runs", body: { check_runs: [] } },
+    ],
+    updateToken: "pat",
+  });
+  assert.equal(results[0].action, "renumbered");
+  assert.ok(!calls.some((c) => c.url.includes("/update-branch")), "no second update on top of the renumber");
+});
+
+test("the conflict wake tells the session to renumber after the merge", () => {
+  const body = buildConflictComment({ baseRef: BASE_REF, baseSha: BASE_SHA, pr: makePr(7) });
+  assert.match(body, /npm run migration:renumber/);
+});
+
+test("the renumber wake names each migration and the reason", () => {
+  const body = buildRenumberComment({
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    pr: makePr(7),
+    renames: [{ from: "20261112150000_a.sql", to: "20261112160001_a.sql" }],
+    reason: "the head branch lives in a fork, which this sweep cannot push to",
+  });
+  assert.ok(body.startsWith(BASE_SYNC_MARKER));
+  assert.match(body, /no longer sort after/);
+  assert.match(body, /git merge origin\/main/);
+  assert.match(body, /`20261112150000_a\.sql`/);
+  assert.match(body, /lives in a fork/);
 });
