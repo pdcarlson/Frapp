@@ -45,6 +45,7 @@ import {
   RequestProofUploadUrlDto,
   ProofUploadUrlResponseDto,
   ReviewServiceEntryDto,
+  ServiceEntryResponseDto,
   ServiceLeaderboardQueryDto,
   ServicePointsRateResponseDto,
 } from '../dtos/service-entry.dto';
@@ -66,6 +67,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'List service entries (own or all for admins)' })
+  @ApiOkResponse({ type: [ServiceEntryResponseDto] })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -135,6 +137,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get service entry by id' })
+  @ApiOkResponse({ type: ServiceEntryResponseDto })
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -251,6 +254,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_APPROVE)
   @ApiOperation({ summary: 'Approve or reject a service entry' })
+  @ApiOkResponse({ type: ServiceEntryResponseDto })
   @FeatureEvent(
     'service-hours-reviewed',
     ({

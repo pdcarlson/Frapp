@@ -39,6 +39,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-sign-up-sheet-claims-20261112170000) § Rollback sign-up sheet claims.
 
+## 2026-11-12: Service entries record the points their approval awarded (#3868)
+
+### 20261112153700_service_entry_awarded_points.sql
+
+- **Purpose**: Adds `service_entries.awarded_points integer` (nullable, `>= 0`): the SERVICE points an entry's approval awarded, 0 for a sub-rate approval, NULL until approved. Redefines `approve_service_entry(uuid, uuid, uuid, text, integer)` with the same signature and body plus `awarded_points = greatest(p_points, 0)` in its compare-and-set and the `search_path = public, pg_temp` pin from `20261107160000` restated (a `create or replace` drops it), so the EXECUTE grants from `20260603120000` (service role only) carry over. Backfills approved or awarded entries from their SERVICE ledger row (`point_transactions.metadata->>'service_entry_id'`), 0 for an approved entry with `points_awarded = false`; an awarded entry whose ledger row is gone stays NULL, which clients show as the old "Points awarded" flag. The rule is [`spec/behavior/service-hours.md` § Approval Workflow](../../../spec/behavior/service-hours.md#approval-workflow).
+- **Checks**: After `db push`, `select count(*) from service_entries where status = 'APPROVED' and awarded_points is null;` returns 0 or only entries whose ledger row was removed, and `select has_function_privilege('authenticated', 'public.approve_service_entry(uuid, uuid, uuid, text, integer)', 'execute');` still returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API selects `*` and ignores the column; the newer API against an unmigrated database still works: reads lack the field and clients fall back to the flag, and creating an entry never names the column. The `add column` with a check constraint and no default is a catalog change plus a scan to validate it; the backfill groups the SERVICE ledger rows that carry a `service_entry_id` once and joins them to the entries (no index covers that JSON key, so it is one pass over the SERVICE ledger, not one per entry), then sets 0 on approved sub-rate entries; each approved entry is updated once. `if not exists`, `create or replace` and the `awarded_points is null` guard make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-service-entry-awarded-points-20261112153700) § Rollback service entry awarded points.
+
 ## 2026-11-12: Members create events and upload backwork by default (#3709)
 
 ### 20261112152000_member_social_trust_defaults.sql

@@ -98,6 +98,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Every member can now add events to the chapter calendar and upload backwork, while making an event required or worth points stays with the officers who manage events.",
       "Chat names someone who just joined as soon as they start typing or posting, instead of \"Member\" and a code, and the typing line never says \"Someone\".",
       "Event and task cards in chat now say when the same way on the web and your phone, and a task in progress or done shows its own colour instead of your chapter's.",
+      "Approved service hours now show how many points they earned, like 3 points, instead of only saying points were awarded.",
     ],
   },
   {

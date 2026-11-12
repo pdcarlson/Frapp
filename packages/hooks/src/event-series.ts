@@ -14,6 +14,12 @@
  * Pure functions over plain rows: no React, no query.
  */
 
+import {
+  describeRepeatPattern,
+  ordinal,
+  parseRepeatRule,
+} from "@repo/validation";
+
 /** The fields this module reads off an event row. */
 export type SeriesEventLike = {
   id?: unknown;
@@ -145,21 +151,6 @@ export function splitByHorizon<T extends SeriesEventLike>(
   return { soon, later };
 }
 
-function ordinal(day: number): string {
-  const tens = day % 100;
-  if (tens >= 11 && tens <= 13) return `${day}th`;
-  switch (day % 10) {
-    case 1:
-      return `${day}st`;
-    case 2:
-      return `${day}nd`;
-    case 3:
-      return `${day}rd`;
-    default:
-      return `${day}th`;
-  }
-}
-
 /**
  * A rule token in sentence case (`DAILY` → `"Daily"`): how a rule outside the
  * catalog (one a retired rule left on an old row) reads, on the list row and
@@ -234,7 +225,9 @@ function majorityWeekday(starts: readonly unknown[]): Date | null {
 
 /**
  * How a series row says when it repeats, from its rule and a meeting's start:
- * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`, and
+ * for a structured rule `"Every Mon and Thu"` or `"Every month on the second
+ * Tuesday"` (`describeRepeatPattern` in `@repo/validation`).
  *
  * The day it names is read from `seriesStarts` (every meeting of the series
  * the caller holds), so one meeting moved on its own doesn't rename the
@@ -252,9 +245,10 @@ export function seriesCadenceLabel(
   if (typeof start !== "string") return null;
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return null;
-  const weekday = (
-    majorityWeekday(seriesStarts) ?? at
-  ).toLocaleDateString("en-US", { weekday: "long" });
+  const weekday = (majorityWeekday(seriesStarts) ?? at).toLocaleDateString(
+    "en-US",
+    { weekday: "long" },
+  );
   switch (rule) {
     case "WEEKLY":
       return `Every ${weekday}`;
@@ -264,7 +258,23 @@ export function seriesCadenceLabel(
       const day = monthlyAnchorDay(seriesStarts) ?? at.getDate();
       return `Every month on the ${ordinal(day)}`;
     }
-    default:
-      return ruleTokenLabel(rule);
+    default: {
+      // A structured rule names its own days (#4488), so it reads straight
+      // from the rule, in the words push copy uses and, like the rows and the
+      // tokens above, on this device's calendar. A by-date monthly rule
+      // without BYMONTHDAY takes the series' usual day, as MONTHLY does
+      // above, not the shown meeting's, which a short month clamps.
+      const parsed = parseRepeatRule(rule);
+      const monthDay =
+        parsed?.freq === "MONTHLY" && !parsed.nthWeekday
+          ? monthlyAnchorDay(seriesStarts)
+          : null;
+      return (
+        describeRepeatPattern(rule, at, {
+          monthDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }) ?? ruleTokenLabel(rule)
+      );
+    }
   }
 }

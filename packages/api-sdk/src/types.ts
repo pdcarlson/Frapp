@@ -5627,7 +5627,7 @@ export interface components {
              * @default false
              */
             is_mandatory: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
             recurrence_rule?: string;
             /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
@@ -5705,7 +5705,7 @@ export interface components {
             end_time?: string;
             point_value?: number;
             is_mandatory?: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
             recurrence_rule?: string;
             /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
@@ -5988,6 +5988,30 @@ export interface components {
             /** @description Professor name */
             name?: string;
         };
+        ServiceEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: date */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            proof_path: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            reviewed_by: string | null;
+            review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
+            points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
+            /** Format: date-time */
+            created_at: string;
+        };
         ServicePointsRateResponseDto: {
             /**
              * @description Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).
@@ -6045,7 +6069,10 @@ export interface components {
             /** Format: uuid */
             reviewed_by: string | null;
             review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
             points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -13108,7 +13135,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13227,7 +13256,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13347,7 +13378,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {

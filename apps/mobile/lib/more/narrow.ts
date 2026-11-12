@@ -1,11 +1,14 @@
 /**
  * Field readers shared by the More-hub selectors.
  *
- * Every endpoint this cluster reads — `/v1/users/me`, `/v1/points/*`,
- * `/v1/service-entries/*`, `/v1/documents/*`, `/v1/notifications`, `/v1/alumni`
- * — is declared in `openapi.json` without a response schema, so
- * `openapi-typescript` infers its body as `never` and the generated client
- * hands back something no property access compiles against. `lib/events/select.ts`
+ * These readers were written when every endpoint this cluster reads —
+ * `/v1/users/me`, `/v1/points/*`, `/v1/service-entries/*`, `/v1/documents/*`,
+ * `/v1/notifications`, `/v1/alumni` — was declared in `openapi.json` without a
+ * response schema, so `openapi-typescript` inferred its body as `never` and the
+ * generated client handed back something no property access compiled against.
+ * Some have schemas now (`/v1/service-entries` list, get and review since #3868;
+ * the service leaderboard and points rate before it), so check
+ * `packages/api-sdk/src/types.ts` before assuming a body is untyped. `lib/events/select.ts`
  * hit the same wall for `/v1/events` and narrowed at the boundary; these are the
  * same readers, factored out rather than copied a sixth time.
  *

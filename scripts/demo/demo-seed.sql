@@ -377,12 +377,15 @@ FROM (VALUES
 
 -- ── Service hours ────────────────────────────────────────────────────────────
 INSERT INTO service_entries (chapter_id, user_id, date, duration_minutes, description,
-                             status, reviewed_by, points_awarded, created_at)
+                             status, reviewed_by, points_awarded, awarded_points, created_at)
 SELECT 'c0ffee00-0000-4000-8000-000000000001', (SELECT id FROM u WHERE n = s.who), (current_date - s.days_ago)::date,
        s.mins, s.descr, s.status,
        -- The president reviews everyone's entries; the VP reviews the president's.
        CASE WHEN s.status <> 'PENDING' THEN (SELECT id FROM u WHERE n = CASE WHEN s.who = 1 THEN 3 ELSE 1 END) END,
-       s.status = 'APPROVED', now() - (interval '1 day' * s.days_ago)
+       s.status = 'APPROVED',
+       -- What approval at the default 60-minute rate records (#3868).
+       CASE WHEN s.status = 'APPROVED' THEN s.mins / 60 END,
+       now() - (interval '1 day' * s.days_ago)
 FROM (VALUES
  -- Roster #1's own entry: Service hours shows only the viewer's history, and the
  -- App Review notes send the reviewer there.
