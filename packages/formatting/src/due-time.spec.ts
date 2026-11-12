@@ -23,7 +23,9 @@ describe("suggestedDueTime", () => {
     expect(suggestedDueTime("2026-09-29", evening)).toBe("19:00");
     expect(suggestedDueTime("2026-09-30", evening)).toBe("17:00");
     const late = new Date(2026, 8, 29, 23, 30);
-    expect(suggestedDueTime("2026-09-29", late)).toBe("23:00");
+    expect(suggestedDueTime("2026-09-29", late)).toBe("23:59");
+    const eleven = new Date(2026, 8, 29, 22, 10);
+    expect(suggestedDueTime("2026-09-29", eleven)).toBe("23:00");
   });
 });
 

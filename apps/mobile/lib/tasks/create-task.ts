@@ -1,8 +1,10 @@
 import {
   dueEntryFields,
+  dueEntryFromTask,
   dueTimePassed,
   formatWeekdayDay,
   localIsoDate,
+  splitDueEntry,
 } from "@repo/formatting";
 
 /**
@@ -268,13 +270,14 @@ export interface TaskEditTarget {
  * and time of its `due_at` on this device, the inverse of `dueEntryFields`.
  */
 export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
-  const at = task.dueAt ? new Date(task.dueAt) : null;
-  const timed = at !== null && !Number.isNaN(at.getTime());
-  const pad = (value: number) => String(value).padStart(2, "0");
+  // The entry web's edit form opens on too, so both read a task's time alike.
+  const { dueDate, dueTime } = splitDueEntry(
+    dueEntryFromTask({ due_date: task.dueDay, due_at: task.dueAt }),
+  );
   return {
     title: task.title,
-    dueDate: timed ? localIsoDate(at) : task.dueDay,
-    dueTime: timed ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : null,
+    dueDate,
+    dueTime,
     subtasks: [],
     assigneeId: task.assigneeId,
     pointsInput: task.pointReward ? String(task.pointReward) : "",

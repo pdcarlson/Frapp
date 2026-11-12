@@ -165,11 +165,12 @@ export function TaskForm({
       titleTooLong: trimmed.length > TASK_TITLE_MAX_LENGTH,
       assignee: !draft.assigneeId,
       due: !draft.dueDate,
-      // An edit keeps the task's own time even once it has passed (#4296).
+      // An edit keeps the task's own time even once it has passed (#4296),
+      // and an accepted suggestion keeps the one the minutes gave it.
       passed: dueEntryPassed(
         draft.dueDate,
         new Date(),
-        editing ? initialDraft?.dueDate : undefined,
+        editing || suggestion ? initialDraft?.dueDate : undefined,
       ),
     };
     setMissing(nextMissing);

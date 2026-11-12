@@ -30,12 +30,15 @@ export function DueTimeControl({
   onChange,
   className,
   disabled,
+  label = "Due time",
   now,
 }: {
   value: string;
   onChange: (value: string) => void;
   className?: string;
   disabled?: boolean;
+  /** The time field's name; a list of rows names each for its task. */
+  label?: string;
   /** For specs; the control reads the clock otherwise. */
   now?: Date;
 }) {
@@ -69,8 +72,7 @@ export function DueTimeControl({
     <div className="flex items-center gap-1">
       <Input
         type="time"
-        step={300}
-        aria-label="Due time"
+        aria-label={label}
         title={formatDueTimeLabel(dueTime)}
         className={cn("min-w-0 flex-1", className)}
         disabled={disabled}

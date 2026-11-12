@@ -1,4 +1,4 @@
-import { dueEntryFields } from "./date-entry";
+import { dueEntryFields, formatDueTimeLabel, TIME_OF_DAY } from "./date-entry";
 import { localIsoDate } from "./local-date";
 
 /**
@@ -15,27 +15,18 @@ export interface DueDayAndTime {
   dueTime?: string | null;
 }
 
-/**
- * A time as a field shows it: `"5 PM"`, `"9:30 AM"`. The minutes only when
- * there are some, as a calendar writes a time.
- */
-export function formatDueTimeLabel(time: string): string {
-  const [hours = 0, minutes = 0] = time.split(":").map(Number);
-  const period = hours < 12 ? "AM" : "PM";
-  const hour = hours % 12 === 0 ? 12 : hours % 12;
-  return minutes === 0
-    ? `${hour} ${period}`
-    : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
-}
+export { formatDueTimeLabel };
 
 /**
  * Where "Add a time" starts: 5 PM, the end of a chapter's working day, or
- * for a task due today once that has passed, the next whole hour (up to
- * 11 PM), so a fresh time is never already behind.
+ * for a task due today once that has passed, the next whole hour, and from
+ * 11 PM on, 11:59 PM, so a fresh time is behind only in the day's last
+ * minute.
  */
 export function suggestedDueTime(dueDate: string, now: Date): string {
   if (dueDate !== localIsoDate(now) || now.getHours() < 17) return "17:00";
-  return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, "0")}:00`;
+  if (now.getHours() >= 23) return "23:59";
+  return `${String(now.getHours() + 1).padStart(2, "0")}:00`;
 }
 
 /**
@@ -70,5 +61,5 @@ export function dueTimePassed(
  */
 export function splitDueEntry(entry: string): DueDayAndTime {
   const [dueDate = "", time] = entry.split("T");
-  return { dueDate, dueTime: time && /^\d{2}:\d{2}$/.test(time) ? time : null };
+  return { dueDate, dueTime: time && TIME_OF_DAY.test(time) ? time : null };
 }

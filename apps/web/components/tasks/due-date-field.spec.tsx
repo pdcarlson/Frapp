@@ -181,7 +181,21 @@ describe("DueDateField's time of day (#4512)", () => {
     expect(field()).toHaveValue("Saturday · 9:30 AM");
   });
 
-  it("takes the time off and keeps the day", () => {
+  it("holds the last whole time while the browser's field is half retyped", () => {
+    const onValue = vi.fn();
+    render(<Harness initial="2026-11-14T17:00" onValue={onValue} />);
+    fireEvent.change(time(), { target: { value: "" } });
+    expect(onValue).not.toHaveBeenCalled();
+    expect(time()).toBeInTheDocument();
+  });
+
+  it("takes any minute, not only five-minute steps", () => {
+    render(<Harness initial="2026-11-14T17:03" />);
+    expect(time()).not.toHaveAttribute("step");
+    expect(time()).toHaveValue("17:03");
+  });
+
+    it("takes the time off and keeps the day", () => {
     const onValue = vi.fn();
     render(<Harness initial="2026-11-14T17:00" onValue={onValue} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove the time" }));
@@ -212,5 +226,20 @@ describe("dueEntryPassed", () => {
     expect(dueEntryPassed("2026-11-09T09:00", NOW, "2026-11-09T09:00")).toBe(
       false,
     );
+  });
+});
+
+describe("DueDateField withoutTime", () => {
+  it("offers no time for a due that is only a day", () => {
+    render(
+      <DueDateField
+        aria-label="Due date"
+        now={NOW}
+        withoutTime
+        value="2026-11-14"
+        onChange={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Add a time" })).toBeNull();
   });
 });

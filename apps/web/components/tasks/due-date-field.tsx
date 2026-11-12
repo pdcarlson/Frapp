@@ -15,6 +15,13 @@ type DueDateFieldProps = Omit<
   passed?: boolean;
   /** The time field's class, to match the form's other fields. */
   timeClassName?: string;
+  /**
+   * A date with no time of day (a meeting's action item): no "Add a time",
+   * and a typed time is not read.
+   */
+  withoutTime?: boolean;
+  /** The time field's name, where several due fields share a screen. */
+  timeLabel?: string;
 };
 
 /**
@@ -27,7 +34,17 @@ type DueDateFieldProps = Omit<
  * readable date or a time already gone by.
  */
 export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
-  function DueDateField({ missing, passed, timeClassName, ...props }, ref) {
+  function DueDateField(
+    {
+      missing,
+      passed,
+      timeClassName,
+      timeLabel,
+      withoutTime = false,
+      ...props
+    },
+    ref,
+  ) {
     return (
       <div className="grid gap-1">
         <div>
@@ -35,25 +52,30 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
             {...props}
             ref={ref}
             lean="ahead"
-            withTime
+            withTime={!withoutTime}
             error={(typed) =>
               missing && !props.value
                 ? typed.trim() === ""
                   ? "Pick a due date."
-                  : "Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm."
+                  : withoutTime
+                    ? "Try a date like November 14 or Friday."
+                    : "Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm."
                 : passed
                   ? "That time has already passed. Pick a later time or another day."
                   : null
             }
           />
         </div>
-        <DueTimeControl
-          value={props.value}
-          onChange={props.onChange}
-          className={timeClassName}
-          disabled={props.disabled}
-          now={props.now}
-        />
+        {withoutTime ? null : (
+          <DueTimeControl
+            value={props.value}
+            onChange={props.onChange}
+            className={timeClassName}
+            label={timeLabel}
+            disabled={props.disabled}
+            now={props.now}
+          />
+        )}
       </div>
     );
   },
