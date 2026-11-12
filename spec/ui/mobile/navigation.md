@@ -240,6 +240,20 @@ is the file half of the last two: a PDF or Office file on s21 needs
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
 whether s20's proof takes a PDF from Files too.
 
+**`package.json` and `app.json` gained `expo-audio`** (2026-11-12, the meeting
+recorder). The dependency, its `plugins` entry (`microphonePermission`,
+`enableBackgroundRecording: true`, `enableBackgroundPlayback: false`), the microphone
+text on the camera and picker entries, and the native version (0.11.0 to 0.12.0) are a
+dependency and its config, which the carve-out above covers, but they did not go
+through it: they shipped inside the recorder's feature slice rather than as a small
+standalone PR, because the AI build's brief assigned the recorder, its native module
+and its version bump to one slice on the `ai-integration` branch. Two more frozen-file
+edits ride with it. `app/_layout.tsx` gained one
+line, `<RecordingBar />` beside `<NetworkBanner />`: the recorder runs for two hours
+across every screen, so its always-visible state has to draw above them all, sheets
+included, which only the root can do. `components/app-runtime.tsx` gained
+`useMeetingRecorderRuntime()`, which is what that component exists for.
+
 **Both were removed again** (#2296) — the three surfaces were still unbuilt a month
 later, and the declarations were not merely premature but actively harmful. The
 `photosPermission` string shipped in the binary as a purpose string for a feature that
@@ -338,6 +352,14 @@ key at all**. Each of those three is load-bearing:
   Guideline 5.1.1(i) shape `photosPermission` used to be. Declining strips nothing
   another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
   and so never adds RECORD_AUDIO either.
+  *Changed 2026-11-12 (the meeting recorder, [`meetings.md` § Recording in the app](../../behavior/meetings.md#recording-in-the-app)):*
+  the app now has a microphone surface, so this decline is gone. A `false` here
+  blocks RECORD_AUDIO for every plugin, the recorder's included, and a `false` on
+  `expo-camera`'s option deletes the purpose string the recorder needs. So
+  `expo-image-picker`, `expo-camera` and `expo-audio` all carry the same
+  `microphonePermission` text, which `IOS_PURPOSE_STRINGS` pins with the recorder's
+  request as its caller; `expo-camera` keeps `recordAudioAndroid: false`, since the
+  recorder's own plugin declares the permission.
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
   unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
@@ -353,9 +375,10 @@ entry: `requestedBy: null` and a `linkedBy` naming the pod, the symbol and the J
 The gate fails if the key is declined again, asks for its removal once that pod stops
 linking the symbol, and fails if the app ever makes the request the text disowns. The
 scan doesn't flag every linked API: the same upload named only the motion key, though
-`expo-camera` links microphone access and `expo-secure-store` links Face ID, and both of
-those stay declined as above. So a linked-only entry is added when Apple names its key,
-and the declines above stand until it does.
+`expo-camera` links microphone access and `expo-secure-store` links Face ID, both
+declined at the time. So a linked-only entry is added when Apple names its key, and a
+decline stands until it does. *(Changed 2026-11-12: the microphone key is no longer
+declined, because the meeting recorder requests it; Face ID's decline stands.)*
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
