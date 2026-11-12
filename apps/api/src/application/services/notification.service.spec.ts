@@ -289,6 +289,34 @@ describe('NotificationService', () => {
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
     });
 
+    it('cleans U+FFFC, the "OBJ" box, from the stored row and the push (#4346)', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'Book the venue \uFFFC',
+        body: 'Due\uFFFCFriday',
+        category: 'tasks',
+      });
+
+      expect(mockNotificationRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Book the venue',
+          body: 'Due Friday',
+        }),
+      );
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          title: 'Book the venue',
+          body: 'Due Friday',
+        }),
+      );
+    });
+
     it('keeps the in-app row and reports at error level when the push-token read fails (#4096)', async () => {
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
       mockSettingsRepo.findByUser.mockResolvedValue(null);

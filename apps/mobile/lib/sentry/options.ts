@@ -7,7 +7,9 @@ import type { ReactNativeOptions } from "@sentry/react-native";
 import { mobileTracePropagationTargets } from "./trace-targets";
 
 /**
- * The single source of truth for how mobile Sentry is configured (issue #1299).
+ * The single source of truth for how mobile Sentry is configured (issue #1299),
+ * except the navigation-timing integration, which `app/_layout.tsx` adds
+ * because building it needs the SDK at runtime (#4342).
  *
  * Modelled on `apps/web/lib/sentry/options.ts`, which is itself modelled on
  * `apps/api/src/infrastructure/observability/sentry-options.ts`, and for the

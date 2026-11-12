@@ -350,6 +350,7 @@ import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -1617,6 +1618,25 @@ describe("Chat home loading and error states", () => {
 
     expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(0);
     expect(tree.root.findAllByType(NoChapterState)).toHaveLength(1);
+    // Nothing more is coming, so the screen counts as shown (#4342).
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
+  });
+
+  it("marks the screen fully shown for Sentry only once the skeleton gives way (#4342)", () => {
+    channelsState.value = { ...channelsState.value, isPending: true };
+    const tree = render();
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(false);
+
+    channelsState.value = { ...channelsState.value, isPending: false };
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <ChatHomeScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(0);
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
   });
 
   it("loads on channel-shaped skeletons, with no spinner or loading copy", () => {
@@ -1825,10 +1845,13 @@ describe("Chat home opens the last channel on launch", () => {
     // Held behind the skeleton while the jump may still happen, so the list
     // never flashes before a channel opens over it (2026-11-07)…
     expect(rows(tree)).toHaveLength(0);
+    // …which is still loading as far as the member can tell (#4342)…
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(false);
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
     // …and shown once the launch settles with nowhere to go.
     expect(rows(tree).map((row) => row.props.name)).toEqual(["general"]);
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
   });
 
   it("stands aside for a notification tap", async () => {

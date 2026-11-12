@@ -75,6 +75,17 @@ bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.t
 `buildPayload`). This example previously showed a
 `messageId` the chat push worker has never emitted; clients MUST NOT read one.
 
+Since #4346 every chat row also says what the in-app list draws it by, so no client
+parses a title: `chatKind` (`dm`, `group`, `announcement` or `channel`, the
+announcement test being the push's own), `channelName` when the channel has a name a
+member would recognize (never a DM's or an unnamed group DM's internal name), and
+`mentioned: true` when the recipient is in the message's `chat_messages.mentions`:
+named, holding a role it named, or the author of the message it replies to (#3844),
+the same test chat's own mention highlight uses. Rows written before #4346 have none of
+the three. The member-joined row (`invite.service.ts`) carries `memberUserId`, the
+`users.id` of who joined; it is deliberately not `senderId`, which means a chat sender
+and drives the block filter.
+
 Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
 
 On mobile both halves of that live in `apps/mobile/lib/notifications/`: `targets.ts`

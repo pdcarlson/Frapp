@@ -83,6 +83,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Chat now says who is typing, clears it as soon as their message arrives, and no longer nudges the conversation up and down while people type.",
       "Editing a message on the web keeps its mentions as highlighted names, and typing @ while editing opens the same member list as a new message. On your phone, editing a message that ends in a mention no longer pops the member list open. On the web, pasted lines no longer gain blank lines between them, and typing ** or a dash at the start of a line sends exactly what you typed.",
       "Opening an invite link on your phone now offers to open it in the Frapp app, so you only sign in once.",
+      "On your phone, the web dashboard now points you to the Frapp app, and you can close the suggestion for good.",
+      "Removing someone from the chapter is now in the menu at the top of their profile instead of a big red button, and only officers who rank above them see it.",
     ],
   },
   {

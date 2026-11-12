@@ -276,13 +276,14 @@ function taskRow(
   task: ActivityTask,
   group: string,
   role: "mine" | "confirm" | "assigned",
+  now: Date,
 ): ActivityRow {
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
   const due =
     task.stored_status === "COMPLETED"
       ? null
-      : formatDueLabel(task.due_at ?? task.due_date);
+      : formatDueLabel(task.due_at ?? task.due_date, now);
   const who =
     role === "mine"
       ? task.created_by_name
@@ -482,9 +483,11 @@ export function activityGroups(
 
   const needs = keep([
     ...checkInNow.map((event) => eventRow(event, "needs", now)),
-    ...activity.needs_you.tasks.map((task) => taskRow(task, "needs", "mine")),
+    ...activity.needs_you.tasks.map((task) =>
+      taskRow(task, "needs", "mine", now),
+    ),
     ...activity.needs_you.task_confirmations.map((task) =>
-      taskRow(task, "needs-confirm", "confirm"),
+      taskRow(task, "needs-confirm", "confirm", now),
     ),
     ...activity.needs_you.hours_approvals.map(hoursRow),
     // Open only: a poll whose time ran out since the read leaves at once.
@@ -518,7 +521,9 @@ export function activityGroups(
     activity.made_by_you.events.map((event) => eventRow(event, "made", now)),
   );
   const madeTasks = keep(
-    activity.made_by_you.tasks.map((task) => taskRow(task, "made", "assigned")),
+    activity.made_by_you.tasks.map((task) =>
+      taskRow(task, "made", "assigned", now),
+    ),
   );
 
   return [
@@ -764,10 +769,11 @@ export function activitySummary(
  */
 export function activityNextUpLine(
   summary: Pick<ActivitySummary, "nextEvent">,
+  now: Date = new Date(),
 ): string | null {
   const next = summary.nextEvent;
   if (!next) return null;
-  const when = formatRelativeDayTime(next.start_time);
+  const when = formatRelativeDayTime(next.start_time, now);
   return ["Next up:", next.name, when ? `· ${when}` : null]
     .filter(Boolean)
     .join(" ");
