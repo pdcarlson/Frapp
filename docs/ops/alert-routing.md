@@ -342,6 +342,14 @@ Source: the events web and mobile send when a React Query query or mutation fail
 
 **No rule pages on the rest, by design.** They land in `frapp-web` and `frapp-mobile` for triage, not as alerts: an API 5xx behind one is already an error-level event in `frapp-api`, which its `request_id` tag joins. Beta Watch files the 5xx ones that match no `frapp-api` event (a gateway or crashed instance), per [its filing bar](../../.claude/skills/beta-watch/SKILL.md#what-counts-as-a-problem). Sentry gives a `warning` event's new issue **medium** priority, and `frapp-web`'s default rule `3855503` (read 2026-11-04) emails only when an issue is or becomes high priority. So a client failure emails no one unless Sentry marks its issue escalating. The production rule `6297121` fires only at level error or above, so it skips these too. `frapp-mobile`'s default rule `3914865` has the same name. All three default rules are scoped to `environment: production` since 2026-11-05.
 
+### Signed-out auth failures
+
+Source: the events web and mobile send when a signed-out auth flow fails ([#3832](https://github.com/pdcarlson/Frapp/issues/3832)): a sign-in, sign-up, magic link, confirmation resend, OAuth start, a link or provider return that didn't become a session, and a session Auth judged over. What is reported, what each event carries and how events are grouped: [`observability.md` § Signed-out auth failures](../../spec/behavior/observability.md#signed-out-auth-failures).
+
+**An unexpected one pages through `6297121`.** A 5xx from Auth, a request that got no answer while the device read online, or a code the reporter doesn't expect (a disabled provider, a broken template) arrives at `error` level, named `AuthFailure`, with a fingerprint per flow and code. Its first event in production is a new error-level issue in `frapp-web` or `frapp-mobile`, which is what `6297121` emails on; no rule changed for it.
+
+**An expected refusal pages no one, by design.** A wrong password, an unconfirmed address, an expired link or an email rate limit arrives at `info`, named `AuthRefusal`, which neither `6297121` nor the projects' default high-priority rules match. It is a count, not an alert: Beta Watch reads each issue's daily event count against its previous week and files a spike ([its filing bar](../../.claude/skills/beta-watch/SKILL.md#what-counts-as-a-problem)), so a spike is seen within a day, not within minutes. A rule that pages on a refusal spike would be a Sentry dashboard change, which is the owner's.
+
 ### Thresholds that exist only as intended lists
 
 [`spec/behavior/observability.md`](../../spec/behavior/observability.md) § Alerting names

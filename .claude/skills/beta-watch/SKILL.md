@@ -57,7 +57,7 @@ App identifiers: iOS bundle and Android package are both `live.frapp.mobile`
 
 | Source | Tool | What to pull |
 | --- | --- | --- |
-| Sentry | `search_issues` | `environment:production is:unresolved`, with `firstSeen` or `is:regressed` inside the window, per project. In `frapp-web` and `frapp-mobile`, also pull unresolved `status_class:5xx` issues with events inside the window (`lastSeen`), because their grouping folds new failures into old issues. Then `get_sentry_resource` on each candidate for the frame, release and user count. |
+| Sentry | `search_issues` | `environment:production is:unresolved`, with `firstSeen` or `is:regressed` inside the window, per project. In `frapp-web` and `frapp-mobile`, also pull unresolved `status_class:5xx` issues with events inside the window (`lastSeen`), because their grouping folds new failures into old issues. Then `get_sentry_resource` on each candidate for the frame, release and user count. Also pull the signed-out auth refusals: `environment:production auth_expected:true` in `frapp-web` and `frapp-mobile` with events inside the window, and each one's event count for the window and for the 7 days before it ([below](#what-counts-as-a-problem)). |
 | TestFlight feedback | Expo `testflight_feedback` | Submissions inside the window. |
 | TestFlight crashes | Expo `testflight_crashes` | Crashes inside the window; fetch the log for any new one. |
 | Play crashes and ANRs | Expo `playstore_crashes` | Issues new or growing inside the window. |
@@ -153,6 +153,18 @@ File (or update) an issue for:
 
   Owner decision, 2026-11-08: under the error-only bar, the apps' warnings were never filed,
   including a 504 on the sign-in screen's client-policy query.
+- A spike in signed-out auth refusals ([#3832](https://github.com/pdcarlson/Frapp/issues/3832)).
+  Web and mobile send each expected sign-in, sign-up, link or session refusal at `info`, one
+  Sentry issue per flow and code (fingerprint `signed-out-auth`, tags `auth_flow` and
+  `auth_error_code`), so a code's daily count is its issue's event count
+  ([`observability.md` § Signed-out auth failures](../../../spec/behavior/observability.md#signed-out-auth-failures)).
+  File when one issue's events in the window, per day, are at least three times its daily average
+  over the 7 days before and at least 10: for example `email_not_confirmed` on `password_sign_in`
+  (members not getting or not opening the confirmation email), `exchange_failed` or
+  `bad_code_verifier` on `auth_callback` (links failing for everyone), or
+  `over_email_send_rate_limit` with no cooldown (the project's hourly cap). Name the flow and code in
+  the title. Below that bar, report the day's top codes in one line and file nothing. An
+  unexpected auth failure arrives at `error` and is filed under the first bullet.
 - Any crash or ANR from TestFlight or Play.
 - Tester feedback or a review describing a bug, a broken flow or confusing UI. A feature request
   is filed only when it's specific; general praise or complaint is reported, not filed.
