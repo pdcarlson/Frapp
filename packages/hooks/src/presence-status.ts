@@ -133,7 +133,7 @@ export type RawPresenceState = Record<string, readonly unknown[]>;
  * same rules, but the payload is whatever their client published, so it is
  * re-checked here rather than trusted.
  */
-export function presenceLineFrom(value: unknown): string | null {
+function presenceLineFrom(value: unknown): string | null {
   if (typeof value !== "string") return null;
   // Control characters and the Unicode line and paragraph separators become
   // spaces, so a crafted payload cannot break the row it renders in.

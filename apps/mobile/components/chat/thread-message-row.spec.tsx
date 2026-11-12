@@ -57,6 +57,7 @@ vi.mock("@repo/hooks", async () => {
     useTask: () => ({ data: undefined }),
     useEvent: () => ({ data: undefined, isError: false }),
     useAttendance: () => ({ data: undefined }),
+    useMyAttendance: () => ({ data: undefined }),
     useCheckIn: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),

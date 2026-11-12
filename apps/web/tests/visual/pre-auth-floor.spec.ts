@@ -123,5 +123,7 @@ test("the dashboard floor suite still exists and still measures all fifteen rout
     // Sixteen since #3827: `/billing` became a redirect into `/settings`
     // (Plan and billing), which this list already measures. Fifteen since
     // study zones moved into Settings: `/geofences` redirects there too.
-  ).toHaveLength(15);
+    // Thirteen since #3837: `/reports` and `/discord-import` redirect into
+    // Chapter settings as well.
+  ).toHaveLength(13);
 });

@@ -37,7 +37,8 @@
     "./attachments": "./src/attachments.ts",
     "./threads": "./src/threads.ts",
     "./typing-label": "./src/typing-label.ts",
-    "./flags": "./src/flags.ts"
+    "./flags": "./src/flags.ts",
+    "./jump-to-latest": "./src/jump-to-latest.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

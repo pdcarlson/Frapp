@@ -1,5 +1,10 @@
 # Promotion log
 
+**New migrations are not ledgered here.** Since 2026-11-12 each migration has its own page in
+[`migrations/`](migrations/README.md), holding its promotion entry and rollback recipe, because
+every PR prepending to this file conflicted with every other open migration PR. This file is the
+record for older migrations, and still counts for them.
+
 Every migration below records what it does, how it was promoted, and anything a
 promoter must do by hand. How a migration gets promoted is
 [`promotion.md`](promotion.md).

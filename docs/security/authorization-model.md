@@ -169,11 +169,12 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
 
-Exact counts are not restated in this paragraph — they move with every migration, and the numbers
-it used to give had drifted by eight tables. The inventory in § "Enforcing layer per table" is the
-table count; the policy count and its counting convention belong to § "The policies that do exist",
-which is reconciled against `pg_policies`. Do not substitute a grep over `supabase/migrations/` for
-either: it counts *history*, so a `drop policy` / `create policy` pair reads as two live policies.
+Table counts are not kept in this section: they move with every migration, and the numbers it
+used to give had drifted by eight tables. The query below lists the API-only tables (all but the
+three `*`-marked ones in § "Enforcing layer per table"); the policy count
+and its counting convention belong to § "The policies that do exist", which is reconciled against
+`pg_policies`. Do not substitute a grep over `supabase/migrations/` for either: it counts
+*history*, so a `drop policy` / `create policy` pair reads as two live policies.
 
 That is deliberate, not an oversight, and the design is stated in
 `supabase/migrations/20260803150000_chat_message_actions_membership_rls.sql:14-17`:
@@ -182,8 +183,8 @@ That is deliberate, not an oversight, and the design is stated in
 > (RLS enabled, no policies). Under the invoking `authenticated` role those sub-selects would return
 > nothing…"*
 
-**How the count in § "Enforcing layer per table" below was derived** (re-derive it the
-same way rather than incrementing it). Against a database with every migration applied:
+**Which tables are API only.** Run this against a database with every migration applied (a local
+stack, or the PGlite harness) to get the current list:
 
 ```sql
 select c.relname
@@ -194,39 +195,15 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **82** rows. The "API only" row of that table is those 82 plus the three `*`-marked
-tables (`members`, `users`, `member_custom_field_values`), which carry
-non-widening policies and are therefore listed there rather than in a row of
-their own — **85**. Re-derived 2026-11-12 with the PGlite harness at migration `20261112240000`, which is where the AI tables arrive: `meetings` and `meeting_templates` (#4312), `corpus_sources` and `corpus_chunks` (#720), `corpus_chat_windows` (#4314), `meeting_drafts` (#4312), `ai_diagnostics_windows`, `ai_diagnostics_exchanges` and `ai_reports` (#4315), and `meeting_recordings` (#712). Before that, counted 2026-11-12 by adding `ai_runs` (#4310, migration
-`20261112165000`), `ai_suggestions` (#4309, migration `20261112165030`), `ai_usage_events` (#714, migration
-`20261112165020`), and `chapter_ai_settings` and `user_ai_consents` (#4308, migration
-`20261112165040`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
-`20261111235900`, which added `chat_message_important_seen` (#4186), after
-`20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
-which added no table. Before that,
-counted at `20261111220000`, which added `activity_item_reads` and `activity_unread_starts`
-(#4173), against a local stack, adding them to the count at
-`20261111200000`, which added `event_types` (#3730), by adding it to the count at
-`20261111180000`, which added `chapter_document_stars` (#3934); that count adds
-it to the one re-derived 2026-11-11 at `20261111140000`, which added `role_tiers` (#4071).
-`20261111030000` added `chat_message_links` and `chat_link_member_states`
-(#3897). The count was re-derived 2026-11-10 against a local stack at
-migration `20261110220000`, which added `chat_thread_follows` (#3785); the names in
-the row were not re-checked one by one. `20261110170000` added `chapter_pledge_classes` (#3939) the same day. `20261109230000` added `backwork_courses`
-(#3848) on 2026-11-09. `20261105220000` added
-`discord_import_created_categories` (RLS on, no policies) on 2026-11-05, added
-to the list by hand. Before that, re-derived 2026-09-30 against a local stack at
-migration `20260930030000`, which added `discord_import_created_channels`
-(#2905), one migration after `20260930020000` added `chat_push_dispatches`
-(#2846). Before that, 2026-09-29 at `20260929230000`, which added
-`discord_author_links` (#2878), one migration after `20260929213000` added `chat_sidebar_pins` and
-`chat_sidebar_preferences` (#2877). Before that, re-derived 2026-09-15 at
-migration `20260915210100`, when it had drifted by four: `rush_candidates` and
-`rush_candidate_votes` (#494) had never been added, and `chat_member_blocks` /
-`chat_message_reports` (#2257) arrived with the same gap. Nothing in CI checks
-this list — `scripts/pglite/tiers/policy-inventory.mjs` reconciles the *policy*
-inventory in § "The policies that do exist" and never the table one — so it
-drifts silently and only a re-derivation catches it.
+Its rows are the "API only" tables in § "Enforcing layer per table" below, minus the three
+`*`-marked tables (`members`, `users`, `member_custom_field_values`), which carry non-widening
+policies and so drop out of the query, but are API only all the same.
+
+This doc deliberately keeps no count or list of these tables. It used to, and every migration that
+added a table appended to it, so any two such PRs open at once conflicted on the same lines, and it
+still drifted (by four tables in 2026-09) because nothing in CI checks it:
+`scripts/pglite/tiers/policy-inventory.mjs` reconciles the *policy* inventory in § "The policies
+that do exist" and never the table one. Dropped 2026-11-12 (#4558); run the query instead.
 
 **Consequence for anyone adding a table:** enabling RLS and writing no policy is the correct default.
 Adding an `auth.uid()` policy *widens* access from "nothing" to "something" and must be justified by
@@ -236,7 +213,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `activity_item_reads`, `activity_unread_starts`, `ai_diagnostics_exchanges`, `ai_diagnostics_windows`, `ai_reports`, `ai_runs`, `ai_suggestions`, `ai_usage_events`, `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_ai_settings`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_document_stars`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_important_seen`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `corpus_chat_windows`, `corpus_chunks`, `corpus_sources`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `event_types`, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `meeting_drafts`, `meeting_recordings`, `meeting_templates`, `meetings`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `task_subtasks`, `tasks`, `user_ai_consents`, `user_settings`, `users`\* | 85 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | Every table the query above returns, plus `members`\*, `users`\* and `member_custom_field_values`\*. Of those, `events`†, `event_attendance`† and `notifications`† also emit a change ping. | Query rows + 3 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

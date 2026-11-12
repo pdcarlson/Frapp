@@ -235,9 +235,11 @@ describe("ChatAdminPage — scoped to the channel being edited", () => {
     expect(screen.queryByText("#general")).toBeNull();
     expect(screen.queryByRole("region", { name: "Categories" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New channel" })).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "All chat settings" }),
-    ).toHaveAttribute("href", "/chat-admin");
+    // The way back to the Chat page of Chapter settings (#3837).
+    expect(screen.getByRole("link", { name: "Chat" })).toHaveAttribute(
+      "href",
+      "/settings?tab=chat",
+    );
   });
 
   it("puts that channel's settings, then its pins, then its own reports last", () => {
@@ -854,7 +856,7 @@ describe("ChatAdminPage — opened from a channel start", () => {
     expect(screen.queryByLabelText("Name")).toBeNull();
     expect(
       screen.getByRole("link", { name: "All chat settings" }),
-    ).toHaveAttribute("href", "/chat-admin");
+    ).toHaveAttribute("href", "/settings?tab=chat");
   });
 
   it("says so for a channel id it doesn't know", () => {

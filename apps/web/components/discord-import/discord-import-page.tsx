@@ -65,6 +65,9 @@ const FIRST_STEP: Record<ImportSource, WizardStep> = {
  * Gate ordering is permission → network → data: every async state renders
  * *inside* `<Can>`, so a member who URL-hits this route is told they cannot see
  * it rather than watching a spinner for a surface they will never reach.
+ *
+ * Drawn inside Chapter settings, in place of the Chat page (#3837,
+ * `?tab=chat&tool=discord-import`); `/discord-import` only redirects there.
  */
 export function DiscordImportPage() {
   const searchParams = useSearchParams();

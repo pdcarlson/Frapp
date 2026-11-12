@@ -8,8 +8,6 @@
  * by changing these to match it.
  */
 
-export { DEFAULT_TRACES_SAMPLE_RATE } from "./sample-rate";
-
 /** Sentry error events: do not set a lower SDK `sampleRate`. */
 export const SENTRY_ERROR_SAMPLE_RATE = 1;
 
