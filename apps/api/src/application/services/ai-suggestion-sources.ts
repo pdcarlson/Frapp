@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AiSuggestionSourceType } from '#domain/entities/ai-suggestion.entity';
 import { ChannelAccessService } from './channel-access.service';
 import { EventService } from './event.service';
+import { MeetingService } from './meeting.service';
 
 /**
  * Who may see a suggestion, by what it was drawn from (#4309,
@@ -75,5 +76,26 @@ export class ChannelSuggestionSource implements AiSuggestionSourceAccess {
       [...sourceIds],
       { includeArchived: true },
     );
+  }
+}
+
+/**
+ * A meeting's minutes, by the one read rule for minutes
+ * (`MeetingService.readableAmong`, `spec/behavior/meetings.md` § Who can read
+ * minutes): a suggested task from an Exec meeting lists only for officers
+ * that meeting's event invites, or who may edit any minutes.
+ */
+@Injectable()
+export class MeetingSuggestionSource implements AiSuggestionSourceAccess {
+  readonly sourceType = 'meeting' as const;
+
+  constructor(private readonly meetings: MeetingService) {}
+
+  filterOpenable(
+    chapterId: string,
+    userId: string,
+    sourceIds: readonly string[],
+  ): Promise<Set<string>> {
+    return this.meetings.readableAmong(chapterId, userId, sourceIds);
   }
 }

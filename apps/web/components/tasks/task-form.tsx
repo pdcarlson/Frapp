@@ -100,6 +100,13 @@ export interface TaskFormProps {
     steps: React.ReactNode;
     assigneeNote: (assigneeId: string) => React.ReactNode;
   };
+  /**
+   * Opened on a suggested task (#4313) to change it before accepting: Accept
+   * and Cancel, and no Points field, because a suggested task never carries
+   * points (`spec/behavior/meetings.md` § Suggested tasks) and the officer
+   * adds them on the task afterwards.
+   */
+  suggestion?: boolean;
 }
 
 /**
@@ -116,6 +123,7 @@ export function TaskForm({
   onDone,
   onDiscard,
   editing,
+  suggestion = false,
 }: TaskFormProps) {
   const layout = "card";
   const field = fieldClass(layout);
@@ -136,7 +144,7 @@ export function TaskForm({
   const dueRef = useRef<HTMLInputElement>(null);
   // An edit opens on the title, the way the + card's form does.
   useEffect(() => {
-    if (editing) titleRef.current?.focus();
+    if (editing || suggestion) titleRef.current?.focus();
     // Once, when the edit opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -168,11 +176,15 @@ export function TaskForm({
         // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
         ...dueEntryFields(draft.dueDate),
         subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-        point_reward: parseGuardedInt(draft.points),
+        point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
       });
       if (!result.ok) {
         toast({
-          title: editing ? "Couldn't save the task" : "Couldn't create task",
+          title: suggestion
+            ? "Couldn't accept the suggestion"
+            : editing
+              ? "Couldn't save the task"
+              : "Couldn't create task",
           description:
             result.error ??
             "Retry in a moment or confirm the assignee is a chapter member.",
@@ -187,7 +199,9 @@ export function TaskForm({
   }
 
   const moreSummary = [
-    pointsLabel(parseGuardedInt(draft.points) ?? 0) ?? "No points",
+    ...(suggestion
+      ? []
+      : [pointsLabel(parseGuardedInt(draft.points) ?? 0) ?? "No points"]),
     draft.description.trim() ? "Description" : "No description",
   ].join(" · ");
 
@@ -303,23 +317,25 @@ export function TaskForm({
       />
       {draft.showMore ? (
         <div id={`${ids}-more`} className="grid gap-3">
-          <div className="grid gap-1">
-            <Label htmlFor={`${ids}-points`}>Points</Label>
-            <Input
-              id={`${ids}-points`}
-              type="number"
-              min={0}
-              className={field}
-              value={draft.points}
-              placeholder="0"
-              onChange={(event) => {
-                const next = guardIntDraft(event.target.value);
-                if (next === undefined) return;
-                edit({ points: next });
-              }}
-              {...gate.controlProps()}
-            />
-          </div>
+          {suggestion ? null : (
+            <div className="grid gap-1">
+              <Label htmlFor={`${ids}-points`}>Points</Label>
+              <Input
+                id={`${ids}-points`}
+                type="number"
+                min={0}
+                className={field}
+                value={draft.points}
+                placeholder="0"
+                onChange={(event) => {
+                  const next = guardIntDraft(event.target.value);
+                  if (next === undefined) return;
+                  edit({ points: next });
+                }}
+                {...gate.controlProps()}
+              />
+            </div>
+          )}
           <div className="grid gap-1">
             <Label htmlFor={`${ids}-description`}>Description</Label>
             <Textarea
@@ -332,7 +348,7 @@ export function TaskForm({
           </div>
         </div>
       ) : null}
-      {editing ? (
+      {editing || suggestion ? (
         <div className="flex items-center justify-end gap-2 pt-1">
           <Button
             type="button"
@@ -344,7 +360,13 @@ export function TaskForm({
             Cancel
           </Button>
           <Button type="submit" size="sm" {...gate.controlProps(posting)}>
-            {posting ? "Saving…" : "Save"}
+            {suggestion
+              ? posting
+                ? "Accepting…"
+                : "Accept"
+              : posting
+                ? "Saving…"
+                : "Save"}
           </Button>
         </div>
       ) : (

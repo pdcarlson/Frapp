@@ -14,7 +14,8 @@
  */
 const SCREENS_BY_ROUTE: readonly (readonly [string, readonly string[]])[] = [
   ["/events", ["events"]],
-  ["/tasks", ["tasks"]],
+  // The board's Suggested list is where suggested tasks are reviewed (#4313).
+  ["/tasks", ["tasks", "ai_suggestions"]],
   ["/points", ["points"]],
   ["/service", ["service"]],
   ["/members", ["members"]],

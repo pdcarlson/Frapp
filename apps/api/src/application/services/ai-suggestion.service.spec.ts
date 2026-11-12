@@ -41,6 +41,21 @@ class FakeRepo implements IAiSuggestionRepository {
   insertBatch = jest.fn(
     async (chapterId: string, rows: readonly NewAiSuggestion[]) => {
       const written: AiSuggestion[] = [];
+      // The unique index on a source's keys: the whole write is refused.
+      const clash = rows.some(
+        (row) =>
+          row.dedupe_key &&
+          this.rows.some(
+            (r) =>
+              r.source_type === row.source_type &&
+              r.source_id === row.source_id &&
+              r.kind === row.kind &&
+              r.dedupe_key === row.dedupe_key,
+          ),
+      );
+      if (clash) {
+        throw Object.assign(new Error('duplicate key'), { code: '23505' });
+      }
       for (const row of rows) {
         if (
           this.rows.some(
@@ -51,6 +66,7 @@ class FakeRepo implements IAiSuggestionRepository {
         }
         const stored: AiSuggestion = {
           ...row,
+          dedupe_key: row.dedupe_key ?? null,
           id: `00000000-0000-4000-8000-${String(++this.seq).padStart(12, '0')}`,
           chapter_id: chapterId,
           status: 'pending',
@@ -67,6 +83,37 @@ class FakeRepo implements IAiSuggestionRepository {
       return written;
     },
   );
+
+  listKeyedForSource = jest.fn(
+    async (
+      chapterId: string,
+      source: { type: string; id: string },
+      kind: string,
+    ) =>
+      this.rows
+        .filter(
+          (r) =>
+            r.chapter_id === chapterId &&
+            r.source_type === source.type &&
+            r.source_id === source.id &&
+            r.kind === kind &&
+            r.dedupe_key !== null,
+        )
+        .map((r) => ({ ...r })),
+  );
+
+  deletePending = jest.fn(async (chapterId: string, ids: readonly string[]) => {
+    const before = this.rows.length;
+    this.rows = this.rows.filter(
+      (r) =>
+        !(
+          r.chapter_id === chapterId &&
+          ids.includes(r.id) &&
+          r.status === 'pending'
+        ),
+    );
+    return before - this.rows.length;
+  });
 
   listUnnotified = jest.fn(async (chapterId: string, batchId: string) =>
     this.rows
@@ -432,6 +479,149 @@ describe('AiSuggestionService (#4309)', () => {
         CHAPTER,
         { kind: 'task', count: 10 },
       );
+    });
+  });
+
+  describe('reconcileSource (#4313)', () => {
+    const item = (key: string, title: string, extra = {}) => ({
+      dedupeKey: key,
+      payload: {
+        title,
+        assignee_id: ASSIGNEE,
+        due_date: '2026-11-14',
+        ...extra,
+      },
+      quote: title,
+    });
+    const reconcile = (
+      service: AiSuggestionService,
+      proposals: ReturnType<typeof item>[],
+      notify?: string[],
+    ) =>
+      service.reconcileSource({
+        chapterId: CHAPTER,
+        requestedFor: OFFICER,
+        source: {
+          type: 'meeting',
+          id: MEETING,
+          title: 'Chapter meeting',
+          text: proposals.map((p) => p.quote).join('\n'),
+        },
+        kind: 'task',
+        proposals,
+        notify,
+      });
+
+    it('proposes each thing once, however often the source is saved', async () => {
+      const { service, repo, notifications } = build();
+      const items = [
+        item('a', 'Book the venue'),
+        item('b', 'Send the invoice'),
+      ];
+      const first = await reconcile(service, items);
+      const second = await reconcile(service, items);
+
+      expect(first.created).toHaveLength(2);
+      expect(second).toEqual({ created: [], withdrawn: 0 });
+      expect(repo.rows).toHaveLength(2);
+      expect(repo.rows.map((row) => row.quote)).toEqual([
+        'Book the venue',
+        'Send the invoice',
+      ]);
+      expect(notifications.notifyMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('never proposes again what an officer already accepted or dismissed', async () => {
+      const { service, repo, tasks } = build();
+      const items = [
+        item('a', 'Book the venue'),
+        item('b', 'Send the invoice'),
+      ];
+      const { created } = await reconcile(service, items);
+      await service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules });
+      await service.dismiss(CHAPTER, OFFICER, created[1].id);
+
+      const again = await reconcile(service, items);
+
+      expect(again).toEqual({ created: [], withdrawn: 0 });
+      expect(repo.rows.map((row) => row.status)).toEqual([
+        'accepted',
+        'dismissed',
+      ]);
+      expect(tasks.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('adds only what is new, and tells only who it is asked to', async () => {
+      const { service, repo, notifications } = build();
+      await reconcile(service, [item('a', 'Book the venue')]);
+      const { created } = await reconcile(
+        service,
+        [item('a', 'Book the venue'), item('c', 'Order shirts')],
+        [],
+      );
+
+      expect(created.map((row) => row.dedupe_key)).toEqual(['c']);
+      expect(repo.rows).toHaveLength(2);
+      expect(notifications.notifyMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes back a waiting suggestion whose thing left the source', async () => {
+      const { service, repo } = build();
+      await reconcile(service, [
+        item('a', 'Book the venue'),
+        item('b', 'Send the invoice'),
+      ]);
+      const result = await reconcile(service, [item('a', 'Book the venue')]);
+
+      expect(result.withdrawn).toBe(1);
+      expect(repo.rows.map((row) => row.dedupe_key)).toEqual(['a']);
+    });
+
+    it('replaces a waiting suggestion whose owner or day changed', async () => {
+      const { service, repo } = build();
+      await reconcile(service, [item('a', 'Book the venue')]);
+      const result = await reconcile(service, [
+        item('a', 'Book the venue', { due_date: '2026-11-20' }),
+      ]);
+
+      expect(result.withdrawn).toBe(1);
+      expect(result.created).toHaveLength(1);
+      expect(repo.rows).toHaveLength(1);
+      expect(repo.rows[0].payload).toMatchObject({ due_date: '2026-11-20' });
+    });
+
+    it('leaves a decided suggestion alone when its thing leaves the source', async () => {
+      const { service, repo } = build();
+      const { created } = await reconcile(service, [
+        item('a', 'Book the venue'),
+      ]);
+      await service.dismiss(CHAPTER, OFFICER, created[0].id);
+
+      const result = await reconcile(service, []);
+
+      expect(result).toEqual({ created: [], withdrawn: 0 });
+      expect(repo.rows).toHaveLength(1);
+    });
+
+    it('reads again and writes the rest when another save wrote the same thing first', async () => {
+      const { service, repo } = build();
+      const listed = repo.listKeyedForSource.getMockImplementation()!;
+      // The first read misses a row a concurrent save is about to write.
+      repo.listKeyedForSource.mockImplementationOnce(async () => []);
+      repo.rows.push({
+        ...(await reconcile(build().service, [item('a', 'Book the venue')]))
+          .created[0],
+        id: '00000000-0000-4000-8000-999999999999',
+      });
+      repo.listKeyedForSource.mockImplementation(listed);
+
+      const result = await reconcile(service, [
+        item('a', 'Book the venue'),
+        item('c', 'Order shirts'),
+      ]);
+
+      expect(result.created.map((row) => row.dedupe_key)).toEqual(['c']);
+      expect(repo.rows.map((row) => row.dedupe_key)).toEqual(['a', 'c']);
     });
   });
 

@@ -4,6 +4,7 @@ import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
+  useAiSuggestions,
   useConfirmTask,
   useCreateTask,
   useCurrentUser,
@@ -51,6 +52,7 @@ import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskEditForm } from "./task-edit-form";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
+import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 
 type Task = {
   id: string;
@@ -160,6 +162,12 @@ export function TasksBoard() {
   // isn't there, and retries after the outage.
   const permissionsLoading =
     !permissionsKnown && permissionsQuery.fetchStatus === "fetching";
+  // Suggested tasks (#4313) sit above the columns for an officer who has
+  // some. The board waits for that read with its own, so the columns are
+  // drawn once and never pushed down by a list arriving late. A server with
+  // AI off answers at once with none.
+  const suggestionsQuery = useAiSuggestions({ enabled: canManage });
+  const suggestionsLoading = canManage && suggestionsQuery.isPending;
   const moduleGate = useChapterModuleGateState();
   const nowTick = useNow();
   // A member with nothing assigned sees one line instead of the board, and
@@ -413,7 +421,7 @@ export function TasksBoard() {
     return <InlineNote>Pick an active chapter to load its tasks.</InlineNote>;
   }
 
-  if (tasksQuery.isPending) {
+  if (tasksQuery.isPending || suggestionsLoading) {
     return <TasksPageSkeleton />;
   }
 
@@ -450,6 +458,8 @@ export function TasksBoard() {
         read-only.
       */}
       <SubscriptionNotice gate={gate} feature="managing tasks" />
+
+      {canManage ? <SuggestedTasks headingId="tasks-suggested" /> : null}
 
       {plateIsClear ? (
         /*

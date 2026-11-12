@@ -628,6 +628,65 @@ describe('MeetingService', () => {
     });
   });
 
+  describe('onPostedMinutesSaved (#4313)', () => {
+    it('runs when minutes post and on each later save of their sections, never for a draft', async () => {
+      const seen: string[] = [];
+      service.onPostedMinutesSaved(async (saved, change) => {
+        seen.push(`${change.reason}:${change.actorId}:${saved.status}`);
+      });
+      rows.set('mtg-1', meeting());
+
+      const draft = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: { summary: 'Still writing.' },
+      });
+      expect(seen).toEqual([]);
+
+      const posted = await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        draft.meeting.updated_at,
+      );
+      // Posting again is not a save.
+      await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        posted.meeting.updated_at,
+      );
+      const edited = await service.update(CHAPTER, 'mtg-1', PRESIDENT, {
+        expected_updated_at: posted.meeting.updated_at,
+        content: { action_items: [] },
+      });
+      // A new label is not a change to what the minutes say.
+      await service.update(CHAPTER, 'mtg-1', PRESIDENT, {
+        expected_updated_at: edited.meeting.updated_at,
+        meeting_type: 'other',
+        other_label: 'Alumni board',
+      });
+
+      expect(seen).toEqual([
+        `posted:${SECRETARY}:posted`,
+        `edited:${PRESIDENT}:posted`,
+      ]);
+    });
+
+    it('never fails the post when a follow-up does', async () => {
+      service.onPostedMinutesSaved(async () => {
+        throw new Error('suggestions are down');
+      });
+      rows.set('mtg-1', meeting());
+      const view = await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        meeting().updated_at,
+      );
+      expect(view.meeting.status).toBe('posted');
+    });
+  });
+
   describe('delete', () => {
     it('lets the author throw away their own draft', async () => {
       rows.set('mtg-1', meeting());

@@ -7,6 +7,7 @@ import {
   AI_SUGGESTION_SOURCE_ACCESS,
   ChannelSuggestionSource,
   EventSuggestionSource,
+  MeetingSuggestionSource,
 } from '../../application/services/ai-suggestion-sources';
 import { AiSuggestionExpiryService } from '../../application/workers/ai-suggestion-expiry.service';
 import { AiSuggestionController } from '../../interface/controllers/ai-suggestion.controller';
@@ -22,6 +23,8 @@ import { TaskModule } from '../task/task.module';
 import { EventModule } from '../event/event.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
+import { MeetingModule } from '../meeting/meeting.module';
+import { MeetingTaskSuggestionsService } from '../../application/services/meeting-task-suggestions.service';
 
 /**
  * AI suggestions (#4309). A new kind is a handler added to the kinds list; a
@@ -36,6 +39,8 @@ import { AiConsentModule } from '../ai-consent/ai-consent.module';
     TaskModule,
     EventModule,
     ChannelAccessModule,
+    // The read rule for minutes, and the moment minutes post (#4313).
+    MeetingModule,
     // A No on the AI sheet takes the member's words out of suggestions.
     AiConsentModule,
   ],
@@ -48,6 +53,8 @@ import { AiConsentModule } from '../ai-consent/ai-consent.module';
     TaskSuggestionKind,
     EventSuggestionSource,
     ChannelSuggestionSource,
+    MeetingSuggestionSource,
+    MeetingTaskSuggestionsService,
     {
       provide: AI_SUGGESTION_KIND_HANDLERS,
       useFactory: (task: TaskSuggestionKind) => [task],
@@ -58,8 +65,13 @@ import { AiConsentModule } from '../ai-consent/ai-consent.module';
       useFactory: (
         event: EventSuggestionSource,
         channel: ChannelSuggestionSource,
-      ) => [event, channel],
-      inject: [EventSuggestionSource, ChannelSuggestionSource],
+        meeting: MeetingSuggestionSource,
+      ) => [event, channel, meeting],
+      inject: [
+        EventSuggestionSource,
+        ChannelSuggestionSource,
+        MeetingSuggestionSource,
+      ],
     },
     {
       provide: AI_SUGGESTION_REPOSITORY,

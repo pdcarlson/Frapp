@@ -182,6 +182,20 @@ export class AiConsentService implements IAiConsentCheck {
   }
 
   /**
+   * Whether the president has one feature family switched on. For a feature
+   * that sends nothing to a provider (suggested tasks read posted minutes as
+   * they stand, #4313), so there is no member's Yes to ask for; anything
+   * that calls a model goes through {@link check} instead.
+   */
+  async chapterSwitchOn(
+    chapterId: string,
+    key: AiChapterSwitch,
+  ): Promise<boolean> {
+    const settings = await this.consents.findChapterSettings(chapterId);
+    return settings?.[SWITCH_COLUMN[key]] === true;
+  }
+
+  /**
    * The chapter's switches, and whether `viewerRoleIds` may change them, so
    * the settings page draws them read-only for everyone but the president.
    */
