@@ -73,8 +73,8 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.15",
-    "@electric-sql/pglite-pgvector": "^0.0.16",
+    "@electric-sql/pglite": "^0.5.16",
+    "@electric-sql/pglite-pgvector": "^0.0.17",
     "@playwright/test": "^1.65.0",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
