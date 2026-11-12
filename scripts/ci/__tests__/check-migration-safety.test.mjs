@@ -29,6 +29,8 @@ import {
   executableEdits,
   executableSql,
   executableSqlHash,
+  isLedgerPage,
+  ledgerPageEntries,
   MIGRATION_DOCS,
   RATCHET_VERSION_CEILING,
   UNLEDGERED,
@@ -86,6 +88,60 @@ test("touching either declared runbook satisfies the gate", () => {
       true,
       `${doc} should satisfy the gate`,
     );
+  }
+});
+
+test("a migration's own ledger page satisfies the gate", () => {
+  assert.equal(
+    satisfiesPromotionDocs([
+      "supabase/migrations/20260101000000_x.sql",
+      "docs/ops/database/migrations/20260101000000_x.md",
+    ]),
+    true,
+  );
+});
+
+test("only a page named like a migration, in the ledger directory, is a ledger page", () => {
+  assert.equal(isLedgerPage("docs/ops/database/migrations/20260101000000_x.md"), true);
+  assert.equal(isLedgerPage("docs/ops/database/migrations/README.md"), false);
+  assert.equal(isLedgerPage("docs/ops/database/20260101000000_x.md"), false);
+  assert.equal(isLedgerPage("docs/ops/database/migrations/nested/20260101000000_x.md"), false);
+});
+
+test("a ledger page with both sections covers its migration", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    { name: "20260101000000_x.md", text: "# x\n\n## Promotion\n\n- a\n\n## Rollback\n\nb\n" },
+    { name: "README.md", text: "## Promotion\n## Rollback\n" },
+  ]);
+  assert.deepEqual([...covered], ["20260101000000_x.sql"]);
+  assert.deepEqual(malformed, []);
+});
+
+test("a ledger page missing a section is reported, not counted", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    { name: "20260101000000_x.md", text: "# x\n\n## Promotion\n\nwe will write the rollback later\n" },
+  ]);
+  assert.equal(covered.size, 0);
+  assert.deepEqual(malformed, [{ page: "20260101000000_x.md", missing: ["## Rollback"] }]);
+});
+
+test("the shipped gate passes a migration whose only entry is its ledger page", () => {
+  const stem = "29990101000001_ledger_page_probe";
+  const probe = join(REPO_ROOT, "supabase", "migrations", `${stem}.sql`);
+  const page = join(REPO_ROOT, "docs", "ops", "database", "migrations", `${stem}.md`);
+  const cleanup = () => {
+    rmSync(probe, { force: true });
+    rmSync(page, { force: true });
+  };
+  exitCleanups.add(cleanup);
+  writeFileSync(probe, "-- fixture\n");
+  writeFileSync(page, `# ${stem}.sql\n\n## Promotion\n\nfixture\n\n## Rollback\n\nfixture\n`);
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 0, out);
+  } finally {
+    cleanup();
+    exitCleanups.delete(cleanup);
   }
 });
 

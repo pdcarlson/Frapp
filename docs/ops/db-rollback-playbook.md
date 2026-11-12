@@ -1,5 +1,10 @@
 # DB Rollback Playbook
 
+**A migration created since 2026-11-12 has its rollback recipe on its own page** in
+[`database/migrations/`](database/migrations/README.md), named after the migration. The recipes
+below are for older migrations, and the procedure sections (decision matrix, backups, undo one
+migration) apply to all of them.
+
 ## Every migration owes a recipe here
 
 `check:migration-safety` asserts **per-migration** coverage in this file *and*

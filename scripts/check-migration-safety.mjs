@@ -6,7 +6,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
-import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
+import { MIGRATION_LEDGER_DIR, PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
 // Resolved from this file, never `process.cwd()`. Every path this gate reasons
 // about is repo-root-relative — `git diff --name-only` emits them that way, and
@@ -122,7 +122,8 @@ function validateMigrationFiles(migrationFiles) {
       console.error(`- ${version}: ${colliders.join(", ")}`);
     }
     console.error(
-      "Each migration needs a unique 14-digit version prefix; Supabase keys schema_migrations by it.",
+      "Each migration needs a unique 14-digit version prefix; Supabase keys schema_migrations by it. " +
+        "If the other one is on main, `npm run migration:renumber` moves yours after it.",
     );
     process.exit(1);
   }
@@ -168,7 +169,65 @@ export const MIGRATION_DOCS = [PROMOTION_LOG, ROLLBACK_PLAYBOOK];
 
 /** Does this change set update one of the docs a migration owes? */
 export function satisfiesPromotionDocs(changedFiles) {
-  return changedFiles.some((file) => MIGRATION_DOCS.includes(file));
+  return changedFiles.some(
+    (file) => MIGRATION_DOCS.includes(file) || isLedgerPage(file),
+  );
+}
+
+/**
+ * A per-migration ledger page: `MIGRATION_LEDGER_DIR/<version>_<name>.md`.
+ *
+ * Since 2026-11-12 this is where a new migration is ledgered. The two shared
+ * docs above took an entry at the top from every migration PR, so each merge
+ * conflicted every other open migration PR in both files (and the playbook's
+ * shared trailing fence kept landing on one side). A page per migration cannot
+ * conflict. The shared docs stay readable history and still count, so a PR
+ * opened before the change passes unchanged.
+ */
+const LEDGER_PAGE = /^(\d{14}_[a-z0-9_]+)\.md$/;
+
+export function isLedgerPage(file) {
+  if (!file.startsWith(`${MIGRATION_LEDGER_DIR}/`)) return false;
+  return LEDGER_PAGE.test(file.slice(MIGRATION_LEDGER_DIR.length + 1));
+}
+
+/** The two headings a ledger page must carry: one per shared doc it stands in for. */
+export const LEDGER_PAGE_SECTIONS = Object.freeze(["## Promotion", "## Rollback"]);
+
+/**
+ * What a directory of ledger pages records.
+ *
+ * @param {Array<{ name: string, text: string }>} pages the directory's files
+ * @returns {{ covered: Set<string>, malformed: Array<{ page: string, missing: string[] }> }}
+ *   `covered` holds `<migration>.sql` for each page carrying both sections;
+ *   `malformed` names each page that lacks one, so the author hears which
+ *   heading to add instead of "needs an entry" for a page they did write.
+ */
+export function ledgerPageEntries(pages) {
+  const covered = new Set();
+  const malformed = [];
+  for (const { name, text } of pages) {
+    const match = LEDGER_PAGE.exec(name);
+    if (!match) continue;
+    const lines = new Set(text.split(/\r?\n/).map((line) => line.trimEnd()));
+    const missing = LEDGER_PAGE_SECTIONS.filter((heading) => !lines.has(heading));
+    if (missing.length > 0) malformed.push({ page: name, missing });
+    else covered.add(`${match[1]}.sql`);
+  }
+  return { covered, malformed };
+}
+
+function readLedgerPages() {
+  const dir = join(REPO_ROOT, MIGRATION_LEDGER_DIR);
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => LEDGER_PAGE.test(name))
+    .map((name) => ({ name, text: readFileSync(join(dir, name), "utf8") }));
 }
 
 /**
@@ -601,8 +660,14 @@ function validateLedgerCoverage(migrations) {
     }),
   );
 
+  // A ledger page stands in for an entry in BOTH shared docs.
+  const pages = ledgerPageEntries(readLedgerPages());
+  for (const entries of entriesByDoc.values()) {
+    for (const migration of pages.covered) entries.add(migration);
+  }
+
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
-  if (problems.length === 0) return;
+  if (problems.length === 0 && pages.malformed.length === 0) return;
 
   const remedy = {
     missing: (doc) => `needs an entry in ${doc}`,
@@ -618,6 +683,11 @@ function validateLedgerCoverage(migrations) {
     (remedy[kind] ?? ((d) => `has ledger problem "${kind}" in ${d}`))(doc);
 
   console.error("Migration safety check failed: ledger coverage.");
+  for (const { page, missing } of pages.malformed) {
+    console.error(
+      `- ${MIGRATION_LEDGER_DIR}/${page} is missing the line(s) ${missing.map((h) => `\`${h}\``).join(" and ")}.`,
+    );
+  }
   for (const { kind, doc, migration } of problems) {
     console.error(`- ${migration} ${describe(kind, doc)}.`);
   }
@@ -625,8 +695,10 @@ function validateLedgerCoverage(migrations) {
   // cannot leave the hint naming a file the problem lines above no longer do.
   const ledger = (doc) => `  ${basename(doc).padEnd(26)}`;
   console.error(
-    "\nEvery migration owes BOTH a promotion-log entry and a rollback recipe.\n" +
-      "Write one of these lines, exactly (the marker may be * or -):\n" +
+    "\nEvery migration owes BOTH a promotion entry and a rollback recipe.\n" +
+      `For a new migration, write both in ${MIGRATION_LEDGER_DIR}/<migration>.md, under the\n` +
+      `headings ${LEDGER_PAGE_SECTIONS.map((h) => `\`${h}\``).join(" and ")}; \`npm run migration:new\` scaffolds it.\n` +
+      "The shared docs still count; there, write one of these lines, exactly (the marker may be * or -):\n" +
       `${ledger(PROMOTION_LOG)}### <migration>.sql\n` +
       "                            (or, under a `## <date>: <what>` heading)\n" +
       "                            * **Migration**: `<migration>.sql`\n" +
@@ -906,7 +978,8 @@ function validatePromotionDocs(base, head) {
     "You changed migration files without updating promotion/rollback docs.",
   );
   console.error(
-    `Update one of ${MIGRATION_DOCS.join(" or ")} in the same change set.`,
+    `Add the migration's page in ${MIGRATION_LEDGER_DIR}/ (\`npm run migration:new\` scaffolds it), ` +
+      `or update one of ${MIGRATION_DOCS.join(" or ")}, in the same change set.`,
   );
   process.exit(1);
 }

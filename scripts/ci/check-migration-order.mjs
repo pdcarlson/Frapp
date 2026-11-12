@@ -251,7 +251,7 @@ const CLI_REFUSAL =
 function renameRemedy(floor) {
   const suggestion = suggestVersion(floor);
   return (
-    `Remedy: rename each to a version after \`${floor}\`` +
+    `Remedy: run \`npm run migration:renumber\`, which does this, or rename each to a version after \`${floor}\`` +
     (suggestion ? ` — e.g. \`${suggestion}_<same_name>.sql\`` : "") +
     `, keeping the name. Safe while the migration is unapplied everywhere, which is the ` +
     `ordinary case for one still in review.`
