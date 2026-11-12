@@ -16,7 +16,7 @@ type ChatReportReason = components["schemas"]["CreateChatReportDto"]["reason"];
  * A `Record` over the SDK's union, so a reason the API adds (or drops) is a
  * compile error here rather than a picker that cannot file it.
  */
-export const REPORT_REASON_LABELS: Record<ChatReportReason, string> = {
+const REPORT_REASON_LABELS: Record<ChatReportReason, string> = {
   harassment: "Harassment or bullying",
   hate: "Hate speech",
   violence: "Violence or threats",

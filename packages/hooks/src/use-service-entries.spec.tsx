@@ -150,3 +150,40 @@ describe("useServiceEntry", () => {
     );
   });
 });
+
+describe("useReviewServiceEntry points refresh", () => {
+  it.each([
+    ["APPROVED", true],
+    ["REJECTED", false],
+  ] as const)(
+    "re-reads points after a %s review only when it awards them",
+    async (status, refreshesPoints) => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const PATCH = vi.fn(async () => ({
+        data: { id: "entry-1" },
+        error: null,
+      }));
+      const { result } = renderHook(() => useReviewServiceEntry(), {
+        wrapper: createWrapper(queryClient, { PATCH }),
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync({ id: "entry-1", body: { status } });
+      });
+
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["service-entries"],
+      });
+      // Approval awards the submitter's SERVICE points in the same
+      // transaction; the leaderboard must not keep the old total.
+      if (refreshesPoints) {
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+      } else {
+        expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["points"] });
+      }
+    },
+  );
+});

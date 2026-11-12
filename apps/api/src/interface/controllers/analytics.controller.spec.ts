@@ -3,6 +3,7 @@ import { ContentFreePropertyError } from '@repo/validation';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { TrackEventDto } from '../dtos/analytics.dto';
+import type { RequestContext } from '../types/request-context.types';
 
 const USER_ID = 'user-1';
 const CHAPTER_ID = '11111111-1111-4111-8111-111111111111';
@@ -96,6 +97,29 @@ describe('AnalyticsController', () => {
   });
 
   describe('track', () => {
+    const NO_HEADERS = { headers: {} } as unknown as RequestContext;
+
+    it('passes the mobile build from X-Client-Version', async () => {
+      analytics.trackFromClient.mockResolvedValue(undefined);
+
+      await controller.track(
+        USER_ID,
+        { name: 'push-prompt-answered', app: 'mobile' },
+        {
+          headers: { 'x-client-version': 'ios/0.11.0+19' },
+        } as unknown as RequestContext,
+      );
+
+      expect(analytics.trackFromClient).toHaveBeenCalledWith(
+        'push-prompt-answered',
+        USER_ID,
+        expect.objectContaining({
+          app: 'mobile',
+          appVersion: { version: '0.11.0', build: '19' },
+        }),
+      );
+    });
+
     it('delegates to trackFromClient (the membership/opt-out boundary) and returns success', async () => {
       const dto: TrackEventDto = {
         name: 'opened-channel',
@@ -105,7 +129,7 @@ describe('AnalyticsController', () => {
       };
       analytics.trackFromClient.mockResolvedValue(undefined);
 
-      const result = await controller.track(USER_ID, dto);
+      const result = await controller.track(USER_ID, dto, NO_HEADERS);
 
       expect(analytics.trackFromClient).toHaveBeenCalledWith(
         'opened-channel',
@@ -125,10 +149,14 @@ describe('AnalyticsController', () => {
       );
 
       await expect(
-        controller.track(USER_ID, {
-          name: 'opened-channel',
-          chapter_id: 'foreign-chapter',
-        }),
+        controller.track(
+          USER_ID,
+          {
+            name: 'opened-channel',
+            chapter_id: 'foreign-chapter',
+          },
+          NO_HEADERS,
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -138,7 +166,7 @@ describe('AnalyticsController', () => {
       );
 
       await expect(
-        controller.track(USER_ID, { name: 'sent-message' }),
+        controller.track(USER_ID, { name: 'sent-message' }, NO_HEADERS),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -147,7 +175,7 @@ describe('AnalyticsController', () => {
       analytics.trackFromClient.mockRejectedValueOnce(fault);
 
       await expect(
-        controller.track(USER_ID, { name: 'opened-channel' }),
+        controller.track(USER_ID, { name: 'opened-channel' }, NO_HEADERS),
       ).rejects.toBe(fault);
     });
   });

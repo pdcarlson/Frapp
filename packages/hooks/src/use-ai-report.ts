@@ -25,7 +25,7 @@ export interface AiReportInput {
   receipt?: string | null;
 }
 
-export const aiReportKeys = {
+const aiReportKeys = {
   policy: (chapterId: string | null | undefined) =>
     ["ai", "reports", "policy", chapterId] as const,
 };

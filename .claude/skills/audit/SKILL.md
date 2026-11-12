@@ -86,9 +86,9 @@ warnings don't fail CI, so count them as debt rather than as passing.
 Every table in `supabase/migrations/` must `ENABLE ROW LEVEL SECURITY`. Almost every table then
 has no permissive policies (default deny), because the API reaches data through the
 `service_role` client. The deliberate exceptions are the chat hot path's client-read policies
-(`chat_message_actions`, membership-scoped `chat_messages` reads). The per-table inventory is
-[`authorization-model.md`](../../../docs/security/authorization-model.md); audit a new
-permissive policy against it.
+(`chat_message_actions`, membership-scoped `chat_messages` reads). [`authorization-model.md`](../../../docs/security/authorization-model.md) § 4 names every table
+that carries a policy and gives the query that lists the API-only rest (it keeps no table list of
+its own); audit a new permissive policy against it.
 
 `npm run check:pglite-migrations` (the CI `pglite-migrations` job) applies every migration to an
 in-process Postgres and fails if any public table lacks RLS, if the policy inventory drifts from
