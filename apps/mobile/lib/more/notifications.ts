@@ -1,18 +1,15 @@
 /**
  * Narrowing and grouping for s14 (Notifications), over `GET /v1/notifications`.
  *
- * ## The category label is derived, not read
+ * What a row looks like (its picture, its kind's badge, the name's colour, the
+ * mention chips) is `@repo/hooks/notification-rows`, shared with the web
+ * drawer (#4346), and needs the viewer and the roster, so the screen works it
+ * out from `title`, `body` and `data` here. This module only narrows the
+ * rows, resolves where a tap goes, and groups them by day.
  *
- * The reference draws a category under each row — "Events · 4:00 PM". A
- * notification row does **not** store its category: `NotificationService`
- * persists `data: payload.data ?? {}` and forwards `category` only to the push
- * provider, for delivery telemetry. What the row does carry is the deep-link
- * target every payload includes (`spec/behavior/notifications.md` § Deep
- * Linking), so the label is derived from `data.target.screen`. That is the
- * honest source; inventing a category from the title's wording would not be.
- *
- * Rows whose target names no known screen fall back to no label rather than to
- * a guessed one.
+ * The category word that sat under each row ("Events · 4:00 PM") was derived
+ * from `data.target.screen` here until #4346; the kind's badge or tile says it
+ * now, and its words are read to a screen reader.
  */
 import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
 import { isRecord, records, str } from "./narrow";
@@ -25,8 +22,8 @@ export interface NotificationRow {
   id: string;
   title: string;
   body: string | null;
-  /** `null` when the row carries no recognizable target. */
-  categoryLabel: string | null;
+  /** The row's `data`, as served, for `notificationLook`. */
+  data: unknown;
   /**
    * Where tapping the row goes.
    *
@@ -51,58 +48,10 @@ export interface NotificationGroup {
   rows: NotificationRow[];
 }
 
-/**
- * `data.target.screen` → the label drawn under a row.
- *
- * Keyed on the screen names the API actually emits — every `screen:` in a
- * `target: {` across `apps/api/src`, which is the list to re-derive from
- * rather than a count kept here: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`, `chat_reports` and `discord_import`. Each has a label — an
- * emitted screen missing here is the bug C7 (#998) found, when an invite
- * notification (`invite.service.ts` sends `screen: 'members'`) navigated
- * correctly to the directory while rendering with no category label at all,
- * which is the one thing this map exists to produce.
- *
- * `chat_reports` is the officer new-report notification
- * (`ChatReportService`). Mobile has no report queue, so the row routes to the
- * notification list (`lib/notifications/targets.ts`), but it is still labelled:
- * an officer reading it here should see what kind of notice it is. The same
- * holds for `discord_import`, the notice that a Discord import ended
- * (`DiscordImportWorkerService`), whose page is web-only.
- *
- * The extra keys below (`event`, `event-details`, `task`, `dues`, `study`) are
- * not emitted by anything today. They are kept because a label that is merely
- * absent costs a member nothing, whereas guessing a *route* would send them
- * somewhere wrong — which is why `lib/notifications/targets.ts` maps only the
- * emitted screens it has a route for and falls back rather than tolerating
- * spelling variants. Anything unmapped here gets no label.
- */
-const SCREEN_LABELS: Record<string, string> = {
-  chat: "Chat",
-  chat_reports: "Reports",
-  discord_import: "Discord import",
-  event: "Events",
-  events: "Events",
-  "event-details": "Events",
-  task: "Tasks",
-  tasks: "Tasks",
-  points: "Points",
-  billing: "Billing",
-  dues: "Billing",
-  service: "Service hours",
-  study: "Study hours",
-  members: "Directory",
-};
-
 function targetScreen(data: unknown): string | null {
   if (!isRecord(data)) return null;
   const target = data.target;
   return isRecord(target) ? str(target, "screen") : null;
-}
-
-export function categoryLabelFor(data: unknown): string | null {
-  const screen = targetScreen(data);
-  return screen ? (SCREEN_LABELS[screen] ?? null) : null;
 }
 
 function parseCreatedAt(value: string): Date | null {
@@ -147,7 +96,7 @@ function toRow(
     id,
     title,
     body: str(row, "body"),
-    categoryLabel: categoryLabelFor(row.data),
+    data: row.data,
     target: resolveNotificationTarget(row.data),
     time: (isToday ? formatTime(createdAt) : formatDay(createdAt, now)) ?? "",
     createdAt,

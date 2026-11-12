@@ -42,6 +42,31 @@ import { drawnText, screenText } from "@/test/screen-text";
 const CREATED_AT = new Date(2026, 8, 30, 23, 47);
 const MOUNTED_AT = new Date(2026, 8, 30, 23, 59, 30);
 
+/** The roster the screen reads for pictures, names and chips (#4346). */
+const ROSTER = vi.hoisted(() => [
+  {
+    user_id: "u-me",
+    display_name: "Marcus Ellison",
+    avatar_url: null,
+    role_color: null,
+  },
+  {
+    user_id: "u-ryan",
+    display_name: "Ryan Castellano",
+    avatar_url: null,
+    role_color: "#8FA8FF",
+  },
+]);
+const NAMES = vi.hoisted(() => {
+  const row = (id: string) => ROSTER.find((r) => r.user_id === id);
+  return {
+    nameFor: (id: string) => row(id)?.display_name ?? null,
+    avatarFor: () => null,
+    roleColorFor: (id: string) => row(id)?.role_color ?? null,
+    avatarTintFor: () => ({ fill: "#2A2D3D", text: "#8FA8FF" }),
+  };
+});
+
 const NOTIFICATIONS = [
   {
     id: "notif-1",
@@ -77,6 +102,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMarkNotificationRead: () => markRead,
   useMarkNotificationsRead: () => markAll,
+  useViewerUserId: () => "u-me",
+  useChapterRoster: () => ({ data: ROSTER }),
+  useMemberDisplayNames: () => NAMES,
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -296,7 +324,7 @@ describe("Notification row press feedback", () => {
               id: "n1",
               title: "Dues reminder",
               body,
-              categoryLabel: "Dues",
+              data: { target: { screen: "billing" } },
               target: { pathname: "/dues" },
               time: "4:00 PM",
               createdAt: CREATED_AT.toISOString(),
@@ -381,20 +409,25 @@ describe("Notification row press feedback", () => {
     expect(bodyNode.props.numberOfLines).toBe(2);
     // The two-line cut is visual only: a screen reader hears all of it.
     expect(row.props.accessibilityLabel).toBe(
-      "Dues reminder. Spring dues are open for every active member.",
+      "Dues: Dues reminder. Spring dues are open for every active member.",
     );
   });
 
-  it("centres the unread dot on the title's first line", () => {
+  it("centres the unread dot on the picture beside it", () => {
     const row = renderRow(true);
-    const title = textStyle(row, "Dues reminder");
     const [dot] = row.children as ReactTestRenderer["root"][];
-    const dotStyle = Object.assign(
-      {},
-      ...[dot!.props.style].flat(Infinity),
-    ) as Record<string, number>;
-
-    expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(title.lineHeight);
+    const picture = row.find(
+      (node) => node.props.testID === "notification-tile-billing",
+    );
+    const style = (node: ReactTestRenderer["root"]) =>
+      Object.assign({}, ...[node.props.style].flat(Infinity)) as Record<
+        string,
+        number
+      >;
+    const dotStyle = style(dot!);
+    expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(
+      style(picture).height,
+    );
   });
 });
 
@@ -415,7 +448,7 @@ describe("Notifications row tap marks read (#3788)", () => {
     const row = tree.root.find(
       (node) =>
         typeof node.props.accessibilityLabel === "string" &&
-        node.props.accessibilityLabel.startsWith(title) &&
+        node.props.accessibilityLabel.includes(title) &&
         typeof node.props.onPress === "function",
     );
     act(() => row.props.onPress());
@@ -467,5 +500,98 @@ describe("Mark all read sends one request (#3929)", () => {
     expect(markAll.mutate.mock.calls[0]?.[0]).toBeUndefined();
     expect(markRead.mutate).not.toHaveBeenCalled();
     expect(markRead.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4346 (Shawn, 2026-11-11): a row shows who it is about and its kind, names
+ * wear their colour, a mention wears the @ badge, and the "OBJ" box is gone.
+ */
+describe("Notification rows that stand out (#4346)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
+
+  function renderChat(data: Record<string, unknown>, body: string) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NotificationListRow
+            row={{
+              id: "n1",
+              title: "Ryan Castellano in #general",
+              body,
+              data: {
+                target: { screen: "chat", channelId: "c1" },
+                senderId: "u-ryan",
+                ...data,
+              },
+              target: { pathname: "/chat-thread" } as never,
+              time: "4:00 PM",
+              createdAt: CREATED_AT.toISOString(),
+              isUnread: true,
+            }}
+            people={{ viewerId: "u-me", members: ROSTER, names: NAMES }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    mounted.push(tree);
+    return tree.root;
+  }
+
+  const byTestId = (root: ReactTestRenderer["root"], id: string) =>
+    root.findAll((node) => node.props.testID === id);
+
+  it("draws the sender's picture, their name in their colour, and the channel badge", () => {
+    const root = renderChat({ chatKind: "channel" }, "can you cover?");
+    expect(byTestId(root, "notification-badge-channel")).not.toHaveLength(0);
+    const name = root.find(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "Ryan Castellano",
+    );
+    expect(Object.assign({}, ...[name.props.style].flat(Infinity)).color).toBe(
+      "#8FA8FF",
+    );
+  });
+
+  it("wears the @ badge when it mentions you, chips the names, and says so to a screen reader", () => {
+    const root = renderChat(
+      { chatKind: "channel", mentioned: true },
+      "@Marcus Ellison @bigsigma can you cover?",
+    );
+    expect(byTestId(root, "notification-badge-mention")).not.toHaveLength(0);
+    const row = root.find(
+      (node) => node.props.testID === "notification-row-mention",
+    );
+    expect(row.props.accessibilityLabel).toMatch(/^Mentioned you: /);
+    const chips = root.findAll(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        Object.assign({}, ...[node.props.style].flat(Infinity))
+          .backgroundColor === signetDarkTokens.color.semantic.mentionChip,
+    );
+    expect(chips.map((chip) => chip.props.children)).toEqual([
+      "@Marcus Ellison",
+    ]);
+  });
+
+  it("leaves out the U+FFFC box", () => {
+    const root = renderChat({ chatKind: "dm" }, "take a look \uFFFC");
+    const row = root.find(
+      (node) => node.props.testID === "notification-row-dm",
+    );
+    expect(row.props.accessibilityLabel).not.toContain("\uFFFC");
+    const texts = root
+      .findAll((node) => (node.type as unknown as string) === "Text")
+      .map((node) => node.props.children)
+      .filter((children): children is string => typeof children === "string");
+    expect(texts).toContain("take a look");
+    expect(texts.join("")).not.toContain("\uFFFC");
   });
 });

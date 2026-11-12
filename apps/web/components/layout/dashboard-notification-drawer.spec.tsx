@@ -43,7 +43,18 @@ const {
   mockScreensSeen,
   mockRefetch,
   pathname,
+  roster,
+  now,
 } = vi.hoisted(() => ({
+  roster: {
+    value: [] as {
+      user_id: string;
+      display_name: string;
+      avatar_url: string | null;
+      role_color: string | null;
+    }[],
+  },
+  now: { value: new Date("2026-09-22T12:00:00Z") },
   mockMarkManyRead: vi.fn(),
   mockScreensSeen: vi.fn(),
   pathname: { value: "/chat" },
@@ -78,6 +89,21 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     }),
     useMarkNotificationScreensSeen: mockScreensSeen,
     useInvalidateChatReports: () => mockInvalidateReports,
+    memberAvatarTint: actual.memberAvatarTint,
+    useNowDate: () => now.value,
+    useChapterRoster: () => ({ data: roster.value }),
+    useMemberDisplayNames: () => {
+      const row = (id: string) => roster.value.find((r) => r.user_id === id);
+      return {
+        nameFor: (id: string) => row(id)?.display_name ?? null,
+        avatarFor: (id: string) => row(id)?.avatar_url ?? null,
+        roleColorFor: (id: string) => row(id)?.role_color ?? null,
+        avatarTintFor: (id: string) =>
+          actual.memberAvatarTint(
+            actual.memberAvatarHue(id, row(id)?.role_color ?? null),
+          ),
+      };
+    },
   };
 });
 
@@ -213,17 +239,17 @@ describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight
     renderDrawer();
 
     expect(
-      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+      screen.getByRole("link", { name: /^Unread:\s*Event\.\s*Notice / }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /^Message Reported / }),
+      screen.getByRole("link", { name: /^Report\.\s*Message Reported / }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^(New|Read)$/)).toBeNull();
     const dots = document.querySelectorAll("[data-unread-dot]");
     expect(dots).toHaveLength(1);
     expect(dots[0]).toHaveClass("bg-foreground");
     expect(
-      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+      screen.getByRole("link", { name: /^Unread:\s*Event\.\s*Notice / }),
     ).toContainElement(dots[0] as HTMLElement);
   });
 
@@ -368,5 +394,151 @@ describe("DashboardNotificationDrawer: reading notifications (#3929)", () => {
       "href",
       "/members",
     );
+  });
+});
+
+/**
+ * #4346 (Shawn, 2026-11-11): a row shows who it is about and what kind of
+ * notice it is, names wear their colour, a mention wears the @ badge, and the
+ * "OBJ" box is gone.
+ */
+describe("DashboardNotificationDrawer: rows that stand out (#4346)", () => {
+  const chat = (
+    id: string,
+    data: Record<string, unknown>,
+    over: Record<string, unknown> = {},
+  ) => ({
+    ...notification(
+      id,
+      "chat",
+      "2026-09-22T11:00:00Z",
+      "Ryan Castellano in #general",
+    ),
+    body: "can you cover saturday?",
+    data: {
+      target: { screen: "chat", channelId: "c1" },
+      senderId: "u-ryan",
+      ...data,
+    },
+    ...over,
+  });
+
+  beforeEach(() => {
+    roster.value = [
+      {
+        user_id: "u-officer",
+        display_name: "Marcus Ellison",
+        avatar_url: null,
+        role_color: null,
+      },
+      {
+        user_id: "u-ryan",
+        display_name: "Ryan Castellano",
+        avatar_url: null,
+        role_color: "#8FA8FF",
+      },
+      {
+        user_id: "u-owen",
+        display_name: "Owen Delacroix",
+        avatar_url: null,
+        role_color: null,
+      },
+    ];
+  });
+
+  it("draws the sender's initials, their name in their colour, and the channel badge", () => {
+    notifications.value = [
+      chat("n1", { chatKind: "channel", channelName: "general" }),
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", {
+      name: /Channel message\.\s*Ryan Castellano in #general/,
+    });
+    expect(row).toHaveAttribute("data-notification-kind", "channel");
+    expect(row.querySelector("[data-person-name]")).toHaveStyle({
+      color: "#8FA8FF",
+    });
+    expect(row).toHaveTextContent("RC");
+    expect(row.querySelector("[data-kind-badge]")).toHaveTextContent("#");
+  });
+
+  it("wears the @ badge in the chapter accent when it mentions you, and stays flat", () => {
+    notifications.value = [
+      chat(
+        "n1",
+        { chatKind: "channel", mentioned: true },
+        {
+          body: "@Marcus Ellison @bigsigma can you cover?",
+        },
+      ),
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Mentioned you\./ });
+    const badge = row.querySelector("[data-kind-badge='mention']");
+    expect(badge).toHaveTextContent("@");
+    expect(badge).toHaveClass("bg-primary");
+    expect(row).not.toHaveClass("bg-accent-subtle");
+    // A name that resolves is chat's chip; one that names nobody is text.
+    const chips = row.querySelectorAll("mark[data-mention]");
+    expect([...chips].map((chip) => chip.textContent)).toEqual([
+      "@Marcus Ellison",
+    ]);
+  });
+
+  it("draws a join as the member who joined", () => {
+    notifications.value = [
+      {
+        ...notification(
+          "n-join",
+          "members",
+          "2026-09-22T11:00:00Z",
+          "Owen Delacroix joined",
+        ),
+        data: { target: { screen: "members" }, memberUserId: "u-owen" },
+      },
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", {
+      name: /New member\.\s*Owen Delacroix joined/,
+    });
+    expect(row).toHaveTextContent("OD");
+    expect(row.querySelector("[data-kind-badge='join']")).not.toBeNull();
+  });
+
+  it("draws a notice with no person behind it as its tile", () => {
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Event\.\s*Notice/ });
+    expect(
+      row.querySelector("[data-notification-tile='events']"),
+    ).not.toBeNull();
+    expect(row.querySelector("[data-kind-badge]")).toBeNull();
+  });
+
+  it("leaves out the U+FFFC box", () => {
+    notifications.value = [
+      chat("n1", { chatKind: "dm" }, { body: "take a look ￼" }),
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Direct message\./ });
+    expect(row.textContent).not.toContain("￼");
+    expect(row).toHaveTextContent("take a look");
+  });
+
+  it("groups rows Today and Earlier on the viewer's day", () => {
+    now.value = new Date("2026-09-22T12:00:00");
+    notifications.value = [
+      notification(
+        "n-today",
+        "events",
+        "2026-09-22T09:00:00",
+        "Today's notice",
+      ),
+      notification("n-old", "tasks", "2026-09-20T09:00:00", "Older notice"),
+    ];
+    renderDrawer();
+    const today = screen.getByRole("region", { name: "Today" });
+    const earlier = screen.getByRole("region", { name: "Earlier" });
+    expect(today).toHaveTextContent("Today's notice");
+    expect(earlier).toHaveTextContent("Older notice");
   });
 });
