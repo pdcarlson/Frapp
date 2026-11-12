@@ -171,7 +171,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
-- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's You tab rows and Up next strip), `--foreground` on hover.
+- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground`, `--foreground` on hover. The one exception is a place's hue, below. (Until 2026-11-12 mobile's You tab rows and Up next strip drew theirs a step dimmer, in `--muted`; both sit in a lead tile now, [`../mobile/patterns.md` § Rows](../mobile/patterns.md#rows).)
 - Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
 - Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
@@ -180,6 +180,29 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 - People's avatars, borders, dividers and decorative frames.
 
 Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
+
+### A place's hue (2026-11-12)
+
+> **Owner decision, 2026-11-12 (Paul, mobile hierarchy pass, [#4610](https://github.com/pdcarlson/Frapp/issues/4610) step 3).** Asked to choose between neutral tiles everywhere, tinted tiles on the You tab only, and tinted tiles on every tab, on a page of the real screens, he chose tinted tiles on the You tab only.
+
+On mobile's You tab, a row that opens a place leads with a tile in that place's own fixed hue (`apps/mobile/lib/more/destination-hue.ts`): the tile's fill is the hue at 16% (iconography §1's emphasis fill) with an edge at 22%, and the glyph is the hue at full strength. It is the one case where an icon that labels a row is not neutral.
+
+**A hue names a place, never a state.** That is the whole rule, and it is what keeps this from being the decoration the accent rule above removed:
+
+- It is the same every day for every member, so it carries no news. It only makes a list of up to ten places findable without reading, as iOS Settings and Telegram's settings list are.
+- A row that shows a state stays neutral: the Activity rows, Chat home's Up next, the Calendar. On those screens colour already means something, the accent asks the member to act and red is overdue, and a tint would read as one more status.
+- The hues are the role palette's ([`components.md`](components.md), `ROLE_COLOR_PALETTE` in `@repo/validation`), already checked for contrast on the charcoal surfaces. That palette leaves out gold and red on purpose, so no tile can be taken for the accent, a mention or an error. Never the chapter accent.
+- A row that can't be opened now (Host check-in with nothing to host) goes grey with its label.
+
+| Place | Hue | | Place | Hue |
+|---|---|---|---|---|
+| Study hours | Periwinkle | | Directory | Violet |
+| Service hours | Rose | | Settings, Chapter settings | Slate |
+| Dues | Green | | Switch chapter | Teal |
+| Documents | Sky | | Invite members | Lime |
+| Minutes | Sand | | Host check-in | Orange |
+
+Web's sidebar is unchanged: its rows are navigation, where the accent marks the active one (rule 6 above), and a second colour per row would fight it.
 
 ### A signature moment's accent (2026-11-06)
 

@@ -6,6 +6,7 @@ import { AccessibilityInfo, Alert, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { SheetHeader } from "@/components/sheet-scaffold";
+import { ForwardGlyph } from "@/components/control-glyphs";
 
 // The report settles in a microtask after the press, so its state update lands
 // inside an async `act`; React only accepts that when told this is a test env.
@@ -215,10 +216,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
 
   it("draws no chevron on any menu row, as Discord's menu draws none", () => {
     const chevrons = (tree: ReactTestRenderer) =>
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" && node.props.children === "›",
-      ).length;
+      tree.root.findAllByType(ForwardGlyph).length;
     // Reply, Edit and Delete all act here.
     expect(chevrons(render(OWN))).toBe(0);
     // Report opens the form, but a menu row is a verb, not a link.

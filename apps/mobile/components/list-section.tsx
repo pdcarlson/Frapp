@@ -15,6 +15,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { guardedBySwipe, useSwipeClaim } from "@/lib/swipe-claim";
 
@@ -489,7 +490,7 @@ export function ListRow({
           style={styles.trailingSlot}
         />
       ) : onPress && !disabled && !action ? (
-        <Text style={styles.chevron}>›</Text>
+        <ForwardGlyph color={tokens.color.text.muted} />
       ) : null}
     </View>
   );
@@ -643,11 +644,6 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flex: 1,
       textAlign: "right",
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
     },
     trailingSlot: {
       flexShrink: 0,

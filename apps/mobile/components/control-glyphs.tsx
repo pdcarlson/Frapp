@@ -202,6 +202,29 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/** The row chevron's side: smaller than a control, it only marks a row. */
+export const FORWARD_GLYPH_SIZE = 16;
+
+/**
+ * Forward: the right chevron at the end of a row that opens something
+ * (`ListRow`, the Activity rows, `ChoiceRow`, the study zone picker). The
+ * mirror of {@link BackGlyph} at the same stroke, drawn for the same reason:
+ * a typed `›` sits on the text's x-height and scales with the type role, so
+ * its ink landed below the middle of every row (#3628; foundations.md §7,
+ * Aligning a row).
+ */
+export function ForwardGlyph({
+  color,
+  size = FORWARD_GLYPH_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M9.5 6l6 6-6 6" {...detail} strokeWidth={BACK_STROKE_WIDTH} />
+    </Frame>
+  );
+}
+
 /**
  * Search, leading a search field (#4137): web's toolbar search draws the same
  * lens and handle (`apps/web/components/layout/nav-glyphs.tsx` `SearchGlyph`),

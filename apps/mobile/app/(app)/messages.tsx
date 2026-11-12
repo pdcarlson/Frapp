@@ -31,7 +31,7 @@ import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import { PencilGlyph } from "@/components/control-glyphs";
 import {
   displayChannelName,
@@ -166,13 +166,13 @@ export default function MessagesScreen() {
       // New message, where iMessage and Instagram keep it. A DM starts from
       // a member, so it opens the Directory, whose member sheet has Message.
       headerAction={
-        <IconButton
+        <HeaderButton
           label="New message"
           hint="Opens the Directory to pick someone."
           onPress={() => router.push("/directory")}
         >
           <PencilGlyph color={tokens.color.text.foreground} />
-        </IconButton>
+        </HeaderButton>
       }
     >
       {/* The order comes from the latest messages, so the list waits for

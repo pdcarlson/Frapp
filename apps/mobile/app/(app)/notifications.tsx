@@ -33,7 +33,7 @@ import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { CheckAllGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_CHAT } from "@/components/back-row";
 import {
@@ -198,7 +198,7 @@ export default function NotificationsScreen() {
           // The double check, as web's drawer draws it (components.md §
           // Icon-only actions). A spinner while the write runs, in place of
           // the "Marking…" word it replaced.
-          <IconButton
+          <HeaderButton
             label="Mark all notifications read"
             disabled={isMarkingAll}
             onPress={markAllRead}
@@ -208,7 +208,7 @@ export default function NotificationsScreen() {
             ) : (
               <CheckAllGlyph color={brand.accent} />
             )}
-          </IconButton>
+          </HeaderButton>
         ) : null
       }
     >
