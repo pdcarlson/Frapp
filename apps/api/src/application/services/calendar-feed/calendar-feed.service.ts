@@ -172,6 +172,13 @@ export class CalendarFeedService {
     return this.memberItems(chapter, feed.user_id, now);
   }
 
+  /** Whether the user is still a member of the chapter. */
+  async isMember(chapterId: string, userId: string): Promise<boolean> {
+    return (
+      (await this.members.findByUserAndChapter(userId, chapterId)) !== null
+    );
+  }
+
   /**
    * What a member's calendar holds in a chapter: the events they may see from
    * {@link CALENDAR_PAST_DAYS} back to {@link FUTURE_DAYS} ahead, and their open

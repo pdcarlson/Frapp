@@ -31,12 +31,14 @@ export class SupabaseGoogleCalendarRepository implements IGoogleCalendarReposito
     chapter_id: string;
     user_id: string;
     return_to: string;
+    code_verifier: string;
     expires_at: string;
   }): Promise<GoogleCalendarOAuthState> {
     const row: TablesInsert<'google_calendar_oauth_states'> = {
       chapter_id: data.chapter_id,
       user_id: data.user_id,
       return_to: data.return_to,
+      code_verifier: data.code_verifier,
       expires_at: data.expires_at,
     };
     const { data: created, error } = await this.supabase
@@ -142,16 +144,34 @@ export class SupabaseGoogleCalendarRepository implements IGoogleCalendarReposito
     if (error) throw new SupabaseQueryError(error);
   }
 
-  async markDisconnecting(id: string): Promise<void> {
-    const { error } = await this.supabase
+  async markDisconnecting(
+    id: string,
+  ): Promise<GoogleCalendarConnection | null> {
+    const { data, error } = await this.supabase
       .from('google_calendar_connections')
       .update({
         status: 'disconnecting',
         sync_due_at: new Date().toISOString(),
-        sync_lease_until: null,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async countForAccount(
+    googleEmail: string,
+    exceptId: string | null,
+  ): Promise<number> {
+    let query = this.supabase
+      .from('google_calendar_connections')
+      .select('id', { count: 'exact', head: true })
+      .eq('google_email', googleEmail);
+    if (exceptId) query = query.neq('id', exceptId);
+    const { count, error } = await query;
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
   }
 
   async claim(
@@ -190,6 +210,13 @@ export class SupabaseGoogleCalendarRepository implements IGoogleCalendarReposito
       // A member who disconnected mid-sync stays disconnecting.
       .neq('status', 'disconnecting');
     if (error) throw new SupabaseQueryError(error);
+    // ...and its lease goes, so the cleanup it waits on runs next tick.
+    const { error: releaseError } = await this.supabase
+      .from('google_calendar_connections')
+      .update({ sync_lease_until: null })
+      .eq('id', id)
+      .eq('status', 'disconnecting');
+    if (releaseError) throw new SupabaseQueryError(releaseError);
   }
 
   async deferCleanup(id: string, until: Date, error: string): Promise<void> {

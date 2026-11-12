@@ -41,6 +41,7 @@ export type GoogleSyncOutcome =
   | 'more'
   | 'needs_reconnect'
   | 'calendar_removed'
+  | 'left_chapter'
   | 'retry'
   | 'skipped';
 
@@ -54,7 +55,9 @@ export type GoogleSyncOutcome =
  * each carries a hash of what was written, so an unchanged item costs
  * nothing), and deletes the events Frapp wrote whose items are gone. Events a
  * member adds to the calendar by hand carry no hash and are left alone, and so
- * are events that ended before the calendar's window, which stay as history.
+ * are events that ended before the calendar's window, which stay as history
+ * (a task's are not: an open task stays however long ago it was due, so its
+ * event goes once the task is done).
  */
 @Injectable()
 export class GoogleCalendarSyncService {
@@ -76,6 +79,15 @@ export class GoogleCalendarSyncService {
         'GOOGLE_CALENDAR_TOKEN_KEY',
       ),
     });
+  }
+
+  /**
+   * Whether this server can sync at all: Google's client and the key the
+   * tokens are sealed with. Without them the worker leaves every connection
+   * as it is, rather than read an unopenable token as one Google refused.
+   */
+  isAvailable(): boolean {
+    return this.google.isConfigured() && this.keyRing !== null;
   }
 
   /** One claimed connection: synced if active, cleaned up if disconnecting. */
@@ -110,13 +122,20 @@ export class GoogleCalendarSyncService {
       const accessToken = await this.google.accessToken(refreshToken);
       const chapter = await this.chapters.findById(connection.chapter_id);
       if (!chapter) return 'skipped';
+      if (!(await this.feeds.isMember(chapter.id, connection.user_id))) {
+        // A former member can't reach Disconnect (the chapter's routes are
+        // closed to them), so leaving the chapter disconnects.
+        const row = await this.repo.markDisconnecting(connection.id);
+        if (row) await this.cleanUp(row, now);
+        return 'left_chapter';
+      }
 
       let calendarId = connection.calendar_id;
       if (!calendarId) {
         calendarId = await this.google.createCalendar(accessToken, {
           summary: `${chapter.name} (Frapp)`,
           description:
-            'Events and tasks from Frapp, kept up to date by Frapp. Edit them in Frapp: changes made here are replaced.',
+            'Events and tasks from Frapp, kept up to date by Frapp. Edit them in Frapp: a change made here is replaced when the item next changes in Frapp.',
         });
         await this.repo.setCalendarId(connection.id, calendarId);
       }
@@ -165,7 +184,16 @@ export class GoogleCalendarSyncService {
             .deleteCalendar(accessToken, connection.calendar_id)
             .catch(ignoreNotFound);
         }
-        await this.google.revoke(refreshToken);
+        // Google revokes a whole account's access at once, so the grant
+        // stays while another connection (another chapter, or a connection
+        // made again) uses the same account.
+        const shared =
+          connection.google_email !== null &&
+          (await this.repo.countForAccount(
+            connection.google_email,
+            connection.id,
+          )) > 0;
+        if (!shared) await this.google.revoke(refreshToken);
       }
       await this.repo.delete(connection.id);
     } catch (error) {
@@ -244,7 +272,9 @@ export class GoogleCalendarSyncService {
     for (const event of remote) {
       if (event.hash === null || wanted.has(event.id)) continue;
       const endsAt = event.endsAt ? Date.parse(event.endsAt) : Number.NaN;
-      if (!Number.isNaN(endsAt) && endsAt < windowStart) continue;
+      if (!event.task && !Number.isNaN(endsAt) && endsAt < windowStart) {
+        continue;
+      }
       if (budget <= 0) return true;
       budget -= 1;
       await this.google
@@ -262,11 +292,8 @@ export class GoogleCalendarSyncService {
     if (error instanceof CalendarRemovedError) {
       // The member deleted Frapp's calendar in Google: they don't want it,
       // so Frapp disconnects rather than making it again.
-      await this.repo.markDisconnecting(connection.id);
-      await this.cleanUp(
-        { ...connection, status: 'disconnecting', calendar_id: null },
-        now,
-      );
+      const row = await this.repo.markDisconnecting(connection.id);
+      if (row) await this.cleanUp({ ...row, calendar_id: null }, now);
       return 'calendar_removed';
     }
     if (error instanceof GoogleCalendarApiError) {
@@ -295,7 +322,16 @@ export class GoogleCalendarSyncService {
     throw error;
   }
 
+  /**
+   * The connection's refresh token, or null when this server's key can't open
+   * it (sealed under a key since retired). Throws when there is no key at
+   * all: that is the server's setup, not the connection, and the worker
+   * doesn't run without one.
+   */
   private openToken(connection: GoogleCalendarConnection): string | null {
+    if (this.keyRing === null) {
+      throw new Error('GOOGLE_CALENDAR_TOKEN_KEY is not set');
+    }
     try {
       return openRefreshToken(
         this.keyRing,

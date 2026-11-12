@@ -46,11 +46,12 @@ describe('GoogleCalendarApiClient', () => {
     );
   });
 
-  it('asks for the narrow calendar scope, offline, with consent every time', () => {
+  it('asks for the narrow calendar scope, offline, with consent every time, under PKCE', () => {
     const url = new URL(
       client().authorizeUrl({
         state: 'state-1',
         redirectUri: 'https://api.frapp.live/v1/google-calendar/callback',
+        codeChallenge: 'challenge-1',
       }),
     );
 
@@ -63,6 +64,8 @@ describe('GoogleCalendarApiClient', () => {
       response_type: 'code',
       scope: `openid email ${GOOGLE_CALENDAR_SCOPE}`,
       state: 'state-1',
+      code_challenge: 'challenge-1',
+      code_challenge_method: 'S256',
       access_type: 'offline',
       prompt: 'consent',
     });
@@ -79,7 +82,7 @@ describe('GoogleCalendarApiClient', () => {
     );
 
     await expect(
-      client().exchangeCode('code-1', 'https://api/cb'),
+      client().exchangeCode('code-1', 'https://api/cb', 'verifier-1'),
     ).resolves.toEqual({
       refreshToken: 'refresh',
       email: 'member@gmail.com',
@@ -93,6 +96,7 @@ describe('GoogleCalendarApiClient', () => {
       grant_type: 'authorization_code',
       code: 'code-1',
       redirect_uri: 'https://api/cb',
+      code_verifier: 'verifier-1',
       client_id: 'client-id',
       client_secret: 'client-secret',
     });
@@ -143,7 +147,9 @@ describe('GoogleCalendarApiClient', () => {
             {
               id: 'a',
               end: { dateTime: '2026-11-20T01:00:00Z' },
-              extendedProperties: { private: { frapp_hash: 'h1' } },
+              extendedProperties: {
+                private: { frapp_hash: 'h1', frapp_task: '1' },
+              },
             },
           ],
           nextPageToken: 'p2',
@@ -154,12 +160,45 @@ describe('GoogleCalendarApiClient', () => {
       );
 
     await expect(client().listEvents('access', 'cal@x')).resolves.toEqual([
-      { id: 'a', hash: 'h1', endsAt: '2026-11-20T01:00:00Z' },
-      { id: 'b', hash: null, endsAt: '2026-11-21' },
+      { id: 'a', hash: 'h1', endsAt: '2026-11-20T01:00:00Z', task: true },
+      { id: 'b', hash: null, endsAt: '2026-11-21', task: false },
     ]);
     const second = new URL(fetchMock.mock.calls[1][0] as string);
     expect(second.pathname).toBe('/calendar/v3/calendars/cal%40x/events');
     expect(second.searchParams.get('pageToken')).toBe('p2');
+  });
+
+  it('marks a task’s event, so a sync can tell it from an old event', async () => {
+    fetchMock.mockImplementation(async () => reply(200, {}));
+    const event = {
+      id: 'e1',
+      summary: 'Due: Dues',
+      description: '',
+      location: null,
+      start: { dateTime: '2026-11-20T00:00:00.000Z' },
+      end: { dateTime: '2026-11-20T00:30:00.000Z' },
+      sourceUrl: 'https://app.frapp.live/tasks',
+      transparent: true,
+      hash: 'h1',
+    };
+
+    await client().insertEvent('access', 'cal', event);
+    await client().insertEvent('access', 'cal', {
+      ...event,
+      transparent: false,
+    });
+
+    const bodies = fetchMock.mock.calls.map(
+      (call) =>
+        JSON.parse((call as [string, RequestInit])[1].body as string) as {
+          extendedProperties: { private: Record<string, string> };
+        },
+    );
+    expect(bodies[0].extendedProperties.private).toEqual({
+      frapp_hash: 'h1',
+      frapp_task: '1',
+    });
+    expect(bodies[1].extendedProperties.private).toEqual({ frapp_hash: 'h1' });
   });
 
   it('treats a token Google no longer knows as revoked', async () => {

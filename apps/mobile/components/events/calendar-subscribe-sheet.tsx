@@ -45,6 +45,14 @@ const COPIED_HOLD_MS = 1500;
  */
 const GOOGLE_RETURN_PATH = "events";
 const GOOGLE_CALENDAR_WEB = "https://calendar.google.com/calendar/r";
+/**
+ * Sign-ins this app has already finished, by return address and by sign-in.
+ * Kept for the life of the process, not the sheet: `Linking.useURL` hands
+ * every new mount the address that launched the app, so a sheet that mounts
+ * again (a chapter switch, signing in again) would post a spent code and say
+ * the connection failed. `join.tsx` keeps its launch address the same way.
+ */
+const finishedSignIns = new Set<string>();
 
 /**
  * Subscribe (#3322): the Events header's sheet that puts the chapter's events,
@@ -91,7 +99,6 @@ export const CalendarSubscribeSheet = forwardRef<
   const confirmGoogle = useConfirmGoogleCalendarConnect().mutateAsync;
   const disconnectGoogle = useDisconnectGoogleCalendar();
   const googleConnect = google.data?.available ? google.data : null;
-  const finishedSignIns = useRef(new Set<string>());
   const returnUrl = Linking.useURL();
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,21 +129,21 @@ export const CalendarSubscribeSheet = forwardRef<
   function finishGoogle(url: string) {
     const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
     const outcome = readGoogleCalendarReturn(new URLSearchParams(query));
-    if (!outcome || finishedSignIns.current.has(url)) return;
-    finishedSignIns.current.add(url);
+    if (!outcome || finishedSignIns.has(url)) return;
+    finishedSignIns.add(url);
     if (outcome.kind !== "confirm") {
       if (outcome.kind !== "denied") {
         Alert.alert(
           "Google Calendar wasn't connected",
           outcome.kind === "expired"
-            ? "That Google sign-in expired. Try again."
-            : "Google didn't finish the sign-in. Try again.",
+            ? "That Google sign-in expired. Connect Google Calendar again."
+            : "Google didn't finish the sign-in. Connect Google Calendar again.",
         );
       }
       return;
     }
-    if (finishedSignIns.current.has(outcome.state)) return;
-    finishedSignIns.current.add(outcome.state);
+    if (finishedSignIns.has(outcome.state)) return;
+    finishedSignIns.add(outcome.state);
     void confirmGoogle({ code: outcome.code, state: outcome.state })
       .then(() =>
         Alert.alert(
@@ -147,7 +154,7 @@ export const CalendarSubscribeSheet = forwardRef<
       .catch((error: unknown) =>
         Alert.alert(
           "Google Calendar wasn't connected",
-          errorCopy(error, "Google didn't finish the sign-in. Try again.", {
+          errorCopy(error, "Google didn't finish the sign-in. Connect Google Calendar again.", {
             serverWritesForMembers: true,
           }),
         ),

@@ -44,6 +44,8 @@ export interface GoogleCalendarEventRef {
   hash: string | null;
   /** When it ends (a date-time, or a date for an all-day event), if known. */
   endsAt: string | null;
+  /** Written for a task, which stays on the calendar while open however old. */
+  task: boolean;
 }
 
 export type GoogleCalendarErrorKind =
@@ -74,8 +76,17 @@ export interface IGoogleCalendarApi {
   /** Whether a client id and secret are configured. */
   isConfigured(): boolean;
   /** Google's consent page for one sign-in. */
-  authorizeUrl(params: { state: string; redirectUri: string }): string;
-  exchangeCode(code: string, redirectUri: string): Promise<GoogleCalendarGrant>;
+  /** `codeChallenge`: the sign-in's PKCE challenge (S256). */
+  authorizeUrl(params: {
+    state: string;
+    redirectUri: string;
+    codeChallenge: string;
+  }): string;
+  exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier: string,
+  ): Promise<GoogleCalendarGrant>;
   /** A short-lived access token for a refresh token. */
   accessToken(refreshToken: string): Promise<string>;
   /** Revoke a refresh token at Google. A token Google no longer knows is fine. */

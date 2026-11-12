@@ -239,6 +239,31 @@ describe("CalendarSubscribeSheet", () => {
       act(() => tree.unmount());
     });
 
+    it("finishes a sign-in the app was opened with once, however often the sheet mounts", async () => {
+      // `useURL` hands every new mount the address that launched the app;
+      // the code in it is single use, so a second confirm would fail.
+      state.google = OFFERED;
+      state.confirm.mockResolvedValue(CONNECTED);
+      const useURL = vi.mocked(Linking.useURL);
+      useURL.mockReturnValue(
+        "frapp://events?gcal=confirm&gcal_code=code-9&gcal_state=state-9",
+      );
+      try {
+        for (let mount = 0; mount < 2; mount += 1) {
+          const tree = render();
+          await act(async () => {});
+          act(() => tree.unmount());
+        }
+        expect(state.confirm).toHaveBeenCalledTimes(1);
+        expect(state.confirm).toHaveBeenCalledWith({
+          code: "code-9",
+          state: "state-9",
+        });
+      } finally {
+        useURL.mockReturnValue(null);
+      }
+    });
+
     it("says nothing when the member cancels on Google's page", async () => {
       state.google = OFFERED;
       state.start.mockResolvedValue("https://accounts.google.com/auth");

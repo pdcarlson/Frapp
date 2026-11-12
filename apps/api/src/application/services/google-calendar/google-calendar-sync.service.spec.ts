@@ -69,19 +69,33 @@ function remoteOf(items: IcsItem[]): GoogleCalendarEventRef[] {
       id: event.id,
       hash: event.hash,
       endsAt: '2026-11-20T01:00:00.000Z',
+      task: event.transparent,
     };
   });
 }
 
-function setup(items: IcsItem[] = [], remote: GoogleCalendarEventRef[] = []) {
+function setup(
+  items: IcsItem[] = [],
+  remote: GoogleCalendarEventRef[] = [],
+  tokenKey: string | null = TOKEN_KEY,
+) {
   const repo = {
     setCalendarId: jest.fn(async () => undefined),
     finishSync: jest.fn(async () => undefined),
-    markDisconnecting: jest.fn(async () => undefined),
+    markDisconnecting: jest.fn(
+      async (id: string): Promise<GoogleCalendarConnection | null> =>
+        connection({
+          id,
+          status: 'disconnecting',
+          sync_due_at: NOW.toISOString(),
+        }),
+    ),
+    countForAccount: jest.fn(async () => 0),
     deferCleanup: jest.fn(async () => undefined),
     delete: jest.fn(async () => undefined),
   };
   const google = {
+    isConfigured: jest.fn(() => true),
     accessToken: jest.fn(async () => 'access-1'),
     createCalendar: jest.fn(async () => 'cal-new'),
     deleteCalendar: jest.fn(async () => undefined),
@@ -94,10 +108,13 @@ function setup(items: IcsItem[] = [], remote: GoogleCalendarEventRef[] = []) {
   const chapters = {
     findById: jest.fn(async () => ({ id: CHAPTER, name: 'Tau Nu' })),
   };
-  const feeds = { memberItems: jest.fn(async () => items) };
+  const feeds = {
+    memberItems: jest.fn(async () => items),
+    isMember: jest.fn(async () => true),
+  };
   const config = {
     get: jest.fn((key: string) =>
-      key === 'GOOGLE_CALENDAR_TOKEN_KEY' ? TOKEN_KEY : undefined,
+      key === 'GOOGLE_CALENDAR_TOKEN_KEY' ? (tokenKey ?? undefined) : undefined,
     ),
   } as unknown as ConfigService;
   const service = new GoogleCalendarSyncService(
@@ -160,11 +177,17 @@ describe('GoogleCalendarSyncService', () => {
 
     it('deletes what Frapp wrote that is gone, and leaves the member’s own and old events', async () => {
       const gone = remoteOf([item(9)])[0];
-      const handAdded = { id: 'members-own', hash: null, endsAt: null };
+      const handAdded = {
+        id: 'members-own',
+        hash: null,
+        endsAt: null,
+        task: false,
+      };
       const history = {
         id: 'fold',
         hash: 'abc',
         endsAt: '2026-08-01T00:00:00.000Z',
+        task: false,
       };
       const { service, google } = setup([], [gone, handAdded, history]);
 
@@ -176,6 +199,56 @@ describe('GoogleCalendarSyncService', () => {
         'cal-1',
         gone.id,
       );
+    });
+
+    it('deletes a done task’s event however long ago it was due', async () => {
+      // An open task stays on the calendar however overdue, so its event is
+      // not history: once the task is done, the event goes.
+      const doneTask = {
+        id: 'old-task',
+        hash: 'abc',
+        endsAt: '2026-08-01T00:30:00.000Z',
+        task: true,
+      };
+      const { service, google } = setup([], [doneTask]);
+
+      await service.sync(connection(), NOW);
+
+      expect(google.deleteEvent).toHaveBeenCalledWith(
+        'access-1',
+        'cal-1',
+        'old-task',
+      );
+    });
+
+    it('disconnects when the member left the chapter', async () => {
+      const { service, google, repo, feeds } = setup([item(1)]);
+      feeds.isMember.mockResolvedValue(false);
+
+      await expect(service.sync(connection(), NOW)).resolves.toBe(
+        'left_chapter',
+      );
+      expect(feeds.memberItems).not.toHaveBeenCalled();
+      expect(repo.markDisconnecting).toHaveBeenCalledWith('conn-1');
+      expect(google.deleteCalendar).toHaveBeenCalledWith('access-1', 'cal-1');
+      expect(google.revoke).toHaveBeenCalledWith('refresh-1');
+      expect(repo.delete).toHaveBeenCalledWith('conn-1');
+    });
+
+    it('changes nothing when this server has no token key', async () => {
+      // Unset settings are the server's state, not the connection's: reading
+      // the token as unopenable would send every member to Reconnect.
+      const { service, repo } = setup([item(1)], [], null);
+
+      expect(service.isAvailable()).toBe(false);
+      await expect(service.sync(connection(), NOW)).rejects.toThrow(
+        'GOOGLE_CALENDAR_TOKEN_KEY is not set',
+      );
+      await expect(
+        service.cleanUp(connection({ status: 'disconnecting' }), NOW),
+      ).rejects.toThrow('GOOGLE_CALENDAR_TOKEN_KEY is not set');
+      expect(repo.finishSync).not.toHaveBeenCalled();
+      expect(repo.delete).not.toHaveBeenCalled();
     });
 
     it('brings back an event the member deleted by hand', async () => {
@@ -292,6 +365,23 @@ describe('GoogleCalendarSyncService', () => {
 
       expect(google.deleteCalendar).toHaveBeenCalledWith('access-1', 'cal-1');
       expect(google.revoke).toHaveBeenCalledWith('refresh-1');
+      expect(repo.delete).toHaveBeenCalledWith('conn-1');
+    });
+
+    it('keeps the Google grant while another connection uses the account', async () => {
+      // Google revokes a whole account's access at once, which would break
+      // the member's connection in another chapter.
+      const { service, google, repo } = setup();
+      repo.countForAccount.mockResolvedValue(1);
+
+      await service.cleanUp(connection({ status: 'disconnecting' }), NOW);
+
+      expect(repo.countForAccount).toHaveBeenCalledWith(
+        'member@gmail.com',
+        'conn-1',
+      );
+      expect(google.deleteCalendar).toHaveBeenCalledWith('access-1', 'cal-1');
+      expect(google.revoke).not.toHaveBeenCalled();
       expect(repo.delete).toHaveBeenCalledWith('conn-1');
     });
 

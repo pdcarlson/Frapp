@@ -14,7 +14,10 @@ function setup(claimed: GoogleCalendarConnection[]) {
     claim: jest.fn(async () => claimed),
     deleteExpiredStates: jest.fn(async () => 0),
   };
-  const sync = { process: jest.fn(async () => 'synced' as const) };
+  const sync = {
+    process: jest.fn(async () => 'synced' as const),
+    isAvailable: jest.fn(() => true),
+  };
   const sweep = new GoogleCalendarSyncSweepService(
     repo as unknown as IGoogleCalendarRepository,
     sync as unknown as GoogleCalendarSyncService,
@@ -38,13 +41,25 @@ describe('GoogleCalendarSyncSweepService', () => {
 
     const tally = await sweep.sweep(NOW);
 
-    expect(repo.claim).toHaveBeenCalledWith(NOW, 12, 1200);
+    expect(repo.claim).toHaveBeenCalledWith(NOW, 24, 1200);
     expect(sync.process).toHaveBeenCalledTimes(4);
     expect(tally).toMatchObject({ synced: 1, retry: 1, error: 1, more: 1 });
     // Sign-ins that expired a day ago go.
     expect(repo.deleteExpiredStates).toHaveBeenCalledWith(
       new Date('2026-11-11T19:00:00.000Z'),
     );
+  });
+
+  it('leaves every connection alone while Google Calendar is switched off', async () => {
+    // Unset settings are the server's state: claiming would read every token
+    // as unopenable and send each member to Reconnect.
+    const { sweep, repo, sync } = setup([row('a')]);
+    sync.isAvailable.mockReturnValue(false);
+
+    await sweep.sweep(NOW);
+
+    expect(repo.claim).not.toHaveBeenCalled();
+    expect(sync.process).not.toHaveBeenCalled();
   });
 
   it('does not overlap a tick still running on this replica', async () => {

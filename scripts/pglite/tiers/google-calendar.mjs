@@ -9,11 +9,13 @@ import { db, miss } from "../harness.mjs";
 //   doesn't count, so a member can connect again at once;
 // - `claim_google_calendar_syncs` hands out only due, unleased connections
 //   (and disconnecting ones), leases them, and pushes an active one's next
-//   sync out fifteen minutes; a second claim gets nothing;
+//   sync out an hour; a second claim gets nothing; a disconnecting one keeps
+//   its `sync_due_at`, the clock its three-day give-up runs on;
 // - a write to `events` or `tasks` makes that chapter's active connections due
 //   now, and no other chapter's;
 // - account deletion turns the member's connections `disconnecting` (so the
-//   API cleans up at Google) and drops their sign-ins in flight.
+//   API cleans up at Google) and drops their sign-ins in flight, keeping a
+//   sync's lease so the cleanup waits for it.
 try {
   const CH = "c1c1c1c1-0000-4000-8000-000000004322";
   const OTHER = "c1c1c1c1-0000-4000-8000-000000004323";
@@ -34,8 +36,8 @@ try {
       ('${CH}', '${U.b}', 'sealed-b', now() + interval '10 minutes'),
       ('${OTHER}', '${U.a}', 'sealed-c', now() + interval '10 minutes');
     insert into google_calendar_oauth_states
-      (chapter_id, user_id, return_to, expires_at) values
-      ('${CH}', '${U.a}', 'frapp://google-calendar', now() + interval '10 minutes');
+      (chapter_id, user_id, return_to, code_verifier, expires_at) values
+      ('${CH}', '${U.a}', 'frapp://google-calendar', 'verifier', now() + interval '10 minutes');
   `);
 
   const rejects = async (sql) => {
@@ -65,7 +67,7 @@ try {
   const claimed = (
     await db.query(
       `select id, user_id, chapter_id, sync_lease_until > now() as leased,
-              sync_due_at > now() + interval '14 minutes' as pushed_out
+              sync_due_at > now() + interval '59 minutes' as pushed_out
          from claim_google_calendar_syncs(now(), 10, 600)`,
     )
   ).rows;
@@ -75,7 +77,7 @@ try {
       claimed[0].chapter_id === CH &&
       claimed[0].leased &&
       claimed[0].pushed_out,
-    "the claim takes only the due connection, leases it and moves its next sync fifteen minutes out",
+    "the claim takes only the due connection, leases it and moves its next sync an hour out",
   ]);
   checks.push([
     (
@@ -114,7 +116,23 @@ try {
     "a task written makes its chapter's connections due",
   ]);
 
+  // A sync of U.a's chapter-CH connection is in flight when the account goes.
+  await db.exec(`
+    update google_calendar_connections
+       set sync_lease_until = now() + interval '20 minutes'
+     where user_id = '${U.a}' and chapter_id = '${CH}';
+  `);
   await db.query(`select public.anonymize_user($1)`, [U.a]);
+  const kept = await one(`
+    select (sync_lease_until > now()) as leased
+      from google_calendar_connections
+     where user_id = '${U.a}' and chapter_id = '${CH}'
+  `);
+  checks.push([
+    kept?.leased === true,
+    "account deletion keeps a sync's lease, so the cleanup waits for it",
+  ]);
+  await db.exec(`update google_calendar_connections set sync_lease_until = null;`);
   const deleted = await one(`
     select count(*) filter (where user_id = '${U.a}' and status = 'disconnecting')::int as a_disconnecting,
            count(*) filter (where user_id = '${U.b}' and status = 'active')::int as b_active,
@@ -131,11 +149,24 @@ try {
     )),
     "a disconnecting connection leaves room to connect again",
   ]);
+  await db.exec(`
+    update google_calendar_connections
+       set sync_due_at = now() - interval '2 days'
+     where status = 'disconnecting';
+  `);
+  const cleanups = (
+    await db.query(
+      `select sync_due_at < now() - interval '1 day' as clock_kept
+         from claim_google_calendar_syncs(now(), 10, 600) where status = 'disconnecting'`,
+    )
+  ).rows;
   checks.push([
-    (
-      await db.query(`select * from claim_google_calendar_syncs(now(), 10, 600) where status = 'disconnecting'`)
-    ).rows.length === 2,
+    cleanups.length === 2,
     "the claim hands out connections waiting to be cleaned up",
+  ]);
+  checks.push([
+    cleanups.length === 2 && cleanups.every((c) => c.clock_kept),
+    "the claim leaves a cleanup's clock (when the disconnect was asked) alone",
   ]);
 
   console.log("\n=== Google Calendar connections (#3322) ===");

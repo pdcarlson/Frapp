@@ -13,9 +13,9 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /** Connections taken per tick, across every chapter. */
-export const GOOGLE_SYNC_BATCH = 12;
+export const GOOGLE_SYNC_BATCH = 24;
 /** Connections synced at once within a tick. */
-const CONCURRENCY = 3;
+const CONCURRENCY = 4;
 /**
  * How long a claimed connection is this replica's. Longer than a sync can
  * take (a write budget of 100 calls, each capped at 10 seconds, is the
@@ -31,11 +31,13 @@ const STATE_KEEP_MS = 24 * 60 * 60 * 1000;
  *
  * Every minute it claims the connections that are due (a new connection, a
  * chapter whose events or tasks changed, which the database's triggers mark,
- * or fifteen minutes since the last sync) and the ones waiting to be cleaned
+ * or an hour since the last sync) and the ones waiting to be cleaned
  * up after a disconnect, and works through them a few at a time. The claim is
  * a leased compare-and-set in the database, so on several API replicas each
  * connection goes to one. Ticks on one replica don't overlap. A tick in which
  * some syncs failed reports it, so a fault that fails every sync is seen.
+ * While Google Calendar is switched off on this server (the settings unset)
+ * it does nothing, so no connection changes until the settings are back.
  */
 @Injectable()
 export class GoogleCalendarSyncSweepService {
@@ -65,10 +67,12 @@ export class GoogleCalendarSyncSweepService {
       more: 0,
       needs_reconnect: 0,
       calendar_removed: 0,
+      left_chapter: 0,
       retry: 0,
       skipped: 0,
       error: 0,
     };
+    if (!this.sync.isAvailable()) return tally;
     const claimed = await this.repo.claim(
       now,
       GOOGLE_SYNC_BATCH,

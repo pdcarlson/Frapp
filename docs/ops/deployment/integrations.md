@@ -404,18 +404,23 @@ publishing status In production, user type External:
    calendar of its own and keeps the chapter's events on it; it reads nothing
    else"). Until then members see "Google hasn't verified this app" and at
    most 100 accounts can connect. Non-sensitive needs no review.
-3. **Make the client.** Google Auth Platform → Clients → Create client → type
-   **Web application**, name **Frapp Calendar** (a dashboard label; members
-   see the brand). Authorized redirect URIs, exactly:
-   `https://api-staging.frapp.live/v1/google-calendar/callback` and
-   `https://api.frapp.live/v1/google-calendar/callback` (add
-   `http://localhost:3001/v1/google-calendar/callback` to try it locally).
-   No JavaScript origins. A separate client from **Frapp Web client 1**, whose
-   secret lives in Supabase: this one's secret lives in Infisical.
-4. **Store the values in Infisical**, staging and prod, names only here:
-   `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET` (the same
-   client in both), and `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per
-   environment, made with
+3. **Make two clients**, one per environment, so production's secret is never
+   in staging (agent sandboxes read staging's Infisical, never prod's).
+   Google Auth Platform → Clients → Create client → type **Web
+   application**, name **Frapp Calendar (staging)** (a dashboard label;
+   members see the brand), one authorized redirect URI, exactly
+   `https://api-staging.frapp.live/v1/google-calendar/callback` (add
+   `http://localhost:3001/v1/google-calendar/callback` to try it locally,
+   on this client only). Then again, **Frapp Calendar**, with only
+   `https://api.frapp.live/v1/google-calendar/callback`. No JavaScript
+   origins on either. The redirect is the API's origin plus that path:
+   `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
+   **Frapp Web client 1**, whose secret lives in Supabase: these live in
+   Infisical.
+4. **Store the values in Infisical**, names only here: in staging, the
+   staging client's `GOOGLE_CALENDAR_CLIENT_ID` and
+   `GOOGLE_CALENDAR_CLIENT_SECRET`; in prod, the production client's. And
+   `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
    `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
    to boot on a partial set. Redeploy the API after the sync reaches Render.
 
@@ -429,8 +434,8 @@ on Events, a toast says connected, and within a minute a calendar named
 
 | Symptom | Cause |
 | --- | --- |
-| Google says `redirect_uri_mismatch` | Step 3's redirect URI differs from `API_URL` + `/v1/google-calendar/callback` |
-| Google says the API is not enabled, and the toast says it couldn't finish | Step 1 |
+| Google says `redirect_uri_mismatch` | Step 3's redirect URI differs from the API's origin (`API_URL` less any trailing `/v1`) + `/v1/google-calendar/callback`, or the environment holds the other environment's client |
+| Connected, but nothing appears, and the API logs `Google Calendar sync failed for connection …: … accessNotConfigured` | Step 1: the sign-in works without the Calendar API, the first sync doesn't |
 | The member is told Frapp needs permission to make its calendar | They unticked it on Google's page, or step 2's scope is missing |
 | "Google hasn't verified this app" | Step 2's scope is sensitive and the review is pending |
 | Connected, but nothing appears | The API logs `Google Calendar sync failed for connection …` with Google's reason |

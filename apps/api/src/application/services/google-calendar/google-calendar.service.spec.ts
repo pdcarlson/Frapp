@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   BadGatewayException,
   BadRequestException,
@@ -34,6 +34,7 @@ function stateRow(
     chapter_id: CHAPTER,
     user_id: USER,
     return_to: 'https://app.frapp.live/events',
+    code_verifier: 'verifier-1',
     created_at: '2026-11-12T00:00:00.000Z',
     expires_at: '2026-11-12T00:10:00.000Z',
     consumed_at: null,
@@ -88,7 +89,15 @@ function setup(options: SetupOptions = {}) {
     ),
     create: jest.fn(async () => connectionRow()),
     replaceToken: jest.fn(async () => undefined),
-    markDisconnecting: jest.fn(async () => undefined),
+    markDisconnecting: jest.fn(
+      async (id: string): Promise<GoogleCalendarConnection | null> =>
+        connectionRow({
+          id,
+          status: 'disconnecting',
+          sync_due_at: '2026-11-12T01:00:00.000Z',
+        }),
+    ),
+    countForAccount: jest.fn(async () => 0),
   };
   const google = {
     isConfigured: jest.fn(() => options.configured ?? true),
@@ -103,7 +112,10 @@ function setup(options: SetupOptions = {}) {
     })),
     revoke: jest.fn(async () => undefined),
   };
-  const sync = { cleanUp: jest.fn(async () => undefined) };
+  const sync = {
+    cleanUp: jest.fn(async () => undefined),
+    isAvailable: jest.fn(() => true),
+  };
   const service = new GoogleCalendarService(
     repo as unknown as IGoogleCalendarRepository,
     google as unknown as IGoogleCalendarApi,
@@ -155,9 +167,18 @@ describe('GoogleCalendarService', () => {
           return_to: 'https://app.frapp.live/events',
         }),
       );
+      // PKCE: the challenge Google gets is the S256 of the verifier kept on
+      // the sign-in, which only the confirm sends back.
+      const { code_verifier } = (
+        repo.createState.mock.calls[0] as unknown[]
+      )[0] as { code_verifier: string };
+      expect(code_verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(google.authorizeUrl).toHaveBeenCalledWith({
         state: STATE,
         redirectUri: 'https://api.frapp.live/v1/google-calendar/callback',
+        codeChallenge: createHash('sha256')
+          .update(code_verifier)
+          .digest('base64url'),
       });
       expect(result.authorize_url).toContain(STATE);
     });
@@ -176,9 +197,15 @@ describe('GoogleCalendarService', () => {
       ['a web page', 'https://evil.example/steal'],
       ['Expo Go, in production', 'exp://192.168.1.5:8081/--/google-calendar'],
       ['nothing', null],
+      ['Expo Go on a public server', 'exp://evil.example:80/--/x'],
+      ['Expo Go on a lookalike host', 'exps://192.168.1.5.evil.example/--/x'],
       ['a control character', 'frapp://google-calendar\n'],
-    ])('refuses %s as a phone return address', async (_label, url) => {
-      const { service, repo } = setup();
+    ])('refuses %s as a phone return address', async (label, url) => {
+      const { service, repo } = setup(
+        label.includes('server') || label.includes('lookalike')
+          ? { env: { SUPABASE_URL: 'http://localhost:54321' } }
+          : {},
+      );
 
       await expect(
         service.connect(CHAPTER, USER, 'mobile', url),
@@ -266,6 +293,7 @@ describe('GoogleCalendarService', () => {
       expect(google.exchangeCode).toHaveBeenCalledWith(
         'code-1',
         'https://api.frapp.live/v1/google-calendar/callback',
+        'verifier-1',
       );
       const created = (repo.create.mock.calls[0] as unknown[])[0] as {
         refresh_token_sealed: string;
@@ -323,6 +351,21 @@ describe('GoogleCalendarService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(google.revoke).toHaveBeenCalledWith('refresh-1');
       expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the grant when the unticked account is connected elsewhere', async () => {
+      const { service, google, repo } = setup();
+      google.exchangeCode.mockResolvedValue({
+        refreshToken: 'refresh-1',
+        email: 'member@gmail.com',
+        scopes: ['openid', 'email'],
+      });
+      repo.countForAccount.mockResolvedValue(1);
+
+      await expect(
+        service.confirm(CHAPTER, USER, STATE, 'code-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(google.revoke).not.toHaveBeenCalled();
     });
 
     it('connecting again on the same account keeps the calendar Frapp made', async () => {
@@ -394,9 +437,44 @@ describe('GoogleCalendarService', () => {
       await service.disconnect(CHAPTER, USER);
 
       expect(repo.markDisconnecting).toHaveBeenCalledWith('conn-1');
+      // The row as it now stands: its clock starts at the disconnect.
       expect(sync.cleanUp).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'conn-1', status: 'disconnecting' }),
+        expect.objectContaining({
+          id: 'conn-1',
+          status: 'disconnecting',
+          sync_due_at: '2026-11-12T01:00:00.000Z',
+        }),
       );
+    });
+
+    it('leaves the cleanup to the worker while a sync is in flight', async () => {
+      // That sync may be making the calendar this very moment; cleaning up
+      // now would miss it and leave it in the member's Google account.
+      const { service, repo, sync } = setup();
+      repo.findLive.mockResolvedValue(connectionRow());
+      repo.markDisconnecting.mockResolvedValue(
+        connectionRow({
+          status: 'disconnecting',
+          calendar_id: null,
+          sync_lease_until: new Date(Date.now() + 60_000).toISOString(),
+        }),
+      );
+
+      await service.disconnect(CHAPTER, USER);
+
+      expect(repo.markDisconnecting).toHaveBeenCalledWith('conn-1');
+      expect(sync.cleanUp).not.toHaveBeenCalled();
+    });
+
+    it('leaves the cleanup to the worker while Google Calendar is off', async () => {
+      const { service, repo, sync } = setup();
+      repo.findLive.mockResolvedValue(connectionRow());
+      sync.isAvailable.mockReturnValue(false);
+
+      await service.disconnect(CHAPTER, USER);
+
+      expect(repo.markDisconnecting).toHaveBeenCalledWith('conn-1');
+      expect(sync.cleanUp).not.toHaveBeenCalled();
     });
 
     it('does nothing when not connected', async () => {

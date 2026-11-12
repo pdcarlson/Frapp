@@ -114,8 +114,10 @@ const REQUIRED_ENV_VARS = [
 // All three or none, checked at boot; unset, Google Calendar is not offered and
 // the subscription link still is:
 //   - GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET  a Web OAuth
-//                        client in Google Cloud project `signet-frapp`, whose
-//                        redirect URI is `${API_URL}/v1/google-calendar/callback`
+//                        client in Google Cloud project `signet-frapp`, one per
+//                        environment, whose redirect URI is the API's origin
+//                        (API_URL less any trailing /v1) +
+//                        /v1/google-calendar/callback
 //   - GOOGLE_CALENDAR_TOKEN_KEY  seals members' Google refresh tokens,
 //                        "<key id>:<base64 of 32 bytes>"
 //

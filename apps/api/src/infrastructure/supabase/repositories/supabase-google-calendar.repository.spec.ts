@@ -46,6 +46,7 @@ const state = (id: string) => ({
   id,
   user_id: USER_SHARED,
   return_to: 'https://app.frapp.live/events',
+  code_verifier: 'verifier',
   created_at: '2026-11-12T00:00:00.000Z',
   expires_at: '2026-11-12T00:10:00.000Z',
   consumed_at: null,
@@ -101,6 +102,7 @@ describe('SupabaseGoogleCalendarRepository — tenant scope', () => {
         chapter_id: CHAPTER_A,
         user_id: USER_A,
         return_to: 'frapp://google-calendar',
+        code_verifier: 'verifier',
         expires_at: '2026-11-12T00:10:00.000Z',
       }),
     );
@@ -134,6 +136,102 @@ describe('SupabaseGoogleCalendarRepository — tenant scope', () => {
 
     expect(fromB?.chapter_id).toBe(CHAPTER_B);
     expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['id']);
+  });
+
+  describe('a member who disconnects mid-sync stays disconnecting', () => {
+    const row = (id: string) =>
+      harness.rows('google_calendar_connections').find((r) => r.id === id);
+
+    it('finishSync writes over a live row but only frees a disconnecting one', async () => {
+      const lease = { sync_lease_until: '2026-11-12T00:20:00.000Z' };
+      await repo.finishSync(CONN_A, { last_error: 'x' });
+      expect(row(CONN_A)).toMatchObject({ last_error: 'x' });
+
+      // The worker's sync of a row the member has since disconnected:
+      // neither Reconnect nor a new due time may land on it, or the cleanup
+      // would never run, but its lease goes so the cleanup runs next tick.
+      harness = createTenantHarness({
+        tables: {
+          ...seed(),
+          google_calendar_connections: [
+            inA({ ...connection(CONN_A_OLD, 'disconnecting'), ...lease }),
+            inB({ ...connection(CONN_B_OLD, 'disconnecting'), ...lease }),
+          ],
+        },
+      });
+      repo = new SupabaseGoogleCalendarRepository(harness.client);
+      await repo.finishSync(CONN_A_OLD, {
+        status: 'needs_reconnect',
+        last_error: 'invalid_grant',
+        sync_due_at: '2026-11-13T00:00:00.000Z',
+      });
+      expect(row(CONN_A_OLD)).toMatchObject({
+        status: 'disconnecting',
+        last_error: null,
+        sync_due_at: '2026-11-12T00:00:00.000Z',
+        sync_lease_until: null,
+      });
+    });
+
+    it('replaceToken leaves a disconnecting row alone', async () => {
+      await repo.replaceToken(CONN_A_OLD, {
+        google_email: 'other@gmail.com',
+        refresh_token_sealed: 'v1.new',
+      });
+      expect(row(CONN_A_OLD)).toMatchObject({
+        status: 'disconnecting',
+        refresh_token_sealed: 'v1.k.n.t.c',
+      });
+    });
+
+    it('deferCleanup touches only a disconnecting row', async () => {
+      const until = new Date('2026-11-12T00:30:00.000Z');
+      await repo.deferCleanup(CONN_A, until, 'backendError');
+      expect(row(CONN_A)).toMatchObject({ sync_lease_until: null });
+
+      await repo.deferCleanup(CONN_A_OLD, until, 'backendError');
+      expect(row(CONN_A_OLD)).toMatchObject({
+        sync_lease_until: until.toISOString(),
+        // The give-up clock is when the disconnect was asked for: kept.
+        sync_due_at: '2026-11-12T00:00:00.000Z',
+      });
+    });
+
+    it('markDisconnecting keeps a sync’s lease and returns the row', async () => {
+      harness = createTenantHarness({
+        tables: {
+          ...seed(),
+          google_calendar_connections: [
+            inA({
+              ...connection(CONN_A, 'active'),
+              sync_lease_until: '2026-11-12T00:20:00.000Z',
+            }),
+            inB({
+              ...connection(CONN_B, 'active'),
+              sync_lease_until: '2026-11-12T00:20:00.000Z',
+            }),
+          ],
+        },
+      });
+      repo = new SupabaseGoogleCalendarRepository(harness.client);
+
+      const marked = await repo.markDisconnecting(CONN_A);
+
+      expect(marked).toMatchObject({
+        id: CONN_A,
+        status: 'disconnecting',
+        sync_lease_until: '2026-11-12T00:20:00.000Z',
+      });
+    });
+  });
+
+  it('countForAccount counts the account’s other connections, in any chapter', async () => {
+    await expect(
+      repo.countForAccount('member@gmail.com', CONN_A),
+    ).resolves.toBe(3);
+    await expect(repo.countForAccount('nobody@gmail.com', null)).resolves.toBe(
+      0,
+    );
   });
 
   it('claim hands the function the time, the limit and the lease', async () => {

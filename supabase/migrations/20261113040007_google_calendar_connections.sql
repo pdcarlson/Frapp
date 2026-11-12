@@ -24,10 +24,13 @@
 -- 2. `google_calendar_oauth_states`: one row per started sign-in, single use,
 --    ten minutes. It names the member who started it and where the browser
 --    goes back to, so the finishing request can be checked against the member
---    making it. RLS on, no policies.
+--    making it, and holds the sign-in's PKCE `code_verifier`, without which
+--    Google won't trade the code it returns: a code that leaks on its way back
+--    is useless to anyone but the member who started the sign-in. RLS on, no
+--    policies.
 -- 3. `claim_google_calendar_syncs`: the connections the API's minute worker
 --    takes next, each leased so that several API instances never sync the same
---    one at once. A claimed active row is next due in fifteen minutes, which
+--    one at once. A claimed active row is next due in an hour, which
 --    catches what no trigger sees (a role change, the calendar window moving
 --    on).
 -- 4. Triggers on `events` and `tasks`: any write makes the chapter's active
@@ -38,6 +41,8 @@
 --    removes the calendar and revokes the token) and its sign-ins in flight go.
 --    A trigger on `users.deleted_at`, which `anonymize_user` sets, as
 --    `users_drop_calendar_feeds` is: `anonymize_user` is not redefined here.
+--    A sync in flight keeps its lease, so the cleanup waits for it and sees
+--    the calendar it may have just made.
 --
 -- Locks. The foreign keys add triggers to `users` and `chapters`, and the new
 -- triggers on `events`, `tasks` and `users` take SHARE ROW EXCLUSIVE on each
@@ -80,6 +85,7 @@ create table if not exists public.google_calendar_oauth_states (
   chapter_id uuid not null references chapters(id) on delete cascade,
   user_id uuid not null references users(id) on delete cascade,
   return_to text not null,
+  code_verifier text not null,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   consumed_at timestamptz
@@ -115,7 +121,7 @@ as $$
   update public.google_calendar_connections c
      set sync_lease_until = p_now + make_interval(secs => p_lease_seconds),
          sync_due_at = case
-           when c.status = 'active' then p_now + interval '15 minutes'
+           when c.status = 'active' then p_now + interval '1 hour'
            else c.sync_due_at
          end
     from due
@@ -177,8 +183,7 @@ as $$
 begin
   update public.google_calendar_connections
      set status = 'disconnecting',
-         sync_due_at = now(),
-         sync_lease_until = null
+         sync_due_at = now()
    where user_id = new.id
      and status <> 'disconnecting';
   delete from public.google_calendar_oauth_states where user_id = new.id;

@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash, randomBytes } from 'node:crypto';
 import { isProductionSupabaseUrl } from '@repo/validation';
 import {
   GOOGLE_CALENDAR_API,
@@ -59,7 +60,9 @@ export interface GoogleCalendarStatus {
  * as the signed-in member, and the sign-in is spent only for the member and
  * chapter that started it. Someone who sends a member their own sign-in link
  * therefore gets nothing: the member's browser lands in the member's own
- * session, which is refused.
+ * session, which is refused. The sign-in also holds a PKCE verifier that
+ * Google demands when the code is traded, so a code that leaks on its way
+ * back (another app claiming `frapp://`, a browser history) is useless.
  */
 @Injectable()
 export class GoogleCalendarService {
@@ -134,16 +137,21 @@ export class GoogleCalendarService {
       client === 'mobile'
         ? this.appReturnUrl(returnUrl)
         : `${this.appOrigin}${WEB_RETURN_PATH}`;
+    const codeVerifier = randomBytes(32).toString('base64url');
     const state = await this.repo.createState({
       chapter_id: chapterId,
       user_id: userId,
       return_to: returnTo,
+      code_verifier: codeVerifier,
       expires_at: new Date(Date.now() + STATE_TTL_MS).toISOString(),
     });
     return {
       authorize_url: this.google.authorizeUrl({
         state: state.id,
         redirectUri: this.redirectUri(),
+        codeChallenge: createHash('sha256')
+          .update(codeVerifier)
+          .digest('base64url'),
       }),
     };
   }
@@ -211,20 +219,32 @@ export class GoogleCalendarService {
 
     let grant;
     try {
-      grant = await this.google.exchangeCode(code, this.redirectUri());
+      grant = await this.google.exchangeCode(
+        code,
+        this.redirectUri(),
+        state.code_verifier,
+      );
     } catch (error) {
       this.logger.warn(
         `Google Calendar sign-in failed: ${toReportableError(error).message}`,
       );
       throw new BadGatewayException(
         "Google didn't finish the sign-in. Connect Google Calendar again.",
+        { cause: toReportableError(error) },
       );
     }
 
     if (!grant.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {
       // Google lets a member untick a permission. Without this one there is
-      // nothing to sync, so the token is handed back rather than kept.
-      await this.google.revoke(grant.refreshToken).catch(() => undefined);
+      // nothing to sync, so the token is handed back rather than kept, unless
+      // another connection uses the account: Google revokes a whole
+      // account's access at once.
+      const shared =
+        grant.email !== null &&
+        (await this.repo.countForAccount(grant.email, null)) > 0;
+      if (!shared) {
+        await this.google.revoke(grant.refreshToken).catch(() => undefined);
+      }
       throw new BadRequestException(
         'Frapp needs permission to make its own calendar. Connect again and leave that box ticked on Google’s page.',
       );
@@ -258,14 +278,22 @@ export class GoogleCalendarService {
 
   /**
    * Remove Frapp's calendar from the member's Google account and revoke the
-   * sign-in. The connection is gone for the member at once; if Google can't
-   * be reached now, the worker finishes the cleanup later.
+   * sign-in. The connection is gone for the member at once; the cleanup at
+   * Google runs now when it can, and otherwise in the worker: when Google
+   * can't be reached, when a sync of this connection is in flight (it may be
+   * making the calendar this very moment, so the cleanup waits for it), or
+   * while Google Calendar is switched off on this server.
    */
   async disconnect(chapterId: string, userId: string): Promise<void> {
     const live = await this.repo.findLive(chapterId, userId);
     if (!live) return;
-    await this.repo.markDisconnecting(live.id);
-    await this.sync.cleanUp({ ...live, status: 'disconnecting' });
+    const row = await this.repo.markDisconnecting(live.id);
+    if (!row || !this.sync.isAvailable()) return;
+    const leased =
+      row.sync_lease_until !== null &&
+      Date.parse(row.sync_lease_until) > Date.now();
+    if (leased) return;
+    await this.sync.cleanUp(row);
   }
 
   private requireAvailable(): void {
@@ -281,16 +309,15 @@ export class GoogleCalendarService {
   }
 
   /**
-   * The phone app's return address: its own `frapp://` scheme, or Expo Go's
-   * outside production. Anything else would hand Google's code to a page the
-   * member's own app doesn't control.
+   * The phone app's return address: its own `frapp://` scheme, or, outside
+   * production, Expo Go's on this computer or the local network. Anything
+   * else would hand Google's code to a page the member's own app doesn't
+   * control: Expo Go runs whatever server an `exp://` address names.
    */
   private appReturnUrl(value: string | null): string {
     const url = value ?? '';
     const allowed =
-      url.startsWith('frapp://') ||
-      (this.allowExpoGo &&
-        (url.startsWith('exp://') || url.startsWith('exps://')));
+      url.startsWith('frapp://') || (this.allowExpoGo && isLocalExpoGoUrl(url));
     // eslint-disable-next-line no-control-regex
     if (!allowed || /[\u0000-\u001F\u007F\s]/.test(url) || url.length > 512) {
       throw new BadRequestException(
@@ -309,6 +336,27 @@ function sameAccount(
     connection.google_email !== null &&
     email !== null &&
     connection.google_email.toLowerCase() === email.toLowerCase()
+  );
+}
+
+/**
+ * An Expo Go address served from this computer or the local network: the
+ * only place a developer's Expo Go points.
+ */
+function isLocalExpoGoUrl(url: string): boolean {
+  if (!url.startsWith('exp://') && !url.startsWith('exps://')) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return (
+    host === 'localhost' ||
+    /^127\.\d+\.\d+\.\d+$/.test(host) ||
+    /^10\.\d+\.\d+\.\d+$/.test(host) ||
+    /^192\.168\.\d+\.\d+$/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)
   );
 }
 

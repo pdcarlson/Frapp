@@ -116,6 +116,10 @@ const USER_ROUTES: Record<string, string> = {
 const MEMBERSHIP_ONLY_ROUTES: Record<string, string> = {
   'AskDiagnosticsStopController.stopDiagnostics':
     "Ends the chapter's Ask diagnostics window; the service lets only the president stop it.",
+  'GoogleCalendarController.status':
+    "The caller's own Google Calendar connection; connecting needs members:view.",
+  'GoogleCalendarController.disconnect':
+    "Ends the caller's own Google Calendar connection, so losing members:view never traps one.",
   'AttendanceController.checkIn':
     'Any member checks themselves in; the check-in token and window are verified in the service.',
   'UserController.getMyPermissions':

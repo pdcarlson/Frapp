@@ -27,13 +27,15 @@ export interface GoogleCalendarConnection {
 
 /**
  * A Google sign-in a member started, single use. `return_to` is where the
- * browser goes back to, checked when the row was made.
+ * browser goes back to, checked when the row was made. `code_verifier` is the
+ * sign-in's PKCE secret, sent to Google only when the code is traded.
  */
 export interface GoogleCalendarOAuthState {
   id: string;
   chapter_id: string;
   user_id: string;
   return_to: string;
+  code_verifier: string;
   created_at: string;
   expires_at: string;
   consumed_at: string | null;

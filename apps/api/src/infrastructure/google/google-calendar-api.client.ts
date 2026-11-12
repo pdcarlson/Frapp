@@ -21,6 +21,8 @@ const LIST_PAGE_SIZE = 2500;
 const LIST_MAX_PAGES = 20;
 /** The private extended property each event Frapp writes carries. */
 const HASH_PROPERTY = 'frapp_hash';
+/** Set on a task's event, which a sync deletes however long ago it was due. */
+const TASK_PROPERTY = 'frapp_task';
 const RATE_LIMIT_REASONS = new Set([
   'rateLimitExceeded',
   'userRateLimitExceeded',
@@ -36,7 +38,7 @@ const RATE_LIMIT_REASONS = new Set([
  * Reads `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET`, an
  * OAuth client of type Web application in the `signet-frapp` Google Cloud
  * project, separate from the sign-in client Supabase holds
- * (`docs/ops/deployment/integrations.md` § Google Calendar). Errors carry
+ * (`docs/ops/deployment/integrations.md` § 7B. Google Calendar). Errors carry
  * Google's short reason and status, never a token or a response body.
  */
 @Injectable()
@@ -55,13 +57,21 @@ export class GoogleCalendarApiClient implements IGoogleCalendarApi {
     return this.clientId !== null && this.clientSecret !== null;
   }
 
-  authorizeUrl(params: { state: string; redirectUri: string }): string {
+  authorizeUrl(params: {
+    state: string;
+    redirectUri: string;
+    codeChallenge: string;
+  }): string {
     const query = new URLSearchParams({
       client_id: this.requireClientId(),
       redirect_uri: params.redirectUri,
       response_type: 'code',
       scope: `openid email ${GOOGLE_CALENDAR_SCOPE}`,
       state: params.state,
+      // PKCE: Google trades the code only with the sign-in's own verifier, so
+      // a code that leaks on its way back is useless to whoever took it.
+      code_challenge: params.codeChallenge,
+      code_challenge_method: 'S256',
       // A refresh token, every time: without `prompt=consent` Google hands
       // one out only on the account's first grant, so a member who connects
       // again (after disconnecting, or in a second chapter) would get none.
@@ -74,11 +84,13 @@ export class GoogleCalendarApiClient implements IGoogleCalendarApi {
   async exchangeCode(
     code: string,
     redirectUri: string,
+    codeVerifier: string,
   ): Promise<GoogleCalendarGrant> {
     const body = await this.token({
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
     });
     const refreshToken = stringField(body, 'refresh_token');
     if (!refreshToken) {
@@ -169,7 +181,12 @@ export class GoogleCalendarApiClient implements IGoogleCalendarApi {
             : typeof end?.date === 'string'
               ? end.date
               : null;
-        events.push({ id, hash: stringField(props, HASH_PROPERTY), endsAt });
+        events.push({
+          id,
+          hash: stringField(props, HASH_PROPERTY),
+          endsAt,
+          task: stringField(props, TASK_PROPERTY) === '1',
+        });
       }
       pageToken = stringField(body, 'nextPageToken');
       if (!pageToken) return events;
@@ -293,7 +310,12 @@ function eventBody(event: GoogleCalendarEventInput): Record<string, unknown> {
     end: event.end,
     source: { title: 'Frapp', url: event.sourceUrl },
     transparency: event.transparent ? 'transparent' : 'opaque',
-    extendedProperties: { private: { [HASH_PROPERTY]: event.hash } },
+    extendedProperties: {
+      private: {
+        [HASH_PROPERTY]: event.hash,
+        ...(event.transparent ? { [TASK_PROPERTY]: '1' } : {}),
+      },
+    },
   };
 }
 

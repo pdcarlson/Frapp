@@ -39,9 +39,12 @@ import {
  * The caller's own Google Calendar connection in the active chapter (#3322,
  * step 2; `spec/behavior/events.md` § Google Calendar).
  *
- * The same gate as the subscription link (`CalendarFeedController`):
+ * Connecting takes the subscription link's gate (`CalendarFeedController`):
  * `members:view`, which every read of events and tasks needs, since the sync
- * writes nothing the member couldn't read in the app. `@FreeTier()`, as the
+ * writes nothing the member couldn't read in the app. Reading the connection
+ * and Disconnect need only membership, so a member whose role loses the
+ * permission can still see and end their own connection (one who leaves the
+ * chapter is disconnected by the sync). `@FreeTier()`, as the
  * link is: the member's own state, not a paid feature. Disconnect is
  * `@SubscriptionExempt()` as member safety: the sync has no subscription
  * check, so a member must be able to stop it while the chapter is locked.
@@ -49,8 +52,7 @@ import {
  */
 @ApiTags('Google Calendar')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@UseGuards(SupabaseAuthGuard, ChapterGuard)
 @FreeTier()
 @Controller('google-calendar')
 export class GoogleCalendarController {
@@ -70,6 +72,8 @@ export class GoogleCalendarController {
   }
 
   @Post('connect')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @HttpCode(200)
   @ApiOperation({
     summary:
@@ -90,6 +94,8 @@ export class GoogleCalendarController {
   }
 
   @Post('confirm')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @HttpCode(200)
   @ApiOperation({
     summary:

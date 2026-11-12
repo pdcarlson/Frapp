@@ -20,6 +20,7 @@ export interface IGoogleCalendarRepository {
     chapter_id: string;
     user_id: string;
     return_to: string;
+    code_verifier: string;
     expires_at: string;
   }): Promise<GoogleCalendarOAuthState>;
   /**
@@ -65,16 +66,31 @@ export interface IGoogleCalendarRepository {
   setCalendarId(id: string, calendarId: string): Promise<void>;
   /**
    * Leave the row for the worker to clean up at Google; `sync_due_at` becomes
-   * the time the disconnect was asked for.
+   * the time the disconnect was asked for. A sync in flight keeps its lease,
+   * so the cleanup waits for it. Returns the row as it now stands, or null
+   * when it is gone.
    */
-  markDisconnecting(id: string): Promise<void>;
+  markDisconnecting(id: string): Promise<GoogleCalendarConnection | null>;
+  /**
+   * How many other connections, in any chapter and state, use this Google
+   * account. Google revokes a whole account's access at once, so a cleanup
+   * leaves the grant alone while another connection still needs it.
+   */
+  countForAccount(
+    googleEmail: string,
+    exceptId: string | null,
+  ): Promise<number>;
   /** Connections to sync or clean up next, each leased to this caller. */
   claim(
     now: Date,
     limit: number,
     leaseSeconds: number,
   ): Promise<GoogleCalendarConnection[]>;
-  /** Write what a sync came to and release its lease. */
+  /**
+   * Write what a sync came to and release its lease. A row the member
+   * disconnected mid-sync stays disconnecting: only its lease is released, so
+   * the cleanup runs at the next tick.
+   */
   finishSync(id: string, result: GoogleCalendarSyncResult): Promise<void>;
   /** Push a cleanup's next try back, keeping the row. */
   deferCleanup(id: string, until: Date, error: string): Promise<void>;
