@@ -5,6 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
+import { invalidatePointReads } from "./use-points";
 import { activityKeys } from "./use-activity";
 
 /**
@@ -635,10 +636,8 @@ export function useConfirmTask() {
     },
     onSettled: (_data, _error, id, context) => {
       invalidateTask(queryClient, context?.chapterId ?? chapterId, id);
-      // Broad prefix on purpose: points keys are `["points", chapterId, …]`, so
-      // this matches the balance, the leaderboard and the transaction list. A
-      // confirm is the one task action that moves the ledger.
-      queryClient.invalidateQueries({ queryKey: ["points"] });
+      // A confirm is the one task action that moves the ledger.
+      void invalidatePointReads(queryClient);
     },
   });
 }

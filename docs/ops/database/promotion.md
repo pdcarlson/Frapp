@@ -182,10 +182,10 @@ The hand reads taken from 2026-08-29 to 2026-09-07 are a dated entry in the
       (or the `migration-lock-safety` job's summary on your PR). **Advisory, not
       blocking** — see [`.squawk.toml`](../../../.squawk.toml) for the rules this
       repo excludes and why
-- [ ] PR includes migration SQL + rollback plan (`db-rollback-playbook.md`)
-- [ ] PR appends an entry to the [promotion log](promotion-log.md)
-      (`check:migration-safety` requires a per-migration entry in **both** the
-      log and the rollback playbook — the log's header gives the entry shapes)
+- [ ] PR includes migration SQL and its [ledger page](migrations/README.md)
+      (`## Promotion` and `## Rollback`), which `check:migration-safety`
+      requires. Older migrations are ledgered in the [promotion log](promotion-log.md)
+      and the rollback playbook instead
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] For a **production** promotion, a backup **taken by you**, with the dump path
       or object key recorded on the PR — or an explicit, written acceptance that

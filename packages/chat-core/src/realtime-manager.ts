@@ -220,7 +220,7 @@ export const RESUME_PROBE_LOOKS = 3;
 export const INBOX_TOPIC = "chat:inbox:global";
 
 /** The broadcast event for typing inside a message thread (#3785). */
-export const THREAD_TYPING_EVENT = "thread_typing";
+const THREAD_TYPING_EVENT = "thread_typing";
 
 /**
  * A `postgres_changes` row, stripped of anything that would let it read as

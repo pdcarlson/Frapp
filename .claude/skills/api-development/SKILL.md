@@ -170,15 +170,17 @@ All live in `interface/decorators/`.
 
 ## Database changes
 
-1. `npm run supabase -- migration new my_change_name` creates
-   `supabase/migrations/{14-digit timestamp}_{snake_case}.sql`.
+1. `npm run migration:new -- my_change_name` creates
+   `supabase/migrations/{version}_{snake_case}.sql` and its ledger page, with a version after both
+   the clock and everything on `main`. If `migration-order` or a duplicate version fails after main
+   moves, `npm run migration:renumber` fixes it
+   ([`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md)).
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
 3. Apply locally with `npm run supabase -- db push --local`.
-4. Add an entry for the migration to both
-   [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
-   [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry
-   shape each one states. `check:migration-safety` fails on a migration missing from either (see
-   the [`testing`](../testing/SKILL.md) skill for reading its failures).
+4. Fill in the migration's ledger page (`## Promotion` and `## Rollback`). Don't add entries to
+   the shared `promotion-log.md` or `db-rollback-playbook.md`: every PR prepending there conflicted
+   with every other. `check:migration-safety` fails on a migration with no page (see the
+   [`testing`](../testing/SKILL.md) skill for reading its failures).
 5. Update `database.types.ts` by hand, as described next.
 
 More: [`docs/guides/database.md`](../../../docs/guides/database.md).
@@ -196,6 +198,12 @@ A new table needs a row interface in `domain/entities/` (exported from the barre
 `text` parameter the caller may omit is `string | null`, because Postgres function parameters are
 nullable.
 
+Put each new entry, its entity in the `#domain/entities` import, and the entity file's line in the
+`domain/entities/index.ts` barrel in alphabetical position, never at the end: two PRs that each
+append a table always conflict on the same lines, and two that insert in order conflict only when
+they sort into the same gap. `database.types.sorted.spec.ts` fails on anything out of order and
+names the entry it belongs after (plain code-unit order, so `_` sorts before letters).
+
 Constraints to know before you fight the compiler:
 
 - `Row` is written `{ [K in keyof Row]: Row[K] }` on purpose. PostgREST constrains rows to
@@ -211,10 +219,9 @@ Constraints to know before you fight the compiler:
   `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
 - Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
-  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin
-  the repository count, so adding one means raising `EXPECTED_REPOSITORY_COUNT` in that helper
-  (and the `covered` count in `tenant-scope-coverage.spec.ts`, unless it lands with a
-  `TENANT_SCOPE_BACKLOG` reason). Direct service-layer writes use the same
+  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives, and needs
+  a tenant-scope spec or a `TENANT_SCOPE_BACKLOG` reason. The counts there are floors, so adding
+  a repository edits no number. Direct service-layer writes use the same
   `TablesInsert` / `TablesUpdate` types.
 
 ## Rate limiting
