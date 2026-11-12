@@ -37,7 +37,12 @@ function canonicalChapterId(
   return chapterId.toLowerCase();
 }
 
-/** `properties` with the API's own `app` stamp, when there is one. */
+/**
+ * `properties` with the API's own stamps, each only when there is one: `app`,
+ * and the mobile build as PostHog's `$app_version` / `$app_build`. Both are
+ * keys `assertContentFreeProperties` refuses from callers, so this is the
+ * only place an event gets them.
+ */
 function withApp(
   properties: AnalyticsProperties | undefined,
   app: AnalyticsApp | undefined,

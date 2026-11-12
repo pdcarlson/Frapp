@@ -65,10 +65,10 @@ describe('requestAppVersion', () => {
     ).toEqual({ version: '0.11.0', build: '19' });
   });
 
-  it('pads a short version and keeps a missing build null', () => {
+  it('keeps a short version as the client wrote it, as the SDK does, and a missing build null', () => {
     expect(
       requestAppVersion(req({ 'x-client-version': 'android/0.11' })),
-    ).toEqual({ version: '0.11.0', build: null });
+    ).toEqual({ version: '0.11', build: null });
   });
 
   it.each([

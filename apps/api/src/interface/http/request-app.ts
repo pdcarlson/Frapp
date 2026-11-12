@@ -52,7 +52,8 @@ export function requestApp(
  * analytics event with PostHog's own `$app_version` / `$app_build`: the same
  * keys `posthog-react-native` puts on the events it sends itself, so one
  * breakdown splits screens and server events alike by build. Read from
- * `X-Client-Version` (`ios/0.11.0+19` gives `0.11.0` and `19`); `undefined`
+ * `X-Client-Version` (`ios/0.11.0+19` gives `0.11.0` and `19`, `android/0.13`
+ * gives `0.13` and no build); `undefined`
  * when the header is absent or doesn't parse, which is the web dashboard,
  * Expo Go and anything older than #2526.
  *
@@ -61,12 +62,19 @@ export function requestApp(
 export function requestAppVersion(
   request: Pick<RequestContext, 'headers'>,
 ): AnalyticsAppVersion | undefined {
-  const parsed = parseClientVersionHeader(
-    request.headers[CLIENT_VERSION_HEADER],
-  );
-  if (!parsed) return undefined;
+  const raw = request.headers[CLIENT_VERSION_HEADER];
+  const parsed = parseClientVersionHeader(raw);
+  if (!parsed || typeof raw !== 'string') return undefined;
+  // The version as the client wrote it, not the parsed parts re-joined: the
+  // SDK sends `nativeApplicationVersion` unpadded, so `0.13` must stay `0.13`
+  // here too or one build splits into two `$app_version` values. The parse
+  // above has already limited it to digits and dots.
+  const version = raw
+    .slice(raw.indexOf('/') + 1)
+    .split('+')[0]
+    .trim();
   return {
-    version: parsed.version.join('.'),
+    version,
     build: parsed.build === null ? null : String(parsed.build),
   };
 }
