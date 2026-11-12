@@ -31,7 +31,7 @@ Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on
 - **The base dropped** from `#0A0A0A` to `#050505`. Starting at `#0A0A0A`, a ladder whose every step clears 1.15 put `--popover` too light for the semantic text tones; starting lower keeps the top of the ladder at `#313131`. Text on the base only rose.
 - **`--surface-1` is the mark's field again** (`#1A1A1A`, [`../brand-identity.md`](../brand-identity.md) §2), so the 404 and error pages are back on `--surface-1`, 1.00:1 off the crest's field.
 
-What moved with it: the accent engine now seats its generator on `--card` and is at version 3 ([`accent-engine.md`](accent-engine.md) §1, §4); `--muted`, `--success`, `--destructive` and the two lifted text tones went up a notch (§4, §5); `--card-hover`, the skeleton highlight and `--gold-ask-fill` were re-pitched to keep their step above what they sit on. Before and after, with the measured ratios: <https://claude.ai/artifact/PENDING>.
+What moved with it: the accent engine now seats its generator on `--card` and is at version 3 ([`accent-engine.md`](accent-engine.md) §1, §4); `--muted`, `--success`, `--destructive` and the two lifted text tones went up a notch (§4, §5); `--card-hover`, the skeleton highlight and `--gold-ask-fill` were re-pitched to keep their step above what they sit on. Before and after, with the measured ratios: <https://claude.ai/artifact/BYanPXmU7zSW7kPNX1VwrJ>.
 
 *Was, for the history below:* rationale for the 2026-11-05 ladder: "Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235)", with `--card-hover` `#2C2C2C` and the skeleton highlight `#2B2B2B`.
 
