@@ -72,6 +72,7 @@ import {
   PointsRules,
   ServiceHoursRules,
 } from "@/components/settings/module-rules";
+import { ModuleGoals } from "@/components/settings/module-goals";
 import {
   SettingsAccentTab,
   useAccentDraft,
@@ -525,24 +526,30 @@ function SettingsPageContent() {
       patchConfig(diff, title);
     if (key === "hours") {
       return renderConfigGated(
-        <ServiceHoursRules
-          minutesPerPoint={config?.service?.minutes_per_point}
-          workflows={workflows}
-          canManage={canManage}
-          savingRate={pendingConfigKeys.has("service")}
-          savingWorkflows={pendingConfigKeys.has("workflows")}
-          onPatch={patchRules}
-        />,
+        <div className="space-y-4">
+          <ServiceHoursRules
+            minutesPerPoint={config?.service?.minutes_per_point}
+            workflows={workflows}
+            canManage={canManage}
+            savingRate={pendingConfigKeys.has("service")}
+            savingWorkflows={pendingConfigKeys.has("workflows")}
+            onPatch={patchRules}
+          />
+          <ModuleGoals metrics={["service", "study"]} canManage={canManage} />
+        </div>,
       );
     }
     if (key === "points") {
       return renderConfigGated(
-        <PointsRules
-          points={config?.points}
-          canManage={canManage}
-          saving={pendingConfigKeys.has("points")}
-          onPatch={patchRules}
-        />,
+        <div className="space-y-4">
+          <PointsRules
+            points={config?.points}
+            canManage={canManage}
+            saving={pendingConfigKeys.has("points")}
+            onPatch={patchRules}
+          />
+          <ModuleGoals metrics={["points"]} canManage={canManage} />
+        </div>,
       );
     }
     if (key === "dues") {

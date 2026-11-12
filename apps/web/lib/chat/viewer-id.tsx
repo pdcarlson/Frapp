@@ -8,7 +8,7 @@
  *
  * `useFrappUser` (`lib/auth/use-frapp-user.ts`) is the app-wide answer and stays
  * exactly as it is. It is read by `member-detail-sheet`, `service-page`,
- * `dashboard-notification-drawer` and `chapter-presence-provider` — ordinary
+ * `notifications-popover` and `chapter-presence-provider` — ordinary
  * dashboard surfaces, none of them on the chat chunk. Teaching it about the
  * cache would pull Dexie onto every route that renders one of those, which is
  * the regression `first-chunk-wipe.ts` exists to avoid and

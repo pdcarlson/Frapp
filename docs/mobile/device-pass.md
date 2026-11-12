@@ -30,7 +30,7 @@ keeps the pass short: the section times add to about seventeen minutes, with bot
 side.
 
 The [automated flows](#what-the-automated-flows-cover) haven't had their first run yet (they need
-the smoke account set up first), so row 18 still walks the More rows by hand.
+the smoke account set up first), so row 18 still walks the You rows by hand.
 
 ## 1. Launch (1 minute)
 
@@ -73,9 +73,9 @@ the smoke account set up first), so row 18 still walks the More rows by hand.
 | 15 | iPhone | Events: switch to Calendar, force-quit, reopen Events, then pull down | It reopens on Calendar, and the pull refreshes | #3882, #3516 |
 | 16 | Both | Documents: upload a camera photo, then switch List and Grid, then delete it | The sheet closes at once and the "Uploading…" row turns into the document within a few seconds, not 30 | #3674, #4519, #3962 |
 | 17 | iPhone | Directory: switch to Grid, filter by a role | The grid holds faces and names. The filter narrows it | #4509, #4130 |
-| 18 | iPhone | More: open each row, and leave each by its back row | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something) | smoke checklist §§ 2-3 |
+| 18 | iPhone | You: open each row, and leave each by its back row | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something) | smoke checklist §§ 2-3 |
 | 19 | iPhone | A channel's ⋯, Edit channel, Who can see. Then Chapter settings, any module, Who can | Each sheet opens over the one before and closes back to it. On the iPhone, swipe back from Chapter settings works | #4526, #4502 |
-| 20 | Both | Profile: change your photo, then put the old one back | The new photo shows on Profile and on your chat messages without a restart | #808 row 8, #4486 |
+| 20 | Both | You: change your photo, then put the old one back | The new photo shows at the top of You, on the You tab itself and on your chat messages without a restart | #808 row 8, #4486 |
 | 21 | iPhone | Settings: switch chat density, open a channel, then switch it back. Then change the quiet-hours end time, leave Settings, come back, and set it back | The open channel redraws in the new density. The new end time is still there when you come back | #3640, #808 row 14 |
 
 ## 6. Offline and push (2 minutes)
@@ -125,7 +125,7 @@ in Expo Workflows, against staging, with no phone in hand. How to run them is in
 pass that a script can see:
 
 - Password sign-in reaches Chat home.
-- Every tab opens, and each More row that every member sees (Activity, Service hours, Directory,
+- Every tab opens, and each You row that every member sees (Service hours, Directory,
   Settings) opens its screen and comes back through its back row; on iOS, the edge swipe from
   Settings does the same, and on Android the back button. This is the smoke checklist's dead-end
   rule ("if a control looks interactive, it must do something") on the main routes, and row 18

@@ -304,7 +304,7 @@ jobs:
             exit 1
           fi
           if [ ! -d node_modules/typescript ]; then
-            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (today it is an optional peer of frimousse and @expo/require-utils -- NOT of next, which declares no typescript peer)."
+            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (today it is an optional peer of @expo/require-utils -- NOT of next, which declares no typescript peer)."
             exit 1
           fi
           echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"

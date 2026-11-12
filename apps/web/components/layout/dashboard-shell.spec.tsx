@@ -179,8 +179,8 @@ vi.mock("@/components/auth/terms-prompt", () => ({
 vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
   OnboardingTutorial: () => null,
 }));
-vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
-  DashboardNotificationDrawer: () => null,
+vi.mock("@/components/layout/notifications-popover", () => ({
+  NotificationsPopover: ({ children }: { children: unknown }) => children,
 }));
 // The binding has its own spec (`use-chat-realtime-binding.spec.tsx`); this
 // one pins only that the shell mounts it, on every route (#3745).

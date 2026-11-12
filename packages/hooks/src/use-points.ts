@@ -35,7 +35,11 @@ export function invalidatePointReads(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: ["points"] });
 }
 
-export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
+export function useMyPoints(
+  window?: PointWindow,
+  semesterArchiveId?: string,
+  options?: { enabled?: boolean },
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -53,7 +57,7 @@ export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
     // Matches every other read in this file: without an active chapter the
     // request cannot resolve a scope, and an ungated fetch would surface as a
     // page-level error rather than the "no chapter selected" empty state.
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 

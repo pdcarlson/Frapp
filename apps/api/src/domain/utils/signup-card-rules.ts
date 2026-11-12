@@ -1,4 +1,10 @@
 import {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  HEADCOUNT_SLOTS,
+  SIGNUP_ANSWER_NOTE_MAX_LENGTH,
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
+  SIGNUP_HEADCOUNT_FORMAT,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
   SIGNUP_SLOT_LABEL_MAX_LENGTH,
@@ -18,6 +24,16 @@ import {
  *
  * A member's claim is their one `chat_message_actions` row with
  * `action_type = 'signup'` and `payload.slot_ids`, every slot they hold.
+ *
+ * A **headcount** (`format: 'headcount'`, #3926 step 2) is the same card with
+ * two fixed slots, Going and Can't make it, both with no limit. A member
+ * holds at most one of them and may add a short note to the answer
+ * (`payload.note` on their claim).
+ *
+ * Either kind may carry an end time (`closes_at`), and its creator or a
+ * `channels:manage` holder may close it early (`closed_at` / `closed_by`,
+ * written only by `ChatService.closeSignup`). Once closed, the claim RPC
+ * refuses every claim.
  */
 
 /** The action type of a member's claim on a sign-up card. */
@@ -25,6 +41,17 @@ export const SIGNUP_ACTION_TYPE = 'signup';
 
 /** The longest slot id a card may carry. Clients make 8-character ids. */
 const SLOT_ID_MAX_LENGTH = 32;
+
+/** A headcount's format and two slots, shared with the clients. */
+export {
+  HEADCOUNT_GOING_SLOT_ID,
+  HEADCOUNT_NOT_GOING_SLOT_ID,
+  SIGNUP_HEADCOUNT_FORMAT,
+};
+
+/** The furthest ahead an end time may be set. */
+const CLOSES_AT_MAX_AHEAD_MS =
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS * 24 * 60 * 60 * 1000;
 
 export interface SignupSlot {
   id: string;
@@ -37,7 +64,14 @@ export interface SignupCard {
   title: string;
   /** Details under the title, or absent. */
   note?: string;
+  /** `'headcount'`, or absent for a sheet of named slots. */
+  format?: typeof SIGNUP_HEADCOUNT_FORMAT;
   slots: SignupSlot[];
+  /** When sign-ups end on their own (ISO), or absent. */
+  closes_at?: string;
+  /** Set only by `ChatService.closeSignup`; never taken from a client. */
+  closed_at?: string;
+  closed_by?: string;
 }
 
 /**
@@ -47,6 +81,7 @@ export interface SignupCard {
  */
 export function normalizeSignupCard(
   payload: unknown,
+  now: number = Date.now(),
 ): { card: SignupCard } | { error: string } {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { error: 'A sign-up card needs a title and at least one slot' };
@@ -73,6 +108,38 @@ export function normalizeSignupCard(
       };
     }
     if (trimmed) note = trimmed;
+  }
+
+  let closesAt: string | undefined;
+  if (raw.closes_at != null && raw.closes_at !== '') {
+    const at =
+      typeof raw.closes_at === 'string' ? Date.parse(raw.closes_at) : NaN;
+    if (Number.isNaN(at)) {
+      return { error: 'A sign-up card’s end time must be a date and time' };
+    }
+    // A past end time is kept, not refused: a card queued offline can reach
+    // the server after the time its creator picked, and it then posts closed.
+    if (at > now + CLOSES_AT_MAX_AHEAD_MS) {
+      return { error: 'A sign-up card can end at most a year from now' };
+    }
+    closesAt = new Date(at).toISOString();
+  }
+
+  const extras = closesAt ? { closes_at: closesAt } : {};
+
+  if (raw.format === SIGNUP_HEADCOUNT_FORMAT) {
+    return {
+      card: {
+        title,
+        ...(note ? { note } : {}),
+        format: SIGNUP_HEADCOUNT_FORMAT,
+        slots: HEADCOUNT_SLOTS.map((slot) => ({ ...slot })),
+        ...extras,
+      },
+    };
+  }
+  if (raw.format != null) {
+    return { error: 'Unknown sign-up card format' };
   }
 
   if (!Array.isArray(raw.slots) || raw.slots.length === 0) {
@@ -118,7 +185,7 @@ export function normalizeSignupCard(
     slots.push({ id, label, capacity });
   }
 
-  return { card: { title, ...(note ? { note } : {}), slots } };
+  return { card: { title, ...(note ? { note } : {}), slots, ...extras } };
 }
 
 /**
@@ -137,4 +204,51 @@ export function signupClaimSlotIds(payload: unknown): string[] | null {
   // A card has at most SIGNUP_SLOTS_MAX slots; a longer list can't be real.
   if (ids.size > SIGNUP_SLOTS_MAX) return null;
   return [...ids];
+}
+
+/** Whether the card is a headcount (two fixed slots, one answer each). */
+export function isHeadcountCard(payload: unknown): boolean {
+  return (
+    (payload as { format?: unknown } | null)?.format === SIGNUP_HEADCOUNT_FORMAT
+  );
+}
+
+/**
+ * Whether the card takes no more claims: closed early, or past its end time.
+ * The claim RPC decides this again under its lock; this lets the API refuse
+ * without a round trip and the close route refuse a second close.
+ */
+export function isSignupCardClosed(
+  payload: unknown,
+  now: number = Date.now(),
+): boolean {
+  const card = payload as { closed_at?: unknown; closes_at?: unknown } | null;
+  if (typeof card?.closed_at === 'string' && card.closed_at !== '') return true;
+  if (typeof card?.closes_at !== 'string') return false;
+  const at = Date.parse(card.closes_at);
+  return !Number.isNaN(at) && at <= now;
+}
+
+/**
+ * The note on a member's answer, or the reason it can't be stored. Only a
+ * headcount takes one; blank is none.
+ */
+export function signupClaimNote(
+  payload: unknown,
+  headcount: boolean,
+): { note: string | null } | { error: string } {
+  const raw = (payload as { note?: unknown } | null)?.note;
+  if (raw == null) return { note: null };
+  if (typeof raw !== 'string') return { error: 'A note must be text' };
+  const note = raw.trim();
+  if (!note) return { note: null };
+  if (!headcount) {
+    return { error: 'Only a headcount answer takes a note' };
+  }
+  if (note.length > SIGNUP_ANSWER_NOTE_MAX_LENGTH) {
+    return {
+      error: `A note can be at most ${SIGNUP_ANSWER_NOTE_MAX_LENGTH} characters`,
+    };
+  }
+  return { note };
 }

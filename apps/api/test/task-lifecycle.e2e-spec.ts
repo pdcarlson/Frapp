@@ -88,6 +88,8 @@ describe('Task lifecycle (e2e)', () => {
       'user-1',
       true,
       'COMPLETED',
+      // No proof photo sent (#4565).
+      undefined,
     );
   });
 

@@ -253,6 +253,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Sender-only; returns the edited message, which is the caller's own.",
   },
+  // #3926: its creator's own sign-up card, or a `channels:manage` holder
+  // closing anyone's, as Close poll is.
+  ChatController_closeSignup_v1: OFFICER_MODERATION,
   ChatController_deleteMessage_v1: {
     status: 'no-foreign-content',
     why: 'Returns the soft-deleted row, whose content is already `[message deleted]`.',
@@ -618,6 +621,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // Absence excuses (#3735): the receiver's push quotes the reason the
+  // member wrote for them, and the decision and reminder name the event.
+  'application/services/event-excuse.service.ts': {
+    calls: 5,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/event-series.service.ts': {
     calls: 2,
     entries: [MEMBER_TEXT],
@@ -703,6 +712,8 @@ const BUCKET_WRITERS = new Set([
   '20261106153000_backwork_bucket_100mb.sql',
   // Creates the private `meeting-audio` bucket (#712); never `chat`.
   '20261112210000_meeting_recordings.sql',
+  // Creates the private `tasks` bucket for task photos (#4565); never `chat`.
+  '20261113040005_task_photos.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

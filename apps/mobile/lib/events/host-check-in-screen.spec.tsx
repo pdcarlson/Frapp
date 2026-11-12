@@ -46,6 +46,16 @@ const hooks = vi.hoisted(() => ({
    * provides, in place of `token`. Set for the life of one tree.
    */
   realMint: false,
+  /** What `useCheckInScreenReport` answers, and what it was asked. */
+  presence: { kind: "none" } as Record<string, unknown>,
+  reportCalls: [] as unknown[][],
+}));
+
+vi.mock("@/lib/events/check-in-screen-report", () => ({
+  useCheckInScreenReport: (eventId: string, active: boolean) => {
+    hooks.reportCalls.push([eventId, active]);
+    return hooks.presence;
+  },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -206,9 +216,96 @@ describe("Host check-in while the room fills", () => {
     ];
     hooks.mintCalls = [];
     hooks.attendanceCalls = [];
+    hooks.presence = { kind: "none" };
+    hooks.reportCalls = [];
   });
   afterEach(() => {
     for (const spy of clockSpies) spy.mockRestore();
+  });
+
+  describe("as the check-in zone (#4532)", () => {
+    const presenceText = (tree: ReactTestRenderer) =>
+      tree.root.findAllByProps({ testID: "check-in-presence" });
+
+    it("reports where it is only while a code is drawn", () => {
+      const tree = render();
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", true]);
+
+      // No code (it failed and nothing still redeems): no report, so the
+      // code isn't made required while members can't get one.
+      hooks.token = {
+        data: undefined,
+        error: new Error("boom"),
+        isError: true,
+        isPending: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      };
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", false]);
+
+      act(() => blur());
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", false]);
+      act(() => refocus());
+      act(() => tree.unmount());
+    });
+
+    it("tells the officer members are checked against this phone", () => {
+      hooks.presence = { kind: "screen" };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Members check in within about 100 yards of this phone.",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("tells the officer another officer's screen is the check when this phone has no fix", () => {
+      hooks.presence = { kind: "elsewhere" };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Members check in near another officer's screen. This phone can't tell where it is.",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("says distance isn't checked, with a way to Settings once the OS won't ask", () => {
+      hooks.presence = {
+        kind: "off",
+        reason: "permission",
+        canAskAgain: false,
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Distance isn't checked. Allow location for Frapp to check it.",
+      );
+      expect(screenText(tree)).toContain("Open Settings");
+
+      hooks.presence = { kind: "off", reason: "imprecise" };
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+      expect(screenText(tree)).toContain(
+        "Distance isn't checked. This phone can't tell where it is.",
+      );
+      expect(screenText(tree)).not.toContain("Open Settings");
+      act(() => tree.unmount());
+    });
+
+    it("says nothing for a drawn zone or before check-in opens", () => {
+      const tree = render();
+      expect(presenceText(tree)).toHaveLength(0);
+      act(() => tree.unmount());
+    });
   });
 
   const lastCall = (calls: unknown[][]) => calls[calls.length - 1];
@@ -258,7 +355,9 @@ describe("Host check-in while the room fills", () => {
     );
     const layout = (width: number) =>
       act(() =>
-        body.props.onLayout({ nativeEvent: { layout: { width, height: 700 } } }),
+        body.props.onLayout({
+          nativeEvent: { layout: { width, height: 700 } },
+        }),
       );
 
     // 402 wide, less the body's 32 and the card's 16 on each side.
@@ -361,7 +460,10 @@ describe("Host check-in while the room fills", () => {
     it("counts down from when it asked, whatever the phone's clock says the server's time is", () => {
       // `expiresAt` is the server's clock. A phone 45s fast would read it as
       // long gone; one far slow, as hours away. Neither moves the countdown.
-      for (const expiresAt of ["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
+      for (const expiresAt of [
+        "2000-01-01T00:00:00Z",
+        "2099-01-01T00:00:00Z",
+      ]) {
         hooks.token = mintedAgo(0, { expiresAt });
         const tree = render();
         expect(screenText(tree)).toContain("0:20");
@@ -488,7 +590,7 @@ describe("Host check-in while the room fills", () => {
     // Nothing is under the screen in this spec (no stack), so it falls back
     // to More; on a device it pops to where the officer started.
     expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
-      "/more",
+      "/you",
     );
     act(() => tree.unmount());
   });

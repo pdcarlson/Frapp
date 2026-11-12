@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactElement, ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -64,7 +65,11 @@ type TopBarProps = {
    */
   titleIsHeading?: boolean;
   unreadNotifications: number;
-  onOpenNotifications: () => void;
+  /**
+   * Wraps the bell in what it opens: the shell passes the notification
+   * dropdown, which anchors under it. Without one the bell is drawn alone.
+   */
+  notifications?: (bell: ReactElement) => ReactNode;
   onOpenMobileNav: () => void;
 };
 
@@ -79,7 +84,7 @@ export function TopBar({
   titleMovesBesideChat = false,
   titleIsHeading = true,
   unreadNotifications,
-  onOpenNotifications,
+  notifications = (bell) => bell,
   onOpenMobileNav,
 }: TopBarProps) {
   return (
@@ -130,19 +135,19 @@ export function TopBar({
         <div className="flex w-7 shrink-0 justify-end xl:w-auto">
           <ConnectionPill placement="top-bar" />
         </div>
-        <button
-          type="button"
-          onClick={onOpenNotifications}
-          aria-label={
-            unreadNotifications > 0
-              ? `Notifications (${unreadNotifications} unread)`
-              : "Notifications"
-          }
-          title="Notifications"
-          className={cn(topBarButtonClassName, "relative")}
-        >
-          <NotificationsGlyph className="h-[18px] w-[18px]" />
-          {/*
+        {notifications(
+          <button
+            type="button"
+            aria-label={
+              unreadNotifications > 0
+                ? `Notifications (${unreadNotifications} unread)`
+                : "Notifications"
+            }
+            title="Notifications"
+            className={cn(topBarButtonClassName, "relative")}
+          >
+            <NotificationsGlyph className="h-[18px] w-[18px]" />
+            {/*
             Fixed gold, and deliberately NOT `bg-primary`.
 
             `--primary` is the per-tenant accent slot, so painting the badge
@@ -156,15 +161,16 @@ export function TopBar({
             a step of hue and the load-bearing property (fixed, not tenant) is
             identical. Red stays reserved for direct address (foundations §5).
           */}
-          {unreadNotifications > 0 ? (
-            <span
-              aria-hidden="true"
-              className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-gold-house px-1 text-[9.5px] font-bold text-gold-on-house"
-            >
-              {unreadNotifications > 99 ? "99+" : unreadNotifications}
-            </span>
-          ) : null}
-        </button>
+            {unreadNotifications > 0 ? (
+              <span
+                aria-hidden="true"
+                className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-gold-house px-1 text-[9.5px] font-bold text-gold-on-house"
+              >
+                {unreadNotifications > 99 ? "99+" : unreadNotifications}
+              </span>
+            ) : null}
+          </button>,
+        )}
         <AskPill />
         <AccountMenu variant="topbar" />
       </div>

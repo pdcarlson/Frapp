@@ -44,6 +44,15 @@ export const FEATURE_EVENTS = {
     feature: 'events',
     properties: ['status', 'has_excuse'],
   },
+  // Absence excuses (#3735): never the reason a member wrote.
+  'event-excuse-sent': {
+    feature: 'events',
+    properties: [],
+  },
+  'event-excuse-decided': {
+    feature: 'events',
+    properties: ['decision'],
+  },
 
   // Meetings (#4312): minutes written by hand. Only the type and which
   // sections hold something, never a word of the minutes.
@@ -76,11 +85,16 @@ export const FEATURE_EVENTS = {
       'assigned_to_self',
       'has_due_time',
       'has_point_reward',
+      'has_reference_photo',
       'has_subtasks',
+      'photo_required',
       'posted_to_chat',
     ],
   },
-  'task-status-changed': { feature: 'tasks', properties: ['status'] },
+  'task-status-changed': {
+    feature: 'tasks',
+    properties: ['status', 'has_proof_photo'],
+  },
   'task-completion-confirmed': { feature: 'tasks', properties: [] },
   'task-completion-rejected': { feature: 'tasks', properties: [] },
 

@@ -1065,6 +1065,8 @@ function ChatAdminBody({
                 <CreateChannelSheet
                   open={createDialogOpen}
                   onOpenChange={setCreateDialogOpen}
+                  docked
+                  backLabel="Back to chat admin"
                   trigger={
                     <Button className="gap-2">
                       <Plus className="h-4 w-4" />

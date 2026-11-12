@@ -519,6 +519,8 @@ export interface MessageTimelineProps {
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
+  /** A sign-up card's Close sign-ups (#3926), its creator's or a moderator's. */
+  onCloseSignup?: (messageId: string) => void;
   /** Flag, re-flag or (`null`) unflag a message (#3921). */
   onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
   /**
@@ -612,6 +614,7 @@ export const MessageTimeline = forwardRef<
     onEdit,
     onDelete,
     onClosePoll,
+    onCloseSignup,
     onFlag,
     bookmarkedMessageIds,
     onToggleBookmark,
@@ -1305,6 +1308,7 @@ export const MessageTimeline = forwardRef<
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onClosePoll={onClosePoll}
+                  onCloseSignup={onCloseSignup}
                   onFlag={onFlag}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}

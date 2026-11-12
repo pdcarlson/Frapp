@@ -15,7 +15,7 @@ import type { ServiceEntryStatus } from "@repo/hooks";
 import { awardedPointsLabel } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
 import { metaLine, num, records, str } from "./narrow";
-import { formatHours } from "./profile";
+import { formatServiceHours } from "@repo/hooks";
 import { addDays } from "@/lib/tasks/create-task";
 
 export interface ServiceEntryRow {
@@ -136,7 +136,7 @@ export function summarizeServiceEntries(
 
   return {
     approvedMinutes,
-    approvedHours: formatHours(approvedMinutes),
+    approvedHours: formatServiceHours(approvedMinutes),
     pendingCount: rows.filter((row) => row.status === "PENDING").length,
   };
 }

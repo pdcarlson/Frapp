@@ -16,8 +16,9 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   BACK_TO_CHAT,
+  BACK_TO_ACTIVITY,
   BACK_TO_EVENTS,
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   BackRow,
 } from "./back-row";
 
@@ -48,8 +49,9 @@ const arrowColor = (tree: ReactTestRenderer) =>
 
 describe("BackRow (#3022)", () => {
   it.each([
-    ["More", BACK_TO_MORE, "/more"],
-    ["Events", BACK_TO_EVENTS, "/events"],
+    ["You", BACK_TO_YOU, "/you"],
+    ["Calendar", BACK_TO_EVENTS, "/events"],
+    ["Activity", BACK_TO_ACTIVITY, "/activity"],
     ["Chat", BACK_TO_CHAT, "/"],
   ])("‹ %s goes to its tab with nothing under the screen", (label, target, href) => {
     const tree = render(<BackRow {...target} />);
@@ -58,10 +60,10 @@ describe("BackRow (#3022)", () => {
   });
 
   it.each([
-    ["Events", { name: "(tabs)", state: { index: 1, routes: [{ name: "index" }, { name: "events" }] } }],
+    ["Calendar", { name: "(tabs)", state: { index: 2, routes: [{ name: "index" }, { name: "activity" }, { name: "events" }] } }],
     ["Chat", { name: "(tabs)", state: { index: 0, routes: [{ name: "index" }] } }],
     ["Chat", { name: "(tabs)" }],
-    ["More", { name: "(tabs)", params: { screen: "more" } }],
+    ["You", { name: "(tabs)", params: { screen: "you" } }],
     ["Notifications", { name: "notifications" }],
   ])("pops to the screen under it, named ‹ %s", (label, below) => {
     const { element, navigation } = stackScreen(
@@ -97,7 +99,7 @@ describe("BackRow (#3022)", () => {
   });
 
   it("draws its arrow in the chapter accent, not house gold", () => {
-    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const tree = render(<BackRow {...BACK_TO_YOU} />);
 
     // The purple stand-in the mock returns: inside a chapter every back arrow
     // follows the accent (spec/behavior/branding.md, owner rule 2026-11-04).
@@ -111,7 +113,7 @@ describe("BackRow (#3022)", () => {
   });
 
   it("sits in a glass capsule, 36pt tall and fully round", () => {
-    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const tree = render(<BackRow {...BACK_TO_YOU} />);
     const capsule = tree.root.findByType(GlassSurface);
     const style = Object.assign({}, ...[capsule.props.style].flat(Infinity));
 
@@ -172,7 +174,7 @@ describe("BackRow in (auth)", () => {
   });
 
   it("shows a press on the glass, as a lift to popover, never a fade", () => {
-    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const tree = render(<BackRow {...BACK_TO_YOU} />);
     const capsuleStyle = () =>
       Object.assign(
         {},
@@ -195,7 +197,7 @@ describe("BackRow in (auth)", () => {
   });
 
   it("takes taps across a 44pt target, the capsule centred in it", () => {
-    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const tree = render(<BackRow {...BACK_TO_YOU} />);
     const target = Object.assign(
       {},
       ...[pressable(tree).props.style].flat(Infinity),

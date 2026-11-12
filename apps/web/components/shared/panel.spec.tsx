@@ -184,6 +184,146 @@ function HeadlessRecord({
   );
 }
 
+/** A page whose button opens a docked panel, beside a chat field. */
+function OpenerHarness({
+  open,
+  onOpen,
+  onClose,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div>
+      <input aria-label="Message" />
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <button type="button" onClick={onOpen}>
+            New minutes
+          </button>
+        </div>
+        <Panel
+          open={open}
+          onOpenChange={(next) => (next ? onOpen() : onClose())}
+          docked
+          backLabel="Back to meetings"
+        >
+          <PanelContent>
+            <PanelHeader>New minutes</PanelHeader>
+          </PanelContent>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+describe("Panel docked focus on close", () => {
+  it("hands focus back to the button pressed to open it, though a click left it unfocused (Safari)", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    // fireEvent.click, unlike a real Chrome click, doesn't focus the button.
+    fireEvent.pointerDown(opener);
+    fireEvent.click(opener);
+    expect(opener).not.toHaveFocus();
+    rerender(<OpenerHarness open onOpen={() => undefined} onClose={onClose} />);
+    expect(screen.getByRole("region", { name: "New minutes" })).toHaveFocus();
+
+    rerender(
+      <OpenerHarness open={false} onOpen={() => undefined} onClose={onClose} />,
+    );
+    expect(opener).toHaveFocus();
+  });
+
+  it("leaves focus in chat when the panel closes while the member is typing there", () => {
+    const noop = () => undefined;
+    const { rerender } = render(
+      <OpenerHarness open={false} onOpen={noop} onClose={noop} />,
+    );
+    const opener = screen.getByRole("button", { name: "New minutes" });
+    fireEvent.pointerDown(opener);
+    opener.focus();
+    rerender(<OpenerHarness open onOpen={noop} onClose={noop} />);
+
+    const chat = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.pointerDown(chat);
+    chat.focus();
+    rerender(<OpenerHarness open={false} onOpen={noop} onClose={noop} />);
+    expect(chat).toHaveFocus();
+  });
+});
+
+/** A page whose ⋯ menu opens the panel, closing the menu as it does. */
+function MenuOpenerHarness({
+  menuOpen,
+  open,
+  onChoose,
+}: {
+  menuOpen: boolean;
+  open: boolean;
+  onChoose: () => void;
+}) {
+  return (
+    <div data-tool-column="">
+      <div data-tool-page="">
+        <button type="button" id="page-more" aria-haspopup="menu">
+          More
+        </button>
+        {menuOpen ? (
+          <div role="menu" aria-labelledby="page-more">
+            <div role="menuitem" tabIndex={-1} onClick={onChoose}>
+              Clean up
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <Panel
+        open={open}
+        onOpenChange={() => undefined}
+        docked
+        backLabel="Back to backwork"
+      >
+        <PanelContent>
+          <PanelHeader>Clean up</PanelHeader>
+        </PanelContent>
+      </Panel>
+    </div>
+  );
+}
+
+describe("Panel docked, opened from a menu", () => {
+  it.each([
+    ["a press", (item: HTMLElement) => fireEvent.pointerDown(item)],
+    [
+      "Enter",
+      (item: HTMLElement) => {
+        item.focus();
+        fireEvent.keyDown(item, { key: "Enter" });
+      },
+    ],
+  ])(
+    "hands focus back to the menu's button after %s on an item, which is gone by then",
+    (_how, choose) => {
+      const noop = () => undefined;
+      const { rerender } = render(
+        <MenuOpenerHarness menuOpen open={false} onChoose={noop} />,
+      );
+      choose(screen.getByRole("menuitem", { name: "Clean up" }));
+      // Choosing closes the menu and opens the panel in one render.
+      rerender(<MenuOpenerHarness menuOpen={false} open onChoose={noop} />);
+      expect(screen.getByRole("region", { name: "Clean up" })).toHaveFocus();
+
+      rerender(
+        <MenuOpenerHarness menuOpen={false} open={false} onChoose={noop} />,
+      );
+      expect(screen.getByRole("button", { name: "More" })).toHaveFocus();
+    },
+  );
+});
+
 describe("Panel with the title in its body", () => {
   it("names the docked region from PanelTitle and draws no header title", () => {
     render(<HeadlessRecord docked />);

@@ -14,7 +14,10 @@ import {
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
 import {
+  isHeadcountCard,
+  isSignupCardClosed,
   SIGNUP_ACTION_TYPE,
+  signupClaimNote,
   signupClaimSlotIds,
 } from '#domain/utils/signup-card-rules';
 import {
@@ -73,6 +76,9 @@ function assertCardPollVoteAllowed(
       );
   }
 }
+
+/** The refusal of a claim on a closed sign-up card (#3926 step 2). */
+const SIGNUPS_CLOSED = 'Sign-ups are closed';
 
 /**
  * A member's responses to a message: emoji reactions on the legacy
@@ -155,7 +161,9 @@ export class ChatReactionService {
    * - Sign-up claims (#3926): `action_type === "signup"` is reserved. It
    *   takes `payload.slot_ids` and goes through `claimSignupSlots` instead
    *   of the insert below: 400 on a message that isn't a sign-up card, a
-   *   malformed list or an unknown slot, 409 on a full slot.
+   *   malformed list or an unknown slot, 409 on a full slot. A headcount
+   *   (step 2) takes at most one slot and an optional `payload.note`, and a
+   *   closed card refuses every claim with a 400.
    */
   async recordMessageAction(
     messageId: string,
@@ -249,7 +257,7 @@ export class ChatReactionService {
    * a slot the member already holds is never full to them.
    */
   private async claimSignupSlots(
-    message: { id: string; kind?: string | null },
+    message: { id: string; kind?: string | null; payload?: unknown },
     userId: string,
     payload: Record<string, unknown>,
   ): Promise<{
@@ -264,11 +272,23 @@ export class ChatReactionService {
     if (slotIds === null) {
       throw new BadRequestException('slot_ids must be a list of slot ids');
     }
+    const headcount = isHeadcountCard(message.payload);
+    if (headcount && slotIds.length > 1) {
+      throw new BadRequestException('A headcount takes one answer');
+    }
+    const note = signupClaimNote(payload, headcount);
+    if ('error' in note) throw new BadRequestException(note.error);
+    // The RPC decides this again under its lock; this spares the round trip
+    // for a card that was closed when it was read.
+    if (isSignupCardClosed(message.payload)) {
+      throw new BadRequestException(SIGNUPS_CLOSED);
+    }
     try {
       const { action, updated } = await this.actionRepo.claimSignupSlots(
         message.id,
         userId,
         slotIds,
+        note.note,
       );
       return { action, deduplicated: false, ...(updated ? { updated } : {}) };
     } catch (error) {
@@ -283,6 +303,8 @@ export class ChatReactionService {
         case 'missing':
           // Deleted between the access check and the lock.
           throw new BadRequestException('Cannot act on a deleted message');
+        case 'closed':
+          throw new BadRequestException(SIGNUPS_CLOSED);
       }
     }
   }

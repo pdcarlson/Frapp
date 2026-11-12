@@ -9,7 +9,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityKeys, activityStandingKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 import { StyleSheet } from "react-native";
 import { getSignetTokens } from "@repo/theme/signet";
@@ -21,7 +20,7 @@ import { getSignetTokens } from "@repo/theme/signet";
  * when it reads again. The sheet has its own spec
  * (`activity-sheet.spec.tsx`); the row model's is in `@repo/hooks`.
  *
- * It renders `app/(app)/activity.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/(tabs)/activity.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -201,7 +200,7 @@ vi.mock("@/components/activity/activity-sheet", () => ({
 }));
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import ActivityScreen from "@/app/(app)/activity";
+import ActivityScreen from "@/app/(app)/(tabs)/activity";
 import { resetActivityFilterForTests } from "@/lib/activity/activity-filter";
 import {
   ActivityAsk,
@@ -334,8 +333,36 @@ describe("Activity screen (#3897)", () => {
     });
   });
 
-  it("goes back to More", () => {
-    expectBackRow(render(), "More", "/more");
+  it("is a tab, so it draws no back row (#4610)", () => {
+    const rows = render().root.findAll(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Back to "),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it("opens the task board from its title row (#4610)", () => {
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    const [link] = render().root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Task board",
+    );
+    expect(link!.props.accessibilityRole).toBe("button");
+    act(() => link!.props.onPress());
+    expect(push).toHaveBeenCalledWith("/tasks");
+  });
+
+  it("draws no Task board while the chapter has Tasks off", () => {
+    chapter.data = { enabled_modules: { tasks: false } };
+    const links = render().root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Task board",
+    );
+    expect(links).toHaveLength(0);
   });
 
   it("lists what needs the member first, then what they made, each group with its count", () => {
@@ -768,10 +795,18 @@ describe("Activity screen (#3897)", () => {
 
   describe("This semester (the standing)", () => {
     const standingRead = {
-      points: { total: 42, rank: 5, ranked: 58 },
+      points: { total: 42, rank: 5, ranked: 58, goal: null },
       required_events: { required: 8, attended: 6, excused: 0 },
-      service: { approved_minutes: 270, pending_minutes: 0 },
-      study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
+      service: {
+        approved_minutes: 270,
+        pending_minutes: 0,
+        goal_minutes: null,
+      },
+      study: {
+        minutes: 125,
+        week_start: "2026-11-08T05:00:00.000Z",
+        goal_minutes: null,
+      },
       unavailable: [],
     };
     const standingRow = (tree: ReactTestRenderer, id: string) =>
@@ -806,6 +841,11 @@ describe("Activity screen (#3897)", () => {
       expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
         "/service-hours",
       );
+      // The board left the tab bar (#4610), so Points pushes it.
+      vi.mocked(useRouter().navigate).mockClear();
+      act(() => standingRow(tree, "points").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
+      expect(vi.mocked(useRouter)().navigate).not.toHaveBeenCalled();
     });
 
     it("holds its place while it loads, and draws nothing when its read fails", () => {

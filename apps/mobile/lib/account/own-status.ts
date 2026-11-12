@@ -11,7 +11,7 @@ import {
 import type { OwnStatus } from "@repo/hooks/member-status";
 
 /**
- * The member's own picked status on the phone (#3845): what the ME button's
+ * The member's own picked status on the phone (#3845): what the You tab's
  * dot and the status sheet show. The rules (expiry, end times, the end-time
  * timer) are shared with web through `@repo/hooks`.
  *

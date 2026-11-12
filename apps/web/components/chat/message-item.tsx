@@ -246,6 +246,8 @@ export interface MessageItemProps {
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
+  /** A sign-up card's Close sign-ups (#3926), its creator's or a moderator's. */
+  onCloseSignup?: (messageId: string) => void;
   /**
    * Flag, re-flag or (`null`) unflag this message (#3921). Optional so a
    * surface that doesn't wire it offers no Flag control; whether the viewer
@@ -408,6 +410,7 @@ export function MessageItem({
   onEdit,
   onDelete,
   onClosePoll,
+  onCloseSignup,
   onFlag,
   isBookmarked,
   onToggleBookmark,
@@ -894,6 +897,7 @@ export function MessageItem({
         isConfirmed={isConfirmed}
         onAct={onAct ?? (() => {})}
         onClosePoll={onClosePoll}
+        onCloseSignup={onCloseSignup}
         trailing={trailingOnOwnLine ? undefined : trailing}
         muted={isPending || isFailed}
       />

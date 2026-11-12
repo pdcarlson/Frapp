@@ -63,7 +63,7 @@ import {
   readPreviewUpload,
   readSignedUpload,
 } from "@repo/validation";
-import { EmojiPicker } from "./emoji-picker";
+import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
 import { ComposerPlusCard } from "./composer-plus-card";
 import {
   PLUS_MENU_COMMANDS,
@@ -2031,6 +2031,8 @@ export function Composer({
                   size="icon"
                   className={compactControlClassName}
                   aria-label="Open emoji picker"
+                  onPointerEnter={preloadEmojiPicker}
+                  onFocus={preloadEmojiPicker}
                 >
                   <ReactionGlyph className="h-5 w-5" />
                 </Button>

@@ -178,12 +178,17 @@ describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () 
     };
   };
 
-  it('passes only the message, the member and the slots: the caller scoped the message', async () => {
+  it('passes only the message, the member, the slots and the note: the caller scoped the message', async () => {
     const { harness, repo } = repoAnswering({
       data: { action: claimed, updated: true },
     });
 
-    const result = await repo.claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri']);
+    const result = await repo.claimSignupSlots(
+      MESSAGE_B,
+      USER_SHARED,
+      ['fri'],
+      'late',
+    );
 
     expect(result).toEqual({ action: claimed, updated: true });
     expect(harness.rpcCalls.map((c) => ({ fn: c.fn, args: c.args }))).toEqual([
@@ -193,6 +198,7 @@ describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () 
           p_message_id: MESSAGE_B,
           p_user_id: USER_SHARED,
           p_slot_ids: ['fri'],
+          p_note: 'late',
         },
       },
     ]);
@@ -202,6 +208,7 @@ describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () 
     ['signup_slot_full', 'full'],
     ['signup_slot_unknown', 'unknown_slot'],
     ['signup_card_missing', 'missing'],
+    ['signup_closed', 'closed'],
   ] as const)(
     'turns the RPC refusal %s into a %s refusal naming the slot',
     async (message, reason) => {
@@ -210,7 +217,7 @@ describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () 
       });
 
       const refusal = await repo
-        .claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri'])
+        .claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri'], null)
         .catch((error: unknown) => error);
 
       expect(refusal).toBeInstanceOf(SignupClaimRefusedError);
@@ -224,7 +231,7 @@ describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () 
     });
 
     await expect(
-      repo.claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri']),
+      repo.claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri'], null),
     ).rejects.not.toBeInstanceOf(SignupClaimRefusedError);
   });
 });

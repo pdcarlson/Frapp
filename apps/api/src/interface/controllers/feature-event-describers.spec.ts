@@ -121,6 +121,15 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'EventExcuseController.decide': {
+    'event-excuse-decided': [
+      [
+        'an approval',
+        { body: { decision: 'APPROVED' } },
+        { decision: 'APPROVED' },
+      ],
+    ],
+  },
   'BackworkController.confirmUpload': {
     'backwork-uploaded': [
       [
@@ -598,7 +607,9 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           assigned_to_self: true,
           has_due_time: false,
           has_point_reward: false,
+          has_reference_photo: false,
           has_subtasks: false,
+          photo_required: false,
           posted_to_chat: true,
         },
       ],
@@ -611,13 +622,17 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             created_by: 'u1',
             point_reward: 5,
             due_at: '2026-11-14T22:00:00.000Z',
+            reference_photo_path: 'chapters/c1/tasks/p1/mess.jpg',
+            photo_required: true,
           },
         },
         {
           assigned_to_self: false,
           has_due_time: true,
           has_point_reward: true,
+          has_reference_photo: true,
           has_subtasks: true,
+          photo_required: true,
           posted_to_chat: false,
         },
       ],
@@ -628,7 +643,17 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       [
         'in progress',
         { body: { status: 'IN_PROGRESS' } },
-        { status: 'IN_PROGRESS' },
+        { status: 'IN_PROGRESS', has_proof_photo: false },
+      ],
+      [
+        'done with proof',
+        {
+          body: {
+            status: 'COMPLETED',
+            proof_photo_path: 'chapters/c1/tasks/p2/done.jpg',
+          },
+        },
+        { status: 'COMPLETED', has_proof_photo: true },
       ],
     ],
   },

@@ -5,7 +5,7 @@ const CLEAR = "Nothing on your plate.";
 
 /**
  * The one line a member with no tasks sees in place of the board, on web's
- * Tasks board and on mobile's Tasks tab alike: that the
+ * Tasks board and on mobile's task board alike: that the
  * plate is clear, then the chapter's next event, so the line says what comes
  * next and not only what isn't there. "Next up" is the soonest event that
  * hasn't started. With none ahead, or with Events off (`events` undefined),

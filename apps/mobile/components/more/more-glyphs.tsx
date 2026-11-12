@@ -5,7 +5,7 @@ import { NavGlyph } from "@/components/nav-glyph";
 import { tint } from "@/lib/theme";
 
 /**
- * The More hub's leading row glyphs, and the stroke recipe a few other
+ * The You tab's leading row glyphs (the More hub's until #3839), and the stroke recipe a few other
  * glyphs outside the hub still use.
  *
  * The hub rows draw the shared nav set in `@repo/theme/nav-glyphs` (see
@@ -112,7 +112,7 @@ export function NotificationsGlyph(props: MoreGlyphProps) {
 /**
  * A hub row's glyph. These draw the shared nav set (`@repo/theme/nav-glyphs`),
  * the same shapes as the web sidebar, so Study hours or Settings looks the same
- * in the More hub as in the web nav. The silhouette is always the glyph's own
+ * on the You tab as in the web nav. The silhouette is always the glyph's own
  * hue at 20%; its hue is `color` alone, `text.muted` on every hub row.
  */
 export type HubGlyphProps = {
@@ -130,11 +130,6 @@ function HubGlyph({
   size = MORE_GLYPH_SIZE,
 }: HubGlyphProps & { name: NavGlyphName }) {
   return <NavGlyph paths={NAV_GLYPHS[name]} color={color} size={size} />;
-}
-
-/** Activity: the nav set's tray, web's Activity row. */
-export function ActivityGlyph(props: HubGlyphProps) {
-  return <HubGlyph name="activity" {...props} />;
 }
 
 export function StudyGlyph(props: HubGlyphProps) {

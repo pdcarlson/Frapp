@@ -36,13 +36,16 @@ export function pinnedBackClearance(tokens: SignetTokens): number {
  * (`lib/back-target.ts`).
  */
 export type BackTarget = {
-  /** The destination's name, as its tab or screen title reads ("More"). */
+  /** The destination's name, as its tab or screen title reads ("You"). */
   label: string;
   href: Href;
 };
 
-/** s10–s13, s15, s16 and Service hours, each opened from a More row. */
-export const BACK_TO_MORE: BackTarget = { label: "More", href: "/more" };
+/**
+ * s10–s13, s16 and Service hours, each opened from a row on the You tab
+ * (`‹ More` until #3839).
+ */
+export const BACK_TO_YOU: BackTarget = { label: "You", href: "/you" };
 /** What's new, opened from a Settings row. */
 export const BACK_TO_SETTINGS: BackTarget = {
   label: "Settings",
@@ -59,13 +62,19 @@ export const BACK_TO_ROLES: BackTarget = {
   href: "/chapter-roles",
 };
 /** s07, opened from an Events row (and from Chat home's Up next). */
-export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
+export const BACK_TO_EVENTS: BackTarget = { label: "Calendar", href: "/events" };
+
+/** The task board's way back when nothing is under it: the Activity tab (#4610). */
+export const BACK_TO_ACTIVITY: BackTarget = {
+  label: "Activity",
+  href: "/activity",
+};
 /**
  * s14. The board draws `‹ More`, but the inbox's entry is the bell on Chat
  * home since #3362, so its way back is Chat.
  */
 export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
-/** Invite members, opened from the Directory's + rather than a More row. */
+/** Invite members, opened from the Directory's + rather than a You row. */
 export const BACK_TO_DIRECTORY: BackTarget = {
   label: "Directory",
   href: "/directory",
@@ -95,7 +104,7 @@ type BackRowProps = {
 );
 
 /**
- * The `‹ More` / `‹ Events` row the Canvas board draws above the title on a
+ * The `‹ You` / `‹ Calendar` row (the Canvas board draws `‹ More` / `‹ Events`) above the title on a
  * screen reached from another one (s07, s10–s16, `canvas-screens.dc.html`).
  * `spec/ui/mobile/navigation.md` § Back rows owns the rule.
  *
@@ -120,12 +129,12 @@ type BackRowProps = {
  * for places with no chapter.
  *
  * Sign-in, join, setup and the chapter picker draw the same row (`‹ Back`,
- * `‹ More`), as the board's s02 does. They pass `house`, because `(auth)` has
+ * `‹ You`), as the board's s02 does. They pass `house`, because `(auth)` has
  * no chapter to take an accent from, and `onPress`, because their way back is
  * a step inside one route (the email form to the providers, the confirm step
  * to the field), not a tab to open. Two leave their route instead: setup's
  * find step goes back to what opened it (`router.back()`, or `/join` with
- * nothing behind it), and the picker's `‹ More` is its own `router.back()`.
+ * nothing behind it), and the picker's `‹ You` is its own `router.back()`.
  */
 export function BackRow(props: BackRowProps) {
   // Two components rather than a branch inside one: a house row never reads

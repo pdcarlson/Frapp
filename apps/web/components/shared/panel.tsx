@@ -3,7 +3,12 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft } from "lucide-react";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
@@ -27,11 +32,12 @@ import { cn } from "@/lib/utils";
  * turning into its editor rather than a second box on top. Below `sm` it is
  * the whole viewport, which holds the 375px floor.
  *
- * **The bands are the upload sheet's** (`upload-sheet.tsx`, board `1j`): a
- * 56px title row at 18/700 with `pr-14` clearing the close button, a body at
- * the 20px inset, a right-aligned footer at the same inset. A panel is that
- * sheet at full height, so it uses the same rhythm rather than inventing a
- * second one. The close button `SheetContent` draws is a 26px box (a 16px
+ * **The bands came from the upload sheet** (board `1j`): a 56px title row at
+ * 18/700 with `pr-14` clearing the close button, a body at the 20px inset, a
+ * right-aligned footer at the same inset. A panel was that sheet at full
+ * height, so it took the same rhythm rather than inventing a second one; the
+ * sheet's own chrome is gone since both uploads moved onto `Panel` (#4593),
+ * so these bands are defined here now. The close button `SheetContent` draws is a 26px box (a 16px
  * glyph, `p-1` and a 1px border) at `top-4`, so its centre sits at 29px, a
  * pixel under the 56px row's centre.
  */
@@ -56,6 +62,8 @@ type PanelDock = {
   onClose: () => void;
   backLabel: string;
   titleId: string;
+  /** The id `PanelDescription` takes, read as the panel's description. */
+  descriptionId: string;
 };
 
 const PanelDockContext = React.createContext<PanelDock | null>(null);
@@ -85,6 +93,8 @@ export function Panel({
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
+  const descriptionId = React.useId();
+  useOpenerTracking(docked);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
   const column = React.useSyncExternalStore<Element | null | undefined>(
@@ -94,8 +104,13 @@ export function Panel({
   );
 
   const dock = React.useMemo<PanelDock>(
-    () => ({ onClose: () => onOpenChange(false), backLabel, titleId }),
-    [onOpenChange, backLabel, titleId],
+    () => ({
+      onClose: () => onOpenChange(false),
+      backLabel,
+      titleId,
+      descriptionId,
+    }),
+    [onOpenChange, backLabel, titleId, descriptionId],
   );
 
   // Docked with no tool column to land in (a page outside the shell, a
@@ -122,29 +137,117 @@ export function Panel({
  * the form. Focus moves in on open and goes back where it was on close.
  * Escape goes back, unless a field or an open popover had it first.
  */
+/**
+ * The control last pressed, and when. Safari doesn't focus a clicked button,
+ * so at the moment a docked panel opens `activeElement` is `<body>` (or
+ * wherever focus was before), not the button that opened it; this is how the
+ * panel still finds its opener to hand focus back to.
+ *
+ * A press on a menu item records the menu's trigger instead (Radix names the
+ * menu by it, `aria-labelledby`): the item is gone once the menu closes, so
+ * the button that opened the menu is where focus goes back, as it would after
+ * any other choice from that menu. Enter and Space on a focused item count as
+ * a press too, since a keyboard choice also unmounts it.
+ */
+let lastPressed: { control: HTMLElement; at: number } | null = null;
+let pressListeners = 0;
+function recordPress(target: EventTarget | null) {
+  if (!(target instanceof Element)) return;
+  let control = target.closest<HTMLElement>(
+    'button, a[href], [role="button"], [role="menuitem"]',
+  );
+  const menu = control?.closest('[role="menu"]');
+  const triggerId = menu?.getAttribute("aria-labelledby");
+  if (triggerId) control = document.getElementById(triggerId) ?? control;
+  lastPressed = control ? { control, at: Date.now() } : null;
+}
+function onPress(event: PointerEvent) {
+  recordPress(event.target);
+}
+function onKeyPress(event: KeyboardEvent) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (!(event.target instanceof Element)) return;
+  // Only a menu item: a focused button already is `activeElement`.
+  if (!event.target.closest('[role="menu"]')) return;
+  recordPress(event.target);
+}
+/** Records presses while a docked `Panel` is on the page. */
+function useOpenerTracking(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled) return;
+    if (pressListeners++ === 0) {
+      document.addEventListener("pointerdown", onPress, true);
+      document.addEventListener("keydown", onKeyPress, true);
+    }
+    return () => {
+      if (--pressListeners === 0) {
+        document.removeEventListener("pointerdown", onPress, true);
+        document.removeEventListener("keydown", onKeyPress, true);
+        lastPressed = null;
+      }
+    };
+  }, [enabled]);
+}
+/** How recent a press must be to count as what opened the panel. */
+const OPENER_WINDOW_MS = 1000;
+
+function openerOf(box: HTMLElement): HTMLElement | null {
+  const pressed = lastPressed;
+  if (
+    pressed &&
+    Date.now() - pressed.at < OPENER_WINDOW_MS &&
+    pressed.control.isConnected &&
+    !box.contains(pressed.control)
+  ) {
+    return pressed.control;
+  }
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body
+    ? active
+    : null;
+}
+
 function DockedPanel({
   dock,
   className,
+  onCloseAutoFocus,
   children,
 }: {
   dock: PanelDock;
   className?: string;
+  /**
+   * The sheet's close-focus hook, honoured docked too: a caller that sends
+   * focus somewhere else on close (the subscription gate's notice, when a
+   * block closed the form) calls `preventDefault()` and focuses it itself.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLElement>(null);
+  const closeFocus = React.useRef(onCloseAutoFocus);
+  React.useEffect(() => {
+    closeFocus.current = onCloseAutoFocus;
+  }, [onCloseAutoFocus]);
+  const descriptionId = dock.descriptionId;
   React.useEffect(() => {
     const box = ref.current;
     const column = box?.parentElement;
     if (!box || !column) return;
-    const returnTo =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    // What opened the panel gets focus back when it closes: the button
+    // pressed for it, or, from the keyboard, the element that had focus.
+    const returnTo = openerOf(box);
     const covered = Array.from(column.children).filter(
       (child): child is HTMLElement =>
         child !== box && child instanceof HTMLElement && !child.inert,
     );
     for (const child of covered) child.inert = true;
+    // A `PanelDescription` is the panel's description, as a sheet's is its
+    // dialog's, so a screen reader reads it with the title when focus lands.
+    // Set before the focus, and only when one is drawn, so the id never
+    // points at nothing.
+    if (box.querySelector(`[id="${descriptionId}"]`)) {
+      box.setAttribute("aria-describedby", descriptionId);
+    }
     box.focus({ preventScroll: true });
 
     // Focus that was in the panel and fell to `<body>` comes back to it. A
@@ -184,9 +287,15 @@ function DockedPanel({
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("pointerdown", onPointerDown, true);
       for (const child of covered) child.inert = false;
+      // Closed while the member was working elsewhere (an upload finishing
+      // while they type in chat): focus is theirs, so leave it there.
+      if (!ours) return;
+      const event = new Event("focus.closeAutoFocus", { cancelable: true });
+      closeFocus.current?.(event);
+      if (event.defaultPrevented) return;
       if (returnTo?.isConnected) returnTo.focus({ preventScroll: true });
     };
-  }, []);
+  }, [descriptionId]);
 
   return (
     <section
@@ -244,7 +353,11 @@ export const PanelContent = React.forwardRef<
   const dock = React.useContext(PanelDockContext);
   if (dock) {
     return (
-      <DockedPanel dock={dock} className={className}>
+      <DockedPanel
+        dock={dock}
+        className={className}
+        onCloseAutoFocus={props.onCloseAutoFocus}
+      >
         {props.children}
       </DockedPanel>
     );
@@ -382,6 +495,33 @@ export function PanelTitle({
 }
 
 /**
+ * A line under the title that says what the panel is for. As a sheet it is
+ * the dialog's description; docked there is no dialog, so it is a plain
+ * paragraph in the same style, which the docked panel names as its own
+ * description.
+ */
+export function PanelDescription({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const dock = React.useContext(PanelDockContext);
+  if (dock) {
+    return (
+      <p
+        id={dock.descriptionId}
+        className={cn("text-sm text-muted-foreground", className)}
+      >
+        {children}
+      </p>
+    );
+  }
+  return <SheetDescription className={className}>{children}</SheetDescription>;
+}
+
+/**
  * The scrolling band. `min-h-0` lets the flex child shrink below its content
  * so it scrolls instead of pushing the footer off the screen.
  *
@@ -410,10 +550,10 @@ export function PanelBody<T extends "div" | "form" = "div">({
 /**
  * The footer: the panel's primary action, right-aligned, outside the scroll so
  * it never scrolls away. A hairline separates it from a body that scrolls
- * under it, which the upload sheet doesn't need because its body is short.
+ * under it.
  *
  * Not `SheetFooter`, which stacks `flex-col-reverse` below `sm` and puts the
- * primary action on top: one row at every width, as `UploadSheetFooter`.
+ * primary action on top: one row at every width.
  */
 export function PanelFooter({
   className,

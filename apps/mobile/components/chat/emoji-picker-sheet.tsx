@@ -22,15 +22,18 @@ import {
   emojiKey,
   emojiPickerRows,
   type EmojiPickerRow,
-} from "@/lib/chat/emoji-search";
+} from "@repo/chat-core/emoji";
+import { useRecentEmoji } from "@/lib/chat/recent-emoji";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Every emoji, for a reaction the quick row doesn't have: the long-press
  * menu's last reaction cell opens it, as Discord's and Slack's do. A search
- * field over the emoji grouped the way the system keyboard groups them. The
- * names are emojibase's, as on web's picker (`frimousse`); this one stops at
- * Emoji 14 (`scripts/generate-emoji-data.mjs`), which web does not.
+ * field over the member's recent emoji, then the rest grouped the way the
+ * system keyboard groups them. Recent first is what Slack, Discord and the
+ * iOS keyboard all open on: most reactions repeat one the member already
+ * uses. The catalog and search are web's too (`@repo/chat-core/emoji`), so
+ * both pickers offer the same emoji under the same names.
  *
  * It replaces the menu (`stackBehavior="replace"`), so closing it returns to
  * the thread. Picking closes it; the chip under the message confirms.
@@ -59,7 +62,16 @@ export const EmojiPickerSheet = forwardRef<
   const tallSheet = useTallSheetProps();
   const close = useSheetClose(ref);
   const [search, setSearch] = useState("");
-  const rows = useMemo(() => emojiPickerRows(search), [search]);
+  const liveRecent = useRecentEmoji();
+  // Held from a pick until the sheet has closed: the pick records itself as
+  // recent, and the Recent row growing would shift every row below it while
+  // the sheet animates away.
+  const [heldRecent, setHeldRecent] = useState<readonly string[] | null>(null);
+  const recent = heldRecent ?? liveRecent;
+  const rows = useMemo(
+    () => emojiPickerRows(search, { recent }),
+    [search, recent],
+  );
   const mine = useMemo(() => new Set(selected.map(emojiKey)), [selected]);
 
   const renderItem = useCallback(
@@ -79,7 +91,10 @@ export const EmojiPickerSheet = forwardRef<
                   isMine ? `Remove ${emoji} reaction` : `React with ${emoji}`
                 }
                 accessibilityState={{ selected: isMine }}
-                onPress={() => onPick(emoji, isMine)}
+                onPress={() => {
+                  setHeldRecent(recent);
+                  onPick(emoji, isMine);
+                }}
                 style={({ pressed }) => [
                   styles.cell,
                   isMine ? { backgroundColor: accentSubtle } : null,
@@ -100,7 +115,7 @@ export const EmojiPickerSheet = forwardRef<
         </View>
       );
     },
-    [accentSubtle, mine, onPick, styles],
+    [accentSubtle, mine, onPick, recent, styles],
   );
 
   return (
@@ -115,6 +130,7 @@ export const EmojiPickerSheet = forwardRef<
       onAnimate={onAnimate}
       onDismiss={() => {
         setSearch("");
+        setHeldRecent(null);
         onDismiss?.();
       }}
     >

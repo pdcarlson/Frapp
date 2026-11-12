@@ -4,13 +4,25 @@ import userEvent from "@testing-library/user-event";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { SignupCard } from "./signup-card";
 
+const myPermissions = vi.hoisted(() => ({ current: [] as string[] }));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    useMyPermissions: () => ({ data: { permissions: myPermissions.current } }),
+  };
+});
+
 const names: Record<string, string> = {
   u1: "Devin Okafor",
   u2: "Julian Reyes",
 };
 const nameFor = (id: string) => names[id] ?? null;
 
-function card(claims: { user: string; slots: string[] }[]): ChatMessage {
+function card(
+  claims: { user: string; slots: string[]; note?: string }[],
+  extra: Record<string, unknown> = {},
+): ChatMessage {
   return {
     id: "m1",
     channel_id: "c1",
@@ -24,13 +36,17 @@ function card(claims: { user: string; slots: string[] }[]): ChatMessage {
         { id: "fri", label: "Friday", capacity: 2 },
         { id: "sat", label: "Saturday", capacity: 1 },
       ],
+      ...extra,
     },
     actions: claims.map((claim, i) => ({
       id: `a${i}`,
       message_id: "m1",
       user_id: claim.user,
       action_type: "signup",
-      payload: { slot_ids: claim.slots },
+      payload: {
+        slot_ids: claim.slots,
+        ...(claim.note ? { note: claim.note } : {}),
+      },
       created_at: `2026-11-12T10:0${i}:00Z`,
     })),
   } as unknown as ChatMessage;
@@ -109,5 +125,99 @@ describe("SignupCard (#3926)", () => {
     expect(
       screen.getByRole("button", { name: "Sign up: Friday" }),
     ).toBeDisabled();
+  });
+
+  const headcount = {
+    format: "headcount",
+    slots: [
+      { id: "going", label: "Going", capacity: null },
+      { id: "not_going", label: "Can’t make it", capacity: null },
+    ],
+  };
+
+  it("answers a headcount, and adds a note to the answer", async () => {
+    const user = userEvent.setup();
+    const onClaim = vi.fn();
+    render(
+      <SignupCard
+        message={card(
+          [
+            { user: "u1", slots: ["going"], note: "running late" },
+            { user: "me", slots: ["going"] },
+          ],
+          headcount,
+        )}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={onClaim}
+      />,
+    );
+    expect(screen.getByText("Headcount · 2 going")).toBeInTheDocument();
+    expect(screen.getByText(/running late/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Answer: Can’t make it" }),
+    );
+    expect(onClaim).toHaveBeenCalledWith("m1", "signup", {
+      slot_ids: ["not_going"],
+    });
+    await user.click(screen.getByRole("button", { name: "Add a note" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Note on your answer" }),
+      "bringing a date",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // The card hasn't redrawn since the switch to Can't make it, so the note
+    // builds on that tap rather than putting the member back on Going.
+    expect(onClaim).toHaveBeenLastCalledWith("m1", "signup", {
+      slot_ids: ["not_going"],
+      note: "bringing a date",
+    });
+  });
+
+  it("draws a closed card with no taps, and offers Close to a moderator", async () => {
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <SignupCard
+        // As its creator, on a confirmed card: only the closing hides Close.
+        message={
+          {
+            ...card([{ user: "u1", slots: ["fri"] }], {
+              closed_at: "2026-11-12T09:00:00Z",
+            }),
+            _status: "confirmed",
+          } as ChatMessage
+        }
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+        onCloseSignup={onClose}
+      />,
+    );
+    expect(screen.getByText("Sign-up · Closed")).toBeInTheDocument();
+    expect(screen.getByText("Devin Okafor")).toBeInTheDocument();
+    // Its rows stay, as a closed poll's options do, and take no taps.
+    expect(
+      screen.getByRole("button", { name: "Sign up: Friday" }),
+    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Close sign-ups" })).toBeNull();
+    unmount();
+
+    myPermissions.current = ["channels:manage"];
+    const user = userEvent.setup();
+    render(
+      <SignupCard
+        message={{ ...card([]), _status: "confirmed" } as ChatMessage}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+        onCloseSignup={onClose}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Close sign-ups" }));
+    expect(onClose).toHaveBeenCalledWith("m1");
+    myPermissions.current = [];
   });
 });

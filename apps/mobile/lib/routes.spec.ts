@@ -228,14 +228,15 @@ describe("tab bar", () => {
   );
 
   it("registers exactly the four locked tabs, all visible", () => {
-    // spec/ui/mobile/navigation.md — 4 tabs, locked, in this order. Nothing
+    // spec/ui/mobile/navigation.md — 4 tabs, locked, in this order (Chat,
+    // Activity, Calendar, You since #4610 and #3839). Nothing
     // hides in the tab bar any more (`href: null`): a screen reached by
     // navigation is pushed on the stack above it, so it can be swiped back.
     expect(registrations.map((r) => r.name)).toEqual([
       "index",
+      "activity",
       "events",
-      "tasks",
-      "more",
+      "you",
     ]);
     expect(registrations.filter((r) => /href:\s*null/.test(r.options))).toEqual(
       [],
@@ -248,7 +249,7 @@ describe("tab bar", () => {
     // here is a fifth visible tab. A new screen goes in `app/(app)/`, on the
     // stack.
     expect(routesDirectlyIn(tabsDir).sort()).toEqual(
-      ["events", "index", "more", "tasks"],
+      ["activity", "events", "index", "you"],
     );
   });
 });

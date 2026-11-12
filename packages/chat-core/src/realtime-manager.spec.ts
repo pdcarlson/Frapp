@@ -654,7 +654,9 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     handler("INSERT")({ new: vote(["fri"], "2026-11-10T00:00:01.000Z") });
     expect(held()).toEqual([{ option_id: ["fri"] }]);
 
-    handler("UPDATE")({ new: vote(["fri", "sat"], "2026-11-10T00:00:03.000Z") });
+    handler("UPDATE")({
+      new: vote(["fri", "sat"], "2026-11-10T00:00:03.000Z"),
+    });
     expect(held()).toEqual([{ option_id: ["fri", "sat"] }]);
 
     // The echo of an earlier tap, arriving late, doesn't undo a later one.

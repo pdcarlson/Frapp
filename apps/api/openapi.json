@@ -4478,6 +4478,52 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/close": {
+      "post": {
+        "operationId": "ChatController_closeSignup_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/pins": {
       "get": {
         "operationId": "ChatController_getPinnedMessages_v1",
@@ -7350,7 +7396,7 @@
     },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
-        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
+        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).",
         "operationId": "AttendanceController_checkIn_v1",
         "parameters": [
           {
@@ -7393,6 +7439,63 @@
           }
         ],
         "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in-screen": {
+      "put": {
+        "description": "Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.",
+        "operationId": "AttendanceController_reportCheckInScreen_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInScreenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInScreenResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report where the host check-in screen (s22) is",
         "tags": [
           "Attendance"
         ]
@@ -7624,6 +7727,259 @@
         "summary": "Trigger auto-absent marking for an event",
         "tags": [
           "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/excuses": {
+      "post": {
+        "description": "Any time before the event and up to 48 hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.",
+        "operationId": "EventExcuseController_submit_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitEventExcuseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventExcuseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send an excuse for an event that requires you",
+        "tags": [
+          "Event excuses"
+        ]
+      },
+      "get": {
+        "operationId": "EventExcuseController_list_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventExcuseWithMemberDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List an event's excuses (its creator, or events:update)",
+        "tags": [
+          "Event excuses"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/excuses/me": {
+      "get": {
+        "operationId": "EventExcuseController_mine_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyEventExcuseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own excuse for an event, and who receives it",
+        "tags": [
+          "Event excuses"
+        ]
+      },
+      "delete": {
+        "description": "Only until check-in closes. Withdrawing an approved excuse also removes the EXCUSED attendance it wrote, so the member can check in. 409 for a declined excuse or a finished event.",
+        "operationId": "EventExcuseController_withdraw_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Withdraw your pending or approved excuse",
+        "tags": [
+          "Event excuses"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/excuses/{userId}": {
+      "patch": {
+        "description": "The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.",
+        "operationId": "EventExcuseController_decide_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideEventExcuseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventExcuseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Approve or decline a member's pending excuse",
+        "tags": [
+          "Event excuses"
         ]
       }
     },
@@ -9853,6 +10209,113 @@
           }
         ],
         "summary": "Delete a task",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/photo-upload-url": {
+      "post": {
+        "description": "PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
+        "operationId": "TaskController_requestPhotoUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestTaskPhotoUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUploadUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/photo-url": {
+      "get": {
+        "operationId": "TaskController_getPhotoUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "photo",
+            "required": true,
+            "in": "query",
+            "description": "Which photo: the reference photo or the proof photo.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reference",
+                "proof"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPhotoUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
         "tags": [
           "Tasks"
         ]
@@ -13660,6 +14123,144 @@
         "summary": "Undo an officer’s remove, so a link shows on Activity again (channels:manage)",
         "tags": [
           "Activity"
+        ]
+      }
+    },
+    "/v1/goals": {
+      "get": {
+        "operationId": "GoalsController_getGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter's goals for points, service hours and study hours",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/mine": {
+      "get": {
+        "operationId": "GoalsController_getMyGoals_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyGoalsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own goal on each measure (points, service and study minutes), null where none",
+        "tags": [
+          "Goals"
+        ]
+      }
+    },
+    "/v1/goals/{metric}": {
+      "put": {
+        "operationId": "GoalsController_setGoals_v1",
+        "parameters": [
+          {
+            "name": "metric",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "points",
+                "service",
+                "study"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalSetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A target out of range, a role named twice, or a role not in this chapter."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace one measure's goals",
+        "tags": [
+          "Goals"
         ]
       }
     },
@@ -21032,13 +21633,54 @@
           },
           "lat": {
             "type": "number",
-            "description": "Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+            "description": "Scanner latitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise."
           },
           "lng": {
             "type": "number",
-            "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+            "description": "Scanner longitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise."
+          },
+          "accuracy_meters": {
+            "type": "number",
+            "description": "The scanner's reported location accuracy in meters. Widens the distance allowed from the officer's screen, up to 50 m. Omit when the phone reports none."
           }
         }
+      },
+      "CheckInScreenDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "The screen's latitude."
+          },
+          "lng": {
+            "type": "number",
+            "description": "The screen's longitude."
+          },
+          "accuracy_meters": {
+            "type": "number",
+            "description": "The screen's reported accuracy in meters. A fix less precise than 100 m isn't stored, and distance isn't checked."
+          }
+        }
+      },
+      "CheckInScreenResultDto": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "string",
+            "enum": [
+              "zone",
+              "screen",
+              "other_screen",
+              "no_location",
+              "not_open",
+              "closed"
+            ],
+            "description": "How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored)."
+          }
+        },
+        "required": [
+          "check"
+        ]
       },
       "EventAttendanceDto": {
         "type": "object",
@@ -21142,6 +21784,208 @@
         },
         "required": [
           "marked"
+        ]
+      },
+      "SubmitEventExcuseDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "One line on why the member can't attend, 1 to 500 characters after trimming.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "EventExcuseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "DECLINED"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "event_id",
+          "user_id",
+          "reason",
+          "status",
+          "decided_by",
+          "decided_at",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ExcuseReceiverDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name"
+        ]
+      },
+      "MyEventExcuseDto": {
+        "type": "object",
+        "properties": {
+          "excuse": {
+            "nullable": true,
+            "description": "The caller's excuse, or null when they sent none.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventExcuseDto"
+              }
+            ]
+          },
+          "receiver": {
+            "nullable": true,
+            "description": "The event's creator, who receives it (\"Excuse sent to Jake\"). Null when the event has no creator in the chapter, or the caller made it: it then goes to the officers who can edit events.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExcuseReceiverDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "excuse",
+          "receiver"
+        ]
+      },
+      "EventExcuseWithMemberDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "DECLINED"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "The sender's display name; empty when they set none."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "event_id",
+          "user_id",
+          "reason",
+          "status",
+          "decided_by",
+          "decided_at",
+          "created_at",
+          "updated_at",
+          "display_name"
+        ]
+      },
+      "DecideEventExcuseDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "DECLINED"
+            ]
+          }
+        },
+        "required": [
+          "decision"
         ]
       },
       "AdjustPointsDto": {
@@ -21924,6 +22768,56 @@
           "status"
         ]
       },
+      "RequestTaskPhotoUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (a JPEG, PNG, GIF or WebP)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/jpeg)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected against the upload size ceiling when present."
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "TaskPhotoUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
+      "TaskPhotoUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Short-lived signed URL to view the photo."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "CreateTaskDto": {
         "type": "object",
         "properties": {
@@ -21957,6 +22851,14 @@
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "description": "A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, the task can only be marked done with a proof photo (#4565). Default false."
           },
           "channel_id": {
             "type": "string",
@@ -22040,6 +22942,20 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
           },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`."
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "When true, Mark done is refused without a proof photo."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -22064,6 +22980,9 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
+          "reference_photo_path",
+          "proof_photo_path",
+          "photo_required",
           "created_at"
         ]
       },
@@ -22095,6 +23014,15 @@
           "point_reward": {
             "type": "number",
             "nullable": true
+          },
+          "reference_photo_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565)."
+          },
+          "photo_required": {
+            "type": "boolean",
+            "description": "Turn \"Photo required\" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer."
           }
         }
       },
@@ -22109,6 +23037,10 @@
               "COMPLETED",
               "OVERDUE"
             ]
+          },
+          "proof_photo_path": {
+            "type": "string",
+            "description": "With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`."
           }
         },
         "required": [
@@ -24763,12 +25695,18 @@
           "ranked": {
             "type": "number",
             "description": "How many members the board ranks."
+          },
+          "goal": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s points goal this semester (#1062), or null when the chapter sets none for them."
           }
         },
         "required": [
           "total",
           "rank",
-          "ranked"
+          "ranked",
+          "goal"
         ]
       },
       "StandingRequiredEventsDto": {
@@ -24803,11 +25741,17 @@
           "pending_minutes": {
             "type": "number",
             "description": "Service minutes waiting for approval."
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s service goal this semester in minutes (#1062), or null for none."
           }
         },
         "required": [
           "approved_minutes",
-          "pending_minutes"
+          "pending_minutes",
+          "goal_minutes"
         ]
       },
       "StandingStudyDto": {
@@ -24820,11 +25764,17 @@
           "week_start": {
             "type": "string",
             "format": "date-time"
+          },
+          "goal_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s study goal for the week in minutes (#1062), or null for none."
           }
         },
         "required": [
           "minutes",
-          "week_start"
+          "week_start",
+          "goal_minutes"
         ]
       },
       "ActivityStandingDto": {
@@ -24947,6 +25897,104 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "RoleGoalDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "type": "number",
+            "nullable": true,
+            "description": "Points for a points goal; minutes for a service or study goal. Null holds the role to no goal."
+          }
+        },
+        "required": [
+          "role_id",
+          "target"
+        ]
+      },
+      "GoalSetDto": {
+        "type": "object",
+        "properties": {
+          "everyone": {
+            "type": "number",
+            "nullable": true,
+            "description": "Every member's goal (points, or minutes for hours), or null for none."
+          },
+          "roles": {
+            "description": "Roles held to a different goal. A member with several is held to the one on their highest-ranked role.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleGoalDto"
+            }
+          }
+        },
+        "required": [
+          "everyone",
+          "roles"
+        ]
+      },
+      "ChapterGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "description": "Points this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "service": {
+            "description": "Approved service minutes this semester.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          },
+          "study": {
+            "description": "Study minutes this week (Sunday to Saturday).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoalSetDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
+        ]
+      },
+      "MyGoalsDto": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's points goal this semester, or null."
+          },
+          "service": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's approved service minutes goal this semester, or null."
+          },
+          "study": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller's study minutes goal this week, or null."
+          }
+        },
+        "required": [
+          "points",
+          "service",
+          "study"
         ]
       },
       "CreateDiscordImportDto": {

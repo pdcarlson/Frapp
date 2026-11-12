@@ -22,7 +22,7 @@ import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { chatDensityLabel } from "@repo/chat-core/density";
 import { AiConsentSheet } from "@/components/ai/ai-consent-sheet";
 import { ScreenShell } from "@/components/screen-shell";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
@@ -79,7 +79,7 @@ import {
  *   docblock in `@repo/validation`.
  * - **No CHAPTER · ADMIN.** The drawn group (accent, chat background, study
  *   zones) moved whole to Chapter settings (`app/(app)/chapter-settings.tsx`,
- *   #4074), the chapter's side of settings off More → Admin, so this screen
+ *   #4074), the chapter's side of settings off You → Admin, so this screen
  *   is the member's own, as web keeps the two apart.
  * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
  *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through
@@ -103,7 +103,7 @@ import {
  *   the member accepts" holds) and otherwise opens the OS settings: an app
  *   cannot revoke its own permission, and iOS never re-prompts once asked.
  *   Before this the row always sent the member to the OS settings, even when
- *   the OS had never asked (More → Settings → Notifications → device
+ *   the OS had never asked (You → Settings → Notifications → device
  *   settings, the owner's 2026-11-04 complaint). Unlike the drawing, a line
  *   under it says so whenever a tap opens the OS settings (`pushRowCaption()`).
  *   In a build that can't push it stays a status row that states why
@@ -337,7 +337,7 @@ export default function PreferencesScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Settings">
+    <ScreenShell back={BACK_TO_YOU} title="Settings">
       <SectionHeader>Notifications</SectionHeader>
 
       <ListSection>

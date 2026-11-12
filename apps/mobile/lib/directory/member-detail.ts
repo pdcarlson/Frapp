@@ -10,12 +10,11 @@
  * enforced server-side"), so it needs no client-side gate. Point balance is
  * the one card field deliberately omitted: `GET /v1/points/members/{userId}`
  * needs the officer-only `points:view_all`, which most viewers of this sheet
- * do not hold — the same "omit, don't fake" call `lib/more/profile.ts`
- * already makes for the drawn attendance stat no member can read.
+ * do not hold — the same "omit, don't fake" call `@repo/hooks`
+ * `profile-stats.ts` makes for the drawn attendance stat no member can read.
  */
 import { parseInstant } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks";
-import { formatGraduationYear } from "../more/profile";
+import { formatGraduationYear, memberLabel } from "@repo/hooks";
 import {
   initialsFor,
   isRecord,

@@ -89,6 +89,7 @@ import {
   threadTitleFor,
 } from "@/lib/chat/channel-list";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
+import { confirmCloseSignup } from "@/lib/chat/confirm-close-signup";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { threadHeaderLines } from "@/lib/chat/thread-header";
@@ -462,7 +463,7 @@ export function MessageThreadScreen({
 
   // A reaction chip's tap and the sheet's quick row tick once, here where the
   // member acted, as the channel's do.
-  const { react, unreact, act, remove, closePoll } = writes;
+  const { react, unreact, act, remove, closePoll, closeSignup } = writes;
   const onReact = useCallback(
     (messageId: string, emoji: string) => {
       selectionHaptic();
@@ -485,6 +486,10 @@ export function MessageThreadScreen({
   const onClosePoll = useCallback(
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
     [closePoll],
+  );
+  const onCloseSignup = useCallback(
+    (messageId: string) => confirmCloseSignup(() => closeSignup(messageId)),
+    [closeSignup],
   );
   const onDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
@@ -631,6 +636,7 @@ export function MessageThreadScreen({
           blockState={blockState}
           onVote={onVote}
           onClosePoll={onClosePoll}
+          onCloseSignup={onCloseSignup}
           onRetry={onRetry}
           onDiscard={thread.discard}
           onReact={onReact}
@@ -654,6 +660,7 @@ export function MessageThreadScreen({
       blockState,
       onVote,
       onClosePoll,
+      onCloseSignup,
       onRetry,
       thread.discard,
       onReact,

@@ -8,7 +8,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * "status color @ 13% alpha / no border / status color / Paid / Overdue /
  * status only — never decorative."
  *
- * Extracted on its third copy. The More hub's "Past due Sep 15" chip and the
+ * Extracted on its third copy. The You tab's "Past due Sep 15" chip and the
  * dues balance card's "Past due Sep 15" chip are the same claim about the same
  * invoice, and the copies had already drifted — one produced its height from a
  * fixed `height: 24`, the other from vertical padding, so they rendered at

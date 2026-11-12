@@ -108,9 +108,9 @@
 - **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
 - Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
 - Check-in atomically creates an attendance record AND awards the event's point value.
-- **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason. Members cannot self-submit excuses. Excused members are not penalized.
+- **Excuses:** A member an event requires sends a one-line excuse before it or up to 48 hours after; the event's creator (or an officer who can edit events) approves or declines it, and approval marks them EXCUSED. Admins can also mark members EXCUSED with an optional reason. Excused members are not penalized ([`events.md` § Excuses](../behavior/events.md#excuses)).
 - Admins can view full attendance for any event and mark EXCUSED/ABSENT/LATE after the fact.
-- **Auto-absent:** For mandatory or role-targeted events, required members who did not check in and were not excused are auto-marked ABSENT.
+- **Auto-absent:** For mandatory or role-targeted events, required members who did not check in, were not excused and have no pending or approved excuse are auto-marked ABSENT.
 - **Meeting minutes:** Events have an optional notes field (markdown) editable by admins after the event. Visible to all members with access to the event.
 - Unique constraint: one attendance record per (event, user).
 - **Calendar integration:** a private subscription link per member that Apple Calendar, Google Calendar and Outlook subscribe to (2026-11-12, #3322), replacing the per-event `.ics` download withdrawn on 2026-11-08 (#3708); [`events.md` § Calendar subscription](../behavior/events.md#calendar-subscription).
@@ -265,7 +265,7 @@ A line shows only to an officer who can do it, and only while the module the ser
 
 ## Not-set-up features
 
-Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
+Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile You tab and the web Ask popover leave them out until the first item exists:
 
 - **Study hours** with no active study zone hides from everyone. Zones are made on the web app's Chapter settings Study zones page (`/settings?tab=geofences`; `/geofences` redirects there), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to that page instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
 - **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.

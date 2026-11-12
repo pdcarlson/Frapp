@@ -69,7 +69,8 @@ function localIso(date: string, time: string): string | null {
  * Start minutes (`spec/behavior/meetings.md` § Writing minutes): pick the
  * meeting from the calendar, the way Granola and Otter attach a note to the
  * calendar event it was taken in, or name one that never made it onto the
- * calendar. Then the type, which the event's name guesses.
+ * calendar. Then the type, which the event's name guesses. It opens docked in
+ * place of the Meetings page, chat staying beside it (2026-11-12, #4593).
  */
 export function StartMinutesPanel({
   open,
@@ -79,7 +80,12 @@ export function StartMinutesPanel({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Panel open={open} onOpenChange={onOpenChange}>
+    <Panel
+      open={open}
+      onOpenChange={onOpenChange}
+      docked
+      backLabel="Back to meetings"
+    >
       <PanelContent aria-describedby={undefined}>
         <PanelHeader>New minutes</PanelHeader>
         {open ? <StartMinutesForm onDone={() => onOpenChange(false)} /> : null}

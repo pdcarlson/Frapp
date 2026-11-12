@@ -66,6 +66,9 @@ export function copyForErrorCode(code: string | null): string | null {
   if (code === "service_entry.receipt_required") {
     return "Add a photo of your proof, then submit.";
   }
+  if (code === "task.proof_required") {
+    return "This task needs a photo to show it's done. Add one, then mark it done.";
+  }
   // Refused in the browser, never by the API: the web client turns writes
   // away while an officer views the app as a role (#4072).
   if (code === "client.role_preview") {
@@ -101,6 +104,14 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   // `ChatReactionService.claimSignupSlots`, 409). Already in a member's words.
   "That slot is full. Someone took the last spot just before you.":
     "That slot is full. Someone took the last spot just before you.",
+  // Sign-up headcounts and closing (#3926 step 2). A card a member is still
+  // drawing open may have closed a moment ago, so say so: a retry can't work.
+  "Sign-ups are closed": "Sign-ups for this have closed.",
+  "Sign-ups are already closed": "Sign-ups for this have closed.",
+  "Cannot close a deleted sign-up": "That sign-up was deleted.",
+  "A headcount takes one answer": "Pick one answer: Going or Can’t make it.",
+  "Only the sign-up’s creator or a member who manages channels can close it":
+    "Only the person who posted this, or an officer who manages channels, can close it.",
   // Check-in and study
   "Already checked in for this event": "You're already checked in.",
   "This event has an invalid check-in area; an officer needs to redraw it":
@@ -125,6 +136,15 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "You can only check in while the event is on.",
   "This event checks you in by location — use the Frapp mobile app to check in.":
     "This event checks you in by location. Open Frapp on your phone to check in.",
+  // Check-in near the QR screen (#4532).
+  // Names the app, because the caller that hits this on web (the chat event
+  // card, the event sheet) has no scanner.
+  "Scan the code on the check-in screen with the Frapp app to check in":
+    "Scan the code on the officer's screen with the Frapp app to check in.",
+  "This check-in needs your location. Allow location for Frapp and scan again.":
+    "This check-in needs your location. Allow location for Frapp and scan again.",
+  "You need to be near the check-in screen to check in":
+    "You need to be near the officer's screen to check in.",
   "Cannot mark auto-absent before the grace period ends":
     "Wait until the grace period ends to mark absences.",
   // Chat

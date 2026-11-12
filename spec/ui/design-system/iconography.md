@@ -30,7 +30,7 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 ### 1.1 Nav glyphs (two-tone, shared by web and mobile)
 
-The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
+The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
 glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
 `link` and `confirm`, §6.2.5a) draw one shared
@@ -187,12 +187,13 @@ second, filled variant to swap to.
 | Semantic intent | Glyph (nav set key, Phosphor name) | Notes |
 |---|---|---|
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
-| Events tab | `events`, `calendar-dots` | |
-| Tasks tab | `tasks`, `seal-check` | |
-| More tab | `more`, `squares-four` | Not an ellipsis: Canvas draws a 2×2 grid, and Canvas wins for visuals. |
+| Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
+| Calendar tab (the `events` route) | `events`, `calendar-dots` | Named Events until #4610. |
+| You tab | — | The member's own avatar, not a glyph (#3839, `components/you-tab-avatar.tsx`): their photo, else their initials in their member tint, never the accent; active, a 1.5pt accent ring with a gap ([`navigation.md` § Tab bar](../mobile/navigation.md#tab-bar--4-tabs-locked)). The More tab drew `more` (`squares-four`, a 2×2 grid) until then; nothing else drew it, so it left the nav set. |
+| Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
-Points no longer exist as screens; Profile moved into the More hub.
+Points no longer exist as screens; Profile moved into the More hub, which became the You tab (#3839).
 
 Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
 draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
@@ -206,7 +207,7 @@ them too (§6.1.3).
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
 cluster replaces its own as it rebuilds; there is no separate icon migration.
 
-### 6.1.2 Mobile More hub (Signet duotone, shipped)
+### 6.1.2 Mobile You tab rows (Signet duotone, shipped; the More hub's until #3839)
 
 The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
 [`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
@@ -217,7 +218,7 @@ shape of the place it leads: New event `events`, New task `tasks`, Invite
 active tab in the pill sits on a soft capsule (white at 8%) under its accent
 glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
 
-The More hub's leading row glyphs (s09, #1048) live in
+The You tab's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
 surfaces. Every row, Member and Admin alike, is painted in `text.muted`
@@ -226,7 +227,6 @@ until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
-| Activity (#3897) | `activity`, `tray` | `ActivityGlyph` |
 | Study hours | `study`, `graduation-cap` | `StudyGlyph` |
 | Service hours | `service`, `hand-heart` | `ServiceGlyph` |
 | Dues | `billing`, `credit-card` | `BillingGlyph` |
@@ -239,7 +239,7 @@ until 2026-11-05).
 
 The same file's `NotificationsGlyph` (bell, clapper stroke-only, still in the
 §1 stroke recipe; s09 and web `NotificationsGlyph`) is drawn by Chat home's inbox bell
-(`components/chat/notifications-bell.tsx`), in `text.foreground` with the
+(`NotificationsButton` in `components/chat/home-header.tsx`, back since #3839), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
 The More screens' empty states drew these glyphs in a tile until 2026-11-07, when every empty state became one line with no glyph ([components.md](components.md) §10). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
 
@@ -256,10 +256,10 @@ except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
-| Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Event card | `EventsGlyph` (the Calendar tab's) | `components/tab-glyphs.tsx` |
+| Task card | `TasksGlyph` (the task board's; a tab until #4610) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
-| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
+| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the You tab's row shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |

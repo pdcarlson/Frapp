@@ -26,6 +26,7 @@ describe('TaskController', () => {
       confirmCompletion: jest.fn(),
       rejectCompletion: jest.fn(),
       delete: jest.fn(),
+      getPhotoDownloadUrl: jest.fn(),
     } as any;
 
     rbacService = {
@@ -168,6 +169,39 @@ describe('TaskController', () => {
     });
   });
 
+  describe('getPhotoUrl (#4565)', () => {
+    const task = { id: 'task-1', assignee_id: 'user-1' } as any;
+
+    it('signs a photo for the assignee', async () => {
+      taskService.findById.mockResolvedValue(task);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+      taskService.getPhotoDownloadUrl.mockResolvedValue({ url: 'https://v' });
+
+      await expect(
+        controller.getPhotoUrl('chapter-1', 'user-1', 'task-1', {
+          photo: 'proof',
+        }),
+      ).resolves.toEqual({ url: 'https://v' });
+      expect(taskService.getPhotoDownloadUrl).toHaveBeenCalledWith(
+        task,
+        'chapter-1',
+        'proof',
+      );
+    });
+
+    it('refuses a member who is neither the assignee nor an officer', async () => {
+      taskService.findById.mockResolvedValue(task);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+      await expect(
+        controller.getPhotoUrl('chapter-1', 'user-2', 'task-1', {
+          photo: 'reference',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(taskService.getPhotoDownloadUrl).not.toHaveBeenCalled();
+    });
+  });
+
   describe('create', () => {
     it('should create a task', async () => {
       const chapterId = 'chapter-1';
@@ -252,6 +286,7 @@ describe('TaskController', () => {
         userId,
         false,
         dto.status,
+        undefined,
       );
       expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });

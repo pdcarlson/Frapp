@@ -110,7 +110,7 @@ composed with **B** or **C** for per-row reads.
 | `semesters` / `chapters/current/rollover` | `POST /chapters/current/rollover`, `GET /semesters` | A+C+P `members:view`, `semester:rollover` | A |
 | `service-entries` | `GET`, `GET /leaderboard`, `GET /:id`, `POST /proof-upload-url`, `GET /:id/proof-url`, `POST`, `PATCH /:id/review`, `DELETE /:id` | A+C, +P per route: `members:view`, `service:log`, `service:approve` | B — `serviceEntryRepo.findById(id, chapterId)` (`service-entry.service.ts`, every `findById` call) |
 | `geofences` / `study-sessions` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id`; `POST /start|heartbeat|pause|resume|stop`, `GET /` | A+C+P `members:view`, `geofences:manage` | B — `geofenceRepo.findById(id, chapterId)` at every call site |
-| `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` additionally narrows to **assignee or `tasks:manage`** (`TaskController.getOne`) — a per-row ACL on top of chapter scoping |
+| `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id`, `POST /photo-upload-url`, `GET /:id/photo-url` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` and `GET /:id/photo-url` additionally narrow to **assignee or `tasks:manage`** (`TaskController.readableTask`) — a per-row ACL on top of chapter scoping. `POST /photo-upload-url` mints under the chapter's `tasks/` prefix for any member, since an assignee uploads proof (#4565) |
 | `calendar-feed` | `POST`, `POST /reset` | A+C+P `members:view`, `@FreeTier()`; `POST /reset` `@SubscriptionExempt` | A, and self — the caller's own link in the request chapter (`calendar_feeds` filtered on `chapter_id` and `user_id`). The calendar app's fetch is `GET /v1/calendar-feed/feed.ics`, below |
 
 ### Controllers without `ChapterGuard`
@@ -387,6 +387,7 @@ URL:
 | `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images |
 | `documents`, `backwork`, `chat` | same | per-bucket |
 | `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
+| `tasks` (task photos) | `20261113040005_task_photos.sql` | images |
 | `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
 | `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** |
 | `meeting-audio` (a meeting's recording, until it is transcribed) | `20261112210000_meeting_recordings.sql` | audio |
@@ -522,7 +523,7 @@ asserts that a member of chapter B is rejected when they:
 
 It also carries **positive controls** — chapter B's own task, event, and invoice each return `200` —
 so a fake that simply failed every lookup could not make the suite pass vacuously. Note that
-`GET /tasks/:id` and `GET /invoices/:id` layer a per-row ACL (assignee / own-invoice, else a
+`GET /tasks/:id` (and `GET /tasks/:id/photo-url`) and `GET /invoices/:id` layer a per-row ACL (assignee / own-invoice, else a
 managing permission) *on top of* chapter scoping, so their fixtures are owned by the caller.
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.

@@ -4,6 +4,7 @@ import { ReportedCron } from './reported-cron.decorator';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { AttendanceService } from '../services/attendance.service';
+import { EventExcuseService } from '../services/event-excuse.service';
 import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
 import { PollService } from '../services/poll.service';
@@ -179,6 +180,7 @@ export class ScheduledJobsService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly chatReports: ChatReportService,
+    private readonly eventExcuses: EventExcuseService,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_HOUR)
@@ -461,6 +463,10 @@ export class ScheduledJobsService {
             event.chapter_id,
           );
           processed += 1;
+          // Once per event, under the same claim: excuses still pending at
+          // the close of check-in get one reminder to their receiver (#3735).
+          // Best-effort inside, so it never releases the claim.
+          await this.eventExcuses.remindPending(event.id, event.chapter_id);
         } catch (error) {
           reportCaughtFailure(this.logger, {
             level: 'warning',
@@ -684,13 +690,23 @@ export class ScheduledJobsService {
       entityId: event.id,
       threshold: 'EVENT_REMINDER',
       dueDate: startsOn,
-      recipients: async () =>
-        (
-          await this.attendanceService.resolveRequiredMembers(
+      recipients: async () => {
+        const [required, excused] = await Promise.all([
+          this.attendanceService.resolveRequiredMembers(
             event.chapter_id,
             event,
-          )
-        ).map((member) => member.user_id),
+          ),
+          // An approved excuse (#3735) means they aren't expected: a push
+          // saying "Required" would contradict "You're excused". A pending
+          // one may still be declined, so it keeps the reminder.
+          this.attendanceService.excusedUserIds(event.chapter_id, event.id, [
+            'APPROVED',
+          ]),
+        ]);
+        return required
+          .map((member) => member.user_id)
+          .filter((userId) => !excused.has(userId));
+      },
       // Named for the event, like every event push (notifications.md § What a
       // push says). Only required members get a reminder, so it says so.
       title: event.name,

@@ -9,9 +9,10 @@ import { RequestDocumentUploadUrlDto } from './chapter-document.dto';
 import { RequestChatUploadUrlDto } from './chat.dto';
 import { RequestProofUploadUrlDto } from './service-entry.dto';
 import { RequestAvatarUploadUrlDto } from './user.dto';
+import { RequestTaskPhotoUploadUrlDto } from './task.dto';
 
 /**
- * `size_bytes` on the five upload-URL requests (#2913). `@IsOptional` skips
+ * `size_bytes` on the six upload-URL requests (#2913). `@IsOptional` skips
  * `null` as well as `undefined`, so `{"size_bytes": null}` used to pass the
  * pipe and reach the service's ceiling check, which answered "File exceeds the
  * 25 MB upload limit" for a file of no stated size. Omitting the field is how a
@@ -25,6 +26,7 @@ describe.each([
   ['RequestChatUploadUrlDto', RequestChatUploadUrlDto],
   ['RequestProofUploadUrlDto', RequestProofUploadUrlDto],
   ['RequestAvatarUploadUrlDto', RequestAvatarUploadUrlDto],
+  ['RequestTaskPhotoUploadUrlDto', RequestTaskPhotoUploadUrlDto],
 ])('%s size_bytes (#2913)', (_name, metatype) => {
   const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
   const metadata: ArgumentMetadata = { type: 'body', metatype };

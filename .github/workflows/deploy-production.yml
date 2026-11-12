@@ -184,14 +184,18 @@ on:
         # A choice, not a box: each platform's build spends EAS build quota, so
         # build only what you mean to ship. Android uploads with the Play
         # service-account key EAS has held since 2026-11-05 (#2556) and builds
-        # with GOOGLE_SERVICES_JSON (#1826). `none` is the unticked box.
-        # `auto` lets `mobile-plan` choose per platform: an OTA update when
-        # the shipped commit's native inputs match that platform's recorded
-        # store build of the same `expo.version`, a store build otherwise
-        # (`scripts/ci/plan-mobile-release.mjs`).
-        description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app."
+        # with GOOGLE_SERVICES_JSON (#1826). `auto` lets `mobile-plan` choose
+        # per platform: an OTA update when the shipped commit's native inputs
+        # match that platform's recorded store build of the same
+        # `expo.version`, a store build otherwise
+        # (`scripts/ci/plan-mobile-release.mjs`). `auto` is the default (Paul,
+        # 2026-11-12; it was `none` from 2026-10-01): every ship reaches
+        # phones unless the dispatcher picks `none`, which does nothing for
+        # the app. Pick `none` after a rollback (`mobile-rollback.yml`), or
+        # the publish replaces it.
+        description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app; pick it after rolling an update back."
         required: false
-        default: none
+        default: auto
         type: choice
         options: [none, ios, android, all, auto]
 

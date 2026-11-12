@@ -112,15 +112,18 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     messageId: string,
     userId: string,
     slotIds: string[],
+    note: string | null,
   ): Promise<{ action: ChatMessageAction; updated: boolean }> {
     const { data, error } = await this.supabase.rpc('claim_signup_slots', {
       p_message_id: messageId,
       p_user_id: userId,
       p_slot_ids: slotIds,
+      p_note: note,
     });
     if (error) {
       // The RPC names each refusal in its message and the slot in DETAIL
-      // (`20261112250000_signup_card_claims.sql`); anything else is a failure.
+      // (`20261113040006_signup_headcount_close.sql`); anything else is a
+      // failure.
       const reason = SIGNUP_REFUSALS[error.message];
       if (reason) {
         throw new SignupClaimRefusedError(reason, error.details || null);
@@ -139,4 +142,5 @@ const SIGNUP_REFUSALS: Record<string, SignupClaimRefusedError['reason']> = {
   signup_card_missing: 'missing',
   signup_slot_unknown: 'unknown_slot',
   signup_slot_full: 'full',
+  signup_closed: 'closed',
 };

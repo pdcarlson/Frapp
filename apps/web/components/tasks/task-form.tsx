@@ -37,6 +37,14 @@ import {
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { pointsLabel } from "@/components/events/event-labels";
 import { useToast } from "@/lib/hooks/use-toast";
+import {
+  EMPTY_TASK_PHOTO_DRAFT,
+  TaskPhotoFields,
+  taskPhotoProblem,
+  uploadFailureMessage,
+  useUploadTaskPhoto,
+  type TaskPhotoDraft,
+} from "@/components/tasks/task-photo";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
 /** What a typed `/task` could read, for the form to open on. */
@@ -47,7 +55,7 @@ export type TaskPrefill = {
 };
 
 /** Everything the form holds, kept by the + card while it is closed. */
-export interface TaskDraft {
+export interface TaskDraft extends TaskPhotoDraft {
   title: string;
   assigneeId: string;
   dueDate: string;
@@ -70,6 +78,7 @@ export function taskDraftFrom(
       prefill.pointReward !== undefined ? String(prefill.pointReward) : "",
     description: "",
     subtasks: [],
+    ...EMPTY_TASK_PHOTO_DRAFT,
     // Open when the typed command set something that lives there.
     showMore: prefill.pointReward !== undefined,
   };
@@ -82,6 +91,8 @@ type Missing = {
   due?: boolean;
   /** The due time has already gone by (#4512). */
   passed?: boolean;
+  /** Why the photo can't be sent, or why it didn't upload (#4565). */
+  photo?: string | null;
 };
 
 export interface TaskFormProps {
@@ -104,6 +115,8 @@ export interface TaskFormProps {
   editing?: {
     steps: React.ReactNode;
     assigneeNote: (assigneeId: string) => React.ReactNode;
+    /** The task's own reference photo, to view or remove (#4565). */
+    photo?: { taskId: string; path: string | null | undefined };
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -147,6 +160,7 @@ export function TaskForm({
   const titleRef = useRef<HTMLInputElement>(null);
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
+  const uploadPhoto = useUploadTaskPhoto();
   // An edit opens on the title, the way the + card's form does.
   useEffect(() => {
     if (editing || suggestion) titleRef.current?.focus();
@@ -179,8 +193,32 @@ export function TaskForm({
     }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
+    const photoProblem = draft.photoFile
+      ? taskPhotoProblem(draft.photoFile)
+      : null;
+    if (photoProblem) {
+      setMissing((prev) => ({ ...prev, photo: photoProblem }));
+      edit({ showMore: true });
+      return;
+    }
     setPosting(true);
     try {
+      // The photo goes up first; the write carries its path (#4565).
+      let referencePhotoPath: string | null | undefined;
+      if (draft.photoFile) {
+        try {
+          referencePhotoPath = await uploadPhoto(draft.photoFile);
+        } catch (error) {
+          setMissing((prev) => ({
+            ...prev,
+            photo: uploadFailureMessage(error),
+          }));
+          edit({ showMore: true });
+          return;
+        }
+      } else if (draft.photoRemoved) {
+        referencePhotoPath = null;
+      }
       const result = await onPost({
         title: trimmed,
         description: draft.description.trim() || undefined,
@@ -189,6 +227,12 @@ export function TaskForm({
         ...dueEntryFields(draft.dueDate),
         subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
         point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
+        ...(suggestion
+          ? {}
+          : {
+              reference_photo_path: referencePhotoPath,
+              photo_required: draft.photoRequired,
+            }),
       });
       if (!result.ok) {
         toast({
@@ -215,6 +259,14 @@ export function TaskForm({
       ? []
       : [pointsLabel(parseGuardedInt(draft.points) ?? 0) ?? "No points"]),
     draft.description.trim() ? "Description" : "No description",
+    ...(suggestion
+      ? []
+      : [
+          draft.photoFile || (editing?.photo?.path && !draft.photoRemoved)
+            ? "Photo"
+            : null,
+          draft.photoRequired ? "Photo required" : null,
+        ].filter(Boolean)),
   ].join(" · ");
 
   return (
@@ -362,6 +414,26 @@ export function TaskForm({
               {...gate.controlProps()}
             />
           </div>
+          {suggestion ? null : (
+            <TaskPhotoFields
+              id={ids}
+              draft={draft}
+              existing={editing?.photo}
+              disabled={posting || gate.controlProps().disabled}
+              problem={missing.photo}
+              onChange={(patch) => {
+                edit(patch);
+                if ("photoFile" in patch) {
+                  setMissing((prev) => ({
+                    ...prev,
+                    photo: patch.photoFile
+                      ? taskPhotoProblem(patch.photoFile)
+                      : null,
+                  }));
+                }
+              }}
+            />
+          )}
         </div>
       ) : null}
       {editing || suggestion ? (

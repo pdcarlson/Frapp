@@ -21,6 +21,7 @@ import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { reportRouteError } from "@/components/route-error";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { resolveCheckInWindow } from "@/lib/events/format";
 import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
@@ -199,7 +200,7 @@ export function useQuickActionsHost({
         }
         case "hostCheckIn": {
           // The event an officer would host: the soonest still checkable-in,
-          // as More's Host check-in row picks it.
+          // as You's Host check-in row picks it.
           const next = selectEventRows(eventsQuery.data, new Date())[0];
           if (next) {
             router.push({
@@ -249,11 +250,7 @@ export function useQuickActionsHost({
             ref={taskRef}
             now={now}
             onCreated={(assigneeName, wasSelf) =>
-              confirm(
-                wasSelf
-                  ? "Added to your tasks."
-                  : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-              )
+              confirm(taskCreatedLine(assigneeName, wasSelf))
             }
           />
         </SheetBoundary>
