@@ -198,6 +198,11 @@ A new table needs a row interface in `domain/entities/` (exported from the barre
 `text` parameter the caller may omit is `string | null`, because Postgres function parameters are
 nullable.
 
+Put each new entry, and its entity in the `#domain/entities` import, in alphabetical position,
+never at the end of the group: two PRs that each append a table conflict on the same line, and two
+that insert in order don't. `database.types.sorted.spec.ts` fails on an entry out of order and
+names the entry it belongs after (plain code-unit order, so `_` sorts before letters).
+
 Constraints to know before you fight the compiler:
 
 - `Row` is written `{ [K in keyof Row]: Row[K] }` on purpose. PostgREST constrains rows to
