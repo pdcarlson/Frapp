@@ -74,8 +74,12 @@ that a Discord import finished or stopped on an error, sent to the admin who set
 `users.id`, which the in-app list uses to withhold a blocked member's rows
 ([`chat/README.md`](./chat/README.md#what-a-block-does-and-does-not-hide), #2715). A
 bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.ts`
-`buildPayload`). This example previously showed a
-`messageId` the chat push worker has never emitted; clients MUST NOT read one.
+`buildPayload`). A single-message chat **push** (not a bundle) also carries
+`messageId`, the `chat_messages.id` it quotes, at the top level of its data beside
+`notificationId`, never inside `target`, so a phone can take the push out of its tray
+when the message is deleted (#4418). The in-app row records the same id in its
+`chat_message_id` column instead, not in `data`, so the list's rows carry none; a
+client deep-links from `target` alone.
 
 Since #4346 every chat row also says what the in-app list draws it by, so no client
 parses a title: `chatKind` (`dm`, `group`, `announcement` or `channel`, the

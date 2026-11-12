@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: the AI corpus (20261112140000, #720) ───────────────────────
+// ─── Functional: the AI corpus (20261112140150, #720) ───────────────────────
 //
 // The index Ask retrieves from. This tier is the proof the spec asks for
 // (`spec/architecture/README.md` § 13 Retrieval): one chapter can never
@@ -40,7 +40,7 @@ import { db, miss } from "../harness.mjs";
 //     source indexed under another fingerprint is claimed again.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: the AI corpus (20261112140000, #720) ===");
+console.log("\n=== Functional: the AI corpus (20261112140150, #720) ===");
 {
   const CH_A = "a0720000-0000-4000-8000-00000000000a";
   const CH_B = "a0720000-0000-4000-8000-00000000000b";
@@ -438,7 +438,7 @@ console.log("\n=== Functional: the AI corpus (20261112140000, #720) ===");
     // the gate replays migrations on an empty database, where it enrols
     // nothing, so this is the only place it meets a document or minutes.
     const backfill = readFileSync(
-      new URL("../../../supabase/migrations/20261112140000_ai_corpus.sql", import.meta.url),
+      new URL("../../../supabase/migrations/20261112140150_ai_corpus.sql", import.meta.url),
       "utf8",
     ).split("-- ─── Existing documents and posted minutes wait to be indexed")[1];
     await db.query(`delete from corpus_sources where chapter_id = $1`, [CH_A]);

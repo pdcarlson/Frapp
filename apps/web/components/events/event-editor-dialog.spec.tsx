@@ -1,3 +1,4 @@
+import { formatDateEntry, parseDateEntry } from "@repo/formatting";
 import type React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
@@ -100,16 +101,22 @@ function openZone() {
   }
 }
 
+/** One end of the schedule: a day typed into the date field, and a time. */
+function setSchedule(end: "Starts" | "Ends", day: string, time: string) {
+  fireEvent.change(screen.getByLabelText(`${end}, day`), {
+    target: { value: day },
+  });
+  fireEvent.change(screen.getByLabelText(`${end}, time`), {
+    target: { value: time },
+  });
+}
+
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("Event name"), {
     target: { value: "Exec Sync" },
   });
-  fireEvent.change(screen.getByLabelText("Start"), {
-    target: { value: "2026-07-01T18:00" },
-  });
-  fireEvent.change(screen.getByLabelText("End"), {
-    target: { value: "2026-07-01T19:00" },
-  });
+  setSchedule("Starts", "2026-07-01", "18:00");
+  setSchedule("Ends", "2026-07-01", "19:00");
 }
 
 describe("EventEditorDialog form shape and attendance by role", () => {
@@ -223,9 +230,12 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     expect(
       (screen.getByLabelText("Event name") as HTMLInputElement).value,
     ).toBe("Winter Formal 2026");
-    expect((screen.getByLabelText("Start") as HTMLInputElement).value).toBe(
-      "2026-12-05T21:00",
-    );
+    expect(
+      (screen.getByLabelText("Starts, day") as HTMLInputElement).value,
+    ).toContain("December 5");
+    expect(
+      (screen.getByLabelText("Starts, time") as HTMLInputElement).value,
+    ).toBe("21:00");
     // Nothing is made until the officer saves.
     expect(createMutate).not.toHaveBeenCalled();
 
@@ -791,11 +801,48 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     });
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter Dinner");
     expect(screen.getByLabelText("Location")).toHaveValue("Main House");
-    expect(screen.getByLabelText("Start")).toHaveValue("2026-11-12T18:00");
-    expect(screen.getByLabelText("End")).toHaveValue("2026-11-12T20:00");
+    // The day is written out (#3937); the time is the browser's own input.
+    expect(screen.getByLabelText("Starts, day")).toHaveValue(
+      formatDateEntry("2026-11-12", new Date()),
+    );
+    expect(screen.getByLabelText("Starts, time")).toHaveValue("18:00");
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
     expect(
       screen.getByRole("button", { name: /More options/ }),
     ).toHaveTextContent("5 points");
+  });
+
+  it("carries the end with a moved start, keeping the length (#3937)", () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    fireEvent.change(screen.getByLabelText("Starts, day"), {
+      target: { value: "2026-11-13" },
+    });
+    expect(screen.getByLabelText("Ends, day")).toHaveValue(
+      formatDateEntry("2026-11-13", new Date()),
+    );
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
+  });
+
+  it("carries the end through a start typed a key at a time", () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    // "11/1" on the way reads as some other November 1, and "1" as nothing:
+    // the end follows the whole move, not each keystroke.
+    for (const typed of ["1", "11", "11/", "11/1", "11/14"]) {
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: typed },
+      });
+    }
+    const start = parseDateEntry("11/14", new Date())!;
+    expect(screen.getByLabelText("Ends, day")).toHaveValue(
+      formatDateEntry(start, new Date()),
+    );
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
   });
 
   it("posts the card in the channel it came from", async () => {
@@ -941,12 +988,8 @@ describe("EventEditorDialog event types (#3730)", () => {
   }
 
   const fillTimes = () => {
-    fireEvent.change(screen.getByLabelText("Start"), {
-      target: { value: "2026-07-01T18:00" },
-    });
-    fireEvent.change(screen.getByLabelText("End"), {
-      target: { value: "2026-07-01T19:00" },
-    });
+    setSchedule("Starts", "2026-07-01", "18:00");
+    setSchedule("Ends", "2026-07-01", "19:00");
   };
 
   it("opens with no type held", () => {

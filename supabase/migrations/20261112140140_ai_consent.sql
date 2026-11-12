@@ -52,7 +52,7 @@ create table if not exists public.chapter_ai_settings (
 alter table public.chapter_ai_settings enable row level security;
 
 comment on table public.chapter_ai_settings is
-  'The president''s AI switches, one per feature family; no row is all off. API only. See 20261112131440_ai_consent.sql.';
+  'The president''s AI switches, one per feature family; no row is all off. API only. See 20261112140140_ai_consent.sql.';
 
 -- 2. ------------------------------------------------------------------------
 
@@ -68,14 +68,14 @@ create table if not exists public.user_ai_consents (
 alter table public.user_ai_consents enable row level security;
 
 comment on table public.user_ai_consents is
-  'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112131440_ai_consent.sql.';
+  'Each person''s answer on the AI sheet, per sheet version; no row for the current version counts as No. API only. See 20261112140140_ai_consent.sql.';
 
 -- 3. Account deletion purges consent rows and quotes -----------------------
 
 -- `anonymize_user` is redefined in full from
 -- `20261111235900_chat_important_seen.sql`; the changes are the
 -- `user_ai_consents` delete and clearing the member's quotes from
--- `ai_suggestions` (`20261112131430_ai_suggestions.sql`, which this file
+-- `ai_suggestions` (`20261112140130_ai_suggestions.sql`, which this file
 -- must sort after). Same signature, so its grants are kept.
 create or replace function anonymize_user(
   p_user_id uuid,

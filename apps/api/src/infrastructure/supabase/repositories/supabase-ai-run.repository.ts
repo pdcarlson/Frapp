@@ -17,7 +17,7 @@ import type {
  * `ai_runs` through the service role (#4310).
  *
  * Enqueue and claim are database functions (`enqueue_ai_run`,
- * `claim_ai_run` in `20261112131400_ai_runs.sql`), so the dedupe and the
+ * `claim_ai_run` in `20261112140100_ai_runs.sql`), so the dedupe and the
  * claim's attempt count are each one statement, and the PGlite gate runs the
  * same SQL. Every write after a claim is a compare-and-set on `lock_token` and
  * `status = 'running'`, as `discord_imports` does: a worker that lost its

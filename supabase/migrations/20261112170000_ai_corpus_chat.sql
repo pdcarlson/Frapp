@@ -602,7 +602,7 @@ $$;
 -- Documents and minutes before chat, then the longest waiting; then, with
 -- what room is left, sources made by another model or pipeline. Two passes,
 -- each on its own partial index: chat adds a row per channel per day of
--- history, so one filter over every source (as in 20261112140000) would scan
+-- history, so one filter over every source (as in 20261112140150) would scan
 -- the whole index every minute once it is large.
 create index if not exists idx_corpus_sources_due_official_first
   on public.corpus_sources ((source_type = 'chat_message'), next_attempt_at)
@@ -671,7 +671,7 @@ begin
 end;
 $$;
 
--- As in 20261112140000, and writes a chat passage's authors, first message
+-- As in 20261112140150, and writes a chat passage's authors, first message
 -- and message count (null on documents and minutes).
 create or replace function public.write_corpus_chunks(
   p_source_id uuid,
@@ -737,7 +737,7 @@ begin
 end;
 $$;
 
--- As in 20261112140000, plus what was left out of the source and whose.
+-- As in 20261112140150, plus what was left out of the source and whose.
 -- Recorded on a skipped window too, so a member who later says yes brings it
 -- back.
 drop function if exists public.finish_corpus_source(
@@ -801,7 +801,7 @@ $$;
 
 drop function if exists public.match_corpus_chunks(uuid, uuid, text, text, text, integer);
 
--- As in 20261112140000, and returns each passage's authors, first message,
+-- As in 20261112140150, and returns each passage's authors, first message,
 -- message count, its source's left-out count and, for chat, its channel.
 create or replace function public.match_corpus_chunks(
   p_chapter_id uuid,
@@ -905,7 +905,7 @@ as $$
 $$;
 
 comment on function public.match_corpus_chunks(uuid, uuid, text, text, text, integer) is
-  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank, authors and (for chat) channel. See 20261112140000_ai_corpus.sql and 20261112170000_ai_corpus_chat.sql.';
+  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank, authors and (for chat) channel. See 20261112140150_ai_corpus.sql and 20261112170000_ai_corpus_chat.sql.';
 
 -- 9. Grants: service role only ----------------------------------------------
 

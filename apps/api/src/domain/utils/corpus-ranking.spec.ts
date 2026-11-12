@@ -60,7 +60,7 @@ describe('the two embedding tasks', () => {
       index.model,
       index.dimensions,
     ]);
-    // The database column is this wide (`20261112140000_ai_corpus.sql`).
+    // The database column is this wide (`20261112140150_ai_corpus.sql`).
     expect(index.dimensions).toBe(1536);
   });
 

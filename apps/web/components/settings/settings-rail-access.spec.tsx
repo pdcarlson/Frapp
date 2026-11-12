@@ -88,7 +88,11 @@ vi.mock("@repo/hooks", () => ({
   usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePendingConfigKeys: () => new Set<string>(),
   useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useRoleTiers: () => ({ data: [], isPending: false, isError: false }),
+  useMembers: () => ({ data: [], isPending: false, isError: false }),
+  useViewerUserId: () => null,
   useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateRoleTier: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/providers/network-provider", async (importOriginal) => {

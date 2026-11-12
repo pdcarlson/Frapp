@@ -97,10 +97,10 @@ type Notification = {
  * only subset; we fall back to `/chat` when a screen isn't yet built so
  * links never dead-end.
  *
- * A chat notification's `target` never carries a `messageId` — the chat
- * push worker has never emitted one (`spec/behavior/notifications.md` §
- * Deep Linking is explicit that clients must not read one) — so this only
- * ever forwards `channelId` through `chatDeepLink`.
+ * A chat notification's `target` never carries a `messageId` (a chat push
+ * carries one beside `target` for the phone's tray, and the in-app row keeps
+ * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
+ * only ever forwards `channelId` through `chatDeepLink`.
  */
 function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;

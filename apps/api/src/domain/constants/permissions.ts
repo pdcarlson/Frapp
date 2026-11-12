@@ -192,7 +192,7 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.CHAPTER_CONFIG_MANAGE,
       SystemPermissions.AI_USE,
       // The exec board writes minutes (`meetings.md` § Permissions); migration
-      // `20261112131410_meetings.sql` gives existing chapters' top tier the same.
+      // `20261112140110_meetings.sql` gives existing chapters' top tier the same.
       SystemPermissions.MEETINGS_RECORD,
     ],
   },

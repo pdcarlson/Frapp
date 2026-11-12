@@ -125,7 +125,7 @@ create trigger trg_corpus_sources_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.corpus_sources is
-  'One row per source the AI corpus can index (a chapter document, posted minutes): its revision and how far the index has caught up. Kept by triggers on the source tables. See 20261112140000_ai_corpus.sql.';
+  'One row per source the AI corpus can index (a chapter document, posted minutes): its revision and how far the index has caught up. Kept by triggers on the source tables. See 20261112140150_ai_corpus.sql.';
 
 create table if not exists public.corpus_chunks (
   id uuid primary key default gen_random_uuid(),
@@ -166,7 +166,7 @@ create index if not exists idx_corpus_chunks_search
 alter table public.corpus_chunks enable row level security;
 
 comment on table public.corpus_chunks is
-  'The AI corpus index: a passage of a source, its 1,536-dimension embedding and a tsvector. Read one chapter at a time through match_corpus_chunks. See 20261112140000_ai_corpus.sql.';
+  'The AI corpus index: a passage of a source, its 1,536-dimension embedding and a tsvector. Read one chapter at a time through match_corpus_chunks. See 20261112140150_ai_corpus.sql.';
 
 -- ─── Keeping corpus_sources in step with the sources ───────────────────────
 
@@ -544,7 +544,7 @@ as $$
 $$;
 
 comment on function public.match_corpus_chunks(uuid, uuid, text, text, text, integer) is
-  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank. See 20261112140000_ai_corpus.sql.';
+  'AI corpus candidates for one question in one chapter, for a member of that chapter only: nearest passages by embedding and best by words, each with its rank. See 20261112140150_ai_corpus.sql.';
 
 -- ─── Grants: service role only, as every RPC the API alone calls ───────────
 

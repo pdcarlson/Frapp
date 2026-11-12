@@ -353,7 +353,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
-| Add row or chat Task form, due date typed but not readable | — | `Try a date like Nov 14 or 11/14, or a day like Friday.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
+| Add row or chat Task form, due date typed but not readable | — | `Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
 | Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
@@ -700,7 +700,7 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 | Delete (finished) | — | `Deleting the import removes the messages and files it brought in. The roles and read permissions it made stay.` · `Delete import` |
 | Finish notification | `Discord import finished` · `Discord import stopped` (failed) | `<n> messages from <server> are now in Frapp chat.` (`1 message … is`; without a server name, `from` and the name are left out) · `The import from <server> stopped on an error. Open the Discord import page to see why.` |
 | One import (API, 409) | — | `Your chapter already has a Discord import. Delete it before starting another.` |
-| Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Enter a whole date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
+| Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
 | Error | `Couldn't load the import` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the import. This is the last update that loaded.` · `Try again` (a background refresh failed; the import as it last loaded, and its meter, stay) |
 | Offline | `Import unavailable offline` | `Reconnect to load your chapter's Discord import.` |

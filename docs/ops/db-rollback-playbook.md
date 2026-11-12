@@ -3748,9 +3748,9 @@ drop index if exists public.idx_chat_messages_channel_countable;
 create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```
 
-## Rollback meeting minutes (20261112131410)
+## Rollback meeting minutes (20261112140110)
 
-* **Migration**: `20261112131410_meetings.sql`
+* **Migration**: `20261112140110_meetings.sql`
 
 Two new tables and one permission added to each chapter's top role tier. Nothing reads either table while the `meetings` module is beta-off.
 
@@ -3766,9 +3766,9 @@ update public.role_tiers
 
 Take `MeetingModule` out of `app.module.ts` in the same release, or every meetings route answers 500.
 
-## Rollback the AI run queue (20261112131400)
+## Rollback the AI run queue (20261112140100)
 
-* **Migration**: `20261112131400_ai_runs.sql`
+* **Migration**: `20261112140100_ai_runs.sql`
 
 One new table, `ai_runs`, with four indexes, and three functions: `ai_run_ref_is_ids_only` (the table's ids-only check), `enqueue_ai_run` and `claim_ai_run`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
 
@@ -3783,9 +3783,9 @@ drop table if exists public.ai_runs;
 drop function if exists public.ai_run_ref_is_ids_only(jsonb);
 ```
 
-## Rollback the AI usage ledger (20261112131420)
+## Rollback the AI usage ledger (20261112140120)
 
-* **Migration**: `20261112131420_ai_usage_ledger.sql`
+* **Migration**: `20261112140120_ai_usage_ledger.sql`
 
 One new table, `ai_usage_events`, with four indexes, and five functions: `ai_usage_charge`, `reserve_ai_spend`, `settle_ai_spend`, `expire_ai_spend_holds` and `ai_chapter_usage`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes the table.
 
@@ -3804,15 +3804,15 @@ drop table if exists public.ai_usage_events;
 drop function if exists public.ai_usage_charge(text, bigint, bigint);
 ```
 
-## Rollback AI suggestions (20261112131430)
+## Rollback AI suggestions (20261112140130)
 
-* **Migration**: `20261112131430_ai_suggestions.sql`
+* **Migration**: `20261112140130_ai_suggestions.sql`
 
 One new table, `ai_suggestions`, and one trigger function fired after deletes on `events` and `chat_channels`. It writes nothing on apply, and only the API reads or writes the table, and only with AI switched on (`AI_ENABLED`).
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With `AI_ENABLED` unset every suggestion route answers 404 and nothing writes the table, so turning the switch off is the first step. Waiting suggestions are AI proposals no one has accepted; tasks already accepted from them are ordinary `tasks` rows and stay.
 
-To remove it all, in a later forward migration. Since `20261112131440_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
+To remove it all, in a later forward migration. Since `20261112140140_ai_consent.sql`, `anonymize_user` also clears the member's quotes in this table, so first redefine it without that update, or account deletion fails once the table is gone:
 
 ```sql
 drop trigger if exists events_drop_ai_suggestions on public.events;
@@ -3821,9 +3821,9 @@ drop function if exists public.ai_suggestions_drop_for_source();
 drop table if exists public.ai_suggestions;
 ```
 
-## Rollback AI consent (20261112131440)
+## Rollback AI consent (20261112140140)
 
-* **Migration**: `20261112131440_ai_consent.sql`
+* **Migration**: `20261112140140_ai_consent.sql`
 
 Two new tables, `chapter_ai_settings` and `user_ai_consents`, and `anonymize_user` redefined to also delete `user_ai_consents` and clear the member's quotes from `ai_suggestions`. No existing row changed. With `AI_ENABLED` off, which is every environment until Paul switches it on, nothing reads or writes either table.
 
@@ -3836,9 +3836,9 @@ drop table if exists public.user_ai_consents;
 drop table if exists public.chapter_ai_settings;
 ```
 
-## Rollback AI search index (20261112140000)
+## Rollback AI search index (20261112140150)
 
-* **Migration**: `20261112140000_ai_corpus.sql`
+* **Migration**: `20261112140150_ai_corpus.sql`
 
 Two new tables, `corpus_sources` and `corpus_chunks`, four functions the API calls, and two triggers, one on `chapter_documents` and one on `meetings`. On apply it wrote one waiting `corpus_sources` row per existing document and per posted meeting. No existing row changed. Everything in both tables is derived: it can be deleted and rebuilt from the documents and minutes at the cost of embedding them again.
 
@@ -3875,7 +3875,7 @@ drop table if exists public.corpus_sources;
 
 One new table, `corpus_chat_windows`, new columns on `corpus_sources` and `corpus_chunks`, four triggers (three on `chat_messages`, one on `chapter_ai_settings`) and new functions; four corpus functions were redefined. No chat message, setting or consent row changed. Everything it wrote is derived and can be rebuilt by turning a chapter's chat switch off and on.
 
-**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` stops indexing and retrieval; a president turning "chat as a source" off deletes that chapter's chat index at once. To take the schema out, run the block below, then re-run sections "Indexing" and "Retrieval" and the grants block of `20261112140000_ai_corpus.sql` to restore the earlier `claim_corpus_sources`, `write_corpus_chunks`, `finish_corpus_source` and `match_corpus_chunks`, and deploy an API without the chat source.
+**Turn it off first, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Unsetting `AI_ENABLED` stops indexing and retrieval; a president turning "chat as a source" off deletes that chapter's chat index at once. To take the schema out, run the block below, then re-run sections "Indexing" and "Retrieval" and the grants block of `20261112140150_ai_corpus.sql` to restore the earlier `claim_corpus_sources`, `write_corpus_chunks`, `finish_corpus_source` and `match_corpus_chunks`, and deploy an API without the chat source.
 
 ```sql
 drop trigger if exists trg_chat_messages_corpus_insert on public.chat_messages;
@@ -4006,7 +4006,7 @@ drop table if exists public.meeting_recordings;
 delete from storage.buckets where id = 'meeting-audio';
 ```
 
-Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112131420_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
+Leave the ledger as it is unless there is a reason to narrow it: `audio_seconds` is zero on every call that is not a transcription, and dropping the column means recreating `settle_ai_spend` and `ai_chapter_usage` without it (their bodies are in `20261112140120_ai_usage_ledger.sql`) in the same migration. The provider check can only be narrowed once no row names `assemblyai`, and `meeting_drafts_notes_len` only once no row's notes are over 50,000 characters.
 
 
 ## Rollback Report this (20261112220000)
@@ -4070,6 +4070,21 @@ alter table public.ai_suggestions drop constraint if exists ai_suggestions_sourc
 alter table public.ai_suggestions
   add constraint ai_suggestions_source_type_check
     check (source_type in ('meeting', 'event', 'channel', 'task'));
+## Rollback deleted chat messages take their notifications (20261112140000)
+
+* **Migration**: `20261112140000_notifications_chat_message_id.sql`
+
+One new column with its index, and two triggers. It writes no row on apply. Notification rows the delete trigger has removed since are gone; a rollback does not bring them back.
+
+**Revert the API first**, because the API from the same PR writes `chat_message_id` on every single-message chat notification and rewrites rows by it on an edit: redeploy the earlier API, which never touches the column. Then, to stop deletes removing notifications, **revert forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)), in a later migration:
+
+```sql
+drop trigger if exists chat_messages_forget_notifications on public.chat_messages;
+drop trigger if exists notifications_skip_deleted_message on public.notifications;
+drop function if exists public.chat_messages_forget_notifications();
+drop function if exists public.notifications_skip_deleted_message();
+drop index if exists public.idx_notifications_chat_message;
+alter table public.notifications drop column if exists chat_message_id;
 ```
 
 ## Rollback chat search with a filter and no text (20261112131300)

@@ -33,12 +33,13 @@ export {
   formatWeekdayDay,
 } from "./display";
 export {
+  type DateLean,
   dueEntryFields,
   dueEntryFromTask,
-  formatDueEntry,
-  parseDueEntry,
-  parseDueEntryWithTime,
-} from "./due-entry";
+  formatDateEntry,
+  parseDateEntry,
+  parseDateEntryWithTime,
+} from "./date-entry";
 export { nextUpLine } from "./next-up";
 export {
   lastYearBareDay,

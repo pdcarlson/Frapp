@@ -194,9 +194,9 @@ That returns **82** rows. The "API only" row of that table is those 82 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **85**. Re-derived 2026-11-12 with the PGlite harness at migration `20261112240000`, which is where the AI tables arrive: `meetings` and `meeting_templates` (#4312), `corpus_sources` and `corpus_chunks` (#720), `corpus_chat_windows` (#4314), `meeting_drafts` (#4312), `ai_diagnostics_windows`, `ai_diagnostics_exchanges` and `ai_reports` (#4315), and `meeting_recordings` (#712). Before that, counted 2026-11-12 by adding `ai_runs` (#4310, migration
-`20261112131400`), `ai_suggestions` (#4309, migration `20261112131430`), `ai_usage_events` (#714, migration
-`20261112131420`), and `chapter_ai_settings` and `user_ai_consents` (#4308, migration
-`20261112131440`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
+`20261112140100`), `ai_suggestions` (#4309, migration `20261112140130`), `ai_usage_events` (#714, migration
+`20261112140120`), and `chapter_ai_settings` and `user_ai_consents` (#4308, migration
+`20261112140140`) to the count below, not re-derived against a stack. Re-derived 2026-11-11 against a local stack at migration
 `20261111235900`, which added `chat_message_important_seen` (#4186), after
 `20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
 which added no table. Before that,

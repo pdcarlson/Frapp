@@ -12,7 +12,12 @@ export const NOTIFICATION_PREFERENCE_REPOSITORY =
 export const USER_SETTINGS_REPOSITORY = 'USER_SETTINGS_REPOSITORY';
 
 export interface INotificationRepository {
-  create(data: Partial<Notification>): Promise<Notification>;
+  /**
+   * Null when the database drops the row: a chat row whose message was
+   * deleted (or removed) before it landed (#4418,
+   * `notifications_skip_deleted_message`).
+   */
+  create(data: Partial<Notification>): Promise<Notification | null>;
   createMany(data: Partial<Notification>[]): Promise<Notification[]>;
   /**
    * The member's newest in-app rows in this chapter.
@@ -63,6 +68,17 @@ export interface INotificationRepository {
     readThrough: string,
     screens?: readonly string[],
   ): Promise<number>;
+  /**
+   * Replace the body of the rows in the chapter that quote chat message
+   * `messageId` (an edit, #4418), for the members in `userIds` only. Deletes need no call: a trigger on
+   * `chat_messages` removes those rows with the message.
+   */
+  rewriteChatMessageBody(
+    chapterId: string,
+    messageId: string,
+    body: string,
+    userIds: readonly string[],
+  ): Promise<void>;
 }
 
 export interface IPushTokenRepository {

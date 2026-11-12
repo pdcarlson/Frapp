@@ -692,10 +692,10 @@ function SettingsPageContent() {
             member on "Couldn't load chapter configuration", which is what
             happened while the nav had a Roles row of its own (#2946 folded it
             into Settings). That combination is freely constructible from the
-            matrix below.
+            tier permission pages below.
 
-            It does not need the gate: the matrix reads `useRoles` and
-            `usePermissionsCatalog`, neither of which is chapter config. Only
+            It does not need the gate: the roles pages read `useRoles` and
+            `useRoleTiers`, neither of which is chapter config. Only
             the default-invite-role picker is, and it degrades on its own —
             `configUnavailable` hides that one control rather than the tab.
           */}

@@ -89,7 +89,7 @@ create trigger trg_meetings_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.meetings is
-  'A meeting''s minutes, one row per event at most. Read by the members the event invites once posted. Never a Standards meeting. See 20261112131410_meetings.sql.';
+  'A meeting''s minutes, one row per event at most. Read by the members the event invites once posted. Never a Standards meeting. See 20261112140110_meetings.sql.';
 
 create table if not exists public.meeting_templates (
   chapter_id uuid primary key references public.chapters(id) on delete cascade,
@@ -108,7 +108,7 @@ create trigger trg_meeting_templates_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.meeting_templates is
-  'A chapter''s minutes template: the sections its minutes show. No row means the default sections. See 20261112131410_meetings.sql.';
+  'A chapter''s minutes template: the sections its minutes show. No row means the default sections. See 20261112140110_meetings.sql.';
 
 -- Each existing chapter's top tier can write minutes. Idempotent: a tier that
 -- already holds the key is not touched.

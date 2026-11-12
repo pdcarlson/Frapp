@@ -58,6 +58,7 @@ export * from "./use-chapters";
 export * from "./chapter-scope";
 export * from "./use-chapter-directory";
 export * from "./use-roles";
+export * from "./use-role-tiers";
 export * from "./use-invites";
 export * from "./use-user";
 export * from "./legal-acceptance";

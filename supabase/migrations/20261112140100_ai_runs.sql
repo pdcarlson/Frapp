@@ -71,7 +71,7 @@ end;
 $$;
 
 comment on function public.ai_run_ref_is_ids_only(jsonb) is
-  'True when a jsonb value is an object of at most 32 snake_case keys whose values are uuids, numbers, booleans, nulls, or arrays (at most 500) of those. Guards ai_runs.input_ref and result_ref so a run holds ids and counts, never text. See 20261112131400_ai_runs.sql.';
+  'True when a jsonb value is an object of at most 32 snake_case keys whose values are uuids, numbers, booleans, nulls, or arrays (at most 500) of those. Guards ai_runs.input_ref and result_ref so a run holds ids and counts, never text. See 20261112140100_ai_runs.sql.';
 
 create table if not exists public.ai_runs (
   id uuid primary key default gen_random_uuid(),
@@ -217,7 +217,7 @@ end;
 $$;
 
 comment on function public.enqueue_ai_run(uuid, text, text, uuid, uuid, jsonb, integer) is
-  'Creates the run for (chapter, kind, dedupe key); queues a failed or cancelled one again in place; otherwise returns the one that exists. See 20261112131400_ai_runs.sql.';
+  'Creates the run for (chapter, kind, dedupe key); queues a failed or cancelled one again in place; otherwise returns the one that exists. See 20261112140100_ai_runs.sql.';
 
 -- Claim the oldest claimable run for one worker, or return no row.
 --
@@ -306,7 +306,7 @@ end;
 $$;
 
 comment on function public.claim_ai_run(text, timestamptz, integer, text[]) is
-  'Leases the oldest claimable AI run of one of p_kinds to p_worker_id and raises its attempt count, failing runs that used every attempt on the way. Returns the claimed run, or no row. See 20261112131400_ai_runs.sql.';
+  'Leases the oldest claimable AI run of one of p_kinds to p_worker_id and raises its attempt count, failing runs that used every attempt on the way. Returns the claimed run, or no row. See 20261112140100_ai_runs.sql.';
 
 -- Service role only, as every RPC the API alone calls.
 revoke execute on function public.ai_run_ref_is_ids_only(jsonb) from public;
