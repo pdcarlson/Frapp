@@ -426,6 +426,7 @@ describe("getSignetCssVars", () => {
     "--warning-tint",
     "--destructive-tint",
     "--destructive-tint-hover",
+    "--info-tint",
   ];
 
   const UNDOCUMENTED_HERE = [

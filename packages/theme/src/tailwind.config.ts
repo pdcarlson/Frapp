@@ -192,6 +192,7 @@ const config: Partial<Config> = {
         info: {
           DEFAULT: colorVar("--info"),
           foreground: colorVar("--info-foreground"),
+          tint: colorVar("--info-tint"),
         },
         // The AA-lifted danger tone for text/icons on a danger tint (§5).
         "destructive-text": colorVar("--destructive-text"),

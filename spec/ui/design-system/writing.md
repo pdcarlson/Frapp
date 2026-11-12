@@ -204,10 +204,10 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Loading (supporting queries) | — | `Loading chapter members...` — the roles-and-points load uses the *same* string. A second, differently-worded loading state for one screen is what this table exists to prevent. |
 | Empty | — | `No actives yet.` (one line) |
 | No results (filters) | — | `No actives match these filters.` then a **Clear filters** link (one line) |
-| No results (search) | — | `No actives match “<query>”.` then a **Clear search** link (one line) |
+| No results (search) | — | `Nobody matches “<query>”.` then a **Clear search** link (one line), the phone's words, since the search spans actives and alumni *(was `No actives match “<query>”.` until #4135, 2026-11-12)* |
 | Empty and no results, mobile s13 | — | `No actives yet.`; a search, which spans both tabs, `Nobody matches “<query>”.` then **Clear search**; the Actives filters, the web row's `No actives match these filters.` then **Clear filters** (one line each; the alumni rows are [Alumni](#alumni-dashboard)'s) |
 | Actives filter sheet, mobile s13 | `Filter actives` | Sections `Status`, `Graduation year`, the chapter's class word, `Role`, each led by `Any` (`Any role` for the role list); `Search roles`; a role search that matches nothing, `No roles match that search.`; the role list loading, `Loading roles…`; failed, `Couldn't load roles.` then **Retry**; **Clear filters** while any is set ([#3971](https://github.com/pdcarlson/Frapp/issues/3971)) |
-| Error | `Couldn't load members` | the load-failure line (§ copy rules) |
+| Error | `Couldn't load the directory` | the load-failure line (§ copy rules); the page is Directory in the nav, and the phone says the same *(was `Couldn't load members` until #4135, 2026-11-12)* |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
 | Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |

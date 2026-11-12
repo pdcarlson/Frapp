@@ -118,6 +118,9 @@
     --warning-tint: rgba(229, 160, 0, 0.13);
     --destructive-tint: rgba(255, 102, 92, 0.13);
     --destructive-tint-hover: rgba(255, 102, 92, 0.2);
+    /* Info's tint, added for the web task card's In progress badge (#4133),
+     * the phone's blue: --info-text clears 4.5:1 on it over every step. */
+    --info-tint: rgba(47, 129, 247, 0.13);
     --info: #2F81F7;
     --info-foreground: #0A0A0A;
     /* The same AA lift components.md §5 sanctions for danger, applied to info
