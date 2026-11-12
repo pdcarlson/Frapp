@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
     reloadAsync: vi.fn(async () => {}),
   },
   listener: null as ((next: string) => void) | null,
+  urlListener: null as (() => void) | null,
+  tapListener: null as (() => void) | null,
   online: true,
   captureException: vi.fn(),
   busy: false,
@@ -32,6 +34,18 @@ vi.mock("react-native", () => ({
       state.listener = listener;
       return { remove: () => (state.listener = null) };
     },
+  },
+  Linking: {
+    addEventListener: (_: string, listener: () => void) => {
+      state.urlListener = listener;
+      return { remove: () => (state.urlListener = null) };
+    },
+  },
+}));
+vi.mock("@/lib/notifications/push", () => ({
+  addNotificationResponseListener: (listener: () => void) => {
+    state.tapListener = listener;
+    return { remove: () => (state.tapListener = null) };
   },
 }));
 vi.mock("@sentry/react-native", () => ({
@@ -46,13 +60,15 @@ vi.mock("@/lib/minutes/recorder/session", () => ({
 
 const { expoUpdatesPort, useResumeUpdates } =
   await import("./use-resume-updates");
-const { AWAY_BEFORE_APPLY_MS, CHECK_EVERY_MS } =
+const { AWAY_BEFORE_APPLY_MS, CHECK_EVERY_MS, RELOAD_SETTLE_MS } =
   await import("./resume-updates");
 
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   state.updates.isEmergencyLaunch = false;
+  state.updates.isEnabled = true;
+  state.busy = false;
   state.updates.latestContext = { isUpdatePending: false };
   state.online = true;
 });
@@ -96,17 +112,78 @@ describe("expoUpdatesPort", () => {
 
 describe("useResumeUpdates", () => {
   it("reloads when the member comes back after ten minutes with an update downloaded", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     renderHook(() => useResumeUpdates());
     state.updates.latestContext = { isUpdatePending: true };
     state.listener?.("background");
     vi.advanceTimersByTime(AWAY_BEFORE_APPLY_MS);
     state.listener?.("active");
+    vi.advanceTimersByTime(RELOAD_SETTLE_MS);
     expect(state.updates.reloadAsync).toHaveBeenCalledTimes(1);
   });
 
+  it("never reloads while a meeting is being recorded", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    state.busy = true;
+    renderHook(() => useResumeUpdates());
+    state.updates.latestContext = { isUpdatePending: true };
+    state.listener?.("background");
+    vi.advanceTimersByTime(AWAY_BEFORE_APPLY_MS);
+    state.listener?.("active");
+    vi.advanceTimersByTime(RELOAD_SETTLE_MS);
+    expect(state.updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it("leaves a return through a link or a notification tap where it was going", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    renderHook(() => useResumeUpdates());
+    state.updates.latestContext = { isUpdatePending: true };
+    for (const arrive of [
+      () => state.urlListener?.(),
+      () => state.tapListener?.(),
+    ]) {
+      state.listener?.("background");
+      vi.advanceTimersByTime(AWAY_BEFORE_APPLY_MS);
+      state.listener?.("active");
+      arrive();
+      vi.advanceTimersByTime(RELOAD_SETTLE_MS);
+    }
+    expect(state.updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it("does nothing where expo-updates is off (development, Expo Go)", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    state.updates.isEnabled = false;
+    renderHook(() => useResumeUpdates());
+    state.updates.latestContext = { isUpdatePending: true };
+    state.listener?.("background");
+    vi.advanceTimersByTime(CHECK_EVERY_MS + AWAY_BEFORE_APPLY_MS);
+    state.listener?.("active");
+    vi.advanceTimersByTime(RELOAD_SETTLE_MS);
+    expect(state.updates.checkForUpdateAsync).not.toHaveBeenCalled();
+    expect(state.updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it("reports a check that failed while online", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    state.updates.checkForUpdateAsync.mockRejectedValueOnce(
+      new Error("bad url"),
+    );
+    renderHook(() => useResumeUpdates());
+    state.listener?.("background");
+    vi.advanceTimersByTime(CHECK_EVERY_MS);
+    state.listener?.("active");
+    await vi.waitFor(() =>
+      expect(state.captureException).toHaveBeenCalledWith(expect.any(Error), {
+        level: "warning",
+        fingerprint: ["expo-updates", "check"],
+        tags: { "expo.updates.step": "check" },
+      }),
+    );
+  });
+
   it("does not report a check that failed while the phone was offline", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     state.online = false;
     state.updates.checkForUpdateAsync.mockRejectedValueOnce(
       new Error("network"),
@@ -123,13 +200,14 @@ describe("useResumeUpdates", () => {
   });
 
   it("reports a failed reload to Sentry as a warning", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     state.updates.reloadAsync.mockRejectedValueOnce(new Error("no runtime"));
     renderHook(() => useResumeUpdates());
     state.updates.latestContext = { isUpdatePending: true };
     state.listener?.("background");
     vi.advanceTimersByTime(AWAY_BEFORE_APPLY_MS);
     state.listener?.("active");
+    vi.advanceTimersByTime(RELOAD_SETTLE_MS);
     await vi.waitFor(() =>
       expect(state.captureException).toHaveBeenCalledWith(expect.any(Error), {
         level: "warning",

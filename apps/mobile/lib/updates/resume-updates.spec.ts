@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AWAY_BEFORE_APPLY_MS,
   CHECK_EVERY_MS,
+  RELOAD_SETTLE_MS,
   createResumeUpdates,
   type UpdatesPort,
 } from "./resume-updates";
@@ -16,16 +17,29 @@ function setup(over: Partial<UpdatesPort> & { busy?: boolean } = {}) {
     reload: over.reload ?? vi.fn(async () => {}),
   } satisfies UpdatesPort;
   const report = vi.fn();
+  const scheduled: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const resume = createResumeUpdates({
     updates,
     busy: () => over.busy ?? false,
     now: () => clock,
+    schedule(fn, ms) {
+      const job = { fn, ms, cancelled: false };
+      scheduled.push(job);
+      return () => {
+        job.cancelled = true;
+      };
+    },
     report,
   });
   return {
     resume,
     updates,
     report,
+    scheduled,
+    /** Let the settle wait run out. */
+    settle() {
+      for (const job of scheduled.splice(0)) if (!job.cancelled) job.fn();
+    },
     advance: (ms: number) => {
       clock += ms;
     },
@@ -37,6 +51,7 @@ function setup(over: Partial<UpdatesPort> & { busy?: boolean } = {}) {
       resume.onAppStateChange("background");
       clock += ms;
       resume.onAppStateChange("active");
+      this.settle();
     },
   };
 }
@@ -66,6 +81,7 @@ describe("createResumeUpdates", () => {
     t.resume.onAppStateChange("background");
     t.advance(AWAY_BEFORE_APPLY_MS / 2);
     t.resume.onAppStateChange("active");
+    t.settle();
     expect(t.updates.reload).toHaveBeenCalledTimes(1);
   });
 
@@ -75,6 +91,7 @@ describe("createResumeUpdates", () => {
     t.resume.onAppStateChange("inactive");
     t.advance(AWAY_BEFORE_APPLY_MS);
     t.resume.onAppStateChange("active");
+    t.settle();
     expect(t.updates.reload).not.toHaveBeenCalled();
   });
 
@@ -165,5 +182,42 @@ describe("createResumeUpdates", () => {
     t.awayFor(AWAY_BEFORE_APPLY_MS + CHECK_EVERY_MS);
     expect(reload).toHaveBeenCalledTimes(1);
     expect(t.updates.checkAndFetch).not.toHaveBeenCalled();
+  });
+
+  it("waits a moment before reloading, so a link or tap that lands just after the return can stop it", () => {
+    const t = setup();
+    t.setPending(true);
+    t.resume.onAppStateChange("background");
+    t.advance(AWAY_BEFORE_APPLY_MS);
+    t.resume.onAppStateChange("active");
+    expect(t.updates.reload).not.toHaveBeenCalled();
+    expect(t.scheduled.map((job) => job.ms)).toEqual([RELOAD_SETTLE_MS]);
+    t.resume.onNavigated();
+    t.settle();
+    expect(t.updates.reload).not.toHaveBeenCalled();
+  });
+
+  it("never reloads a return that a link or notification tap brought, and reloads on the next real one", () => {
+    const t = setup();
+    t.setPending(true);
+    t.resume.onAppStateChange("background");
+    t.advance(AWAY_BEFORE_APPLY_MS);
+    t.resume.onNavigated();
+    t.resume.onAppStateChange("active");
+    t.settle();
+    expect(t.updates.reload).not.toHaveBeenCalled();
+    t.awayFor(AWAY_BEFORE_APPLY_MS);
+    expect(t.updates.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a waiting reload when the member leaves again within the moment", () => {
+    const t = setup();
+    t.setPending(true);
+    t.resume.onAppStateChange("background");
+    t.advance(AWAY_BEFORE_APPLY_MS);
+    t.resume.onAppStateChange("active");
+    t.resume.onAppStateChange("background");
+    t.settle();
+    expect(t.updates.reload).not.toHaveBeenCalled();
   });
 });

@@ -154,7 +154,7 @@ describe("the expression reader", () => {
 });
 
 describe("the mobile_build input", () => {
-  it("is a choice whose default lets the plan pick an update or a store build per platform", () => {
+  it("is a choice whose default does nothing for the app", () => {
     const lines = readFileSync(CALLER, "utf8").split("\n");
     const at = lines.findIndex((l) => /^ {6}mobile_build:\s*$/.test(l));
     assert.notEqual(at, -1, "deploy-production.yml has no mobile_build input");
@@ -165,7 +165,7 @@ describe("the mobile_build input", () => {
     }
     const value = (key) => block.find((l) => new RegExp(`^ {8}${key}:`).test(l))?.replace(/^ {8}\w+:\s*/, "");
     assert.equal(value("type"), "choice");
-    assert.equal(value("default"), "auto");
+    assert.equal(value("default"), "none");
     assert.equal(value("required"), "false");
     assert.equal(value("options"), "[none, ios, android, all, auto]");
   });

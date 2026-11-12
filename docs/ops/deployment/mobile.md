@@ -306,10 +306,9 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual. **`mobile_build`** defaults to `auto` (since
-2026-11-12; it was `none`, and every ship since 2026-11-10 picked `auto` by hand). Set
-`ios`, `android` or `all` to force a store build, or `none` to ship only web and the API, which
-leaves the app exactly as it was. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
+`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
+the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
 the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
 the input says.
 
@@ -589,7 +588,7 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 ### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-Deploy production publishes one by default (`mobile_build: auto`, below), and a person can still
+Deploy production publishes one when asked (`mobile_build: auto`, below), and a person can still
 publish from a laptop. Both go through the same guard. #2511 still owns a staging app variant,
 promotion and staged rollout.
 
@@ -702,11 +701,14 @@ mounted in `AppRuntime`):
 - **Coming back to the app checks again**, at most every 15 minutes, and downloads what it finds,
   a rollback included.
 - **A downloaded update runs when the member comes back after 10 minutes or more away.** The app
-  reloads into it straight away, behind the splash screen's near-black with no spinner, before
-  they have started doing anything. A shorter trip out never reloads. Drafts and the outbox are
-  already on disk, so nothing typed is lost. It never reloads while a meeting recording is
-  starting, running, saving or uploading, and does nothing in development, Expo Go or an
-  emergency launch (an update that failed to start, so expo-updates fell back to the store build).
+  reloads into it a second later, behind the splash screen's near-black with no spinner. A
+  shorter trip out never reloads, and neither does a return through a link or a notification tap,
+  which the running bundle is already handling (the update waits for the next return). Chat drafts
+  and the outbox are on disk and survive the reload; a sheet left half filled for ten minutes (a
+  new event, a poll) doesn't, as when iOS ends a suspended app. It never reloads while a meeting
+  recording is starting, running, saving or uploading, and does nothing in development, Expo Go
+  or an emergency launch (an update that failed to start, so expo-updates fell back to the store
+  build).
 
 So a fix reaches most members within a day: the first return after the publish downloads it, the
 next return after ten minutes away runs it.
@@ -717,10 +719,14 @@ next return after ten minutes away runs it.
   `expo.updates.runtime_version`, through `@sentry/react-native`'s built-in Expo context, and
   reports an emergency launch as a warning tagged `expo.updates.emergency_launch`. Events from an
   update also carry its commit as the `git_sha` tag.
-- **PostHog** events carry `app_launch` (`store_build`, `update`, `emergency` or `development`),
-  `app_update_id`, `app_update_published_at`, `app_update_channel` and `app_runtime_version`
-  ([`lib/updates/running-update.ts`](../../../apps/mobile/lib/updates/running-update.ts)).
-  Break any insight down by `app_update_id` to see how far an update has reached.
+- **PostHog**: the events the mobile SDK sends itself (`$screen`, `Application Became Active` and
+  the other lifecycle events, `$identify`) carry `app_launch` (`store_build`, `update`,
+  `emergency` or `development`), `app_update_id`, `app_update_published_at`, `app_update_channel`
+  and `app_runtime_version`, as super properties
+  ([`lib/updates/running-update.ts`](../../../apps/mobile/lib/updates/running-update.ts)). Break
+  `$screen` down by `app_update_id` to see how far an update has reached. Named product events
+  (`task-created` and the rest) go through the API (`POST /v1/analytics/events`) and don't carry
+  them.
 - **EAS**: `npm run eas -- update:list --branch production` lists the groups; the Expo dashboard
   shows each group's launches and crashes.
 
@@ -733,11 +739,14 @@ Run **Roll back the app update** in GitHub Actions
   that version are affected.
 - **`to`**: `store_build` sends those phones back to the JavaScript inside their store build.
   `update_group` republishes an earlier update group instead; copy its ID from the Expo dashboard
-  (Updates, the `production` branch) into **`group`**.
+  (Updates, the `production` branch) into **`group`**. The job refuses a group that isn't on the
+  `production` branch or wasn't built for `runtime_version`, because a republish lands on the
+  group's own branch and version, whatever the form says.
 - **`platform`**: `all`, `ios` or `android`.
 
-It publishes no new bundle, so it skips the guard, and it needs no laptop. Phones pick it up the
-way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
+It publishes no new bundle, so it skips the guard, and it needs no laptop. It runs eas-cli from
+the release production serves (the newest `vX.Y.Z` tag), and refuses a tag whose commit isn't on
+`main`. Phones pick it up the way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
 before shipping again, or ship with `mobile_build: none`.
 
 From a laptop, the same two commands are `npm run eas -- update:roll-back-to-embedded --channel

@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, Linking } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { onlineManager } from "@tanstack/react-query";
 import * as Updates from "expo-updates";
 import { isMeetingRecorderBusy } from "@/lib/minutes/recorder/session";
+import { addNotificationResponseListener } from "@/lib/notifications/push";
 import { createResumeUpdates, type UpdatesPort } from "./resume-updates";
 
 /**
@@ -37,7 +38,8 @@ export function expoUpdatesPort(): UpdatesPort {
 /**
  * Checks for an over-the-air update when the app comes back to the
  * foreground, and runs a downloaded one when the member returns after a real
- * absence (`resume-updates.ts` has the rule). Mounted once, in `AppRuntime`.
+ * absence, unless a link or a notification tap brought them back
+ * (`resume-updates.ts` has the rule). Mounted once, in `AppRuntime`.
  *
  * A failed check while offline is the member's network and is not reported;
  * any other failure reaches Sentry as a warning, grouped per step.
@@ -48,6 +50,10 @@ export function useResumeUpdates(): void {
       updates: expoUpdatesPort(),
       busy: isMeetingRecorderBusy,
       now: Date.now,
+      schedule(fn, ms) {
+        const timer = setTimeout(fn, ms);
+        return () => clearTimeout(timer);
+      },
       report(error, step) {
         if (step === "check" && !onlineManager.isOnline()) return;
         Sentry.captureException(error, {
@@ -57,9 +63,17 @@ export function useResumeUpdates(): void {
         });
       },
     });
-    const subscription = AppState.addEventListener("change", (next) =>
+    const appState = AppState.addEventListener("change", (next) =>
       resume.onAppStateChange(next),
     );
-    return () => subscription.remove();
+    // A link or a notification tap that opens the app is the old bundle's to
+    // handle; that return never reloads.
+    const link = Linking.addEventListener("url", () => resume.onNavigated());
+    const tap = addNotificationResponseListener(() => resume.onNavigated());
+    return () => {
+      appState.remove();
+      link.remove();
+      tap?.remove();
+    };
   }, []);
 }
