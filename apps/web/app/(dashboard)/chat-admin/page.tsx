@@ -1,14 +1,18 @@
-import { ChatAdminPage } from "@/components/chat-admin/chat-admin-page";
+import { redirect } from "next/navigation";
+import {
+  CHAT_SETTINGS_PATH,
+  settingsRedirectPath,
+} from "@/components/settings/settings-paths";
 
-export const metadata = { title: "Chat admin" };
-
-/** `?channel=<id>` opens that channel's editor (the channel start's Edit channel). */
+/**
+ * Chat admin moved inside Chapter settings' Chat page (#3837); this route only
+ * redirects old links there. `?channel=<id>` still opens that channel's own
+ * settings.
+ */
 export default async function ChatAdmin({
   searchParams,
 }: {
-  searchParams: Promise<{ channel?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { channel } = await searchParams;
-  const initialChannelId = typeof channel === "string" ? channel : null;
-  return <ChatAdminPage initialChannelId={initialChannelId} />;
+  redirect(settingsRedirectPath(CHAT_SETTINGS_PATH, await searchParams));
 }

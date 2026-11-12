@@ -23,7 +23,7 @@ import {
  * would otherwise slip content past the forbidden-key check.
  */
 @ValidatorConstraint({ name: 'analyticsScalarsOnly', async: false })
-export class ScalarsOnlyConstraint implements ValidatorConstraintInterface {
+class ScalarsOnlyConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     if (value === undefined || value === null) return true;
     if (typeof value !== 'object' || Array.isArray(value)) return false;

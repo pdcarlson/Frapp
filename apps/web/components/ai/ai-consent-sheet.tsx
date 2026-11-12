@@ -105,7 +105,7 @@ type Props = {
  * The sheet as a dialog. Closing it is not an answer: an unanswered sheet
  * counts as No on the server, and the next AI entry point asks again.
  */
-export function AiConsentDialog({ open, consent, onAnswered, onDismiss }: Props) {
+function AiConsentDialog({ open, consent, onAnswered, onDismiss }: Props) {
   const answer = useAnswerAiConsent();
   const [error, setError] = useState<string | null>(null);
   // Which button was pressed, so only that one says it is saving.

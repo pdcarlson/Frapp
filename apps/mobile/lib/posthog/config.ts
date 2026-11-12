@@ -50,7 +50,7 @@ export type MobilePostHogInitOptions = Pick<
  * flip is gated rather than inventing the mask at the same time as the sample
  * rate. `posthog-react-native-session-replay` is not a dependency.
  */
-export function mobileSessionReplayConfig(): PostHogSessionReplayConfig {
+function mobileSessionReplayConfig(): PostHogSessionReplayConfig {
   return {
     maskAllTextInputs: true,
     maskAllImages: true,

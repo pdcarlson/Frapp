@@ -13,7 +13,7 @@ import { TaskService } from './task.service';
 export const TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH = 2000;
 
 /** How long a suggested task waits for an officer (spec: ai.md § Suggestions). */
-export const TASK_SUGGESTION_EXPIRY_DAYS = 14;
+const TASK_SUGGESTION_EXPIRY_DAYS = 14;
 
 /**
  * A suggested task, as stored and as listed. Never carries points

@@ -27,7 +27,7 @@ import { reportCaughtFailure } from '../../../infrastructure/observability/repor
  * line, fall back under it and cross it again many times before the settled
  * spend gets there; only the first crossing is news.
  */
-export const AI_PLATFORM_POOL_ALERTS = [50, 75, 90] as const;
+const AI_PLATFORM_POOL_ALERTS = [50, 75, 90] as const;
 
 /**
  * Error kinds that prove the provider turned the request away before doing

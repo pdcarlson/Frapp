@@ -18,6 +18,11 @@
 //      exception is a conflict only in the shipped-builds registry from a PR
 //      that only adds entries: its merge is mechanical, so the sweep pushes it
 //      itself with the app token (resolve-registry-conflict.mjs, #3783).
+//      Likewise a clean PR whose migrations now sort before main's newest
+//      (main took a later version first): the sweep merges main and renumbers
+//      them in one commit, as `npm run migration:renumber` would, and wakes no
+//      one (resolve-migration-order.mjs, #4558). When it can't push that, the
+//      wake carries the exact command.
 //      Comments are webhook events (same wake path as ci-wake.mjs), and the
 //      agent's own push triggers CI normally.
 //   3. When the failure is REPO-WIDE — no app token, or a token the API rejects
@@ -44,7 +49,8 @@
 // lib/required-checks.mjs). A PR that is behind but merges cleanly can merge as
 // it is, so updating it would only restart its CI. While the flag is off the
 // sweep updates no clean PR and runs no slot: it handles conflicts (the wake,
-// or the registry merge) and clears wakes that no longer apply, and a slot
+// or the registry merge) and migrations that no longer sort after main's (the
+// renumber, or its wake), and clears wakes that no longer apply, and a slot
 // sweep (`mode: "checks"`) does nothing. Points 1 and 3 above, and the slot,
 // are what turning it back on restores. With nothing updated, the stale
 // `mergeable` race below has no update-branch failure to reroute it, so a push
@@ -68,8 +74,9 @@
 //   PR_BASE_SYNC_TOKEN  — optional GitHub App installation token (contents +
 //                         pull-requests write), minted in the workflow by
 //                         actions/create-github-app-token; writes only: update-branch,
-//                         and the registry merge's tree, commit and non-forced ref
-//                         update on a PR's head branch (#3783)
+//                         and the registry merge's and the migration renumber's
+//                         tree, commit and non-forced ref update on a PR's head
+//                         branch (#3783, #4558)
 //   GITHUB_REPOSITORY   — required, owner/repo
 //   GITHUB_REF_NAME     — required, the base branch that moved (main)
 //   GITHUB_SHA          — required, the new base tip
@@ -97,6 +104,11 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { REGISTRY_PATH } from "./lib/shipped-builds-registry.mjs";
 import { planRegistryConflict, pushRegistryMerge } from "./resolve-registry-conflict.mjs";
+import {
+  planMigrationRenumber,
+  pushMigrationRenumber,
+  readBaseMigrations,
+} from "./resolve-migration-order.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "./lib/required-checks.mjs";
 import { ACCEPTED_CONCLUSIONS, fetchCheckRuns, latestRunsByName } from "./lib/check-runs.mjs";
@@ -667,7 +679,8 @@ export function isHeadMoved({ status, error }) {
  * (the slot sweep's rejected token, rate limit or stall).
  */
 /** A result that pushed to its PR (or lost the race to a push): it holds the slot. */
-const TAKES_SLOT = new Set(["updated", "raced", "registry-merged"]);
+// A renumber merges the base too (resolve-migration-order.mjs), so it is an update.
+const TAKES_SLOT = new Set(["updated", "raced", "registry-merged", "renumbered"]);
 
 async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fallback = async () => null }) {
   const results = [];
@@ -750,10 +763,35 @@ export function buildConflictComment({ baseRef, baseSha, pr }) {
     instructions: [
       "If you are the agent session watching this PR, resolve them now:",
       "",
-      `1. \`git fetch origin ${baseRef}\``,
-      `2. \`git merge origin/${baseRef}\` on this PR's branch`,
-      "3. Resolve the conflicts — keep both sides' behavior; only ask when a conflict is genuinely ambiguous (both sides changed the same logic and picking one loses behavior).",
-      "4. Run the checks you can locally, then push. Your push re-runs CI against the new base.",
+      `1. \`npm run merge:main\` on this PR's branch. It merges \`origin/${baseRef}\`, regenerates a conflicted API contract itself, and stops on any other conflict. A branch without that script yet: \`git fetch origin ${baseRef} && git merge origin/${baseRef}\`.`,
+      "2. Resolve the conflicts — keep both sides' behavior; only ask when a conflict is genuinely ambiguous (both sides changed the same logic and picking one loses behavior). Then `npm run merge:main -- --continue`.",
+      "3. Run the checks you can locally, then push. Your push re-runs CI against the new base.",
+    ],
+  });
+}
+
+/**
+ * The wake for a clean PR whose migrations now sort before the base's newest,
+ * when the sweep could not push the renumber itself: the exact command, and why.
+ */
+export function buildRenumberComment({ baseRef, baseSha, pr, renames, reason }) {
+  return buildSyncComment({
+    baseRef,
+    baseSha,
+    pr,
+    headline:
+      ` with a later migration, so this PR's migrations **no longer sort after** \`${baseRef}\`'s, ` +
+      "and staging would refuse them. The sweep did not renumber them itself " +
+      `(${reason}).`,
+    instructions: [
+      "If you are the agent session watching this PR, renumber them:",
+      "",
+      `1. \`git fetch origin ${baseRef} && git merge origin/${baseRef}\``,
+      "2. `npm run migration:renumber`, then check any file it lists as still naming an old version on its own (it may be the base's migration of the same version, which stays).",
+      "3. Commit, run the checks you can locally, and push.",
+      "",
+      "It will move:",
+      ...renames.map(({ from, to }) => `- \`${from}\` (to a version after the base's newest, such as \`${to.slice(0, 14)}\`)`),
     ],
   });
 }
@@ -766,7 +804,7 @@ export function buildBehindComment({ baseRef, baseSha, pr, reason }) {
     headline: `; this PR is behind it and was **not** auto-updated (${reason}).`,
     instructions: [
       "If you are the agent session watching this PR, update the branch yourself: " +
-        `\`git fetch origin ${baseRef} && git merge origin/${baseRef}\`, then push. ` +
+        `\`npm run merge:main\` (on a branch without that script yet, \`git fetch origin ${baseRef} && git merge origin/${baseRef}\`), then push. ` +
         "The merge should be clean, but resolve conflicts if it surfaces any — mergeability may have been computed against the previous base. " +
         "Your push is what makes CI re-run against the new base — the workflow's default token cannot trigger CI runs.",
     ],
@@ -889,6 +927,7 @@ export async function processBaseMove({
 
   // Shared by every PR in this sweep: see UPDATE_BRANCH_STALLS_BEFORE_STOP.
   const updateBranch = { stalls: 0, stoppedDetail: null };
+  const migrations = sweepMigrations({ token, repo, baseSha, fetchImpl });
   // Belt over the per-PR body: ghRequest already converts network failures into
   // ok:false, so a throw here is a logic error — but even that must cost one PR,
   // not the rest of the sweep (the fail-safe contract in the header).
@@ -907,6 +946,8 @@ export async function processBaseMove({
       updateBranchTimeoutMs,
       queue,
       requireUpToDate,
+      migrations,
+      now,
     }).catch((error) => {
       logger.log?.(
         `[pr-base-sync] #${number}: unexpected error (${error.message}) — skipping, fail safe`,
@@ -1125,8 +1166,11 @@ async function reconcileTokenAlert({
   // that genuinely proves nothing, and it must not close a live alert. Nor does
   // a sweep whose behind PRs were all held behind the update slot (#3599): it
   // called update-branch on none of them, so "hit no failure" would be vacuous.
-  // Nor one whose only app-token write was a registry merge GitHub refused (#3783).
-  const untested = results.some((r) => r.action === "held" || r.action === "raced" || r.registryRefused);
+  // Nor one whose only app-token write was a registry merge (#3783) or a migration
+  // renumber (#4558) that GitHub refused.
+  const untested = results.some(
+    (r) => r.action === "held" || r.action === "raced" || r.registryRefused || r.renumberRefused,
+  );
   if (!updated && (!updateToken || untested)) return;
 
   const recovery = await resolveAutoUpdateAlert({
@@ -1181,6 +1225,8 @@ async function processOnePr({
   updateBranchTimeoutMs,
   queue = null,
   requireUpToDate = REQUIRE_UP_TO_DATE,
+  migrations = sweepMigrations({ token, repo, baseSha, fetchImpl }),
+  now = Date.now,
 }) {
   // An auto-merge PR was already read by assessAutoMergeQueue; reuse it,
   // including an unresolved mergeability (pr: null), which must not be polled
@@ -1258,6 +1304,24 @@ async function processOnePr({
   };
 
   if (pr.mergeable === false) return postConflictComment();
+
+  // Merges cleanly, but its migrations may now sort before the base's newest
+  // (#4558). Checked before the up-to-date rule's early return below: a clean PR
+  // left as it is would merge out of order, and staging would refuse it.
+  const renumbered = await renumberMigrations({
+    token,
+    updateToken,
+    repo,
+    baseRef,
+    baseSha,
+    pr,
+    number,
+    fetchImpl,
+    logger,
+    migrations,
+    now,
+  });
+  if (renumbered) return renumbered;
 
   // Merges cleanly, and need not be up to date to merge: leave it, whether or
   // not it is behind. An update would only restart its CI. A wake left from an
@@ -1437,6 +1501,97 @@ async function processOnePr({
     ...wake,
     ...(blockedDetail ? { blockedDetail } : {}),
   };
+}
+
+/**
+ * What one sweep shares about migrations: the base's list, read at most once
+ * and only when some PR adds a migration, and the versions this sweep already
+ * gave PRs, so two PRs renumbered in one sweep don't land on the same version.
+ */
+function sweepMigrations({ token, repo, baseSha, fetchImpl }) {
+  let base = null;
+  return {
+    getBase: () => (base ??= readBaseMigrations({ token, repo, baseSha, fetchImpl })),
+    taken: [],
+  };
+}
+
+/**
+ * A clean PR whose migrations sort before the base's newest: push the merge and
+ * renumber with the app token (resolve-migration-order.mjs), or, when that can't
+ * be done safely, post a wake with the exact command. Null when the PR's
+ * migrations are fine, it adds none, or the sweep could not tell (fail safe:
+ * the PR takes its usual path).
+ */
+async function renumberMigrations({
+  token,
+  updateToken,
+  repo,
+  baseRef,
+  baseSha,
+  pr,
+  number,
+  fetchImpl,
+  logger,
+  migrations,
+  now,
+}) {
+  const plan = await planMigrationRenumber({
+    token,
+    repo,
+    pr,
+    baseSha,
+    getBaseMigrations: migrations.getBase,
+    taken: migrations.taken,
+    fetchImpl,
+    now: new Date(now()),
+  });
+  if (plan.needed === null) {
+    logger.log?.(`[pr-base-sync] #${number}: could not check its migrations' order (${plan.reason}) — carrying on`);
+    return null;
+  }
+  if (!plan.needed) return null;
+
+  let reason = plan.ok ? null : plan.reason;
+  let renumberRefused = false;
+  if (plan.ok && !updateToken) {
+    // A push through GITHUB_TOKEN would start no CI, so it never falls back to it.
+    reason = "the workflow minted no app token to push with";
+  } else if (plan.ok) {
+    const fix = await pushMigrationRenumber({
+      token,
+      pushToken: updateToken,
+      repo,
+      plan,
+      baseRef,
+      baseSha,
+      fetchImpl,
+    });
+    if (fix.resolved) {
+      migrations.taken.push(...plan.renames.map(({ to }) => to.slice(0, 14)));
+      const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+      logger.log?.(
+        `[pr-base-sync] #${number}: migrations sorted before ${baseRef}'s — merged ${baseRef} and renumbered ` +
+          `${plan.renames.map(({ from, to }) => `${from.slice(0, 14)}->${to.slice(0, 14)}`).join(", ")} ` +
+          `in ${fix.sha.slice(0, 12)}${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+      );
+      // Not "updated": that is update-branch's proof for the token alert.
+      return { number, verdict: "migration-order", action: "renumbered" };
+    }
+    reason = `GitHub refused the push: ${fix.reason}`;
+    // An app-token write failed: this sweep proves nothing about the token.
+    renumberRefused = true;
+  }
+  const wake = await postWakeComment({
+    token,
+    repo,
+    number,
+    body: buildRenumberComment({ baseRef, baseSha, pr, renames: plan.renames, reason }),
+    what: `migrations sort before ${baseRef}'s, not renumbered (${reason})`,
+    fetchImpl,
+    logger,
+  });
+  return { number, verdict: "migration-order", ...wake, ...(renumberRefused ? { renumberRefused } : {}) };
 }
 
 /**

@@ -8,7 +8,7 @@
  * These records are emitted at `warn` so a level filter alone isolates them.
  */
 
-export const SECURITY_EVENT = 'security_event' as const;
+const SECURITY_EVENT = 'security_event' as const;
 
 export type SecurityEventKind =
   'auth_failure' | 'authorization_denied' | 'rate_limit_rejected';
@@ -19,12 +19,11 @@ export type SecurityEventKind =
  * Keyed by status because that is what the exception filter has in hand at the
  * one point every denial passes through, whichever guard raised it.
  */
-export const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> =
-  {
-    401: 'auth_failure',
-    403: 'authorization_denied',
-    429: 'rate_limit_rejected',
-  };
+const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> = {
+  401: 'auth_failure',
+  403: 'authorization_denied',
+  429: 'rate_limit_rejected',
+};
 
 /**
  * Which of the auth guard's 401s a failure was (#3907). An auth-failure spike

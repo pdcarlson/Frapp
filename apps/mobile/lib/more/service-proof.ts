@@ -37,7 +37,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * a sentence to show in it.
  */
 
-export const PROOF_TYPE_REFUSAL =
+const PROOF_TYPE_REFUSAL =
   "Proof from your phone can be a JPEG, PNG, GIF or WebP photo.";
 export const PROOF_SIZE_REFUSAL = `Proof can be up to ${MAX_UPLOAD_LABEL}.`;
 

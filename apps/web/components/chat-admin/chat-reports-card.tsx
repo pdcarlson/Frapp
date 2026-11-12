@@ -51,6 +51,7 @@ import {
 import type { ChatReportTab } from "./chat-report-copy";
 import { ReportRowsSkeleton } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CHAT_REPORTS_ANCHOR } from "@/components/settings/settings-paths";
 
 /**
  * The officer report queue (#2257) and its one destructive action (#2311).
@@ -172,9 +173,6 @@ function resolutionFailureMessage(error: unknown, next: Resolution): string {
     : FAILED_TOAST[next];
 }
 
-/** The queue's anchor: the new-report notification links to it. */
-export const CHAT_REPORTS_ANCHOR = "reported-messages";
-
 function ChatReportsQueue({ channelId }: { channelId?: string }) {
   // Kept out of the way (Paul, 2026-11-11: "just not showing reports if
   // there's no reported messages ... it doesn't need to be staring you right
@@ -192,7 +190,7 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
     Array.isArray(openQuery.data) && openQuery.data.length === 0;
   const [status, setStatus] = useState<ChatReportStatus>("open");
   // The queue sits last on the page, under the channel settings, so a
-  // new-report notification (`/chat-admin#reported-messages`) scrolls to it
+  // new-report notification (`CHAT_REPORTS_SETTINGS_PATH`) scrolls to it
   // once it mounts: the browser's own jump ran before the permission gate let
   // the section render.
   const sectionRef = useRef<HTMLElement>(null);

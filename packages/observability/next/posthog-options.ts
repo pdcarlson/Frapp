@@ -16,7 +16,7 @@ export { shouldEnablePostHogReplay } from "../src/index";
  * config. Landing adds `never`.
  */
 
-export const ANONYMOUS_POSTHOG_SESSION_RECORDING = {
+const ANONYMOUS_POSTHOG_SESSION_RECORDING = {
   maskAllInputs: true,
   maskTextSelector: "*",
   blockClass: "ph-no-capture",

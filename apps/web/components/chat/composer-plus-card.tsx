@@ -66,7 +66,7 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
 };
 
 /** The form's title in the card's header. */
-export const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
+const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   poll: "New poll",
   signup: "New sign-up sheet",
   event: "New event",

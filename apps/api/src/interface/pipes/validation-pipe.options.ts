@@ -21,7 +21,7 @@ const nestRefusal = new ValidationPipe().createExceptionFactory();
  * (`@repo/observability`'s `api-error-codes.ts`). Anything that isn't Nest's
  * plain 400 body is passed on unchanged.
  */
-export function codedValidationRefusal(errors: ValidationError[]): unknown {
+function codedValidationRefusal(errors: ValidationError[]): unknown {
   const refusal = nestRefusal(errors);
   if (!(refusal instanceof BadRequestException)) return refusal;
   const body = refusal.getResponse();

@@ -24,7 +24,7 @@ import {
   ThemedRefreshControl,
   type ScreenRefresh,
 } from "@/components/pull-to-refresh";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
@@ -270,31 +270,6 @@ function CoveredByOverlay({
 
 const coveredStyle = { flex: 1 } as const;
 
-export function InfoCard({
-  title,
-  body,
-  badge,
-}: {
-  title: string;
-  body: string;
-  badge?: string;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-
-  return (
-    <View style={styles.card}>
-      {badge ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badge}</Text>
-        </View>
-      ) : null}
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardBody}>{body}</Text>
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     frame: {
@@ -329,35 +304,6 @@ function createStyles(tokens: SignetTokens) {
     },
     subtitle: {
       marginTop: tokens.spacing.xs,
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
-    },
-    card: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-    },
-    badge: {
-      alignSelf: "flex-start",
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tint(tokens.color.semantic.info),
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    badgeText: {
-      color: tokens.color.semantic.info,
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.2,
-      textTransform: "uppercase",
-    },
-    cardTitle: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    cardBody: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
     },

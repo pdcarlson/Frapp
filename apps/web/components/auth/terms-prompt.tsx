@@ -44,7 +44,7 @@ export const TERMS_PROMPT_DELETE_FAILED = `${DELETE_ACCOUNT_FAILED.title}. ${DEL
  * as mobile's Terms screen offers it too. Accepting updates the cached status,
  * and the gate unmounts this.
  */
-export function TermsPrompt() {
+function TermsPrompt() {
   const acceptTerms = useAcceptLegalTerms();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);

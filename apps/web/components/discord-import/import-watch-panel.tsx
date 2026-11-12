@@ -38,7 +38,7 @@ export interface ImportProgress {
 }
 
 /** "3 done · 1 importing · 12 waiting", leaving out what is zero. */
-export function progressSummary(counts: ImportProgress["counts"]): string {
+function progressSummary(counts: ImportProgress["counts"]): string {
   return [
     `${counts.completed} done`,
     counts.running > 0 ? `${counts.running} importing` : null,

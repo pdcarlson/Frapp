@@ -7,8 +7,19 @@ import {
   createRouteViewRecorder,
   isAnalyticsCaptureOptedOut,
   isPostHogReady,
+  resetPostHog,
 } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "./client";
+
+vi.mock("expo-updates", () => ({
+  isEnabled: true,
+  isEmbeddedLaunch: false,
+  isEmergencyLaunch: false,
+  updateId: "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+  channel: "production",
+  runtimeVersion: "0.12.0",
+  createdAt: new Date("2026-11-12T20:00:00.000Z"),
+}));
 
 afterEach(() => {
   bindPostHogAdapterForTests(null);
@@ -29,6 +40,28 @@ describe("initMobilePostHog", () => {
     expect(isPostHogReady()).toBe(true);
     initMobilePostHog();
     expect(isPostHogReady()).toBe(true);
+  });
+
+  it("tags every event with the update this launch runs, again after a reset", () => {
+    const register = vi.spyOn(PostHog.prototype, "register");
+    const reset = vi.spyOn(PostHog.prototype, "reset");
+    try {
+      vi.stubEnv("EXPO_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+      initMobilePostHog();
+      const running = expect.objectContaining({
+        app_launch: "update",
+        app_update_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        app_runtime_version: "0.12.0",
+      });
+      expect(register).toHaveBeenCalledWith(running);
+      register.mockClear();
+      resetPostHog();
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(register).toHaveBeenCalledWith(running);
+    } finally {
+      register.mockRestore();
+      reset.mockRestore();
+    }
   });
 
   it("starts opted out until the chapter's answer arrives (#3101)", () => {

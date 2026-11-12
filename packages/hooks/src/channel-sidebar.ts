@@ -98,7 +98,7 @@ export interface ArrangedSidebar<C extends SidebarChannelLike> {
   emptiedByFilters: boolean;
 }
 
-export const PINNED_SECTION_LABEL = "Pinned";
+const PINNED_SECTION_LABEL = "Pinned";
 
 /** The shape of a TanStack query result these helpers read. */
 interface QueryState<T> {
@@ -268,7 +268,7 @@ export function isAddressed(
  * mentions, or a direct message's unread count. A channel that is merely
  * unread draws no number; its bold name says so.
  */
-export function addressedCount(
+function addressedCount(
   isDirect: boolean,
   counts: SidebarUnreadCounts,
 ): number {

@@ -1,10 +1,12 @@
 import PostHog from "posthog-react-native";
+import * as Updates from "expo-updates";
 import {
   applyAnalyticsOptOut,
   canStartLivePostHogInit,
   isAnalyticsCaptureOptedOut,
   setLivePostHogAdapter,
 } from "@repo/observability/identified-posthog";
+import { runningUpdateProperties } from "@/lib/updates/running-update";
 import { buildMobilePostHogInitOptions, mobilePostHogKey } from "./config";
 
 /**
@@ -14,6 +16,26 @@ import { buildMobilePostHogInitOptions, mobilePostHogKey } from "./config";
 function resetLiveGroups(client: PostHog): void {
   void client.register({ $groups: {} });
   client.resetGroupPropertiesForFlags();
+}
+
+/**
+ * Every event says which JavaScript this launch runs: the store build or an
+ * over-the-air update, and which (`lib/updates/running-update.ts`). Super
+ * properties persist, and `reset()` clears them, so this runs at init and
+ * after every reset.
+ */
+function registerRunningUpdate(client: PostHog): void {
+  void client.register({
+    ...runningUpdateProperties({
+      isEnabled: Updates.isEnabled,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      isEmergencyLaunch: Updates.isEmergencyLaunch,
+      updateId: Updates.updateId,
+      channel: Updates.channel,
+      runtimeVersion: Updates.runtimeVersion,
+      createdAt: Updates.createdAt,
+    }),
+  });
 }
 
 /**
@@ -27,12 +49,14 @@ export function initMobilePostHog(): void {
   const key = mobilePostHogKey();
   if (!key) return;
   const client = new PostHog(key, buildMobilePostHogInitOptions());
+  registerRunningUpdate(client);
   setLivePostHogAdapter({
     identify(distinctId) {
       client.identify(distinctId);
     },
     reset() {
       client.reset();
+      registerRunningUpdate(client);
     },
     group(groupType, groupKey) {
       client.group(groupType, groupKey);

@@ -18,8 +18,8 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { InlineNote } from "@/components/shared/inline-note";
 
-export const DISCORD_HISTORY_TITLE = "Discord history";
-export const DISCORD_HISTORY_DESCRIPTION =
+const DISCORD_HISTORY_TITLE = "Discord history";
+const DISCORD_HISTORY_DESCRIPTION =
   "If your chapter imported its Discord server, link the Discord account you used there. Your old messages then show under your name in this chapter, and you can delete them like any message of yours.";
 
 /**

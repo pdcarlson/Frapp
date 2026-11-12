@@ -9,7 +9,7 @@ import { createStoredPreference } from "@/lib/stored-preference";
  * Only chips are kept: the To confirm tile's narrowing is a moment's
  * shortcut, so picking it leaves the stored chip as it was.
  */
-export const ACTIVITY_FILTER_STORAGE_KEY = "frapp.activity.filter";
+const ACTIVITY_FILTER_STORAGE_KEY = "frapp.activity.filter";
 
 const preference = createStoredPreference<ActivityFilter>({
   key: ACTIVITY_FILTER_STORAGE_KEY,
@@ -22,7 +22,6 @@ const preference = createStoredPreference<ActivityFilter>({
 // and it should draw on the stored chip rather than jump to it.
 void preference.hydrate();
 
-export const hydrateActivityFilter = preference.hydrate;
 export const useStoredActivityFilter = preference.use;
 export const resetActivityFilterForTests = preference.resetForTests;
 

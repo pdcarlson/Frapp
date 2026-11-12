@@ -1,0 +1,32 @@
+# Device pass: a message sends in #general and its long-press menu offers
+# Copy text (#3653).
+appId: live.frapp.mobile
+name: "Send a message and open its menu"
+tags:
+  - smoke
+---
+- launchApp
+- runFlow: ../subflows/sign-in.yaml
+- runFlow: ../subflows/open-general.yaml
+- evalScript: ${output.stamp = 'Smoke check ' + Date.now()}
+- tapOn: "Message.*"
+- inputText: ${output.stamp}
+- tapOn: "Send message"
+- extendedWaitUntil:
+    visible: ${output.stamp}
+    timeout: 15000
+# Sent, not stuck: a failed send leaves a retry control on the row.
+- extendedWaitUntil:
+    notVisible: "Retry sending this message"
+    timeout: 15000
+- takeScreenshot: chat-sent
+- longPressOn: ${output.stamp}
+- assertVisible: "Copy text"
+- takeScreenshot: chat-message-menu
+- tapOn: "Copy text"
+# The row reads "Copied" in place, then the sheet closes by itself.
+- assertVisible: "Copied"
+- extendedWaitUntil:
+    notVisible: "Copied"
+    timeout: 5000
+- assertNotVisible: "Copy text"

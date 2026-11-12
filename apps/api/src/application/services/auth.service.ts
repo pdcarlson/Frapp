@@ -3,8 +3,8 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 
-export const PLACEHOLDER_EMAIL_HOST = 'users.invalid';
-export const APPLE_PRIVATE_RELAY_HOST = 'privaterelay.appleid.com';
+const PLACEHOLDER_EMAIL_HOST = 'users.invalid';
+const APPLE_PRIVATE_RELAY_HOST = 'privaterelay.appleid.com';
 
 function stringField(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -12,11 +12,11 @@ function stringField(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function isPlaceholderAuthEmail(email: string): boolean {
+function isPlaceholderAuthEmail(email: string): boolean {
   return email.split('@')[1]?.toLowerCase() === PLACEHOLDER_EMAIL_HOST;
 }
 
-export function isApplePrivateRelayEmail(email: string): boolean {
+function isApplePrivateRelayEmail(email: string): boolean {
   return email.split('@')[1]?.toLowerCase() === APPLE_PRIVATE_RELAY_HOST;
 }
 
@@ -24,7 +24,7 @@ export function isApplePrivateRelayEmail(email: string): boolean {
  * `users.email` is NOT NULL. Native Sign in with Apple may omit email after
  * the first grant, so an empty Auth email cannot be written as `''`.
  */
-export function emailForSync(supabaseAuthId: string, email: string): string {
+function emailForSync(supabaseAuthId: string, email: string): string {
   const trimmed = email.trim();
   if (trimmed.length > 0) return trimmed;
   return `noreply+${supabaseAuthId}@${PLACEHOLDER_EMAIL_HOST}`;
@@ -38,10 +38,7 @@ export function emailForSync(supabaseAuthId: string, email: string): string {
  * Collision of two *different* auth users who share an email is GoTrue
  * identity linking — this table is unique on `supabase_auth_id` only.
  */
-export function shouldAdoptSyncedEmail(
-  current: string,
-  incoming: string,
-): boolean {
+function shouldAdoptSyncedEmail(current: string, incoming: string): boolean {
   if (current === incoming) return false;
   if (isPlaceholderAuthEmail(incoming)) return false;
   if (isPlaceholderAuthEmail(current)) return true;
@@ -50,7 +47,7 @@ export function shouldAdoptSyncedEmail(
   );
 }
 
-export function displayNameFromMetadata(
+function displayNameFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!metadata) return null;
@@ -65,9 +62,9 @@ export function displayNameFromMetadata(
 }
 
 /** The name stored when sign-in carried none and the email gives none away. */
-export const PLACEHOLDER_DISPLAY_NAME = 'Member';
+const PLACEHOLDER_DISPLAY_NAME = 'Member';
 
-export function displayNameForSync(
+function displayNameForSync(
   email: string,
   metadata?: Record<string, unknown> | null,
 ): string {
@@ -90,7 +87,7 @@ export function displayNameForSync(
  * gives only once was never adopted. A name the member typed is never
  * replaced.
  */
-export function shouldFillDisplayName(
+function shouldFillDisplayName(
   stored: unknown,
   metadata: Record<string, unknown> | null | undefined,
 ): boolean {

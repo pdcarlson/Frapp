@@ -191,7 +191,7 @@ const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
  * every change, and a key nothing reads would otherwise live on that device
  * forever (this is what #266 found with `digestEmailsEnabled`).
  */
-export function parseCachedPreferences(value: unknown): CachedPreferences | null {
+function parseCachedPreferences(value: unknown): CachedPreferences | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.quietHoursEnabled !== "boolean") return null;
@@ -218,7 +218,7 @@ export function parseCachedPreferences(value: unknown): CachedPreferences | null
   return { quietHoursEnabled: candidate.quietHoursEnabled, categories };
 }
 
-export function defaultQuietHoursWindow(): QuietHoursWindow {
+function defaultQuietHoursWindow(): QuietHoursWindow {
   return {
     start: DEFAULT_QUIET_HOURS_START,
     end: DEFAULT_QUIET_HOURS_END,

@@ -250,6 +250,7 @@ describe('FeatureEventInterceptor (#593)', () => {
       USER_ID,
       expect.objectContaining({
         app: 'mobile',
+        appVersion: { version: '0.9.0', build: '2' },
         properties: { feature: 'tasks', posted_to_chat: false },
       }),
     );

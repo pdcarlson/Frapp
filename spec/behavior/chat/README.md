@@ -712,7 +712,7 @@ A chapter migrating from Discord imports its history into the **same**
 exactly the machinery everything else uses.
 
 **How an import happens — two ways, both ending in the same rows.** The admin
-chooses one at `/discord-import`; everything after the choice is identical.
+chooses one on Discord import (Chapter settings → Chat, `/settings?tab=chat&tool=discord-import`); everything after the choice is identical.
 
 - **Connect Discord** (`source = 'bot'`). The chapter installs one
   Frapp-owned bot through Discord's ordinary "Add to Server" screen, and the
@@ -756,7 +756,7 @@ read, so a message count would read full from the first page (#2816). An upload'
 is counted in messages. Neither reads 100% until the import has completed.
 
 **One import per chapter (2026-11-06).** *Owner's decision (the import
-redesign): a chapter moves off Discord once, so `/discord-import` is built
+redesign): a chapter moves off Discord once, so Discord import is built
 around its one import rather than a list of jobs.* The API refuses to create
 or start an import (409, `Your chapter already has a Discord import. Delete it
 before starting another.`) while another of the chapter's imports is queued,

@@ -177,7 +177,7 @@ export type NotifyPayload = {
  * zone their quiet hours run in, else null. A stored value this runtime cannot
  * resolve counts as none, so formatting never throws on a legacy row.
  */
-export function recipientTimeZone(
+function recipientTimeZone(
   settings:
     | (Pick<UserSettings, 'quiet_hours_tz'> & { time_zone?: string | null })
     | null,

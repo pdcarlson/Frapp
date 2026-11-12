@@ -58,7 +58,7 @@ export function isPersonalSettingsSectionShown(
 }
 
 /** The section the page opens on, and falls back to for an unknown `?section=`. */
-export const DEFAULT_PERSONAL_SETTINGS_SECTION: PersonalSettingsSection =
+const DEFAULT_PERSONAL_SETTINGS_SECTION: PersonalSettingsSection =
   "notifications";
 
 export function personalSettingsHref(section: PersonalSettingsSection): string {

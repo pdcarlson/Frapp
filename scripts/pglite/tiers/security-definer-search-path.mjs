@@ -119,6 +119,7 @@ console.log("\n=== security definer search_path ===");
 const ACCEPTED_AUTHENTICATED_DEFINERS = [
   "can_read_chat_channel",
   "can_read_chat_message",
+  "chat_action_is_callers",
   "chat_viewer_has_blocked",
   "realtime_can_read_chapter_scope",
   "realtime_can_read_event_scope",

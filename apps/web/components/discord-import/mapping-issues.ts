@@ -88,7 +88,7 @@ export function privacyReason(channel: StagedChannel): PrivacyReason | null {
  * who could see it in Discord; a genuinely private one the bot reads only
  * when the chapter gives it Manage Threads, and it lands there too.
  */
-export function defaultVisibility(
+function defaultVisibility(
   channel: StagedChannel,
 ): "chapter" | "discord" | undefined {
   const reason = privacyReason(channel);

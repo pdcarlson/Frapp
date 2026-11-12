@@ -53,6 +53,8 @@ import { TaskEditForm } from "./task-edit-form";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
+import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
+import { useListLayout, type ListLayout } from "@/lib/list-layout";
 
 type Task = {
   id: string;
@@ -211,6 +213,10 @@ export function TasksBoard() {
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
 
   const [showAllConfirmed, setShowAllConfirmed] = useState(false);
+  // Grid is the board of status columns, the page's only view until #4175
+  // and still its default; List is the same groups as rows, top to bottom.
+  const [layout] = useListLayout("tasks");
+  const isGrid = layout === "grid";
 
   const { columns, confirmed } = useMemo(() => {
     const grouped = new Map<TaskStatus, Task[]>();
@@ -453,8 +459,9 @@ export function TasksBoard() {
 
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
-    // window is wide, so the lanes count the page's own width. One lane per
-    // row below `@2xl` (672px), two to `@4xl` (896px), then all four.
+    // window is wide, so the layout counts the page's own width. In Grid, one
+    // lane per row below `@2xl` (672px), two to `@4xl` (896px), then all
+    // four; List stacks the groups at every width.
     <div className="@container space-y-6">
       {/*
         For every viewer, not only `tasks:manage`: the assignee-facing Start /
@@ -480,70 +487,89 @@ export function TasksBoard() {
           Flush, not carded. Each column used to be a `<Card>` with a title,
           a description and (under the completed column) a footer explaining
           the confirm rule. A column is now a section on the page surface,
-          named by its label and count; the tiles inside keep a hairline frame,
-          because a kanban tile is a block with its own controls, not a row.
+          named by its label and count. In Grid the tiles inside keep a
+          hairline frame, because a kanban tile is a block with its own
+          controls; in List they are flush rows split by a hairline (#4175).
         */
-        <div className="grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4">
-          {COLUMNS.map((column) => {
-            const list = columns.get(column.status) ?? [];
-            const labelId = `tasks-column-${column.status.toLowerCase()}`;
-            return (
-              <section
-                key={column.status}
-                aria-labelledby={labelId}
-                className="min-w-0 space-y-3"
-              >
-                <SectionLabel id={labelId} count={list.length}>
-                  {column.label}
-                </SectionLabel>
-                {/*
-                  Rule 2: the first action sits where the first item goes.
-                  The add row is the board's only way to create a task, so
-                  it stays at the top of To do once the column fills up.
-                */}
-                {column.status === "TODO" &&
-                (canManage || !permissionsKnown) ? (
-                  <Can permission="tasks:manage">
-                    <AddTaskRow
-                      members={members}
-                      gate={gate}
-                      pending={createTask.isPending}
-                      onCreate={createFromDraft}
-                    />
-                  </Can>
-                ) : null}
-                {list.length === 0 ? (
-                  column.status === "TODO" && canManage ? null : (
-                    <p className="text-sm text-muted-foreground">
-                      {column.empty}
-                    </p>
-                  )
-                ) : (
-                  <ul className="space-y-2">
-                    {list.map((task) => (
-                      <TaskTile
-                        key={task.id}
-                        task={task}
-                        assigneeName={
-                          membersByUserId.get(task.assignee_id) ??
-                          memberFallbackLabel(task.assignee_id)
-                        }
-                        myUserId={myUserId}
-                        canManage={canManage}
+        <>
+          {/*
+            The List / Grid switch at the trailing edge, over the groups it
+            lays out (Linear's and Asana's List / Board sit there too).
+          */}
+          <div className="flex justify-end">
+            <ListLayoutToggle screen="tasks" />
+          </div>
+          <div
+            className={
+              isGrid
+                ? "grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4"
+                : "space-y-8"
+            }
+          >
+            {COLUMNS.map((column) => {
+              const list = columns.get(column.status) ?? [];
+              const labelId = `tasks-column-${column.status.toLowerCase()}`;
+              return (
+                <section
+                  key={column.status}
+                  aria-labelledby={labelId}
+                  className="min-w-0 space-y-3"
+                >
+                  <SectionLabel id={labelId} count={list.length}>
+                    {column.label}
+                  </SectionLabel>
+                  {/*
+                    Rule 2: the first action sits where the first item goes.
+                    The add row is the board's only way to create a task, so
+                    it stays at the top of To do once the column fills up.
+                  */}
+                  {column.status === "TODO" &&
+                  (canManage || !permissionsKnown) ? (
+                    <Can permission="tasks:manage">
+                      <AddTaskRow
+                        members={members}
                         gate={gate}
-                        lifecycleWritePending={lifecycleWritePending}
-                        onChangeStatus={(next) => void changeStatus(task, next)}
-                        onConfirm={() => void confirmCompletion(task)}
-                        onReject={() => void rejectCompletion(task)}
-                        onDelete={() => void removeTask(task)}
+                        pending={createTask.isPending}
+                        onCreate={createFromDraft}
                       />
-                    ))}
-                  </ul>
-                )}
-              </section>
-            );
-          })}
-        </div>
+                    </Can>
+                  ) : null}
+                  {list.length === 0 ? (
+                    column.status === "TODO" && canManage ? null : (
+                      <p className="text-sm text-muted-foreground">
+                        {column.empty}
+                      </p>
+                    )
+                  ) : (
+                    <ul className={taskListClassName(layout)}>
+                      {list.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          layout={layout}
+                          task={task}
+                          assigneeName={
+                            membersByUserId.get(task.assignee_id) ??
+                            memberFallbackLabel(task.assignee_id)
+                          }
+                          myUserId={myUserId}
+                          canManage={canManage}
+                          gate={gate}
+                          lifecycleWritePending={lifecycleWritePending}
+                          onChangeStatus={(next) =>
+                            void changeStatus(task, next)
+                          }
+                          onConfirm={() => void confirmCompletion(task)}
+                          onReject={() => void rejectCompletion(task)}
+                          onDelete={() => void removeTask(task)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {/*
@@ -558,13 +584,20 @@ export function TasksBoard() {
           <SectionLabel id="tasks-confirmed" count={confirmed.length}>
             {TASK_CONFIRMED_LABEL}
           </SectionLabel>
-          <ul className="grid gap-x-6 gap-y-2 @2xl:grid-cols-2 @4xl:grid-cols-4">
+          <ul
+            className={
+              isGrid
+                ? "grid gap-x-6 gap-y-2 @2xl:grid-cols-2 @4xl:grid-cols-4"
+                : taskListClassName(layout)
+            }
+          >
             {(showAllConfirmed
               ? confirmed
               : confirmed.slice(0, CONFIRMED_PREVIEW)
             ).map((task) => (
-              <TaskTile
+              <TaskCard
                 key={task.id}
+                layout={layout}
                 task={task}
                 assigneeName={
                   membersByUserId.get(task.assignee_id) ??
@@ -599,7 +632,21 @@ export function TasksBoard() {
   );
 }
 
-function TaskTile({
+/**
+ * A task group's list: in Grid a stack of framed tiles, in List flush rows
+ * split by a hairline, as the Documents and Directory lists are.
+ */
+function taskListClassName(layout: ListLayout): string {
+  return layout === "grid" ? "space-y-2" : "divide-y divide-border";
+}
+
+/**
+ * One task, as a tile in a Grid column or a row of the List (#4175). Both
+ * draw the same facts and the same controls, Edit and Delete included, from
+ * this one body; only the frame and where the controls sit differ.
+ */
+function TaskCard({
+  layout,
   task,
   assigneeName,
   myUserId,
@@ -611,6 +658,7 @@ function TaskTile({
   onReject,
   onDelete,
 }: {
+  layout: ListLayout;
   task: Task;
   assigneeName: string;
   myUserId: string;
@@ -645,12 +693,16 @@ function TaskTile({
   // stood, so it has no Edit.
   const [editing, setEditing] = useState(false);
   const editable = canManage && !task.points_awarded;
+  const isRow = layout === "list";
 
   if (editing && editable) {
     return (
       <li
         aria-label={`Editing ${task.title}`}
-        className="rounded-[14px] border border-ring/60 p-3"
+        className={cn(
+          "rounded-[14px] border border-ring/60 p-3",
+          isRow && "my-2",
+        )}
         // Escape puts the tile back unsaved, like the + card's Escape. A
         // picker open inside handles its own Escape in its portal first.
         onKeyDown={(event) => {
@@ -670,11 +722,17 @@ function TaskTile({
     );
   }
 
-  return (
-    <li className="rounded-[14px] border border-border p-3">
+  const summary = (
+    <div className="min-w-0 flex-1">
       <p className="text-sm font-semibold text-foreground">{task.title}</p>
       {task.description ? (
-        <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
+        <p
+          className={cn(
+            "mt-1 text-caption text-muted-foreground",
+            // A row stays one line of description; a tile has the height.
+            isRow ? "line-clamp-1" : "line-clamp-2",
+          )}
+        >
           {task.description}
         </p>
       ) : null}
@@ -713,130 +771,167 @@ function TaskTile({
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
       </div>
-      {subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
-        <TaskSubtaskList
-          taskId={task.id}
-          subtasks={task.subtasks}
-          canCheck={isMine || canManage}
-          canEdit={canManage}
-          closed={task.points_awarded}
-          gate={gate}
-        />
-      ) : null}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/*
+    </div>
+  );
+
+  const controls = (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-2",
+        // A row with nothing to offer this viewer draws no empty gap.
+        // In a row they end it, wrapping within its trailing half on a
+        // narrow page rather than taking a line of their own under it.
+        isRow ? "empty:hidden max-w-[55%] justify-end" : "mt-3",
+      )}
+    >
+      {/*
           The inline status controls are writes too
           (`PATCH /v1/tasks/:id/status`), so they mirror the same gate as
           Create — gating only the header trigger would claim writes are
           blocked while still offering four of them.
         */}
-        {isMine && status === "TODO" ? (
-          <Button
-            size="toolbar"
-            variant="secondary"
-            {...gate.controlProps(lifecycleWritePending)}
-            onClick={() => onChangeStatus("IN_PROGRESS")}
-          >
-            {TASK_ACTION_LABELS.start}
-          </Button>
-        ) : null}
-        {isMine && status === "IN_PROGRESS" ? (
-          <Button
-            size="toolbar"
-            variant="secondary"
-            {...gate.controlProps(lifecycleWritePending)}
-            onClick={() => onChangeStatus("COMPLETED")}
-          >
-            {TASK_ACTION_LABELS.complete}
-          </Button>
-        ) : null}
-        {/*
+      {isMine && status === "TODO" ? (
+        <Button
+          size="toolbar"
+          variant="secondary"
+          {...gate.controlProps(lifecycleWritePending)}
+          onClick={() => onChangeStatus("IN_PROGRESS")}
+        >
+          {TASK_ACTION_LABELS.start}
+        </Button>
+      ) : null}
+      {isMine && status === "IN_PROGRESS" ? (
+        <Button
+          size="toolbar"
+          variant="secondary"
+          {...gate.controlProps(lifecycleWritePending)}
+          onClick={() => onChangeStatus("COMPLETED")}
+        >
+          {TASK_ACTION_LABELS.complete}
+        </Button>
+      ) : null}
+      {/*
           The assignee taking back their own "done" until an officer confirms
           it. Ghost, not secondary: it is the rare move on this tile.
         */}
-        {canReopenOwnTask({
-          stored: status,
-          pointsAwarded: task.points_awarded,
-          isAssignee: isMine,
-        }) ? (
-          <Button
-            size="toolbar"
-            variant="ghost"
-            {...gate.controlProps(lifecycleWritePending)}
-            onClick={() => onChangeStatus("IN_PROGRESS")}
-          >
-            {TASK_ACTION_LABELS.reopen}
-          </Button>
-        ) : null}
-        <Can permission="tasks:manage">
-          {status === "COMPLETED" && !task.points_awarded ? (
-            <>
-              {/*
-               * Hidden on your own task: the API refuses a self-confirmation
-               * (#1056), so rendering it would offer an action guaranteed to
-               * 403, and the optimistic write would flip the label to
-               * "Confirmed" and snap back. A confirmed task carries neither
-               * control: it sits in the Confirmed list, which says so, and the
-               * API refuses a reject once points are awarded. Reject stays on
-               * your own unconfirmed task: it withholds points rather than
-               * awarding them, so the self-confirm rule does not cover it.
-               */}
-              {cannotConfirm ? null : (
-                <Button
-                  size="toolbar"
-                  className="gap-1.5"
-                  onClick={onConfirm}
-                  {...gate.controlProps(lifecycleWritePending)}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {TASK_ACTION_LABELS.confirm}
-                </Button>
-              )}
+      {canReopenOwnTask({
+        stored: status,
+        pointsAwarded: task.points_awarded,
+        isAssignee: isMine,
+      }) ? (
+        <Button
+          size="toolbar"
+          variant="ghost"
+          {...gate.controlProps(lifecycleWritePending)}
+          onClick={() => onChangeStatus("IN_PROGRESS")}
+        >
+          {TASK_ACTION_LABELS.reopen}
+        </Button>
+      ) : null}
+      <Can permission="tasks:manage">
+        {status === "COMPLETED" && !task.points_awarded ? (
+          <>
+            {/*
+             * Hidden on your own task: the API refuses a self-confirmation
+             * (#1056), so rendering it would offer an action guaranteed to
+             * 403, and the optimistic write would flip the label to
+             * "Confirmed" and snap back. A confirmed task carries neither
+             * control: it sits in the Confirmed list, which says so, and the
+             * API refuses a reject once points are awarded. Reject stays on
+             * your own unconfirmed task: it withholds points rather than
+             * awarding them, so the self-confirm rule does not cover it.
+             */}
+            {cannotConfirm ? null : (
               <Button
                 size="toolbar"
-                variant="secondary"
                 className="gap-1.5"
+                onClick={onConfirm}
                 {...gate.controlProps(lifecycleWritePending)}
-                onClick={onReject}
               >
-                <Undo2 className="h-4 w-4" />
-                {TASK_ACTION_LABELS.reject}
+                <CheckCircle2 className="h-4 w-4" />
+                {TASK_ACTION_LABELS.confirm}
               </Button>
-            </>
-          ) : null}
-          {/*
+            )}
+            <Button
+              size="toolbar"
+              variant="secondary"
+              className="gap-1.5"
+              {...gate.controlProps(lifecycleWritePending)}
+              onClick={onReject}
+            >
+              <Undo2 className="h-4 w-4" />
+              {TASK_ACTION_LABELS.reject}
+            </Button>
+          </>
+        ) : null}
+        {/*
             A square icon at the trailing edge, so the tile's lifecycle
             actions lead and Delete never reads as one of them, and Confirm,
             Reject and Delete fit one row of a narrow column. Named for the
             task, since every tile has one.
           */}
-          {editable ? (
-            <Button
-              size="toolbar"
-              variant="ghost"
-              className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
-              aria-label={`Edit ${task.title}`}
-              {...gate.controlProps()}
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          ) : null}
+        {editable ? (
           <Button
             size="toolbar"
             variant="ghost"
-            className={cn(
-              "w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0",
-              !editable && "ml-auto",
-            )}
-            aria-label={`Delete ${task.title}`}
+            className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+            aria-label={`Edit ${task.title}`}
             {...gate.controlProps()}
-            onClick={onDelete}
+            onClick={() => setEditing(true)}
           >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            <Pencil className="h-4 w-4" aria-hidden="true" />
           </Button>
-        </Can>
-      </div>
+        ) : null}
+        <Button
+          size="toolbar"
+          variant="ghost"
+          className={cn(
+            "w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0",
+            !editable && "ml-auto",
+          )}
+          aria-label={`Delete ${task.title}`}
+          {...gate.controlProps()}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </Can>
+    </div>
+  );
+
+  const subtaskList =
+    subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
+      <TaskSubtaskList
+        taskId={task.id}
+        subtasks={task.subtasks}
+        canCheck={isMine || canManage}
+        canEdit={canManage}
+        closed={task.points_awarded}
+        gate={gate}
+      />
+    ) : null;
+
+  return (
+    <li className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}>
+      {isRow ? (
+        // The row's facts lead and its controls end it, as a Linear list
+        // row's do; an opened checklist spans the row under both.
+        <>
+          <div className="flex items-start gap-3 @xl:gap-4">
+            {summary}
+            {controls}
+          </div>
+          {subtaskList}
+        </>
+      ) : (
+        // The tile as it always was: the checklist opens under the meta line
+        // that holds its toggle, and the controls end the tile.
+        <>
+          {summary}
+          {subtaskList}
+          {controls}
+        </>
+      )}
       {/*
         The one rule from the old column footer worth keeping: it explains a
         missing control, so it sits on the tile whose control is missing. Only

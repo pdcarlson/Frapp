@@ -103,13 +103,13 @@ interface FanOutOutcome {
  * of the same INSERT to every other instance, which is seconds; a day leaves
  * room for an instance whose socket reconnected late.
  */
-export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
+const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The iOS stack a chat push joins (`PushPayload.threadId`): one per channel,
  * which for a DM is one per person.
  */
-export function chatPushThreadId(channelId: string): string {
+function chatPushThreadId(channelId: string): string {
   return `chat:${channelId}`;
 }
 
@@ -124,7 +124,7 @@ const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
  */
 export type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
 
-export function chatNotificationKind(
+function chatNotificationKind(
   channel: Pick<CachedChannelRow, 'type'>,
   isAnnouncement: boolean,
 ): ChatNotificationKind {
@@ -138,7 +138,7 @@ export function chatNotificationKind(
  * nothing. A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
  * `group-dm-<timestamp>`, both internal, so neither ever reaches a member.
  */
-export function readableChannelName(
+function readableChannelName(
   channel: Pick<CachedChannelRow, 'type' | 'name'>,
 ): { channelName?: string } {
   if (channel.type === 'DM') return {};
