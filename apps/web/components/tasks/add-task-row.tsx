@@ -15,7 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { DueDateField } from "@/components/tasks/due-date-field";
+import {
+  DueDateField,
+  dueEntryPassed,
+} from "@/components/tasks/due-date-field";
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -44,7 +47,7 @@ const EMPTY = {
   subtasks: [] as string[],
 };
 
-type Missing = { assignee?: boolean; due?: boolean };
+type Missing = { assignee?: boolean; due?: boolean; passed?: boolean };
 
 /**
  * The board's one way to create a task: a "+ Add a task" row at the top of
@@ -97,13 +100,14 @@ export function AddTaskRow({
     const nextMissing: Missing = {
       assignee: !draft.assignee_id,
       due: !draft.due_date,
+      passed: dueEntryPassed(draft.due_date),
     };
     setMissing(nextMissing);
     if (nextMissing.assignee) {
       assigneeRef.current?.focus();
       return;
     }
-    if (nextMissing.due) {
+    if (nextMissing.due || nextMissing.passed) {
       dueRef.current?.focus();
       return;
     }
@@ -215,10 +219,15 @@ export function AddTaskRow({
             aria-label="Due date"
             placeholder="Due: Fri 5pm"
             missing={missing.due}
+            passed={missing.passed}
             value={draft.due_date}
             onChange={(value) => {
               setDraft((prev) => ({ ...prev, due_date: value }));
-              if (value) setMissing((prev) => ({ ...prev, due: false }));
+              setMissing((prev) => ({
+                ...prev,
+                due: prev.due && !value,
+                passed: false,
+              }));
             }}
           />
         </div>

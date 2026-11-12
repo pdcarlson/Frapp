@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   duePresets,
-  dueTimePassed,
   editDraftOf,
   formatDueFieldLabel,
   taskEditBody,
@@ -211,15 +210,5 @@ describe("editing a task (#4296)", () => {
         },
       ),
     ).toEqual({ due_date: "2026-09-29", due_at: null });
-  });
-
-  it("doesn't refuse a task's own time for having passed, only a new one", () => {
-    const now = new Date(2026, 8, 29, 18, 0);
-    const kept = { dueDate: "2026-09-29", dueTime: "17:00" };
-    expect(dueTimePassed(kept, now)).toBe(true);
-    expect(dueTimePassed(kept, now, kept)).toBe(false);
-    expect(
-      dueTimePassed({ dueDate: "2026-09-29", dueTime: "17:30" }, now, kept),
-    ).toBe(true);
   });
 });

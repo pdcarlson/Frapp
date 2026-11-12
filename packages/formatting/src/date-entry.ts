@@ -162,8 +162,7 @@ export function formatDateEntry(
   const [isoDate = entry, time] = entry.split("T");
   const day = formatDateDay(isoDate, now, lean);
   if (!time || !TIME_OF_DAY.test(time)) return day;
-  const [hours, minutes] = time.split(":").map(Number) as [number, number];
-  return `${day} · ${clockWords(hours, minutes)}`;
+  return `${day} · ${formatDueTimeLabel(time)}`;
 }
 
 function formatDateDay(isoDate: string, now: Date, lean: DateLean): string {
@@ -186,8 +185,14 @@ function formatDateDay(isoDate: string, now: Date, lean: DateLean): string {
   return `${monthDay}, ${at.getFullYear()}`;
 }
 
-/** `"5 PM"`, `"5:30 PM"`, `"12 PM"`: English, like the rest of the field. */
-function clockWords(hours: number, minutes: number): string {
+/**
+ * A time of day as a due field shows it on web and the phone: `"5 PM"`,
+ * `"9:30 AM"`, `"12 PM"`. The minutes only when there are some, as a
+ * calendar writes a time; English, like the rest of the field. `time` is
+ * `HH:MM` on the 24-hour clock.
+ */
+export function formatDueTimeLabel(time: string): string {
+  const [hours = 0, minutes = 0] = time.split(":").map(Number);
   const period = hours < 12 ? "AM" : "PM";
   const hour = hours % 12 === 0 ? 12 : hours % 12;
   return minutes === 0
@@ -195,7 +200,8 @@ function clockWords(hours: number, minutes: number): string {
     : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
 }
 
-const TIME_OF_DAY = /^\d{2}:\d{2}$/;
+/** `HH:MM`: how a due entry carries its time of day. */
+export const TIME_OF_DAY = /^\d{2}:\d{2}$/;
 
 /**
  * {@link parseDateEntry} with an optional time of day (#4003), the way

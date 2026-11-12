@@ -193,3 +193,65 @@ describe("TaskForm (#3865, #3983)", () => {
     );
   });
 });
+
+describe("TaskForm's due time (#4512)", () => {
+  // A time long gone by, so no clock is needed: any submit refuses it unless
+  // it is the task's own.
+  const PAST = "2020-01-06T09:00";
+  const editing = { steps: null, assigneeNote: () => null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("refuses a new time already gone by, and posts nothing", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: PAST },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(create());
+    expect(
+      await screen.findByText(/That time has already passed/),
+    ).toBeInTheDocument();
+    expect(onPost).not.toHaveBeenCalled();
+  });
+
+  it("keeps a task's own time on an edit, even once it has passed", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: PAST },
+      initialAssigneeId: "u-1",
+      editing,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
+    expect(onPost.mock.calls[0]![0]).toMatchObject({ due_date: "2020-01-06" });
+    expect(onPost.mock.calls[0]![0].due_at).toEqual(expect.any(String));
+  });
+
+  it("keeps a suggestion's own time when it is accepted", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: PAST },
+      initialAssigneeId: "u-1",
+      suggestion: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
+  });
+
+  it("refuses a time newly moved into the past on an edit", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: PAST },
+      initialAssigneeId: "u-1",
+      editing,
+    });
+    fireEvent.change(screen.getByLabelText("Due time"), {
+      target: { value: "08:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText(/That time has already passed/),
+    ).toBeInTheDocument();
+    expect(onPost).not.toHaveBeenCalled();
+  });
+});
