@@ -66,8 +66,9 @@ export const mintRequestId = (): string => `req_${randomClientId()}`;
 
 /**
  * Ensure `x-request-id` is present. Honours a caller-supplied value.
- * Same rule as {@link createFrappClient} — used by raw `fetch` health probes
- * that cannot go through the OpenAPI client (`/health` is not under `/v1`).
+ * Same rule as {@link createFrappClient}; {@link withRequestIdInit} applies it
+ * for raw `fetch` health probes that cannot go through the OpenAPI client
+ * (`/health` is not under `/v1`).
  */
 const ensureRequestIdHeader = (headers: Headers): Headers => {
   if (!headers.has(REQUEST_ID_HEADER)) {

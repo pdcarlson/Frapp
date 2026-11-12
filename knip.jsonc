@@ -18,7 +18,8 @@
         "concurrently",
         // Run as node_modules/.bin/squawk by check-migration-lock-safety.mjs.
         "squawk-cli",
-        // Hoisted from apps; only hand-run scripts import them.
+        // Only hand-run scripts import these: supabase-js is hoisted from the
+        // apps, playwright arrives through @playwright/test.
         "@supabase/supabase-js",
         "playwright",
       ],
@@ -26,8 +27,8 @@
     "apps/api": {
       "entry": [
         "src/main.ts",
-        // One-off CLIs run with ts-node (export-openapi, backfills, open-*).
-        "src/*.ts",
+        // One-off backfills run by hand with ts-node.
+        "src/backfill-*.ts",
         "test/**/*.ts",
         // Compile-time checks: tsc type-checks them, nothing imports them.
         "src/infrastructure/supabase/database.types.insert-check.ts",
@@ -42,11 +43,7 @@
       // Metro picks a platform file by suffix, which knip can't follow.
       "entry": ["**/*.{native,web,ios,android}.{ts,tsx}"],
       // Native modules Expo needs installed though no file imports them.
-      "ignoreDependencies": [
-        "@expo/vector-icons",
-        "expo-font",
-        "babel-preset-expo",
-      ],
+      "ignoreDependencies": ["@expo/vector-icons", "expo-font"],
     },
     // The packages are private, so an export nothing imports is dead even
     // when package.json exports the file.

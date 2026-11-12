@@ -31,7 +31,7 @@ type RevealState<Field extends string> = {
 
 const EMPTY: RevealState<never> = { submitted: false, left: new Set() };
 
-/** The pure step behind {@link useFieldReveal}, exported for its tests. */
+/** The pure step behind {@link useFieldReveal}. */
 function revealAfterBlur<Field extends string>(
   state: RevealState<Field>,
   field: Field,

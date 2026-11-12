@@ -7,6 +7,9 @@
  */
 
 export {
+  validatedDistinctId,
+  validatedChapterGroupId,
+  fetchAnalyticsIdentity,
   observabilityIdentityQueryKey,
   isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryOptions,
@@ -21,9 +24,15 @@ export {
   isAnalyticsCaptureOptedOut,
   applyAnalyticsOptOut,
   applyAnalyticsIdentity,
+  applyObservabilityIdentity,
   applyFetchedObservabilityIdentity,
   namedAnalyticsEventBody,
   resetPostHog,
+  getPostHogDistinctId,
+  getPostHogSessionId,
+  getPostHogReplayId,
+  isProductFlagEnabled,
+  captureSentryErrorCorrelated,
   createRouteViewRecorder,
 } from "./posthog-adapter";
 export type {
@@ -34,5 +43,8 @@ export type {
   NamedAnalyticsEventProperties,
 } from "./posthog-adapter";
 
-export { withPostHogSentryCorrelation } from "./sentry-posthog-correlation";
+export {
+  attachPostHogCorrelation,
+  withPostHogSentryCorrelation,
+} from "./sentry-posthog-correlation";
 export type { CorrelatableSentryEvent } from "./sentry-posthog-correlation";
