@@ -143,6 +143,20 @@ export default function AppLayout() {
         name="arrange-channels"
         options={{ title: SCREEN_TITLES["arrange-channels"] }}
       />
+      {/* Chapter settings and its Roles screens (#4074), from More → Admin. */}
+      <Stack.Screen
+        name="chapter-settings"
+        options={{ title: SCREEN_TITLES["chapter-settings"] }}
+      />
+      <Stack.Screen
+        name="chapter-roles"
+        options={{ title: SCREEN_TITLES["chapter-roles"] }}
+      />
+      <Stack.Screen
+        name="role-tier"
+        options={{ title: SCREEN_TITLES["role-tier"] }}
+      />
+      <Stack.Screen name="role" options={{ title: SCREEN_TITLES.role }} />
     </Stack>
   );
 }

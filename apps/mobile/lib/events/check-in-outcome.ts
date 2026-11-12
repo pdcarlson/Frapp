@@ -1,3 +1,4 @@
+import { formatPointsChip } from "@repo/formatting";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
@@ -88,7 +89,7 @@ const CHECKED_IN_TITLE = "You're checked in";
 export function checkInSuccess(
   pointValue: number | null | undefined,
 ): Extract<CheckInOutcome, { kind: "success" }> {
-  const pointsLabel = pointValue ? `+${pointValue} pts` : null;
+  const pointsLabel = pointValue ? formatPointsChip(pointValue) : null;
   return {
     kind: "success",
     message: pointsLabel

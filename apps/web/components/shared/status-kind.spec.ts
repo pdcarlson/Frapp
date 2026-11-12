@@ -6,6 +6,7 @@ import {
 import { serviceStatusKind } from "@/components/service/service-status";
 import { studySessionStatusKind } from "@/components/study/study-status";
 import { geofenceStatusKind } from "@/components/geofences/geofence-status";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import {
   invoiceStatusKind,
   subscriptionStatusKind,
@@ -56,6 +57,12 @@ const MAPPERS = {
     inputs: ["active", "incomplete", "past_due", "canceled"],
   },
   moduleTier: { fn: moduleTierKind, inputs: ["free", "paid"] },
+  // #4133: In progress and Completed were the accent on the chat task card.
+  task: {
+    fn: (status: string) =>
+      taskStatusKind({ status: status as "TODO", points_awarded: false }),
+    inputs: ["TODO", "IN_PROGRESS", "COMPLETED", "OVERDUE"],
+  },
 } as const;
 
 /**
@@ -178,5 +185,22 @@ describe("the mappings themselves", () => {
     // invoice, and the same word on a module states the opposite.
     expect(moduleTierLabel("free")).toBe("Free");
     expect(moduleTierLabel("paid")).toBe("Chapter Pro");
+  });
+});
+
+describe("a task's status, as the phone draws it (#4133)", () => {
+  it("gives each state the phone's colour", () => {
+    expect(taskStatusKind({ status: "TODO" })).toBe("outline");
+    expect(taskStatusKind({ status: "IN_PROGRESS" })).toBe("info");
+    expect(taskStatusKind({ status: "OVERDUE" })).toBe("destructive");
+  });
+
+  it("keeps a completed task amber until its points are awarded", () => {
+    expect(
+      taskStatusKind({ status: "COMPLETED", points_awarded: false }),
+    ).toBe("warning");
+    expect(taskStatusKind({ status: "COMPLETED", points_awarded: true })).toBe(
+      "success",
+    );
   });
 });

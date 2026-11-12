@@ -567,7 +567,7 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.touch.button,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       ...fieldTypeRole(tokens.typography.role.body),

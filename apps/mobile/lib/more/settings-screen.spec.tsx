@@ -98,31 +98,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useGeofences: () => ({ data: [], isPending: false, isError: false }),
   usePermissionList: () => state.permissions,
-  useChapterChatBackground: () => ({
-    data: { background: "midnight", photo_url: null },
-    isPending: false,
-    isError: false,
-  }),
 }));
-
-// The chat background sheet (#4031) as a stand-in whose `present` a spec can see.
-const backgroundSheet = vi.hoisted(() => ({ present: vi.fn() }));
-vi.mock("@/components/settings/chat-background-sheet", async () => {
-  const React = await import("react");
-  return {
-    ChatBackgroundSheet: React.forwardRef(function ChatBackgroundSheet(
-      _props: object,
-      ref: React.Ref<{ present: () => void }>,
-    ) {
-      React.useImperativeHandle(ref, () => ({
-        present: backgroundSheet.present,
-      }));
-      return null;
-    }),
-  };
-});
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ signOut: vi.fn() }),
@@ -496,73 +473,14 @@ describe("Settings copy", () => {
     expect(row.props.disabled).toBe(false);
   });
 
-  it("gives an editor's accent row no narration, and no web footnote", () => {
+  it("leaves the chapter's side to Chapter settings (#4074)", () => {
+    // Even for the President: the accent, chat background and study zones
+    // moved to More → Admin → Chapter settings.
     state.permissions = ["*"];
     const text = screenText(render());
-
-    expect(text).toContain("Chapter accent");
-    expect(text).not.toContain("Your organization's colors");
-    expect(text).not.toContain("Set by an officer");
-    expect(text).not.toContain(
-      "Other chapter settings are edited on the web dashboard.",
-    );
-  });
-
-  it("tells a member who can't edit the accent who can", () => {
-    // Chapter config in view, without the manage half of
-    // CHAPTER_PROFILE_PERMISSIONS: the row can't open, so it says why.
-    state.permissions = ["chapter-config:view"];
-    const tree = render();
-
-    expect(screenText(tree)).toContain(
-      "Set by an officer with chapter settings access.",
-    );
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Chapter accent",
-      ),
-    ).toHaveLength(0);
-  });
-
-  it("opens the chat background sheet for an editor, showing the default (#4031)", () => {
-    state.permissions = ["*"];
-    backgroundSheet.present.mockClear();
-    const tree = render();
-    expect(screenText(tree)).toContain("Chat background");
-    expect(screenText(tree)).toContain("Midnight");
-    const row = tree.root.find(
-      (node) =>
-        node.props.accessibilityHint ===
-          "Choose the background every channel shows unless it has its own." &&
-        typeof node.props.onPress === "function",
-    );
-    act(() => row.props.onPress());
-    expect(backgroundSheet.present).toHaveBeenCalled();
-  });
-
-  it("gives a member who can't edit the chapter no way into the background sheet", () => {
-    state.permissions = ["chapter-config:view"];
-    const tree = render();
-    expect(screenText(tree)).toContain("Chat background");
-    expect(
-      tree.root.findAll(
-        (node) =>
-          node.props.accessibilityHint ===
-            "Choose the background every channel shows unless it has its own." &&
-          typeof node.props.onPress === "function",
-      ),
-    ).toHaveLength(0);
-  });
-
-  it("says where study zones are changed, on their read-only row", () => {
-    state.permissions = ["*"];
-
-    // Label, its line, then the value: the line sits under this row's label.
-    expect(screenText(render())).toContain(
-      "Study zones\nManaged on the web dashboard.\n0 zones",
-    );
+    expect(text).not.toContain("Chapter accent");
+    expect(text).not.toContain("Chat background");
+    expect(text).not.toContain("Study zones");
   });
 });
 

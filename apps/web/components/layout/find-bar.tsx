@@ -139,7 +139,7 @@ export function FindBar({ className }: { className?: string }) {
           setOpen(true);
         }}
         className={cn(
-          "flex h-[34px] items-center gap-2.5 rounded-[10px] border border-input bg-surface-1 px-3 text-left text-sm text-muted-foreground transition hover:text-foreground",
+          "flex h-[34px] items-center gap-2.5 rounded-[10px] border border-control-edge bg-surface-1 px-3 text-left text-sm text-muted-foreground transition hover:text-foreground",
           FOCUS_RING_SHELL,
           className,
         )}

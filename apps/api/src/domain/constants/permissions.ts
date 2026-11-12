@@ -162,6 +162,28 @@ const OFFICER_DEFAULT_PERMISSIONS = [
 ] as const;
 
 /**
+ * What every member of a new chapter can do, whatever their tier (#3709,
+ * Paul 2026-11-07: start from social trust and let chapters tighten it).
+ * Each of the top three starting tiers carries it, so an officer invited
+ * straight into their own role can do what the members they lead can: before
+ * this, a Vice President could not create an event or upload backwork. New
+ * members get less ({@link STARTING_ROLE_TIERS}).
+ *
+ * `events:create` makes an event, not a requirement: making anyone required
+ * and attaching points take `events:update` (`EventService.create`).
+ */
+const MEMBER_DEFAULT_PERMISSIONS = [
+  SystemPermissions.MEMBERS_VIEW,
+  SystemPermissions.EVENTS_CREATE,
+  SystemPermissions.BACKWORK_UPLOAD,
+  SystemPermissions.SERVICE_LOG,
+  SystemPermissions.POLLS_CREATE,
+  // What any member could do in recruitment before it had permissions
+  // (#4070); a chapter tightens it from here.
+  ...RUSH_MEMBER_PERMISSIONS,
+] as const;
+
+/**
  * The tiers a new chapter starts with, highest first (#4068 decision 10), and
  * what each gives its roles. **Seed data only.** From the moment a chapter
  * exists its tiers are its own rows in `role_tiers`: it can rename, reorder,
@@ -176,15 +198,27 @@ const OFFICER_DEFAULT_PERMISSIONS = [
  * edits a role or tier ranked at or above their own, so the Vice President
  * cannot edit the President's role or the Exec board itself.
  *
+ * The top three also carry {@link MEMBER_DEFAULT_PERMISSIONS}, what every
+ * member can do (#3709); New members get `members:view` and
+ * `backwork:upload` only. The top one also edits and deletes any event,
+ * which is what makes an event required or worth points (#3709), so the
+ * Vice President and Secretary can and a member can't.
+ *
  * Chapters that existed before tiers were placed into the same four names by
  * migration `20261111140000_role_tiers.sql`. Changing this list changes new
- * chapters and nothing else.
+ * chapters and nothing else; migration
+ * `20261112152000_member_social_trust_defaults.sql` carried #3709's two
+ * member keys to existing chapters.
  */
 export const STARTING_ROLE_TIERS = [
   {
     name: 'Exec board',
     permissions: [
-      SystemPermissions.MEMBERS_VIEW,
+      ...MEMBER_DEFAULT_PERMISSIONS,
+      // Edit and delete any event: what makes an event required or worth
+      // points (#3709), so required attendance stays with the officers.
+      SystemPermissions.EVENTS_UPDATE,
+      SystemPermissions.EVENTS_DELETE,
       SystemPermissions.POLLS_VIEW_ALL,
       ...OFFICER_DEFAULT_PERMISSIONS,
       SystemPermissions.ROLES_MANAGE,
@@ -199,23 +233,14 @@ export const STARTING_ROLE_TIERS = [
   {
     name: 'Officers and chairs',
     permissions: [
-      SystemPermissions.MEMBERS_VIEW,
+      ...MEMBER_DEFAULT_PERMISSIONS,
       ...OFFICER_DEFAULT_PERMISSIONS,
       SystemPermissions.AI_USE,
     ],
   },
   {
     name: 'Members',
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.BACKWORK_UPLOAD,
-      SystemPermissions.SERVICE_LOG,
-      SystemPermissions.POLLS_CREATE,
-      // What any member could do in recruitment before it had permissions
-      // (#4070); a chapter tightens it from here.
-      ...RUSH_MEMBER_PERMISSIONS,
-      SystemPermissions.AI_USE,
-    ],
+    permissions: [...MEMBER_DEFAULT_PERMISSIONS, SystemPermissions.AI_USE],
   },
   {
     name: 'New members',

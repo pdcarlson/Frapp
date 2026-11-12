@@ -1,55 +1,11 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import {
-  PERMISSION_REGISTRY,
-  groupPermissionsByModule,
-  permissionLabel,
-} from "@repo/validation";
+import { groupPermissionsByModule } from "@repo/validation";
+import { permissionRows } from "@repo/hooks/role-tiers";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useIsPermissionHidden } from "./hidden-permissions";
-
-export type PermissionRow = {
-  permission: string;
-  label: string;
-  description: string | null;
-};
-type Row = PermissionRow;
-
-const DESCRIPTIONS = new Map(
-  PERMISSION_REGISTRY.map((entry) => [entry.permission, entry.description]),
-);
-
-/**
- * Every permission in the registry, plus any other string the holder carries
- * (a Discord import's per-channel read gate, say), so a page never hides
- * something a role actually holds. The wildcard is never a row: nobody
- * switches it, it moves only through Transfer presidency.
- */
-export function permissionRows(
-  extra: readonly string[],
-  /** Leaves out switches for features this server does not offer. */
-  isHidden: (permission: string) => boolean = () => false,
-): Row[] {
-  const known = new Set(PERMISSION_REGISTRY.map((entry) => entry.permission));
-  const rows: Row[] = PERMISSION_REGISTRY.filter(
-    (entry) => entry.permission !== "*" && !isHidden(entry.permission),
-  ).map((entry) => ({
-    permission: entry.permission,
-    label: entry.label,
-    description: entry.description,
-  }));
-  for (const permission of new Set(extra)) {
-    if (permission === "*" || known.has(permission)) continue;
-    rows.push({
-      permission,
-      label: permissionLabel(permission),
-      description: DESCRIPTIONS.get(permission) ?? null,
-    });
-  }
-  return rows;
-}
 
 /**
  * The page of switches a tier or a role is edited on (#3990): one group per

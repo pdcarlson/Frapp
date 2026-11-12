@@ -70,14 +70,28 @@ describe("selectSetupChecklist", () => {
         "billing:view",
         "billing:manage",
         "events:create",
+        "events:update",
       ],
     });
     expect(list?.lines.map((l) => l.key)).toEqual(["event", "dues"]);
   });
 
+  // #3709: every member can create an event, but scheduling the chapter's
+  // first one is an officer's job.
+  it("leaves the event line to officers who edit events", () => {
+    expect(
+      select({ permissions: ["events:create", "members:view"] }),
+    ).toBeNull();
+  });
+
   it("needs billing:view for dues, since only it reads the chapter's invoices", () => {
     const list = select({
-      permissions: ["billing:manage", "events:create", "members:view"],
+      permissions: [
+        "billing:manage",
+        "events:create",
+        "events:update",
+        "members:view",
+      ],
     });
     expect(list?.lines.map((l) => l.key)).toEqual(["event"]);
   });
@@ -119,7 +133,7 @@ describe("selectSetupChecklist", () => {
 
   it("doesn't wait on a list for a line the viewer can't see", () => {
     const list = select({
-      permissions: ["events:create", "members:view"],
+      permissions: ["events:create", "events:update", "members:view"],
       counts: { event: 0 },
     });
     expect(list?.lines.map((l) => l.key)).toEqual(["event"]);

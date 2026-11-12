@@ -156,6 +156,8 @@ const config: Partial<Config> = {
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
+        /* A control's identifying edge (foundations §3, #4389). */
+        "control-edge": colorVar("--control-edge"),
         /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
 
@@ -192,6 +194,7 @@ const config: Partial<Config> = {
         info: {
           DEFAULT: colorVar("--info"),
           foreground: colorVar("--info-foreground"),
+          tint: colorVar("--info-tint"),
         },
         // The AA-lifted danger tone for text/icons on a danger tint (§5).
         "destructive-text": colorVar("--destructive-text"),

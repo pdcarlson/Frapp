@@ -16,6 +16,9 @@ const captureException = jest.mocked(Sentry.captureException);
 
 // Moved out of `event.service.spec.ts` with the methods (#3270). Cases drive
 // `EventService.create` / `update`, which announce through this service.
+/** The maker of these events, an `events:update` holder (#3709). */
+const OFFICER = 'user-maker';
+
 describe('EventAnnouncementService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
@@ -36,6 +39,9 @@ describe('EventAnnouncementService', () => {
       mockChatService,
       mockRbacService,
     } = await createEventServiceFixture());
+    // An officer makes these events: making anyone required takes
+    // `events:update` (#3709).
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
   });
 
   /** The copy one recipient reads from the last `notifyMembers` call. */
@@ -136,6 +142,7 @@ describe('EventAnnouncementService', () => {
       });
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -288,6 +295,7 @@ describe('EventAnnouncementService', () => {
         .mockImplementation(() => undefined);
 
       const result = await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -359,6 +367,7 @@ describe('EventAnnouncementService', () => {
         });
 
         await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Exec Meeting',
           start_time: thanksgiving.start_time,
@@ -441,6 +450,7 @@ describe('EventAnnouncementService', () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -495,6 +505,7 @@ describe('EventAnnouncementService', () => {
         mockEventRepo.create.mockResolvedValue(baseEvent);
 
         const result = await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -611,6 +622,7 @@ describe('EventAnnouncementService', () => {
         });
 
         await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Exec Review',
           start_time: baseEvent.start_time,

@@ -897,7 +897,7 @@ export function MembersDirectory() {
          */
         usingSearch ? (
           <InlineNote>
-            No actives match “{deferredQuery}”.{" "}
+            Nobody matches “{deferredQuery}”.{" "}
             <InlineNoteAction onClick={() => setQuery("")}>
               Clear search
             </InlineNoteAction>

@@ -1,18 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Check, Minus } from "lucide-react";
 import { groupPermissionsByModule } from "@repo/validation";
 import { useUpdateRole } from "@repo/hooks";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { useIsPermissionHidden } from "@/components/roles/hidden-permissions";
-import { permissionRows } from "@/components/roles/permission-switch-list";
+import { permissionRows } from "@repo/hooks/role-tiers";
+import {
+  useOverrideOverlay,
+  type Override,
+} from "@repo/hooks/permission-overlay";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
-import type { TieredRole, TierRow } from "@/lib/role-tiers";
+import type { TieredRole, TierRow } from "@repo/hooks/role-tiers";
 
-/** One row's override: on, off, or `null` for "the tier decides". */
-export type Override = boolean | null;
 type Choice = "off" | "tier" | "on";
 
 const toChoice = (value: Override): Choice =>
@@ -214,52 +216,18 @@ export function RoleOverrideList({
   );
 }
 
-/**
- * One role's overrides, one key per save, shown at once.
- *
- * An overlay keeps a pick on screen from the click until the server's copy
- * agrees (`mutateAsync` resolves before the refetched role arrives, as in
- * `use-role-permission-toggle.ts`), and a failed pick drops it so the row
- * snaps back to the truth.
- */
+/** One role's overrides, through the overlay shared with the phone. */
 function useRoleOverrideToggle(role: TieredRole) {
   const updateRole = useUpdateRole();
   const { toast } = useToast();
-  const [overlay, setOverlay] = useState<Record<string, Override>>({});
-  const [pending, setPending] = useState<string | null>(null);
-
-  const stored = (permission: string): Override =>
-    role.permission_overrides[permission] ?? null;
-
-  // Reconciled during render: an entry the server now agrees with is the
-  // same as no entry, so dropping it is a pure derivation.
-  const liveOverlay = useMemo(() => {
-    const next: Record<string, Override> = {};
-    for (const [permission, value] of Object.entries(overlay)) {
-      if ((role.permission_overrides[permission] ?? null) !== value) {
-        next[permission] = value;
-      }
-    }
-    return next;
-  }, [overlay, role.permission_overrides]);
-
-  const overrideOf = (permission: string): Override =>
-    permission in liveOverlay ? liveOverlay[permission]! : stored(permission);
-
-  async function set(permission: string, value: Override) {
-    setOverlay((prev) => ({ ...prev, [permission]: value }));
-    setPending(permission);
-    try {
-      await updateRole.mutateAsync({
+  return useOverrideOverlay(
+    role,
+    (permission, value) =>
+      updateRole.mutateAsync({
         id: role.id,
         body: { permission_overrides: { [permission]: value } },
-      });
-    } catch (error) {
-      setOverlay((prev) => {
-        const reverted = { ...prev };
-        delete reverted[permission];
-        return reverted;
-      });
+      }),
+    (error) =>
       toast({
         title: `Couldn't update ${role.name}`,
         description: getErrorMessage(
@@ -267,11 +235,6 @@ function useRoleOverrideToggle(role: TieredRole) {
           "The permission was not changed. Try again in a moment.",
         ),
         variant: "destructive",
-      });
-    } finally {
-      setPending(null);
-    }
-  }
-
-  return { overrideOf, set, pending };
+      }),
+  );
 }

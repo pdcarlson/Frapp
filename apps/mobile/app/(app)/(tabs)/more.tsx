@@ -37,6 +37,7 @@ import {
 import { ProfileCard } from "@/components/more/profile-card";
 import { StatusChip } from "@/components/status-chip";
 import { activityCountChip } from "@/lib/activity/count-chip";
+import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
@@ -87,9 +88,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the right direction.
  *
  * It holds Invite members (`members:invite`, owner ask 2026-11-06: the phone
- * had no way to invite) and Host check-in (`events:update`), each row drawn
- * only for a role that holds its permission, and the section only when one
- * row is.
+ * had no way to invite), Host check-in (`events:update`) and Chapter settings
+ * (`chapter-config:view` or `roles:manage`, #4074, `lib/more/chapter-settings.ts`),
+ * each row drawn only for a role that holds its permission, and the section
+ * only when one row is.
  *
  * Canvas labels the section "ADMIN · PRESIDENT", the viewer's role name. No
  * role string is readable on mobile (`/v1/users/me/permissions` returns
@@ -154,6 +156,8 @@ export default function MoreScreen() {
   const canHost = can("events:update", permissions);
   // Every invite route checks `members:invite`; by default the President's.
   const canInvite = can("members:invite", permissions);
+  // The chapter's side of settings (#4074), for whoever has a page there.
+  const canChapterSettings = chapterSettingsAccess(permissions).any;
 
   // The setup gate needs to tell "still loading" from "holds nothing", which
   // `usePermissionList` (`[]` while loading) can't, so it reads the query.
@@ -360,7 +364,7 @@ export default function MoreScreen() {
         )}
       </ListSection>
 
-      {canHost || canInvite ? (
+      {canHost || canInvite || canChapterSettings ? (
         <>
           <SectionHeader>Admin</SectionHeader>
           <ListSection>
@@ -401,6 +405,14 @@ export default function MoreScreen() {
                     params: { eventId: nextEvent.id },
                   });
                 }}
+              />
+            ) : null}
+            {canChapterSettings ? (
+              <ListRow
+                label="Chapter settings"
+                leading={<SettingsGlyph color={glyphColor} />}
+                accessibilityHint="Opens the chapter's accent, chat background and roles."
+                onPress={() => router.push("/chapter-settings")}
               />
             ) : null}
           </ListSection>

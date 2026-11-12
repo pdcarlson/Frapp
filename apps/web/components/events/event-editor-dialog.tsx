@@ -39,6 +39,7 @@ import {
   describeAttendance,
   emptyAttendanceDraft,
   eventLimitsAudience,
+  eventRequiresAnyone,
   isRecurrenceRule,
   describeSeriesLength,
   type EventAttendanceDraft,
@@ -415,6 +416,11 @@ export function EventEditorDialog({
   // can open this form may pick one.
   const { data: permissionsPayload } = useMyPermissions();
   const canManageTypes = can("events:update", permissionsPayload?.permissions);
+  // The same permission decides who makes anyone required or attaches
+  // points (#3709): a member who may only create events makes optional
+  // events worth no points, and the API holds them to it
+  // (`EventService.create`). Editing takes `events:update` anyway.
+  const canSetRequirements = canManageTypes;
 
   const eventId = typeof event?.id === "string" ? event.id : "";
   const isSubmitting =
@@ -556,12 +562,16 @@ export function EventEditorDialog({
   function handlePickType(type: EventType | null) {
     setEventTypeId(type?.id ?? null);
     if (!type) return;
-    setPointValue(String(type.point_value));
-    setAttendance((previous) =>
-      previous.everyone === "not_invited"
-        ? previous
-        : withEveryone(previous, type.is_mandatory ? "required" : "optional"),
-    );
+    // A member's event carries no points and requires nobody, whatever the
+    // type says: the type still names it.
+    if (canSetRequirements) {
+      setPointValue(String(type.point_value));
+      setAttendance((previous) =>
+        previous.everyone === "not_invited"
+          ? previous
+          : withEveryone(previous, type.is_mandatory ? "required" : "optional"),
+      );
+    }
     if (name.trim() === "" || name === typeFilledName) {
       setName(type.name);
       setTypeFilledName(type.name);
@@ -664,6 +674,15 @@ export function EventEditorDialog({
     }
 
     const wire = attendanceToWire(attendance);
+    if (!canSetRequirements && eventRequiresAnyone(wire)) {
+      setShowMore(true);
+      toast({
+        title: "Only officers who manage events can make one required",
+        description: "Set it to optional, or ask one of them to make it.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (attendanceInvitesNobody(wire)) {
       setShowMore(true);
       toast({
@@ -680,7 +699,7 @@ export function EventEditorDialog({
       location: location.trim() || undefined,
       start_time: startIso,
       end_time: endIso,
-      point_value: pointValueNumber,
+      point_value: canSetRequirements ? pointValueNumber : 0,
       is_mandatory: wire.is_mandatory,
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
@@ -825,8 +844,12 @@ export function EventEditorDialog({
       ? describeSeriesLength(repeatStart, recurrenceRule)
       : null;
   const moreSummary = [
-    pointsLabel(Number(pointValue.trim() === "" ? 0 : pointValue)) ??
-      "No points",
+    ...(canSetRequirements
+      ? [
+          pointsLabel(Number(pointValue.trim() === "" ? 0 : pointValue)) ??
+            "No points",
+        ]
+      : []),
     describeAttendance(attendance, roleName),
     isRecurrenceRule(recurrenceRule)
       ? RECURRENCE_REPEAT_LABELS[recurrenceRule]
@@ -947,6 +970,7 @@ export function EventEditorDialog({
                   <AttendanceEditor
                     value={attendance}
                     onChange={setAttendance}
+                    allowRequired={canSetRequirements}
                     roles={roleOptions}
                     rolesState={
                       rolesQuery.isError
@@ -992,18 +1016,20 @@ export function EventEditorDialog({
                       </p>
                     ) : null}
                   </div>
-                  <div className="grid content-start gap-1">
-                    <Label htmlFor="event-point-value">
-                      Points for attending
-                    </Label>
-                    <Input
-                      id="event-point-value"
-                      type="number"
-                      min={0}
-                      value={pointValue}
-                      onChange={handlePointValueChange}
-                    />
-                  </div>
+                  {canSetRequirements ? (
+                    <div className="grid content-start gap-1">
+                      <Label htmlFor="event-point-value">
+                        Points for attending
+                      </Label>
+                      <Input
+                        id="event-point-value"
+                        type="number"
+                        min={0}
+                        value={pointValue}
+                        onChange={handlePointValueChange}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-1">

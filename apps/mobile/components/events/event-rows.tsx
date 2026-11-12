@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { parseInstant } from "@repo/formatting";
+import { formatPointsChip, parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip, StatusChip } from "@/components/status-chip";
@@ -114,7 +114,7 @@ export function EventRowCard({
         {event.point_value || isOpen ? (
           <View style={styles.footer}>
             {event.point_value ? (
-              <AccentChip label={`+${event.point_value} pts`} />
+              <AccentChip label={formatPointsChip(event.point_value)} />
             ) : null}
             {isOpen ? (
               <Text style={styles.openNow}>Check-in is open</Text>

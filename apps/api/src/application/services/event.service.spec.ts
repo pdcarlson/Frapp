@@ -310,12 +310,15 @@ describe('EventService', () => {
 
   it('should create an event with valid times', async () => {
     mockEventRepo.create.mockResolvedValue(baseEvent);
+    // An officer (`events:update`): the spec's default of 10 points applies.
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
 
     const result = await service.create({
       chapter_id: 'ch-1',
       name: 'Chapter Meeting',
       start_time: baseEvent.start_time,
       end_time: baseEvent.end_time,
+      created_by: 'user-officer',
     });
 
     expect(mockEventRepo.create).toHaveBeenCalledWith({
@@ -341,10 +344,157 @@ describe('EventService', () => {
       check_in_opens_minutes: 10,
       // No type picked.
       event_type_id: null,
-      // No caller named: no creator recorded.
-      created_by: null,
+      created_by: 'user-officer',
     });
+    expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+      'ch-1',
+      'user-officer',
+      ['events:update'],
+    );
     expect(result).toEqual(baseEvent);
+  });
+
+  // #3709: any member with `events:create` makes an event, but making anyone
+  // required and attaching points stay with `events:update` holders.
+  describe('a member who cannot edit events', () => {
+    const create = (extra: Record<string, unknown> = {}) =>
+      service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        created_by: 'user-member',
+        ...extra,
+      });
+
+    beforeEach(() => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockRbacService.memberHasAnyPermission.mockResolvedValue(false);
+    });
+
+    it('creates an optional event that carries no points', async () => {
+      await create({ point_value: 10, is_mandatory: false });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          point_value: 0,
+          is_mandatory: false,
+          created_by: 'user-member',
+        }),
+      );
+    });
+
+    it('stores no points when none are sent either', async () => {
+      await create();
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+
+    it('may still set roles optional or not invited', async () => {
+      await create({
+        optional_role_ids: ['role-seniors'],
+        excluded_role_ids: ['role-new'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          optional_role_ids: ['role-seniors'],
+          excluded_role_ids: ['role-new'],
+        }),
+      );
+    });
+
+    // Lowered, not refused (#3709): app builds already installed copy a
+    // type's "required for everyone" into the form, and a refusal would leave
+    // the member retrying a save that can never succeed.
+    it('stores an event required for everyone as optional for everyone', async () => {
+      await create({ is_mandatory: true });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          others_invited: true,
+          point_value: 0,
+        }),
+      );
+    });
+
+    it('keeps a role it made required invited, as optional, and nobody else', async () => {
+      // An older build's "required for officers": `others_invited` omitted,
+      // which reads as "only the listed roles" while a role is required.
+      await create({
+        required_role_ids: ['role-officers'],
+        optional_role_ids: ['role-seniors'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          optional_role_ids: ['role-seniors', 'role-officers'],
+          // Written out: a null with no required role left would read as
+          // "everyone" and open the event to the whole chapter.
+          others_invited: false,
+        }),
+      );
+    });
+
+    it('keeps everyone else invited when the request said so', async () => {
+      await create({
+        required_role_ids: ['role-officers'],
+        others_invited: true,
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          required_role_ids: null,
+          optional_role_ids: ['role-officers'],
+          others_invited: true,
+        }),
+      );
+    });
+
+    it('treats a create with no maker as a member', async () => {
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        point_value: 25,
+      });
+
+      expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+  });
+
+  it('lets an events:update holder make an event required with points', async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+    await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-officer',
+      point_value: 25,
+      is_mandatory: true,
+      required_role_ids: ['role-officers'],
+    });
+
+    expect(mockEventRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        point_value: 25,
+        is_mandatory: true,
+        required_role_ids: ['role-officers'],
+      }),
+    );
   });
 
   it('records who made the event (#3897)', async () => {

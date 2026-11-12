@@ -48,6 +48,16 @@ export const BACK_TO_SETTINGS: BackTarget = {
   label: "Settings",
   href: "/preferences",
 };
+/** Chapter settings' Roles, and their pages, opened from Chapter settings (#4074). */
+export const BACK_TO_CHAPTER_SETTINGS: BackTarget = {
+  label: "Chapter settings",
+  href: "/chapter-settings",
+};
+/** A tier's or a role's page, opened from Roles (#4074). */
+export const BACK_TO_ROLES: BackTarget = {
+  label: "Roles",
+  href: "/chapter-roles",
+};
 /** s07, opened from an Events row (and from Chat home's Up next). */
 export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
 /**

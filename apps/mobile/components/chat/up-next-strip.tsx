@@ -7,6 +7,7 @@ import {
   formatDayHeading,
   parseInstant,
   parseInstantOrBareLocalNoon,
+  isDueOverdue,
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -29,7 +30,7 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * 20pt (since 2026-11-05 the shared nav set's shapes, not the board's
  * geometry), both at rest in the inactive tab's muted paint: the shape says
  * at a glance whether a row is an event or a task (a dot said neither). The
- * event's trailing time is the foreground text; an imminent task due date is
+ * event's trailing time is the foreground text; an overdue task due date is
  * `semantic.destructive`, which is the drawn danger red — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
@@ -218,11 +219,13 @@ export function formatDueDate(dueDate: string, now: Date): string {
   return `Due ${formatDayWord(due, now)}`;
 }
 
-/** Due today, tomorrow, or already past — the states drawn in red. */
+/**
+ * Past due — the one state drawn in red. Due today or tomorrow stays plain,
+ * as on web (Shawn's pick, #4133, 2026-11-12; until then today and tomorrow
+ * were red too). The rule is `@repo/formatting`'s `isDueOverdue`.
+ */
 export function isDueUrgent(dueDate: string, now: Date): boolean {
-  const due = parseDueInstant(dueDate);
-  if (!due) return false;
-  return dayDelta(now, due) <= 1;
+  return isDueOverdue(dueDate, now);
 }
 
 export function UpNextStrip({
@@ -307,7 +310,9 @@ export function UpNextStrip({
           </Text>
           <Text
             style={
-              isDueUrgent(task.due_date, at) ? styles.dueUrgent : styles.dueCalm
+              task.status === "OVERDUE" || isDueUrgent(task.due_date, at)
+                ? styles.dueUrgent
+                : styles.dueCalm
             }
           >
             {formatDueDate(task.due_date, at)}

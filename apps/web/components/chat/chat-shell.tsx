@@ -49,6 +49,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useRosterCatchUp,
   useMentionRoles,
   useMyPermissions,
   useBookmarks,
@@ -532,6 +533,7 @@ export function ChatShell({
   const {
     byId: memberNames,
     nameFor,
+    typistLabelFor,
     avatarFor,
     roleColorFor,
     avatarTintFor,
@@ -1215,7 +1217,10 @@ export function ChatShell({
     blockState,
     userId,
   );
-  const typingLine = typingLabel(typingUsers, nameFor);
+  const typingLine = typingLabel(typingUsers, typistLabelFor);
+  // Someone who joined after the roster loaded, typing or posting here, is
+  // named a moment later rather than left as `Member 2f4a1c` (#4493).
+  useRosterCatchUp(channel.typingUsers, channel.messages);
   // The rows drawn in full: what every surface beside the timeline that prints
   // a message's author or words reads (the Pinned panel and its count). A
   // tombstoned row carries a blocked member's words whenever an echo put them
@@ -2986,6 +2991,7 @@ export function ChatShell({
           rootId={threadRootId}
           viewerId={userId}
           nameFor={nameFor}
+          typistLabelFor={typistLabelFor}
           avatarFor={avatarFor}
           roleColorFor={roleColorFor}
           blockState={blockState}

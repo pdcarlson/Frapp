@@ -213,12 +213,25 @@ describe("TaskCard — the snapshot", () => {
     expect(screenText(render(ASSIGNEE))).toContain("Due tomorrow");
   });
 
-  it("gives the plain date to a finished task, and to a viewer who can't read it", () => {
+  it("never calls a finished task late, and gives a viewer who can't read it the plain date", () => {
+    // The rule every task surface shares (`taskDueLine`, #4135): a finished
+    // task still on time keeps its countdown, one past its date reads the
+    // plain date rather than "Overdue by…".
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
-    const finished = screenText(render(ASSIGNEE));
-    expect(finished).not.toContain("Due tomorrow");
-    expect(finished).toMatch(/Due Nov 6/);
+    expect(screenText(render(ASSIGNEE))).toContain("Due tomorrow");
+    state.now = new Date(2026, 10, 9, 12, 0);
+    const late = screenText(render(ASSIGNEE));
+    expect(late).not.toContain("Overdue");
+    expect(late).toMatch(/Due Nov 6/);
     expect(screenText(render("bystander"))).toMatch(/Due Nov 6/);
+  });
+
+  it("reads the live due date over the snapshot's (#4135)", () => {
+    state.now = new Date(2026, 10, 9, 12, 0);
+    state.live = liveTask({ due_date: "2026-11-20" });
+    const text = screenText(render(ASSIGNEE));
+    expect(text).not.toContain("Overdue");
+    expect(text).toContain("Due Nov 20");
   });
 });
 

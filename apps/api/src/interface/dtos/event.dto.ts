@@ -59,7 +59,11 @@ export class CreateEventDto {
   @IsISO8601()
   end_time: string;
 
-  @ApiPropertyOptional({ default: 10 })
+  @ApiPropertyOptional({
+    default: 10,
+    description:
+      "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709).",
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -68,7 +72,11 @@ export class CreateEventDto {
   @Max(POINTS_ADJUSTMENT_MAX)
   point_value?: number;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709).",
+  })
   @IsOptional()
   @IsStrictBoolean()
   is_mandatory?: boolean;

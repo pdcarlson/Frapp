@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { formatHoursValue } from "@/lib/study/format";
 
 /**
@@ -33,7 +34,7 @@ export function WeekSummary({ minutes, sessionCount }: WeekSummaryProps) {
 
   return (
     <View style={styles.row}>
-      <Text style={styles.label}>THIS WEEK</Text>
+      <Text style={styles.label}>This week</Text>
       <Text
         style={styles.value}
         accessibilityLabel={`${hours} hours this week across ${sessionCount} ${
@@ -56,9 +57,8 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.sm,
     },
     label: {
-      ...typeRole(tokens.typography.role.caption),
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
-      letterSpacing: 0.6,
     },
     value: {
       ...typeRole(tokens.typography.role.label),

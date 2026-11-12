@@ -11,6 +11,11 @@ type ToggleProps = {
    * where there is no chapter yet (the `(auth)` group, `spec/behavior/branding.md`).
    */
   house?: boolean;
+  /**
+   * The switch can't change now (a permission the member's role may not
+   * give). It keeps showing its state; the row beside it says why.
+   */
+  disabled?: boolean;
 };
 
 /**
@@ -34,6 +39,7 @@ export function Toggle({
   onValueChange,
   accessibilityLabel,
   house = false,
+  disabled = false,
 }: ToggleProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -47,6 +53,7 @@ export function Toggle({
   return (
     <Switch
       value={value}
+      disabled={disabled}
       onValueChange={onValueChange}
       accessibilityLabel={accessibilityLabel}
       trackColor={{ false: offTrack, true: onTrack }}
