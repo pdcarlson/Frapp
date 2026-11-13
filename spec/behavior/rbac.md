@@ -70,7 +70,7 @@ The system does NOT reject unknown permission strings. It stores and evaluates t
 4. If the set contains `*`, access is granted.
 5. Otherwise, check that **all** required permissions for the endpoint are present in the set.
 
-Permissions are never cached across requests. Each request freshly resolves the user's permission set, ensuring that role changes take effect immediately.
+Permissions are never cached across requests. Each request resolves the user's permission set, so a role change takes effect on the next request. The one exception is a burst of reads: `GET` and `HEAD` requests that arrive together may join a membership or role read that another such request started at most 250 ms earlier (`IN_FLIGHT_JOIN_WINDOW_MS`). So a role change committed inside that window can be missed by the reads that joined, and every request arriving after it sees the change. A request that may write never joins one, so a role change stops it at once. Paul decided this on 2026-11-13 (#3752, reversing his 2026-11-08 call), after a single app open of about 70 requests filled PostgREST's 10-connection pool and stalled production for up to 15 seconds.
 
 The same resolution backs `GET /v1/users/me/permissions` (the effective-permission set clients use to render permission-aware UI), so the chapter filter applies there too.
 

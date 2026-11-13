@@ -9,6 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
 import type {
+  PostgrestError,
   JwtPayload,
   PostgrestMaybeSingleResponse,
 } from '@supabase/supabase-js';
@@ -33,7 +34,8 @@ import {
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-import { InFlightLookups, lookupUnavailable } from './guard-lookup';
+import { lookupUnavailable } from './guard-lookup';
+import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
 import {
   memberReadKey,
   readMemberByUserAndChapter,
@@ -46,6 +48,7 @@ import {
   keepForRequest,
   readOncePerRequest,
   requestReadsActive,
+  sharesBurstLookups,
 } from '../../infrastructure/supabase/request-reads';
 import type { Member } from '#domain/entities/member.entity';
 import type { Role } from '#domain/entities/role.entity';
@@ -76,14 +79,14 @@ type ChapterRow = {
 /**
  * Process-wide, not per guard instance: Nest builds a guard per module, and
  * the requests a mobile resume fires together (#3728) hit several modules'
- * routes. Only two reads are shared: the user's own row id, and the chapter's
- * subscription state and module toggles, for which no spec promises
- * same-instant freshness. Only the guard's own reads join them: with a
- * chapter named, the prefetch gets both rows from `get_request_context`
- * per request instead (#3583), so on that path nothing is shared. A joiner's answer can predate its request by up to
- * `IN_FLIGHT_JOIN_WINDOW_MS`. Membership is still read per request, because
- * spec/behavior/multi-tenancy.md promises that a revoked membership refuses
- * every later request.
+ * routes. These two share the user's own row id, and the chapter's
+ * subscription state and module toggles, on the guard's own reads. With a
+ * chapter named, the prefetch gets both rows, the membership and the roles
+ * from `get_request_context` (#3583), and that call is shared the same way
+ * (`requestContextLookups`), for read requests only. A joiner's answer can
+ * predate its request by up to `IN_FLIGHT_JOIN_WINDOW_MS`, the bound Paul
+ * accepted for membership and roles on 2026-11-13 (#3752;
+ * spec/behavior/multi-tenancy.md and rbac.md).
  */
 const appUserLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<{ id: string }>
@@ -91,6 +94,10 @@ const appUserLookups = new InFlightLookups<
 const chapterLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<ChapterRow>
 >();
+const requestContextLookups = new InFlightLookups<{
+  data: unknown;
+  error: PostgrestError | null;
+}>();
 
 /** Carries a failed PostgREST answer out of `readOncePerRequest` as a rejection. */
 class FailedLookup<T> extends Error {
@@ -209,15 +216,21 @@ function readRequestContext(
   supabaseAuthId: string,
   chapterId: string,
 ): Promise<RequestContextAnswer | null> {
-  // An executor, so a client that throws instead of answering an error
-  // still lands in the `catch` below rather than in the caller.
-  return new Promise<Awaited<ReturnType<typeof supabase.rpc>>>((resolve) =>
-    resolve(
-      supabase.rpc('get_request_context', {
-        p_auth_id: supabaseAuthId,
-        p_chapter_id: chapterId,
-      }),
-    ),
+  // Shared by the read requests of one burst with this user and chapter
+  // (#3752); a request that may write makes its own call. Each request still
+  // records the answer in its own store below, and every reader gets its own
+  // copy from there (`readOncePerRequest`). The call runs inside a promise
+  // either way, so a client that throws instead of answering an error still
+  // lands in the `catch` below.
+  const call = () =>
+    supabase.rpc('get_request_context', {
+      p_auth_id: supabaseAuthId,
+      p_chapter_id: chapterId,
+    });
+  return (
+    sharesBurstLookups()
+      ? requestContextLookups.run(`${supabaseAuthId}:${chapterId}`, call)
+      : Promise.resolve().then(call)
   )
     .then(({ data, error }) => {
       if (error) throw new SupabaseQueryError(error);
@@ -281,8 +294,8 @@ function asRequestContext(data: unknown): RequestContextAnswer | null {
  * only once the session check has passed, under the user id `getUser`
  * returned. They are keyed by that id, so a token whose verified `sub` were
  * somehow not the user `getUser` answers with would find nothing to reuse.
- * Every request still reads its own membership and roles; this changes when
- * the reads start, not whether they happen (#3752). A failed read is not
+ * Requests of one burst share these reads within `IN_FLIGHT_JOIN_WINDOW_MS`
+ * (#3752, Paul 2026-11-13); past that, each reads its own. A failed read is not
  * kept (`keepAnswerForRequest`), so the guard that needs it reads again. If
  * the one call fails, the user and chapter are read separately and the
  * membership and roles chained after the user, as before #3583.

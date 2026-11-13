@@ -1,4 +1,5 @@
 import { SupabaseMemberRepository } from './supabase-member.repository';
+import { runWithRequestReads } from '../request-reads';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -157,6 +158,29 @@ describe('SupabaseMemberRepository — tenant scope', () => {
       expect(foreign?.chapter_id).toBe(CHAPTER_A);
     });
   });
+
+  // An app open's GET requests join one membership read (#3752); a request
+  // that may write reads its own.
+  it.each([
+    ['GET', 1],
+    ['POST', 2],
+  ])(
+    'findByUserAndChapter in two %s requests at once makes %i read(s)',
+    async (method, reads) => {
+      const from = jest.spyOn(harness.client, 'from');
+      const member = (chapter: string) =>
+        runWithRequestReads(String(method), () =>
+          repo.findByUserAndChapter(USER_SHARED, chapter),
+        );
+
+      const [a, b] = await Promise.all([member(CHAPTER_B), member(CHAPTER_B)]);
+
+      expect(from).toHaveBeenCalledTimes(Number(reads));
+      expect(a?.id).toBe(MEMBER_B);
+      expect(b?.id).toBe(MEMBER_B);
+      expect(a).not.toBe(b);
+    },
+  );
 });
 
 /**
