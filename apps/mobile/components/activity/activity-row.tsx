@@ -361,7 +361,11 @@ export function ActivityAskButton({
         action.disabled ? tinted.disabled : pressed ? tinted.pressed : null,
       ]}
     >
-      <Text style={tinted.label}>{action.label}</Text>
+      <Text
+        style={[tinted.label, action.disabled ? tinted.disabledLabel : null]}
+      >
+        {action.label}
+      </Text>
     </Pressable>
   );
 }
