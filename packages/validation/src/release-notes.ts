@@ -197,6 +197,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can clear a notification by pressing and holding it.",
       "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
       "Long-press a message and tap Forward to send it to another channel or a direct message, with a note of your own if you like.",
+      "On Android, pointing your camera at a check-in code now opens Frapp straight to the check-in, the way it already did on iPhone.",
     ],
   },
   {
