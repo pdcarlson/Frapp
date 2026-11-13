@@ -72,6 +72,24 @@ export function SectionHeader({
 }
 
 /**
+ * A day's heading over a list of what happens on it ("Today", "Tomorrow",
+ * "Sunday", `formatDayHeading`): sentence case in the caption role at 600, in
+ * the foreground tone, as web's Events list draws its day headings and as
+ * iOS Calendar's and Google Calendar's lists set their days. A day is the
+ * content's own label, not a category, so it doesn't take the uppercase
+ * section eyebrow ({@link SectionHeader}; #4138).
+ */
+export function DayHeading({ children }: { children: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Text accessibilityRole="header" style={styles.dayHeading}>
+      {children}
+    </Text>
+  );
+}
+
+/**
  * A section's count, drawn beside its heading as a separate muted number, the
  * way web's `SectionLabel` draws it. {@link SectionHeader}'s `count` draws
  * one; a smaller heading inside a section (Activity's "Now" and "Later")
@@ -506,7 +524,7 @@ export function ListRow({
           style={styles.trailingSlot}
         />
       ) : onPress && !disabled && !action ? (
-        <ForwardGlyph color={tokens.color.text.muted} />
+        <ForwardGlyph color={tokens.color.text.mutedForeground} />
       ) : null}
     </View>
   );
@@ -562,6 +580,15 @@ function createStyles(tokens: SignetTokens) {
     sectionHeader: {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
+      marginTop: sectionHeaderMarginTop,
+    },
+    // Web's Events day heading: caption / 600 in `--foreground`, sentence case.
+    dayHeading: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.foreground,
       marginTop: sectionHeaderMarginTop,
     },
     // The caption and its count on one baseline. The caption keeps its own

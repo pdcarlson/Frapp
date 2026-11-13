@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASK_COPY,
+  ASK_STEPS,
   ASK_STREAM_KEEPALIVE,
   ASK_STREAM_VERSION,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
@@ -14,6 +16,7 @@ import {
   askLeftOutLine,
   askSourceKindLabel,
   askSourceTarget,
+  askStepLine,
   askSuggestionName,
   askSuggestionText,
   askUnavailableLine,
@@ -88,6 +91,11 @@ describe("the Ask stream format", () => {
         JSON.stringify({ v, type: "status", step: "thinking", extra: true }),
       ),
     ).toEqual({ v, type: "status", step: "thinking" });
+  });
+
+  it("carries what a reading step says is being read", () => {
+    const event = { v, type: "status", step: "reading", reads: ["roster"], found: 3 };
+    expect(parseAskStreamEvent(JSON.stringify(event))).toEqual(event);
   });
 
   it("keeps a source of a kind and target it does not know, without a link", () => {
@@ -273,6 +281,60 @@ describe("Ask copy", () => {
       askUnavailableLine("not_available"),
     );
     expect(askUnavailableLine(null)).toBe(askUnavailableLine("not_available"));
+  });
+});
+
+describe("askStepLine", () => {
+  it("says what the server named, and searching for a step this build does not know", () => {
+    expect(askStepLine("searching")).toBe("Searching your chapter's sources");
+    expect(askStepLine("writing")).toBe("Writing");
+    expect(askStepLine("proposing")).toBe("Working out what that would change");
+    expect(askStepLine("pondering")).toBe("Searching your chapter's sources");
+    expect(askStepLine(null)).toBe("Searching your chapter's sources");
+    // An open string from the wire is never read off the object itself.
+    expect(askStepLine("constructor")).toBe("Searching your chapter's sources");
+  });
+
+  it("names the records being read and how many sources were found", () => {
+    expect(askStepLine("reading", { reads: ["events"], found: 0 })).toBe(
+      "Reading the events calendar",
+    );
+    expect(askStepLine("reading", { reads: [], found: 1 })).toBe(
+      "Reading 1 source",
+    );
+    expect(askStepLine("reading", { reads: ["roster"], found: 3 })).toBe(
+      "Reading the roster and 3 sources",
+    );
+    expect(
+      askStepLine("reading", {
+        reads: ["events", "my_tasks", "my_points"],
+        found: 2,
+      }),
+    ).toBe("Reading the events calendar, your tasks, your points and 2 sources");
+  });
+
+  it("leaves out a read this build has no words for, and never reads a name off the object itself", () => {
+    expect(
+      askStepLine("reading", { reads: ["attendance", "roster"], found: 0 }),
+    ).toBe("Reading the roster");
+    expect(askStepLine("reading", { reads: ["constructor"], found: 2 })).toBe(
+      "Reading 2 sources",
+    );
+  });
+
+  it("says the plain reading line when an older server names nothing", () => {
+    expect(askStepLine("reading")).toBe("Reading what it found");
+    expect(askStepLine("reading", { reads: ["attendance"] })).toBe(
+      "Reading what it found",
+    );
+  });
+
+  it("has words for every step, and the line under a turn draws them", () => {
+    for (const step of ASK_STEPS) {
+      expect(ASK_COPY.steps[step].length).toBeGreaterThan(0);
+      // A step added to the list is drawn without a change to `askStepLine`.
+      expect(askStepLine(step)).toBe(ASK_COPY.steps[step]);
+    }
   });
 });
 

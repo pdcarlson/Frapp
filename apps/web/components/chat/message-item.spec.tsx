@@ -1046,6 +1046,8 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+    // A pinned message's pin is solid, as every on pin is (#4292).
+    expect(pinned.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
     // A marker, not an action: the trailing captions' muted tone, never the
     // chapter accent (`foundations.md` §6).
     expect(pinned.closest("span")!.className).not.toContain("accent");
@@ -1543,6 +1545,8 @@ describe("MessageItem bookmark toggle (#462)", () => {
 
     const button = screen.getByRole("button", { name: "Save" });
     expect(button).toHaveAttribute("aria-pressed", "true");
+    // The ribbon reads as on: solid, not the outline (#4292).
+    expect(button.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
     expect(button).toHaveAttribute("title", "Saved");
   });
 

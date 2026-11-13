@@ -66,7 +66,7 @@ import { MoreOptionsRow } from "@/components/more-options-row";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { RepeatOptions } from "@/components/events/repeat-options";
-import { roleOptionsFrom } from "@/lib/events/attendance-roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   EVENT_NAME_MAX_LENGTH,
   applyEventType,
@@ -276,7 +276,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     );
     const roleName = useMemo(() => {
       const byId = new Map(
-        roleOptionsFrom(rolesQuery.data).map((role) => [role.id, role.name]),
+        toRoleOptions(rolesQuery.data, "hide").map((role) => [
+          role.id,
+          role.name,
+        ]),
       );
       return (id: string) => byId.get(id);
     }, [rolesQuery.data]);
@@ -757,7 +760,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     <Text style={styles.optionValue} numberOfLines={1}>
                       {describeAttendance(draft.attendance, roleName)}
                     </Text>
-                    <ForwardGlyph color={tokens.color.text.muted} />
+                    <ForwardGlyph color={tokens.color.text.mutedForeground} />
                   </Pressable>
                   {setsRequirements ? (
                     <>

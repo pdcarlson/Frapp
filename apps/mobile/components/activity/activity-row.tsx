@@ -130,7 +130,7 @@ export function ActivityListRow({
           />
         )
       ) : null}
-      <ForwardGlyph color={tokens.color.text.muted} />
+      <ForwardGlyph color={tokens.color.text.mutedForeground} />
     </>
   );
 

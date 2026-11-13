@@ -23,6 +23,7 @@ import {
 import { memberLabel } from "@repo/hooks/display-names";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  DayHeading,
   SectionHeader,
   SectionHeaderSkeleton,
 } from "@/components/list-section";
@@ -193,7 +194,7 @@ export default function EventsScreen() {
       const flat = card ? group.entries.slice(1) : group.entries;
       return (
         <View key={group.day} style={styles.dayGroup}>
-          <SectionHeader>{group.heading}</SectionHeader>
+          <DayHeading>{group.heading}</DayHeading>
           {card ? (
             <EventRowCard
               event={card.event}

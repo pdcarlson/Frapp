@@ -17,7 +17,9 @@ import {
  * alone enforces is the member boundary. RLS is on with no policies and the
  * API reads through the service role, so the `user_id` filter is the only
  * thing between one member's answers and another's. `USER_A` has answered the
- * same form, so a dropped filter returns their row.
+ * same form, so a dropped filter returns their row. `findAllForCreator`
+ * (#3926 step 4) is the one unfiltered read; `ChatFormService` guards it with
+ * the sender check, so here it is held only to its one form and its order.
  */
 
 const FORM = '0a000000-0000-4000-8000-000000003926';
@@ -27,18 +29,21 @@ const response = (
   messageId: string,
   userId: string,
   answers: Record<string, string | string[]>,
+  createdAt = '2026-11-13T00:00:00.000Z',
 ) => ({
   message_id: messageId,
   user_id: userId,
   answers,
-  created_at: '2026-11-13T00:00:00.000Z',
+  created_at: createdAt,
   updated_at: '2026-11-13T01:00:00.000Z',
 });
 
+// Seeded out of answer order: `USER_A` answered first, so a read that drops
+// or flips its `created_at` order returns them second.
 const seed = () => ({
   chat_form_responses: [
-    response(FORM, USER_SHARED, { room: 'single' }),
-    response(FORM, USER_A, { room: 'double' }),
+    response(FORM, USER_SHARED, { room: 'single' }, '2026-11-13T00:05:00.000Z'),
+    response(FORM, USER_A, { room: 'double' }, '2026-11-13T00:00:00.000Z'),
     response(OTHER_FORM, USER_B, { room: 'triple' }),
   ],
 });
@@ -71,6 +76,13 @@ describe('SupabaseChatFormResponseRepository — member scope', () => {
   it('findOwn is null for a member who has not answered, though others have', async () => {
     const { repo } = build();
     await expect(repo.findOwn(FORM, USER_B)).resolves.toBeNull();
+  });
+
+  it('findAllForCreator reads every member’s answers to that one form only, first answered first', async () => {
+    const { repo } = build();
+    const rows = await repo.findAllForCreator(FORM);
+    expect(rows.map((row) => row.user_id)).toEqual([USER_A, USER_SHARED]);
+    expect(rows.every((row) => row.message_id === FORM)).toBe(true);
   });
 
   it('findAnswered names only the forms the caller answered, and when', async () => {

@@ -91,6 +91,10 @@ const REQUIRED_ENV_VARS = [
 // validateAiEnv (config/ai-config.ts).
 //   - AI_ENABLED         the server switch; on is exactly "true"
 //   - AI_PROVIDER        "live" (default) or "scripted" (canned, no network)
+//   - AI_SCRIPTED_PACE_MS  local only, beside "scripted": milliseconds the
+//                        canned reply waits, so a working state can be seen;
+//                        not checked at boot, and anything but a whole
+//                        number is no wait (language-model-registry.ts)
 //   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
 //   - GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON  enable the Google
 //                        adapter; both or neither, and the JSON must be a

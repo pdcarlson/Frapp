@@ -26,7 +26,8 @@ import { normalizeClosesAt } from './card-closing';
  * A member's answers are **not** on the card and not in
  * `chat_message_actions`, which every member of the channel reads. They are
  * one `chat_form_responses` row per member per form, read only through the
- * API by the member who wrote it (and, in step 4, the form's creator).
+ * API by the member who wrote it and by the form's creator
+ * (`ChatFormService.getResponses`, #3926 step 4).
  *
  * A form shares a sign-up's end time (`closes_at`) and early close
  * (`closed_at` / `closed_by`, written only by `ChatService.closeCard`). A

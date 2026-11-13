@@ -1,6 +1,9 @@
 import { AnthropicLanguageModel } from './anthropic-language-model';
 import { GoogleLanguageModel } from './google-language-model';
-import { buildLanguageModelRegistry } from './language-model-registry';
+import {
+  buildLanguageModelRegistry,
+  scriptedPaceMs,
+} from './language-model-registry';
 import { ScriptedLanguageModel } from './scripted-language-model';
 
 describe('buildLanguageModelRegistry', () => {
@@ -34,6 +37,15 @@ describe('buildLanguageModelRegistry', () => {
     });
     expect(registry.resolve('anthropic')).toBeInstanceOf(ScriptedLanguageModel);
     expect(registry.resolve('google')).toBe(registry.resolve('anthropic'));
+  });
+
+  it('paces the scripted adapter only by a whole number of milliseconds, capped', () => {
+    expect(scriptedPaceMs({})).toBe(0);
+    expect(scriptedPaceMs({ AI_SCRIPTED_PACE_MS: ' ' })).toBe(0);
+    expect(scriptedPaceMs({ AI_SCRIPTED_PACE_MS: '1500' })).toBe(1500);
+    expect(scriptedPaceMs({ AI_SCRIPTED_PACE_MS: '1.5s' })).toBe(0);
+    expect(scriptedPaceMs({ AI_SCRIPTED_PACE_MS: '-20' })).toBe(0);
+    expect(scriptedPaceMs({ AI_SCRIPTED_PACE_MS: '999999' })).toBe(10_000);
   });
 
   it('builds the Google adapter only with a project and a service account key', () => {

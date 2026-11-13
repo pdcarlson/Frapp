@@ -181,4 +181,24 @@ describe("useFocusOnOpen", () => {
 
     expect(focusEvents()).toHaveLength(2);
   });
+
+  it("sends nothing, and doesn't throw, where the platform has no sendAccessibilityEvent", () => {
+    // react-native-web leaves it out (#3916); calling it threw on Expo web.
+    const info = AccessibilityInfo as {
+      sendAccessibilityEvent?: typeof AccessibilityInfo.sendAccessibilityEvent;
+    };
+    const send = info.sendAccessibilityEvent;
+    delete info.sendAccessibilityEvent;
+    try {
+      render(<FocusHarness open />);
+      expect(() =>
+        act(() => {
+          vi.runAllTimers();
+        }),
+      ).not.toThrow();
+    } finally {
+      info.sendAccessibilityEvent = send;
+    }
+    expect(focusEvents()).toHaveLength(0);
+  });
 });

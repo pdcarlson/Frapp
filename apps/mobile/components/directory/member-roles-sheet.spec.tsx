@@ -5,8 +5,8 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import {
-  parseRoleOptions,
   ROLES_SAVE_FAILED_TITLE,
   type RoleOption,
 } from "@/lib/directory/role-editor";
@@ -34,7 +34,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import { MemberRolesSheet } from "./member-roles-sheet";
 
-const OPTIONS = parseRoleOptions([
+const OPTIONS = parseChapterRoles([
   { id: "r-pres", name: "President", is_system: true, permissions: ["*"] },
   {
     id: "r-member",

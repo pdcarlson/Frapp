@@ -17,11 +17,12 @@ function isInvite(next: string): boolean {
 }
 
 /**
- * `/new-account`'s two ways out (#3786).
+ * `/new-account`'s two ways out (#3786, #3801).
  *
  * **Which one is primary.** Sign out, unless `next` is an invite. The page
  * only shows after the member chose sign-in, so without an invite the likelier
- * story is a member who picked the wrong provider. With one, it is just as
+ * story is a member who picked the wrong provider or typed an email they
+ * never joined with. With one, it is just as
  * likely a newcomer the invite link sent to `/sign-in`, so Continue leads.
  *
  * Sign out is the shared `useSignOutToSignIn`, local scope, landing on

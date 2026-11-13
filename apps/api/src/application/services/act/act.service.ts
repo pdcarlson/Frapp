@@ -63,6 +63,13 @@ interface ActConversation {
 
 export interface ActInput extends ActMember, ActConversation {
   request: string;
+  /**
+   * Told the moment the request has been read as an action this member was
+   * offered, before its details are looked up. It is how a conversation can
+   * say it is working out a card (`AskConversationService`). It is told the
+   * action's name and nothing the model wrote.
+   */
+  onAction?: (action: string) => void;
 }
 
 export type ActUnavailableReason =
@@ -189,6 +196,7 @@ export class ActService {
     const tool = offered.find((item) => item.name === planned.value.action);
     if (!tool) return { status: 'no_action', available };
 
+    input.onAction?.(tool.name);
     const draft = await tool.draft(
       planned.value,
       this.toolContext(input, held, now),

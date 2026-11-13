@@ -2,12 +2,13 @@ import { ForbiddenException } from '@nestjs/common';
 import { ASK_STREAM_VERSION, type AskStreamEvent } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportSwallowed } from '../../../infrastructure/observability/report-swallowed';
-import type { ActOutcome } from '../act/act.service';
+import type { ActInput, ActOutcome } from '../act/act.service';
 import {
   AskConversationService,
   type AskConversationEvent,
   type AskConversationInput,
 } from './ask-conversation.service';
+import type { AskInput } from './ask.service';
 
 jest.mock('../../../infrastructure/observability/report-swallowed', () => ({
   reportSwallowed: jest.fn(),
@@ -56,16 +57,18 @@ const input = (
   ...over,
 });
 
-function build(options: {
-  act?: () => Promise<ActOutcome>;
-  events?: AskStreamEvent[];
-}) {
+type Act = (input: ActInput) => Promise<ActOutcome>;
+
+function build(options: { act?: Act; events?: AskStreamEvent[] }) {
   /** How far the answer lane got: the events it was asked for. */
   const reached: string[] = [];
   let ended = false;
   const askService = {
-    ask: jest.fn(async function* () {
+    // As `AskService.ask` does: once its search is back it asks whether it
+    // may go on, and ends there when it may not.
+    ask: jest.fn(async function* (given: AskInput) {
       try {
+        let asked = false;
         for (const event of options.events ?? [
           START,
           SEARCHING,
@@ -73,6 +76,13 @@ function build(options: {
           WRITING,
           DONE,
         ]) {
+          const searching =
+            event.type === 'start' ||
+            (event.type === 'status' && event.step === 'searching');
+          if (!searching && !asked) {
+            asked = true;
+            if (given.mayGoOn && !(await given.mayGoOn())) return;
+          }
           reached.push(event.type === 'status' ? event.step : event.type);
           yield event;
         }
@@ -82,7 +92,9 @@ function build(options: {
     }),
   };
   const actService = {
-    act: jest.fn(options.act ?? (async () => PROPOSED)),
+    act: jest.fn<Promise<ActOutcome>, [ActInput, Date]>(
+      options.act ?? (async () => PROPOSED),
+    ),
   };
   const service = new AskConversationService(
     askService as never,
@@ -98,11 +110,26 @@ function build(options: {
   return { run, askService, actService, reached, ended: () => ended };
 }
 
+const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+
 /** A request lane that answers after the answer lane has had time to move. */
 const slowly = (outcome: ActOutcome) => async () => {
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await pause();
   return outcome;
 };
+
+/**
+ * A request lane that reads the words as an action once the answer lane has
+ * had time to move, and takes as long again to come back with `outcome`.
+ */
+const picksThen =
+  (outcome: ActOutcome): Act =>
+  async (given) => {
+    await pause();
+    given.onAction?.('create_task');
+    await pause();
+    return outcome;
+  };
 
 const shown = (events: AskConversationEvent[]) =>
   events.map((event) => (event.type === 'status' ? event.step : event.type));
@@ -148,19 +175,69 @@ describe('AskConversationService', () => {
             reject(new LanguageModelError('aborted', 'anthropic'));
           });
         });
-      } as never);
+      });
       expect(shown(await run())).toEqual(['start', 'act']);
       expect(stopped).toBe(true);
     });
 
-    it('hold the answer lane at its first step past searching until the request lane has spoken', async () => {
+    it('hold the answer lane at the end of its search until the request lane has spoken', async () => {
       const { run, reached, ended } = build({ act: slowly(PROPOSED) });
       const events = await run();
       expect(shown(events)).toEqual(['start', 'searching', 'act']);
-      // The answer lane was asked for its next step and went no further: no
-      // tool ran and no word was written.
-      expect(reached).toEqual(['start', 'searching', 'reading']);
+      // The answer lane asked whether it may go on and was told no: no tool
+      // ran, nothing was kept and no word was written.
+      expect(reached).toEqual(['start', 'searching']);
       expect(ended()).toBe(true);
+    });
+
+    it('say the turn is becoming a card once the request lane has read an action, and not before', async () => {
+      const { run, reached } = build({ act: picksThen(PROPOSED) });
+      expect(shown(await run())).toEqual([
+        'start',
+        'searching',
+        'proposing',
+        'act',
+      ]);
+      expect(reached).toEqual(['start', 'searching']);
+    });
+
+    it('never say it is working out a card for a card that is already here', async () => {
+      const { run } = build({
+        act: async (given) => {
+          given.onAction?.('create_task');
+          return PROPOSED;
+        },
+      });
+      expect(shown(await run())).toEqual(['start', 'act']);
+    });
+
+    it('say they are searching before they say a card is being worked out, however fast the words were read', async () => {
+      const { run } = build({
+        act: async (given) => {
+          given.onAction?.('create_task');
+          await pause();
+          return PROPOSED;
+        },
+      });
+      expect(shown(await run())).toEqual([
+        'start',
+        'searching',
+        'proposing',
+        'act',
+      ]);
+    });
+
+    it('never say a card is being worked out once the request lane has come back without one', async () => {
+      const { run } = build({
+        // Read as an action and given up on in the same breath.
+        act: async (given) => {
+          given.onAction?.('create_task');
+          return { status: 'no_action', available: ['create_task'] };
+        },
+      });
+      const steps = shown(await run());
+      expect(steps).not.toContain('proposing');
+      expect(steps.at(-1)).toBe('done');
     });
 
     it('show the choice of event, and the card that asks for what was left unsaid', async () => {
@@ -209,6 +286,7 @@ describe('AskConversationService', () => {
           request: '5, for cleaning the kitchen',
           earlier: ['Who is the treasurer?', 'Give Jordan points'],
           keepEarlier: true,
+          onAction: expect.any(Function),
           signal: controller.signal,
         },
         NOW,
@@ -266,6 +344,20 @@ describe('AskConversationService', () => {
         act: slowly({ status: 'no_action', available: [] }),
       });
       expect(shown(await run())).toEqual(answered);
+    });
+
+    it('are answered, after saying so, when an action was read and its card could not be made', async () => {
+      const { run } = build({
+        act: picksThen({ status: 'unavailable', reason: 'not_available' }),
+      });
+      expect(shown(await run())).toEqual([
+        'start',
+        'searching',
+        'proposing',
+        'reading',
+        'writing',
+        'done',
+      ]);
     });
 
     it.each([

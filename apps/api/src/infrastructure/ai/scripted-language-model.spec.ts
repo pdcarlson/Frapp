@@ -126,6 +126,48 @@ describe('ScriptedLanguageModel', () => {
     });
   });
 
+  describe('given a pace', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('takes that long to start a reply, and spaces a stream out', async () => {
+      const model = new ScriptedLanguageModel(
+        { 'ask.answer': () => ({ text: 'Formal is April 12.' }) },
+        1000,
+      );
+      let replied = false;
+      const reply = model.generate(cited).then(() => {
+        replied = true;
+      });
+      await jest.advanceTimersByTimeAsync(999);
+      expect(replied).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      await reply;
+      expect(replied).toBe(true);
+
+      const events: LanguageModelStreamEvent[] = [];
+      const streamed = (async () => {
+        for await (const event of model.stream(cited)) events.push(event);
+      })();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(events).toHaveLength(0);
+      await jest.advanceTimersByTimeAsync(50);
+      expect(events).toHaveLength(1);
+      await jest.advanceTimersByTimeAsync(1000);
+      await streamed;
+      expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('stops waiting when the request is aborted', async () => {
+      const model = new ScriptedLanguageModel({}, 5000);
+      const controller = new AbortController();
+      const reply = model.generate({ ...cited, signal: controller.signal });
+      const failed = expect(reply).rejects.toMatchObject({ kind: 'aborted' });
+      controller.abort();
+      await failed;
+    });
+  });
+
   it('embeds each text as a repeatable unit vector of the asked width', async () => {
     const model = new ScriptedLanguageModel();
     const request = {

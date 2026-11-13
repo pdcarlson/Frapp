@@ -317,9 +317,17 @@ officer's typed request into a proposal they confirm
   member who sends an answer back anyway is sending text they were already shown.
 - **A turn that ends in a card has already searched.** The two lanes start together, so by the time
   the request lane has a card the answer lane may have embedded the question, searched the index
-  and made its own planning call. It is stopped there: its first step past searching is held until
-  the request lane has spoken, so no tool runs and no answer is written for that turn, and nothing
-  it found reaches the request lane.
+  and made its own planning call. It is stopped there: before it goes past its search it asks
+  whether it may (`AskInput.mayGoOn`), and it is answered only once the request lane has spoken, so
+  no tool runs, nothing is kept and no answer is written for that turn, and nothing it found
+  reaches the request lane. (Changed in #4701 by pdcarlson, 2026-11-13: until then the hold was the
+  conversation service waiting on the answer lane's first event past "searching", which tied the
+  rule to an event the member is shown. The rule is the same.)
+- **What a working turn says it is doing carries no text anyone wrote** (#4701). The stream's
+  `status` events name a step, the names of the read tools the planner picked, and a count of
+  sources. The request lane tells the conversation only that an offered action was read, by a
+  callback given the action's name; the step it causes (`proposing`) is a fixed word. No title,
+  passage, name or model output is in any of them.
 - **Cards are asked for on `ai:act` alone.** The client sets `actions` for any member who holds the
   permission, without waiting for the list of actions; the server decides whether anything fits.
 - **Details are resolved by the server, as the officer, in their chapter.** The model writes names;

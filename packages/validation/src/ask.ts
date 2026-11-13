@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatAiAnswerDate } from "./ai-copy";
+import { formatAiAnswerDate, joinNames } from "./ai-copy";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -79,9 +79,43 @@ export const AskRequestSchema = z.object({
 });
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
-/** What the server is doing before the first word arrives. */
-export const ASK_STEPS = ["searching", "reading", "writing"] as const;
+/**
+ * What the server is doing while a turn works, each named when it happens
+ * (`ai.md` § Ask Frapp, #4701):
+ *
+ * - `searching`: the index is being searched and the question read for which
+ *   live records it needs.
+ * - `reading`: something was found, or a live read was picked, and it is
+ *   being read. Carries which reads (`reads`) and how many sources the
+ *   search found (`found`). Not sent when there is nothing to read.
+ * - `writing`: the first word of the answer has been written.
+ * - `proposing`: the member's words were read as something to do, and the
+ *   card's details are being looked up.
+ *
+ * Open on the wire: a build shows a step it does not know as `searching`.
+ */
+export const ASK_STEPS = [
+  "searching",
+  "reading",
+  "writing",
+  "proposing",
+] as const;
 export type AskStep = (typeof ASK_STEPS)[number];
+
+/** What a `reading` step says is being read. */
+export interface AskStepDetail {
+  /**
+   * The live reads being made, by the read's name (`roster`, `events`,
+   * `my_tasks`): open strings, and a name this build has no words for is
+   * left out of the line.
+   */
+  reads?: readonly string[] | undefined;
+  /**
+   * How many sources the search found for this question: documents, minutes
+   * and conversations, each counted once.
+   */
+  found?: number | undefined;
+}
 
 /**
  * How an ask ended.
@@ -218,7 +252,15 @@ const version = z.literal(ASK_STREAM_VERSION);
 
 export const AskStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ v: version, type: z.literal("start"), ask_id: z.string() }),
-  z.object({ v: version, type: z.literal("status"), step: z.string() }),
+  z.object({
+    v: version,
+    type: z.literal("status"),
+    step: z.string(),
+    /** With `reading`: the live reads being made (`AskStepDetail`). */
+    reads: z.array(z.string()).optional(),
+    /** With `reading`: how many sources the search found. */
+    found: z.number().int().nonnegative().optional(),
+  }),
   z.object({ v: version, type: z.literal("text"), delta: z.string() }),
   z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
   /**
@@ -468,7 +510,21 @@ export const ASK_COPY = {
     searching: "Searching your chapter's sources",
     reading: "Reading what it found",
     writing: "Writing",
+    proposing: "Working out what that would change",
   } satisfies Record<AskStep, string>,
+  /**
+   * What each live read is called in the reading line ("Reading the roster"),
+   * by the read's name. `ask-tools.spec.ts` in the API holds every class in
+   * `ASK_TOOL_CLASSES`, the list the server offers from, to an entry here.
+   */
+  reads: {
+    roster: "the roster",
+    events: "the events calendar",
+    my_points: "your points",
+    points_leaderboard: "the points standings",
+    my_dues: "your dues",
+    my_tasks: "your tasks",
+  } as Record<string, string>,
   not_found:
     "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
@@ -508,6 +564,47 @@ export const ASK_COPY = {
   consent_action: "Answer the AI question",
   entry_label: "Ask a question about your chapter",
 } as const;
+
+/** An own entry only: the key is an open string from the wire. */
+function ownWords(
+  words: Readonly<Record<string, string>>,
+  key: string,
+): string | null {
+  return Object.prototype.hasOwnProperty.call(words, key)
+    ? (words[key] as string)
+    : null;
+}
+
+/**
+ * The one line under a working turn: what Frapp is doing at that moment, from
+ * the step the server last named (#4701). Web and the phone both draw this,
+ * so the words cannot drift.
+ *
+ * `reading` names what is being read when the server said: the live reads
+ * this build has words for, then how many sources the search found ("Reading
+ * the events calendar and 3 sources"). A step this build does not know reads
+ * as searching, which every turn does first.
+ */
+export function askStepLine(
+  step: string | null | undefined,
+  detail?: AskStepDetail | null,
+): string {
+  if (step === "reading") {
+    const parts = (detail?.reads ?? [])
+      .map((name) => ownWords(ASK_COPY.reads, name))
+      .filter((words): words is string => words !== null);
+    const found = detail?.found ?? 0;
+    if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
+    return parts.length === 0
+      ? ASK_COPY.steps.reading
+      : `Reading ${joinNames(parts)}`;
+  }
+  // Every other step is its own words, so a step added to `ASK_COPY.steps`
+  // needs nothing here.
+  return (
+    (step ? ownWords(ASK_COPY.steps, step) : null) ?? ASK_COPY.steps.searching
+  );
+}
 
 /** A source kind's label, or null for a kind this build does not know. */
 export function askSourceKindLabel(kind: string): string | null {

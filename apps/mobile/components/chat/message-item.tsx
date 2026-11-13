@@ -712,6 +712,7 @@ function PinnedMarker({
       <PinGlyph
         color={typeof color === "string" ? color : "currentColor"}
         size={PIN_MARKER_SIZE}
+        on
       />
       {" Pinned"}
     </Text>

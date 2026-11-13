@@ -1,4 +1,6 @@
+import { ASK_COPY } from '@repo/validation';
 import {
+  ASK_TOOL_CLASSES,
   EventsAskTool,
   MyDuesAskTool,
   MyPointsAskTool,
@@ -6,7 +8,7 @@ import {
   PointsLeaderboardAskTool,
   RosterAskTool,
 } from './ask-tools';
-import type { AskToolContext } from './ask-tool';
+import type { AskTool, AskToolContext } from './ask-tool';
 
 const context: AskToolContext = {
   chapterId: 'chapter-a',
@@ -17,19 +19,25 @@ const context: AskToolContext = {
 
 describe('Ask tools', () => {
   it('every tool is read-only and asks for a permission', () => {
-    const tools = [
-      new RosterAskTool({} as never, {} as never),
-      new EventsAskTool({} as never, {} as never),
-      new MyPointsAskTool({} as never),
-      new PointsLeaderboardAskTool({} as never, {} as never),
-      new MyDuesAskTool({} as never),
-      new MyTasksAskTool({} as never),
-    ];
+    // The module's own list, so a tool added to it is held to these rules.
+    const tools = ASK_TOOL_CLASSES.map(
+      (Tool) =>
+        new (Tool as new (...services: never[]) => AskTool)(
+          {} as never,
+          {} as never,
+        ),
+    );
+    expect(tools.length).toBeGreaterThan(0);
     expect(tools.map((tool) => tool.effect)).toEqual(tools.map(() => 'read'));
     expect(tools.every((tool) => tool.permission.length > 0)).toBe(true);
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
     // The planner reads the list as `- name: description`.
     expect(tools.every((tool) => /^[a-z_]+$/.test(tool.name))).toBe(true);
+    // The line under a working turn names each read ("Reading the roster"),
+    // in words both clients share (#4701).
+    expect(
+      tools.filter((tool) => !Object.hasOwn(ASK_COPY.reads, tool.name)),
+    ).toEqual([]);
   });
 
   describe('roster', () => {

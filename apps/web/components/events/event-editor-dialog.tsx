@@ -81,7 +81,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   cn,
   getErrorMessage,
@@ -486,7 +486,7 @@ export function EventEditorDialog({
 
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data, "hide").sort((first, second) =>
+      toRoleOptions(rolesQuery.data, "hide").sort((first, second) =>
         first.name.localeCompare(second.name),
       ),
     [rolesQuery.data],

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { inlineNoteActionClassName } from "@/components/shared/inline-note";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import {
   guessMeetingType,
   meetingHref,
@@ -93,7 +93,9 @@ export function EventMinutes({
       {minutes ? (
         <Link
           href={meetingHref(minutes.id)}
-          className={inlineNoteActionClassName}
+          // Not in a sentence, so it takes the row's 14px itself, as the
+          // status beside it and the Write minutes button in its place do.
+          className={cn(inlineNoteActionClassName, "text-sm")}
         >
           {MEETING_ENTRY_COPY.open}
         </Link>
