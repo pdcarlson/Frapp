@@ -1162,7 +1162,54 @@ describe("picked mentions (#3835)", () => {
     ).toEqual(["u-sam", "u-jane"]);
   });
 
-  it("two members sharing a name are both reached when both were picked", () => {
+  it("one label reaches one member: the first pick for it, so a re-pick replaces", () => {
+    const a = { user_id: "u-chris-a", display_name: "Chris Lee" };
+    const b = { user_id: "u-chris-b", display_name: "Chris Lee" };
+    // Picked A, deleted the chip, picked B: the newest comes first.
+    const picks = [
+      { user_id: "u-chris-b", label: "Chris Lee" },
+      { user_id: "u-chris-a", label: "Chris Lee" },
+    ];
+    expect(resolveMentions("@Chris Lee", [a, b], [], picks)).toEqual([
+      "u-chris-b",
+    ]);
+    expect(mentionPicksIn("@Chris Lee", picks)).toEqual([picks[0]]);
+  });
+
+  it("a longer roster name doesn't take a picked label", () => {
+    const longer = { user_id: "u-jds", display_name: "Jane Doe Smith" };
+    expect(
+      resolveMentions(
+        "@Jane Doe Smith was asking",
+        [JANE_DOE, longer],
+        [],
+        pickedJane,
+      ),
+    ).toEqual(["u-jane-doe"]);
+    // Nor a one-word pick followed by more words.
+    const jane = { user_id: "u-jane", display_name: "Jane" };
+    expect(
+      resolveMentions(
+        "@Jane Doe hi",
+        [jane, JANE_DOE],
+        [],
+        [{ user_id: "u-jane", label: "Jane" }],
+      ),
+    ).toEqual(["u-jane"]);
+  });
+
+  it("a stale pick isn't read as the member named exactly its first word", () => {
+    // Jane Doe left; a member named exactly "Jane" is still here. The exact
+    // first word would make the reading fall back to `@Jane` without the
+    // picked label being read as written.
+    const jane = { user_id: "u-jane", display_name: "Jane" };
+    expect(resolveMentions("@Jane Doe hi", [jane, BOB])).toEqual(["u-jane"]);
+    expect(
+      resolveMentions("@Jane Doe hi", [jane, BOB], [], pickedJane),
+    ).toEqual([]);
+  });
+
+  it("two members sharing a name are told apart by the pick", () => {
     const twin = { user_id: "u-jane-doe-2", display_name: "Jane Doe" };
     const chapter = [JANE_DOE, twin, BOB];
     // By name the pair is ambiguous and reaches nobody.
@@ -1232,7 +1279,7 @@ describe("picked mentions (#3835)", () => {
   });
 
   describe("mentionPicksIn", () => {
-    it("keeps the picks the body still writes, once each", () => {
+    it("keeps the picks the body still writes, once per label", () => {
       const picks: MentionPick[] = [
         { user_id: "u-jane-doe", label: "Jane Doe" },
         { user_id: "u-jane-doe", label: "Jane Doe" },
@@ -1251,9 +1298,10 @@ describe("picked mentions (#3835)", () => {
     it("holds at most MAX_MENTION_PICKS", () => {
       const many = Array.from({ length: MAX_MENTION_PICKS + 5 }, (_, i) => ({
         user_id: `u-${i}`,
-        label: "Jane",
+        label: `Jane${i}`,
       }));
-      expect(mentionPicksIn("@Jane", many)).toHaveLength(MAX_MENTION_PICKS);
+      const body = many.map((pick) => `@${pick.label}`).join(" ");
+      expect(mentionPicksIn(body, many)).toHaveLength(MAX_MENTION_PICKS);
     });
 
     it("drops strays, so a stored list never pins a token the body lost", () => {

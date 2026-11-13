@@ -49,7 +49,11 @@ import {
 } from "@repo/chat-core/reply-preview";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
-import { mentionPicksIn, type MentionPick } from "@repo/validation";
+import {
+  MAX_MENTION_PICKS,
+  mentionPicksIn,
+  type MentionPick,
+} from "@repo/validation";
 import type { ComposerContext } from "@/components/chat/chat-composer";
 import type { SendOptions } from "./use-chat-channel";
 
@@ -228,17 +232,23 @@ export function useComposerStaging({
    * put back a reply the first tap already sent.
    */
   const replyInFlightRef = useRef<StagedTarget | null>(null);
-  // The members picked since the last send or save (#3835). Shared by the
-  // draft and an open edit: each takes only the picks its own text writes.
+  // The members picked into this composer (#3835), newest first and one per
+  // label: a re-pick of a label replaces the member it named. Shared by the
+  // draft and an open edit, and never emptied by a send or a save: each
+  // takes the picks its own text still writes (`mentionPicksIn`), so saving
+  // an edit leaves the draft's picks, and a send or save that fails and is
+  // tried again still carries them.
   const picksRef = useRef<MentionPick[]>([]);
   const addMentionPick = useCallback((pick: MentionPick) => {
-    picksRef.current = [...picksRef.current, pick];
+    picksRef.current = [
+      pick,
+      ...picksRef.current.filter((held) => held.label !== pick.label),
+    ].slice(0, MAX_MENTION_PICKS);
   }, []);
-  const takePicks = useCallback((text: string) => {
-    const picks = mentionPicksIn(text, picksRef.current);
-    picksRef.current = [];
-    return picks;
-  }, []);
+  const picksFor = useCallback(
+    (text: string) => mentionPicksIn(text, picksRef.current),
+    [],
+  );
 
   const activeReply = (channelId && replies[channelId]) || null;
   const editing = (channelId && edits[channelId]) || null;
@@ -365,7 +375,7 @@ export function useComposerStaging({
       );
       savingRef.current.add(messageId);
       setSavingIds(new Set(savingRef.current));
-      void edit(messageId, content, takePicks(content))
+      void edit(messageId, content, picksFor(content))
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
           // and opened another while the request was out.
@@ -414,7 +424,7 @@ export function useComposerStaging({
     onSending?.();
     void send(draft, {
       replyToId: staged?.messageId ?? null,
-      mentionPicks: takePicks(draft),
+      mentionPicks: picksFor(draft),
     }).then((dispatched) => {
       if (!staged) return;
       if (replyInFlightRef.current === staged) replyInFlightRef.current = null;
@@ -437,7 +447,7 @@ export function useComposerStaging({
     onSending,
     send,
     sendInFlight,
-    takePicks,
+    picksFor,
   ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys

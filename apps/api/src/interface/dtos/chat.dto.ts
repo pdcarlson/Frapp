@@ -23,6 +23,7 @@ import {
   CHANNEL_ACCESS_LIST_MAX,
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  MAX_MENTION_LABEL_LENGTH,
   MAX_MENTION_PICKS,
   CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
@@ -547,10 +548,10 @@ export class MentionPickDto {
   @IsUUID()
   user_id: string;
 
-  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @ApiProperty({ minLength: 1, maxLength: MAX_MENTION_LABEL_LENGTH })
   @IsString()
   @MinLength(1)
-  @MaxLength(64)
+  @MaxLength(MAX_MENTION_LABEL_LENGTH)
   label: string;
 }
 

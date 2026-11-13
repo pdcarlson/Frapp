@@ -25,6 +25,9 @@ export interface MentionCandidate {
  */
 const MAX_TOKEN_LENGTH = 64;
 
+/** The longest label a mention pick may carry: the token bound (#3835). */
+export const MAX_MENTION_LABEL_LENGTH = MAX_TOKEN_LENGTH;
+
 /**
  * `@` followed by a run of name-ish characters.
  *
@@ -105,8 +108,8 @@ export interface MentionSpanOptions {
    * Names with a space in them that someone can be mentioned by, from
    * {@link spacedMentionNames}: members' display names and role names
    * (2026-11-09, #3825: "Winston Hewitt" is mentionable as written). After an
-   * `@`, text that spells one of them, ignoring case, is one token, the
-   * longest name first. Without the list every token stops at whitespace, as
+   * `@`, text that spells one of them, ignoring case, is one token, tried in
+   * the order given: longest first, after any picked labels (#3835). Without the list every token stops at whitespace, as
    * all of them did before.
    */
   names?: readonly string[];
@@ -356,10 +359,17 @@ function spacedPickLabel(label: string): string | null {
 
 /**
  * The picks `content` still writes: each whose label is read as a token there,
- * once per member and label, at most {@link MAX_MENTION_PICKS}. What a send
- * stores (`metadata.mention_picks`) so a later edit reads the same `@`s the
- * same way, and what a client sends: picks made in a draft whose text has
- * since been deleted are dropped here, not resolved.
+ * one per label, at most {@link MAX_MENTION_PICKS}. What a send stores
+ * (`metadata.mention_picks`) so a later edit reads the same `@`s the same
+ * way, and what a client sends: picks made in a draft whose text has since
+ * been deleted are dropped here, not resolved.
+ *
+ * **One label is one member: the first pick for it in `picks` wins.** So a
+ * caller lists the picks it trusts most first: the newest (a member who
+ * deleted `@Chris Lee` and picked the other Chris Lee meant the second), and
+ * an edit's own picks ahead of the stored ones. Two members sharing a name
+ * can't both be reached by one label, since the text can't say which `@` was
+ * which; the one picked last is.
  */
 export function mentionPicksIn(
   content: string,
@@ -382,9 +392,8 @@ export function mentionPicksIn(
   for (const pick of picks) {
     if (kept.length >= MAX_MENTION_PICKS) break;
     if (!written.has(pick.label)) continue;
-    const key = `${pick.user_id}\u0000${pick.label}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(pick.label)) continue;
+    seen.add(pick.label);
     kept.push({ user_id: pick.user_id, label: pick.label });
   }
   return kept;
@@ -426,14 +435,16 @@ function pickedTargets(
 ): Map<string, string[]> {
   const byId = new Map(candidates.map((member) => [member.user_id, member]));
   const targets = new Map<string, string[]>();
+  // One label, one member: the first pick for it (`mentionPicksIn`).
   for (const pick of picks) {
-    const ids = targets.get(pick.label) ?? [];
+    if (targets.has(pick.label)) continue;
+    const ids: string[] = [];
     targets.set(pick.label, ids);
     const member = byId.get(pick.user_id);
     if (!member) continue;
     const folded = fold(pick.label);
     if (folded.length === 0 || fold(member.display_name) !== folded) continue;
-    if (!ids.includes(member.user_id)) ids.push(member.user_id);
+    ids.push(member.user_id);
   }
   return targets;
 }
@@ -531,16 +542,19 @@ export function sendMentionReading(
   // A picked label is read whole even when the roster no longer has the
   // name (#3835): that is the stale case, and reading it as `@Jane` is how
   // it reached someone else.
-  const known = new Set(roster.map((name) => name.toLowerCase()));
+  //
+  // Picked labels come first, ahead of longer roster names: the picker wrote
+  // `@Jane Doe`, so `@Jane Doe Smith` after it is Jane Doe and prose, not a
+  // roster "Jane Doe Smith" the member never picked.
+  const pickedSpaced = [...pickedLabels]
+    .map(spacedPickLabel)
+    .filter((name): name is string => name !== null)
+    .sort((a, b) => b.length - a.length);
+  const firsts = new Set(pickedSpaced.map((name) => name.toLowerCase()));
   const names = [
-    ...roster,
-    ...[...pickedLabels]
-      .map(spacedPickLabel)
-      .filter(
-        (name): name is string =>
-          name !== null && !known.has(name.toLowerCase()),
-      ),
-  ].sort((a, b) => b.length - a.length);
+    ...pickedSpaced,
+    ...roster.filter((name) => !firsts.has(name.toLowerCase())),
+  ];
   if (names.length === 0) return {};
   const asWritten = new Set([...roster, ...pickedLabels]);
   const namesSomeoneExactly = (bare: string): boolean => {
@@ -555,6 +569,10 @@ export function sendMentionReading(
     accept: (token) => {
       const space = token.indexOf(" ");
       if (space === -1) return true;
+      if (pickedLabels.has(token)) return true;
+      // A one-word pick (`@Jane`) followed by more words stays the pick, as
+      // a spaced one does: a roster "Jane Doe" doesn't take it.
+      if (pickedLabels.has(token.slice(0, space))) return false;
       if (asWritten.has(token)) return true;
       return !namesSomeoneExactly(token.slice(0, space));
     },

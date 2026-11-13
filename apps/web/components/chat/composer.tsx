@@ -31,7 +31,7 @@ import {
   buildEditDoc,
   chatMentionExtension,
   chatText,
-  editorMentionPicks,
+  composerMentionPicks,
   chatTextKit,
   createKeymap,
   pasteAsLines,
@@ -1127,6 +1127,8 @@ export function Composer({
     onUpdate({ editor }) {
       const text = chatText(editor);
       onChangeDraft(text);
+      // Held for the channel, so a remount from the text draft keeps them.
+      composerMentionPicks(channelId, editor);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
       // for four seconds under the message that had just landed.
@@ -1448,7 +1450,7 @@ export function Composer({
     const sentPending = pending;
     const sentReplyId = replyTo?.id ?? null;
     const sentUploads = uploadsStartedRef.current;
-    const sentPicks = editorMentionPicks(editor);
+    const sentPicks = composerMentionPicks(channelId, editor);
     const sent = (async () => onSend(text, sentPending, sentPicks))();
     editor.commands.clearContent(true);
     setPending([]);
@@ -1487,6 +1489,7 @@ export function Composer({
       });
     });
   }, [
+    channelId,
     editor,
     onChangeDraft,
     onRestoreReply,

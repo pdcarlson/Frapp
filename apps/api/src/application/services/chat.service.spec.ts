@@ -5600,6 +5600,51 @@ describe('ChatService', () => {
         );
       });
 
+      it('drops a client metadata copy of the picks even when it sends none of its own', async () => {
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: 'hi @Jane Doe',
+          metadata: {
+            mention_picks: [{ user_id: 'user-3', label: 'Jane Doe' }],
+          },
+        });
+        const stored = mockMessageRepo.create.mock.calls.at(-1)?.[0];
+        expect(stored?.metadata).not.toHaveProperty('mention_picks');
+        expect(stored?.mentions).toEqual(['user-2']);
+      });
+
+      it('lets an edit re-pick a label, replacing the stored pick for it', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          content: '@Jane Doe hi',
+          mentions: ['user-2'],
+          metadata: {
+            mention_picks: [{ user_id: 'user-2', label: 'Jane Doe' }],
+          },
+        });
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        // Someone else now holds the name; the sender picked them instead.
+        mockMemberRepo.findChapterMemberIdentities.mockResolvedValue([
+          ...roster,
+          { user_id: 'user-4', display_name: 'Jane Doe', role_ids: [] },
+        ]);
+
+        await service.editMessage('msg-1', 'ch-1', 'user-1', '@Jane Doe hi!', [
+          { user_id: 'user-4', label: 'Jane Doe' },
+        ]);
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({
+            mentions: ['user-4'],
+            metadata: {
+              mention_picks: [{ user_id: 'user-4', label: 'Jane Doe' }],
+            },
+          }),
+        );
+      });
+
       it('leaves metadata alone on an edit with no picks either side', async () => {
         mockMessageRepo.findById.mockResolvedValue(baseMessage);
         mockMessageRepo.update.mockResolvedValue(baseMessage);

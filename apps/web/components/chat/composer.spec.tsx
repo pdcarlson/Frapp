@@ -117,6 +117,7 @@ import {
   uploadFailureDescription,
   type CommandFormOutcome,
 } from "./composer";
+import { composerMentionPicks } from "./chat-editor";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { ChatDropTarget } from "./chat-drop-target";
 import type { SlashCommand } from "@repo/chat-core/integrations";
@@ -1077,6 +1078,35 @@ describe("Composer send failure (#1728)", () => {
 
     toastSaying(GONE);
     expect(editor.commands.setContent).not.toHaveBeenCalled();
+  });
+
+  it("sends the members picked into the text beside it (#3835)", async () => {
+    // The channel's draft held a pick before the composer was rebuilt from
+    // its text, as a channel switch does: what the send finds.
+    composerMentionPicks("chan-1", {
+      getText: () => "@Jane Doe hi",
+      state: {
+        doc: {
+          descendants: (visit: (node: unknown) => void) =>
+            visit({
+              type: { name: "mention" },
+              attrs: { memberId: "u-jane", label: "Jane Doe" },
+            }),
+        },
+      },
+    } as unknown as Parameters<typeof composerMentionPicks>[1]);
+    editor = fakeEditor("@Jane Doe hi");
+    editorDouble.current = editor;
+    const onSend = vi.fn(async () => undefined);
+    renderComposer({ onSend, draft: "@Jane Doe hi" });
+
+    await act(async () => fireEvent.click(sendButton()));
+
+    expect(onSend).toHaveBeenCalledWith(
+      "@Jane Doe hi",
+      [],
+      [{ user_id: "u-jane", label: "Jane Doe" }],
+    );
   });
 
   it("clears the text and files, silently, once the send is queued", async () => {

@@ -600,6 +600,26 @@ describe('ChatMentionService.resolveForSend', () => {
       expect(officer.onlineUserIds).not.toHaveBeenCalled();
     });
 
+    it('reads the earlier body with its picks when working out who @here reached (#3835)', async () => {
+      // Sent "@Ben Stone @here" with a pick for Ben Stone (u9), who has
+      // left; @here reached Ben (u2). Read without the pick, the earlier
+      // body's `@Ben Stone` is `@Ben`, which would count Ben as named and
+      // take his @here mention away on the edit.
+      const officer = service(members, roles, ['channels:manage']);
+      const picks = [{ user_id: 'u9', label: 'Ben Stone' }];
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ben Stone @here (edited)',
+          ['u2'],
+          null,
+          '@Ben Stone @here',
+          { previous: picks, next: picks },
+        ),
+      ).resolves.toEqual(['u2']);
+    });
+
     it('drops a name the edit removes, though the message keeps @here', async () => {
       // Sent "@Dee @here" with Ann and Cal online: Dee by name, Ann and Cal
       // by @here. Editing Dee out for Ben takes her mention away.
