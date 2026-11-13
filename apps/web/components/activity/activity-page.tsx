@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,6 +56,8 @@ import {
   activityBadgeIsAsk,
   activityFilterAvailable,
   activityGroups,
+  activityReviewQueue,
+  findActivityTaskRow,
   activityRowAction,
   activityKeys,
   activityStandingKeys,
@@ -370,6 +373,35 @@ function GroupPart({
 }
 
 /**
+ * Reads `?review=<taskId>` (a "submitted a task" notification, `deepLinkFor`
+ * in the bell) and hands it to the page once per link, then drops it from the
+ * address so a refresh doesn't reopen the panel. Clicking the same link again
+ * later opens it again. Its own component because `useSearchParams` needs a
+ * Suspense boundary of its own (as in `chat-page.tsx`), and the page around
+ * it must not wait on one.
+ */
+function ReviewParam({ open }: { open: (taskId: string) => Promise<void> }) {
+  const searchParams = useSearchParams();
+  const taskId = searchParams.get("review");
+  const handled = useRef<string | null>(null);
+  // The page hands a new `open` each render; the link is acted on once.
+  const latestOpen = useRef(open);
+  useEffect(() => {
+    latestOpen.current = open;
+  });
+  useEffect(() => {
+    if (!taskId) {
+      handled.current = null;
+      return;
+    }
+    if (handled.current === taskId) return;
+    handled.current = taskId;
+    void latestOpen.current(taskId);
+  }, [taskId]);
+  return null;
+}
+
+/**
  * `/activity`: what is waiting on the member and what they made, in one place
  * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
  *
@@ -422,6 +454,27 @@ export function ActivityPage() {
     // A link opens in a new tab and has no panel.
     if (row.kind !== "link") setOpened(row);
   };
+  // `/activity?review=<taskId>`: a "submitted a task" notification
+  // (`deepLinkFor` in the bell). Opens that task's panel once the read has
+  // it, whatever chip is picked; a task no longer in the feed opens nothing.
+  // The read is taken again first: the one in hand can predate the
+  // submission (the page was open, or its read cached). A task the fresh
+  // read doesn't hold (confirmed elsewhere, or past the read's cap) goes to
+  // the board, whose waiting column lists every completion.
+  const router = useRouter();
+  const pathname = usePathname();
+  const openReview = async (taskId: string) => {
+    const result = await activity.refetch();
+    const row = result.data
+      ? findActivityTaskRow(result.data, taskId, new Date())
+      : null;
+    if (row) {
+      openFromList(row);
+      router.replace(pathname, { scroll: false });
+    } else {
+      router.replace("/tasks");
+    }
+  };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
@@ -454,6 +507,11 @@ export function ActivityPage() {
           )
         : null,
     [activity.data, permissions.data?.permissions, isModuleEnabled, now],
+  );
+  // The waiting reviews a review steps through (#4693), whatever chip is lit.
+  const reviewQueue = useMemo(
+    () => (activity.data ? activityReviewQueue(activity.data, now) : []),
+    [activity.data, now],
   );
   const openRow = useMemo(
     () =>
@@ -578,6 +636,9 @@ export function ActivityPage() {
           ),
         )}
 
+        <Suspense fallback={null}>
+          <ReviewParam open={openReview} />
+        </Suspense>
         <ActivityPanel
           row={openRow}
           viewerId={userId}
@@ -594,6 +655,17 @@ export function ActivityPage() {
             if (key === undefined) refresh();
           }}
           onActed={refresh}
+          reviewQueue={{
+            after: (key) => {
+              const at = reviewQueue.findIndex((row) => row.key === key);
+              return at === -1
+                ? reviewQueue.filter((row) => row.key !== key)
+                : // Only those after it: one before it was confirmed or
+                  // skipped already, and the list still holds the skipped.
+                  reviewQueue.slice(at + 1);
+            },
+            open: openFromList,
+          }}
         />
       </div>
     </ActivityFaces.Provider>

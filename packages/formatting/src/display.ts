@@ -112,7 +112,12 @@ export function formatDayTimeRange(
  * end it is just the start time. Shared by {@link formatDayTimeRange} and
  * {@link formatEventWindow}, so the two can't word a range differently.
  */
-function withTimes(day: string, from: Date, to: Date | null, now: Date): string {
+function withTimes(
+  day: string,
+  from: Date,
+  to: Date | null,
+  now: Date,
+): string {
   if (!to) return `${day} · ${time(from)}`;
   if (dayDelta(from, to) !== 0) {
     return `${day} · ${time(from)} – ${weekdayMonthDay(to, now)} · ${time(to)}`;
@@ -239,13 +244,27 @@ export function formatSentLabel(
   value: unknown,
   now: Date = new Date(),
 ): string | null {
+  return formatActedLabel("Sent", value, now);
+}
+
+/**
+ * When something was done, led by what was done: `"Submitted today at
+ * 9:04 PM"`, `"Resubmitted yesterday at 8:00 AM"`, `"Submitted Nov 3 at …"`.
+ * `formatSentLabel` is this with `"Sent"`; a task review says when the work
+ * was handed in with it (#4693).
+ */
+export function formatActedLabel(
+  verb: string,
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
   const when = formatRelativeDayTime(value, now);
   if (!when) return null;
   const [day = when, clock] = when.split(" · ");
   const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
     ? day.toLowerCase()
     : day;
-  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
+  return clock ? `${verb} ${spoken} at ${clock}` : `${verb} ${spoken}`;
 }
 
 /**

@@ -1,4 +1,8 @@
-import { describeRepeatPattern, ordinal } from '@repo/validation';
+import {
+  describeRepeatPattern,
+  ordinal,
+  taskNeedsSignOff,
+} from '@repo/validation';
 
 /**
  * How a push names a time: what a member glancing at a lock screen needs, in
@@ -204,4 +208,72 @@ export function joinFacts(
   ...facts: (string | null | undefined | false)[]
 ): string {
   return facts.filter((fact): fact is string => !!fact).join(PUSH_SEPARATOR);
+}
+
+/**
+ * The iOS stack every "submitted a task" push joins (`aps.thread-id`), so a
+ * night of submissions is one pile on the officer's lock screen.
+ */
+export const TASK_REVIEW_PUSH_THREAD = 'tasks:review';
+
+/** The longest reply a submitted push quotes before it is cut. */
+const SUBMITTED_REPLY_MAX = 60;
+
+/**
+ * What the officer who assigned a task reads when it is marked done (#4635
+ * proof): the person and the action lead, because their action is the news,
+ * then what came with it and what is asked. "Shawn Klein submitted: Clean his
+ * room" / "1 photo · Confirm to award 10 points".
+ *
+ * A task with no points and no proof was Done as marked, so it "finished"
+ * and asks for nothing; a send-back's second try "resubmitted" and quotes the
+ * reply, the thing that changed.
+ */
+export function taskSubmittedCopy(
+  name: string,
+  task: {
+    title: string;
+    point_reward?: number | null;
+    proof_kind?: string | null;
+    proof_link?: string | null;
+    completion_note?: string | null;
+  },
+  submitted: { photoCount: number; resubmitted: boolean },
+): { title: string; body: string } {
+  const needsSignOff = taskNeedsSignOff(task);
+  const verb = !needsSignOff
+    ? 'finished'
+    : submitted.resubmitted
+      ? 'resubmitted'
+      : 'submitted';
+  const note = task.completion_note?.trim() || null;
+  // Cut by character, not UTF-16 unit, so the cut never splits an emoji
+  // (as `chat-push-preview.ts` cuts).
+  const chars = note ? Array.from(note) : [];
+  const quoted = note
+    ? `"${
+        chars.length > SUBMITTED_REPLY_MAX
+          ? `${chars
+              .slice(0, SUBMITTED_REPLY_MAX - 1)
+              .join('')
+              .trimEnd()}…`
+          : note
+      }"`
+    : null;
+  const points = task.point_reward ?? 0;
+  const ask = !needsSignOff
+    ? "Done · send it back if something's off"
+    : points > 0
+      ? `Confirm to award ${points} ${points === 1 ? 'point' : 'points'}`
+      : 'Check it and confirm';
+  return {
+    title: `${name} ${verb}: ${task.title}`,
+    body: joinFacts(
+      quoted && (submitted.resubmitted ? `Replied ${quoted}` : quoted),
+      submitted.photoCount > 0 &&
+        `${submitted.photoCount} ${submitted.photoCount === 1 ? 'photo' : 'photos'}`,
+      task.proof_link && 'Link attached',
+      ask,
+    ),
+  };
 }

@@ -39,6 +39,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityFilterAvailable: actual.activityFilterAvailable,
     activityGroups: actual.activityGroups,
+    findActivityTaskRow: actual.findActivityTaskRow,
+    activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
@@ -64,6 +66,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         : null,
   };
 });
+// `?review=<taskId>` from a "submitted a task" notification.
+let mockSearch = new URLSearchParams();
+const mockReplace = vi.fn();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearch,
+  usePathname: () => "/activity",
+  useRouter: () => ({ replace: mockReplace }),
+}));
 // The chapter's module switch, unknown here: every tile shows.
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
   useChapterModuleGate: () => mockModuleGate(),
@@ -575,6 +585,52 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
+  });
+
+  it("re-reads before opening a review notification's task, under any chip, and again on a later click", async () => {
+    // The read in hand predates the submission; only the re-read holds it.
+    window.localStorage.setItem("frapp.activity.filter.me", "poll");
+    const stale = loaded({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll],
+      },
+    });
+    const refetch = vi.fn(() => Promise.resolve({ data: data() }));
+    mockActivity.mockReturnValue({ ...stale, refetch });
+    mockSearch = new URLSearchParams("review=t1");
+    const { rerender } = render(<ActivityPage />);
+    await act(async () => {});
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("panel:Book the venue")).toBeInTheDocument();
+    // Dropped from the address, so a refresh doesn't open it again.
+    expect(mockReplace).toHaveBeenCalledWith("/activity", { scroll: false });
+
+    // The address drops it, then the same notification is clicked again.
+    mockSearch = new URLSearchParams();
+    rerender(<ActivityPage />);
+    mockSearch = new URLSearchParams("review=t1");
+    rerender(<ActivityPage />);
+    await act(async () => {});
+    expect(refetch).toHaveBeenCalledTimes(2);
+    mockSearch = new URLSearchParams();
+  });
+
+  it("sends a review the fresh read doesn't hold to the task board", async () => {
+    mockActivity.mockReturnValue({
+      ...loaded(),
+      refetch: vi.fn(() => Promise.resolve({ data: data() })),
+    });
+    mockSearch = new URLSearchParams("review=gone");
+    render(<ActivityPage />);
+    await act(async () => {});
+
+    expect(screen.queryByText(/^panel:/)).not.toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith("/tasks");
+    mockSearch = new URLSearchParams();
   });
 
   it("dots an unread row and records the open when it is opened (#4405)", () => {

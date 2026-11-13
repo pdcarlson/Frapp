@@ -32,6 +32,7 @@ export {
   formatPointsChip,
   formatRelativeDayTime,
   formatSentLabel,
+  formatActedLabel,
   formatTimestampFull,
   formatWeekdayDay,
   isDueOverdue,

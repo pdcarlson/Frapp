@@ -391,16 +391,30 @@ export default function TasksScreen() {
       ? linkedTaskId
       : null;
   const [openedLink, setOpenedLink] = useState<string | null>(null);
+  // Only a task the viewer can read opens: a push (Overdue also reaches the
+  // assigner) can name one their read doesn't hold, such as an assigner who
+  // has since lost tasks:manage, and the sheet would open empty. They land on
+  // the board instead, as before.
   if (linked !== null && tasksQuery.isSuccess && openedLink !== linked) {
     setOpenedLink(linked);
-    setOpenId(linked);
+    const readable =
+      Array.isArray(tasksQuery.data) &&
+      (tasksQuery.data as unknown[]).some(
+        (row) =>
+          !!row &&
+          typeof row === "object" &&
+          (row as { id?: unknown }).id === linked,
+      );
+    if (readable) setOpenId(linked);
   } else if (linked === null && openedLink !== null) {
     setOpenedLink(null);
   }
   useEffect(() => {
     if (openedLink === null) return;
-    sheetRef.current?.present();
+    if (openId === openedLink) sheetRef.current?.present();
     router.setParams({ task: undefined });
+    // Once per link: `openId` is read as the link set it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openedLink, router]);
   const rosterQuery = useChapterRoster();
   const createdBy = openRow?.createdBy ?? null;
@@ -525,7 +539,7 @@ export default function TasksScreen() {
     // leaves the board shimmering forever with no retry, a screen dead until a
     // force-quit. A pull refetches it too (#3385), but nothing on screen says
     // so, which is why `ErrorState` keeps its button (`state-block.tsx`).
-    if ((viewerQuery.isError && viewerQuery.data === undefined)) {
+    if (viewerQuery.isError && viewerQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your account"
@@ -555,7 +569,7 @@ export default function TasksScreen() {
       );
     }
 
-    if ((tasksQuery.isError && tasksQuery.data === undefined)) {
+    if (tasksQuery.isError && tasksQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your tasks"
@@ -606,9 +620,7 @@ export default function TasksScreen() {
         title="Tasks"
         refresh={refresh}
         createAction={
-          canCreate
-            ? { label: "New task", onPress: openCreate }
-            : undefined
+          canCreate ? { label: "New task", onPress: openCreate } : undefined
         }
         headerAction={
           chapterId ? <ListLayoutToggle screen="tasks" /> : undefined
