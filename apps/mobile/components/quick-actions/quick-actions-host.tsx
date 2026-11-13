@@ -22,7 +22,6 @@ import { reportRouteError } from "@/components/route-error";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
-import { resolveCheckInWindow } from "@/lib/events/format";
 import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
 import type { QuickActionKey } from "@/lib/quick-actions";
@@ -175,29 +174,6 @@ export function useQuickActionsHost({
         case "study":
           router.push("/study");
           return;
-        case "checkIn": {
-          // The one event whose check-in is open now goes straight to the
-          // scanner. None, or several at once, goes to Events to choose.
-          const at = new Date();
-          const open = selectEventRows(eventsQuery.data, at).filter(
-            (row) =>
-              resolveCheckInWindow(
-                row.start_time,
-                row.end_time,
-                at,
-                row.check_in_opens_minutes,
-              ).state === "open",
-          );
-          if (open.length === 1) {
-            router.push({
-              pathname: "/check-in",
-              params: { eventId: open[0].id },
-            });
-          } else {
-            router.navigate("/events");
-          }
-          return;
-        }
         case "hostCheckIn": {
           // The event an officer would host: the soonest still checkable-in,
           // as You's Host check-in row picks it.

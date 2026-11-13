@@ -68,6 +68,11 @@
               "scheme": "https",
               "host": "app.frapp.live",
               "path": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "app.frapp.live",
+              "path": "/check-in"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

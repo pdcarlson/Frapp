@@ -51,8 +51,8 @@ const quick = vi.hoisted(() => ({
 }));
 vi.mock("@/components/quick-actions/use-quick-actions", () => ({
   useQuickActions: () => ({
-    shown: ["message", "checkIn"],
-    available: ["message", "checkIn"],
+    shown: ["message", "study"],
+    available: ["message", "study"],
     save: quick.save,
     ready: quick.ready,
   }),
@@ -378,8 +378,8 @@ describe("the +", () => {
   it("closes the panel and runs the action picked", () => {
     const tree = render();
     act(() => plus(tree.root)!.props.onPress());
-    act(() => panel(tree.root).props.onRun("checkIn"));
-    expect(quick.run).toHaveBeenCalledWith("checkIn");
+    act(() => panel(tree.root).props.onRun("study"));
+    expect(quick.run).toHaveBeenCalledWith("study");
     expect(panel(tree.root)).toBeUndefined();
   });
 

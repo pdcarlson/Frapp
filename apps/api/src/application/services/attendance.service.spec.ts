@@ -1084,6 +1084,7 @@ describe('AttendanceService', () => {
         'evt-1',
         SECRET,
         duringEvent.getTime(),
+        'https://app.frapp.live',
       );
 
       await expect(
@@ -1097,6 +1098,7 @@ describe('AttendanceService', () => {
         'evt-1',
         SECRET,
         duringEvent.getTime(),
+        'https://app.frapp.live',
       );
 
       await expect(
@@ -1109,6 +1111,7 @@ describe('AttendanceService', () => {
         'evt-OTHER',
         SECRET,
         duringEvent.getTime(),
+        'https://app.frapp.live',
       );
 
       await expect(
@@ -1117,11 +1120,12 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
-    it('rejects a token from two windows ago', async () => {
+    it('rejects a token from four windows ago', async () => {
       const { token } = mintCheckInToken(
         'evt-1',
         SECRET,
-        duringEvent.getTime() - 2 * CHECK_IN_TOKEN_WINDOW_MS,
+        duringEvent.getTime() - 4 * CHECK_IN_TOKEN_WINDOW_MS,
+        'https://app.frapp.live',
       );
 
       await expect(
@@ -1160,6 +1164,7 @@ describe('AttendanceService', () => {
         'evt-1',
         SECRET,
         duringEvent.getTime(),
+        'https://app.frapp.live',
       );
       delete process.env.EVENT_CHECK_IN_TOKEN_SECRET;
 
@@ -1357,7 +1362,12 @@ describe('AttendanceService', () => {
       lng: house.lng,
     });
     const freshToken = () =>
-      mintCheckInToken('evt-1', SECRET, duringEvent.getTime()).token;
+      mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime(),
+        'https://app.frapp.live',
+      ).token;
 
     beforeEach(() => {
       previousSecret = process.env.EVENT_CHECK_IN_TOKEN_SECRET;
@@ -1530,6 +1540,7 @@ describe('AttendanceService', () => {
         'evt-1',
         SECRET,
         duringEvent.getTime(),
+        'https://app.frapp.live',
       );
 
       await expect(

@@ -56,7 +56,7 @@ export type CheckInOutcome =
       attemptOnly: boolean;
     };
 
-/** The scanner's own words when location access is refused. */
+/** The chat card's words when location access is refused at a zoned event. */
 export const CHECK_IN_LOCATION_DENIED_COPY =
   "This event checks you in by location. Allow location access to check in.";
 
@@ -77,6 +77,26 @@ export const CHECK_IN_CODE_REFUSED_MESSAGE =
  */
 export const CHECK_IN_NEEDS_CODE_MESSAGE =
   "Scan the code on the check-in screen with the Frapp app to check in";
+
+/**
+ * The API's two refusals of a check-in that carried no location: near the
+ * officer's screen (#4532) and inside a drawn zone. A spec reads both from the
+ * API's source.
+ */
+export const CHECK_IN_NEEDS_LOCATION_MESSAGES: readonly string[] = [
+  "This check-in needs your location. Allow location for Frapp and scan again.",
+  "This event checks you in by location — use the Frapp mobile app to check in.",
+];
+
+/** Whether a failed check-in was refused for carrying no location. */
+export function needsLocationRefusal(error: unknown): boolean {
+  const message = serverMessageOf(error);
+  return (
+    statusOf(error) === 400 &&
+    typeof message === "string" &&
+    CHECK_IN_NEEDS_LOCATION_MESSAGES.includes(message)
+  );
+}
 
 /** Whether a failed check-in was refused for carrying no code. */
 export function needsScannedCode(error: unknown): boolean {

@@ -9,6 +9,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
+import { pseudonymizeUserId } from '../../infrastructure/observability/pseudonyms';
+import { getRequestId } from '../../infrastructure/observability/request-als';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
@@ -28,6 +31,7 @@ import {
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
+  PRODUCTION_APP_ORIGIN,
 } from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
@@ -110,6 +114,63 @@ export const CHECK_IN_NEEDS_LOCATION =
 export const CHECK_IN_TOO_FAR =
   'You need to be near the check-in screen to check in';
 
+/**
+ * The dashboard origin the QR's check-in link names: `APP_URL`, as the invite
+ * email reads it (`infrastructure/email/invite-link.util.ts`), else production.
+ * The web serves the same path as the fallback for a phone without the app,
+ * so a staging host screen links to staging.
+ */
+function checkInLinkOrigin(): string {
+  const configured = process.env.APP_URL?.trim();
+  return configured ? configured.replace(/\/+$/, '') : PRODUCTION_APP_ORIGIN;
+}
+
+/**
+ * Why a check-in was turned away, for the operational log.
+ *
+ * The request log carries only the status, and several refusals share one (a
+ * 400 is the window, a missing location, or a zone without one; a 403 is a bad
+ * code, the wrong place, or too far from the screen). On 2026-11-13 two
+ * members' scans failed with 400s and nothing recorded which, so this names
+ * the branch, with whether a location came and how sure the phone was of it.
+ * No ids, coordinates or message text: the user is a pseudonym, as on the
+ * request log, and the request id joins the two.
+ */
+type CheckInRefusal =
+  | 'window'
+  | 'needs_code'
+  | 'bad_code'
+  | 'zone_invalid'
+  | 'zone_needs_location'
+  | 'outside_zone'
+  | 'needs_location'
+  | 'too_far';
+
+function logCheckInRefusal(
+  reason: CheckInRefusal,
+  userId: string,
+  options: CheckInOptions,
+): void {
+  const hasLocation =
+    typeof options.lat === 'number' && typeof options.lng === 'number';
+  const userHash = pseudonymizeUserId(userId);
+  const requestId = getRequestId();
+  enqueueSanitizedLog({
+    body: 'check_in_refused',
+    severity: 'INFO',
+    attributes: {
+      reason,
+      has_code: options.token !== undefined || options.manualCode !== undefined,
+      has_location: hasLocation,
+      ...(typeof options.accuracyMeters === 'number'
+        ? { accuracy_m: Math.round(options.accuracyMeters) }
+        : {}),
+      ...(requestId ? { request_id: requestId } : {}),
+      ...(userHash ? { user_hash: userHash } : {}),
+    },
+  });
+}
+
 @Injectable()
 export class AttendanceService {
   private readonly logger = new Logger(AttendanceService.name);
@@ -144,7 +205,12 @@ export class AttendanceService {
       throw new NotFoundException('Event not found');
     }
 
-    return mintCheckInToken(eventId, this.requireTokenSecret(), Date.now());
+    return mintCheckInToken(
+      eventId,
+      this.requireTokenSecret(),
+      Date.now(),
+      checkInLinkOrigin(),
+    );
   }
 
   /**
@@ -263,6 +329,7 @@ export class AttendanceService {
       event.check_in_opens_minutes,
     );
     if (now < opensAt || now > closesAt) {
+      logCheckInRefusal('window', userId, options);
       throw new BadRequestException(
         'Check-in is only allowed during the event time window',
       );
@@ -340,6 +407,7 @@ export class AttendanceService {
     const hasCode =
       options.token !== undefined || options.manualCode !== undefined;
     if (screens.length > 0 && !hasCode) {
+      logCheckInRefusal('needs_code', userId, options);
       throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
     }
 
@@ -352,6 +420,7 @@ export class AttendanceService {
           verifyManualCode(options.manualCode, eventId, secret, now.getTime()));
 
       if (!accepted) {
+        logCheckInRefusal('bad_code', userId, options);
         throw new ForbiddenException(
           'That check-in code is not valid for this event, or it has expired',
         );
@@ -369,6 +438,7 @@ export class AttendanceService {
       // would silently disable the check the row exists to encode — the exact
       // failure mode a geofence must not have.
       if (!isValidZone(event.check_in_zone)) {
+        logCheckInRefusal('zone_invalid', userId, options);
         throw new BadRequestException(
           'This event has an invalid check-in area; an officer needs to redraw it',
         );
@@ -392,12 +462,14 @@ export class AttendanceService {
         // `@repo/validation`, keyed by this exact sentence), so putting the
         // guidance here is what makes that path honest — and it costs no
         // per-card fetch of the event just to learn it has a zone.
+        logCheckInRefusal('zone_needs_location', userId, options);
         throw new BadRequestException(
           'This event checks you in by location — use the Frapp mobile app to check in.',
         );
       }
 
       if (!pointInPolygon(lat, lng, event.check_in_zone)) {
+        logCheckInRefusal('outside_zone', userId, options);
         throw new ForbiddenException('You need to be at the event to check in');
       }
     }
@@ -420,6 +492,7 @@ export class AttendanceService {
         !Number.isFinite(lat) ||
         !Number.isFinite(lng)
       ) {
+        logCheckInRefusal('needs_location', userId, options);
         throw new BadRequestException(CHECK_IN_NEEDS_LOCATION);
       }
 
@@ -428,6 +501,7 @@ export class AttendanceService {
         isNearCheckInScreen(anchor, member),
       );
       if (!near) {
+        logCheckInRefusal('too_far', userId, options);
         throw new ForbiddenException(CHECK_IN_TOO_FAR);
       }
     }

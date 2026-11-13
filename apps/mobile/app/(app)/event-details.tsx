@@ -345,13 +345,15 @@ export default function EventDetailsScreen() {
  *   opens too, so the QR can be up when the first member arrives. Events have
  *   no creator or hosts list (#3762), so "host" is the permission. A host who
  *   attends still earns the points, so while the window is open and they
- *   aren't in yet, a quieter "Check myself in" under the button opens the
- *   scanner.
- * - **Open, for a guest.** "Scan QR to check in". Held back while their own
- *   row is first being read, so a checked-in member never sees it flash. Not
- *   while that read is paused offline: the scanner says what offline means
- *   for a check-in, and a card with no button would say nothing. A failed
- *   read shows it too (the server refuses a second check-in anyway).
+ *   aren't in yet, a quieter "Check myself in" under the button opens s18,
+ *   where they type the code their own screen shows.
+ * - **Open, for a guest.** One line saying to point the phone's camera at the
+ *   code (2026-11-13: the QR is a link the camera opens, and the app has no
+ *   scanner), and a quieter "Enter code" for a camera that won't read it.
+ *   Held back while their own row is first being read, so a checked-in
+ *   member never sees it flash. Not while that read is paused offline: s18
+ *   says what offline means for a check-in. A failed read shows it too (the
+ *   server refuses a second check-in anyway).
  *
  * A check-in zone is said here, on the card it constrains, as one muted line
  * while check-in is open. It used to be its own box painted in
@@ -480,15 +482,24 @@ function CheckInCard({
           ) : null}
         </>
       ) : showScan ? (
-        // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
-        // control radius, the chapter accent under `gold.onHouse` ink, as the
-        // dues Pay button and every sheet's CTA draw it.
-        <SheetPrimaryButton
-          label="Scan QR to check in"
-          accent={accent}
-          onAccent={tokens.color.gold.onHouse}
-          onPress={openScanner}
-        />
+        <>
+          <Text style={styles.cameraHint}>
+            Point your phone&apos;s camera at the code on the officer&apos;s
+            screen.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={openScanner}
+            style={({ pressed }) => [
+              styles.selfCheckIn,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={[styles.selfCheckInText, { color: accent }]}>
+              Enter code
+            </Text>
+          </Pressable>
+        </>
       ) : null}
     </View>
   );
@@ -689,6 +700,10 @@ function createStyles(tokens: SignetTokens) {
     zoneText: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
+    },
+    cameraHint: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.body),
     },
     section: {
       gap: tokens.spacing.xs,

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  APP_LINK_PATHS,
   PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
 } from "@repo/validation";
@@ -1354,8 +1355,9 @@ describe("media picker dependencies (#2296, #2464)", () => {
 describe("invite links open the app (#4002)", () => {
   // The binary's half of universal links and App Links. The web's half is
   // `/.well-known/apple-app-site-association` and `assetlinks.json` on
-  // app.frapp.live, which claim `/join` only; the two must agree.
-  it("claims app.frapp.live/join and nothing else, on both platforms", () => {
+  // app.frapp.live, which claim `APP_LINK_PATHS` (the invite and the
+  // check-in code); the two must agree.
+  it("claims exactly the web's app-link paths on app.frapp.live, on both platforms", () => {
     const appJson = JSON.parse(
       readFileSync(new URL("./app.json", import.meta.url), "utf8"),
     ) as {
@@ -1381,9 +1383,13 @@ describe("invite links open the app (#4002)", () => {
       autoVerify: true,
       category: ["BROWSABLE", "DEFAULT"],
     });
-    expect(filters[0]!.data).toEqual([
-      { scheme: "https", host: "app.frapp.live", path: "/join" },
-    ]);
+    expect(filters[0]!.data).toEqual(
+      APP_LINK_PATHS.map((path) => ({
+        scheme: "https",
+        host: "app.frapp.live",
+        path,
+      })),
+    );
   });
 });
 

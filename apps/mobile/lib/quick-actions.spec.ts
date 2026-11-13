@@ -39,7 +39,6 @@ describe("which actions a member can use", () => {
       "newTask",
       "invite",
       "message",
-      "checkIn",
       "hostCheckIn",
       "logHours",
       "study",
@@ -53,7 +52,7 @@ describe("which actions a member can use", () => {
         permissions: ["members:view", "service:log"],
         enabledModules: undefined,
       }),
-    ).toEqual(["message", "checkIn", "logHours", "study"]);
+    ).toEqual(["message", "logHours", "study"]);
   });
 
   it("asks each action for the permission its endpoint does", () => {
@@ -63,20 +62,20 @@ describe("which actions a member can use", () => {
         enabledModules: undefined,
       });
     // New Member and Alumni hold members:view but not service:log.
-    expect(keys(["members:view"])).toEqual(["message", "checkIn", "study"]);
-    // No roster, no Directory and no study sessions; check-in needs none.
-    expect(keys(["service:log"])).toEqual(["checkIn", "logHours"]);
+    expect(keys(["members:view"])).toEqual(["message", "study"]);
+    // No roster, no Directory and no study sessions.
+    expect(keys(["service:log"])).toEqual(["logHours"]);
     // `POST /v1/tasks` also needs the controller's members:view (#3865).
     expect(keys(["tasks:manage"])).not.toContain("newTask");
     expect(keys(["tasks:manage", "members:view"])).toContain("newTask");
   });
 
-  it("lets officers check themselves in, not only host", () => {
+  it("has no Check in: the phone's camera opens check-in (2026-11-13)", () => {
     const officer = availableQuickActions({
       permissions: ["events:update", "events:create"],
       enabledModules: undefined,
     });
-    expect(officer).toContain("checkIn");
+    expect(officer as string[]).not.toContain("checkIn");
     expect(officer).toContain("hostCheckIn");
   });
 
@@ -139,19 +138,18 @@ describe("what the panel shows", () => {
       "newTask",
       "invite",
       "message",
-      "checkIn",
       "hostCheckIn",
+      "logHours",
     ]);
   });
 
-  it("starts a member on the four they can use", () => {
+  it("starts a member on the three they can use", () => {
     const member = availableQuickActions({
       permissions: ["members:view", "service:log"],
       enabledModules: undefined,
     });
     expect(resolveQuickActions(null, member)).toEqual([
       "message",
-      "checkIn",
       "logHours",
       "study",
     ]);
@@ -167,8 +165,10 @@ describe("what the panel shows", () => {
   it("drops what the member can no longer use, and anything unknown", () => {
     expect(
       resolveQuickActions(
-        ["newTask", "polls", "message", "message"],
-        ["message", "checkIn"],
+        // "checkIn" was an action until 2026-11-13; a panel saved with it
+        // just drops it.
+        ["newTask", "polls", "checkIn", "message", "message"],
+        ["message", "study"],
       ),
     ).toEqual(["message"]);
   });
@@ -189,31 +189,31 @@ describe("editing", () => {
     const six = [
       "newTask",
       "message",
-      "checkIn",
+      "invite",
       "hostCheckIn",
       "logHours",
       "study",
     ] as const;
-    expect(removeQuickAction(six, "checkIn")).not.toContain("checkIn");
+    expect(removeQuickAction(six, "invite")).not.toContain("invite");
     expect(addQuickAction(["message"], "study")).toEqual(["message", "study"]);
     expect(addQuickAction(six, "upload")).toEqual([...six]);
     expect(addQuickAction(["message"], "message")).toEqual(["message"]);
   });
 
   it("moves one action and closes the others up around it", () => {
-    expect(moveQuickAction(["message", "checkIn", "study"], 0, 2)).toEqual([
-      "checkIn",
+    expect(moveQuickAction(["message", "invite", "study"], 0, 2)).toEqual([
+      "invite",
       "study",
       "message",
     ]);
-    expect(moveQuickAction(["message", "checkIn", "study"], 2, 0)).toEqual([
+    expect(moveQuickAction(["message", "invite", "study"], 2, 0)).toEqual([
       "study",
       "message",
-      "checkIn",
+      "invite",
     ]);
-    expect(moveQuickAction(["message", "checkIn"], 1, 9)).toEqual([
+    expect(moveQuickAction(["message", "invite"], 1, 9)).toEqual([
       "message",
-      "checkIn",
+      "invite",
     ]);
   });
 
@@ -222,17 +222,17 @@ describe("editing", () => {
     // reordering what is shown doesn't lose it.
     expect(
       mergeSavedQuickActions(
-        ["checkIn", "message"],
-        ["message", "upload", "checkIn", "polls"],
-        ["message", "checkIn"],
+        ["invite", "message"],
+        ["message", "upload", "invite", "polls"],
+        ["message", "invite"],
       ),
-    ).toEqual(["checkIn", "message", "upload"]);
+    ).toEqual(["invite", "message", "upload"]);
     // Removing a shown one does remove it.
     expect(
       mergeSavedQuickActions(
         ["message"],
-        ["message", "checkIn"],
-        ["message", "checkIn"],
+        ["message", "invite"],
+        ["message", "invite"],
       ),
     ).toEqual(["message"]);
     expect(mergeSavedQuickActions(["study"], null, ["study"])).toEqual([
@@ -242,8 +242,8 @@ describe("editing", () => {
 
   it("offers in the Add row only what is not placed", () => {
     expect(
-      addableQuickActions(["message"], ["message", "checkIn", "study"]),
-    ).toEqual(["checkIn", "study"]);
+      addableQuickActions(["message"], ["message", "invite", "study"]),
+    ).toEqual(["invite", "study"]);
   });
 
   it("lays four out two by two and the rest in threes", () => {

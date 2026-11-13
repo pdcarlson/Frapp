@@ -112,6 +112,8 @@ export * from "./module-refusal";
 // shared so web's invite hand-off (`AppHandoff`), the API's update-screen
 // default and the app-link files name one app. See ./native-app.
 export * from "./native-app";
+// The check-in QR as a link the phone camera opens. See ./check-in-link.
+export * from "./check-in-link";
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is

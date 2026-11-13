@@ -20,7 +20,6 @@ export type QuickActionKey =
   | "newTask"
   | "invite"
   | "message"
-  | "checkIn"
   | "hostCheckIn"
   | "logHours"
   | "study"
@@ -32,9 +31,11 @@ export const QUICK_ACTION_LIMIT = 6;
 /**
  * Every action, in the order a member who never edits the panel sees them.
  * The starting set is the first six of these the member may use, so a
- * President starts with New event, New task, Invite, Message, Check in and
- * Host check-in, and a member whose role logs hours with Message, Check in,
- * Log hours and Study. Invite sits third so the officer who can invite finds
+ * President starts with New event, New task, Invite, Message, Host check-in
+ * and Log hours, and a member whose role logs hours with Message, Log hours
+ * and Study. There is no Check in: a member checks in by pointing the phone's
+ * camera at the host's code, which opens the app already checking in
+ * (2026-11-13), and a saved panel that held it just drops it. Invite sits third so the officer who can invite finds
  * it on the first open (owner ask 2026-11-06, "I couldn't find a way to
  * invite new members"); Log hours moves to the Add row for that officer.
  */
@@ -43,7 +44,6 @@ const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
   "newTask",
   "invite",
   "message",
-  "checkIn",
   "hostCheckIn",
   "logHours",
   "study",
@@ -55,7 +55,6 @@ export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
   newTask: "New task",
   invite: "Invite",
   message: "Message",
-  checkIn: "Check in",
   hostCheckIn: "Host check-in",
   logHours: "Log hours",
   study: "Study",
@@ -68,7 +67,6 @@ export const QUICK_ACTION_HINTS: Record<QuickActionKey, string> = {
   newTask: "Opens the new task sheet.",
   invite: "Opens invites to email or share with new members.",
   message: "Opens the directory to pick who to message.",
-  checkIn: "Opens check-in for the event happening now.",
   hostCheckIn: "Opens the host check-in display for the next event.",
   logHours: "Opens the log service hours sheet.",
   study: "Opens study hours.",
@@ -105,7 +103,6 @@ export function availableQuickActions({
     invite: can("members:invite", permissions),
     // The Directory lists the roster (`GET /v1/members`, `members:view`).
     message: can("members:view", permissions),
-    checkIn: on("events"),
     hostCheckIn: on("events") && can("events:update", permissions),
     // Filing an entry is `service:log` (`POST /v1/service-entries`), which the
     // seeded New Member and Alumni roles don't hold.

@@ -6,22 +6,17 @@ import {
 } from "@/lib/location";
 
 /**
- * The member's position for s18, ready before they scan (#4532).
+ * The member's position for s18, ready before they check in (#4532).
  *
- * A scanned check-in code is accepted for 30 to 60 seconds, and a GPS fix
- * indoors can take tens of seconds. Asking for the fix only after the scan
- * would let the code expire while the phone looks for satellites, and the
- * member would be told a code they just scanned is not valid. So the scanner
- * starts a fix as soon as it is on screen, when location is already allowed
- * (it never prompts here: a prompt belongs to the scan that needs it), and the
- * scan uses that fix when it is fresh.
+ * A GPS fix indoors can take tens of seconds, and a scanned code expires in 90
+ * to 120. So s18 starts a fix as soon as it is on screen, when location is
+ * already allowed (it never prompts here: the prompt belongs to the check-in
+ * that needs it, `check-in-location.ts`), and the check-in uses that fix when
+ * it is fresh. A typed code finds the fix ready while the member types.
  */
 
 /** A warm fix older than this is read again at the scan. */
 export const WARM_FIX_MAX_AGE_MS = 60_000;
-
-/** How long a scan waits for a fix of its own before sending without one. */
-export const CHECK_IN_FIX_TIMEOUT_MS = 8_000;
 
 /**
  * While `active`, keep a fresh GPS fix: one when the scanner opens, and
