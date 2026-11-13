@@ -35,7 +35,8 @@ export function decideNavigation(target: string, appOrigin: string): NavigationD
  * The browser permissions the app may ask for, and only from its own origin:
  * notifications (#4842), the microphone for recording a meeting (#712),
  * clipboard writes for Copy, and full screen for a photo or video.
- * Everything else (camera, location, MIDI, USB, …) is refused.
+ * Everything else (camera, screen capture, location, MIDI, USB, …) is refused.
+ * `mediaTypes` lists the devices a `media` request or check names.
  */
 const ALLOWED_PERMISSIONS = new Set([
   "notifications",
@@ -58,7 +59,11 @@ export function isPermissionAllowed(
     return false;
   }
   if (origin !== appOrigin) return false;
-  // `media` covers the camera too; recording minutes needs only the microphone.
-  if (permission === "media") return mediaTypes.every((type) => type === "audio");
+  // `media` covers the camera and screen capture too; recording minutes needs
+  // only the microphone. A request that names no device (screen capture
+  // arrives that way) is refused, not waved through by an empty list.
+  if (permission === "media") {
+    return mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio");
+  }
   return true;
 }

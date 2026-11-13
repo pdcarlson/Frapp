@@ -6,7 +6,7 @@
  * `FRAPP_DESKTOP_APP_URL`, and only the origins below are accepted, so a
  * stray flag or a link can never point a member's app at another site.
  * `localhost:3000` (the web dev server) is accepted only from an unpackaged
- * `npm run dev`, never from an installed app.
+ * `npm start`, never from an installed app.
  */
 
 export const PRODUCTION_APP_URL = "https://app.frapp.live";

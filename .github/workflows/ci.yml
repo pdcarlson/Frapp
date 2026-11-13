@@ -137,6 +137,7 @@ jobs:
               - '!apps/web/**'
               - '!apps/landing/**'
               - '!apps/api/**'
+              - '!apps/desktop/**'
               - '!docs/**'
               - '!spec/**'
               - '!supabase/**'
@@ -145,6 +146,7 @@ jobs:
               - '!apps/web/**'
               - '!apps/landing/**'
               - '!apps/mobile/**'
+              - '!apps/desktop/**'
               - '!docs/**'
               - '!spec/**'
 

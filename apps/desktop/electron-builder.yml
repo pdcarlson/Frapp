@@ -42,7 +42,9 @@ dmg:
   title: Frapp
 
 win:
-  icon: ../../packages/brand-assets/assets/signet-emblem-B.ico
+  # The PNG, not the favicon .ico: electron-builder needs a 256px frame and
+  # builds the .ico itself.
+  icon: ../../packages/brand-assets/assets/signet-emblem-B-1024.png
   target:
     - target: nsis
       arch: [x64, arm64]

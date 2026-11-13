@@ -33,6 +33,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
+    desktop/        # Electron shell around app.frapp.live (macOS + Windows, ADR-29)
   packages/         # 13 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
@@ -101,7 +102,7 @@ Frapp/
 
 - **Framework:** Electron ([ADR-29](adr/adr-29.md)). The window loads the hosted web app at `https://app.frapp.live`; nothing of the web app is bundled, so UI changes ship as web deploys.
 - **Boundary:** The renderer is sandboxed with no Node access. The web app reaches the OS only through `window.frappDesktop` (`apps/desktop/src/shared/bridge.ts`), and links off the app's origin open in the default browser (`src/shared/navigation.ts`).
-- **Running it:** `npm run dev -w apps/desktop` opens production; `-- --app-url=https://app.staging.frapp.live` opens staging, and an unpackaged run also accepts `http://localhost:3000`. `npm run dist -w apps/desktop` packages for the current OS; the `Desktop build` workflow packages macOS, Windows and Linux on every change and keeps the installers on the run for 14 days.
+- **Running it:** `npm start -w apps/desktop` opens production; `npm start -w apps/desktop -- --app-url=https://app.staging.frapp.live` opens staging, and an unpackaged run also accepts `http://localhost:3000`. Those three origins are the whole allow-list (`src/shared/app-url.ts`). The script is `start`, not `dev`, so the root `npm run dev` (Turbo, web and landing) doesn't open a desktop window. `npm run dist -w apps/desktop` packages for the current OS; the `Desktop build` workflow packages macOS, Windows and Linux on every change and keeps the installers on the run for 14 days. Linux is built only to keep packaging honest: it isn't offered to members, and it has no Open at Login.
 - **Not yet built:** sign-in through the system browser (#4841), notifications and the unread badge (#4842), signing and auto-update (#4843).
 
 ### 3.5 Documentation (no `apps/docs` web app)

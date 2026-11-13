@@ -13,7 +13,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "npm run build && electron .",
+    "start": "npm run build && electron .",
     "dist": "npm run build && npx --yes electron-builder@26.18.1 --publish never",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",

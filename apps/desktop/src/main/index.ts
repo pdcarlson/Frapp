@@ -44,17 +44,23 @@ if (!app.requestSingleInstanceLock()) {
 
   // Every page, including ones the app opens later, gets the same rules.
   app.on("web-contents-created", (_event, contents) => {
-    contents.on("will-navigate", (event, url) => {
+    const guard = (event: Electron.Event, url: string): void => {
       const decision = decideNavigation(url, appOrigin);
       if (decision.kind === "stay") return;
       event.preventDefault();
       if (decision.kind === "external") void shell.openExternal(decision.url);
+    };
+    contents.on("will-navigate", (event, url) => guard(event, url));
+    // A server redirect skips `will-navigate`: an app URL answering 302 to
+    // another site must not load that site in the window either.
+    contents.on("will-redirect", (event, url, _inPlace, isMainFrame) => {
+      if (isMainFrame) guard(event, url);
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       const decision = decideNavigation(url, appOrigin);
       if (decision.kind === "external") void shell.openExternal(decision.url);
-      if (decision.kind === "stay") void contents.loadURL(url);
+      if (decision.kind === "stay") contents.loadURL(url).catch(ignoreLoadFailure);
       return { action: "deny" };
     });
   });
@@ -62,8 +68,14 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     installPermissionHandlers();
     installBridge();
-    installAppMenu({ isPackaged: app.isPackaged, showWindow });
-    if (process.platform !== "darwin") createTray({ showWindow, iconPath: trayIconPath() });
+    const menus = { isPackaged: app.isPackaged, showWindow, onChange: () => rebuildMenus() };
+    let tray: ReturnType<typeof createTray> | null = null;
+    const rebuildMenus = (): void => {
+      installAppMenu(menus);
+      tray?.rebuild();
+    };
+    installAppMenu(menus);
+    if (process.platform !== "darwin") tray = createTray({ ...menus, iconPath: trayIconPath() });
     mainWindow = createWindow({ hidden: launchedHidden() });
   });
 }
@@ -88,13 +100,15 @@ function createWindow(options: { hidden?: boolean } = {}): BrowserWindow {
       additionalArguments: [`--frapp-desktop-version=${app.getVersion()}`],
     },
   });
-  if (state.maximized) win.maximize();
   if (state.bounds.x === undefined) win.center();
+  // `maximize()` also shows the window, so it waits until the window is shown:
+  // a hidden launch at login must stay hidden.
+  if (state.maximized) pendingMaximize.add(win);
   trackWindowState(win);
   installContextMenu(win.webContents);
 
   win.once("ready-to-show", () => {
-    if (!options.hidden) win.show();
+    if (!options.hidden) reveal(win);
   });
   // Closing the window keeps Frapp running for notifications; Quit ends it.
   // Windows signing out or shutting down closes windows without `before-quit`;
@@ -110,12 +124,21 @@ function createWindow(options: { hidden?: boolean } = {}): BrowserWindow {
   win.webContents.on("did-fail-load", (_event, code, _description, url, isMainFrame) => {
     // -3 is ERR_ABORTED: a navigation the page or we cancelled, not a failure.
     if (!isMainFrame || code === -3 || url.startsWith("data:")) return;
-    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(offlinePageHtml(appOrigin))}`);
+    win
+      .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(offlinePageHtml(appOrigin))}`)
+      .catch(ignoreLoadFailure);
   });
 
-  void win.loadURL(appOrigin);
+  win.loadURL(appOrigin).catch(ignoreLoadFailure);
   return win;
 }
+
+/**
+ * `loadURL` rejects when the page fails to load. `did-fail-load` already shows
+ * the offline screen for that, and an unhandled rejection would put Electron's
+ * "A JavaScript error occurred" dialog on top of it.
+ */
+function ignoreLoadFailure(): void {}
 
 function showWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -123,8 +146,15 @@ function showWindow(): void {
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
+  reveal(mainWindow);
   mainWindow.focus();
+}
+
+const pendingMaximize = new WeakSet<BrowserWindow>();
+
+function reveal(win: BrowserWindow): void {
+  if (pendingMaximize.delete(win)) win.maximize();
+  win.show();
 }
 
 function installPermissionHandlers(): void {
@@ -133,9 +163,11 @@ function installPermissionHandlers(): void {
     const mediaTypes = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
     callback(isPermissionAllowed(permission, details.requestingUrl ?? contents.getURL(), appOrigin, mediaTypes));
   });
-  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    isPermissionAllowed(permission, requestingOrigin, appOrigin),
-  );
+  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
+    const mediaType = details.mediaType;
+    const mediaTypes = mediaType === "audio" || mediaType === "video" ? [mediaType] : [];
+    return isPermissionAllowed(permission, requestingOrigin, appOrigin, mediaTypes);
+  });
 }
 
 /** The main-process half of `window.frappDesktop`; see `shared/bridge.ts`. */

@@ -44,6 +44,9 @@ describe("isPermissionAllowed", () => {
   it("refuses the camera, other permissions and other origins", () => {
     expect(isPermissionAllowed("media", APP, APP, ["video"])).toBe(false);
     expect(isPermissionAllowed("media", APP, APP, ["audio", "video"])).toBe(false);
+    // Screen capture names no device; a check without media types names none either.
+    expect(isPermissionAllowed("media", APP, APP, [])).toBe(false);
+    expect(isPermissionAllowed("media", APP, APP)).toBe(false);
     expect(isPermissionAllowed("geolocation", APP, APP)).toBe(false);
     expect(isPermissionAllowed("openExternal", APP, APP)).toBe(false);
     expect(isPermissionAllowed("notifications", "https://evil.example", APP)).toBe(false);

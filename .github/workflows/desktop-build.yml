@@ -14,12 +14,22 @@ on:
       - "apps/desktop/**"
       - "packages/brand-assets/assets/**"
       - ".github/workflows/desktop-build.yml"
+      # The only macOS and Windows install in CI: a lockfile or toolchain change
+      # that breaks those platforms should fail here, not on the next desktop PR.
+      - "package-lock.json"
+      - "package.json"
+      - ".github/actions/node-setup/**"
   push:
     branches: [main]
     paths:
       - "apps/desktop/**"
       - "packages/brand-assets/assets/**"
       - ".github/workflows/desktop-build.yml"
+      # The only macOS and Windows install in CI: a lockfile or toolchain change
+      # that breaks those platforms should fail here, not on the next desktop PR.
+      - "package-lock.json"
+      - "package.json"
+      - ".github/actions/node-setup/**"
   workflow_dispatch:
 
 concurrency:

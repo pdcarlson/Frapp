@@ -18,20 +18,26 @@ describe("parseBadgeCount", () => {
 });
 
 describe("parseExternalUrl", () => {
-  it("passes https pages through", () => {
-    expect(parseExternalUrl("https://accounts.google.com/o/oauth2/v2/auth?x=1")).toBe(
-      "https://accounts.google.com/o/oauth2/v2/auth?x=1",
-    );
+  it("passes Supabase Auth's authorize page through", () => {
+    const url = "https://abcdefgh.supabase.co/auth/v1/authorize?provider=google&redirect_to=x";
+    expect(parseExternalUrl(url)).toBe(url);
   });
 
-  it("refuses every other scheme and anything that isn't a URL", () => {
+  it("refuses any other page, scheme, or anything that isn't a URL", () => {
     for (const value of [
+      "https://accounts.google.com/o/oauth2/v2/auth?x=1",
+      "https://phish.example/auth/v1/authorize",
+      "https://supabase.co.evil.example/auth/v1/authorize",
+      "https://abcdefgh.supabase.co/auth/v1/token",
+      "https://user:pass@abcdefgh.supabase.co/auth/v1/authorize",
+      "https://abcdefgh.supabase.co:8443/auth/v1/authorize",
+      "http://abcdefgh.supabase.co/auth/v1/authorize",
       "http://example.com",
       "file:///etc/passwd",
       "javascript:alert(1)",
       "frapp-desktop://auth/callback",
       "nope",
-      `https://example.com/${"a".repeat(9000)}`,
+      `https://abcdefgh.supabase.co/auth/v1/authorize?${"a".repeat(9000)}`,
       42,
       null,
     ]) {
@@ -41,9 +47,12 @@ describe("parseExternalUrl", () => {
 });
 
 describe("the preload", () => {
-  it("sends on the same channels the main process listens on", () => {
+  it("sends each method on the channel the main process listens on for it", () => {
     // The sandboxed preload can't import `IPC`, so it spells the names out.
     const preload = readFileSync(join(__dirname, "../preload/index.ts"), "utf8");
-    for (const channel of Object.values(IPC)) expect(preload).toContain(`"${channel}"`);
+    for (const method of Object.keys(IPC) as (keyof typeof IPC)[]) {
+      const sent = new RegExp(`^\\s*${method}: \\([^)]*\\) => ipcRenderer\\.send\\("([^"]+)"`, "m").exec(preload);
+      expect(sent?.[1], method).toBe(IPC[method]);
+    }
   });
 });

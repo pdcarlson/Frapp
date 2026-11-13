@@ -8,7 +8,10 @@
  * could be compromised.
  */
 
-/** IPC channel names. One place, so preload and main can't drift apart. */
+/**
+ * IPC channel names. The sandboxed preload can't import this file, so it
+ * spells them out; `bridge.spec.ts` checks each method sends on its own one.
+ */
 export const IPC = {
   setBadgeCount: "frapp-desktop:set-badge-count",
   openExternal: "frapp-desktop:open-external",
@@ -20,7 +23,7 @@ export type FrappDesktopBridge = {
   readonly platform: "darwin" | "win32" | "linux";
   /** The unread count on the dock or taskbar icon; 0 clears it. */
   setBadgeCount(count: number): void;
-  /** Open an https page in the member's default browser (OAuth, #4841). */
+  /** Open the Supabase sign-in page in the member's default browser (OAuth, #4841). */
   openExternal(url: string): void;
 };
 
@@ -34,15 +37,25 @@ export function parseBadgeCount(value: unknown): number | null {
 }
 
 /**
- * A URL `openExternal` may hand to the operating system, or `null`. Only
- * https: the bridge exists for the OAuth provider page, and a page that could
- * open `file:` or an app scheme could launch a program.
+ * A URL `openExternal` may hand to the operating system, or `null`. The
+ * bridge exists for one page: Supabase Auth's `authorize` endpoint, which
+ * starts Google or Apple sign-in in the browser (#4841). Ordinary links
+ * already open in the browser through the navigation rules, so anything else
+ * here would only let a compromised page open sites of its choosing with no
+ * click, or launch a program through `file:` or an app scheme.
  */
 export function parseExternalUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 8192) return null;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : null;
+    const isSupabaseAuthorize =
+      url.protocol === "https:" &&
+      url.hostname.endsWith(".supabase.co") &&
+      url.pathname === "/auth/v1/authorize" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.port === "";
+    return isSupabaseAuthorize ? url.toString() : null;
   } catch {
     return null;
   }

@@ -33,7 +33,8 @@ export function parseWindowState(raw: string | null): WindowState | null {
 /**
  * The bounds to open with. A saved window keeps its place only when at least
  * a 100 by 50 pixel corner of its title bar area is on a display that is still
- * attached; otherwise it opens at the default size, centred by the caller.
+ * attached; otherwise it keeps its saved size and the caller centres it. With
+ * nothing saved, it opens at the default size.
  */
 export function restoreBounds(
   saved: WindowState | null,
