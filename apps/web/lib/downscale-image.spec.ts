@@ -11,6 +11,8 @@ import { downscaleImage, withExtension } from "./downscale-image";
 
 let encodes: string[];
 let encodedType: (requested: string) => string;
+let encodedBytes: number;
+let filled: boolean;
 let drawn: { width: number; height: number } | null;
 
 function stubBitmap(width: number, height: number) {
@@ -23,12 +25,16 @@ function stubBitmap(width: number, height: number) {
 beforeEach(() => {
   encodes = [];
   encodedType = (requested) => requested;
+  encodedBytes = 10;
+  filled = false;
   drawn = null;
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
     function (this: HTMLCanvasElement) {
       const { width, height } = this;
       return {
-        fillRect: vi.fn(),
+        fillRect: vi.fn(() => {
+          filled = true;
+        }),
         drawImage: vi.fn(() => {
           drawn = { width, height };
         }),
@@ -38,7 +44,11 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
     (callback, type) => {
       encodes.push(type ?? "");
-      callback(new Blob(["x".repeat(10)], { type: encodedType(type ?? "") }));
+      callback(
+        new Blob(["x".repeat(encodedBytes)], {
+          type: encodedType(type ?? ""),
+        }),
+      );
     },
   );
 });
@@ -68,27 +78,49 @@ describe("downscaleImage", () => {
     expect(out.body.size).toBe(10);
   });
 
-  it("keeps a logo's transparency as WebP", async () => {
-    stubBitmap(2000, 2000);
+  it("fills a photo with white under the JPEG, which has no alpha", async () => {
+    stubBitmap(3024, 4032);
 
-    const out = await downscaleImage(big("image/png", "crest.png"), {
-      keepAlpha: true,
-    });
+    await downscaleImage(big("image/png", "me.png"), { keepAlpha: false });
 
-    expect(out.contentType).toBe("image/webp");
-    expect(out.filename).toBe("crest.webp");
+    expect(filled).toBe(true);
   });
 
-  it("falls back to PNG where the browser can't encode WebP", async () => {
+  it("keeps a logo's transparency as PNG, which the PDF report can embed", async () => {
     stubBitmap(2000, 2000);
-    encodedType = () => "image/png";
 
-    const out = await downscaleImage(big("image/png", "crest.png"), {
+    const out = await downscaleImage(big("image/jpeg", "crest.jpg"), {
       keepAlpha: true,
     });
 
-    expect(encodes).toEqual(["image/webp", "image/png"]);
+    expect(encodes).toEqual(["image/png"]);
+    expect(filled).toBe(false);
     expect(out.contentType).toBe("image/png");
+    expect(out.filename).toBe("crest.png");
+  });
+
+  it("keeps the original when the re-encode would not be smaller", async () => {
+    stubBitmap(1500, 1500);
+    encodedBytes = 4096;
+    const original = {
+      body: new Blob(["x".repeat(2048)], { type: "image/jpeg" }),
+      filename: "tight.jpg",
+      contentType: "image/jpeg",
+    };
+
+    await expect(downscaleImage(original, { keepAlpha: false })).resolves.toBe(
+      original,
+    );
+  });
+
+  it("keeps the original when the browser encodes another type", async () => {
+    stubBitmap(2000, 2000);
+    encodedType = () => "image/webp";
+    const original = big("image/png", "crest.png");
+
+    await expect(downscaleImage(original, { keepAlpha: true })).resolves.toBe(
+      original,
+    );
   });
 
   it("flattens a GIF even when it is already small in pixels", async () => {
@@ -103,7 +135,7 @@ describe("downscaleImage", () => {
       { keepAlpha: true },
     );
 
-    expect(out.contentType).toBe("image/webp");
+    expect(out.contentType).toBe("image/png");
     expect(drawn).toEqual({ width: 200, height: 200 });
   });
 

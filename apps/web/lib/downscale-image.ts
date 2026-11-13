@@ -13,22 +13,24 @@ export interface PreparedImage {
  */
 const KEEP_AS_IS_BYTES = 256 * 1024;
 
-/** JPEG and WebP quality for a downscaled avatar: no visible loss at 512px. */
+/** JPEG quality for a downscaled photo: no visible loss at 512px. */
 const QUALITY = 0.85;
 
 /**
  * Shrink a profile photo or chapter logo to {@link AVATAR_MAX_EDGE} on its
  * longest side before it is uploaded (#2912).
  *
- * The stored object is what every avatar and crest downloads, at 24-84px, so a
+ * The stored object is what every avatar and crest downloads, at 24-112px, so a
  * 4 MB phone photo stored as picked made a 25-member directory cost 100 MB.
  *
  * - A GIF is always re-encoded, which keeps its first frame: an animated avatar
  *   was unbounded in bytes, and no surface animates one.
- * - `keepAlpha` (logos) encodes WebP, which keeps transparency, and falls back
- *   to PNG on a browser that can't encode WebP (Safari). A photo encodes JPEG
- *   over white, the smallest for a photograph; every surface draws it in a
- *   filled circle.
+ * - `keepAlpha` (logos) encodes PNG, which keeps transparency. Not WebP: the
+ *   PDF report embeds the logo, and its renderer reads only PNG and JPEG. A
+ *   photo encodes JPEG over white, the smallest for a photograph; every
+ *   surface draws it in a filled circle.
+ * - The original is kept when it is already within the bound and small, or
+ *   when the re-encode would not be smaller.
  * - A file the browser can't decode is uploaded as it is, so a downscale that
  *   fails never blocks an upload the type gate already accepted.
  */
@@ -38,7 +40,10 @@ export async function downscaleImage(
 ): Promise<PreparedImage> {
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(image.body);
+    // Explicit, as in `chat/photo-preview.ts`: the bound applies upright.
+    bitmap = await createImageBitmap(image.body, {
+      imageOrientation: "from-image",
+    });
   } catch {
     return image;
   }
@@ -66,15 +71,9 @@ export async function downscaleImage(
     context.imageSmoothingQuality = "high";
     context.drawImage(bitmap, 0, 0, width, height);
 
-    const preferred = keepAlpha ? "image/webp" : "image/jpeg";
-    let blob = await toBlob(canvas, preferred);
-    // A browser that can't encode the type hands back a PNG instead.
-    if (blob && blob.type !== preferred && keepAlpha) {
-      blob = await toBlob(canvas, "image/png");
-    }
-    if (!blob || (blob.type !== preferred && blob.type !== "image/png")) {
-      return image;
-    }
+    const type = keepAlpha ? "image/png" : "image/jpeg";
+    const blob = await toBlob(canvas, type);
+    if (!blob || blob.type !== type) return image;
     // Never trade a small original for a larger re-encode.
     if (blob.size >= image.body.size && image.contentType !== "image/gif") {
       return image;
@@ -96,7 +95,6 @@ function toBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
 }
 
 function extensionFor(type: string): string {
-  if (type === "image/webp") return "webp";
   if (type === "image/png") return "png";
   return "jpg";
 }

@@ -17,6 +17,19 @@ const { chapter, upload, remove, toast } = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 
+// #2912: what goes up is what the downscale hands back, never the picked file.
+vi.mock("@/lib/downscale-image", () => ({
+  downscaleImage: vi.fn(
+    async (image: { filename: string }, opts: { keepAlpha: boolean }) => ({
+      body: new Blob(["small"], {
+        type: opts.keepAlpha ? "image/png" : "image/jpeg",
+      }),
+      filename: `small-${image.filename}`,
+      contentType: opts.keepAlpha ? "image/png" : "image/jpeg",
+    }),
+  ),
+}));
+
 vi.mock("@repo/hooks", () => ({
   // A server with AI off: no AI row (#4308).
   useAiConsent: () => ({ data: null }),
@@ -65,6 +78,7 @@ vi.mock("@/components/shared/can", () => ({
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
 const { SettingsPage } = await import("./settings-page");
+const { downscaleImage } = await import("@/lib/downscale-image");
 
 function chapterWith(extra: Record<string, unknown>) {
   chapter.current = {
@@ -105,10 +119,15 @@ describe("the Settings page's chapter logo wiring", () => {
 
     await waitFor(() =>
       expect(upload).toHaveBeenCalledWith({
-        body: file,
-        filename: "crest.png",
+        body: expect.any(Blob),
+        filename: "small-crest.png",
         contentType: "image/png",
       }),
+    );
+    // Downscaled first, keeping transparency (#2912).
+    expect(downscaleImage).toHaveBeenCalledWith(
+      expect.objectContaining({ body: file }),
+      { keepAlpha: true },
     );
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Logo saved" }),

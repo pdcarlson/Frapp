@@ -5,7 +5,7 @@
 //
 // Since #2912 every client shrinks a photo or logo before the PUT, so new
 // uploads arrive small. This is for the objects stored before that: a phone
-// photo uploaded as picked, up to the 25 MB cap, that every 24-84px avatar
+// photo uploaded as picked, up to the 25 MB cap, that every 24-112px avatar
 // downloads in full. Until it runs, those objects still render: they are only
 // larger than they need to be.
 //
@@ -37,8 +37,11 @@ export const AVATAR_MAX_EDGE = 512;
 /** Within the bound and under this, an object is left as it is. */
 const KEEP_AS_IS_BYTES = 256 * 1024;
 
-/** Above any realistic row count; re-run for the remainder. */
-const MAX_ROWS = 20_000;
+/**
+ * Rows read per request. PostgREST caps a response at `max_rows` (1000 here and
+ * on hosted projects) whatever `limit` asks for, so the listing pages.
+ */
+const PAGE_SIZE = 1000;
 
 /**
  * The downscaled bytes for `input`, or `null` when it should be left alone.
@@ -106,32 +109,34 @@ const CONTENT_TYPES = {
   gif: "image/gif",
 };
 
+/** Every non-null `column` of `table`, read a page at a time in `id` order. */
+async function readAll(supabase, table, column) {
+  const values = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(`id, ${column}`)
+      .not(column, "is", null)
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    values.push(...data.map((row) => row[column]));
+    if (data.length < PAGE_SIZE) return values;
+  }
+}
+
 /** Every stored profile photo and chapter logo, as `{ bucket, path }`. */
 async function listTargets(supabase) {
-  const [users, chapters] = await Promise.all([
-    supabase
-      .from("users")
-      .select("avatar_url")
-      .not("avatar_url", "is", null)
-      .limit(MAX_ROWS),
-    supabase
-      .from("chapters")
-      .select("logo_path")
-      .not("logo_path", "is", null)
-      .limit(MAX_ROWS),
+  const [avatars, logos] = await Promise.all([
+    readAll(supabase, "users", "avatar_url"),
+    readAll(supabase, "chapters", "logo_path"),
   ]);
-  if (users.error) throw users.error;
-  if (chapters.error) throw chapters.error;
   return [
     // A URL is not a stored object (`ProfilePhotoUrlService` serves it as null).
-    ...users.data
-      .map((row) => row.avatar_url)
+    ...avatars
       .filter((path) => typeof path === "string" && !/^[a-z]+:/i.test(path))
       .map((path) => ({ bucket: "profiles", path })),
-    ...chapters.data.map((row) => ({
-      bucket: "branding",
-      path: row.logo_path,
-    })),
+    ...logos.map((path) => ({ bucket: "branding", path })),
   ];
 }
 

@@ -54,6 +54,17 @@ beforeEach(() => {
 
 const run = () => pickAndSetChapterLogo({ requestUploadUrl, confirm });
 
+/** The context of the last `ImageManipulator.manipulate` call. */
+function lastManipulation(manipulator: { manipulate: unknown }): {
+  resize: ReturnType<typeof vi.fn>;
+  renderAsync: ReturnType<typeof vi.fn>;
+} {
+  const results = vi.mocked(
+    manipulator.manipulate as (...args: unknown[]) => unknown,
+  ).mock.results;
+  return results[results.length - 1]!.value as never;
+}
+
 describe("pickAndSetChapterLogo", () => {
   it("mints with only the declared fields, PUTs, then confirms the minted path", async () => {
     granted();
@@ -77,6 +88,123 @@ describe("pickAndSetChapterLogo", () => {
       expect.objectContaining({ httpMethod: "PUT" }),
     );
     expect(confirm).toHaveBeenCalledWith(TICKET.storage_path);
+  });
+
+  it("stores a logo that may be transparent as PNG, scaled to 512 (#2912)", async () => {
+    granted();
+    picked({
+      uri: "file:///crest.png",
+      fileName: "crest.png",
+      mimeType: "image/png",
+      width: 2000,
+      height: 2000,
+    });
+    const { ImageManipulator, SaveFormat } =
+      await import("expo-image-manipulator");
+
+    await expect(run()).resolves.toEqual({ status: "updated" });
+
+    const context = lastManipulation(ImageManipulator);
+    expect(context.resize).toHaveBeenCalledWith({ width: 512 });
+    const rendered = await context.renderAsync.mock.results[0]!.value;
+    expect(rendered.saveAsync).toHaveBeenCalledWith({ format: SaveFormat.PNG });
+  });
+
+  it("stores a JPEG logo as JPEG, which has no transparency to keep", async () => {
+    granted();
+    picked({
+      uri: "file:///crest.jpg",
+      fileName: "crest.jpg",
+      mimeType: "image/jpeg",
+      width: 1200,
+      height: 1200,
+    });
+    const { ImageManipulator, SaveFormat } =
+      await import("expo-image-manipulator");
+
+    await run();
+
+    const rendered =
+      await lastManipulation(ImageManipulator).renderAsync.mock.results[0]!
+        .value;
+    expect(rendered.saveAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ format: SaveFormat.JPEG }),
+    );
+    expect(requestUploadUrl).toHaveBeenCalledWith({
+      filename: "crest.jpg",
+      content_type: "image/jpeg",
+    });
+  });
+
+  it("uploads a small logo within the bound as picked", async () => {
+    granted();
+    picked({
+      uri: "file:///crest.jpg",
+      fileName: "crest.jpg",
+      mimeType: "image/jpeg",
+      width: 400,
+      height: 400,
+      fileSize: 35_000,
+    });
+    const { ImageManipulator } = await import("expo-image-manipulator");
+
+    await run();
+
+    expect(ImageManipulator.manipulate).not.toHaveBeenCalled();
+    expect(fs.uploadAsync).toHaveBeenCalledWith(
+      TICKET.upload_url,
+      "file:///crest.jpg",
+      expect.anything(),
+    );
+  });
+
+  it("keeps the original when the re-encode would not be smaller", async () => {
+    granted();
+    picked({
+      uri: "file:///crest.jpg",
+      fileName: "crest.jpg",
+      mimeType: "image/jpeg",
+      width: 500,
+      height: 500,
+      fileSize: 300_000,
+    });
+    // The re-encode on disk is larger than the 300 KB original.
+    fs.getInfoAsync.mockResolvedValue({ exists: true, size: 400_000 } as never);
+
+    await run();
+
+    expect(fs.uploadAsync).toHaveBeenCalledWith(
+      TICKET.upload_url,
+      "file:///crest.jpg",
+      expect.anything(),
+    );
+  });
+
+  it("never scales up a logo whose size the picker didn't report", async () => {
+    granted();
+    picked({
+      uri: "file:///crest.png",
+      fileName: "crest.png",
+      mimeType: "image/png",
+    });
+    const { ImageManipulator } = await import("expo-image-manipulator");
+    const measured = {
+      width: 200,
+      height: 200,
+      saveAsync: vi.fn(),
+    };
+    vi.mocked(ImageManipulator.manipulate).mockImplementationOnce(
+      () =>
+        ({
+          resize: vi.fn(),
+          renderAsync: vi.fn().mockResolvedValue(measured),
+        }) as never,
+    );
+
+    await run();
+
+    const context = lastManipulation(ImageManipulator);
+    expect(context.resize).not.toHaveBeenCalled();
   });
 
   it("crops to a square, since every surface draws the mark in a square", async () => {

@@ -48,3 +48,37 @@ test("leaves a small image within the bound alone", async () => {
 test("leaves bytes it can't decode alone", async () => {
   assert.equal(await shrinkImage(Buffer.from("not an image")), null);
 });
+
+test("flattens an animated GIF to its first frame, still GIF", async () => {
+  // Three 100x100 pages: animated, so it is rewritten though small.
+  const frame = 100;
+  const animated = await sharp(
+    await noise(frame, frame * 3)
+      .raw()
+      .toBuffer(),
+    {
+      raw: { width: frame, height: frame * 3, channels: 3, pageHeight: frame },
+    },
+  )
+    .gif()
+    .toBuffer();
+  assert.equal((await sharp(animated).metadata()).pages, 3);
+
+  const output = await shrinkImage(animated);
+  assert.ok(output);
+  const meta = await sharp(output, { pages: -1 }).metadata();
+  assert.equal(meta.format, "gif");
+  assert.equal(meta.pages ?? 1, 1);
+  assert.equal(meta.height, frame);
+});
+
+test("leaves an object whose re-encode would not be smaller", async () => {
+  // A flat 600px palette PNG of a few hundred bytes: past the bound, but the
+  // 512px RGB re-encode is larger, so the object is left as it is.
+  const input = await sharp({
+    create: { width: 600, height: 600, channels: 3, background: "#336699" },
+  })
+    .png({ palette: true })
+    .toBuffer();
+  assert.equal(await shrinkImage(input), null);
+});
