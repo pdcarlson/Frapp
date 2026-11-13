@@ -995,3 +995,21 @@ export function findActivityTaskRow(
   }
   return null;
 }
+
+/**
+ * The tasks waiting on the viewer's sign-off, longest waiting first, as the
+ * To confirm tile lists them: the queue a review steps through (#4693).
+ * Confirm or Send back on one opens the next, the way Classroom's grader
+ * moves to the next student's work, so twenty-five Sunday-night chores are
+ * one sitting rather than twenty-five trips back to the list.
+ */
+export function activityReviewQueue(
+  activity: Activity,
+  now: Date = new Date(),
+): ActivityRow[] {
+  return activityGroups(activity, "confirm", now).flatMap((group) =>
+    [...group.rows, ...(group.archive?.rows ?? [])].filter(
+      (row) => row.kind === "task" && row.glyph === "confirm",
+    ),
+  );
+}

@@ -62,14 +62,25 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
  * `onActed` runs after an action that changes what the page lists, so the row
  * can leave "Needs you".
  */
+/**
+ * The tasks waiting on the viewer's sign-off, for stepping from one review to
+ * the next (#4693): those after a row, and how to open one.
+ */
+export interface ReviewQueue {
+  after: (key: string) => ActivityRow[];
+  open: (row: ActivityRow) => void;
+}
+
 export function ActivityPanel({
   row,
   viewerId,
   onClose,
   onActed,
+  reviewQueue,
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
+  reviewQueue?: ReviewQueue;
   /**
    * Close the panel. With a row key, only if that row is still the open one:
    * an action's answer can arrive after the member has moved to another row.
@@ -100,6 +111,7 @@ export function ActivityPanel({
                 viewerId={viewerId}
                 onClose={onClose}
                 onActed={onActed}
+                reviewQueue={reviewQueue}
               />
             ) : (
               // The cards decide whose controls to show from the viewer's id;
@@ -118,11 +130,13 @@ function PanelCard({
   viewerId,
   onClose,
   onActed,
+  reviewQueue,
 }: {
   row: ActivityRow;
   viewerId: string;
   onClose: (key?: string) => void;
   onActed: () => void;
+  reviewQueue?: ReviewQueue;
 }) {
   switch (row.kind) {
     case "task":
@@ -132,6 +146,7 @@ function PanelCard({
           viewerId={viewerId}
           onClose={onClose}
           onActed={onActed}
+          reviewQueue={reviewQueue}
         />
       );
     case "event":
@@ -162,25 +177,33 @@ function TaskPanel({
   viewerId,
   onClose,
   onActed,
+  reviewQueue,
 }: {
   row: Extract<ActivityRow, { kind: "task" }>;
   viewerId: string;
   onClose: (key?: string) => void;
   onActed: () => void;
+  reviewQueue?: ReviewQueue;
 }) {
   const message = useMemo(() => activityTaskMessage(row.task), [row.task]);
   const faceFor = useContext(ActivityFaces);
   if (row.glyph === "confirm") {
+    const rest = reviewQueue?.after(row.key) ?? [];
+    const next = rest[0];
     return (
       <TaskReview
         taskId={row.task.id}
         assigneeName={row.task.assignee_name}
         face={faceFor(row.task.assignee_id)}
+        waitingAfter={rest.length}
+        onSkip={next && reviewQueue ? () => reviewQueue.open(next) : undefined}
         onDone={() => {
-          // As the hours review: the list re-reads, and only this row's
-          // panel closes if the officer has already moved on.
+          // The list re-reads. With more waiting, the next one opens (the
+          // grader's "next student"); otherwise only this row's panel
+          // closes, in case the officer has already moved on.
           onActed();
-          onClose(row.key);
+          if (next && reviewQueue) reviewQueue.open(next);
+          else onClose(row.key);
         }}
       />
     );

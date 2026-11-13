@@ -40,6 +40,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityFilterAvailable: actual.activityFilterAvailable,
     activityGroups: actual.activityGroups,
     findActivityTaskRow: actual.findActivityTaskRow,
+    activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,

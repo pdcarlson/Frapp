@@ -136,6 +136,23 @@ describe("TaskReview (#4693)", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 
+  it("says how many more wait, and skips to the next", () => {
+    const onSkip = vi.fn();
+    render(
+      <TaskReview
+        taskId="task-1"
+        assigneeName="Shawn Klein"
+        face={null}
+        waitingAfter={3}
+        onSkip={onSkip}
+        onDone={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("3 more waiting")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(onSkip).toHaveBeenCalled();
+  });
+
   it("reads the task again on open, since a cached read can predate the submission", () => {
     renderReview();
     expect(state.refetch).toHaveBeenCalled();

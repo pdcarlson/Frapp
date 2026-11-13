@@ -61,6 +61,8 @@ export function TaskReview({
   taskId,
   assigneeName,
   face,
+  waitingAfter = 0,
+  onSkip,
   onDone,
 }: {
   taskId: string;
@@ -68,6 +70,10 @@ export function TaskReview({
   assigneeName: string;
   /** The assignee on the roster, for their photo; null for one who left. */
   face: ActivityFace | null;
+  /** How many more wait after this one (#4693); Confirm moves to the next. */
+  waitingAfter?: number;
+  /** Leave this one waiting and open the next. */
+  onSkip?: () => void;
   onDone: () => void;
 }) {
   const { toast } = useToast();
@@ -271,6 +277,22 @@ export function TaskReview({
         feature="reviewing tasks"
         className="mb-0"
       />
+      {waitingAfter > 0 ? (
+        <div className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
+          <span>{waitingAfter} more waiting</span>
+          {onSkip ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={onSkip}
+            >
+              Skip
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <SendBackDialog
         title={title}

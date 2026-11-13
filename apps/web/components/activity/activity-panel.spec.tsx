@@ -20,8 +20,21 @@ vi.mock("@/components/chat/renderers/task-card", () => ({
   TaskCard: () => <div data-testid="task-card" />,
 }));
 vi.mock("@/components/tasks/task-review", () => ({
-  TaskReview: ({ taskId }: { taskId: string }) => (
-    <div data-testid="task-review">{taskId}</div>
+  TaskReview: ({
+    taskId,
+    waitingAfter,
+    onDone,
+  }: {
+    taskId: string;
+    waitingAfter?: number;
+    onDone: () => void;
+  }) => (
+    <div data-testid="task-review">
+      {taskId}:{waitingAfter ?? 0}
+      <button type="button" onClick={onDone}>
+        done
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/service/use-service-review", () => ({
@@ -131,8 +144,41 @@ describe("ActivityPanel: a task (#4693)", () => {
       />,
     );
     expect(screen.getByText("Review task")).toBeTruthy();
-    expect(screen.getByTestId("task-review").textContent).toBe("task-1");
+    expect(screen.getByTestId("task-review").textContent).toContain("task-1:0");
     expect(screen.queryByTestId("task-card")).toBeNull();
+  });
+
+  it("opens the next waiting review once this one is done, else closes", () => {
+    const next = { ...taskRow("confirm"), key: "needs-confirm:task:task-2" };
+    const open = vi.fn();
+    const onClose = vi.fn();
+    const onActed = vi.fn();
+    const { rerender } = render(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={onClose}
+        onActed={onActed}
+        reviewQueue={{ after: () => [next], open }}
+      />,
+    );
+    expect(screen.getByTestId("task-review").textContent).toContain("task-1:1");
+    fireEvent.click(screen.getByRole("button", { name: "done" }));
+    expect(onActed).toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(next);
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={onClose}
+        onActed={onActed}
+        reviewQueue={{ after: () => [], open }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "done" }));
+    expect(onClose).toHaveBeenCalledWith("needs:task:task-1");
   });
 
   it("opens any other task as chat's card", () => {

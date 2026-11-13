@@ -56,6 +56,7 @@ import {
   activityBadgeIsAsk,
   activityFilterAvailable,
   activityGroups,
+  activityReviewQueue,
   findActivityTaskRow,
   activityRowAction,
   activityKeys,
@@ -507,6 +508,11 @@ export function ActivityPage() {
         : null,
     [activity.data, permissions.data?.permissions, isModuleEnabled, now],
   );
+  // The waiting reviews a review steps through (#4693), whatever chip is lit.
+  const reviewQueue = useMemo(
+    () => (activity.data ? activityReviewQueue(activity.data, now) : []),
+    [activity.data, now],
+  );
   const openRow = useMemo(
     () =>
       opened === null
@@ -649,6 +655,17 @@ export function ActivityPage() {
             if (key === undefined) refresh();
           }}
           onActed={refresh}
+          reviewQueue={{
+            after: (key) => {
+              const at = reviewQueue.findIndex((row) => row.key === key);
+              return at === -1
+                ? reviewQueue.filter((row) => row.key !== key)
+                : // Only those after it: one before it was confirmed or
+                  // skipped already, and the list still holds the skipped.
+                  reviewQueue.slice(at + 1);
+            },
+            open: openFromList,
+          }}
         />
       </div>
     </ActivityFaces.Provider>
