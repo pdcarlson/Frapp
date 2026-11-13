@@ -107,5 +107,8 @@ import { TaskModule } from '../task/task.module';
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
   ],
+  // For Frapp AI's standing tools (#4901), which read the standing as `GET
+  // /v1/activity/standing` does.
+  exports: [ActivityStandingService],
 })
 export class ActivityModule {}
