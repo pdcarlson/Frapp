@@ -26,7 +26,7 @@ before you pick up a phone.
 
 Rows marked **iPhone** or **Android** run on that phone only. The rest run on both. A row runs on
 one phone when what it checks is shared JavaScript with nothing native under it; that is what
-keeps the pass short: the section times add to about eighteen minutes, with both phones side by
+keeps the pass short: the section times add to about twenty minutes, with both phones side by
 side.
 
 The [automated flows](#what-the-automated-flows-cover) haven't had their first run yet (they need
@@ -93,11 +93,13 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 25 | Android | Settings, Sign out, Continue with email, tap the password field | The field and Sign in sit above the keyboard. Android back returns to the first view without leaving the app | #4208, #808 row 2 |
 | 26 | Android | Sign back in | Straight to the chat, with no chapter picker | smoke checklist § 1 |
 
-## 8. Check-in link (1 minute)
+## 8. Check-in link and Scan code (3 minutes)
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
 | 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. Point the Android phone's own camera app at it and tap the link it offers | Frapp opens on the check-in and checks you in, not a browser page with Open in Frapp | #4763 |
+| 28 | Android | With the iPhone still showing the code, open the same event in Frapp on the Android phone and tap Check myself in, then Scan code (a member without host rights sees Scan code on the event itself). Allow the camera when asked and point it at the code | The camera asks once, saying it's for scanning the check-in code; the viewport reads the code and lands on "You're already checked in" (row 27 checked you in), so the scan reached the server | #4763 |
+| 29 | iPhone | Show the code on the Android phone instead. On the iPhone, open the event, tap Check myself in, then Scan code, and choose Don't Allow. Tap Open Settings, turn the camera on for Frapp and come back | The viewport comes up and reads the code; you're checked in | #4763 |
 
 ## What the pass leaves out, and why
 
@@ -110,7 +112,8 @@ These were owed device checks too. Each is settled elsewhere, so it's not on the
   and 40 reactions (all counted in `frapp-prod`'s auth, check-in and reaction tables on
   2026-11-12), and Sentry `ui.load.initial_display` spans from both iOS and Android (#4350). If
   0.12.0 or a later version changes one of these flows natively, it rejoins the pass. 0.13.0
-  does: Android's camera opens a check-in code's link in the app (#4763), so check-in rejoins it.
+  does: Android's camera opens a check-in code's link in the app, and Scan code is back in the app
+  (#4763), so check-in rejoins it.
 - **The Xcode version** (#808 row 1, #2477). It's in the EAS build log's "Spin up build
   environment" section, not on a phone.
 - **An expired attachment link** (#808 row 7). It needs an attachment older than its signed

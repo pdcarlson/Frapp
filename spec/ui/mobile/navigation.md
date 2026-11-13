@@ -387,8 +387,7 @@ changed 2026-11-12 and the camera 2026-11-13, both below)_:
   `permissions[key] || infoPlist[key] || default`, so an undefined option falls
   through to whatever a plugin already wrote before it ever reaches the vendor
   default, and `expo-camera` writes NSCameraUsageDescription explicitly in either
-  plugin order. _(Superseded 2026-11-13 by 0.13.0, which removed `expo-camera`; see
-  below.)_
+  plugin order. _(Changed 2026-11-13; see below.)_
 - `microphonePermission` **is** declined, and must stay declined. Omitting it is not
   inert: `withAndroidImagePickerPermissions` adds `android.permission.RECORD_AUDIO`
   whenever the option is anything other than `false`, and the iOS half would write a
@@ -426,25 +425,22 @@ declined, because the meeting recorder requests it; Face ID's decline stands.)_
 
 _Changed 2026-11-13 (0.13.0, [#4763](https://github.com/pdcarlson/Frapp/issues/4763)):_
 the in-app QR scanner went with [#4762](https://github.com/pdcarlson/Frapp/issues/4762),
-when the check-in code became a link the phone's own camera app opens, so 0.13.0 removes
-`expo-camera` and its plugin entry. Two of its jobs move:
+when the check-in code became a link the phone's own camera app opens, and the first
+0.13.0 change (#4926) removed `expo-camera` with a linked-only camera note and a blocked
+Android CAMERA in its place. Before any 0.13.0 build, Paul kept an in-app Scan code beside
+the camera path ("why not?"), so 0.13.0 ships `expo-camera` again, for s18's Scan code
+(`components/check-in/check-in-scanner.tsx`):
 
-- **The camera key on iOS.** With `expo-camera` gone, `expo-image-picker` would write its
-  default camera purpose string. Its `cameraPermission` now carries a linked-only note
-  instead ("Frapp never uses the camera..."), pinned with `linkedBy` on the picker's
-  `AVCaptureDevice` use and its three camera requests (`requestCameraPermissionsAsync`,
-  `useCameraPermissions`, `launchCameraAsync`). This is the one linked-only key added
-  before Apple named it, as a precaution, not an observed requirement: every build until
-  0.13.0 carried a camera key, so the upload scan never had the chance, and dropping it
-  risked an ITMS-90683 rejection of the first build without it.
-- **`android.permission.CAMERA`.** `expo-image-picker`'s own library manifest declares it,
-  so it would still reach the merged manifest. `android.blockedPermissions` in `app.json`
-  removes it, and `ANDROID_REMOVED_PERMISSIONS` pins the removal. The #2296 lesson still
-  holds: the block is safe only because nothing in the app requests the camera, and the
-  gate fails if anything starts to.
+- **The camera key on iOS** is requested again, by the scanner's `useCameraPermissions`,
+  with the text "Frapp uses the camera to scan an event's check-in code when you tap Scan
+  code." `expo-image-picker`'s `cameraPermission` now carries the same text rather than
+  being omitted, so the key is the scanner's whichever plugin runs last. `false` there is
+  still the #2296 defect.
+- **`android.permission.CAMERA`** is declared by `expo-camera` and requested by the
+  scanner, as before #4762; nothing removes it.
 
-`microphonePermission` is now carried by `expo-image-picker` and `expo-audio`, the two
-plugins that write the key.
+`microphonePermission` is carried by `expo-image-picker`, `expo-camera` and `expo-audio`
+again, the three plugins that write the key.
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
