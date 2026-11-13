@@ -424,6 +424,17 @@ export interface IChatMessageActionRepository {
     actionType: string,
   ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
   /**
+   * Every member's `actionType` rows on `messageIds`, for Activity's
+   * sign-up sheets (#3926): whether the caller holds a slot, and whether a
+   * sheet is full. Only for action types the whole channel already reads
+   * (a sign-up claim names its holder on the card); never for anything
+   * private. The caller passes ids it has already scoped and authorized.
+   */
+  findAllActionsOnMessages(
+    messageIds: string[],
+    actionType: string,
+  ): Promise<Pick<ChatMessageAction, 'message_id' | 'user_id' | 'payload'>[]>;
+  /**
    * Set this member's slots on a sign-up card (#3926) in one atomic step:
    * the `claim_signup_slots` RPC locks the card's message row, refuses a slot
    * that is full of other members' claims, and writes the member's one

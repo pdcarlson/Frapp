@@ -154,6 +154,7 @@ export async function createChatServiceFixture() {
     findOne: jest.fn(),
     updateForVote: jest.fn(),
     findActionsOnMessages: jest.fn(),
+    findAllActionsOnMessages: jest.fn(),
     claimSignupSlots: jest.fn(),
   };
 

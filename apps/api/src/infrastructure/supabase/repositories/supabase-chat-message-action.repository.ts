@@ -108,6 +108,24 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     }));
   }
 
+  async findAllActionsOnMessages(
+    messageIds: string[],
+    actionType: string,
+  ): Promise<Pick<ChatMessageAction, 'message_id' | 'user_id' | 'payload'>[]> {
+    if (messageIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_message_actions')
+      .select('message_id, user_id, payload')
+      .in('message_id', messageIds)
+      .eq('action_type', actionType);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => ({
+      message_id: row.message_id,
+      user_id: row.user_id,
+      payload: row.payload ?? {},
+    }));
+  }
+
   async claimSignupSlots(
     messageId: string,
     userId: string,

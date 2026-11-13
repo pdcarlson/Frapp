@@ -422,14 +422,17 @@ function PollSheet({
       <CardActions>
         <CardButton
           label="Open in chat"
-          accessibilityHint="Opens the channel this poll was posted in."
+          accessibilityHint="Opens the poll in the channel it was posted in."
           onPress={() => {
             onNavigate();
             // Object form: the shape `lib/routes.spec.ts` matches when a
             // param is involved.
             router.push({
               pathname: "/chat-thread",
-              params: { channelId: row.poll.channel_id },
+              params: {
+                channelId: row.poll.channel_id,
+                focusMessageId: row.poll.message_id,
+              },
             });
           }}
         />

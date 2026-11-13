@@ -211,6 +211,10 @@ channel rules (#3926 step 4):
   (Going or Can't make it), or any saved form response. Answers to a form are private
   ([`chat/README.md`](chat/README.md)), so the read asks only which forms have a response of
   the caller's, never what it says.
+- **A full sheet no longer waits.** When every slot of a sheet has a limit and has reached it,
+  nobody else can sign up, so it leaves Needs you for everyone who holds no slot (a headcount has
+  no limits, so it is never full). Telling needs every member's claims on the open sheets, which
+  the channel already reads on the card, so this reads nothing private.
 - A row carries the card's kind (`signup`, `headcount`, `form`), title, channel, end time, and
   how many slots or questions it has; never anyone's claims or answers. It is answered on the
   card, so a client opens the message in chat rather than drawing the card on Activity.

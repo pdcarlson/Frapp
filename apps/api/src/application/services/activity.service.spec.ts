@@ -109,7 +109,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const messageRepo = {
     findCardsByChapter: jest.fn().mockResolvedValue([]),
   };
-  const actionRepo = { findActionsOnMessages: jest.fn().mockResolvedValue([]) };
+  const actionRepo = {
+    findActionsOnMessages: jest.fn().mockResolvedValue([]),
+    findAllActionsOnMessages: jest.fn().mockResolvedValue([]),
+  };
   const linkService = { listFor: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
@@ -643,11 +646,21 @@ describe('ActivityService', () => {
         formCard({ id: 'answered-form' }),
         formCard({ id: 'open-form' }),
       ]);
-      actionRepo.findActionsOnMessages.mockResolvedValue([
-        { message_id: 'claimed', payload: { slot_ids: ['fri'] } },
-        { message_id: 'cleared', payload: { slot_ids: [] } },
-        { message_id: 'going', payload: { slot_ids: ['going'] } },
-        { message_id: 'not-going', payload: { slot_ids: ['not_going'] } },
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        { message_id: 'claimed', user_id: ME, payload: { slot_ids: ['fri'] } },
+        { message_id: 'cleared', user_id: ME, payload: { slot_ids: [] } },
+        // Someone else's claim is not the caller's answer.
+        {
+          message_id: 'cleared',
+          user_id: OTHER,
+          payload: { slot_ids: ['fri'] },
+        },
+        { message_id: 'going', user_id: ME, payload: { slot_ids: ['going'] } },
+        {
+          message_id: 'not-going',
+          user_id: ME,
+          payload: { slot_ids: ['not_going'] },
+        },
       ]);
       formResponseRepo.findAnsweredMessageIds.mockResolvedValue([
         'answered-form',
@@ -659,11 +672,79 @@ describe('ActivityService', () => {
         'cleared',
         'open-form',
       ]);
-      expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
+      expect(actionRepo.findAllActionsOnMessages).toHaveBeenCalledWith(
         ['claimed', 'cleared', 'going', 'not-going'],
-        ME,
         'signup',
       );
+    });
+
+    it('leaves out a sheet whose every slot is full, but not one with room or no limit', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      const oneSpot = { slots: [{ id: 'fri', label: 'Friday', capacity: 1 }] };
+      serveCards(messageRepo, [
+        signupCard({ id: 'full' }, oneSpot),
+        signupCard({ id: 'room' }, oneSpot),
+        signupCard(
+          { id: 'unlimited' },
+          { slots: [{ id: 'fri', label: 'Friday', capacity: null }] },
+        ),
+        signupCard({ id: 'head' }, { format: 'headcount' }),
+      ]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        { message_id: 'full', user_id: OTHER, payload: { slot_ids: ['fri'] } },
+        {
+          message_id: 'unlimited',
+          user_id: OTHER,
+          payload: { slot_ids: ['fri'] },
+        },
+        {
+          message_id: 'head',
+          user_id: OTHER,
+          payload: { slot_ids: ['going'] },
+        },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.needs_you.cards.map((card) => card.message_id).sort(),
+      ).toEqual(['head', 'room', 'unlimited']);
+      expect(view.needs_you_count).toBe(3);
+    });
+
+    it('breaks a tie on end time newest first, and serves a bad end time as none', async () => {
+      const { service, messageRepo } = build();
+      serveCards(messageRepo, [
+        formCard({ id: 'older', created_at: iso(-5 * HOUR) }),
+        formCard({ id: 'newer', created_at: iso(-HOUR) }),
+        formCard(
+          { id: 'garbled', created_at: iso(-3 * HOUR) },
+          { closes_at: 'not a date' },
+        ),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.needs_you.cards.map((card) => [card.message_id, card.closes_at]),
+      ).toEqual([
+        ['newer', null],
+        ['garbled', null],
+        ['older', null],
+      ]);
+    });
+
+    it('caps the list at 25 and counts every one', async () => {
+      const { service, messageRepo } = build();
+      serveCards(
+        messageRepo,
+        Array.from({ length: 30 }, (_, i) => formCard({ id: `form-${i}` })),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.cards).toHaveLength(25);
+      expect(view.needs_you_count).toBe(30);
     });
 
     it('leaves out the caller’s own, closed ones, unreadable channels and blocked members', async () => {

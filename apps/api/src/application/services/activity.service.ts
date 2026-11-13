@@ -1058,25 +1058,48 @@ export class ActivityService {
 
     const openSignups = signups.filter(waiting);
     const openForms = forms.filter(waiting);
+    // Every member's claims, not only the caller's: a sheet whose every
+    // slot is at its limit can't be signed up for, so it no longer waits on
+    // anyone who doesn't hold a slot. Claims are channel-readable (the card
+    // names each holder), so reading them all reveals nothing.
     const [claims, answeredForms] = await Promise.all([
-      openSignups.length === 0
-        ? Promise.resolve([])
-        : this.actionRepo.findActionsOnMessages(
-            openSignups.map((message) => message.id),
-            userId,
-            SIGNUP_ACTION_TYPE,
-          ),
+      this.actionRepo.findAllActionsOnMessages(
+        openSignups.map((message) => message.id),
+        SIGNUP_ACTION_TYPE,
+      ),
       this.formResponseRepo.findAnsweredMessageIds(
         openForms.map((message) => message.id),
         userId,
       ),
     ]);
-    const answered = new Set([
-      ...claims
-        .filter((row) => (signupClaimSlotIds(row.payload) ?? []).length > 0)
-        .map((row) => row.message_id),
-      ...answeredForms,
-    ]);
+    const heldBySlot = new Map<string, number>();
+    const answered = new Set<string>(answeredForms);
+    for (const row of claims) {
+      const slotIds = signupClaimSlotIds(row.payload) ?? [];
+      if (slotIds.length === 0) continue;
+      if (row.user_id === userId) answered.add(row.message_id);
+      for (const slotId of slotIds) {
+        const key = `${row.message_id}:${slotId}`;
+        heldBySlot.set(key, (heldBySlot.get(key) ?? 0) + 1);
+      }
+    }
+    // Full: every slot has a limit and has reached it. A headcount's slots
+    // have none, so a headcount is never full.
+    const isFull = (message: ChatMessage) => {
+      const slots = (message.payload as { slots?: unknown } | null)?.slots;
+      if (!Array.isArray(slots) || slots.length === 0) return false;
+      return slots.every((slot: unknown) => {
+        const { id, capacity } = (slot ?? {}) as {
+          id?: unknown;
+          capacity?: unknown;
+        };
+        return (
+          typeof id === 'string' &&
+          typeof capacity === 'number' &&
+          (heldBySlot.get(`${message.id}:${id}`) ?? 0) >= capacity
+        );
+      });
+    };
 
     const toRow = (
       message: ChatMessage,
@@ -1114,13 +1137,15 @@ export class ActivityService {
       return Array.isArray(slots) ? slots.length : 0;
     };
     const rows = [
-      ...openSignups.map((message) =>
-        toRow(
-          message,
-          isHeadcountCard(message.payload) ? 'headcount' : 'signup',
-          slotCount(message),
+      ...openSignups
+        .filter((message) => !isFull(message))
+        .map((message) =>
+          toRow(
+            message,
+            isHeadcountCard(message.payload) ? 'headcount' : 'signup',
+            slotCount(message),
+          ),
         ),
-      ),
       ...openForms.map((message) =>
         toRow(message, 'form', formQuestions(message.payload).length),
       ),

@@ -5,6 +5,7 @@ const COUNTED_SECTIONS: ReadonlySet<Activity["unavailable"][number]> = new Set([
   "tasks",
   "hours_approvals",
   "polls",
+  "cards",
   "coming_up",
 ]);
 

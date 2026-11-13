@@ -164,7 +164,7 @@ describe("sign-up and form cards (#3926 step 4)", () => {
       "all",
       NOW,
     );
-    const rows = groups[0].rows;
+    const rows = groups[0]!.rows;
     expect(
       rows.map((row) => [row.title, row.detail, row.badge?.label, row.glyph]),
     ).toEqual([
@@ -184,7 +184,7 @@ describe("sign-up and form cards (#3926 step 4)", () => {
       null,
       null,
     ]);
-    expect(rows[0].faceId).toBe("olive");
+    expect(rows[0]!.faceId).toBe("olive");
   });
 
   it("is Now within a day of closing, says so in the warning phrase, and leaves once closed", () => {
@@ -201,15 +201,15 @@ describe("sign-up and form cards (#3926 step 4)", () => {
       closes_at: "2026-11-13T11:00:00.000Z",
     });
     const data = withCards([soon, later, gone], { needs_you_count: 3 });
-    const [needs] = activityGroups(data, "all", NOW);
+    const needs = activityGroups(data, "all", NOW)[0]!;
 
     expect(needs.rows.map((row) => row.readRef.item_id)).toEqual([
       "soon",
       "later",
     ]);
-    expect(needs.rows[0].soon).toBe("closes in 3 hours");
-    expect(activityRowIsNow(needs.rows[0], NOW)).toBe(true);
-    expect(activityRowIsNow(needs.rows[1], NOW)).toBe(false);
+    expect(needs.rows[0]!.soon).toBe("closes in 3 hours");
+    expect(activityRowIsNow(needs.rows[0]!, NOW)).toBe(true);
+    expect(activityRowIsNow(needs.rows[1]!, NOW)).toBe(false);
     expect(needs.parts.map((part) => part.label)).toEqual(["Now", "Later"]);
     // The one that closed since the read no longer counts.
     expect(
@@ -226,11 +226,11 @@ describe("sign-up and form cards (#3926 step 4)", () => {
 
   it("names the section when it couldn't load, under All and Needs you only", () => {
     const data = withCards([], { unavailable: ["cards"] });
-    expect(activityGroups(data, "all", NOW)[0].unavailable).toEqual(["cards"]);
-    expect(activityGroups(data, "waiting", NOW)[0].unavailable).toEqual([
+    expect(activityGroups(data, "all", NOW)[0]!.unavailable).toEqual(["cards"]);
+    expect(activityGroups(data, "waiting", NOW)[0]!.unavailable).toEqual([
       "cards",
     ]);
-    expect(activityGroups(data, "poll", NOW)[0].unavailable).toEqual([]);
+    expect(activityGroups(data, "poll", NOW)[0]!.unavailable).toEqual([]);
     expect(
       activitySummary(data, { canConfirmTasks: false, canApproveHours: false })
         .incomplete,
@@ -238,7 +238,7 @@ describe("sign-up and form cards (#3926 step 4)", () => {
   });
 
   it("reads a cached read from before cards were served as none", () => {
-    expect(activityGroups(activity(), "all", NOW)[0].rows).toEqual([]);
+    expect(activityGroups(activity(), "all", NOW)[0]!.rows).toEqual([]);
   });
 
   it("draws the sign-up and form glyphs from the shared set", () => {
