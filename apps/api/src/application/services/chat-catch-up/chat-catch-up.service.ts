@@ -455,7 +455,11 @@ export class ChatCatchUpService {
         content: row.content,
         createdAt: row.created_at,
         threadRootId: row.thread_root_id,
-        mentionsReader: row.mentions?.includes(input.userId) ?? false,
+        // The reader's own message never addresses them, though their own
+        // `@here` stores them in `mentions` (2026-11-13).
+        mentionsReader:
+          row.sender_id !== input.userId &&
+          (row.mentions?.includes(input.userId) ?? false),
       });
     }
     return {

@@ -547,8 +547,21 @@ describe("MessageItem mentions the viewer", () => {
     );
   });
 
-  it("leaves the viewer's own message plain", () => {
-    renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
+  it("lights the viewer's own message when it reaches them, as their own @here does", () => {
+    renderItem(
+      message({
+        sender_id: VIEWER,
+        content: "@here build",
+        mentions: [VIEWER],
+      }),
+    );
+    expect(screen.getByRole("listitem")).toHaveAttribute(
+      "data-mentions-viewer",
+    );
+  });
+
+  it("leaves the viewer's own message plain when it reaches only others", () => {
+    renderItem(message({ sender_id: VIEWER, mentions: [OTHER] }));
     expect(screen.getByRole("listitem")).not.toHaveAttribute(
       "data-mentions-viewer",
     );

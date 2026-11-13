@@ -467,10 +467,11 @@ export function MessageItem({
   );
   // The server resolved who this message pings (`chat_messages.mentions`),
   // so the row trusts that list rather than re-reading the body: it is the
-  // same set the notifier used. A viewer's own message never lights up.
+  // same set the notifier used. A viewer's own message lights up too when it
+  // reaches them (their own `@here`, a role they hold), as on Discord; only
+  // the push and the badge skip a sender's own message (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
