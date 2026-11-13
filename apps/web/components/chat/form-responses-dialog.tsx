@@ -216,7 +216,7 @@ function ResponsesTabs({
                       {texts.map((text, i) => (
                         <li
                           key={i}
-                          className="whitespace-pre-wrap rounded-md bg-muted px-3 py-2 text-sm"
+                          className="whitespace-pre-wrap rounded-md bg-card-hover px-3 py-2 text-sm"
                         >
                           {text}
                         </li>
