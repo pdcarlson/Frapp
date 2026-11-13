@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { CONTRACT_ARTIFACTS } from "../../check-api-contract-drift.mjs";
-import { mergeMain, needsRegeneration, partitionConflicts } from "../../merge-main.mjs";
+import { mergeMain, needsRegeneration, partitionConflicts, squashedPrNumber } from "../../merge-main.mjs";
 
 const [OPENAPI, TYPES] = CONTRACT_ARTIFACTS;
 // Real API source paths, so the script's real isApiRelated decides what counts.
@@ -325,4 +325,60 @@ test("uncommitted changes, or --continue with no merge, are refused", (t) => {
 
   git(work, "checkout", "-q", "--", "README.md");
   assert.equal(run(work, { resume: true }).outcome, "refused");
+});
+
+test("squashedPrNumber reads the last PR number in a squash subject", () => {
+  assert.equal(squashedPrNumber("Web form dialog: hold edits (#4727) (#4754)"), 4754);
+  assert.equal(squashedPrNumber("Forms on web (#3926 step 3, part 2) (#4721)"), 4721);
+  assert.equal(squashedPrNumber("Merge branch 'main'"), null);
+});
+
+/**
+ * A stacked branch: part 2 adds a file on its own branch, part 3 branches from
+ * part 2 and edits that file again. Part 2 then squash-merges into main, and a
+ * later main commit edits another line of the same file.
+ */
+function stackOnSquashedPr(seed, work) {
+  const NOTES = "docs/notes.md";
+  const part2 = "one\ntwo\nthree\nfour\nfive\n";
+  git(work, "checkout", "-q", "-b", "part2");
+  write(work, NOTES, part2);
+  commitAll(work, "part 2 adds notes");
+  git(work, "push", "-q", "origin", "part2:refs/pull/7/head");
+  git(work, "checkout", "-q", "feature");
+  git(work, "merge", "-q", "--no-edit", "part2");
+  write(work, NOTES, part2.replace("two", "two, from part 3"));
+  commitAll(work, "part 3 edits notes");
+
+  landOnMain(seed, (cwd) => write(cwd, NOTES, part2), "Notes (#7)");
+  landOnMain(seed, (cwd) => write(cwd, NOTES, part2.replace("five", "five, from main")), "Main edits notes (#8)");
+  return NOTES;
+}
+
+test("a branch stacked on a squash-merged PR merges against its own copy of that PR", (t) => {
+  const { seed, work } = setup(t);
+  const notes = stackOnSquashedPr(seed, work);
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "merged", output);
+  assert.match(output, /#7 is already in this branch/);
+  assert.equal(readFileSync(join(work, notes), "utf8"), "one\ntwo, from part 3\nthree\nfour\nfive, from main\n");
+  // The grafts and fetched heads are gone, and the merge records its real parents.
+  assert.equal(git(work, "replace", "-l"), "");
+  assert.equal(git(work, "for-each-ref", "refs/merge-main/"), "");
+  const parents = git(work, "rev-list", "--parents", "-n", "1", "HEAD").split(" ").slice(1);
+  assert.deepEqual(parents, [git(work, "rev-parse", "HEAD^1"), git(work, "rev-parse", "origin/main")]);
+});
+
+test("without the PR's head on the remote, a stacked branch merges as plain git would", (t) => {
+  const { seed, work } = setup(t);
+  stackOnSquashedPr(seed, work);
+  git(work, "push", "-q", "origin", ":refs/pull/7/head");
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "conflicts", "the add/add conflict the grafts exist to avoid");
+  assert.match(output, /docs\/notes\.md/);
+  assert.equal(git(work, "replace", "-l"), "");
 });
