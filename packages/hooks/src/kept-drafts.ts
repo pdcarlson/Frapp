@@ -156,24 +156,14 @@ export function useKeptFormDraft<T>(
   const [settles, setSettles] = useState(0);
   const settled = useRef(-1);
   const baseline = useRef<string | null>(null);
-  const held = useRef(false);
+  // The save in flight, if any: the key it was sent under, and the value as
+  // it was sent, for a form that has since turned into another one.
+  const held = useRef<{ key: string; value: T } | null>(null);
   // What decides whether there is a draft, and what decides rewriting it: a
   // section opened after the last keystroke is kept, but isn't an edit.
   const whole = safeSignature(value);
   const signature = options?.signature ?? whole;
   const settle = useCallback(() => setSettles((count) => count + 1), []);
-
-  const take = useCallback((): T | undefined => {
-    settle();
-    held.current = false;
-    if (key === null) {
-      setRestored(false);
-      return undefined;
-    }
-    const kept = readKeptDraft<T>(key);
-    setRestored(kept !== undefined);
-    return kept;
-  }, [key, settle]);
 
   const latest = useRef(value);
   const restoredRef = useRef(restored);
@@ -186,6 +176,25 @@ export function useKeptFormDraft<T>(
   // turns into another form) its state is still what the last one held,
   // until its fill lands; writing that would put a stale draft back.
   const writingTo = useRef<string | null>(null);
+
+  const take = useCallback((): T | undefined => {
+    settle();
+    if (key === null) {
+      setRestored(false);
+      return undefined;
+    }
+    // Reopened while its own save is still in flight: the form opens on what
+    // it sent, and the save's outcome settles it, rather than a blank form
+    // that the outcome would then drop or put back as the draft.
+    if (held.current?.key === key) {
+      setRestored(false);
+      return latest.current;
+    }
+    const kept = readKeptDraft<T>(key);
+    setRestored(kept !== undefined);
+    return kept;
+  }, [key, settle]);
+
   useEffect(() => {
     if (!open || key === null) {
       writingTo.current = null;
@@ -197,7 +206,7 @@ export function useKeptFormDraft<T>(
       baseline.current = signature;
       return;
     }
-    if (held.current) return;
+    if (held.current?.key === key) return;
     if (restoredRef.current || signature !== baseline.current) {
       writeKeptDraft(key, latest.current);
     } else {
@@ -205,26 +214,36 @@ export function useKeptFormDraft<T>(
     }
   }, [open, key, settles, signature, whole]);
 
+  // Each settles the key it was made for: a save's outcome lands on the form
+  // it was sent from, even when this one has turned into another since.
   const drop = useCallback(() => {
-    held.current = false;
+    if (held.current?.key === key) held.current = null;
     if (key !== null) dropKeptDraft(key);
-    setRestored(false);
+    if (writingTo.current === key || writingTo.current === null) {
+      setRestored(false);
+    }
   }, [key]);
   const discard = useCallback(() => {
     if (key !== null) dropKeptDraft(key);
-    held.current = false;
+    if (held.current?.key === key) held.current = null;
     setRestored(false);
     settle();
   }, [key, settle]);
   const hold = useCallback(() => {
-    held.current = true;
-    if (key !== null) dropKeptDraft(key);
+    if (key === null) return;
+    held.current = { key, value: latest.current };
+    dropKeptDraft(key);
   }, [key]);
   // Written even after the form has gone: a save that fails once the member
-  // has left keeps their work for when they come back.
+  // has left keeps their work for when they come back. What the form shows
+  // now if it is still that form, else what was sent.
   const release = useCallback(() => {
-    held.current = false;
-    if (key !== null) writeKeptDraft(key, latest.current);
+    const sent = held.current;
+    if (sent === null || sent.key !== key) return;
+    held.current = null;
+    const stillThatForm =
+      writingTo.current === key || writingTo.current === null;
+    writeKeptDraft(key, stillThatForm ? latest.current : sent.value);
   }, [key]);
 
   return useMemo(

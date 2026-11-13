@@ -98,6 +98,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
+  // A send from this panel still on its way, even if the panel was closed
+  // and reopened since: the reopened composer is a new one, and would
+  // otherwise offer the same addresses to send again.
+  const [sending, setSending] = useState(false);
   const [addresses, setAddresses] = useState<InviteAddresses>(NO_ADDRESSES);
   // Whether there is a draft is the addresses, and the role picked for them.
   // A role picked with no addresses is not one: the next invite starts on the
@@ -481,10 +485,18 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 onAddressesChange={(patch) =>
                   setAddresses((current) => ({ ...current, ...patch }))
                 }
-                onSendStart={kept.hold}
-                onSendFailed={kept.release}
+                busy={sending}
+                onSendStart={() => {
+                  setSending(true);
+                  kept.hold();
+                }}
+                onSendFailed={() => {
+                  setSending(false);
+                  kept.release();
+                }}
                 onInvited={(how) => {
                   if (how !== "email") return;
+                  setSending(false);
                   // Sent: what the field is left holding (an address that
                   // couldn't be emailed, listed under Invited) is not a draft.
                   kept.drop();

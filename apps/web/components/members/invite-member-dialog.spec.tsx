@@ -726,4 +726,24 @@ describe("InviteMemberDialog keeps its draft (#4593)", () => {
     second.unmount();
     land({ invites: [], failed: [] });
   });
+
+  it("reopened while a send is on its way, shows what was sent and can't send it twice", async () => {
+    let land: (value: { invites: []; failed: [] }) => void = () => {};
+    mockEmailInvites.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    await close();
+    await reopen();
+
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    land({ invites: [], failed: [] });
+    await waitFor(() => expect(screen.queryByText("a@school.edu")).toBeNull());
+    expect(mockEmailInvites).toHaveBeenCalledTimes(1);
+  });
 });

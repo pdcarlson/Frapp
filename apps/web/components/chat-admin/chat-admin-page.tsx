@@ -688,7 +688,7 @@ function ChatAdminBody({
   // A channel's own page has no New channel, so it waits for the chapter's.
   useKeptPanel({
     page: "chat-admin",
-    form: channelDraftName(null),
+    form: channelDraftName(null, true),
     open: createDialogOpen,
     setOpen: setCreateDialogOpen,
     ready: !channelMode,

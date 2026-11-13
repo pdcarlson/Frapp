@@ -77,6 +77,7 @@ export function InviteComposer({
   onAddressesChange,
   onSendStart,
   onSendFailed,
+  busy = false,
 }: {
   role?: string;
   roleControl?: ReactNode;
@@ -94,6 +95,11 @@ export function InviteComposer({
   onSendStart?: () => void;
   /** The send failed outright; the addresses are still there. */
   onSendFailed?: () => void;
+  /**
+   * A send the caller started is still on its way, from a composer that has
+   * since closed and reopened: nothing to send again until it lands.
+   */
+  busy?: boolean;
 }) {
   const fieldId = useId();
   const problemId = useId();
@@ -120,7 +126,7 @@ export function InviteComposer({
     (chip) => chip.problem === "invalid",
   ).length;
   const undelivered = chips.filter((chip) => chip.problem === "undelivered");
-  const sending = emailInvites.isPending;
+  const sending = emailInvites.isPending || busy;
 
   function updateChips(next: EmailChip[]) {
     setChips(next);

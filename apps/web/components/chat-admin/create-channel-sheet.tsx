@@ -43,8 +43,16 @@ import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 /** Sentinel for "no category": Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
-/** The kept draft's name (#4593): one per category the + was beside. */
-export function channelDraftName(categoryId: string | null): string {
+/**
+ * The kept draft's name (#4593): Chat admin's New channel keeps its own, and
+ * the chat rail keeps one per category the + was beside, so a draft begun in
+ * one doesn't turn up half-filled in the other.
+ */
+export function channelDraftName(
+  categoryId: string | null,
+  docked: boolean,
+): string {
+  if (docked) return "chat-admin:channel-create";
   return categoryId ? `channel-create:in:${categoryId}` : "channel-create";
 }
 
@@ -141,7 +149,7 @@ export function CreateChannelSheet({
   const [alwaysFormal, setAlwaysFormal] = useState(false);
 
   const kept = useKeptFormDraft<ChannelDraft>(
-    channelDraftName(initialCategoryId),
+    channelDraftName(initialCategoryId, docked),
     open,
     {
       name,

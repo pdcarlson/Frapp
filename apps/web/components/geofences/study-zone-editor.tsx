@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useCreateGeofence, useUpdateGeofence } from "@repo/hooks";
 import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
@@ -228,6 +228,12 @@ export function StudyZoneEditor({
     setLoadedKey(formKey);
     if (formKey) fill(kept.take());
   }
+  // The zone open now, for a save that lands after the officer moved on to
+  // another one: it closes only the editor it was sent from.
+  const openKey = useRef(formKey);
+  useEffect(() => {
+    openKey.current = formKey;
+  });
 
   /** Cancel: give the draft up and close. */
   function cancel() {
@@ -256,6 +262,7 @@ export function StudyZoneEditor({
     );
     if (!shapeBody.ok || !parsedRules) return;
     const trimmed = name.trim();
+    const sentFrom = formKey;
     kept.hold();
     try {
       if (zone) {
@@ -277,7 +284,7 @@ export function StudyZoneEditor({
         });
       }
       kept.drop();
-      onOpenChange(false);
+      if (openKey.current === sentFrom) onOpenChange(false);
     } catch (error) {
       kept.release();
       toast({
