@@ -400,7 +400,9 @@ describe("FormCard (#3926 step 3)", () => {
     let land: (value: unknown) => void = () => {};
     const fresh = new Promise((resolve) => (land = resolve));
     api.GET.mockResolvedValueOnce(SAVED).mockReturnValue(fresh);
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Edit your answers" }),
     );
@@ -435,7 +437,7 @@ describe("FormCard (#3926 step 3)", () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue(SAVED);
     const { client } = wrap(
-      <FormCard message={form()} viewerId="u1" isConfirmed />,
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
     );
     const edit = await screen.findByRole("button", {
       name: "Edit your answers",
@@ -461,7 +463,9 @@ describe("FormCard (#3926 step 3)", () => {
     api.GET.mockResolvedValueOnce(SAVED).mockResolvedValue({
       error: { message: "Server error" },
     });
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Edit your answers" }),
     );
@@ -478,7 +482,9 @@ describe("FormCard (#3926 step 3)", () => {
   it("lets the cached answers be edited when the open-time read waits for the network", async () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue(SAVED);
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     const edit = await screen.findByRole("button", {
       name: "Edit your answers",
     });
@@ -498,7 +504,9 @@ describe("FormCard (#3926 step 3)", () => {
     api.GET.mockResolvedValue(SAVED);
     let land: (value: unknown) => void = () => {};
     api.PUT.mockReturnValue(new Promise((resolve) => (land = resolve)));
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Edit your answers" }),
     );
@@ -546,7 +554,7 @@ describe("FormCard (#3926 step 3)", () => {
     let land: (value: unknown) => void = () => {};
     api.PUT.mockReturnValue(new Promise((resolve) => (land = resolve)));
     const { client } = wrap(
-      <FormCard message={form()} viewerId="u1" isConfirmed />,
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
     );
     const write = vi.spyOn(client, "setQueryData");
     const invalidate = vi.spyOn(client, "invalidateQueries");
