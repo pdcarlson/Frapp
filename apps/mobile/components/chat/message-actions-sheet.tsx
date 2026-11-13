@@ -76,7 +76,7 @@ import type { ChatMessageFlag } from "@repo/validation";
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
  * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
- * text, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * text, Mark unread, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
@@ -101,6 +101,9 @@ import type { ChatMessageFlag } from "@repo/validation";
  * that opens the message in the app or on the web, on any message the thread
  * offers it for, cards included, as Discord's does. Either row turns to
  * "Copied" in place, then the sheet closes.
+ *
+ * **Mark unread** (#3723) sits after Copy text, where Discord's long-press
+ * puts it. The thread moves the read cursor back and leaves the channel.
  *
  * **Reply, Edit, Mention and Delete hand off to the thread.** Reply and Edit
  * stage in the composer, Mention puts `@Name` in the draft, and Delete asks for
@@ -160,6 +163,9 @@ export const UNPIN_LABEL = "Unpin message";
 export const SAVE_LABEL = "Save message";
 export const UNSAVE_LABEL = "Remove from Saved";
 
+/** The row that marks the channel unread from a message (#3723). */
+export const MARK_UNREAD_LABEL = "Mark unread";
+
 /** The Copy text row's label once the text is on the clipboard. */
 export const COPIED_LABEL = "Copied";
 /** How long "Copied" shows before the sheet closes: long enough to read. */
@@ -179,6 +185,12 @@ export interface MessageActionsTarget {
    * drawn.
    */
   copyText: string | null;
+  /**
+   * Mark unread (#3723): a confirmed message on the channel's timeline. The
+   * thread moves the viewer's read cursor to just before it and leaves the
+   * channel, so it reads as unread on the list.
+   */
+  canMarkUnread?: boolean;
   /**
    * What "Copy message link" copies (#3723): the message's
    * `app.frapp.live/chat?…` link (`messageLinkUrl` in `@repo/validation`),
@@ -288,6 +300,8 @@ export interface MessageActionsSheetProps {
   onDelete?: (messageId: string) => void;
   /** Put `@Sender` in the composer's draft. */
   onMention?: (messageId: string) => void;
+  /** Mark the channel unread from this message on (#3723). */
+  onMarkUnread?: (messageId: string) => void;
   /**
    * Add a reaction from the quick row. Omit it, with `onUnreact`, and the row
    * is not drawn.
@@ -315,6 +329,7 @@ export const MessageActionsSheet = forwardRef<
     onEdit,
     onDelete,
     onMention,
+    onMarkUnread,
     onReact,
     onUnreact,
     onFlag,
@@ -758,6 +773,7 @@ export const MessageActionsSheet = forwardRef<
             </View>
           ) : null}
           {target?.copyText ||
+          (target?.canMarkUnread && onMarkUnread) ||
           target?.link ||
           (target?.pin && onSetPinned) ||
           (target?.save && onSetSaved) ||
@@ -768,6 +784,13 @@ export const MessageActionsSheet = forwardRef<
                   label={isCopied("text") ? COPIED_LABEL : "Copy text"}
                   action
                   onPress={() => copy("text")}
+                />
+              ) : null}
+              {target.canMarkUnread && onMarkUnread ? (
+                <ListRow
+                  label={MARK_UNREAD_LABEL}
+                  action
+                  onPress={() => handOff(onMarkUnread)}
                 />
               ) : null}
               {target.link ? (

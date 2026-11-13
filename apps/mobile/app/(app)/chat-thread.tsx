@@ -58,6 +58,9 @@ import {
   useCurrentUser,
   claimViewedChannel,
   useMarkChannelRead,
+  useMarkMessageUnread,
+  holdChannelUnread,
+  releaseChannelUnread,
   useMemberDisplayNames,
   usePermissionList,
   useRosterCatchUp,
@@ -550,16 +553,28 @@ function ChannelThreadScreen() {
   //    Focus, not mount: this screen stays mounted under one pushed over it.
   const requestUploadUrl = useRequestChatUploadUrl();
 
+  //
+  // Mark unread (#3723) holds both stamps for the rest of the visit
+  // (`unreadHeldFor`): it drops the claim so the activity handler stops
+  // re-stamping, and the blur skips its stamp, or leaving would read the
+  // channel straight back. The next focus clears the hold, so opening the
+  // channel again reads it, as on Discord.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  const unreadHeldFor = useRef<string | null>(null);
+  const releaseViewedRef = useRef<(() => void) | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      unreadHeldFor.current = null;
+      releaseChannelUnread(channelId);
       markReadMutate(channelId);
       const releaseViewed = claimViewedChannel(channelId);
+      releaseViewedRef.current = releaseViewed;
       return () => {
         releaseViewed();
-        markReadMutate(channelId);
+        releaseViewedRef.current = null;
+        if (unreadHeldFor.current !== channelId) markReadMutate(channelId);
       };
     }, [channelId, markReadMutate]),
   );
@@ -1192,6 +1207,31 @@ function ChannelThreadScreen() {
     [channelId, jumpToImportant, openThreadFor, router],
   );
 
+  // Mark unread (#3723): hold the channel so no read stamp follows (the blur
+  // one, and the activity handler's, queued ones included), move the cursor
+  // back, and leave at once, as Slack's phone app does, so the screen below
+  // shows the badge. The write is ordered after any stamp still pending
+  // (`useMarkMessageUnread`). A failure is an alert wherever the member is by
+  // then; nothing is re-claimed, since the screen has gone.
+  const markUnread = useMarkMessageUnread();
+  const markUnreadAsync = markUnread.mutateAsync;
+  const handleMarkUnread = useCallback(
+    (messageId: string) => {
+      if (!channelId) return;
+      selectionHaptic();
+      unreadHeldFor.current = channelId;
+      holdChannelUnread(channelId);
+      releaseViewedRef.current?.();
+      releaseViewedRef.current = null;
+      markUnreadAsync(messageId).catch((error: unknown) => {
+        Alert.alert("Couldn't mark unread", errorCopy(error));
+      });
+      if (below) below.goBack();
+      else goBackTo(router, "/");
+    },
+    [below, channelId, markUnreadAsync, router],
+  );
+
   // A poll card's Close poll (#3794), asked first like Delete.
   const handleClosePoll = useCallback(
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
@@ -1337,6 +1377,10 @@ function ChannelThreadScreen() {
       setActionTarget({
         messageId: message.id,
         copyText: copyableText(message),
+        // Mark unread (#3723): someone else's message. The unread count never
+        // counts the viewer's own, an imported row or a blocked member's, so
+        // moving the cursor before one of those would change nothing.
+        canMarkUnread: actions.canReport && message.kind !== "imported",
         // Copy message link (#3723). A channel message only: this sheet never
         // holds a thread reply, whose link would open on a timeline it's not in.
         link: channelId
@@ -2101,6 +2145,7 @@ function ChannelThreadScreen() {
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}
+        onMarkUnread={handleMarkUnread}
         onReact={handleReact}
         onUnreact={handleUnreact}
         onFlag={handleFlag}

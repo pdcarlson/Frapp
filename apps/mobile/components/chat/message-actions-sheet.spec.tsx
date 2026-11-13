@@ -58,6 +58,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
+  MARK_UNREAD_LABEL,
   COPY_LINK_LABEL,
   PIN_LABEL,
   SAVE_LABEL,
@@ -101,6 +102,7 @@ function render(
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
     onMention?: (messageId: string) => void;
+    onMarkUnread?: (messageId: string) => void;
     onSetPinned?: (messageId: string, pinned: boolean) => void;
     onSetSaved?: (messageId: string, saved: boolean) => void;
   } = {},
@@ -266,6 +268,33 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     }
   });
 
+  it("offers Mark unread after Copy text and hands the message to the thread (#3723)", () => {
+    const onMarkUnread = vi.fn();
+    const tree = render(
+      { ...OWN, copyText: "hi", canMarkUnread: true },
+      undefined,
+      { onMarkUnread },
+    );
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(MARK_UNREAD_LABEL),
+    );
+    pressByLabel(tree, MARK_UNREAD_LABEL);
+    expect(onMarkUnread).toHaveBeenCalledWith(OWN.messageId);
+    expect(
+      hasRow(
+        render({ ...OWN, copyText: "hi" }, undefined, { onMarkUnread }),
+        MARK_UNREAD_LABEL,
+      ),
+    ).toBe(false);
+  });
+
   it("offers Copy message link after Copy text, copies the link, and says Copied on that row only (#3723)", async () => {
     const link = "https://app.frapp.live/chat?channel=c1&message=m1";
     const tree = render({ ...OWN, copyText: "hi", link });
@@ -287,6 +316,43 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     // Copy text still says what it does.
     expect(hasRow(tree, "Copy text")).toBe(true);
     expect(hasRow(tree, COPY_LINK_LABEL)).toBe(false);
+  });
+
+  it("puts Mark unread between Copy text and Copy message link, Discord's order (#3723)", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canMention: true,
+        canMarkUnread: true,
+        messageId: "m1",
+        copyText: "hi",
+        link: "https://app.frapp.live/chat?channel=c1&message=m1",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+      },
+      undefined,
+      { onMention: vi.fn(), onMarkUnread: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(
+      labels.slice(labels.indexOf("Copy text"), labels.indexOf("Mention") + 1),
+    ).toEqual(["Copy text", MARK_UNREAD_LABEL, COPY_LINK_LABEL, "Mention"]);
   });
 
   it("puts Copy message link right after Copy text, before Pin, Save and Mention", () => {
