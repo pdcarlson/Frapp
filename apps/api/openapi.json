@@ -28761,6 +28761,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28774,6 +28779,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at"
         ]
@@ -28818,6 +28824,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28835,6 +28846,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at",
           "messages_linked"

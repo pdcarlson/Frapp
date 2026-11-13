@@ -9166,6 +9166,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9185,6 +9187,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;

@@ -21,6 +21,7 @@ import { DiscordOAuthService, isUuid } from './discord-oauth.service';
 export interface DiscordAuthorLinkView {
   available: boolean;
   linked: boolean;
+  discord_user_id: string | null;
   discord_username: string | null;
   linked_at: string | null;
 }
@@ -67,6 +68,7 @@ export class DiscordAuthorLinkService {
     return {
       available,
       linked: link !== null,
+      discord_user_id: link?.discord_user_id ?? null,
       discord_username: link?.discord_username ?? null,
       linked_at: link?.linked_at ?? null,
     };
@@ -146,6 +148,7 @@ export class DiscordAuthorLinkService {
     return {
       available: true,
       linked: true,
+      discord_user_id: linked.discord_user_id,
       discord_username: linked.discord_username,
       linked_at: linked.linked_at,
       messages_linked: linked.messages_linked,
