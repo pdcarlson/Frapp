@@ -33,7 +33,7 @@ Color per state (roles defined in [foundations](foundations.md)):
 The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
 glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
-`link` and `confirm`, §6.2.5a) draw one shared
+`link`, `confirm`, `signup` and `form`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -266,7 +266,8 @@ except the audit card's).
 | Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the You tab's row shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
-| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+| A private or role-gated channel's row on chat home, in the `#` sigil's slot, size (18) and colours, and its channel start's tile (32, accent), as web draws both (#4134; the rule is `channelMarkFor` in `@repo/hooks/channel-start`) | `LockGlyph` (body filled, shackle stroke-only; web's `LockGlyph`) | `components/chat/card-glyphs.tsx` |
 
 The poll card has no glyph: its eyebrow is muted text on both surfaces.
 
@@ -632,7 +633,7 @@ rows draw the same lead at the same sizes in `text.mutedForeground`
 #4173 step 2), and both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
-`link` and `confirm` were added for the two kinds that have no place of their own.
+`link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
 
 A row from another member leads with that member's face instead
@@ -652,6 +653,8 @@ coloured. Which rows take a face:
 | Poll | `polls`, `chart-bar` |
 | Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
 | Sign-up link | `link`, `link` (added for it) |
+| Sign-up sheet or headcount to answer (#3926) | `signup`, `list-checks` (added for it) |
+| Form to fill out (#3926) | `form`, `clipboard-text` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 

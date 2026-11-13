@@ -129,6 +129,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A task with no points and nothing to prove counts as done as soon as you mark it done.",
       "When someone submits a task you gave them, the notification says who submitted what, and tapping it opens a review with their proof up front. With several waiting, Confirm moves on to the next.",
       "Can't make it is now on a required event's chat card too, and opens the event with your excuse ready to write.",
+      "Mandatory now shows only on the events that need you, as a quiet label instead of a red badge.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -136,6 +137,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Service hours now opens on your own approved and pending hours and your full log, with a chapter leaderboard you can switch between this semester and all time.",
       "Officers can ask for a photo or a link as proof on a task, add up to six photos, and say what needs to change when they send a task back.",
       "When you upload a document, the Type choices are now your chapter's own list, and officers who manage documents can rename, add or remove types with Edit types.",
+      "Officers can import a whole folder into Documents: Frapp suggests a folder, type and title for each file, sets aside copies and files it can't take, and imports them all once you've checked.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -143,6 +145,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Cards and lists are a shade darker, so they sit more quietly on the black behind them.",
       "Chat home shows you the swipe to Messages the first time you rest on it, and the screen now gives under your finger as you swipe.",
       "Tasks can now carry photos, you can mark a task done with a photo or a link as proof, and officers can see that proof and say what needs to change when they send a task back.",
+      "Private channels now show a lock in your channel list, so you can tell which ones not everyone can see.",
     ],
   },
   {

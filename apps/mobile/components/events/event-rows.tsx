@@ -3,7 +3,7 @@ import { formatPointsChip, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { AccentChip, StatusChip } from "@/components/status-chip";
+import { AccentChip, HairlineChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -103,12 +103,7 @@ export function EventRowCard({
       <View style={styles.body}>
         <View style={styles.titleRow}>
           <EventName event={event} cadence={cadence} style={styles.title} />
-          {required ? (
-            <StatusChip
-              label="Mandatory"
-              hue={tokens.color.semantic.destructive}
-            />
-          ) : null}
+          {required ? <HairlineChip label="Mandatory" /> : null}
         </View>
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
 
@@ -179,9 +174,9 @@ export function EventRowFlat({
         ) : null}
         {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
       </View>
-      {required ? (
-        <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />
-      ) : null}
+      {/* Hairline, as web's row draws it (#3822, #4132): required of this
+          viewer, by default or by a role of theirs (`useRequiredOfViewer`). */}
+      {required ? <HairlineChip label="Mandatory" /> : null}
     </PressableRow>
   );
 }

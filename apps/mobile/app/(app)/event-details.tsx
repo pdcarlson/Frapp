@@ -41,7 +41,7 @@ import {
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { AccentChip, StatusChip } from "@/components/status-chip";
+import { AccentChip, HairlineChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatCheckInOpens,
@@ -241,10 +241,9 @@ export default function EventDetailsScreen() {
         {requiredOfViewer || event.point_value ? (
           <View style={styles.badgeRow}>
             {requiredOfViewer ? (
-              <StatusChip
-                label="Mandatory"
-                hue={tokens.color.semantic.destructive}
-              />
+              // The hairline kind, as the list and the chat card draw it
+              // (#4132): one look for Mandatory on every screen.
+              <HairlineChip label="Mandatory" />
             ) : null}
             {event.point_value ? (
               <AccentChip label={`+${event.point_value} pts`} />

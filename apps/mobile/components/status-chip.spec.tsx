@@ -9,7 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, fontFamilyFor } from "@/lib/theme";
-import { AccentChip, StatusChip } from "./status-chip";
+import { AccentChip, HairlineChip, StatusChip } from "./status-chip";
 
 // A purple stand-in, so a chip painted house gold or a hairline grey fails.
 vi.mock("@/lib/chapter-branding", () => ({
@@ -110,5 +110,16 @@ describe("StatusChip text tone (components.md §5)", () => {
       const { label } = parts(render(<StatusChip label="Paid" hue={hue} />));
       expect(label.color).toBe(hue);
     }
+  });
+});
+
+describe("HairlineChip (components.md §5 Hairline, #4132)", () => {
+  it("draws no fill, a 1px hairline border and muted text, at the chip step", () => {
+    const { chip, label } = parts(render(<HairlineChip label="Mandatory" />));
+    expect(chip.backgroundColor).toBeUndefined();
+    expect(chip.borderWidth).toBe(1);
+    expect(chip.borderColor).toBe(tokens.color.border.hairline);
+    expect(chip.height).toBe(24);
+    expect(label.color).toBe(tokens.color.text.mutedForeground);
   });
 });

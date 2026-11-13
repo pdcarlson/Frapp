@@ -31,6 +31,11 @@ vi.mock("@/components/ai/suggested-events", () => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // A viewer with no roles: the event's default decides (#4132). The rule
+  // itself is the hook's own spec.
+  useRequiredOfViewer:
+    () => (fields: { is_mandatory?: boolean | null }) =>
+      fields.is_mandatory === true,
   // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
   useCalendarFeedLink: () => ({ data: undefined, isError: false }),
   useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
