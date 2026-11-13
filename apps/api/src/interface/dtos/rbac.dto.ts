@@ -4,11 +4,11 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -42,10 +42,13 @@ function normalizeRoleColorInput(value: unknown): unknown {
 }
 
 export class CreateRoleDto {
-  @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })
+  @ApiProperty({
+    maxLength: ROLE_NAME_MAX_LENGTH,
+    description: 'Must contain something besides whitespace.',
+  })
   @IsString()
-  @IsNotEmpty()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name: string;
 
   @ApiProperty({ type: [String] })
@@ -96,10 +99,14 @@ export class CreateRoleDto {
 }
 
 export class UpdateRoleDto {
-  @ApiPropertyOptional({ maxLength: ROLE_NAME_MAX_LENGTH })
+  @ApiPropertyOptional({
+    maxLength: ROLE_NAME_MAX_LENGTH,
+    description: 'Must contain something besides whitespace.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -229,8 +236,8 @@ export class PermissionCatalogEntryDto {
 export class CreateRoleTierDto {
   @ApiProperty({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
   @IsString()
-  @IsNotEmpty()
   @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name: string;
 
   @ApiPropertyOptional({
@@ -248,8 +255,8 @@ export class UpdateRoleTierDto {
   @ApiPropertyOptional({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name?: string;
 
   @ApiPropertyOptional({
