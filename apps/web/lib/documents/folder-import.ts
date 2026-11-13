@@ -79,7 +79,8 @@ export function folderSegments(path: string): string[] {
  *
  * - the deepest folder on the path that the chapter already has, matched
  *   ignoring case and punctuation ("treasurer/2025" files into an existing
- *   "Treasurer");
+ *   "Treasurer"), or else whose name holds every word of it ("Minutes"
+ *   files into "Meeting Minutes", "Governance" into "Bylaws & Governance");
  * - else the first folder under the one that was dropped, as a new folder
  *   ("Chapter files/Rush/2025/flyer.pdf" goes to a new "Rush"), since the
  *   dropped folder is usually just the container;
@@ -91,13 +92,31 @@ export function folderFromPath(
   folders: readonly string[],
 ): { folder: string; isNew: boolean } | null {
   const segments = folderSegments(path);
-  for (const segment of [...segments].reverse()) {
-    const own = folders.find((folder) => typeKey(folder) === typeKey(segment));
-    if (own) return { folder: own, isNew: false };
+  for (const match of [sameName, holdsWords]) {
+    for (const segment of [...segments].reverse()) {
+      const own = folders.find((folder) => match(folder, segment));
+      if (own) return { folder: own, isNew: false };
+    }
   }
   const pick = segments.length >= 2 ? segments[1] : segments[0];
   if (!pick) return null;
   return { folder: pick.trim().slice(0, FOLDER_NAME_MAX), isNew: true };
+}
+
+function sameName(folder: string, segment: string): boolean {
+  return typeKey(folder) !== "" && typeKey(folder) === typeKey(segment);
+}
+
+function words(name: string): string[] {
+  return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/** Every word of the path's folder is a word of the chapter's folder. */
+function holdsWords(folder: string, segment: string): boolean {
+  const wanted = words(segment);
+  if (wanted.length === 0) return false;
+  const have = new Set(words(folder));
+  return wanted.every((word) => have.has(word));
 }
 
 /** `CreateDocumentFolderDto.name`'s limit. */

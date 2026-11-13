@@ -62,6 +62,22 @@ describe("folderFromPath", () => {
     ).toEqual({ folder: "Treasurer", isNew: false });
   });
 
+  it("else files into a chapter folder whose name holds the path folder's words", () => {
+    const folders = ["Meeting Minutes", "Bylaws & Governance"];
+    expect(folderFromPath("Drive/Minutes/10-12.pdf", folders)).toEqual({
+      folder: "Meeting Minutes",
+      isNew: false,
+    });
+    expect(folderFromPath("Drive/governance/bylaws.pdf", folders)).toEqual({
+      folder: "Bylaws & Governance",
+      isNew: false,
+    });
+    // An exact match anywhere on the path beats a partial one deeper down.
+    expect(
+      folderFromPath("Drive/Treasurer/Minutes/x.pdf", ["Treasurer", "Meeting Minutes"]),
+    ).toEqual({ folder: "Treasurer", isNew: false });
+  });
+
   it("proposes the first folder under the dropped one as new", () => {
     expect(folderFromPath("Chapter files/Rush/2025/flyer.pdf", [])).toEqual({
       folder: "Rush",
@@ -100,8 +116,8 @@ describe("suggestForImport", () => {
   it("reads the type off a folder on the path when the name says nothing", () => {
     const suggestion = suggestForImport("Drive/Minutes/10-12.docx", context);
     expect(suggestion.documentType).toBe("Minutes");
-    expect(suggestion.folder).toBe("Minutes");
-    expect(suggestion.folderIsNew).toBe(true);
+    expect(suggestion.folder).toBe("Meeting Minutes");
+    expect(suggestion.folderIsNew).toBe(false);
   });
 
   it("files a loose file where the chapter files its type", () => {
