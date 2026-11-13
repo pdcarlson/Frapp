@@ -345,6 +345,72 @@ describe("AskTurn", () => {
   });
 });
 
+describe("people and channels an answer names (#4904)", () => {
+  const named = (entities: unknown) =>
+    exchange({
+      answer: {
+        ...answer({
+          text: "Ask @Ana Ruiz in #rush-week, not @Nobody.",
+          citations: [],
+          sources: [],
+        }),
+        entities,
+      } as AskAnswer,
+    });
+  const ENTITIES = [
+    { type: "member", id: "u1", name: "Ana Ruiz" },
+    { type: "channel", id: "c1", name: "rush-week" },
+  ];
+  const runs = (tree: ReactTestRenderer, text: string) =>
+    tree.root.findAll(
+      (node) => node.type === Text && node.props.children === text,
+    );
+  const filled = (node: ReactTestInstance) =>
+    Boolean(
+      (node.props.style as { backgroundColor?: string } | undefined)
+        ?.backgroundColor,
+    );
+
+  it("highlights a listed member and links a channel the reader has", () => {
+    const onOpenChannel = vi.fn();
+    const tree = render(named(ENTITIES), {
+      canOpenChannel: (id) => id === "c1",
+      onOpenChannel,
+    });
+
+    const [member] = runs(tree, "@Ana Ruiz");
+    expect(filled(member)).toBe(true);
+    expect(member.props.onPress).toBeUndefined();
+
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBe("link");
+    act(() => channel.props.onPress());
+    expect(onOpenChannel).toHaveBeenCalledWith("c1");
+
+    // A name the server did not list is ordinary text.
+    expect(runs(tree, "@Nobody")).toHaveLength(0);
+  });
+
+  it("leaves a channel the reader cannot open as plain words", () => {
+    const tree = render(named(ENTITIES), {
+      canOpenChannel: () => false,
+      onOpenChannel: vi.fn(),
+    });
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBeUndefined();
+    expect(channel.props.onPress).toBeUndefined();
+    expect(filled(channel)).toBe(false);
+  });
+
+  it("draws an answer with no list as it always was", () => {
+    const tree = render(named(undefined));
+    expect(runs(tree, "@Ana Ruiz")).toHaveLength(0);
+    expect(
+      runs(tree, "Ask @Ana Ruiz in #rush-week, not @Nobody."),
+    ).toHaveLength(1);
+  });
+});
+
 describe("askSourceMetaLine", () => {
   it("writes kind, place and the full date", () => {
     expect(askSourceMetaLine(BYLAWS)).toMatch(/· Article IV · September 1, 2026$/);

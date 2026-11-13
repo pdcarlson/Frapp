@@ -69,6 +69,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useChannels: () => ({ data: [] }),
   useAskSuggestions: (options: { enabled: boolean }) => {
     hooks.suggestionsEnabled.push(options.enabled);
     return { suggestions: options.enabled ? hooks.suggestions : [] };

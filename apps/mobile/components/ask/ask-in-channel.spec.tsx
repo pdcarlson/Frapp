@@ -57,6 +57,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     reset: vi.fn(),
   }),
   useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+  useChannels: () => ({ data: [] }),
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));

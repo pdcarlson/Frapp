@@ -16,8 +16,14 @@ import {
   type AskAnswer,
 } from "@repo/validation";
 
+const channelList = vi.hoisted(() => ({ reads: 0 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The reader has #rush-week and not #exec.
+  useChannels: () => {
+    channelList.reads += 1;
+    return { data: [{ id: "c1", name: "rush-week" }] };
+  },
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -241,6 +247,47 @@ describe("AskTurn", () => {
       { ctrlKey: true },
     );
     expect(followMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a listed person as a mention and a channel the reader has as a link (#4904)", async () => {
+    const followMessage = vi.fn();
+    show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: "Ask @Sam Abernathy in #rush-week or #exec, not @Nobody.",
+          citations: [],
+          entities: [
+            { type: "member", id: "u1", name: "Sam Abernathy" },
+            { type: "channel", id: "c1", name: "rush-week" },
+            { type: "channel", id: "c9", name: "exec" },
+          ],
+        } as AskAnswer,
+      }),
+      { followMessage },
+    );
+
+    expect(screen.getByText("@Sam Abernathy").tagName).toBe("MARK");
+    const channel = screen.getByRole("link", { name: "#rush-week" });
+    expect(channel.getAttribute("href")).toContain("c1");
+    channel.addEventListener("click", (event) => event.preventDefault());
+    await userEvent.click(channel);
+    expect(followMessage).toHaveBeenCalledTimes(1);
+
+    // A channel the reader cannot open, and a name the server did not list,
+    // are the plain words.
+    expect(screen.queryByRole("link", { name: "#exec" })).toBeNull();
+    expect(screen.queryByText("@Nobody")).toBeNull();
+    expect(
+      screen.getByText(/or #exec, not @Nobody\./),
+    ).toBeTruthy();
+  });
+
+  it("reads the channel list only for an answer that names a channel", () => {
+    channelList.reads = 0;
+    show(exchange());
+    expect(channelList.reads).toBe(0);
+    expect(screen.queryByRole("mark")).toBeNull();
   });
 
   it("marks each cited sentence with a link to its source", () => {

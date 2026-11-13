@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
+  useChannels,
   useDocumentDownloadUrl,
   type AskConversation,
   type AskExchange,
@@ -16,6 +17,7 @@ import { AskProposal, type ActLink } from "@/components/ask/ask-proposal";
 import type { AskReply } from "@/components/ask/ask-turn";
 import { useAskKept } from "@/lib/ask/kept-targets";
 import { askSourceOpening } from "@/lib/ask/source-route";
+import { selectChannels } from "@/lib/chat/channel-list";
 import { asRoute, openHref } from "@/lib/href";
 import { selectDownloadUrl } from "@/lib/more/documents";
 import { notificationHref } from "@/lib/notifications/targets";
@@ -78,6 +80,25 @@ export function useAskTurns({
     [leave, router],
   );
 
+  // A channel an answer names opens only for a reader who has it (#4904):
+  // the list the Chat tab already keeps.
+  const channels = useChannels().data;
+  const canOpenChannel = useCallback(
+    (channelId: string) =>
+      selectChannels(channels).some((channel) => channel.id === channelId),
+    [channels],
+  );
+  const openChannel = useCallback(
+    (channelId: string) => {
+      leave?.();
+      openHref(
+        router,
+        asRoute(`/chat-thread?channelId=${encodeURIComponent(channelId)}`),
+      );
+    },
+    [leave, router],
+  );
+
   const propsFor = (exchange: AskExchange) => ({
     exchange,
     canOpen: canOpenAskSource,
@@ -89,6 +110,8 @@ export function useAskTurns({
     onRetry: () => void retry(exchange.id, options()),
     onAnswerConsent: () => void retry(exchange.id, options()),
     report: reportFor(exchange, reporting),
+    canOpenChannel,
+    onOpenChannel: openChannel,
     proposal: exchange.proposal ? (
       <AskProposal
         proposal={exchange.proposal}

@@ -13,7 +13,9 @@ import {
   AI_REPORT_COPY,
   ASK_COPY,
   ASK_POST_COPY,
+  askAnswerEntities,
   askAnswerSegments,
+  askEntityParts,
   askLeftOutLine,
   askPostedSourceTitle,
   askReadLine,
@@ -21,6 +23,7 @@ import {
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
+  type AskNamedEntity,
   type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -87,6 +90,8 @@ export function AskTurn({
   onRetry,
   onAnswerConsent,
   report,
+  canOpenChannel,
+  onOpenChannel,
 }: {
   exchange: AskExchange;
   /**
@@ -110,6 +115,13 @@ export function AskTurn({
    * out, or null, draws nothing.
    */
   report?: { reported: boolean; onPress: () => void } | null;
+  /**
+   * Whether the reader has a channel the answer names (#4904). Left out, or
+   * false for a channel, its name is the plain words it was written as.
+   */
+  canOpenChannel?: (channelId: string) => boolean;
+  /** Opens a channel the answer names. */
+  onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
@@ -135,6 +147,8 @@ export function AskTurn({
         onRetry={onRetry}
         onAnswerConsent={onAnswerConsent}
         report={report}
+        canOpenChannel={canOpenChannel}
+        onOpenChannel={onOpenChannel}
       />
     </View>
   );
@@ -159,6 +173,8 @@ export function AskReply({
   onRetry,
   onAnswerConsent,
   report,
+  canOpenChannel,
+  onOpenChannel,
 }: AskReplyProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -202,6 +218,8 @@ export function AskReply({
             onOpenSource={onOpenSource}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            canOpenChannel={canOpenChannel}
+            onOpenChannel={onOpenChannel}
           />
         ) : null}
 
@@ -318,6 +336,8 @@ function AnswerBody({
   onOpenSource,
   busy,
   onAnswerConsent,
+  canOpenChannel,
+  onOpenChannel,
 }: {
   answer: AskAnswer;
   /** What Frapp read to write it (`askReadLine`), or null. */
@@ -327,6 +347,8 @@ function AnswerBody({
   onOpenSource: (source: AskSource) => void;
   busy: boolean;
   onAnswerConsent: () => void;
+  canOpenChannel?: (channelId: string) => boolean;
+  onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -358,12 +380,22 @@ function AnswerBody({
     );
   }
 
+  const entities = askAnswerEntities(answer);
+
   return (
     <>
       <Text style={styles.answer}>
         {askAnswerSegments(answer).map((segment, position) => {
           if (segment.type === "text") {
-            return <Text key={position}>{segment.text}</Text>;
+            return (
+              <EntityText
+                key={position}
+                text={segment.text}
+                entities={entities}
+                canOpenChannel={canOpenChannel}
+                onOpenChannel={onOpenChannel}
+              />
+            );
           }
           const source = answer.sources[segment.citation.source];
           if (!source) return null;
@@ -400,6 +432,60 @@ function AnswerBody({
           ))}
         </View>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * A run of an answer's text with the people and channels it names drawn the
+ * way chat draws a mention (#4904; `message-markdown.tsx`), as Discord and
+ * Slack mark a name inside a sentence. Which names count is the server's
+ * call (`askEntityParts`): a name that is not in `entities` is ordinary
+ * text. Web's twin is `ask-entity-text.tsx`.
+ *
+ * A member is a highlight. A channel is also a link into that channel, when
+ * the reader has it; one they cannot open stays the plain words.
+ */
+function EntityText({
+  text,
+  entities,
+  canOpenChannel,
+  onOpenChannel,
+}: {
+  text: string;
+  entities: readonly AskNamedEntity[];
+  canOpenChannel?: (channelId: string) => boolean;
+  onOpenChannel?: (channelId: string) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <>
+      {askEntityParts(text, entities).map((part, position) => {
+        if (part.type === "text") {
+          return <Text key={position}>{part.text}</Text>;
+        }
+        if (part.type === "member") {
+          return (
+            <Text key={position} style={styles.mention}>
+              {part.text}
+            </Text>
+          );
+        }
+        if (!onOpenChannel || !canOpenChannel?.(part.id)) {
+          return <Text key={position}>{part.text}</Text>;
+        }
+        return (
+          <Text
+            key={position}
+            accessibilityRole="link"
+            onPress={() => onOpenChannel(part.id)}
+            style={styles.mention}
+          >
+            {part.text}
+          </Text>
+        );
+      })}
     </>
   );
 }
@@ -638,6 +724,12 @@ function createStyles(tokens: SignetTokens) {
       fontFamily: fontFamilyFor(700),
       color: tokens.color.gold.askText,
       backgroundColor: tokens.color.gold.askFill,
+    },
+    // Chat's in-body mention chip (`message-markdown.tsx`): colour only, so a
+    // name can't change its line's height.
+    mention: {
+      backgroundColor: tokens.color.semantic.mentionChip,
+      color: tokens.color.semantic.mentionChipText,
     },
     notes: {
       gap: tokens.spacing.xs,
