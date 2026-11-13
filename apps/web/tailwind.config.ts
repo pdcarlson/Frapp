@@ -12,7 +12,7 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * it into one.
  *
  * What stays here is the surface-specific remainder, and there is exactly one
- * family of it: `gold` is an `apps/web` treatment (the Ask pill), so promoting
+ * family of it: `gold` is an `apps/web` treatment (Ask's source markers), so promoting
  * it would claim a treatment the landing does not implement. The landing's
  * mirror of this file keeps its three marketing type roles for the same shape
  * of reason (foundations §7's amendment). `mention` is NOT in that category —

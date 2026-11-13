@@ -6,7 +6,6 @@ import { ChevronRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { FindBar } from "@/components/layout/find-bar";
-import { AskPill } from "@/components/layout/ask-pill";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { ConnectionPill } from "@/components/shared/connection-pill";
 import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
@@ -14,7 +13,8 @@ import type { PageTitle } from "@/components/layout/page-title";
 import { useChatHasUnread } from "@/components/layout/use-chat-has-unread";
 
 /**
- * The 48px top bar: page title, find, notifications, Ask, account.
+ * The 48px top bar: page title, find, notifications, account. Ask left it on
+ * 2026-11-13 (#4702): its entry is in the chat composer (`ask/ask-host.tsx`).
  *
  * Board option `1b`. What it no longer carries, all from the deletion list
  * (`1t`): the breadcrumb block, the per-route primary action button, and the
@@ -151,7 +151,7 @@ export function TopBar({
             Fixed gold, and deliberately NOT `bg-primary`.
 
             `--primary` is the per-tenant accent slot, so painting the badge
-            with it is the same house-tenant mistake the Ask pill documents:
+            with it is the house-tenant mistake (`web-dashboard/tokens.md` § L-01):
             on a chapter seeded a red accent this badge becomes visually
             identical to the fixed `#E5484D` mention/DM badge, and a member
             can no longer tell "3 notifications" from "3 people addressed me".
@@ -171,7 +171,6 @@ export function TopBar({
             ) : null}
           </button>,
         )}
-        <AskPill />
         <AccountMenu variant="topbar" />
       </div>
     </header>

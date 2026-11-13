@@ -1,7 +1,7 @@
 > **TARGET SPEC (partially built).**
 > Every route below now exists in `apps/mobile`.
 > `check-in` (from an event) and `host-check-in` (role-gated) are registered without an inbound link from the frozen tab layout's cluster list — `join` and `welcome` are now routed to by the auth gate (`lib/auth-gate.ts`) rather than waiting on an inbound link.
-> `ask` no longer is: the Ask Frapp bar in the tab bar's + panel presents its sheet (for a member who has Ask), and the route file survives only because the frozen tab layout registers it.
+> `ask` no longer is: the Ask Frapp bar above the tab bar presents its sheet (for a member who has Ask; the bar was inside the + panel until #4702), and the route file survives only because the frozen tab layout registers it.
 > Implementation is tracked in GitHub Issues — do not file spec-vs-implementation drift issues against these documents ([`README.md`](README.md)).
 
 # Mobile Screen Inventory (s01–s23)
@@ -52,7 +52,7 @@ It normally has no route of its own — s17 is the single exception, and honestl
 | s14 | [Notifications](#s14-notifications) | `(app)/notifications.tsx` |
 | s15 | [Profile (on the You tab)](#s15-profile-on-the-you-tab) | `(app)/(tabs)/you.tsx`, `components/you/profile-sections.tsx` |
 | s16 | [Settings](#s16-settings) | `(app)/preferences.tsx` |
-| s17 | [Ask sheet](#s17-ask-sheet) | *sheet* from the tab bar's + panel (`components/quick-actions/quick-actions-host.tsx`), plus `(app)/ask.tsx` |
+| s17 | [Ask sheet](#s17-ask-sheet) | *sheet* from the Ask Frapp bar above the tab bar (`components/ask/ask-bar.tsx`, hosted by `components/quick-actions/quick-actions-host.tsx`), plus `(app)/ask.tsx` |
 | — | [Minutes](#minutes) | `(app)/minutes.tsx`, `(app)/minutes-details.tsx` |
 | — | [Suggested](#suggested) | `(app)/suggested-tasks.tsx` |
 | s18 | [Check-in](#s18-check-in) | `(app)/check-in.tsx` |
@@ -229,7 +229,7 @@ Route: `(app)/(tabs)/index.tsx`.
 
 Live — chat is home, so the screen is titled by the chapter, its mark and name (`ChapterMark`, [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark), not by the word "Chat".
 The board draws no title there, and [`navigation.md` § Tab bar](navigation.md#tab-bar--4-tabs-locked) records the departure.
-Real channel list on `GET /v1/channels`, with the UP NEXT strip, an officer's setup checklist under it ([`../../product/modules.md` § Setup checklist](../../product/modules.md#setup-checklist)), then, for a member whose push is off, one `Notifications are off` reminder row ([`patterns.md`](patterns.md#push-notifications) § Push notifications), then the Messages door (the ✦ Ask pill sat here until 2026-11-12; Ask is now in the + panel, s17) and the inbox's bell with its house-gold count (#3839; from 2026-11-07 until then the member's avatar with a Status, Profile, Notifications and Settings menu, which became the You tab; the board draws neither, [`navigation.md` § Global entries outside the tab bar](navigation.md#global-entries-outside-the-tab-bar) records them), and server unread/mention badges.
+Real channel list on `GET /v1/channels`, with the UP NEXT strip, an officer's setup checklist under it ([`../../product/modules.md` § Setup checklist](../../product/modules.md#setup-checklist)), then, for a member whose push is off, one `Notifications are off` reminder row ([`patterns.md`](patterns.md#push-notifications) § Push notifications), then the Messages door (the ✦ Ask pill sat here until 2026-11-12; Ask is the bar above the tab bar since #4702, s17) and the inbox's bell with its house-gold count (#3839; from 2026-11-07 until then the member's avatar with a Status, Profile, Notifications and Settings menu, which became the You tab; the board draws neither, [`navigation.md` § Global entries outside the tab bar](navigation.md#global-entries-outside-the-tab-bar) records them), and server unread/mention badges.
 The list holds channels only; direct and group messages, and Hidden conversations, are on the Messages screen (2026-11-07).
 Channels are grouped by chapter category (#1684): Pinned, then Channels (anything unfiled), then one section per category in the server's order.
 Empty sections are omitted.
@@ -464,12 +464,17 @@ The drawn "Join code" row is omitted: no such field exists
 
 ### s17 Ask sheet
 
-Route: *sheet* from the tab bar's + panel (`components/quick-actions/quick-actions-host.tsx`), plus `(app)/ask.tsx`.
+Route: *sheet* from the Ask Frapp bar above the tab bar (`components/ask/ask-bar.tsx`, hosted by `components/quick-actions/quick-actions-host.tsx`), plus `(app)/ask.tsx`.
 
-Live — Ask Frapp (`components/ask/ask-sheet.tsx`), a gorhom v5 sheet at a **fixed 78% detent** ([`patterns.md`](patterns.md)) over whatever screen the member is on, opened from the bar at the top of the + panel ([`navigation.md` § Global entries](navigation.md#global-entries-outside-the-tab-bar); until 2026-11-12 a ✦ pill on s04 and s06).
+Live — Ask Frapp (`components/ask/ask-sheet.tsx`), a gorhom v5 **tall sheet** (full height under the status bar, closed by its header's X or the grabber; [`patterns.md`](patterns.md)) over whatever tab the member is on, opened from the Ask Frapp bar above the tab bar ([`navigation.md` § Global entries](navigation.md#global-entries-outside-the-tab-bar)).
+Changed in #4702 by pdcarlson, 2026-11-13: until then it was a fixed 78% detent opened from a bar at the top of the + panel (and until 2026-11-12 from a ✦ pill on s04 and s06).
+Its header is the crest in the chapter accent and "Ask Frapp".
+**It is drawn on the page's background (`surface.background`), not a sheet's `popover` grey** (#4702; Paul, 2026-11-13, on the first captures: at full height it is a screen, and his reference, Bevel's assistant, talks on the app's own dark background), so a suggestion, the field and a proposal card take the page's `surface1`.
+The field is a capsule like the bar that opened it, and the send button is round and the chapter's solid accent.
 **One conversation in one field** ([`../../behavior/ai.md` § One conversation](../../behavior/ai.md#one-conversation); changed in #4699 by pdcarlson, 2026-11-13: until then it showed one question at a time, said so under the field, and had an Ask / Do switch beside the title for a member who could have Frapp act).
 The title row is pinned, with a New conversation button once there is a turn; the thread scrolls under it and follows the newest words unless the member has scrolled up; the field is pinned above the keyboard and reads "Ask Frapp anything".
-Each turn (`components/ask/ask-turn.tsx`) is what the member typed in a `surface1` bubble on the right, then Frapp on the left with no frame: the step it is on while it works ("Searching your chapter's sources") under the streamed words, then the answer with a numbered gold marker after each cited sentence and a wrapping row of source chips under it (36pt drawn, the number then the name; kind and date are in the chip's spoken name).
+Each turn (`components/ask/ask-turn.tsx`) is what the member typed in a bubble on the right (the chapter's solid accent since #4702, `surface1` before), then Frapp on the left with no frame: the step it is on while it works ("Searching your chapter's sources") under the streamed words, then the answer with a numbered gold marker after each cited sentence and a wrapping row of source chips under it (36pt drawn, the number then the name; kind and date are in the chip's spoken name).
+Between the answer and its chips one caption line says what Frapp read to write it ("Read the events calendar and 3 sources"), and after the chips sit two muted icons, Copy and Report, where the words "Report this" were (#4702; Paul, 2026-11-13; [`../design-system/components.md`](../design-system/components.md) §11).
 A chip opens the real thing: a document in the in-app browser over the sheet, minutes on the minutes screen, a channel message's channel, live data on its screen (`lib/ask/source-route.ts`); a source this build has no screen for is a plain chip.
 A turn says in plain words when Ask can't answer: not found, refused, off for the chapter, over the month's allowance, or not agreed to, which offers the AI sheet.
 The AI question is asked at the first question, not when the sheet opens (`components/ai/ai-consent-sheet.tsx`).
@@ -477,8 +482,8 @@ The empty sheet says what Frapp answers from, then offers what this member could
 They are read once the sheet is open and fade in under the opening lines, where nothing sits below them to move; with nothing to suggest the two lines stand alone.
 Nothing sits under the field; while the beta diagnostics window is on, one caption line above the field says questions and answers are saved and until when ([#4315](https://github.com/pdcarlson/Frapp/issues/4315)), and because the composer is anchored to the sheet's bottom its arrival moves neither the field nor the top of the thread.
 Whether a member has Ask is the server's answer (`lib/ai/availability.ts`); without it nothing is drawn and `ask.tsx` goes to Chat home ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
-Web's twin is the Ask panel, and both read `ASK_COPY`.
-Draws no Cancel: the grabber and the scrim are the dismissal, as drawn.
+Web's twin is the Ask card over the chat (the Ask panel until #4702), and both read `ASK_COPY`.
+Draws no Cancel word: its header's X and the grabber are the dismissal (the grabber and the scrim were, as drawn, until #4702 made it a tall sheet).
 **A request** (2026-11-12, #718, [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)) typed in the same field comes back as a card in the thread (`components/ask/ask-proposal.tsx`) saying exactly what would happen and to whom, with Cancel and Confirm; every card in the thread stays live.
 A points card lists its members (folded behind Show when more than five), each with a remove control, and Add a member opens the roster in a tall sheet with a search field; "Which event?" is a list of the recent events to pick from.
 A task card's who and when open the New task sheet (s19) on the proposal, and Confirm opens it when either is missing.

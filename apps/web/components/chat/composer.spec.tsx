@@ -101,6 +101,15 @@ const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
+// Ask Frapp's entry decides for itself who gets it (`ask-host.spec.tsx`).
+// Here it only has to be where the composer puts it.
+vi.mock("@/components/ask/ask-host", () => ({
+  AskComposerButton: ({ className }: { className?: string }) => (
+    <button type="button" data-testid="ask-entry" className={className}>
+      Ask Frapp
+    </button>
+  ),
+}));
 
 import {
   COMPOSER_BOX_CLASS,
@@ -2528,6 +2537,36 @@ describe("Composer in the audit log", () => {
     expect(
       screen.queryByText("This channel is read-only for your role."),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Ask Frapp's entry is in the composer (#4702, Paul 2026-11-13): "a card that
+ * says Ask Frapp next to like GIF and question mark", not a button in the top
+ * bar.
+ */
+describe("Composer carries Ask Frapp's entry (#4702)", () => {
+  it("puts it on the row of controls, straight after the help mark", () => {
+    render(<Composer {...baseProps()} />);
+    const help = screen.getByRole("button", { name: "Composing help" });
+    const entry = screen.getByTestId("ask-entry");
+    expect(help.parentElement).toBe(entry.parentElement);
+    expect(help.nextElementSibling).toBe(entry);
+  });
+
+  it.each([
+    ["a channel that is read-only for the member's role", { isReadOnly: true }],
+    ["the audit log", { isReadOnly: true, isAuditLog: true }],
+    ["an alumnus who can read but not post", { canPost: false }],
+  ])("keeps it where there is no composer to type in: %s", (_, props) => {
+    render(<Composer {...baseProps(props)} />);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // On the same row as the line that says why, not under it.
+    const entry = screen.getByTestId("ask-entry");
+    expect(entry.parentElement).toHaveTextContent(
+      /read-only|read this channel|audit|log/i,
+    );
+    expect(entry.parentElement?.className).toContain("items-center");
   });
 });
 

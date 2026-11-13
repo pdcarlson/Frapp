@@ -1,4 +1,10 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
@@ -6,6 +12,7 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  askReadLine,
   type AskAnswer,
 } from "@repo/validation";
 
@@ -80,13 +87,18 @@ const exchange = (overrides: Partial<AskExchange> = {}): AskExchange => ({
 
 const show = (
   value: AskExchange,
-  handlers: { retry?: () => void; consent?: () => void } = {},
+  handlers: {
+    retry?: () => void;
+    consent?: () => void;
+    followMessage?: () => void;
+  } = {},
 ) =>
   render(
     <AskTurn
       exchange={value}
       onRetry={handlers.retry ?? (() => undefined)}
       onAnswerConsent={handlers.consent ?? (() => undefined)}
+      onFollowMessage={handlers.followMessage}
       onProposal={() => undefined}
       onResolved={() => undefined}
     />,
@@ -125,11 +137,17 @@ describe("askSourceHref", () => {
 });
 
 describe("AskTurn", () => {
-  it("offers Report this under an answer, and nothing under one never attempted (#4315)", () => {
+  // The icon is named for what it reports; its tooltip is the plain action.
+  const REPORT = AI_REPORT_COPY.titles.ask_answer;
+
+  it("offers Report under an answer as a quiet icon, and nothing under one never attempted (#4315)", () => {
     const { unmount } = show(exchange({ askId: "a-1" }));
-    expect(
-      screen.getByRole("button", { name: AI_REPORT_COPY.action }),
-    ).toBeInTheDocument();
+    const report = screen.getByRole("button", { name: REPORT });
+    expect(report).toHaveAttribute("title", AI_REPORT_COPY.action);
+    // Paul, 2026-11-13: Report is not the answer's one loud control. It is
+    // an icon in the muted tone, and its words are not on screen.
+    expect(report).toHaveClass("text-muted-foreground/70");
+    expect(screen.queryByText(AI_REPORT_COPY.action)).toBeNull();
     unmount();
     show(
       exchange({
@@ -137,9 +155,92 @@ describe("AskTurn", () => {
         answer: { ...ANSWER, status: "unavailable", reason: "not_available" },
       }),
     );
+    expect(screen.queryByRole("button", { name: REPORT })).toBeNull();
+  });
+
+  it("copies the answer's words, and says so for a moment", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    show(exchange({ askId: "a-1" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: ASK_COPY.copy_answer }),
+    );
+    expect(writeText).toHaveBeenCalledWith(ANSWER.text);
     expect(
-      screen.queryByRole("button", { name: AI_REPORT_COPY.action }),
+      await screen.findByRole("button", { name: ASK_COPY.copied_answer }),
+    ).toBeInTheDocument();
+  });
+
+  it("has nothing to copy under an answer with no words", () => {
+    show(
+      exchange({
+        askId: "a-1",
+        answer: {
+          ...ANSWER,
+          status: "not_found",
+          text: "",
+          citations: [],
+          sources: [],
+        },
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: ASK_COPY.copy_answer }),
     ).toBeNull();
+    expect(screen.getByRole("button", { name: REPORT })).toBeInTheDocument();
+  });
+
+  it("says what Frapp read under a finished answer, before its sources", () => {
+    show(exchange({ askId: "a-1", read: { reads: ["events"], found: 3 } }));
+    const line = screen.getByText(
+      askReadLine({ reads: ["events"], found: 3 })!,
+    );
+    const sources = screen.getByRole("list", { name: ASK_COPY.sources });
+    expect(
+      line.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      sources.compareDocumentPosition(
+        screen.getByRole("button", { name: REPORT }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("draws no read line when the server named nothing it read", () => {
+    show(exchange({ askId: "a-1" }));
+    expect(screen.queryByText(/^Read /)).toBeNull();
+  });
+
+  it("paints the member's own words in the chapter's colour", () => {
+    show(exchange());
+    expect(
+      screen.getByRole("heading", { name: "What is quorum?" }),
+    ).toHaveClass("bg-primary", "text-primary-foreground");
+  });
+
+  it("tells the card when a cited chat message is followed, and not for a source that opens beside chat", async () => {
+    const followMessage = vi.fn();
+    show(exchange(), { followMessage });
+    const list = screen.getByRole("list", { name: ASK_COPY.sources });
+    // jsdom has no navigation; keep the click from logging one.
+    list.addEventListener("click", (event) => event.preventDefault());
+    await userEvent.click(
+      within(list).getByRole("link", { name: /^Source 1: Bylaws/ }),
+    );
+    expect(followMessage).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(list).getByRole("link", { name: /^Source 2: #general/ }),
+    );
+    expect(followMessage).toHaveBeenCalledTimes(1);
+    // Opening it in a new tab leaves this one, and the card, as they are.
+    fireEvent.click(
+      within(list).getByRole("link", { name: /^Source 2: #general/ }),
+      { ctrlKey: true },
+    );
+    expect(followMessage).toHaveBeenCalledTimes(1);
   });
 
   it("marks each cited sentence with a link to its source", () => {
@@ -200,7 +301,7 @@ describe("AskTurn", () => {
     );
     expect(screen.getByText(ACT_COPY.missing.amount)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: AI_REPORT_COPY.action }),
+      screen.queryByRole("button", { name: AI_REPORT_COPY.titles.ask_answer }),
     ).toBeNull();
   });
 

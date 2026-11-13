@@ -307,8 +307,13 @@ describe("editing in place", () => {
   });
 });
 
-describe("the Ask Frapp bar", () => {
-  function panel(onAsk: (() => void) | undefined, editing = false) {
+/**
+ * Ask Frapp left the panel for a bar above the tab bar (#4702, Paul
+ * 2026-11-13: "not only when you open the plus menu"), so the panel is the
+ * actions and nothing else.
+ */
+describe("Ask Frapp", () => {
+  it("has no row in the panel", () => {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
@@ -317,32 +322,20 @@ describe("the Ask Frapp bar", () => {
             shown={["message"]}
             available={OFFICER}
             width={374}
-            editing={editing}
+            editing={false}
             canEdit
-            onAsk={onAsk}
             {...props}
           />
         </FrappThemeProvider>,
       );
     });
-    return tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Ask Frapp",
-    );
-  }
-
-  it("is drawn only for a member who has Ask", () => {
-    expect(panel(undefined)).toHaveLength(0);
-    const onAsk = vi.fn();
-    const bars = panel(onAsk);
-    expect(bars).toHaveLength(1);
-    act(() => bars[0].props.onPress());
-    expect(onAsk).toHaveBeenCalledTimes(1);
-  });
-
-  it("steps aside while the actions are being edited", () => {
-    expect(panel(vi.fn(), true)).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.includes("Ask"),
+      ),
+    ).toHaveLength(0);
   });
 });
 

@@ -40,10 +40,10 @@ Three things already pointed the same way:
   `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
   case. These four rows were the document's only Title Case strings.
 
-**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** One
-Title Case control ships on the web dashboard today — `Open Documents`
-(`apps/web/components/layout/ask-pill.tsx`); `/events`' `New Event` became `New event` in November
-2026 — and
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** The
+Title Case controls this document knew of on the web dashboard are gone (corrected 2026-11-13:
+`Open Documents`, in the top bar's Ask pill, went with the pill in #4702, and `/events`' `New Event`
+became `New event` in November 2026; nobody has swept for others), but
 [`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
 which outranks written docs on the web surface
 ([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),

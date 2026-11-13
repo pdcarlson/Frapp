@@ -18,6 +18,7 @@ import Animated, {
 import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "expo-router/tabs";
+import { AskBar } from "@/components/ask/ask-bar";
 import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
@@ -32,9 +33,11 @@ import { TabLabel } from "@/components/tab-glyphs";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  FLOATING_ASK_BAR,
   FLOATING_TAB_BAR,
   floatingTabBarBottom,
   floatingTabBarTop,
+  setAskBarShown,
 } from "@/lib/floating-chrome";
 import { selectionHaptic } from "@/lib/haptics";
 import { useOverlayPresence } from "@/lib/overlay-presence";
@@ -60,6 +63,10 @@ const TAB_HEIGHT = FLOATING_TAB_BAR.height - 12;
  * four tabs, and beside it a round glass + that is always there on a tab
  * screen. The + opens the quick-actions panel above the bar and turns into an
  * X while it is open (`spec/ui/mobile/navigation.md` § Quick actions).
+ *
+ * Above both, for a member who has Ask, sits the Ask Frapp bar
+ * (`ask/ask-bar.tsx`, #4702): on all four tabs, not inside the + panel, where
+ * it was until 2026-11-13. The open panel covers it.
  *
  * Drawn as the navigator's whole `tabBar`, over the screens rather than under
  * them: the root fills the window and lets touches through everywhere it draws
@@ -137,12 +144,14 @@ export function GlassTabBar({
     return () => subscription.remove();
   }, [open, editing, closePanel]);
 
-  // Ask is in the panel only for a member who has it; the server decides.
+  // The Ask Frapp bar is there only for a member who has Ask; the server
+  // decides. The tab screens are told, so their last row and anything that
+  // floats above the tab bar clears it (`useAskBarLift`).
   const hasAsk = useAiSurfaces().ask;
-  const openAsk = useCallback(() => {
-    closePanel();
-    ask();
-  }, [ask, closePanel]);
+  useEffect(() => {
+    setAskBarShown(hasAsk);
+    return () => setAskBarShown(false);
+  }, [hasAsk]);
 
   const runAction = useCallback(
     (key: QuickActionKey) => {
@@ -161,6 +170,11 @@ export function GlassTabBar({
     FLOATING_TAB_BAR.actionButton +
     FLOATING_TAB_BAR.actionGap;
   const panelWidth = width - FLOATING_TAB_BAR.side * 2;
+  const askBarBottom = floatingTabBarTop(bottomInset) + FLOATING_ASK_BAR.gap;
+  // A confirmation sits above the Ask Frapp bar where there is one.
+  const aboveAskBar = hasAsk
+    ? askBarBottom + FLOATING_ASK_BAR.height + FLOATING_TAB_BAR.actionGap
+    : aboveBar;
 
   const plusStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${45 * turn.get()}deg` }],
@@ -171,6 +185,23 @@ export function GlassTabBar({
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {sheets}
+      {/* Before the scrim, so the open panel and its scrim cover it. */}
+      {hasAsk && !open ? (
+        <Animated.View
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(120)}
+          style={[
+            styles.askBar,
+            {
+              left: FLOATING_TAB_BAR.side,
+              right: FLOATING_TAB_BAR.side,
+              bottom: askBarBottom,
+            },
+          ]}
+        >
+          <AskBar onPress={ask} />
+        </Animated.View>
+      ) : null}
       {open ? (
         <Animated.View
           entering={FadeIn.duration(200)}
@@ -210,7 +241,6 @@ export function GlassTabBar({
             onEditingChange={setEditing}
             onRun={runAction}
             onSave={save}
-            onAsk={hasAsk ? openAsk : undefined}
           />
         </Animated.View>
       ) : null}
@@ -220,7 +250,7 @@ export function GlassTabBar({
           entering={FadeIn.duration(150)}
           exiting={FadeOut.duration(200)}
           pointerEvents="none"
-          style={[styles.noticeRow, { bottom: aboveBar }]}
+          style={[styles.noticeRow, { bottom: aboveAskBar }]}
         >
           <GlassSurface style={styles.notice}>
             {/* Read out by the host's announceForAccessibility, on both
@@ -393,6 +423,7 @@ function growFromPlus() {
 
 const styles = StyleSheet.create({
   scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
+  askBar: { position: "absolute" },
   noticeRow: {
     position: "absolute",
     left: FLOATING_TAB_BAR.side,

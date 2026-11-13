@@ -103,7 +103,11 @@ export type SignetTokens = {
     };
     /**
      * Signet's own gold. Fixed for every chapter — the Ask/AI surface speaks in
-     * Signet's voice, not the tenant's, so these never retint.
+     * Signet's voice, not the tenant's, so these never retint. Since #4702 what
+     * that covers on Ask is what is Frapp's inside the conversation (the source
+     * markers and the number on a source chip); Ask's entry and the member's
+     * own controls take the chapter accent
+     * (`spec/ui/design-system/components.md` §11).
      */
     gold: {
       /** The brand gold itself. Also the Signet mark, which never takes a chapter accent. */
@@ -112,7 +116,10 @@ export type SignetTokens = {
       seed: string;
       /** Text/icons drawn on `house`. */
       onHouse: string;
-      /** The Ask card and Ask entry chip: tinted fill, border, and text. */
+      /**
+       * Ask's source markers and chip numbers (the Ask card and the entry
+       * chip until #4702): tinted fill, border, and text.
+       */
       askFill: string;
       askBorder: string;
       askText: string;
