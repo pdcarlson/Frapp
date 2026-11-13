@@ -3,7 +3,8 @@ import { Redirect } from "expo-router";
 /**
  * Catch-all for unmatched paths, including stale deep links into routes this
  * slice deleted (`/points`, `/notification-targets`, `/onboarding-tour`,
- * `/documents-reports`, `/task-center`, `/chat`).
+ * `/documents-reports`, `/task-center`). `/chat` was one of them until it came
+ * back as the chat-link route (`(app)/chat.tsx`, #3723).
  *
  * It redirects rather than drawing a dead end: chat is home, and a member who
  * followed an old link is better served by the app than by an error. The one

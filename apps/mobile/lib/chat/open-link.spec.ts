@@ -3,6 +3,11 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const route = vi.hoisted(() => ({ pathname: undefined as string | undefined }));
+vi.mock("@/lib/current-pathname", () => ({
+  currentPathname: () => route.pathname,
+}));
 import {
   LINK_OPEN_FAILED_BODY,
   LINK_OPEN_FAILED_TITLE,
@@ -52,20 +57,63 @@ describe("openMessageLink", () => {
     );
   });
 
-  it("opens a message's own link in the app, not the browser (#3723)", async () => {
-    vi.mocked(router.push).mockClear();
-    await openMessageLink("https://app.frapp.live/chat?channel=c1&message=m1");
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: "/chat-thread",
-      params: { channelId: "c1", focusMessageId: "m1" },
+  describe("chat links (#3723)", () => {
+    const IN_APP = { chatLinksInApp: true } as const;
+    const LINK = "https://app.frapp.live/chat?channel=c1&message=m1";
+    beforeEach(() => {
+      vi.mocked(router.push).mockClear();
+      vi.mocked(router.replace).mockClear();
+      delete process.env.EXPO_PUBLIC_APP_URL;
+      route.pathname = undefined;
     });
-    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
-  });
 
-  it("opens any other dashboard page in the browser as before", async () => {
-    vi.mocked(router.push).mockClear();
-    await openMessageLink("https://app.frapp.live/chat?channel=c1");
-    expect(router.push).not.toHaveBeenCalled();
-    expect(WebBrowser.openBrowserAsync).toHaveBeenCalled();
+    it("replaces an open channel rather than stacking a second", async () => {
+      route.pathname = "/chat-thread";
+      await openMessageLink(LINK, IN_APP);
+      expect(router.replace).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c1", focusMessageId: "m1" },
+      });
+      expect(router.push).not.toHaveBeenCalled();
+    });
+
+    it("opens a message's link in the app from a message body", async () => {
+      await openMessageLink(LINK, IN_APP);
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c1", focusMessageId: "m1" },
+      });
+      expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    });
+
+    it("opens the web's channel-only Copy link on the channel", async () => {
+      await openMessageLink("https://app.frapp.live/chat?channel=c1", IN_APP);
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c1" },
+      });
+    });
+
+    it("keeps the browser for a caller that didn't ask, like a proof-link chip in a sheet", async () => {
+      await openMessageLink(LINK);
+      expect(router.push).not.toHaveBeenCalled();
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(LINK);
+    });
+
+    it("opens only its own build's origin in the app: a staging build sends production links to the web", async () => {
+      process.env.EXPO_PUBLIC_APP_URL = "https://staging.frapp.live";
+      await openMessageLink(LINK, IN_APP);
+      expect(router.push).not.toHaveBeenCalled();
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(LINK);
+      await openMessageLink(
+        "https://staging.frapp.live/chat?channel=c1&message=m1",
+        IN_APP,
+      );
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c1", focusMessageId: "m1" },
+      });
+      delete process.env.EXPO_PUBLIC_APP_URL;
+    });
   });
 });

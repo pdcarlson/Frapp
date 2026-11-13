@@ -1,1 +1,1 @@
-Copy message link on a message's long-press gives you a link that opens that message, in the app on a phone that has it and on the web anywhere else.
+Copy message link on a message's long-press gives you a link to that message. It opens on the web, and in the app when you tap it in a Frapp message.

@@ -3,7 +3,7 @@ import {
   APP_LINK_PATHS,
   CHAT_LINK_PATH,
   messageLinkUrl,
-  parseMessageLink,
+  parseChatLink,
   PRODUCTION_APP_ORIGIN,
 } from "./index";
 
@@ -21,33 +21,37 @@ describe("message links (#3723)", () => {
 
   it("read back what they were made from", () => {
     expect(
-      parseMessageLink(messageLinkUrl(PRODUCTION_APP_ORIGIN, TARGET)),
+      parseChatLink(messageLinkUrl(PRODUCTION_APP_ORIGIN, TARGET)),
     ).toEqual(TARGET);
   });
 
   it("read a build's own origin only when it is passed", () => {
     const staging = "https://staging.frapp.live";
     const href = messageLinkUrl(staging, TARGET);
-    expect(parseMessageLink(href)).toBeNull();
-    expect(parseMessageLink(href, [staging, PRODUCTION_APP_ORIGIN])).toEqual(
+    expect(parseChatLink(href)).toBeNull();
+    expect(parseChatLink(href, [staging, PRODUCTION_APP_ORIGIN])).toEqual(
       TARGET,
     );
   });
 
   it("are not any other address", () => {
+    expect(parseChatLink("https://app.frapp.live/chat?message=a")).toBeNull();
     expect(
-      parseMessageLink("https://app.frapp.live/chat?channel=a"),
+      parseChatLink("https://app.frapp.live/join?channel=a&message=b"),
     ).toBeNull();
     expect(
-      parseMessageLink("https://app.frapp.live/join?channel=a&message=b"),
+      parseChatLink("https://evil.example/chat?channel=a&message=b"),
     ).toBeNull();
-    expect(
-      parseMessageLink("https://evil.example/chat?channel=a&message=b"),
-    ).toBeNull();
-    expect(parseMessageLink("not a url")).toBeNull();
+    expect(parseChatLink("not a url")).toBeNull();
   });
 
-  it("are a path the app claims", () => {
-    expect(APP_LINK_PATHS).toContain(CHAT_LINK_PATH);
+  it("name a channel alone too, as the web's channel Copy link does", () => {
+    expect(
+      parseChatLink(`https://app.frapp.live/chat?channel=${TARGET.channelId}`),
+    ).toEqual({ channelId: TARGET.channelId, messageId: null });
+  });
+
+  it("are not a path the app claims yet (#4869)", () => {
+    expect(APP_LINK_PATHS as readonly string[]).not.toContain(CHAT_LINK_PATH);
   });
 });

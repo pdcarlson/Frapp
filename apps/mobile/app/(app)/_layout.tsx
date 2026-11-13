@@ -1,3 +1,4 @@
+import { useTrackCurrentPathname } from "@/lib/current-pathname";
 import { Redirect, Stack, type ErrorBoundaryProps } from "expo-router";
 import { AppErrorScreen, stackScreenLayout } from "@/components/route-error";
 import { SCREEN_TITLES } from "@/lib/back-target";
@@ -36,6 +37,8 @@ export const unstable_settings = {
  * sign-in like one who opens the app.
  */
 export default function AppLayout() {
+  // What `openHref` compares a link against outside a component (#3723).
+  useTrackCurrentPathname();
   const { status, chapterId, isChapterResolving } = useAuthSession();
   const { tokens } = useFrappTheme();
 

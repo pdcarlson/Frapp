@@ -8,12 +8,11 @@ import {
  *
  * Three call sites build links into `/chat` — the notification drawer, the
  * command-palette search results, and `ChatPage`'s own param reader — and
- * they only work if they agree on the query-param names. This is the one
- * place that spelling lives, so a rename is a one-file change instead of a
- * silent three-way drift.
+ * they only work if they agree on the query-param names. The names themselves
+ * live in `@repo/validation`'s `message-link.ts` (#3723), which the phone's
+ * Copy message link builds absolute links from, so a link copied on the phone
+ * lands here: rename them there, never by replacing these aliases.
  */
-// The names a message's link (`@repo/validation`'s `message-link.ts`, #3723)
-// carries too, so a link copied on the phone lands here.
 export const CHAT_CHANNEL_PARAM = CHAT_LINK_CHANNEL_PARAM;
 export const CHAT_MESSAGE_PARAM = CHAT_LINK_MESSAGE_PARAM;
 /**

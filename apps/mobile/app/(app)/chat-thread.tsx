@@ -1,3 +1,4 @@
+import { firstParam } from "@/lib/route-params";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -258,12 +259,6 @@ export default function ChatThreadRoute() {
     );
   }
   return <ChannelThreadScreen />;
-}
-
-/** A route param's one value: a repeated query key arrives as an array. */
-function firstParam(raw: string | string[] | undefined): string | null {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function ChannelThreadScreen() {

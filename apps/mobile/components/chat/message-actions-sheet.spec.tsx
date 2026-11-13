@@ -289,6 +289,49 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     expect(hasRow(tree, COPY_LINK_LABEL)).toBe(false);
   });
 
+  it("puts Copy message link right after Copy text, before Pin, Save and Mention", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        link: "https://app.frapp.live/chat?channel=c1&message=m1",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+        pin: { pinned: false },
+        save: { saved: false },
+      },
+      undefined,
+      { onMention: vi.fn(), onSetPinned: vi.fn(), onSetSaved: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(labels.slice(labels.indexOf("Copy text"))).toEqual([
+      "Copy text",
+      COPY_LINK_LABEL,
+      PIN_LABEL,
+      SAVE_LABEL,
+      "Mention",
+      "Report message",
+    ]);
+  });
+
   it("draws no Copy message link without a link", () => {
     expect(hasRow(render({ ...OWN, copyText: "hi" }), COPY_LINK_LABEL)).toBe(
       false,

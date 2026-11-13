@@ -748,38 +748,17 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
     // Pasted onto the end of a real key: the allowlist patterns accept key
     // characters to the end, so this check is the one that sees it, and a
     // production build would otherwise ship it.
-    [
-      "a secret key appended to a publishable key",
-      `${PUBLISHABLE_KEY_FIXTURE}${SECRET_KEY_FIXTURE}`,
-    ],
-    [
-      "an access token appended to a publishable key",
-      `${PUBLISHABLE_KEY_FIXTURE}${ACCESS_TOKEN_FIXTURE}`,
-    ],
-    [
-      "a secret key appended to an anon JWT",
-      `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`,
-    ],
+    ["a secret key appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${SECRET_KEY_FIXTURE}`],
+    ["an access token appended to a publishable key", `${PUBLISHABLE_KEY_FIXTURE}${ACCESS_TOKEN_FIXTURE}`],
+    ["a secret key appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SECRET_KEY_FIXTURE}`],
     ["a URL-encoded secret key", `%22${SECRET_KEY_FIXTURE}%22`],
     // A JWT among other dotted text doesn't split into three parts, so its
     // claims are found as an `eyJ` segment after a dot instead; one that
     // looks like a header (an `alg` and no `role`) is skipped.
-    [
-      "a service_role JWT appended to an anon JWT",
-      `${LEGACY_ANON_JWT_FIXTURE}${SERVICE_ROLE_JWT_FIXTURE}`,
-    ],
-    [
-      "a service_role JWT after an anon JWT and a space",
-      `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`,
-    ],
-    [
-      "a service_role JWT with a trailing period",
-      `${SERVICE_ROLE_JWT_FIXTURE}.`,
-    ],
-    [
-      "a service_role JWT after the project URL",
-      `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`,
-    ],
+    ["a service_role JWT appended to an anon JWT", `${LEGACY_ANON_JWT_FIXTURE}${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT after an anon JWT and a space", `${LEGACY_ANON_JWT_FIXTURE} ${SERVICE_ROLE_JWT_FIXTURE}`],
+    ["a service_role JWT with a trailing period", `${SERVICE_ROLE_JWT_FIXTURE}.`],
+    ["a service_role JWT after the project URL", `https://ref.supabase.co ${SERVICE_ROLE_JWT_FIXTURE}`],
     // Claims with no role aren't anon either, wherever they sit.
     [
       "a JWT with no role after the project URL",
@@ -836,9 +815,7 @@ describe("assertNoSupabaseSecretKey (#2526)", () => {
       `${LEGACY_ANON_JWT_FIXTURE}.${LEGACY_ANON_JWT_FIXTURE}`,
       undefined,
     ]) {
-      expect(() =>
-        assertNoSupabaseSecretKey({ supabaseAnonKey }),
-      ).not.toThrow();
+      expect(() => assertNoSupabaseSecretKey({ supabaseAnonKey })).not.toThrow();
     }
   });
 });
@@ -851,18 +828,12 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
     ["the legacy JWT secret", JWT_SECRET_FIXTURE],
     ["an unresolved reference", "${SUPABASE_ANON_KEY}"],
     // Expo inlines the value verbatim and lib/supabase.ts doesn't trim it.
-    [
-      "a publishable key with a trailing newline",
-      `${PUBLISHABLE_KEY_FIXTURE}\n`,
-    ],
+    ["a publishable key with a trailing newline", `${PUBLISHABLE_KEY_FIXTURE}\n`],
     ["an anon JWT with a leading space", ` ${LEGACY_ANON_JWT_FIXTURE}`],
     ["only whitespace", "   "],
     // Nor anything else a paste leaves around a key, which trim() can't see.
     ["an anon JWT in quotes", `"${LEGACY_ANON_JWT_FIXTURE}"`],
-    [
-      "an anon JWT behind a zero-width space",
-      `\u200b${LEGACY_ANON_JWT_FIXTURE}`,
-    ],
+    ["an anon JWT behind a zero-width space", `\u200b${LEGACY_ANON_JWT_FIXTURE}`],
     ["a publishable key with a trailing quote", `${PUBLISHABLE_KEY_FIXTURE}"`],
     [
       "anon claims between segments that aren't a JWT",
@@ -922,9 +893,7 @@ describe("assertEasSupabaseClientKey (#2526)", () => {
   it("leaves a run with no EAS profile to the denylist", () => {
     const { applyMobileConfig, assertEasSupabaseClientKey } = loadConfig();
     for (const supabaseAnonKey of ["test-anon-key", JWT_SECRET_FIXTURE]) {
-      expect(() =>
-        assertEasSupabaseClientKey({ supabaseAnonKey }),
-      ).not.toThrow();
+      expect(() => assertEasSupabaseClientKey({ supabaseAnonKey })).not.toThrow();
       expect(() =>
         applyMobileConfig(androidConfig, {
           env: {
@@ -1035,34 +1004,24 @@ describe("an OTA update through the guard (#3472)", () => {
   });
 
   it("runs the production Supabase fences", () => {
-    const {
-      applyMobileConfig,
-      PRODUCTION_SUPABASE_URL_ERROR,
-      PRODUCTION_SUPABASE_KEY_ERROR,
-    } = loadConfig();
+    const { applyMobileConfig, PRODUCTION_SUPABASE_URL_ERROR, PRODUCTION_SUPABASE_KEY_ERROR } =
+      loadConfig();
     expect(() =>
       applyMobileConfig(androidConfig, {
-        env: {
-          ...productionUpdateEnv,
-          EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin,
-        },
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin },
         existsSync: missing,
       }),
     ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
     expect(() =>
       applyMobileConfig(androidConfig, {
-        env: {
-          ...productionUpdateEnv,
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: LEGACY_ANON_JWT_FIXTURE,
-        },
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_SUPABASE_ANON_KEY: LEGACY_ANON_JWT_FIXTURE },
         existsSync: missing,
       }),
     ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
   });
 
   it("refuses a production update with no Sentry DSN, which a Secret EAS variable never supplies locally", () => {
-    const { applyMobileConfig, PRODUCTION_UPDATE_SENTRY_DSN_ERROR } =
-      loadConfig();
+    const { applyMobileConfig, PRODUCTION_UPDATE_SENTRY_DSN_ERROR } = loadConfig();
     expect(() =>
       applyMobileConfig(androidConfig, {
         env: { ...productionUpdateEnv, EXPO_PUBLIC_SENTRY_DSN: undefined },
@@ -1088,19 +1047,13 @@ describe("an OTA update through the guard (#3472)", () => {
     const { applyMobileConfig, EAS_SUPABASE_CLIENT_KEY_ERROR } = loadConfig();
     expect(() =>
       applyMobileConfig(androidConfig, {
-        env: {
-          FRAPP_EAS_UPDATE_PROFILE: "preview",
-          EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live",
-        },
+        env: { FRAPP_EAS_UPDATE_PROFILE: "preview", EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live" },
         existsSync: missing,
       }),
     ).not.toThrow();
     expect(() =>
       applyMobileConfig(androidConfig, {
-        env: {
-          FRAPP_EAS_UPDATE_PROFILE: "preview",
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: JWT_SECRET_FIXTURE,
-        },
+        env: { FRAPP_EAS_UPDATE_PROFILE: "preview", EXPO_PUBLIC_SUPABASE_ANON_KEY: JWT_SECRET_FIXTURE },
         existsSync: missing,
       }),
     ).toThrow(EAS_SUPABASE_CLIENT_KEY_ERROR);
@@ -1327,8 +1280,7 @@ describe("iOS privacy manifest (#2294)", () => {
           NSPrivacyAccessedAPITypeReasons: ["C617.1"],
         },
         {
-          NSPrivacyAccessedAPIType:
-            "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
           NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
         },
         {
@@ -1410,8 +1362,7 @@ describe("invite links open the app (#4002)", () => {
   // `/check-in` (2026-11-13) reaches Android with #4763; until then its web
   // page hands off with Open in Frapp. iOS reads its paths from the web's
   // file, so it needs no build for a new one.
-  // `/chat` (a message's link, #3723) waits on the same native version.
-  const ANDROID_CLAIMS_LATER: readonly string[] = ["/check-in", "/chat"];
+  const ANDROID_CLAIMS_LATER: readonly string[] = ["/check-in"];
   it("claims exactly the web's app-link paths on app.frapp.live, on both platforms", () => {
     const appJson = JSON.parse(
       readFileSync(new URL("./app.json", import.meta.url), "utf8"),
@@ -1439,13 +1390,13 @@ describe("invite links open the app (#4002)", () => {
       category: ["BROWSABLE", "DEFAULT"],
     });
     expect(filters[0]!.data).toEqual(
-      APP_LINK_PATHS.filter((path) => !ANDROID_CLAIMS_LATER.includes(path)).map(
-        (path) => ({
-          scheme: "https",
-          host: "app.frapp.live",
-          path,
-        }),
-      ),
+      APP_LINK_PATHS.filter(
+        (path) => !ANDROID_CLAIMS_LATER.includes(path),
+      ).map((path) => ({
+        scheme: "https",
+        host: "app.frapp.live",
+        path,
+      })),
     );
   });
 });

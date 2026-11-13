@@ -3,8 +3,10 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { isOpenableHref } from "@repo/chat-core/links";
-import { PRODUCTION_APP_ORIGIN, parseMessageLink } from "@repo/validation";
+import { parseChatLink } from "@repo/validation";
 import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import { openHref } from "@/lib/href";
+import { currentPathname } from "@/lib/current-pathname";
 
 /** The alert a link that would not open shows. */
 export const LINK_OPEN_FAILED_TITLE = "Couldn't open that link";
@@ -21,25 +23,36 @@ export const LINK_OPEN_FAILED_BODY =
  * that hands a member-typed string to the OS. A failure gets an alert: a tap that does
  * nothing reads as a dead link.
  *
- * A message's own link (Copy message link, #3723) opens that message here in
- * the app, on this build's dashboard origin or production's, rather than the
- * web chat in a browser sheet: Discord and Slack open their message links in
- * place too.
+ * With `chatLinksInApp`, a chat link (Copy message link's, or the web's
+ * channel Copy link, #3723) opens its channel, on its message, here in the
+ * app rather than the web chat in a browser sheet: Discord and Slack open
+ * their message links in place too. Only a message body passes it: a
+ * proof-link chip sits in a sheet, over which a pushed screen would open out
+ * of sight, so its links keep the browser its label promises. Through
+ * `openHref`, so a link tapped in an open channel replaces it rather than
+ * stacking a second. Only this build's own dashboard origin
+ * (`webAppOrigin`): on a staging build a production link names a channel the
+ * staging API doesn't have, so it stays a web page.
  */
-export async function openMessageLink(href: string): Promise<void> {
+export async function openMessageLink(
+  href: string,
+  options: { chatLinksInApp?: boolean } = {},
+): Promise<void> {
   if (!isOpenableHref(href)) return;
-  const message = parseMessageLink(href, [
-    webAppOrigin(),
-    PRODUCTION_APP_ORIGIN,
-  ]);
-  if (message) {
-    router.push({
-      pathname: "/chat-thread",
-      params: {
-        channelId: message.channelId,
-        focusMessageId: message.messageId,
+  const chat = options.chatLinksInApp
+    ? parseChatLink(href, [webAppOrigin()])
+    : null;
+  if (chat) {
+    openHref(
+      router,
+      {
+        pathname: "/chat-thread",
+        params: chat.messageId
+          ? { channelId: chat.channelId, focusMessageId: chat.messageId }
+          : { channelId: chat.channelId },
       },
-    });
+      currentPathname(),
+    );
     return;
   }
   try {
