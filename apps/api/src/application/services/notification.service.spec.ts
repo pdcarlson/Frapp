@@ -100,6 +100,7 @@ describe('NotificationService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
     };
     mockPushProvider = {
       sendToUser: jest.fn().mockResolvedValue({ invalidTokens: [] }),

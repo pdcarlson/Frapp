@@ -137,6 +137,33 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     });
   });
 
+  it('setRoleIds passes the chapter and the read value to the RPC, and answers null when it wrote nothing', async () => {
+    harness = createTenantHarness({
+      tables: {
+        members: [
+          inA({ id: MEMBER_A, user_id: USER_SHARED, role_ids: [] }),
+          inB({ id: MEMBER_B, user_id: USER_SHARED, role_ids: [] }),
+        ],
+      },
+      rpc: { set_member_role_ids: { data: [] } },
+    });
+    repo = new SupabaseMemberRepository(harness.client);
+
+    // #4830: the compare-and-set runs inside SQL, so `p_chapter_id` and
+    // `p_expected` are all a reviewer sees of its scope and its condition.
+    const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setRoleIds(CHAPTER_B, MEMBER_B, ['held'], ['held', 'given']),
+    );
+
+    expect(written).toBeNull();
+    expect(harness.rpcCalls[0].args).toEqual({
+      p_chapter_id: CHAPTER_B,
+      p_member_id: MEMBER_B,
+      p_expected: ['held'],
+      p_role_ids: ['held', 'given'],
+    });
+  });
+
   describe('deliberately unscoped surfaces', () => {
     it('findByUser spans chapters, because multi-chapter membership is the feature', async () => {
       const memberships = await repo.findByUser(USER_SHARED);

@@ -5,6 +5,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
@@ -408,7 +409,24 @@ export class MemberService {
 
     await this.assertRolesWithinReach(member, roleIds, roles, actorUserId);
 
-    return this.memberRepo.update(memberId, { role_ids: roleIds });
+    // Written only if the row still holds what was read and every newly
+    // given role still exists, under the locks `delete_role` takes (#4830).
+    // A role delete committing between the reads above and this write would
+    // otherwise put its id back and drop the Everyone it gave. The member is
+    // read before the roles, so a delete that lands between the two reads
+    // still moves the row this write compares against.
+    const written = await this.memberRepo.setRoleIds(
+      chapterId,
+      memberId,
+      member.role_ids,
+      roleIds,
+    );
+    if (!written) {
+      throw new ConflictException(
+        "This member's roles changed while you were saving. Reload and try again.",
+      );
+    }
+    return written;
   }
 
   /** The rank rules of {@link updateRoles}; see there. */
