@@ -10,6 +10,8 @@ export interface ChapterDocumentFilter {
 
 export interface IChapterDocumentRepository {
   findById(id: string, chapterId: string): Promise<ChapterDocument | null>;
+  /** The chapter's documents among `ids`; ids in another chapter or gone are left out. */
+  findByIds(ids: string[], chapterId: string): Promise<ChapterDocument[]>;
   findByChapter(
     chapterId: string,
     filter?: ChapterDocumentFilter,

@@ -138,6 +138,51 @@ export function useDeleteDocumentFolder() {
   });
 }
 
+/** Ids one `GET /v1/documents/previews` signs; the API refuses more. */
+export const DOCUMENT_PREVIEW_BATCH = 100;
+
+/**
+ * Inline preview links for the web Documents grid (#4647), as a map from
+ * document id to signed URL. One request per hundred ids, rather than a
+ * `useDocument` per tile: the grid spends a read or two of the member's read
+ * budget, records no `document-viewed` event (a tile coming into view isn't a
+ * member opening a file), and the links stay put when an upload or delete
+ * invalidates `["documents"]`, so photos aren't downloaded again.
+ *
+ * The links last an hour, so the cache keeps them 50 minutes and doesn't
+ * refetch on window focus. A tile whose id is missing from the map (storage
+ * couldn't sign it) shows its type glyph.
+ */
+export function useDocumentPreviews(
+  ids: readonly string[],
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const sorted = [...new Set(ids)].sort();
+  return useQuery({
+    queryKey: ["document-previews", chapterId, sorted.join(",")],
+    queryFn: async () => {
+      const urls = new Map<string, string>();
+      for (let i = 0; i < sorted.length; i += DOCUMENT_PREVIEW_BATCH) {
+        const batch = sorted.slice(i, i + DOCUMENT_PREVIEW_BATCH);
+        const { data, error } = await client.GET("/v1/documents/previews", {
+          params: { query: { ids: batch } },
+        });
+        if (error) throw error;
+        for (const { id, url } of data) urls.set(id, url);
+      }
+      return urls;
+    },
+    staleTime: 50 * 60_000,
+    gcTime: 60 * 60_000,
+    refetchOnWindowFocus: false,
+    // A narrower or wider list keeps the links it had while the next set signs.
+    placeholderData: (previous) => previous,
+    enabled: sorted.length > 0 && (options?.enabled ?? true),
+  });
+}
+
 export function useDocument(id: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({

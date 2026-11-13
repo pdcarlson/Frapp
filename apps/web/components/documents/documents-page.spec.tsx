@@ -92,6 +92,14 @@ const BYLAWS = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
+const mockDocumentPreviews = vi.hoisted(() =>
+  vi.fn((ids: readonly string[]) => ({
+    data: new Map(ids.map((id) => [id, `https://signed/preview/${id}`])),
+    isError: false,
+    isPlaceholderData: false,
+  })),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -113,6 +121,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
   // The viewer's read of the signed links; never settles here, so an open
   // viewer shows its loading page. `document-viewer.spec.tsx` covers the rest.
+  // The grid's preview links (#4647); the tile's own spec covers drawing them.
+  useDocumentPreviews: (ids: readonly string[]) => mockDocumentPreviews(ids),
   useDocument: () => ({
     data: undefined,
     isError: false,
@@ -2395,7 +2405,16 @@ describe("DocumentsPage as a grid (#4175)", () => {
   // the title instead.
   it("previews photos and PDFs, and gives other files no empty panel", () => {
     documentsQuery.data = [
+      // No recorded size (filed before sizes were): no preview.
       BYLAWS,
+      {
+        ...BYLAWS,
+        id: "doc-budget",
+        title: "Budget",
+        storage_path: "chap-1/budget.pdf",
+        content_type: "application/pdf",
+        byte_size: 90_000,
+      },
       {
         ...BYLAWS,
         id: "doc-photo",
@@ -2430,10 +2449,16 @@ describe("DocumentsPage as a grid (#4175)", () => {
         .getByRole("button", { name: title })
         .querySelector("[data-thumbnail]")
         ?.getAttribute("data-thumbnail") ?? null;
-    expect(panel(/^Chapter bylaws/)).toBe("pdf");
+    expect(panel(/^Budget/)).toBe("pdf");
     expect(panel(/^Formal photo/)).toBe("image");
+    expect(panel(/^Chapter bylaws/)).toBeNull();
     expect(panel(/^Minutes draft/)).toBeNull();
     expect(panel(/^Scanned archive/)).toBeNull();
+    // One batch of links, for the files that preview and no others.
+    expect(mockDocumentPreviews).toHaveBeenLastCalledWith([
+      "doc-budget",
+      "doc-photo",
+    ]);
     // The compact tile still names its type, beside who uploaded it.
     expect(
       screen.getByRole("button", { name: /^Minutes draft/ }),

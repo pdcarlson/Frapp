@@ -14,6 +14,7 @@ import type { ChapterDocument } from "@/components/documents/document-types";
 import {
   DocumentThumbnail,
   thumbnailKind,
+  type ThumbnailLink,
 } from "@/components/documents/document-thumbnail";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,7 @@ export function DocumentTile({
   onDelete,
   onToggleStar,
   onTogglePin,
+  previewLink,
 }: {
   doc: ChapterDocument;
   /** Who uploaded it, when the roster can name them (#3852). */
@@ -69,6 +71,8 @@ export function DocumentTile({
   onDelete: (doc: ChapterDocument) => void;
   onToggleStar: (doc: ChapterDocument) => void;
   onTogglePin: (doc: ChapterDocument) => void;
+  /** This file's preview link from the list's batch (`useDocumentPreviews`). */
+  previewLink: ThumbnailLink;
 }) {
   const pinned = !!doc.pinned_at;
   const { label: typeLabel } = classifyFile(doc);
@@ -99,6 +103,7 @@ export function DocumentTile({
             kind={preview}
             typeLabel={typeLabel}
             pinned={pinned}
+            link={previewLink}
           />
         ) : null}
         <span className="flex min-w-0 items-start gap-2 px-1">
