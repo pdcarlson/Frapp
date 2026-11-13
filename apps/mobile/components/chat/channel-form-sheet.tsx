@@ -468,7 +468,9 @@ export const ChannelFormSheet = forwardRef<
                         <Text style={styles.optionValue} numberOfLines={1}>
                           {valueText}
                         </Text>
-                        <ForwardGlyph color={tokens.color.text.muted} />
+                        <ForwardGlyph
+                          color={tokens.color.text.mutedForeground}
+                        />
                       </Pressable>
                     </View>
                   );
