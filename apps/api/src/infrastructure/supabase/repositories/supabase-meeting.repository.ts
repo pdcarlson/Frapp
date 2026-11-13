@@ -57,6 +57,24 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
     return data ?? [];
   }
 
+  async findPostedSince(
+    chapterId: string,
+    since: string,
+    limit: number,
+  ): Promise<Meeting[]> {
+    const { data, error } = await this.supabase
+      .from('meetings')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('status', 'posted')
+      .gte('event_start_time', since)
+      .order('event_start_time', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async create(data: TablesInsert<'meetings'>): Promise<Meeting | null> {
     const { data: created, error } = await this.supabase
       .from('meetings')

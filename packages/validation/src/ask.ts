@@ -43,6 +43,13 @@ export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
 export const AskHistoryTurnSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
   answer: z.string().max(ASK_HISTORY_ANSWER_MAX_LENGTH),
+  /**
+   * True when the member did not type this turn's question: they tapped an
+   * opening suggestion that names a record someone else may have written
+   * (#4700). The answer call still reads the turn; the request reading, which
+   * is shown only what the member typed, does not.
+   */
+  suggested: z.boolean().optional(),
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
@@ -117,6 +124,7 @@ export const ASK_SOURCE_KINDS = [
   "events",
   "points",
   "dues",
+  "tasks",
 ] as const;
 export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
 
@@ -126,6 +134,7 @@ export const ASK_SOURCE_PAGES = [
   "events",
   "points",
   "dues",
+  "tasks",
 ] as const;
 export type AskSourcePage = (typeof ASK_SOURCE_PAGES)[number];
 
@@ -311,21 +320,29 @@ function cutWhole(text: string, max: number): string {
  * again, so its words are not sent a second time.
  */
 export function askHistory(
-  turns: readonly { question: string; answer: AskAnswer | null }[],
+  turns: readonly {
+    question: string;
+    answer: AskAnswer | null;
+    /** The question was a tapped suggestion, not typed. */
+    suggested?: boolean;
+  }[],
 ): AskHistoryTurn[] {
-  return turns.slice(-ASK_HISTORY_MAX_TURNS).map(({ question, answer }) => {
-    const carried =
-      answer !== null &&
-      answer.status === "answered" &&
-      answer.read_chat !== true &&
-      !answer.sources.some((source) => source.kind === "chat");
-    return {
-      question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
-      answer: carried
-        ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
-        : "",
-    };
-  });
+  return turns
+    .slice(-ASK_HISTORY_MAX_TURNS)
+    .map(({ question, answer, suggested }) => {
+      const carried =
+        answer !== null &&
+        answer.status === "answered" &&
+        answer.read_chat !== true &&
+        !answer.sources.some((source) => source.kind === "chat");
+      return {
+        question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
+        answer: carried
+          ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
+          : "",
+        ...(suggested ? { suggested: true } : {}),
+      };
+    });
 }
 
 /** A source's target as a known shape, or null when this build has no page for it. */
@@ -362,6 +379,80 @@ export function askSourceTarget(source: AskSource): AskSourceTarget | null {
   }
 }
 
+/**
+ * What Ask opens on (#4700): a few things to ask, each built by the server
+ * from what the member's own account holds at that moment (their next event,
+ * their open tasks, their dues, minutes they can read, their points). There
+ * is no fixed list: a member whose account holds nothing gets none.
+ *
+ * `request` is true for the one suggestion that asks for something to be
+ * done. Its words hold nothing anyone else wrote (only days), so a tap sends
+ * it as the member's own request. Every other suggestion names a record
+ * another member may have written, so a tap sends it as a question only, and
+ * it is never among the earlier messages the request reading is shown
+ * (`docs/security/ai-prompt-injection.md` C3).
+ */
+export const ASK_SUGGESTION_KINDS = [
+  "event",
+  "tasks",
+  "dues",
+  "minutes",
+  "points",
+  "request",
+] as const;
+export type AskSuggestionKind = (typeof ASK_SUGGESTION_KINDS)[number];
+
+/** At most this many questions, and one request after them. */
+export const ASK_SUGGESTED_QUESTIONS_MAX = 3;
+
+/**
+ * A record's name is put in a suggestion only when it is this short. A
+ * longer one is left out whole: cut, it would no longer name the record.
+ */
+export const ASK_SUGGESTION_NAME_MAX = 60;
+
+export const AskSuggestionSchema = z.object({
+  /** Open: a client shows a kind it does not know like any other. */
+  kind: z.string(),
+  /** What a tap sends, as the member would type it. */
+  text: z.string(),
+  request: z.boolean(),
+});
+export type AskSuggestion = z.infer<typeof AskSuggestionSchema>;
+
+/**
+ * A record's name as it goes into a suggestion: on one line, or null when it
+ * is empty or too long to put in a sentence.
+ */
+export function askSuggestionName(
+  name: string | null | undefined,
+): string | null {
+  const flat = (name ?? "").replace(/\s+/g, " ").trim();
+  return flat.length > 0 && flat.length <= ASK_SUGGESTION_NAME_MAX
+    ? flat
+    : null;
+}
+
+/**
+ * The words of each suggestion. One place, so web and the phone show the
+ * same ones and the server that builds them is tested against the same text.
+ * `day` and `date` are written out in full by the caller ("Saturday",
+ * "November 9"), never abbreviated. An event's `when` is how a member would
+ * say its day ("today", "tomorrow", "on Sunday", "on November 22"), so a
+ * meeting that repeats is asked about on the right day.
+ */
+export const askSuggestionText = {
+  event: (name: string, when: string) => `When and where is ${name} ${when}?`,
+  task: (title: string) => `When is my task "${title}" due?`,
+  tasks: (count: number) => `Which of my ${count} open tasks is due first?`,
+  dues: (title: string) => `How much do I owe for ${title}?`,
+  minutes: (name: string, date: string) =>
+    `What was decided at ${name} on ${date}?`,
+  points: () => "How many points do I have this semester?",
+  request: (eventDay: string, dueDay: string) =>
+    `Make a task for me to get ready for ${eventDay}'s event, due ${dueDay}`,
+} as const;
+
 /** The words Ask shows, shared so web and mobile cannot drift. */
 export const ASK_COPY = {
   name: "Ask Frapp",
@@ -373,11 +464,6 @@ export const ASK_COPY = {
   /** Added for a member Frapp can also act for. */
   empty_body_act:
     "Or say what needs doing. You'll see exactly what will happen, and nothing changes until you confirm.",
-  examples: [
-    "When is the next chapter meeting?",
-    "What do the bylaws say about quorum?",
-    "Who is the treasurer?",
-  ],
   steps: {
     searching: "Searching your chapter's sources",
     reading: "Reading what it found",
@@ -413,6 +499,7 @@ export const ASK_COPY = {
     events: "Events",
     points: "Points",
     dues: "Dues",
+    tasks: "Tasks",
   } satisfies Record<AskSourceKind, string>,
   send: "Send",
   try_again: "Try again",

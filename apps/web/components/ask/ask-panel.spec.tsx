@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ACT_COPY, ASK_COPY, askSavedLine } from "@repo/validation";
+import { ASK_COPY, askSavedLine } from "@repo/validation";
 
 /**
  * The Ask panel's own rules: consent before the first question leaves, and
@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   consent: vi.fn(),
   permissions: ["ai:use", "ai:act"],
   actions: null as string[] | null,
+  suggestions: [] as Array<{ kind: string; text: string; request: boolean }>,
+  suggestionsEnabled: [] as boolean[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -36,6 +38,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     reset: state.reset,
   }),
   useActStatus: () => ({ data: state.actions }),
+  useAskSuggestions: (options?: { enabled?: boolean }) => {
+    state.suggestionsEnabled.push(options?.enabled ?? true);
+    return { suggestions: state.suggestions };
+  },
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyPermissions: () => ({ data: { permissions: state.permissions } }),
   useAskStatus: () => ({
@@ -60,7 +66,8 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
 
 const { AskPanel } = await import("./ask-panel");
 
-const open = () => render(<AskPanel open onOpenChange={() => undefined} />);
+const open = (isOpen = true) =>
+  render(<AskPanel open={isOpen} onOpenChange={() => undefined} />);
 
 const DONE = {
   id: "turn-1",
@@ -113,6 +120,8 @@ describe("AskPanel", () => {
     state.savedUntil = null;
     state.permissions = ["ai:use"];
     state.actions = null;
+    state.suggestions = [];
+    state.suggestionsEnabled = [];
   });
 
   it("sends what was typed on Enter, behind the consent gate, and clears the field", async () => {
@@ -125,12 +134,71 @@ describe("AskPanel", () => {
     expect(field).toHaveValue("");
   });
 
-  it("asks an example when it is picked", async () => {
-    open();
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: ASK_COPY.examples[0] }));
-    expect(state.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], sent());
+  describe("what it opens with (#4700)", () => {
+    const EVENT = {
+      kind: "event",
+      text: "When and where is Formal on Friday?",
+      request: false,
+    };
+    const REQUEST = {
+      kind: "request",
+      text: "Make a task for me to get ready for Sunday's event, due Saturday",
+      request: true,
+    };
+
+    it("offers what the server built from the member's own account, and no preset", () => {
+      state.suggestions = [EVENT];
+      open();
+      expect(
+        screen.getAllByRole("button").map((button) => button.textContent),
+      ).toContain(EVENT.text);
+      // Nothing but the server's list is ever offered.
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    });
+
+    it("opens plain for a member with nothing to ask about: the two lines and the field", () => {
+      open();
+      expect(screen.getByText(ASK_COPY.empty_title)).toBeInTheDocument();
+      expect(screen.queryByRole("list")).toBeNull();
+      expect(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+      ).toBeInTheDocument();
+    });
+
+    it("reads them only once the panel is open", () => {
+      const view = open(false);
+      expect(state.suggestionsEnabled.every((enabled) => !enabled)).toBe(true);
+      view.unmount();
+      state.suggestionsEnabled = [];
+      open();
+      expect(state.suggestionsEnabled.at(-1)).toBe(true);
+    });
+
+    it("sends a tapped question as a suggestion, never as words the member typed", async () => {
+      state.permissions = ["ai:use", "ai:act"];
+      state.suggestions = [EVENT, REQUEST];
+      open();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: EVENT.text }));
+      expect(state.ask).toHaveBeenCalledWith(
+        EVENT.text,
+        sent({ actions: true, suggested: true }),
+      );
+    });
+
+    it("sends the one request like typed words, so it comes back as a card", async () => {
+      state.permissions = ["ai:use", "ai:act"];
+      state.suggestions = [EVENT, REQUEST];
+      open();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: REQUEST.text }));
+      expect(state.ask).toHaveBeenCalledWith(
+        REQUEST.text,
+        sent({ actions: true, suggested: false }),
+      );
+    });
   });
 
   it("reads whether answers are being saved again each time it opens", () => {
@@ -191,6 +259,9 @@ describe("AskPanel", () => {
 
     it("keeps every turn on screen, in order, with the field still under them", () => {
       state.exchanges = [DONE, SECOND];
+      state.suggestions = [
+        { kind: "event", text: "When and where is Formal on Friday?", request: false },
+      ];
       open();
       const turns = screen.getAllByRole("article");
       expect(turns).toHaveLength(2);
@@ -199,9 +270,9 @@ describe("AskPanel", () => {
       expect(
         screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
       ).toBeInTheDocument();
-      // The examples are for an empty thread.
+      // Suggestions are for an empty thread.
       expect(
-        screen.queryByRole("button", { name: ASK_COPY.examples[0] }),
+        screen.queryByRole("button", { name: "When and where is Formal on Friday?" }),
       ).toBeNull();
     });
 
@@ -393,6 +464,7 @@ describe("a member Frapp can act for (#718)", () => {
     state.savedUntil = null;
     state.permissions = ["ai:use", "ai:act"];
     state.actions = null;
+    state.suggestions = [];
   });
 
   it("has no Ask and Do switch, whoever the member is: one field takes both", () => {
@@ -402,21 +474,20 @@ describe("a member Frapp can act for (#718)", () => {
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
   });
 
-  it("sends what they type as something that may end in a card, and offers one request to try", async () => {
+  it("says Frapp can do things for them, and sends what they type as something that may end in a card", async () => {
     state.actions = ["create_task", "give_points"];
     open();
     expect(screen.getByText(new RegExp(ASK_COPY.empty_body_act))).toBeDefined();
-    await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.examples.create_task }),
-    );
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Give Jordan 5 points{Enter}",
+      );
     expect(state.ask).toHaveBeenCalledWith(
-      ACT_COPY.examples.create_task,
+      "Give Jordan 5 points",
       sent({ actions: true }),
     );
-    // One request beside the questions, not one per action.
-    expect(
-      screen.queryByRole("button", { name: ACT_COPY.examples.give_points }),
-    ).toBeNull();
   });
 
   it("asks for a card on the permission alone: a request typed before the list of actions has loaded, or with none to list, is still read as one", async () => {
@@ -424,7 +495,7 @@ describe("a member Frapp can act for (#718)", () => {
       state.ask.mockClear();
       state.actions = actions;
       const view = open();
-      // The list only picks the opening example.
+      // The list only words the opening.
       expect(
         screen.queryByText(new RegExp(ASK_COPY.empty_body_act)),
       ).toBeNull();
