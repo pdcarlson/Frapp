@@ -38,10 +38,13 @@ export interface GenerationCatalogEntry extends CatalogEntryBase {
   maxOutputTokens: number;
   effort: LanguageModelEffort;
   /**
-   * The effort when the member asks the task to think harder. Only a task
-   * that offers that has one; without it the task always runs at `effort`.
+   * What changes when the member asks the task to think harder. Only a task
+   * that offers that has one; without it the task always runs as above. The
+   * ceiling rises with the effort because a model's thinking is spent from
+   * the same output tokens as its answer, and what a call may cost is
+   * reserved from this ceiling.
    */
-  effortMore?: LanguageModelEffort;
+  more?: { effort: LanguageModelEffort; maxOutputTokens: number };
   inputUsdPerMillionTokens: number;
   outputUsdPerMillionTokens: number;
 }
@@ -131,7 +134,7 @@ export const AI_MODEL_CATALOG = {
     maxOutputTokens: 4_000,
     effort: 'medium',
     // "Think harder" (`AskEffort` `more`), with the loop's wider bounds.
-    effortMore: 'high',
+    more: { effort: 'high', maxOutputTokens: 8_000 },
   },
   /**
    * An officer's request, read into one action and its details (#718). It is

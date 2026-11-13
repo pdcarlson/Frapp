@@ -163,11 +163,11 @@ export interface AskInput {
   history?: readonly AskHistoryTurn[];
   /**
    * What the member had open when they asked. Ids from the client: each is
-   * looked up as the asker before anything about it reaches a model. Carried
-   * to here and not read yet (#4899).
+   * looked up as the asker before anything about it reaches a model
+   * (`AskFromService`). Read by the tool loop only.
    */
   from?: AskFrom;
-  /** How hard to work on it. Carried to here and not read yet (#4899). */
+  /** How hard to work on it (`AGENT_LIMITS`). Read by the tool loop only. */
   effort?: AskEffort;
   /** Where the member asked from. Counted in the turn's trace, never read. */
   door?: AskDoor;

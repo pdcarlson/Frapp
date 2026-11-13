@@ -138,8 +138,8 @@ export interface AiAgentPrompt extends AiPrompt {
   /** The caller's limits are spent: this round writes the answer. */
   mustAnswer?: boolean;
   /**
-   * The member asked for more thought: the round runs at the task's
-   * `effortMore`, when its catalog entry has one.
+   * The member asked for more thought: the round runs as the task's
+   * catalog entry says under `more`, when it has one.
    */
   more?: boolean;
 }
@@ -370,20 +370,27 @@ export class AiGatewayService {
     const returned = prompt.rounds.flatMap((round) =>
       round.results.flatMap((result) => result.sources),
     );
-    const admitted = await this.admit(task, 'agent', prompt, context, [
-      ...prompt.context.map(titled),
-      ...returned.map(titled),
-      ...prompt.rounds.flatMap((round) => [
-        // The model's own earlier turn goes back in whole: what it wrote,
-        // what it asked for, and its reasoning. Its shape is the provider's,
-        // so it is sized as the text it serialises to.
-        { text: JSON.stringify(round.replay ?? '') },
-        ...round.results.map((result) => ({ text: result.note ?? '' })),
-      ]),
-      ...prompt.tools.map((tool) => ({
-        text: `${tool.description}\n${JSON.stringify(tool.inputSchema)}`,
-      })),
-    ]);
+    const admitted = await this.admit(
+      task,
+      'agent',
+      prompt,
+      context,
+      [
+        ...prompt.context.map(titled),
+        ...returned.map(titled),
+        ...prompt.rounds.flatMap((round) => [
+          // The model's own earlier turn goes back in whole: what it wrote,
+          // what it asked for, and its reasoning. Its shape is the provider's,
+          // so it is sized as the text it serialises to.
+          { text: JSON.stringify(round.replay ?? '') },
+          ...round.results.map((result) => ({ text: result.note ?? '' })),
+        ]),
+        ...prompt.tools.map((tool) => ({
+          text: `${tool.description}\n${JSON.stringify(tool.inputSchema)}`,
+        })),
+      ],
+      prompt.more === true,
+    );
     if ('status' in admitted) {
       yield { type: 'end', result: admitted };
       return;
@@ -391,9 +398,6 @@ export class AiGatewayService {
 
     const request: LanguageModelRequest = {
       ...this.baseRequest(admitted, prompt),
-      ...(prompt.more && admitted.entry.effortMore
-        ? { effort: admitted.entry.effortMore }
-        : {}),
       kind: 'agent',
       tools: prompt.tools,
       context: prompt.context,
@@ -529,6 +533,8 @@ export class AiGatewayService {
     prompt: Pick<AiPrompt, 'promptVersion' | 'system' | 'messages'>,
     context: AiCallContext,
     extraInput: ReadonlyArray<{ text: string }>,
+    /** Run as the entry's `more` says, when it says anything. */
+    more = false,
   ): Promise<Admitted<EntryOfKind<K>> | AiUnavailable> {
     if (!isAiEnabled()) return { status: 'unavailable', reason: 'disabled' };
 
@@ -538,8 +544,13 @@ export class AiGatewayService {
       throw new Error(`AI task ${task} is ${found.kind}, not ${kind}`);
     }
     // A transcription task never gets here: its kind is none of this
-    // gateway's three, and `AiTranscriptionService` serves it.
-    const entry = found;
+    // gateway's three, and `AiTranscriptionService` serves it. Thinking
+    // harder is settled here, before anything is reserved, so the call is
+    // priced at the ceiling it will run with.
+    const entry =
+      more && found.kind !== 'embedding' && found.more
+        ? { ...found, ...found.more }
+        : found;
 
     const model = this.models.resolve(entry.provider);
     if (!model) return { status: 'unavailable', reason: 'not_configured' };

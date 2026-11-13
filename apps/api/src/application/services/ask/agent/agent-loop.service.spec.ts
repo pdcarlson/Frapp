@@ -433,6 +433,31 @@ describe('AgentLoopService', () => {
       expect(prompts[0].more).toBeUndefined();
     });
 
+    it('gives a turn asked to think harder longer to read', async () => {
+      let now = 0;
+      // Each read takes what an ordinary turn has in all.
+      const slow = tool('search_messages', () => {
+        now += AGENT_READ_BUDGET_MS;
+        return Promise.resolve(found());
+      });
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages')] }),
+        round({ toolCalls: [call('search_messages')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(
+        loop,
+        input({ tools: [slow], clock: () => now, effort: 'more' }),
+      );
+
+      // Still reading after the first, and stopped by the second.
+      expect(prompts[1].mustAnswer ?? false).toBe(false);
+      expect(prompts[2].mustAnswer).toBe(true);
+      expect(slow.run).toHaveBeenCalledTimes(2);
+      expect(outcome?.stop).toBe('time_limit');
+    });
+
     it('tells the model to answer once the read budget is spent', async () => {
       let now = 0;
       const slow = tool('search_messages', () => {
