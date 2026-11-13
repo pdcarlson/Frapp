@@ -137,8 +137,12 @@ export class AgentToolUnavailableError extends Error {
 /** The most text one result may hand the model; the loop cuts past it. */
 export const AGENT_RESULT_MAX_CHARS = 12_000;
 
-/** The most sources one result may carry. */
-export const AGENT_RESULT_MAX_SOURCES = 20;
+/**
+ * The most sources one result may carry. A message is one source, so this
+ * is also the most messages one read of a channel hands over; the character
+ * cap is what bounds a result's cost.
+ */
+export const AGENT_RESULT_MAX_SOURCES = 60;
 
 /** Injection token for the read tools the agent loop may offer. */
 export const AGENT_READ_TOOLS = 'AGENT_READ_TOOLS';

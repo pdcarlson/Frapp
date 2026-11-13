@@ -222,6 +222,8 @@ export class AskController {
         question: dto.question,
         ...(dto.history === undefined ? {} : { history: dto.history }),
         actions: dto.actions === true,
+        ...(dto.from ? { from: dto.from } : {}),
+        ...(dto.effort === undefined ? {} : { effort: dto.effort }),
         enabledModules,
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader

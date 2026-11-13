@@ -9527,6 +9527,23 @@ export interface components {
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
         };
+        AskFromDto: {
+            /**
+             * Format: uuid
+             * @description The channel the member had open.
+             */
+            channel_id?: string;
+            /**
+             * Format: uuid
+             * @description The event the member had open.
+             */
+            event_id?: string;
+            /**
+             * Format: uuid
+             * @description The task the member had open.
+             */
+            task_id?: string;
+        };
         AskRequestDto: {
             /**
              * @description The question, in the member’s own words.
@@ -9544,6 +9561,13 @@ export interface components {
              * @enum {string}
              */
             door?: "ask" | "chat_private";
+            /** @description What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one. */
+            from?: components["schemas"]["AskFromDto"] | null;
+            /**
+             * @description How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.
+             * @enum {string}
+             */
+            effort?: "default" | "more";
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */

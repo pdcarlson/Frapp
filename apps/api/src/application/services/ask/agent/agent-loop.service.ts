@@ -77,6 +77,8 @@ export interface AgentCallTrace {
     | 'timed_out'
     | 'foreign_chapter'
     | 'over_limit';
+  /** The size of the arguments the model wrote, in bytes. Never the arguments. */
+  argBytes: number;
   sources: number;
   chars: number;
   cut: boolean;
@@ -434,6 +436,7 @@ export class AgentLoopService {
         trace: {
           tool: tool.name,
           outcome: 'ok',
+          argBytes: argBytes(call),
           sources: kept.length,
           chars,
           cut,
@@ -461,6 +464,7 @@ export class AgentLoopService {
         trace: {
           tool: tool.name,
           outcome: timedOut ? 'timed_out' : 'failed',
+          argBytes: argBytes(call),
           sources: 0,
           chars: 0,
           cut: false,
@@ -483,8 +487,24 @@ function notRun(
     sources: [],
     entities: [],
     leftOutMessages: 0,
-    trace: { tool, outcome, sources: 0, chars: 0, cut: false, ms: 0 },
+    trace: {
+      tool,
+      outcome,
+      argBytes: argBytes(call),
+      sources: 0,
+      chars: 0,
+      cut: false,
+      ms: 0,
+    },
   };
+}
+
+function argBytes(call: LanguageModelToolCall): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(call.input ?? null), 'utf8');
+  } catch {
+    return 0;
+  }
 }
 
 /**

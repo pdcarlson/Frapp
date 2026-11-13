@@ -1496,6 +1496,7 @@ describe('AskService', () => {
             {
               tool: 'roster',
               outcome: 'ok',
+              argBytes: 2,
               sources: 1,
               chars: 21,
               cut: false,
@@ -1504,6 +1505,7 @@ describe('AskService', () => {
             {
               tool: 'my_dues',
               outcome: 'failed',
+              argBytes: 2,
               sources: 0,
               chars: 0,
               cut: false,
@@ -1597,7 +1599,11 @@ describe('AskService', () => {
         'done',
       ]);
       expect(events[3]).toEqual(
-        expect.objectContaining({ reads: ['roster', 'my_dues'] }),
+        expect.objectContaining({
+          reads: ['roster', 'my_dues'],
+          tool: 'my_dues',
+          label: 'Reading your dues',
+        }),
       );
       expect(events[5]).toEqual(
         expect.objectContaining({ delta: 'Dana Reyes is the treasurer.' }),
@@ -1609,6 +1615,38 @@ describe('AskService', () => {
       ]);
       expect(answer.citations).toEqual([
         expect.objectContaining({ source: 0, quote: 'Dana Reyes: Treasurer' }),
+      ]);
+    });
+
+    it('lists the members and channels the answer marks, and no name it did not', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              entities: [
+                { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+                { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+                { type: 'member', id: 'u-lee', name: 'Lee Park' },
+                { type: 'channel', id: 'c-gen', name: 'general' },
+                { type: 'channel', id: 'c-exec', name: 'exec' },
+              ],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '@Dana Reyes is the treasurer, as Lee Park said in #general. Ask @Sam Nobody.',
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer.entities).toEqual([
+        { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+        { type: 'channel', id: 'c-gen', name: 'general' },
       ]);
     });
 
@@ -1750,6 +1788,7 @@ describe('AskService', () => {
         id: 'passage:c1',
         kind: 'chat',
         title: '#general',
+        detail: 'Dana Reyes',
         date: '2026-11-08T01:00:00.000Z',
         target: { type: 'message', channel_id: 'ch', message_id: 'm1' },
         text: 'Dana: dues are due Friday',
@@ -1797,6 +1836,15 @@ describe('AskService', () => {
       expect(
         titleOf(source({ title: 'The member asking: read me', date: null })),
       ).toMatch(/^Chapter source: /);
+      // Whose message it is rides on the source, for the chip.
+      expect(answer.sources).toEqual([
+        expect.objectContaining({
+          kind: 'chat',
+          title: '#general',
+          detail: null,
+          author: 'Dana Reyes',
+        }),
+      ]);
       expect(answer.read_chat).toBe(true);
       expect(answer.left_out_messages).toBe(3);
       expect(answer.saved).toBe(false);

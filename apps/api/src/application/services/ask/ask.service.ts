@@ -3,6 +3,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_STREAM_VERSION,
   type AskAnswer,
+  type AskEffort,
+  type AskEntity,
+  type AskFrom,
   type AskHistoryTurn,
   type AskSource,
   type AskStep,
@@ -52,6 +55,7 @@ import {
 } from './agent/agent-loop.service';
 import {
   AGENT_READ_TOOLS,
+  type AgentEntity,
   type AgentReadTool,
   type AgentSource,
 } from './agent/agent-tool';
@@ -149,6 +153,14 @@ export interface AskInput {
    * said, and it reaches only the asker's own answer.
    */
   history?: readonly AskHistoryTurn[];
+  /**
+   * What the member had open when they asked. Ids from the client: each is
+   * looked up as the asker before anything about it reaches a model. Carried
+   * to here and not read yet (#4899).
+   */
+  from?: AskFrom;
+  /** How hard to work on it. Carried to here and not read yet (#4899). */
+  effort?: AskEffort;
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The asker's IANA time zone. */
@@ -318,11 +330,31 @@ function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
       id: source.id,
       kind: source.kind,
       title: source.title,
-      detail: source.detail,
+      // A chat source's detail is whose message it is.
+      detail: source.chat ? null : source.detail,
       date: source.date,
       target: source.target,
+      ...(source.chat && source.detail ? { author: source.detail } : {}),
     },
   };
+}
+
+/**
+ * Of the members and channels the tools named, the ones the answer names:
+ * `@Name` for a member, `#name` for a channel, as the prompt asks for them.
+ * A client links only these, so a name the model made up is plain text, and
+ * so is a real name it did not mark.
+ */
+function namedIn(text: string, entities: readonly AgentEntity[]): AskEntity[] {
+  const seen = new Set<string>();
+  return entities.flatMap((entity): AskEntity[] => {
+    const name = entity.name.trim();
+    const mark = `${entity.type === 'member' ? '@' : '#'}${name}`;
+    const key = `${entity.type}:${entity.id}`;
+    if (!name || seen.has(key) || !text.includes(mark)) return [];
+    seen.add(key);
+    return [{ type: entity.type, id: entity.id, name }];
+  });
 }
 
 /**
@@ -643,7 +675,13 @@ export class AskService {
         writing = false;
       } else if (part.type === 'tool') {
         if (!reads.includes(part.name)) reads.push(part.name);
-        yield event({ type: 'status', step: 'reading', reads: [...reads] });
+        yield event({
+          type: 'status',
+          step: 'reading',
+          reads: [...reads],
+          tool: part.name,
+          label: part.reading,
+        });
       } else outcome = part.outcome;
     }
     // The loop ends with nothing for a member who left.
@@ -681,6 +719,9 @@ export class AskService {
       answer.status === 'not_found'
     ) {
       answer = emptyAnswer('unavailable', { reason: 'not_available' });
+    }
+    if (answer.status === 'answered') {
+      answer.entities = namedIn(answer.text, outcome.entities);
     }
     const written = outcome.result.status === 'ok' ? outcome.result.text : '';
     answer.saved = await this.keep(input, answer, written, entries, run, now);
