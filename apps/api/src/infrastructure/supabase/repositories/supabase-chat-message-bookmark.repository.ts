@@ -29,11 +29,13 @@ import { omitColumns } from '../supabase.utils';
  * stay in step. It is a genuinely different list from the sibling's — the
  * timeline needs `payload`, `mentions` and `reply_to_id` to render a card; a
  * bookmark row renders an author, a timestamp and a text preview, and jumps.
+ * `forwarded_from` (#4875) is the preview's text when a forward has no
+ * comment of its own; the service masks and redacts it as it does `content`.
  * Narrowing also makes the rows small, which is what lets this endpoint stay
  * unpaginated for now.
  */
 const BOOKMARK_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id, forwarded_from';
 
 const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
 

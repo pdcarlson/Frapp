@@ -1501,6 +1501,14 @@ export class BookmarkedMessageDto {
   thread_root_id: string | null;
 
   @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    description:
+      'Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.',
+  })
+  forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
     type: Boolean,
     description:
       'Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows.',

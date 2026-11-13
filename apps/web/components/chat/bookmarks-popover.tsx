@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { MessageAuthor } from "@repo/hooks";
 import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+import { forwardedFromOf } from "@repo/chat-core/types";
 import { replyPreviewText } from "./reply-quote";
 
 /**
@@ -27,6 +28,8 @@ export interface BookmarkedMessage extends MessageAuthor {
   content: string;
   is_deleted: boolean;
   created_at: string;
+  /** A forward's copy (#4875), read with `forwardedFromOf`. */
+  forwarded_from?: unknown;
 }
 
 export interface BookmarkEntry {
@@ -147,7 +150,13 @@ export function BookmarksPanel({
                     (bookmark.message.is_deleted || !available) && "italic",
                   )}
                 >
-                  {replyPreviewText(bookmark.message)}
+                  {replyPreviewText({
+                    ...bookmark.message,
+                    // A forward with no comment previews its copy (#4875).
+                    forwarded_from: forwardedFromOf(
+                      bookmark.message.forwarded_from,
+                    ),
+                  })}
                 </span>
               </>
             );

@@ -84,7 +84,11 @@ import {
   ChatMessageDto,
   ForwardMessageDto,
 } from '../dtos/chat.dto';
-import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+import type {
+  ChannelType,
+  ChatChannel,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
 
 /** What `POST :id/messages` answers with. */
 type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
@@ -779,6 +783,14 @@ export class ChatController {
       'Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)',
   })
   @ApiCreatedResponse({ type: ChatMessageDto })
+  // The caller's own new row, so its `content` is their comment, unmasked.
+  @FeatureEvent(
+    'message-forwarded',
+    ({ result }: FeatureEventInput<ForwardMessageDto, ChatMessage>) => ({
+      has_comment:
+        typeof result.content === 'string' && result.content.trim() !== '',
+    }),
+  )
   async forwardMessage(
     @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,

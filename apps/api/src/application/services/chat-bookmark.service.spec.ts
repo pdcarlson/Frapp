@@ -22,7 +22,7 @@ const MESSAGE = 'msg-1';
 const message = (
   overrides: Partial<StoredBookmarkedMessage> = {},
 ): StoredBookmarkedMessage => ({
-  // Exactly what the repository reads — the ten-column projection. The
+  // Exactly what the repository reads — the eleven-column projection. The
   // service adds the per-viewer `sender_blocked`; a wider fixture would let a
   // test assert redaction of a field production never sends.
   id: MESSAGE,
@@ -34,8 +34,22 @@ const message = (
   content: 'keep this',
   is_deleted: false,
   thread_root_id: null,
+  forwarded_from: null,
   created_at: '2026-01-01T00:00:00.000Z',
   ...overrides,
+});
+
+/** A forward's copy of an original by `sender_id` (#4875). */
+const copy = (sender_id = 'user-3') => ({
+  message_id: 'orig-1',
+  channel_id: 'ch-2',
+  sender_id,
+  author_name: 'Original Author',
+  content: 'the forwarded words',
+  gif: null,
+  attachment_count: 0,
+  created_at: '2026-01-01T00:00:00.000Z',
+  deleted: false,
 });
 
 const bookmark: ChatMessageBookmarkRef = {
@@ -214,7 +228,7 @@ describe('ChatBookmarkService', () => {
       // Stronger than redacting them: pin state, edits, payload, mentions and
       // metadata are not in the endpoint's projection at all, so there is no
       // value to get wrong. This asserts the redacted row is exactly the
-      // ten-field shape rather than a wider object with blanks in it — a
+      // eleven-field shape rather than a wider object with blanks in it — a
       // redacted row that differed structurally from an available one would be
       // the same "carries fields its declared shape omits" problem inverted.
       mockRepo.findByUserAndChapter.mockResolvedValue([
@@ -231,6 +245,7 @@ describe('ChatBookmarkService', () => {
         'channel_id',
         'content',
         'created_at',
+        'forwarded_from',
         'id',
         'is_deleted',
         'sender_blocked',
@@ -302,6 +317,79 @@ describe('ChatBookmarkService', () => {
 
       expect(row.message.sender_blocked).toBe(false);
       expect(row.message.content).toBe('keep this');
+    });
+
+    describe('a saved forward (#4875)', () => {
+      it('serves its copy, so one with no comment can preview it', async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          {
+            ...bookmark,
+            message: message({ content: '', forwarded_from: copy() }),
+          },
+        ]);
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.forwarded_from).toEqual({
+          ...copy(),
+          sender_blocked: false,
+        });
+      });
+
+      it("withholds the copy's text when the caller blocked the original's author", async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          {
+            ...bookmark,
+            message: message({
+              content: '',
+              forwarded_from: copy('user-blocked'),
+            }),
+          },
+        ]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        // The forwarder isn't blocked, so their row stands; only the copy hides.
+        expect(row.message.sender_blocked).toBe(false);
+        expect(row.message.forwarded_from).toMatchObject({
+          content: '',
+          author_name: null,
+          sender_blocked: true,
+        });
+        expect(JSON.stringify(row)).not.toContain('the forwarded words');
+      });
+
+      it('drops the copy when the caller blocked the forwarder', async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          {
+            ...bookmark,
+            message: message({
+              sender_id: 'user-blocked',
+              forwarded_from: copy(),
+            }),
+          },
+        ]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.forwarded_from).toBeNull();
+      });
+
+      it("drops the copy from a row whose channel the caller can't read", async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          { ...bookmark, message: message({ forwarded_from: copy() }) },
+        ]);
+        mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(
+          new Set(),
+        );
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.forwarded_from).toBeNull();
+        expect(JSON.stringify(row)).not.toContain('the forwarded words');
+      });
     });
 
     it('fails the read when the block list cannot be read', async () => {
