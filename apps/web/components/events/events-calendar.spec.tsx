@@ -8,6 +8,13 @@ import {
 } from "@repo/hooks/calendar-tasks";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
 
+// A viewer with no roles: the event's default decides (#4132). The rule
+// itself is the hook's own spec.
+vi.mock("@repo/hooks", () => ({
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
+}));
+
 // Local wall-clock parts, so the event lands in the anchor month's grid in any
 // zone the suite runs in.
 const anchor = startOfMonth(new Date(2026, 10, 1));

@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-core/cards";
 import { moduleDisabledMessage } from "@repo/validation";
-import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -64,6 +63,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: id ? state.mine : undefined };
   },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  // A viewer with no roles: the default decides (the rule is its own spec).
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
   // The rule is the hook's own spec in @repo/hooks (#4660).
   useEventCardExcuse: (card: unknown) => {
     state.excuseArgs.push(card);
@@ -103,6 +105,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { EventCard } from "./event-card";
 import { CardMeta } from "./chat-card";
+import { HairlineChip } from "@/components/status-chip";
 
 /** Inside the window: it started at 23:00 and ends at 00:00. */
 const PAYLOAD: EventPayload = {
@@ -255,9 +258,15 @@ describe("EventCard — the snapshot", () => {
     expect(text).toContain("Mandatory");
   });
 
-  it("draws Mandatory red, as every other Mandatory card does (#3830)", () => {
-    const chip = render().root.findByProps({ label: "Mandatory" });
-    expect(chip.props.hue).toBe(signetDarkTokens.color.semantic.destructive);
+  it("draws Mandatory as the hairline chip, as the Events list does (#4132)", () => {
+    expect(render().root.findAllByType(HairlineChip)).toHaveLength(1);
+  });
+
+  it("goes by the card's own answer for this viewer over the default (#4132)", () => {
+    const text = screenText(
+      render({ payload: { ...PAYLOAD, viewer_required: false } }),
+    );
+    expect(text).not.toContain("Mandatory");
   });
 
   it("draws when it is in the viewer's own time, not the server's sentence", () => {

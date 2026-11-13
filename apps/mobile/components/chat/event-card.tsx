@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import type { EventPayload } from "@repo/chat-core/cards";
 import {
   countCheckedIn,
+  eventCardRequiresViewer,
   useAttendance,
   useCheckIn,
   useCurrentChapter,
@@ -11,11 +12,12 @@ import {
   useMyAttendance,
   useNowDate,
   usePermissionList,
+  useRequiredOfViewer,
 } from "@repo/hooks";
 import { can, isModuleEnabled, statusLabel } from "@repo/validation";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { EventsGlyph } from "@/components/tab-glyphs";
-import { StatusChip } from "@/components/status-chip";
+import { HairlineChip } from "@/components/status-chip";
 import { useConnection } from "@/lib/connection/use-connection";
 import {
   CHECK_IN_LOCATION_DENIED_COPY,
@@ -136,6 +138,9 @@ export function EventCard({
   // returning to the foreground), and a tap before then gets the server's 409.
   const mine = useMyAttendance(open ? payload.event_id : "");
   const excuse = useEventCardExcuse(payload, now);
+  // Mandatory means required of this viewer, as the Events list says it
+  // (#4132): by default or by a role of theirs, else the card's own answer.
+  const required = eventCardRequiresViewer(payload, useRequiredOfViewer());
   const own = selectMyAttendance(mine.data);
   // A row without a check-in is an officer's mark.
   const marked = own && !own.checkedInAt ? own.status : null;
@@ -229,14 +234,7 @@ export function EventCard({
           <CardEyebrow
             label="Event"
             glyph={EventsGlyph}
-            trailing={
-              payload.is_mandatory ? (
-                <StatusChip
-                  label="Mandatory"
-                  hue={tokens.color.semantic.destructive}
-                />
-              ) : null
-            }
+            trailing={required ? <HairlineChip label="Mandatory" /> : null}
           />
           <CardTitle>{payload.name}</CardTitle>
           <CardMeta

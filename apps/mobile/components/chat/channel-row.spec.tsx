@@ -32,6 +32,7 @@ import {
   badgeLabel,
   ChannelListSkeleton,
   ChannelRow,
+  channelMarkFor,
   HIDE_ACTION,
   PIN_ACTION,
 } from "./channel-row";
@@ -496,5 +497,70 @@ describe("accessibilityLabelFor, muted and previewed rows", () => {
         preview: "",
       }),
     ).toBe("#social");
+  });
+});
+
+describe("ChannelRow mark (#4134)", () => {
+  const hashes = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "#",
+    );
+  const marked = (tree: ReactTestRenderer, mark: string) =>
+    tree.root.findAll((node) => node.props.testID === `channel-row-${mark}`);
+
+  it("picks the lock for PRIVATE and ROLE_GATED, the shield for the audit channel, # for the rest", () => {
+    expect(channelMarkFor({ type: "PUBLIC", name: "general" })).toBe("hash");
+    expect(channelMarkFor({ type: "PRIVATE", name: "exec" })).toBe("lock");
+    expect(channelMarkFor({ type: "ROLE_GATED", name: "officers" })).toBe(
+      "lock",
+    );
+    expect(channelMarkFor({ type: "PRIVATE", name: "chapter-audit" })).toBe(
+      "audit",
+    );
+  });
+
+  it("draws a lock, not #, on a PRIVATE row", () => {
+    const tree = renderRow({
+      name: "exec",
+      mark: channelMarkFor({ type: "PRIVATE", name: "exec" }),
+    });
+    expect(marked(tree, "lock")).toHaveLength(1);
+    expect(hashes(tree)).toHaveLength(0);
+  });
+
+  it("draws # and no lock on a PUBLIC row", () => {
+    const tree = renderRow({
+      mark: channelMarkFor({ type: "PUBLIC", name: "general" }),
+    });
+    expect(hashes(tree)).toHaveLength(1);
+    expect(marked(tree, "lock")).toHaveLength(0);
+  });
+
+  it("paints the lock in the sigil's read, unread and muted colours", () => {
+    const strokeOf = (props: Partial<React.ComponentProps<typeof ChannelRow>>) =>
+      renderRow({ name: "exec", mark: "lock", ...props })
+        .root.findAll((node) => (node.type as unknown) === "Path")
+        .map((node) => node.props.stroke)[0];
+    expect(strokeOf({})).toBe(signetDarkTokens.color.text.muted);
+    expect(strokeOf({ unreadCount: 3 })).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    expect(strokeOf({ isMuted: true })).toBe(
+      signetDarkTokens.color.text.disabled,
+    );
+  });
+
+  it("says a locked row is a private channel", () => {
+    expect(
+      renderRow({ name: "exec", mark: "lock", unreadCount: 2 }).root.findByProps(
+        { accessibilityRole: "button" },
+      ).props.accessibilityLabel,
+    ).toBe("#exec, private channel, 2 unread");
+    expect(
+      renderRow({ name: "general" }).root.findByProps({
+        accessibilityRole: "button",
+      }).props.accessibilityLabel,
+    ).toBe("#general");
   });
 });

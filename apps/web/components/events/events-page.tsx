@@ -23,6 +23,7 @@ import {
   useEvents,
   useMyPermissions,
   useNow,
+  useRequiredOfViewer,
 } from "@repo/hooks";
 import {
   ALL_CALENDAR_LAYERS,
@@ -47,7 +48,6 @@ import {
   can,
   canAll,
   EVENT_CREATE_PERMISSIONS,
-  eventDefaultAttendance,
   eventSetsRolesApart,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -383,6 +383,7 @@ export function EventsPage() {
         : memberLabel(names.get(memberUserId), memberUserId);
   }, [rosterQuery.data, userId]);
 
+  const requiredOf = useRequiredOfViewer();
   // Shared by both views: search text, attendance policy, cadence. Time
   // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
   // ("what's coming up"), and applying it to the calendar would silently
@@ -397,10 +398,9 @@ export function EventsPage() {
       // rule, so reading `recurrence_rule` alone filed every generated
       // occurrence as one-time.
       const isRecurring = isSeriesEvent(event);
-      // Required of everyone by default, as the row's Mandatory badge and the
-      // calendar say; an event that sets roles apart also carries "By role".
-      const isMandatory =
-        eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
+      // Required of this viewer, as the row's Mandatory badge and the
+      // calendar say (#4132).
+      const isMandatory = requiredOf(attendanceFieldsOf(event));
 
       if (
         queryLower &&
@@ -423,7 +423,7 @@ export function EventsPage() {
       }
       return true;
     },
-    [query, attendanceFilter, recurrenceFilter],
+    [query, attendanceFilter, recurrenceFilter, requiredOf],
   );
 
   const calendarEvents = useMemo(
@@ -739,9 +739,10 @@ export function EventsPage() {
     const eventId = eventIdOf(event);
     const eventName = String(event.name ?? "Untitled event");
     const fields = attendanceFieldsOf(event);
-    // "Mandatory" means required of everyone; an event that sets roles apart
-    // says so with its own badge instead.
-    const isMandatory = eventDefaultAttendance(fields) === "required";
+    // "Mandatory" means required of this viewer, by default or by a role of
+    // theirs, as the phone says it (#4132, `spec/behavior/events.md`). An
+    // event that sets roles apart also says so with its own badge.
+    const isMandatory = requiredOf(fields);
     const isTargeted = eventSetsRolesApart(fields);
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.

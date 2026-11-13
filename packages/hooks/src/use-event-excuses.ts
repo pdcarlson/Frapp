@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { statusOf, throwUnlessOk } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
@@ -188,10 +188,15 @@ export function useRequiredOfViewer(): (
     const alumniId = alumniRoleIdOf(roles.data);
     return alumniId !== undefined && roleIds.includes(alumniId);
   }, [roles.data, roleIds]);
-  return (event) => {
-    const attendance = eventAttendanceFor(event, roleIds);
-    return attendance.status === "required" && (attendance.byRole || !alumni);
-  };
+  // Stable while the roles hold, so a list filter that depends on it
+  // (the web Events page's) doesn't recompute on every render.
+  return useCallback(
+    (event: EventAttendanceFields) => {
+      const attendance = eventAttendanceFor(event, roleIds);
+      return attendance.status === "required" && (attendance.byRole || !alumni);
+    },
+    [roleIds, alumni],
+  );
 }
 
 /** Who the excuse goes to, as the member reads it. */
@@ -389,6 +394,20 @@ export interface ExcuseCardEvent extends EventAttendanceFields {
 }
 
 /**
+ * Whether a chat event card's event requires the viewer: the card's own
+ * `viewer_required` when it carries one, else its role fields through
+ * `requiredOf` ({@link useRequiredOfViewer}; a card posted before them goes
+ * by `is_mandatory`). The card's Mandatory badge (#4132) and its Can't make
+ * it offer ({@link useEventCardExcuse}) both read it, so they never disagree.
+ */
+export function eventCardRequiresViewer(
+  card: Pick<ExcuseCardEvent, "viewer_required"> & EventAttendanceFields,
+  requiredOf: (event: EventAttendanceFields) => boolean,
+): boolean {
+  return card.viewer_required ?? requiredOf(card);
+}
+
+/**
  * The excuse view for a chat event card (#4660): {@link myExcuseView} over
  * the card's snapshot, so the card offers Can't make it, or says where an
  * excuse stands, as the event page would while the excuse window is open.
@@ -415,7 +434,7 @@ export function useEventCardExcuse(
     !isNaN(end.getTime()) &&
     now.getTime() <= eventExcuseClosesAt(end).getTime();
   const required =
-    !!card && windowOpen && (card.viewer_required ?? requiredOf(card));
+    !!card && windowOpen && eventCardRequiresViewer(card, requiredOf);
   const eventId = required ? card.event_id : "";
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId, { enabled: required });
