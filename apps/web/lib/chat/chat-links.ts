@@ -1,14 +1,20 @@
+import {
+  CHAT_LINK_CHANNEL_PARAM,
+  CHAT_LINK_MESSAGE_PARAM,
+} from "@repo/validation";
+
 /**
  * The web chat deep-link contract: `/chat?channel=<id>&message=<id>`.
  *
  * Three call sites build links into `/chat` — the notification drawer, the
  * command-palette search results, and `ChatPage`'s own param reader — and
- * they only work if they agree on the query-param names. This is the one
- * place that spelling lives, so a rename is a one-file change instead of a
- * silent three-way drift.
+ * they only work if they agree on the query-param names. The names themselves
+ * live in `@repo/validation`'s `message-link.ts` (#3723), which the phone's
+ * Copy message link builds absolute links from, so a link copied on the phone
+ * lands here: rename them there, never by replacing these aliases.
  */
-export const CHAT_CHANNEL_PARAM = "channel";
-export const CHAT_MESSAGE_PARAM = "message";
+export const CHAT_CHANNEL_PARAM = CHAT_LINK_CHANNEL_PARAM;
+export const CHAT_MESSAGE_PARAM = CHAT_LINK_MESSAGE_PARAM;
 /**
  * Which list the chat panel opens on (#3774): `channels` or `direct`. The
  * nav's Direct messages row links to `/chat?view=direct` below the

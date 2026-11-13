@@ -324,6 +324,22 @@ describe("EventCard", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("says to scan the officer's code once a screen has made it required (#4808)", () => {
+      mockUseEvent.mockReturnValue({
+        data: { id: "evt-1", check_in_zone: null, check_in_needs_code: true },
+        isError: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByText(
+          "Point your phone's camera at the code on the officer's screen to check in.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
     it("says Checked in the moment the member's own check-in lands", () => {
       // Before the row is read back: no row yet, but this session's POST
       // succeeded, so Check in must not come back for a refused second press.

@@ -137,6 +137,7 @@ describe('AttendanceService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
     };
 
     // Default: nobody holds an excuse.

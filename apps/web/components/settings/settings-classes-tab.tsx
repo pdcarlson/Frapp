@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import {
   fraternalOrderComparator,
@@ -15,6 +15,15 @@ import {
   type PledgeClass,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
+import {
+  hasKeptDraft,
+  readKeptDraft,
+  readKeptPanel,
+  useKeptDraftKeys,
+  useKeptFormDraft,
+  writeKeptPanel,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import {
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
@@ -84,6 +93,17 @@ function memberCountLabel(count: number): string {
  * plural or a lowercased form of a free-text word comes out wrong for "PC" or
  * "Family" (`settings-semester-tab.tsx` words around its term the same way).
  */
+/** One class's kept member draft (`@repo/hooks/kept-drafts`, #4593). */
+function classDraftName(classId: string): string {
+  return `pledge-class:${classId}`;
+}
+
+/** What the member editor keeps: the rows, and the roster they were read from. */
+type ClassDraft = {
+  members: readonly MemberProfile[];
+  rows: ClassEditorRow[];
+};
+
 export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   const classesQuery = usePledgeClasses();
   const membersQuery = useMembers();
@@ -93,7 +113,19 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   // Above the loading and error branches, so a failed background refetch does
   // not unmount an open delete confirmation (see `SettingsFieldsTab`).
   const { confirm, confirmDialog } = useConfirmDialog();
-  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  // The class whose members are being edited. A tab left with one open
+  // (#4593) opens it again, on its draft, while it still holds one.
+  const keptKeys = useKeptDraftKeys();
+  const editorPanelKey = keptKeys.panel("pledge-classes");
+  const [editingClassId, setEditingClassId] = useState<string | null>(() => {
+    const left = readKeptPanel<string>(editorPanelKey);
+    return left && hasKeptDraft(keptKeys.draft(classDraftName(left)))
+      ? left
+      : null;
+  });
+  useEffect(() => {
+    writeKeptPanel(editorPanelKey, editingClassId);
+  }, [editorPanelKey, editingClassId]);
   // The order as the officer just dropped it, shown until the save and the
   // re-read answer, so a row never jumps back and then forward again.
   const [pendingOrder, setPendingOrder] = useState<PledgeClass[] | null>(null);
@@ -245,14 +277,14 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
       {confirmDialog}
       {body}
       <Panel
-        open={editingClass !== null && members !== undefined}
+        open={editingClass !== null && members !== undefined && canManage}
         onOpenChange={(open) => {
           if (!open) setEditingClassId(null);
         }}
         docked
         backLabel={`Back to ${classTerm}`}
       >
-        {editingClass && members ? (
+        {editingClass && members && canManage ? (
           <ClassMembersEditor
             // Keyed by class, so a draft never carries over to the next class.
             key={editingClass.id}
@@ -503,11 +535,31 @@ function rowName(member: MemberProfile): string {
   return memberLabel(member.display_name, member.user_id);
 }
 
+/** A class's members as editor rows, in the order the Directory lists them. */
+function rowsOf(
+  members: readonly MemberProfile[],
+  classId: string,
+  classes: readonly PledgeClass[],
+): ClassEditorRow[] {
+  return members
+    .filter((member) => member.pledge_class_id === classId)
+    .sort(fraternalOrderComparator(classes))
+    .map((member) => ({
+      memberId: member.id,
+      name: rowName(member),
+      number: member.order_number === null ? "" : String(member.order_number),
+    }));
+}
+
 /**
  * One class's members, in the order the Directory will list them. Dragging a
  * row renumbers the class (`renumberRows` says how), and each number can be
  * typed instead. Nothing is written until Save, which sends every change in
  * one request the API applies whole or not at all.
+ *
+ * Going back or leaving the page keeps the draft (#4593), with the roster it
+ * was worked out against, so Save still sends only what the officer changed.
+ * Cancel and Save give it up.
  */
 function ClassMembersEditor({
   pledgeClass,
@@ -525,22 +577,41 @@ function ClassMembersEditor({
 }) {
   const { toast } = useToast();
   const assign = useAssignPledgeClasses();
+  const keptKeys = useKeptDraftKeys();
+  const [opening] = useState(() =>
+    readKeptDraft<ClassDraft>(keptKeys.draft(classDraftName(pledgeClass.id))),
+  );
   // The roster as it stood when the editor opened. The rows are built from it
   // once, so the save is worked out against the same snapshot: a background
   // re-read that brings in a member another officer just added to this class
-  // must not read as "the officer took them out".
-  const [members] = useState(liveMembers);
-  const [rows, setRows] = useState<ClassEditorRow[]>(() =>
-    members
-      .filter((member) => member.pledge_class_id === pledgeClass.id)
-      .sort(fraternalOrderComparator(classes))
-      .map((member) => ({
-        memberId: member.id,
-        name: rowName(member),
-        number: member.order_number === null ? "" : String(member.order_number),
-      })),
+  // must not read as "the officer took them out". A kept draft brings its own.
+  const [members, setMembers] = useState(
+    () => opening?.members ?? liveMembers,
+  );
+  const [rows, setRows] = useState<ClassEditorRow[]>(
+    () => opening?.rows ?? rowsOf(liveMembers, pledgeClass.id, classes),
   );
   const [search, setSearch] = useState("");
+  const kept = useKeptFormDraft<ClassDraft>(
+    classDraftName(pledgeClass.id),
+    true,
+    { members, rows },
+    { signature: JSON.stringify(rows), restoredAtMount: opening !== undefined },
+  );
+
+  /** Cancel: give the draft up and close. */
+  function cancel() {
+    kept.drop();
+    onDone();
+  }
+
+  /** Discard: start over from the roster as it is now. */
+  function discard() {
+    kept.discard();
+    setMembers(liveMembers);
+    setRows(rowsOf(liveMembers, pledgeClass.id, classes));
+    setSearch("");
+  }
 
   const classNameById = useMemo(
     () => new Map(classes.map((entry) => [entry.id, entry.name])),
@@ -582,11 +653,14 @@ function ClassMembersEditor({
 
   async function handleSave() {
     if (!assignments || assignments.length === 0 || tooMany) return;
+    kept.hold();
     try {
       await assign.mutateAsync(assignments);
+      kept.drop();
       toast({ title: `${pledgeClass.name} saved` });
       onDone();
     } catch (error) {
+      kept.release();
       toast({
         title: `Couldn't save ${pledgeClass.name}`,
         description: getErrorMessage(
@@ -719,9 +793,10 @@ function ClassMembersEditor({
         </div>
       </PanelBody>
       <PanelFooter>
+        {kept.restored ? <KeptDraftNote onDiscard={discard} /> : null}
         <Button
           variant="secondary"
-          onClick={onDone}
+          onClick={cancel}
           disabled={assign.isPending}
         >
           Cancel

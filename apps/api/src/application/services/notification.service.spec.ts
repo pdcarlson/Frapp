@@ -66,6 +66,8 @@ describe('NotificationService', () => {
       markRead: jest.fn(),
       markChatChannelRead: jest.fn(),
       markAllRead: jest.fn(),
+      deleteMany: jest.fn(),
+      deleteConversation: jest.fn(),
       rewriteChatMessageBody: jest.fn(),
     };
     mockPushTokenRepo = {
@@ -100,6 +102,7 @@ describe('NotificationService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
     };
     mockPushProvider = {
       sendToUser: jest.fn().mockResolvedValue({ invalidTokens: [] }),
@@ -1643,6 +1646,48 @@ describe('NotificationService', () => {
         service.rewriteChatMessagePreview('chapter-1', 'm-1', 'fixed', ['u-1']),
       ).resolves.toBeUndefined();
       expect(captureException).toHaveBeenCalled();
+    });
+  });
+
+  describe('clearNotifications (#3948)', () => {
+    it('deletes the named rows, once each, scoped to the caller and chapter', async () => {
+      mockNotificationRepo.deleteMany.mockResolvedValue(2);
+
+      const result = await service.clearNotifications('user-1', 'chapter-1', [
+        'n-1',
+        'n-2',
+        'n-1',
+      ]);
+
+      expect(mockNotificationRepo.deleteMany).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        ['n-1', 'n-2'],
+      );
+      expect(result).toEqual({ cleared: 2 });
+      expect(mockNotificationRepo.deleteConversation).not.toHaveBeenCalled();
+    });
+
+    it('with a conversation, also clears its rows past the ids, up to now', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-13T19:00:00.000Z'));
+      mockNotificationRepo.deleteMany.mockResolvedValue(2);
+      mockNotificationRepo.deleteConversation.mockResolvedValue(5);
+
+      const result = await service.clearNotifications(
+        'user-1',
+        'chapter-1',
+        ['n-1', 'n-2'],
+        { channelId: 'c-1', threadRootId: 'm-1' },
+      );
+
+      expect(mockNotificationRepo.deleteConversation).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        { channelId: 'c-1', threadRootId: 'm-1' },
+        '2026-11-13T19:00:00.000Z',
+      );
+      expect(result).toEqual({ cleared: 7 });
+      jest.useRealTimers();
     });
   });
 

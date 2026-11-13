@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { MemberService } from './member.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
@@ -72,6 +73,7 @@ describe('MemberService', () => {
       findByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      setRoleIds: jest.fn(),
       delete: jest.fn(),
       // One chapter each unless a test says otherwise (#4367).
       findByUser: jest.fn().mockResolvedValue([]),
@@ -555,7 +557,7 @@ describe('MemberService', () => {
         customRole,
       ]);
       const updated = { ...existingMember, role_ids: ['role-1', 'role-2'] };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       const result = await service.updateRoles(
         'member-1',
@@ -564,10 +566,54 @@ describe('MemberService', () => {
         'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1', 'role-2'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1', 'role-2'],
+      );
       expect(result).toEqual(updated);
+    });
+
+    // #4830: a role delete committing between the reads and the write must
+    // not have its id written back, so the write compares against what was
+    // read and refuses when the row moved.
+    it('writes against the role_ids it read, and answers 409 when the row moved', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        customRole,
+      ]);
+      mockRepo.setRoleIds.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-1', 'role-2'],
+          'chapter-1',
+          'user-actor',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        'chapter-1',
+        'member-1',
+        ['role-1'],
+        ['role-1', 'role-2'],
+      );
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the member was removed while the save was out', async () => {
+      mockRepo.findById
+        .mockResolvedValueOnce(existingMember)
+        .mockResolvedValueOnce(null);
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole, customRole]);
+      mockRepo.setRoleIds.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     describe('the Everyone role (#4191)', () => {
@@ -596,9 +642,9 @@ describe('MemberService', () => {
           role_ids: held,
         });
         mockRoleRepo.findByChapter.mockResolvedValue(roles);
-        mockRepo.update.mockImplementation(
-          (_id: string, data: { role_ids: string[] }) =>
-            Promise.resolve({ ...existingMember, ...data }),
+        mockRepo.setRoleIds.mockImplementation(
+          (_chapterId: string, _id: string, _held: string[], ids: string[]) =>
+            Promise.resolve({ ...existingMember, role_ids: ids }),
         );
         await service.updateRoles(
           'member-1',
@@ -606,7 +652,8 @@ describe('MemberService', () => {
           'chapter-1',
           'user-actor',
         );
-        return mockRepo.update.mock.calls.at(-1)?.[1];
+        const ids = mockRepo.setRoleIds.mock.calls.at(-1)?.[3];
+        return ids && { role_ids: ids };
       };
 
       it('keeps it when a save leaves it off, as a shipped build may', async () => {
@@ -659,7 +706,7 @@ describe('MemberService', () => {
           'user-actor',
         ),
       ).rejects.toThrow(BadRequestException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('blocks adding the President role through the generic endpoint', async () => {
@@ -674,7 +721,7 @@ describe('MemberService', () => {
           'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('blocks removing the President role through the generic endpoint', async () => {
@@ -687,7 +734,7 @@ describe('MemberService', () => {
       await expect(
         service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('allows keeping the President role unchanged while editing other roles', async () => {
@@ -704,7 +751,7 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-president', 'role-2'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       const result = await service.updateRoles(
         'member-1',
@@ -713,9 +760,12 @@ describe('MemberService', () => {
         'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-president', 'role-2'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-president', 'role-2'],
+      );
       expect(result).toEqual(updated);
     });
 
@@ -731,7 +781,7 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-1', 'role-deleted'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       await service.updateRoles(
         'member-1',
@@ -740,9 +790,12 @@ describe('MemberService', () => {
         'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1', 'role-deleted'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1', 'role-deleted'],
+      );
     });
 
     it('compares wildcard roles as sets: duplicates neither bypass nor false-403', async () => {
@@ -776,7 +829,7 @@ describe('MemberService', () => {
           'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
 
       // (b) held [president]; payload [president, president, member role] —
       // the wildcard SET is unchanged → allowed.
@@ -788,7 +841,7 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-president', 'role-president', 'role-1'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       await service.updateRoles(
         'member-1',
@@ -796,9 +849,12 @@ describe('MemberService', () => {
         'chapter-1',
         'user-actor',
       );
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-president', 'role-president', 'role-1'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-president', 'role-president', 'role-1'],
+      );
     });
 
     it('blocks assigning a non-system role that carries the wildcard', async () => {
@@ -827,14 +883,14 @@ describe('MemberService', () => {
           'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('writes role_ids and never custom_role_ids (#4075)', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
       const updated = { ...existingMember };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       await service.updateRoles(
         'member-1',
@@ -843,9 +899,12 @@ describe('MemberService', () => {
         'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1'],
+      );
     });
   });
 
@@ -875,10 +934,12 @@ describe('MemberService', () => {
     const save = (memberId: string, roleIds: string[], actorUserId: string) => {
       mockRepo.findById.mockResolvedValue(memberRow(memberId));
       mockRoleRepo.findByChapter.mockResolvedValue(roles);
-      mockRepo.update.mockImplementation(async (id, data) => ({
-        ...memberRow(id),
-        ...data,
-      }));
+      mockRepo.setRoleIds.mockImplementation(
+        async (_chapterId, id, _held, ids) => ({
+          ...memberRow(id),
+          role_ids: ids,
+        }),
+      );
       mockRbacService.getRankContext.mockResolvedValue(
         tieredRankContext(actorUserId),
       );
@@ -893,7 +954,7 @@ describe('MemberService', () => {
           USER.riskChair,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it("stops a chair giving anyone a role in the chairs' own tier", async () => {
@@ -928,9 +989,12 @@ describe('MemberService', () => {
         [ROLE.brother, ROLE.pledge],
         USER.riskChair,
       );
-      expect(mockRepo.update).toHaveBeenCalledWith(TIERED_MEMBER.brother, {
-        role_ids: [ROLE.brother, ROLE.pledge],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        TIERED_MEMBER.brother,
+        expect.any(Array),
+        [ROLE.brother, ROLE.pledge],
+      );
     });
 
     it("refuses a role below the chair that carries a permission the chair lacks, so a second account can't collect it", async () => {
@@ -949,7 +1013,7 @@ describe('MemberService', () => {
           USER.riskChair,
         ),
       ).rejects.toThrow(/alumni:post/);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('lets an exec officer make a brother a chair, and the President do anything', async () => {
@@ -959,7 +1023,7 @@ describe('MemberService', () => {
         USER.vicePresident,
       );
       await save(TIERED_MEMBER.vicePresident, [ROLE.treasurer], USER.president);
-      expect(mockRepo.update).toHaveBeenCalledTimes(2);
+      expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
     });
   });
 

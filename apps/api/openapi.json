@@ -2926,6 +2926,53 @@
         ]
       }
     },
+    "/v1/notifications/clear": {
+      "post": {
+        "operationId": "NotificationController_clearNotifications_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearNotificationsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearNotificationsResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear (delete) the caller's own notifications by id",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v1/notifications/{id}/read": {
       "patch": {
         "operationId": "NotificationController_markRead_v1",
@@ -19726,6 +19773,62 @@
           "updated"
         ]
       },
+      "NotificationConversationDto": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "The chat channel (`data.target.channelId`)",
+            "format": "uuid"
+          },
+          "threadRootId": {
+            "type": "string",
+            "description": "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "ClearNotificationsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped.",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "conversation": {
+            "description": "Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationConversationDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "ClearNotificationsResultDto": {
+        "type": "object",
+        "properties": {
+          "cleared": {
+            "type": "number",
+            "description": "How many notifications this call cleared"
+          }
+        },
+        "required": [
+          "cleared"
+        ]
+      },
       "UpdateNotificationPreferenceDto": {
         "type": "object",
         "properties": {
@@ -27419,6 +27522,10 @@
             "type": "boolean",
             "description": "Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses."
           },
+          "check_in_needs_code": {
+            "type": "boolean",
+            "description": "Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise."
+          },
           "checked_in": {
             "type": "boolean",
             "nullable": true,
@@ -27450,6 +27557,7 @@
           "check_in_opens_minutes",
           "check_in_open",
           "check_in_needs_location",
+          "check_in_needs_code",
           "checked_in",
           "created_by",
           "created_at",
@@ -28856,6 +28964,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28869,6 +28982,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at"
         ]
@@ -28913,6 +29027,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28930,6 +29049,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at",
           "messages_linked"
@@ -29243,6 +29363,14 @@
           "actions": {
             "type": "boolean",
             "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
+          },
+          "door": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "chat_private"
+            ],
+            "description": "Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message."
           }
         },
         "required": [

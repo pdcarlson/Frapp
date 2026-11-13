@@ -12,6 +12,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { EyeOff } from "lucide-react";
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -57,12 +58,16 @@ import {
   noteComposerShellFocusable,
 } from "@/lib/chat/cold-load-marks";
 import {
+  ASK_COPY,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
+  askMentionQuestion,
   inspectUploadFile,
   isBetaOffModule,
+  readChannelAsk,
   readPreviewUpload,
   readSignedUpload,
+  type AskAccess,
   type MentionPick,
 } from "@repo/validation";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
@@ -469,6 +474,21 @@ interface ComposerBaseProps {
      */
     mentionPicks: MentionPick[],
   ) => void | Promise<void>;
+  /**
+   * Asking Frapp from this composer (#4713), for a member with Ask: Frapp is
+   * offered in the `@` list, and a message that names `@Frapp` is asked, not
+   * sent. `send` takes the question, with the handle taken out. Nothing is
+   * posted, and the answer is drawn in the channel for the member alone
+   * (`ask-in-channel.tsx`). Null or absent for everyone else, whose `@Frapp`
+   * is ordinary text.
+   */
+  ask?: { busy: boolean; send: (question: string) => void } | null;
+  /**
+   * Whether it is not yet known that this member has Ask (the reads are in
+   * flight, or failed). A message that names `@Frapp` is then held, not
+   * posted: it may be a question meant for Frapp alone (`readChannelAsk`).
+   */
+  askUnknown?: boolean;
   /**
    * Send a GIF picked from the GIF button's picker as its own message
    * (#4631). Omitted (GIFs not set up on this server, or a surface that
@@ -979,6 +999,8 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  ask = null,
+  askUnknown = false,
   onSendGif,
   gifProvider,
   onSlashDispatch,
@@ -1005,7 +1027,24 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement | null>(null);
   // The `@` list's roster and roles (`useMentionSourceRefs`, shared with the
   // inline editor a message turns into on Edit).
-  const { rosterRef, rolesRef } = useMentionSourceRefs();
+  const { rosterRef, rolesRef, spacedNames } = useMentionSourceRefs();
+  // Whether the `@` list offers Frapp, read on each keystroke: the editor's
+  // extensions are built once, before it is known whether this member has Ask.
+  const askRef = useRef(false);
+  // Whether a draft naming `@Frapp` may be a question (Ask, or not yet
+  // known): what the typing ping below goes by.
+  const mayAskRef = useRef(false);
+  const spacedNamesRef = useRef(spacedNames);
+  const askAccess: AskAccess = ask ? "yes" : askUnknown ? "unknown" : "no";
+  useEffect(() => {
+    askRef.current = ask !== null;
+    mayAskRef.current = askAccess !== "no";
+    spacedNamesRef.current = spacedNames;
+  }, [ask, askAccess, spacedNames]);
+  // Whether Send will ask Frapp instead of posting, so the composer can say
+  // so before it happens.
+  const asksFrapp =
+    ask !== null && askMentionQuestion(draft, spacedNames) !== null;
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -1090,7 +1129,8 @@ export function Composer({
       // colour the instant you pressed Enter. `createMentionSuggestion`
       // only reads the refs later, inside `items()` callbacks invoked from
       // keystroke events, never synchronously during render.
-      chatMentionExtension(rosterRef, rolesRef),
+      // eslint-disable-next-line react-hooks/refs -- read in items(), on a keystroke
+      chatMentionExtension(rosterRef, rolesRef, { askRef }),
       // Submit on Enter; Shift+Enter falls through to StarterKit's hard
       // break. Tiptap registers this shortcut while constructing the editor;
       // the handler reads `sendRef.current` only on Enter, not during render.
@@ -1132,8 +1172,12 @@ export function Composer({
       composerMentionPicks(channelId, editor);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
-      // for four seconds under the message that had just landed.
-      if (text.trim().length > 0) onTyping();
+      // for four seconds under the message that had just landed. Nor is a
+      // question for Frapp, which nobody else will see arrive (#4713).
+      const forFrapp =
+        mayAskRef.current &&
+        askMentionQuestion(text, spacedNamesRef.current) !== null;
+      if (text.trim().length > 0 && !forFrapp) onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
         parsed.isSlash &&
@@ -1416,6 +1460,29 @@ export function Composer({
         return;
       }
     }
+    // A message that names `@Frapp` is a question for Frapp, from a member
+    // with Ask (#4713). It is never posted: only the asker sees it and its
+    // answer. Each refusal keeps the member's text, and says what to change.
+    // While it is not yet known whether they have Ask, it is held the same
+    // way: posting it could put the question in front of the channel.
+    const reading = readChannelAsk({
+      text,
+      names: spacedNames,
+      access: askAccess,
+      attachments: pending.length,
+      busy: ask?.busy ?? false,
+    });
+    if (reading.kind === "refused") {
+      toast({ title: reading.reason });
+      return;
+    }
+    if (reading.kind === "ask" && ask) {
+      editor.commands.clearContent(true);
+      // A staged reply was context for a message that is not being sent.
+      if (replyTo) onCancelReply?.();
+      ask.send(reading.question);
+      return;
+    }
     /*
       Cleared optimistically, and put back whole if the send is refused (#1728).
 
@@ -1490,8 +1557,11 @@ export function Composer({
       });
     });
   }, [
+    ask,
+    askAccess,
     channelId,
     editor,
+    onCancelReply,
     onChangeDraft,
     onRestoreReply,
     onSend,
@@ -1502,6 +1572,7 @@ export function Composer({
     replyTo,
     showPlusForm,
     slashRefusal,
+    spacedNames,
     toast,
     uploading.length,
   ]);
@@ -2018,7 +2089,7 @@ export function Composer({
           overflow every touch target on it. The constant reserves what this row
           *comes out as*; it does not set it.
         */}
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="@container mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             {/*
               One + for a file and every command's form (#3865, layout A),
@@ -2088,6 +2159,35 @@ export function Composer({
             */}
             <AskComposerButton className="ml-1" />
           </div>
+          {/*
+            What Send will do while the draft names `@Frapp` (#4713), said
+            before it does it. On the row's own line between the controls and
+            Send, so it arrives and leaves without moving anything. Where the
+            row is too narrow for the sentence (a phone's width, or a chat
+            column squeezed by a thread beside it) it is the private mark and
+            two words, the mark the answer itself will carry; a sentence cut
+            to "Only you will…" told the member nothing. The row measures
+            itself (`@container`), since the window's width says little about
+            the composer's. A screen reader always gets the sentence.
+          */}
+          {asksFrapp ? (
+            <p
+              role="status"
+              data-ask-hint=""
+              className="flex min-w-0 flex-1 items-center justify-end gap-1 text-caption text-muted-foreground"
+            >
+              <EyeOff
+                className="h-3 w-3 shrink-0 @xl:hidden"
+                aria-hidden="true"
+              />
+              <span className="truncate @xl:hidden" aria-hidden="true">
+                {ASK_COPY.only_you_short}
+              </span>
+              <span className="sr-only @xl:not-sr-only @xl:truncate">
+                {ASK_COPY.only_you_hint}
+              </span>
+            </p>
+          ) : null}
           {/*
             A round arrow, the mobile composer's send (principles.md P6.5):
             one glyph for one action on both apps. 32px to a mouse and 44px to

@@ -22,6 +22,23 @@ export function chatMessagesKey(channelId: string) {
   return [CHAT_MESSAGE_QUERY_ROOT, channelId, "messages"] as const;
 }
 
+/**
+ * The channel id in a `chatMessagesKey`, or `null` for any other key, other
+ * `["chat", …]` keys included. The one test of that key's shape: a caller
+ * matching timelines in the query cache uses this rather than reading indexes.
+ */
+export function chatMessagesChannelId(
+  queryKey: readonly unknown[],
+): string | null {
+  const [root, channelId, leaf] = queryKey;
+  return root === CHAT_MESSAGE_QUERY_ROOT &&
+    typeof channelId === "string" &&
+    leaf === "messages" &&
+    queryKey.length === 3
+    ? channelId
+    : null;
+}
+
 /** A message thread's parent and the viewer's follow (#3785). */
 export function chatThreadKey(channelId: string, rootId: string) {
   return [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread", rootId] as const;

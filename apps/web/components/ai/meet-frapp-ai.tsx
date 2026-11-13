@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Sparkles } from "lucide-react";
 import { errorCopy, useFrappAiChoice } from "@repo/hooks";
 import {
@@ -199,6 +205,16 @@ export function useAiConsentGate(): {
     settle.current?.(ok);
     settle.current = null;
   }, []);
+  // A host that goes away with the dialog up answers No, as the phone's
+  // gate does: nothing else would settle the promise for a caller that
+  // outlives it.
+  useEffect(
+    () => () => {
+      settle.current?.(false);
+      settle.current = null;
+    },
+    [],
+  );
 
   const ensureConsent = useCallback(async (): Promise<boolean> => {
     // A failed read is not a No: it throws, so the entry point can say it

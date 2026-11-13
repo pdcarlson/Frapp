@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useCreateGeofence, useUpdateGeofence } from "@repo/hooks";
+import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,6 +90,54 @@ function sameShape(a: ZoneDraft, b: ZoneDraft): boolean {
     : JSON.stringify(a.points) === JSON.stringify(b.points);
 }
 
+/** One zone's kept draft (`@repo/hooks/kept-drafts`, #4593); null is New. */
+export function zoneDraftName(zoneId: string | null): string {
+  return zoneId ? `study-zone-edit:${zoneId}` : "study-zone-create";
+}
+
+type ZoneFields = {
+  name: string;
+  shape: ZoneDraft;
+  rules: Record<RuleKey, string>;
+};
+
+/** What is kept: the fields, and for an edit the zone as it opened. */
+type ZoneFormDraft = ZoneFields & { base: ZoneFields | null };
+
+function fieldsOf(zone: StudyZone | null): ZoneFields {
+  return {
+    name: zone?.name ?? "",
+    shape: zone ? draftFromZone(zone) : emptyZoneDraft(),
+    rules: zone
+      ? {
+          minutes_per_point: String(zone.minutes_per_point ?? 30),
+          points_per_interval: String(zone.points_per_interval ?? 1),
+          min_session_minutes: String(zone.min_session_minutes ?? 15),
+          pause_grace_minutes: String(zone.pause_grace_minutes ?? 5),
+        }
+      : RULE_DEFAULTS,
+  };
+}
+
+/**
+ * An edit's kept draft laid over the zone as it is now: only what the officer
+ * changed from the zone they opened, so another officer's change to the rest
+ * isn't undone (the Events editor's `keepEditsOver`).
+ */
+function keepZoneEditsOver(kept: ZoneFormDraft, now: ZoneFields): ZoneFields {
+  const base = kept.base;
+  if (!base) return { name: kept.name, shape: kept.shape, rules: kept.rules };
+  const rules = { ...now.rules };
+  for (const key of Object.keys(RULE_MIN) as RuleKey[]) {
+    if (kept.rules[key] !== base.rules[key]) rules[key] = kept.rules[key];
+  }
+  return {
+    name: kept.name !== base.name ? kept.name : now.name,
+    shape: sameShape(kept.shape, base.shape) ? now.shape : kept.shape,
+    rules,
+  };
+}
+
 function parseRules(
   draft: Record<RuleKey, string>,
 ): Record<RuleKey, number> | null {
@@ -119,6 +169,10 @@ type Props = {
  * Docked (panel.tsx): it takes the place of Chapter settings with a back
  * arrow, so the map gets the page's width instead of a 576px sheet, and the
  * officer comes back to the zone list they left.
+ *
+ * Going back or leaving the page keeps the draft (#4593), per zone, and it
+ * opens on it next time, saying so; an edit's draft keeps only what the
+ * officer changed. Cancel and saving give it up.
  */
 export function StudyZoneEditor({
   open,
@@ -143,32 +197,54 @@ export function StudyZoneEditor({
   const [rules, setRules] = useState<Record<RuleKey, string>>(RULE_DEFAULTS);
   const [shapeError, setShapeError] = useState<string | null>(null);
   const [rulesError, setRulesError] = useState<string | null>(null);
+  // The zone as this editor opened on it, kept with an edit's draft.
+  const [openedBase, setOpenedBase] = useState<ZoneFields | null>(null);
+  const kept = useKeptFormDraft<ZoneFormDraft>(
+    zoneDraftName(zone?.id ?? null),
+    open,
+    { name, shape, rules, base: openedBase },
+    { signature: JSON.stringify([name, shape, rules]) },
+  );
 
-  // Fresh each time it opens: the zone's own values, or a blank new one.
-  // Keyed by the zone's id, not the object, so a refetch while the officer is
-  // editing doesn't wipe what they've changed.
+  /** Fill the form: the kept draft over the zone, or the zone (or a blank). */
+  function fill(draft: ZoneFormDraft | undefined) {
+    const opened = fieldsOf(zone);
+    const fields = draft ? keepZoneEditsOver(draft, opened) : opened;
+    setName(fields.name);
+    setShape(fields.shape);
+    setRules(fields.rules);
+    setOpenedShape(zone ? opened.shape : null);
+    setOpenedBase(zone ? opened : null);
+    setShapeError(null);
+    setRulesError(null);
+  }
+
+  // Each time it opens: the kept draft, else the zone's own values or a blank
+  // new one. Keyed by the zone's id, not the object, so a refetch while the
+  // officer is editing doesn't wipe what they've changed.
   const formKey = open ? (zone?.id ?? "new") : null;
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   if (formKey !== loadedKey) {
     setLoadedKey(formKey);
-    if (formKey) {
-      setName(zone?.name ?? "");
-      const opened = zone ? draftFromZone(zone) : emptyZoneDraft();
-      setShape(opened);
-      setOpenedShape(zone ? opened : null);
-      setRules(
-        zone
-          ? {
-              minutes_per_point: String(zone.minutes_per_point ?? 30),
-              points_per_interval: String(zone.points_per_interval ?? 1),
-              min_session_minutes: String(zone.min_session_minutes ?? 15),
-              pause_grace_minutes: String(zone.pause_grace_minutes ?? 5),
-            }
-          : RULE_DEFAULTS,
-      );
-      setShapeError(null);
-      setRulesError(null);
-    }
+    if (formKey) fill(kept.take());
+  }
+  // The zone open now, for a save that lands after the officer moved on to
+  // another one: it closes only the editor it was sent from.
+  const openKey = useRef(formKey);
+  useEffect(() => {
+    openKey.current = formKey;
+  });
+
+  /** Cancel: give the draft up and close. */
+  function cancel() {
+    kept.drop();
+    onOpenChange(false);
+  }
+
+  /** Discard: start over from the zone as it is now, or a blank one. */
+  function discard() {
+    kept.discard();
+    fill(undefined);
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -186,6 +262,8 @@ export function StudyZoneEditor({
     );
     if (!shapeBody.ok || !parsedRules) return;
     const trimmed = name.trim();
+    const sentFrom = formKey;
+    kept.hold();
     try {
       if (zone) {
         await updateZone.mutateAsync({
@@ -205,8 +283,10 @@ export function StudyZoneEditor({
           description: `Members can study at ${trimmed} now.`,
         });
       }
-      onOpenChange(false);
+      kept.drop();
+      if (openKey.current === sentFrom) onOpenChange(false);
     } catch (error) {
+      kept.release();
       toast({
         title: zone ? "Couldn't save study zone" : "Couldn't create study zone",
         description: getErrorMessage(error, "Try again in a moment."),
@@ -315,10 +395,11 @@ export function StudyZoneEditor({
           </div>
         </PanelBody>
         <PanelFooter className="px-5">
+          {kept.restored ? <KeptDraftNote onDiscard={discard} /> : null}
           <Button
             type="button"
             variant="secondary"
-            onClick={() => onOpenChange(false)}
+            onClick={cancel}
             disabled={pending}
           >
             Cancel

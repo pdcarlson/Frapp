@@ -242,9 +242,20 @@ export function EventDetailSheet({
       : "";
   const notes =
     typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
-  // Three states, not two (`checkInZoneState`): a zone with a bad point
-  // refuses every check-in, which is not "no zone".
-  const zoneState = checkInZoneState(resolvedEvent?.check_in_zone);
+  // `checkInZoneState`: a zone with a bad point refuses every check-in, which
+  // is not "no zone", and a zoneless event whose check-in needs an officer's
+  // code (#4808) is not "check in from anywhere" either.
+  const zoneState = checkInZoneState(
+    resolvedEvent?.check_in_zone,
+    resolvedEvent?.check_in_needs_code,
+  );
+  // Only the event's own read says whether an officer's code is required:
+  // the list row the sheet opens with doesn't carry it. Until that read lands,
+  // offering Check in could be a sure refusal, so the check-in block waits,
+  // as the chat card does. A failed read stops waiting, and the server's
+  // answer explains itself.
+  const checkInReadPending =
+    !usingPreviewData && eventQuery.data === undefined && !eventQuery.isError;
   const hasCheckInZone = zoneState === "zone";
   const checkInZoneIsMalformed = zoneState === "malformed";
   const checkInZoneName =
@@ -422,6 +433,7 @@ export function EventDetailSheet({
                 pointValue={resolvedEvent?.point_value}
                 eventUnavailable={eventUnavailable}
                 zone={zoneState}
+                eventPending={checkInReadPending}
               />
             ) : null}
             {/* Keyed by event: the sheet switches series occurrences in
@@ -494,6 +506,11 @@ export function EventDetailSheet({
                       rejected. Edit the event to finish or clear it.
                     </div>
                   </div>
+                ) : zoneState === "code" ? (
+                  <p className="text-sm text-muted-foreground">
+                    No zone. An officer&apos;s screen is showing the code, so
+                    members scan it to check in
+                  </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No zone, so members can check in from anywhere

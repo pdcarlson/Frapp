@@ -109,6 +109,7 @@ export * from "./member-nudge";
 // since mentions override a per-channel mute in the push rules and a
 // client-supplied list would be forgeable.
 export * from "./mentions";
+export * from "./message-link";
 export * from "./message-text";
 export * from "./module-enablement";
 export * from "./module-refusal";

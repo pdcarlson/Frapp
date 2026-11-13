@@ -9,15 +9,20 @@ import {
 } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { MemberAvatarTint } from "@repo/hooks";
-import { mentionRoleHint } from "@repo/validation";
+import { ASK_COPY, mentionRoleHint } from "@repo/validation";
+import { FrappCrest } from "@/components/ask/frapp-crest";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, initials } from "@/lib/utils";
 
 /** One roster member, or one role, as offered to the `@`-mention popup. */
 export interface MentionSuggestionItem {
-  /** A role row reaches everyone holding it once the server resolves it. */
-  kind: "member" | "role";
+  /**
+   * A role row reaches everyone holding it once the server resolves it. The
+   * `ask` row is Frapp itself (#4713): picking it makes the message a
+   * question, answered to the member alone.
+   */
+  kind: "member" | "role" | "ask";
   /** `users.id`, or the role's id. */
   id: string;
   /**
@@ -192,7 +197,17 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}
           >
-            {item.kind === "role" ? (
+            {item.kind === "ask" ? (
+              // Frapp's own mark, in the chapter's colour as the composer's
+              // Ask button draws it (`ask-host.tsx`).
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-popover"
+                aria-hidden="true"
+                data-mention-ask-glyph
+              >
+                <FrappCrest className="h-[14px] w-[12px] text-primary" />
+              </span>
+            ) : item.kind === "role" ? (
               // A role has no face, so its 24px slot holds the Roles nav glyph
               // (the same silhouette as the sidebar's Roles and mobile's row)
               // on the fill an initials avatar takes, and the row says "Role"
@@ -216,7 +231,12 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
               </Avatar>
             )}
             <span className="min-w-0 flex-1 truncate">{item.displayName}</span>
-            {item.kind === "role" ? (
+            {item.kind === "ask" ? (
+              // What picking it does, said before it is picked.
+              <span className="shrink-0 text-muted-foreground">
+                {ASK_COPY.mention_hint}
+              </span>
+            ) : item.kind === "role" ? (
               // "Role", "Tier" or "Group", or who `@everyone` and `@here` reach, as Slack's and
               // Discord's pickers say (`mentionRoleHint`, shared with mobile).
               <span className="shrink-0 text-muted-foreground">

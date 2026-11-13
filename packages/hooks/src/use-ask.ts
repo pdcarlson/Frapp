@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { codeOf, throwUnlessOk, type components } from "@repo/api-sdk";
 import {
@@ -30,7 +39,10 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * It also holds the conversation (`ai.md` § One conversation): every turn of
  * this sitting, in order. The server keeps nothing between questions, so the
  * turns before a question are sent with it (`askHistory`). The conversation
- * lives as long as the screen that holds this hook, and is gone on reload.
+ * lives as long as whatever holds it, and is gone on reload: the app's
+ * `AskConversationProvider`, so that Ask's own screen and a channel a member
+ * asked `@Frapp` from show the same thread (#4713), or, with no provider
+ * above it, the screen that calls `useAsk`.
  */
 
 /** `GET /v1/ai/ask`: whether exchanges are being kept, and who may change that. */
@@ -148,6 +160,27 @@ export type AskProposalResolution =
   /** It stopped waiting before the member decided: a day passed, or it was decided elsewhere. */
   | { kind: "gone" };
 
+/**
+ * Where a turn was asked, when that was a chat composer (`@Frapp`, #4713).
+ * The turn is drawn in that channel for the asker alone, at the moment it
+ * was asked, as well as in Ask's thread. It is never a message: nothing
+ * about it is sent to the channel.
+ */
+interface AskOrigin {
+  channelId: string;
+  /** When it was asked (ISO), which is where it sits among the messages. */
+  at: string;
+  /**
+   * The newest message in the channel when it was asked, by the key the
+   * list draws it under (`client_message_id ?? id`), or null for none. The
+   * turn sits under that message; `at` places it when the message is gone.
+   * A key, because two clocks need not agree on which message came first.
+   */
+  after?: string | null;
+  /** The member dismissed it from the channel. It stays in Ask's thread. */
+  dismissed?: boolean;
+}
+
 /** One turn: what the member typed and what has come back for it so far. */
 export interface AskExchange {
   /** This turn's place in the conversation: a list key, and what the turn's changes name. */
@@ -192,6 +225,8 @@ export interface AskExchange {
   resolution: AskProposalResolution | null;
   /** Why it failed, in words to show, and whether asking again may work. */
   failure: { message: string; retryable: boolean } | null;
+  /** Set when the turn was asked from a chat composer. */
+  origin?: AskOrigin;
 }
 
 /** An answer no stream was opened for: the server refused before it began. */
@@ -321,19 +356,21 @@ export interface AskOptions {
    * throw ends it as a failure to try again.
    */
   gate?: () => Promise<boolean>;
+  /**
+   * The channel whose composer this was typed in, with `@Frapp` (#4713).
+   * The turn is then also drawn there, for the asker alone, and the request
+   * says which door it came through. A turn asked again keeps where it was
+   * first asked.
+   */
+  channelId?: string;
+  /** With `channelId`: the newest message there now (`AskOrigin.after`). */
+  afterMessage?: string | null;
 }
 
 let nextExchange = 0;
 
-/**
- * Asks, and holds the conversation on screen.
- *
- * `ask` adds a turn and resolves when it is over, however it ended; it never
- * rejects. `retry` asks a failed turn's question again in its place at the
- * end. `stop` abandons the question in flight and takes its turn away
- * (closing the panel), and `reset` starts a new conversation.
- */
-export function useAsk(): {
+/** The conversation, and what can be done to it. */
+export interface AskConversation {
   exchanges: AskExchange[];
   /** A turn is waiting on the server. */
   working: boolean;
@@ -343,9 +380,127 @@ export function useAsk(): {
   setProposal: (id: string, proposal: ActResponse) => void;
   /** Records that a turn's card was confirmed or dismissed. */
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
+  /**
+   * Takes a turn asked from a channel out of that channel's view. It stays
+   * in the conversation, so Ask's own screen still shows it.
+   */
+  dismissFromChannel: (id: string) => void;
   stop: () => void;
   reset: () => void;
-} {
+}
+
+const AskConversationContext = createContext<AskConversation | null>(null);
+
+/**
+ * Holds one conversation for everything under it (#4713): Ask's own screen
+ * and each channel a member asks `@Frapp` from read and write the same
+ * turns. Mounted once, above both. `scope` says whose it is, so a
+ * conversation never follows a member into another chapter or account.
+ */
+export function AskConversationProvider({
+  scope,
+  children,
+}: {
+  /**
+   * Whose conversation this is, as one string (the member and the chapter).
+   * When it changes the conversation starts over. Not a `key`, which would
+   * remount everything under the provider too.
+   */
+  scope?: string | null;
+  children: ReactNode;
+}) {
+  const conversation = useAskConversation();
+  const { reset } = conversation;
+  const held = useRef(scope);
+  useEffect(() => {
+    if (held.current === scope) return;
+    held.current = scope;
+    reset();
+  }, [scope, reset]);
+  return createElement(
+    AskConversationContext.Provider,
+    { value: conversation },
+    children,
+  );
+}
+
+/**
+ * Asks, and holds the conversation on screen.
+ *
+ * `ask` adds a turn and resolves when it is over, however it ended; it never
+ * rejects. `retry` asks a failed turn's question again in its place at the
+ * end. `stop` abandons the question in flight and takes its turn away
+ * (closing the panel), and `reset` starts a new conversation.
+ *
+ * Under an `AskConversationProvider` this is the shared conversation. With
+ * none above it, the caller holds a conversation of its own, as every caller
+ * did before #4713.
+ */
+export function useAsk(): AskConversation {
+  const shared = useContext(AskConversationContext);
+  // Always called, so the hook order is the same either way; with a shared
+  // conversation this one is never asked anything and stays empty.
+  const own = useAskConversation();
+  return shared ?? own;
+}
+
+/**
+ * The turns of the conversation that were asked from this channel and not
+ * dismissed there, oldest first. Empty with no channel.
+ */
+export function askTurnsInChannel(
+  exchanges: readonly AskExchange[],
+  channelId: string | null | undefined,
+): AskExchange[] {
+  if (!channelId) return [];
+  return exchanges.filter(
+    (exchange) =>
+      exchange.origin?.channelId === channelId && !exchange.origin.dismissed,
+  );
+}
+
+/** The key turns are listed under when they sit above every row. */
+export const ASK_TURNS_ABOVE_ALL = "";
+
+/**
+ * Where each turn asked in a channel sits among that channel's rows: under
+ * the row it names (`AskOrigin.after`), or, when that row is not in the list,
+ * under the last row sent at or before the turn was asked. A turn older than
+ * every row sits above them all ({@link ASK_TURNS_ABOVE_ALL}).
+ *
+ * `rows` are the list's rows, oldest first. Both clients draw from this, so
+ * a turn is in the same place on each.
+ */
+export function placeAskTurns<T extends Pick<AskExchange, "origin">>(
+  rows: readonly { key: string; at: string }[],
+  turns: readonly T[],
+): Map<string, T[]> {
+  const placed = new Map<string, T[]>();
+  if (turns.length === 0) return placed;
+  const keys = new Set(rows.map((row) => row.key));
+  for (const turn of turns) {
+    if (!turn.origin) continue;
+    let under = ASK_TURNS_ABOVE_ALL;
+    if (turn.origin.after && keys.has(turn.origin.after)) {
+      under = turn.origin.after;
+    } else {
+      const asked = Date.parse(turn.origin.at);
+      for (const row of rows) {
+        // An unreadable time sorts the row before the turn: a turn is never
+        // lifted above a message because of a bad date on it.
+        const sent = Date.parse(row.at);
+        if (!Number.isNaN(sent) && sent > asked) break;
+        under = row.key;
+      }
+    }
+    const list = placed.get(under);
+    if (list) list.push(turn);
+    else placed.set(under, [turn]);
+  }
+  return placed;
+}
+
+function useAskConversation(): AskConversation {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const [exchanges, setExchanges] = useState<AskExchange[]>([]);
@@ -408,6 +563,20 @@ export function useAsk(): {
       const id = `turn-${(nextExchange += 1)}`;
       const earlier = latest.current.filter((exchange) => exchange.id !== drop);
       const history = askHistoryOf(earlier);
+      // A turn asked again stays where it was first asked: its place in the
+      // channel, or Ask's own screen.
+      const again = drop
+        ? latest.current.find((exchange) => exchange.id === drop)
+        : undefined;
+      const origin: AskOrigin | undefined = again
+        ? again.origin
+        : options?.channelId
+          ? {
+              channelId: options.channelId,
+              at: new Date().toISOString(),
+              after: options.afterMessage ?? null,
+            }
+          : undefined;
       /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
         if (inFlight.current === abort) patch(id, change);
@@ -428,6 +597,7 @@ export function useAsk(): {
           proposal: null,
           resolution: null,
           failure: null,
+          ...(origin ? { origin } : {}),
         },
       ]);
 
@@ -463,6 +633,9 @@ export function useAsk(): {
               ? { actions: true }
               : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
+            // Only the new door is named: a server from before #4713
+            // refuses a field it does not know, and "ask" is its default.
+            ...(origin ? { door: "chat_private" as const } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,
@@ -567,6 +740,16 @@ export function useAsk(): {
     [patch],
   );
 
+  const dismissFromChannel = useCallback(
+    (id: string) =>
+      patch(id, (current) =>
+        current.origin
+          ? { ...current, origin: { ...current.origin, dismissed: true } }
+          : current,
+      ),
+    [patch],
+  );
+
   return {
     exchanges,
     working: exchanges.some((exchange) => exchange.phase === "working"),
@@ -574,6 +757,7 @@ export function useAsk(): {
     retry,
     setProposal,
     resolveProposal,
+    dismissFromChannel,
     stop,
     reset,
   };

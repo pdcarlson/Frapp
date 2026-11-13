@@ -101,7 +101,9 @@ export const ROLES_SAVE_FAILED_TITLE = "Couldn't save roles";
  * Why a save failed, by the API's answer: a 400 is a role deleted since the
  * list loaded; a 403 is a change the viewer may no longer make (they lost
  * `roles:manage`, the member left the chapter, or the change touched
- * President). Neither is fixed by trying again. `name` is set when the officer
+ * President); a 409 is a save that crossed another change to the member's
+ * roles, such as a role deleted mid-save (#4830). None is fixed by trying
+ * again from the same list. `name` is set when the officer
  * has already moved on to someone else, so the alert says whose change it was.
  */
 export function rolesSaveFailedBody(
@@ -111,6 +113,9 @@ export function rolesSaveFailedBody(
   const change = name ? `Your change to ${name}'s roles` : "The change";
   if (status === 400) {
     return `One of those roles was just deleted. ${change} was put back and the list refreshed.`;
+  }
+  if (status === 409) {
+    return `Someone changed these roles at the same time. ${change} was put back and the list refreshed.`;
   }
   if (status === 403) {
     return `${change} isn't allowed any more, so it was put back.`;

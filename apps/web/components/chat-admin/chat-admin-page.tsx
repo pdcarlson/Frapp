@@ -1,6 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { useKeptPanel } from "@repo/hooks/kept-drafts";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -82,7 +83,7 @@ import {
   ChatAdminBodySkeleton,
 } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
-import { CreateChannelSheet } from "./create-channel-sheet";
+import { CreateChannelSheet, channelDraftName } from "./create-channel-sheet";
 import {
   CHAT_SETTINGS_PATH,
   channelSettingsPath,
@@ -683,6 +684,15 @@ function ChatAdminBody({
 
   // ── Create-channel panel (`create-channel-sheet.tsx`, shared with the rail)
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // Left with New channel open, the page reopens it on its draft (#4593).
+  // A channel's own page has no New channel, so it waits for the chapter's.
+  useKeptPanel({
+    page: "chat-admin",
+    form: channelDraftName(null, true),
+    open: createDialogOpen,
+    setOpen: setCreateDialogOpen,
+    ready: !channelMode,
+  });
 
   // ── Pinned messages for the selected channel ────────────────────────────
   const pinsQuery = usePinnedMessages(selectedChannelId ?? "");

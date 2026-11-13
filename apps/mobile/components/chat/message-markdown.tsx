@@ -323,7 +323,9 @@ const COMPONENTS: Components = {
     return (
       <Text
         accessibilityRole="link"
-        onPress={() => void openMessageLink(link.href)}
+        onPress={() =>
+          void openMessageLink(link.href, { chatLinksInApp: true })
+        }
         // A nested `Text` with `onPress` claims the touch, so it forwards the
         // row's long-press.
         onLongPress={onLongPress}
@@ -442,7 +444,7 @@ export function runLinkA11yAction(
   if (!actionName.startsWith(OPEN_LINK_ACTION_PREFIX)) return false;
   const link = links[Number(actionName.slice(OPEN_LINK_ACTION_PREFIX.length))];
   if (!link) return false;
-  void openMessageLink(link.href);
+  void openMessageLink(link.href, { chatLinksInApp: true });
   return true;
 }
 

@@ -12,7 +12,11 @@ import {
   type AskStreamEvent,
 } from "@repo/validation";
 import {
+  ASK_TURNS_ABOVE_ALL,
+  AskConversationProvider,
   applyAskEvent,
+  askTurnsInChannel,
+  placeAskTurns,
   useAsk,
   useAskStatus,
   useAskSuggestions,
@@ -539,6 +543,186 @@ describe("the Ask hooks", () => {
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("What is quorum?"));
     expect(result.current.exchanges[0]?.phase).toBe("failed");
+  });
+
+  describe("asked from a channel (#4713)", () => {
+    const answering = () =>
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+
+    it("names the chat door, and only then", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("From the screen?"));
+      await act(() => result.current.ask("From a channel?", { channelId: "c1" }));
+      expect(POST.mock.calls[0]![1].body).toEqual({ question: "From the screen?" });
+      expect(POST.mock.calls[1]![1].body).toMatchObject({
+        question: "From a channel?",
+        door: "chat_private",
+      });
+    });
+
+    it("keeps where the turn was asked, and lists it for that channel only", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("From the screen?"));
+      await act(() => result.current.ask("In general?", { channelId: "c1" }));
+      await act(() =>
+        result.current.ask("In rush?", { channelId: "c2", afterMessage: "m9" }),
+      );
+      const { exchanges } = result.current;
+      expect(exchanges[0]!.origin).toBeUndefined();
+      expect(exchanges[1]!.origin).toMatchObject({ channelId: "c1", after: null });
+      expect(Number.isNaN(Date.parse(exchanges[1]!.origin!.at))).toBe(false);
+      expect(askTurnsInChannel(exchanges, "c1").map((turn) => turn.question)).toEqual([
+        "In general?",
+      ]);
+      expect(exchanges[2]!.origin).toMatchObject({ channelId: "c2", after: "m9" });
+      expect(askTurnsInChannel(exchanges, "c3")).toEqual([]);
+      expect(askTurnsInChannel(exchanges, null)).toEqual([]);
+    });
+
+    it("dismisses a turn from its channel and keeps it in the conversation", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("In general?", { channelId: "c1" }));
+      const id = result.current.exchanges[0]!.id;
+      act(() => result.current.dismissFromChannel(id));
+      expect(askTurnsInChannel(result.current.exchanges, "c1")).toEqual([]);
+      expect(result.current.exchanges).toHaveLength(1);
+      // The next question still leans on it.
+      await act(() => result.current.ask("And then?"));
+      expect(POST.mock.calls[1]![1].body.history).toEqual([
+        { question: "In general?", answer: ANSWER.text },
+      ]);
+    });
+
+    it("asks a failed turn again in the place it was first asked", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
+        .mockResolvedValueOnce(streamed([{ v, type: "done", answer: ANSWER }]));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("In general?", { channelId: "c1" }));
+      const first = result.current.exchanges[0]!;
+      expect(first.phase).toBe("failed");
+      await act(() => result.current.retry(first.id));
+      const again = result.current.exchanges[0]!;
+      expect(again.phase).toBe("done");
+      expect(again.origin).toEqual(first.origin);
+      expect(POST.mock.calls[1]![1].body.door).toBe("chat_private");
+    });
+  });
+
+  describe("placeAskTurns (#4713)", () => {
+    const rows = [
+      { key: "m1", at: "2026-11-13T10:00:00.000Z" },
+      { key: "m2", at: "2026-11-13T10:05:00.000Z" },
+      { key: "m3", at: "2026-11-13T10:10:00.000Z" },
+    ];
+    const turn = (id: string, at: string, after?: string | null): AskExchange => ({
+      ...WORKING,
+      id,
+      origin: { channelId: "c1", at, after },
+    });
+
+    it("sits under the message that was newest when it was asked", () => {
+      const placed = placeAskTurns(rows, [turn("t1", "2026-11-13T09:00:00.000Z", "m2")]);
+      expect([...placed.keys()]).toEqual(["m2"]);
+    });
+
+    it("falls back to the time when that message is not in the list", () => {
+      const placed = placeAskTurns(rows, [
+        turn("t1", "2026-11-13T10:07:00.000Z", "gone"),
+        turn("t2", "2026-11-13T10:07:30.000Z", null),
+      ]);
+      expect(placed.get("m2")?.map((t) => t.id)).toEqual(["t1", "t2"]);
+    });
+
+    it("sits above every row when it is older than all of them, or there are none", () => {
+      expect([
+        ...placeAskTurns(rows, [turn("t1", "2026-11-13T09:00:00.000Z")]).keys(),
+      ]).toEqual([ASK_TURNS_ABOVE_ALL]);
+      expect([
+        ...placeAskTurns([], [turn("t1", "2026-11-13T09:00:00.000Z", "m1")]).keys(),
+      ]).toEqual([ASK_TURNS_ABOVE_ALL]);
+    });
+
+    it("stays under its message when newer ones arrive", () => {
+      const asked = [turn("t1", "2026-11-13T10:10:01.000Z", "m3")];
+      const later = [...rows, { key: "m4", at: "2026-11-13T10:11:00.000Z" }];
+      expect([...placeAskTurns(later, asked).keys()]).toEqual(["m3"]);
+    });
+
+    it("ignores a turn that was not asked from a channel", () => {
+      expect(placeAskTurns(rows, [WORKING]).size).toBe(0);
+    });
+  });
+
+  describe("AskConversationProvider (#4713)", () => {
+    it("starts over when the member or the chapter changes", async () => {
+      const POST = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+      const Outer = wrapper({ POST });
+      let scope = "user-1:chapter-1";
+      const Shared = ({ children }: { children: React.ReactNode }) => (
+        <Outer>
+          <AskConversationProvider scope={scope}>{children}</AskConversationProvider>
+        </Outer>
+      );
+      const { result, rerender } = renderHook(() => useAsk(), { wrapper: Shared });
+      await act(() => result.current.ask("Mine?"));
+      rerender();
+      expect(result.current.exchanges).toHaveLength(1);
+      scope = "user-1:chapter-2";
+      rerender();
+      await waitFor(() => expect(result.current.exchanges).toEqual([]));
+    });
+
+    it("is one conversation for every caller under it", async () => {
+      const POST = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+      const Outer = wrapper({ POST });
+      const Shared = ({ children }: { children: React.ReactNode }) => (
+        <Outer>
+          <AskConversationProvider>{children}</AskConversationProvider>
+        </Outer>
+      );
+      const { result } = renderHook(
+        () => ({ screen: useAsk(), channel: useAsk() }),
+        { wrapper: Shared },
+      );
+      await act(() => result.current.channel.ask("In general?", { channelId: "c1" }));
+      expect(result.current.screen.exchanges.map((turn) => turn.question)).toEqual([
+        "In general?",
+      ]);
+      act(() => result.current.screen.reset());
+      expect(result.current.channel.exchanges).toEqual([]);
+    });
+
+    it("with no provider, each caller holds its own, as before", async () => {
+      const POST = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+      const { result } = renderHook(
+        () => ({ one: useAsk(), two: useAsk() }),
+        { wrapper: wrapper({ POST }) },
+      );
+      await act(() => result.current.one.ask("Mine?"));
+      expect(result.current.one.exchanges).toHaveLength(1);
+      expect(result.current.two.exchanges).toEqual([]);
+    });
   });
 
   it("asks nothing for an empty question", async () => {

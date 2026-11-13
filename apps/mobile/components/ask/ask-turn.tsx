@@ -122,6 +122,45 @@ export function AskTurn({
           {exchange.question}
         </Text>
       </View>
+      <AskReply
+        exchange={exchange}
+        proposal={proposal}
+        canOpen={canOpen}
+        openingSourceId={openingSourceId}
+        onOpenSource={onOpenSource}
+        busy={busy}
+        onRetry={onRetry}
+        onAnswerConsent={onAnswerConsent}
+        report={report}
+      />
+    </View>
+  );
+}
+
+type AskReplyProps = Parameters<typeof AskTurn>[0];
+
+/**
+ * What Frapp came back with for one turn: the words as they arrive, then the
+ * answer or the card, or the failure. `AskTurn` draws it under the question's
+ * bubble; a channel draws it under Frapp's name for a turn asked there with
+ * `@Frapp` (`ask-in-channel.tsx`, #4713), so an answer reads the same in both
+ * places.
+ */
+export function AskReply({
+  exchange,
+  proposal,
+  canOpen,
+  openingSourceId,
+  onOpenSource,
+  busy = false,
+  onRetry,
+  onAnswerConsent,
+  report,
+}: AskReplyProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
+  return (
       <View style={styles.reply} accessibilityLiveRegion="polite">
         {exchange.phase === "working" ? (
           <>
@@ -178,7 +217,6 @@ export function AskTurn({
           />
         ) : null}
       </View>
-    </View>
   );
 }
 

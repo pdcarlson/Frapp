@@ -1,6 +1,12 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import {
+  hasKeptDraft,
+  readKeptPanel,
+  useKeptDraftKeys,
+  writeKeptPanel,
+} from "@repo/hooks/kept-drafts";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -42,6 +48,7 @@ import { GeofenceRowsSkeleton } from "@/components/geofences/geofences-skeleton"
 import { InlineNote } from "@/components/shared/inline-note";
 import {
   StudyZoneEditor,
+  zoneDraftName,
   type StudyZone,
 } from "@/components/geofences/study-zone-editor";
 
@@ -100,6 +107,48 @@ export function StudyZonesManager() {
     "geofences:manage",
     permissionsPayload?.permissions,
   );
+
+  // The editor the page was left with open (#4593): reopened on its draft
+  // once the officer may still open it and, for an edit, the zone is still
+  // there. Until then the mark that says so stays.
+  const keptKeys = useKeptDraftKeys();
+  const editorPanelKey = keptKeys.panel("study-zones");
+  const [leftEditor, setLeftEditor] = useState<{ id: string | null } | null>(
+    () => {
+      const left = readKeptPanel<{ id: string | null }>(editorPanelKey);
+      return left && hasKeptDraft(keptKeys.draft(zoneDraftName(left.id)))
+        ? left
+        : null;
+    },
+  );
+  const zonesLoaded = geofencesQuery.data !== undefined;
+  useEffect(() => {
+    if (!leftEditor || !canManageZones || !gate.allowed) return;
+    if (leftEditor.id !== null) {
+      if (!zonesLoaded) return;
+      if (!zones.some((zone) => zone.id === leftEditor.id)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- its zone is gone, so there is nothing to reopen
+        setLeftEditor(null);
+        writeKeptPanel(editorPanelKey, null);
+        return;
+      }
+    }
+    setLeftEditor(null);
+    setEditingId(leftEditor.id);
+    setEditorOpen(true);
+  }, [
+    leftEditor,
+    canManageZones,
+    gate.allowed,
+    zonesLoaded,
+    zones,
+    editorPanelKey,
+    setEditorOpen,
+  ]);
+  useEffect(() => {
+    if (leftEditor && !editorOpen) return;
+    writeKeptPanel(editorPanelKey, editorOpen ? { id: editingId } : null);
+  }, [editorPanelKey, editorOpen, editingId, leftEditor]);
 
   function openEditor(zone: StudyZone | null) {
     setEditingId(zone?.id ?? null);

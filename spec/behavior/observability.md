@@ -508,6 +508,17 @@ Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28]
 
 A call the gateway stops before the provider (the server switch, no credential, consent, a spend cap) sends nothing. A provider error is thrown as a `LanguageModelError`, which carries the error's kind, HTTP status and request id and never the provider's message, because a provider's 400 can quote the request back. `ai-gateway.service.spec.ts` asserts that no prompt, source or answer text reaches a log line, a Sentry envelope or the event, on a call that succeeds and one that fails.
 
+## AI question events
+
+Each question a member is allowed to ask sends one PostHog event, `ai-question-asked`, from the ask route (`AskController`, through `AnalyticsService.track`, attributed to the member and their chapter group like any server event). It exists to say which way into Ask members use (#4713), and it holds nothing of what was asked.
+
+| Property | Value |
+| --- | --- |
+| `door` | Where the question was typed: `ask` (Ask's own screen: the card on web, the sheet on the phone) or `chat_private` (`@Frapp` in a channel, answered to the asker alone; [`ai.md` § Asking from a channel](ai.md#asking-from-a-channel)). A build from before #4713 names no door and is counted as `ask`. A closed set, `ASK_DOORS` in `@repo/validation`; a door that posts an answer to the channel will be a third value |
+| `is_follow_up` | Whether the question was sent with earlier turns of the conversation |
+
+It is sent once the member has passed the checks that can refuse a question outright (the server switch, the chapter's switch, `ai:use`, consent), and before the answer starts, so a question that later fails or is stopped is still counted. It is not a feature event: Ask belongs to no module. No question text, answer text, source, channel id or message id is on it; `ask.controller.spec.ts` runs the event through `assertContentFreeProperties`, and `ai-stored-text.invariant.spec.ts` reads it for leaks with everything else the route sends out. The share of questions asked from a channel is `door = chat_private` over all.
+
 ## AI Suggestion Events
 
 AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run, or by the save of posted minutes ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks), #4313), and expired by an hourly sweep, none of which is a request to the suggestion routes, so they are not feature events. `AiSuggestionService` sends five events itself, through `AnalyticsService`:

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
+import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
 import {
   useCategories,
   useChannelAccessOptions,
@@ -37,9 +38,34 @@ import {
   ChannelAccessField,
   type ChannelAccessOption,
 } from "@/components/chat-admin/channel-access-field";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 
 /** Sentinel for "no category": Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
+
+/**
+ * The kept draft's name (#4593): Chat admin's New channel keeps its own, and
+ * the chat rail keeps one per category the + was beside, so a draft begun in
+ * one doesn't turn up half-filled in the other.
+ */
+export function channelDraftName(
+  categoryId: string | null,
+  docked: boolean,
+): string {
+  if (docked) return "chat-admin:channel-create";
+  return categoryId ? `channel-create:in:${categoryId}` : "channel-create";
+}
+
+interface ChannelDraft {
+  name: string;
+  description: string;
+  isPrivate: boolean;
+  categoryId: string;
+  see: string[] | null;
+  post: string[] | null;
+  accessTouched: boolean;
+  alwaysFormal: boolean;
+}
 
 interface SheetCategory {
   id: string;
@@ -56,9 +82,11 @@ interface SheetCategory {
  * which starts it in that category, as Discord's and Slack's + do.
  *
  * Reads the categories and the access options itself, so a caller only says
- * where it opens. The draft is dropped on every close (X, Escape, scrim,
- * Cancel) and on success. `onCreated` gets the new channel's id, for the rail
- * to open it.
+ * where it opens. Leaving it keeps the draft (#4593): the back arrow or X,
+ * Escape, the scrim and leaving the page all keep it, one per category the +
+ * was beside, and it opens on it next time with "Draft restored". Cancel and
+ * creating the channel drop it. `onCreated` gets the new channel's id, for
+ * the rail to open it.
  */
 export function CreateChannelSheet({
   open,
@@ -120,32 +148,59 @@ export function CreateChannelSheet({
   const [accessTouched, setAccessTouched] = useState(false);
   const [alwaysFormal, setAlwaysFormal] = useState(false);
 
-  // The category the + was beside, applied each time the panel opens (during
-  // render, so its first paint already shows it). Its lists seed the form,
-  // as picking that category would.
+  const kept = useKeptFormDraft<ChannelDraft>(
+    channelDraftName(initialCategoryId, docked),
+    open,
+    {
+      name,
+      description,
+      isPrivate,
+      categoryId,
+      see,
+      post,
+      accessTouched,
+      alwaysFormal,
+    },
+  );
+
+  /** A fresh form, in the category the + was beside. */
+  function fillFresh() {
+    const category = initialCategoryId
+      ? categories.find((c) => c.id === initialCategoryId)
+      : undefined;
+    setName("");
+    setDescription("");
+    setIsPrivate(false);
+    setCategoryId(category ? category.id : NO_CATEGORY);
+    setSee(category?.who_can_see ?? null);
+    setPost(category?.who_can_post ?? null);
+    setAccessTouched(false);
+    setAlwaysFormal(false);
+  }
+
+  // Filled each time the panel opens (during render, so its first paint
+  // already shows it): the kept draft when there is one, else a fresh form
+  // whose category is the one the + was beside, with its lists, as picking
+  // that category would.
   const [seededFor, setSeededFor] = useState<string | null>(null);
   const seedKey = open ? `open:${initialCategoryId ?? ""}` : null;
   if (seededFor !== seedKey) {
     setSeededFor(seedKey);
     if (open) {
-      const category = initialCategoryId
-        ? categories.find((c) => c.id === initialCategoryId)
-        : undefined;
-      setCategoryId(category ? category.id : NO_CATEGORY);
-      setSee(category?.who_can_see ?? null);
-      setPost(category?.who_can_post ?? null);
+      const draft = kept.take();
+      if (draft) {
+        setName(draft.name);
+        setDescription(draft.description);
+        setIsPrivate(draft.isPrivate);
+        setCategoryId(draft.categoryId);
+        setSee(draft.see);
+        setPost(draft.post);
+        setAccessTouched(draft.accessTouched);
+        setAlwaysFormal(draft.alwaysFormal);
+      } else {
+        fillFresh();
+      }
     }
-  }
-
-  function reset() {
-    setName("");
-    setDescription("");
-    setIsPrivate(false);
-    setCategoryId(NO_CATEGORY);
-    setSee(null);
-    setPost(null);
-    setAccessTouched(false);
-    setAlwaysFormal(false);
   }
 
   function handleCategoryChange(next: string) {
@@ -160,10 +215,16 @@ export function CreateChannelSheet({
     !isPrivate &&
     (isEmptyChannelAccessChoice(see) || isEmptyChannelAccessChoice(post));
 
-  /** Every way the panel closes (X, Escape, scrim, Cancel) drops the draft. */
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (!next) reset();
+  /** Cancel: give the draft up and close. */
+  function cancel() {
+    kept.drop();
+    onOpenChange(false);
+  }
+
+  /** Discard: start over in place. */
+  function discard() {
+    kept.discard();
+    fillFresh();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -178,6 +239,7 @@ export function CreateChannelSheet({
       });
       return;
     }
+    kept.hold();
     try {
       const created = await createChannel.mutateAsync({
         name: trimmed,
@@ -189,11 +251,13 @@ export function CreateChannelSheet({
           ? { who_can_see: see, who_can_post: post }
           : {}),
       });
+      kept.drop();
       toast({ description: `#${trimmed} created.` });
-      handleOpenChange(false);
+      onOpenChange(false);
       const createdId = (created as { id?: unknown } | undefined)?.id;
       if (typeof createdId === "string") onCreated?.(createdId);
     } catch (error) {
+      kept.release();
       toast({
         variant: "destructive",
         description: getErrorMessage(error, "Couldn't create the channel."),
@@ -204,11 +268,11 @@ export function CreateChannelSheet({
   return (
     <>
       {trigger ? (
-        <Slot onClick={() => handleOpenChange(true)}>{trigger}</Slot>
+        <Slot onClick={() => onOpenChange(true)}>{trigger}</Slot>
       ) : null}
       <Panel
         open={open}
-        onOpenChange={handleOpenChange}
+        onOpenChange={onOpenChange}
         docked={docked}
         backLabel={backLabel}
       >
@@ -305,12 +369,10 @@ export function CreateChannelSheet({
             </label>
           </PanelBody>
           <PanelFooter>
+            {kept.restored ? <KeptDraftNote onDiscard={discard} /> : null}
             <Button
               variant="secondary"
-              // Through the same handler as the X and Escape: Radix fires no
-              // `onOpenChange` for a close made by setting state, so a bare
-              // `onOpenChange(false)` would keep the draft.
-              onClick={() => handleOpenChange(false)}
+              onClick={cancel}
               disabled={createChannel.isPending}
             >
               Cancel

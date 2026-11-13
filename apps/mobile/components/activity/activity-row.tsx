@@ -19,10 +19,12 @@ import {
   LEAD_TILE_GLYPH,
   LEAD_TILE_SIZE,
   LeadTile,
+  LeadTileSkeleton,
+  leadRowStyles,
 } from "@/components/lead-tile";
 import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
-import { SkeletonBlock, SkeletonText } from "@/components/state-block";
+import { SkeletonText } from "@/components/state-block";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { tintedControlStyles } from "@/components/tinted-control";
 import { createUnreadDotStyles } from "@/components/unread-dot";
@@ -411,11 +413,7 @@ export function ActivityRowSkeleton({
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
       <View style={createUnreadDotStyles(tokens).spacer} />
-      <SkeletonBlock
-        width={LEAD_SIZE}
-        height={LEAD_SIZE}
-        radius={tokens.radius.chipLarge}
-      />
+      <LeadTileSkeleton />
       <View style={styles.text}>
         <SkeletonText role={label} width={SKELETON_WIDTHS[index % 4]} />
         <SkeletonText role={caption} width="34%" />
@@ -441,13 +439,11 @@ function askTinted(
 }
 
 function createActivityRowStyles(tokens: SignetTokens) {
+  // The frame the Calendar's rows share (`leadRowStyles`).
+  const lead = leadRowStyles(tokens);
   return StyleSheet.create({
     row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.sm,
+      ...lead.row,
       // Square and hairline-split, as the Events list's flat rows bleed:
       // content on the gutter line, press feedback clear of it.
       ...gutterBleed(tokens, { rounded: false }),
@@ -461,15 +457,8 @@ function createActivityRowStyles(tokens: SignetTokens) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
     },
-    text: {
-      flex: 1,
-      minWidth: 0,
-      gap: tokens.spacing.xs,
-    },
-    title: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
+    text: lead.text,
+    title: lead.title,
     detail: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

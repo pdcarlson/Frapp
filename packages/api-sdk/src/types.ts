@@ -981,6 +981,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear (delete) the caller's own notifications by id */
+        post: operations["NotificationController_clearNotifications_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/{id}/read": {
         parameters: {
             query?: never;
@@ -5986,6 +6003,28 @@ export interface components {
             /** @description How many notifications this call marked read */
             updated: number;
         };
+        NotificationConversationDto: {
+            /**
+             * Format: uuid
+             * @description The chat channel (`data.target.channelId`)
+             */
+            channelId: string;
+            /**
+             * Format: uuid
+             * @description A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.
+             */
+            threadRootId?: string;
+        };
+        ClearNotificationsDto: {
+            /** @description The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped. */
+            ids: string[];
+            /** @description Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid. */
+            conversation?: components["schemas"]["NotificationConversationDto"];
+        };
+        ClearNotificationsResultDto: {
+            /** @description How many notifications this call cleared */
+            cleared: number;
+        };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
             chapter_id: string;
@@ -8713,6 +8752,8 @@ export interface components {
             check_in_open: boolean;
             /** @description Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses. */
             check_in_needs_location: boolean;
+            /** @description Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise. */
+            check_in_needs_code: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
             /**
@@ -9199,6 +9240,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9218,6 +9261,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9345,6 +9390,11 @@ export interface components {
             history?: components["schemas"]["AskHistoryTurnDto"][];
             /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
             actions?: boolean;
+            /**
+             * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.
+             * @enum {string}
+             */
+            door?: "ask" | "chat_private";
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -11808,6 +11858,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    NotificationController_clearNotifications_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearNotificationsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearNotificationsResultDto"];
                 };
             };
             /** @description Error */

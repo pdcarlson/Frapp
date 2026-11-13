@@ -619,3 +619,75 @@ describe("StudyZonesManager study-rule guard (#2206)", () => {
     await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
   });
 });
+
+/**
+ * Leaving the zone editor keeps its draft (#4593): no "are you sure", and it
+ * opens on it next time. Cancel and saving give it up.
+ */
+describe("StudyZonesManager keeps the editor's draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  const nameField = () => screen.getByLabelText(/^name$/i);
+  const back = () =>
+    userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+
+  it("opens New study zone on what was typed after it was closed", async () => {
+    render(<StudyZonesManager />);
+    await userEvent.click(createTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    fireEvent.change(nameField(), { target: { value: "Science library" } });
+    await back();
+    await userEvent.click(createTrigger());
+
+    expect(nameField()).toHaveValue("Science library");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps an edit apart from New, and reopens it when the page was left", async () => {
+    const first = render(<StudyZonesManager />);
+    await userEvent.click(editButton());
+    fireEvent.change(nameField(), {
+      target: { value: "Main library, 2nd floor" },
+    });
+    first.unmount();
+
+    render(<StudyZonesManager />);
+    expect(await screen.findByText("Draft restored")).toBeInTheDocument();
+    expect(nameField()).toHaveValue("Main library, 2nd floor");
+    // Only the name changed, so the shape still isn't resent.
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
+    const { body } = mockUpdateMutate.mock.calls[0]![0];
+    expect(body.name).toBe("Main library, 2nd floor");
+    expect(body).not.toHaveProperty("coordinates");
+  });
+
+  it("keeps nothing on Cancel, or for a form left untouched", async () => {
+    render(<StudyZonesManager />);
+    await userEvent.click(createTrigger());
+    await back();
+    await userEvent.click(createTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+
+    fireEvent.change(nameField(), { target: { value: "Science library" } });
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(createTrigger());
+    expect(nameField()).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", async () => {
+    render(<StudyZonesManager />);
+    await userEvent.click(editButton());
+    fireEvent.change(nameField(), { target: { value: "Renamed" } });
+    await back();
+    await userEvent.click(editButton());
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(nameField()).toHaveValue("Main library");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+});

@@ -638,6 +638,11 @@ export default function ChatHomeScreen() {
     );
   }
 
+  // Which headings carry New channel (#3838): Channels and each category's,
+  // for `channels:manage`. Never Pinned.
+  const sectionHasNewChannel = (sectionKey: string) =>
+    canManageChannels &&
+    (sectionKey === "channels" || sectionKey.startsWith("category:"));
   const filterButton = (
     <ChannelFilterButton menu={filterMenu} active={filtersOn} />
   );
@@ -800,8 +805,8 @@ export default function ChatHomeScreen() {
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the
-            button at the end of the first heading, as web's rail keeps them
-            behind its Channels header; they used to be two chips above the
+            button on the first heading (before its +, #4679), as web's rail
+            keeps them behind its Channels header; they used to be two chips above the
             list.
           */}
           {arranged.sections.length === 0
@@ -862,26 +867,41 @@ export default function ChatHomeScreen() {
                         >
                           {section.label}
                         </Text>
-                        {section.collapsed && section.addressed ? (
-                          <UnreadBadge
-                            unreadCount={section.addressedCount}
-                            mentionCount={section.mentionCount}
-                          />
-                        ) : null}
-                        {/* Drawn, at the right edge where a thumb expects
-                            it; the typed ▸ ▾ sat low and read as noise. */}
+                        {/* Drawn (the typed ▸ ▾ sat low and read as noise),
+                            and beside the name, as Slack and Discord draw a
+                            section's fold, so the heading's right side is
+                            one column of controls down the list (owner pick
+                            2026-11-13, #4679; it sat at the right edge
+                            until then). The whole heading still folds. */}
                         <DisclosureGlyph
                           color={tokens.color.text.mutedForeground}
                           size={18}
                           direction={section.collapsed ? "right" : "down"}
                         />
+                        {section.collapsed && section.addressed ? (
+                          <View style={styles.headingBadge}>
+                            <UnreadBadge
+                              unreadCount={section.addressedCount}
+                              mentionCount={section.mentionCount}
+                            />
+                          </View>
+                        ) : null}
                       </PressableRow>
+                      {/* Outside the fold control, so a screen reader
+                          reaches each as its own button. The filter comes
+                          first, so the + is the last thing on every heading
+                          and runs in one column down the list (#4679). */}
+                      {index === 0 ? (
+                        <ChannelFilterButton
+                          menu={filterMenu}
+                          active={filtersOn}
+                          atEdge={!sectionHasNewChannel(section.key)}
+                        />
+                      ) : null}
                       {/* New channel (#3838): beside the Channels heading
                           and each category's, for `channels:manage`, as
                           Discord and Slack draw it. Never on Pinned. */}
-                      {canManageChannels &&
-                      (section.key === "channels" ||
-                        section.key.startsWith("category:")) ? (
+                      {sectionHasNewChannel(section.key) ? (
                         <View style={styles.headingAction}>
                           <IconButton
                             label={
@@ -906,14 +926,11 @@ export default function ChatHomeScreen() {
                           >
                             <PlusGlyph
                               color={tokens.color.text.mutedForeground}
-                              size={18}
+                              size={HEADING_PLUS_SIZE}
                             />
                           </IconButton>
                         </View>
                       ) : null}
-                      {/* Outside the fold control, so a screen reader
-                          reaches it as its own button. */}
-                      {index === 0 ? filterButton : null}
                     </View>
                   </StickyHeader>,
                   line || section.rows.length > 0 ? (
@@ -1059,12 +1076,24 @@ export default function ChatHomeScreen() {
   );
 }
 
+/** A heading's + (New channel), a step under the row glyphs' 20. */
+const HEADING_PLUS_SIZE = 18;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // The last thing on a heading: its glyph's right edge sits on the
+    // gutter, like the rows' trailing badges under it, so every heading's +
+    // is in one column (#4679).
     headingAction: {
       width: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
+      marginRight: -(tokens.touch.minimum - HEADING_PLUS_SIZE) / 2,
+    },
+    // A folded section's count, at the fold control's right end, where the
+    // rows' badges sit.
+    headingBadge: {
+      marginLeft: "auto",
     },
     headerActions: {
       flexDirection: "row",
@@ -1103,10 +1132,11 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       ...gutterBleed(tokens),
     },
-    // Inside the fold control the label gives up width to the badge and the
-    // chevron.
+    // Inside the fold control the label is as wide as its name, so the
+    // chevron sits beside it, and gives up width to the chevron and the
+    // badge when the name is long.
     headingInHeader: {
-      flex: 1,
+      flexShrink: 1,
     },
     headingRow: {
       flexDirection: "row",

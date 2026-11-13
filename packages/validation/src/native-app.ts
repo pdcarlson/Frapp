@@ -30,13 +30,17 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 
 /**
  * The paths on the dashboard origin the app claims as universal links (iOS)
- * and App Links (Android). The invite, and the event check-in code a phone's
- * camera reads (`./check-in-link`, 2026-11-13): every other dashboard page stays
- * on the web (the phone dashboard suggests the app with a card it can close). The web's `/.well-known` files publish
- * these; the binary claims them through `apps/mobile/app.json`
- * (`ios.associatedDomains`, Android `intentFilters`), which must list the same
- * paths. Until a store build carries that native half (#4002), no installed
- * app claims them and every invite link opens the web.
+ * and App Links (Android): the invite, and the event check-in code a phone's
+ * camera reads (`./check-in-link`, 2026-11-13). Every other dashboard page
+ * stays on the web (the phone dashboard suggests the app with a card it can
+ * close). The web's `/.well-known` files publish these. iOS takes its paths
+ * from the web's file, so a path added here reaches every iOS build with
+ * `applinks:app.frapp.live` (0.11.0 on) at the next web deploy: add one only
+ * once the installed builds have its route, or they open it on Chat home.
+ * Android claims each path in `apps/mobile/app.json`'s `intentFilters`, which
+ * is native, so a new Android path waits on the next native version
+ * (`app.config.spec.ts` lists the ones waiting). A message's link (`/chat`,
+ * `./message-link`) waits on both (#4869).
  */
 export const APP_LINK_PATHS = ["/join", "/check-in"] as const;
 

@@ -96,6 +96,14 @@ export function copyForErrorCode(code: string | null): string | null {
 }
 
 /**
+ * What a member is told when check-in needs the code on an officer's screen:
+ * the `needs_code` refusal below, and web's line in place of Check in while
+ * the event's read says so (#4808), one sentence for both.
+ */
+export const CHECK_IN_NEEDS_CODE_COPY =
+  "Point your phone's camera at the code on the officer's screen to check in.";
+
+/**
  * Server sentences that carry a reason the member can act on, keyed by the
  * exact text the API throws (`apps/api/src`), rewritten in the chapter's
  * words. A key here that the API no longer throws costs nothing but a dead
@@ -152,7 +160,7 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   // and stay as they are for older builds; the words changed on 2026-11-13,
   // when the code became a link the phone's own camera opens.
   "Scan the code on the check-in screen with the Frapp app to check in":
-    "Point your phone's camera at the code on the officer's screen to check in.",
+    CHECK_IN_NEEDS_CODE_COPY,
   "This check-in needs your location. Allow location for Frapp and scan again.":
     "This check-in needs your location. Allow location for Frapp and try again.",
   "You need to be near the check-in screen to check in":
