@@ -368,6 +368,8 @@ describe("chapter picker, opened from You", () => {
       borderWidth: 1,
       borderRadius: signetDarkTokens.radius.control,
       minHeight: signetDarkTokens.touch.button,
+      paddingHorizontal: signetDarkTokens.spacing.lg,
+      paddingVertical: signetDarkTokens.spacing.md,
     });
     // Pressed steps the fill up one: held on iOS, the ripple on Android.
     expect(flatStyle(join.props.style, true).backgroundColor).toBe(held);
