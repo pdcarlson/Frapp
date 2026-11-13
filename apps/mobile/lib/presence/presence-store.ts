@@ -4,7 +4,8 @@
  * from the runtime so a screen reading a dot imports no Supabase client or
  * native module, and a second reader costs a store read, not a channel.
  */
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
+import type { PresenceStatus } from "@repo/hooks/presence-status";
 import type { ChapterPresence } from "@repo/hooks/use-chapter-presence";
 
 export const PRESENCE_NOT_READY: ChapterPresence = {
@@ -30,15 +31,33 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-function read(): ChapterPresence {
-  return current;
+/** One member's presence as a row draws it: `null` status draws no dot. */
+export interface MemberPresence {
+  status: PresenceStatus | null;
+  line: string | null;
 }
 
+export const NO_PRESENCE: MemberPresence = { status: null, line: null };
+
 /**
- * Chapter presence for a screen: `isReady` false (draw no dot, claim no
- * Offline) until the first sync, and whenever the app is signed out,
- * backgrounded or off the link.
+ * One member's dot and custom status line (#4633), `NO_PRESENCE` until the
+ * first sync (or with no member). Each half is read as a primitive through
+ * its own selector, so a reader re-renders only when *this* member's status
+ * or line changes, not on every heartbeat or another member's re-publish,
+ * as reading the whole `ChapterPresence` object would. The object is
+ * memoized on those two primitives, so it is stable between their changes.
  */
-export function useChapterPresence(): ChapterPresence {
-  return useSyncExternalStore(subscribe, read, read);
+export function usePresenceOf(
+  userId: string | null | undefined,
+): MemberPresence {
+  const readStatus = () =>
+    current.isReady && userId ? current.statusOf(userId) : null;
+  const readLine = () =>
+    current.isReady && userId ? current.lineOf(userId) : null;
+  const status = useSyncExternalStore(subscribe, readStatus, readStatus);
+  const line = useSyncExternalStore(subscribe, readLine, readLine);
+  return useMemo(
+    () => (status === null && line === null ? NO_PRESENCE : { status, line }),
+    [status, line],
+  );
 }
