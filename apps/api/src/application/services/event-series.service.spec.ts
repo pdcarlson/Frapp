@@ -966,6 +966,67 @@ describe('EventSeriesService', () => {
         );
       });
 
+      // #4505: the split path rebuilds a legacy token on the saving officer's
+      // wall clock. The new head is Sun 2026-03-22 18:00 GMT; London's clocks
+      // change on 2026-03-29, so from then a London 6 PM is 17:00Z.
+      it("regenerates a legacy token in the saving officer's zone", async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+        mockNotificationService.timeZoneFor.mockImplementation(
+          async (userId: string) =>
+            userId === 'user-editor' ? 'Europe/London' : null,
+        );
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+          'user-editor',
+        );
+
+        const starts = occurrenceRows(mockEventRepo).map(
+          (row) => row.start_time,
+        );
+        expect(starts).toHaveLength(6);
+        expect(starts.slice(0, 2)).toEqual([
+          '2026-04-05T17:00:00.000Z',
+          '2026-04-19T17:00:00.000Z',
+        ]);
+      });
+
+      it("falls back to the creator's zone when the saving officer has none", async () => {
+        // Every meeting carries its series' creator.
+        const made: Event = { ...parent, created_by: OFFICER };
+        const children = wholeSeries.map((child) => ({
+          ...child,
+          created_by: OFFICER,
+        }));
+        mockEventRepo.findById.mockResolvedValue(made);
+        mockEventRepo.findChildren.mockResolvedValue(children);
+        mergeUpdate([made, ...children]);
+        mockNotificationService.timeZoneFor.mockImplementation(
+          async (userId: string) =>
+            userId === OFFICER ? 'Europe/London' : null,
+        );
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+          'user-editor',
+        );
+
+        expect(mockNotificationService.timeZoneFor).toHaveBeenCalledWith(
+          'user-editor',
+        );
+        expect(occurrenceRows(mockEventRepo)[0].start_time).toBe(
+          '2026-04-05T17:00:00.000Z',
+        );
+      });
+
       it('carries a kept COUNT onto the new head less the meetings that left', async () => {
         const counted: Event = {
           ...parent,

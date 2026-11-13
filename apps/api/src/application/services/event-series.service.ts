@@ -154,26 +154,39 @@ export class EventSeriesService {
    * decides what a failure means for it (`EventService.create` deletes it).
    */
   async generateRecurringInstances(parent: Event): Promise<Event[]> {
-    const zone = await this.legacyZoneFor(parent);
+    const zone = await this.legacyZoneFor(parent, parent.created_by);
     return this.eventRepo.createMany(
       this.buildOccurrencePayloads(parent, zone),
     );
   }
 
   /**
-   * The zone a series' legacy token keeps the wall clock of (#4505): its
-   * creator's, as their device last reported it (`timeZoneFor`). Chapters
-   * keep no zone of their own, and the officer who scheduled a meeting is on
-   * its campus. `null` (step in UTC, as tokens always did) for a structured
-   * rule, which names its own zone and needs no read; for a series made
-   * before `created_by` was recorded (2026-11-11); and for a creator with no
-   * zone on file.
+   * The zone a series' legacy token keeps the wall clock of when it is
+   * (re)generated (#4505): the zone on file (`timeZoneFor`) for the officer
+   * saving it, else for its creator. Chapters keep no zone of their own, and
+   * the officer who schedules a meeting is on its campus.
+   *
+   * The saver comes first because their Repeat control captions the series,
+   * and decides whether a token says the same meetings as their structured
+   * rule (`legacyTokenFor` in `@repo/validation`), on their device's zone,
+   * which is the zone the API keeps on file for them. On a new series the
+   * saver is the creator. The creator stands in when the saver has no zone,
+   * and covers a series no request is saving.
+   *
+   * `null` (step in UTC, as tokens always did) for a structured rule, which
+   * names its own zone and needs no read, and when neither has a zone.
    */
-  private async legacyZoneFor(series: Event): Promise<string | null> {
-    if (!isRecurrenceRule(series.recurrence_rule) || !series.created_by) {
-      return null;
+  private async legacyZoneFor(
+    series: Event,
+    saverId: string | null | undefined,
+  ): Promise<string | null> {
+    if (!isRecurrenceRule(series.recurrence_rule)) return null;
+    for (const userId of new Set([saverId, series.created_by])) {
+      if (!userId) continue;
+      const zone = await this.notifications.timeZoneFor(userId);
+      if (zone) return zone;
     }
-    return this.notifications.timeZoneFor(series.created_by);
+    return null;
   }
 
   /**
@@ -275,8 +288,8 @@ export class EventSeriesService {
    * stepper the Repeat controls caption a series from, so what an officer is
    * told and what gets written cannot drift apart. A structured rule steps in
    * its own zone, keeping the wall-clock time across DST (#3662); a legacy
-   * token steps in `legacyZone`, the creator's (`legacyZoneFor`, #4505), or
-   * UTC without one. The zone is read before this, so it stays pure.
+   * token steps in `legacyZone`, the saving officer's or the creator's
+   * (`legacyZoneFor`, #4505), or UTC without one. The zone is read before this, so it stays pure.
    *
    * For a legacy token, skipping rather than filtering is load-bearing: its
    * run is counted from `skipBefore`, not from the head. Filtering a fixed
@@ -563,7 +576,7 @@ export class EventSeriesService {
         recurrence_rule: nextRule,
       };
       const template: Event = { ...parent, ...written };
-      const zone = await this.legacyZoneFor(template);
+      const zone = await this.legacyZoneFor(template, actorId);
       await this.replaceOccurrences({
         headId: parent.id,
         chapterId,
@@ -791,7 +804,7 @@ export class EventSeriesService {
       // consistent series, just not regenerated; the request fails, and
       // repeating a rule change against the new head finishes the rebuild.
       const template: Event = { ...newHead, recurrence_rule: seriesRule };
-      const zone = await this.legacyZoneFor(template);
+      const zone = await this.legacyZoneFor(template, actorId);
       await this.replaceOccurrences({
         headId: newHead.id,
         chapterId,

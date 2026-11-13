@@ -17,7 +17,7 @@
  *   end of its own; it makes a fixed number of meetings after the first
  *   (12, 6, 6). Still accepted and still read, so no row needs migrating.
  *   A token carries no zone, so the caller names the one it steps in
- *   ({@link SeriesStepOptions}): the API passes the creating officer's, so a
+ *   ({@link SeriesStepOptions}): the API passes the saving officer's, so a
  *   7 PM weekly meeting stays at 7 PM across a DST change (#4505); without
  *   one it steps in UTC, as the API did before.
  * - **A structured rule**, a subset of iCalendar's RRULE (RFC 5545) written as
@@ -240,12 +240,8 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   const interval = Number(intervalText);
   if (interval > MAX_REPEAT_INTERVAL) return null;
 
-  const zoneText = fields.get("TZID");
-  // Untrimmed is refused rather than trimmed: the zone check trims, Intl
-  // doesn't, so " America/New_York" would pass here and throw when stepped.
-  if (!zoneText || zoneText !== zoneText.trim()) return null;
-  if (!isSupportedTimeZone(zoneText)) return null;
-  const timeZone = canonicalZone(zoneText);
+  const timeZone = readZone(fields.get("TZID"));
+  if (!timeZone) return null;
 
   const countText = fields.get("COUNT");
   const untilText = fields.get("UNTIL");
@@ -304,6 +300,18 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
     end,
     timeZone,
   };
+}
+
+/**
+ * A zone this module can step in, in its canonical spelling, or `null`.
+ * Untrimmed is refused rather than trimmed: the zone check trims, Intl
+ * doesn't, so " America/New_York" would pass it and throw when stepped. The
+ * one check for a rule's `TZID` and a caller's legacy zone alike.
+ */
+function readZone(text: string | null | undefined): string | null {
+  if (!text || text !== text.trim()) return null;
+  if (!isSupportedTimeZone(text)) return null;
+  return canonicalZone(text);
 }
 
 /**
@@ -566,7 +574,8 @@ function untilDayNumber(until: string): number {
 export interface SeriesStepOptions {
   /**
    * The zone whose wall clock a legacy token keeps (IANA name): the API
-   * passes the series creator's, a caption the reader's. Missing, `null` or
+   * passes the saving officer's or the series creator's, a caption the
+   * device's. Missing, `null` or
    * not a zone this runtime knows steps in UTC, as tokens always did. A
    * structured rule ignores it and keeps its own `TZID`.
    */
@@ -576,10 +585,7 @@ export interface SeriesStepOptions {
 /** The zone a parsed rule steps in. */
 function stepZone(rule: ParsedRepeatRule, options: SeriesStepOptions): string {
   if (!rule.legacy) return rule.timeZone;
-  const zone = options.legacyTimeZone;
-  return zone && zone === zone.trim() && isSupportedTimeZone(zone)
-    ? canonicalZone(zone)
-    : "UTC";
+  return readZone(options.legacyTimeZone) ?? "UTC";
 }
 
 /**
@@ -683,8 +689,7 @@ export function seriesExtent(
  * meetings, the last on Feb 5." (the year added when it differs). Dates read
  * in the rule's zone. A legacy token is stepped and read in
  * `options.legacyTimeZone`, or the device's zone without one: the zone the
- * API steps it in is its creator's, which for a new series is this device's
- * (#4505). `null` for a value that is not a rule.
+ * API steps it in is the saving officer's, this device's (#4505). `null` for a value that is not a rule.
  */
 export function describeSeriesLength(
   start: Date,
