@@ -326,6 +326,53 @@ export function useRequestDocumentUploadUrl() {
   });
 }
 
+/** Signed upload links for up to 25 files in one call (folder import, #2242). */
+export function useRequestDocumentUploadUrls() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["documents", "request-document-upload-urls"],
+    mutationFn: async (
+      body: components["schemas"]["RequestDocumentUploadUrlsDto"],
+    ) => {
+      const { data, error } = await client.POST("/v1/documents/upload-urls", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Files up to 25 uploads in one call (folder import, #2242); each result says
+ * whether its document was filed. It doesn't invalidate the library: an
+ * import calls this every few seconds, so it refreshes the list once, when it
+ * ends ({@link useInvalidateDocuments}).
+ */
+export function useConfirmDocumentUploads() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["documents", "confirm-document-uploads"],
+    mutationFn: async (
+      body: components["schemas"]["ConfirmDocumentUploadsDto"],
+    ) => {
+      const { data, error } = await client.POST("/v1/documents/batch", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/** Refreshes every chapter's document lists, as a single upload does. */
+export function useInvalidateDocuments() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ["documents"] });
+  };
+}
+
 export function useConfirmDocumentUpload() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
