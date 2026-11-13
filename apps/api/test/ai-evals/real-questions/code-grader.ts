@@ -180,7 +180,9 @@ export function gradeRealQuestion(
     });
   }
 
-  if (expect.decline && !answer.refused && !DECLINES.test(text)) {
+  // The words decide, not `refused`: an agent also reports an outage or an
+  // empty search as refused, and neither is declining the request.
+  if (expect.decline && !DECLINES.test(text)) {
     violations.push({
       rule: 'decline',
       detail: 'the right answer was to decline, and it answered',

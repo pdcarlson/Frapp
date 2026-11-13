@@ -92,7 +92,7 @@ export interface RealQuestion {
   group: QuestionGroup;
   /**
    * Where the question came from: the plan page's starting list, Paul's own
-   * fifteen (`paul-questions.json`), or a miss in real use rewritten for the
+   * (`paul-questions.json`), or a miss in real use rewritten for the
    * synthetic chapter (`README.md`, "Turning a miss into a case").
    */
   origin: 'plan' | 'paul' | 'miss';

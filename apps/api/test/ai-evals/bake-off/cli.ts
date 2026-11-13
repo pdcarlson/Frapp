@@ -42,7 +42,12 @@ import {
   type ArmEffort,
 } from '../real-questions/run';
 import { candidateRegistry } from './candidate-registry';
-import { BAKE_OFF_CANDIDATES, findCandidate } from './candidates';
+import {
+  BAKE_OFF_CANDIDATES,
+  costUsd,
+  findCandidate,
+  priceOn,
+} from './candidates';
 import { formatBakeOff, runBakeOff } from './run';
 import { BAKE_OFF_TASKS } from './tasks';
 
@@ -76,13 +81,16 @@ async function main(): Promise<void> {
       [JUDGE_TASK]: scriptedJudge,
     }).registry.resolve(candidate.provider);
     if (!adapter) throw new Error(`No adapter for ${values.judge}`);
+    const agreement = await judgeAgreement(
+      createJudge(adapter, candidate.model),
+      HAND_GRADED_SAMPLE,
+      findQuestion,
+    );
+    const today = new Date().toISOString().slice(0, 10);
     emit(
       formatAgreement(
-        await judgeAgreement(
-          createJudge(adapter, candidate.model),
-          HAND_GRADED_SAMPLE,
-          findQuestion,
-        ),
+        agreement,
+        costUsd(priceOn(candidate, values.date ?? today), agreement.usage),
       ),
     );
     return;

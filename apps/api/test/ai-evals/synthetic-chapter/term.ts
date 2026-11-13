@@ -410,7 +410,7 @@ export const TERM_EVENTS: readonly TermEvent[] = [
   event(
     'elections',
     'Chapter meeting with officer elections',
-    '2026-12-08T00:00:00Z',
+    '2026-12-07T00:00:00Z',
     'Chapter room',
     true,
     5,
@@ -480,8 +480,8 @@ export interface ServiceEntry {
   status: 'approved' | 'awaiting_approval';
 }
 
-/** The entries a case reads by name. Everyone else has one approved November entry. */
-export const SERVICE_ENTRIES: readonly ServiceEntry[] = [
+/** The entries a case reads by name. */
+const NAMED_SERVICE_ENTRIES: readonly ServiceEntry[] = [
   {
     memberId: 'syn-ravi-menon',
     hours: 3,
@@ -510,6 +510,27 @@ export const SERVICE_ENTRIES: readonly ServiceEntry[] = [
     what: 'Food pantry sorting',
     status: 'approved',
   },
+];
+
+/**
+ * Every service entry logged in November. Beside the named ones, each other
+ * active member has one approved entry, except the five with none: a
+ * `service_hours` tool reading this list finds the same five the question
+ * expects.
+ */
+export const SERVICE_ENTRIES: readonly ServiceEntry[] = [
+  ...NAMED_SERVICE_ENTRIES,
+  ...ACTIVES.filter(
+    (person) =>
+      !NO_SERVICE_HOURS_IN_NOVEMBER.includes(person.id) &&
+      !NAMED_SERVICE_ENTRIES.some((entry) => entry.memberId === person.id),
+  ).map((person, index): ServiceEntry => ({
+    memberId: person.id,
+    hours: 2 + (index % 3),
+    day: `2026-11-0${1 + (index % 7)}`,
+    what: index % 2 === 0 ? 'Food pantry sorting' : 'Campus cleanup',
+    status: 'approved',
+  })),
 ];
 
 /** Who still owes fall dues, and how much. The Treasurer's to read, nobody else's. */
@@ -890,7 +911,7 @@ export const TERM_MESSAGES: readonly CorpusDocument[] = [
     'new-member-quiz',
     TERM_CHANNEL.newMembers,
     'syn-marcus-bell',
-    'New member quiz on chapter history is November 19 before meeting.',
+    'New member quiz on chapter history is Sunday, November 15, before meeting.',
     '2026-11-05T17:00:00Z',
   ),
 ];

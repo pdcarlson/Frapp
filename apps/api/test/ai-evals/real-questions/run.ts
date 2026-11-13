@@ -43,6 +43,7 @@ import {
   priceOn,
   type BakeOffCandidate,
 } from '../bake-off/candidates';
+import { percentile } from '../bake-off/run';
 import { scriptedAskPlanner } from '../harness/ask-agent';
 import { createEvalGateway } from '../harness/eval-gateway';
 import type { EvalViolation } from '../harness/grader';
@@ -76,6 +77,8 @@ export interface AttemptResult {
   violations: EvalViolation[];
   /** Null when no judge ran, or the answer never arrived. */
   judge: { pass: boolean; failed: JudgeCriterion[] } | null;
+  /** The answer never arrived (a provider error). Counted wrong, and left out of cost and time. */
+  errored: boolean;
   modelCalls: number;
   seconds: number;
   inputTokens: number;
@@ -115,6 +118,10 @@ export interface RealRunOptions {
   questions?: readonly RealQuestion[];
   env?: Record<string, string | undefined>;
   date?: string;
+  /** Judge with this instead of the `judge` candidate's model. For a test of a judge that fails. */
+  judgeWith?: Judge;
+  /** Sees each request as it goes to a model under test. For a test of what was sent. */
+  onRequest?: (request: LanguageModelRequest) => void;
 }
 
 const SCRIPTED = {
@@ -144,19 +151,29 @@ export async function runRealQuestions(
   const agentName = options.agent ?? 'one-shot';
   const createAgent = findRealQuestionAgent(agentName);
   const pool = options.questions ?? REAL_QUESTIONS;
+  const unknown = (options.only ?? []).filter(
+    (id) => !pool.some((q) => q.id === id),
+  );
+  if (unknown.length > 0) {
+    // A typo must not make a paid run quietly smaller than the one asked for.
+    throw new Error(`--only names no such question: ${unknown.join(', ')}`);
+  }
   const questions: readonly RealQuestion[] = options.only
     ? pool.filter((q) => options.only?.includes(q.id))
     : pool;
-  if (questions.length === 0) throw new Error('No question matches --only');
+  if (questions.length === 0) throw new Error('No question to ask');
 
   // Everything is resolved and built before the first call, so a typo, a
   // missing key or the paid switch left off fails before money is spent.
-  const judging = options.judge ? buildJudge(options.judge, env) : null;
+  const built = options.judge ? buildJudge(options.judge, env) : null;
+  const judging =
+    built && options.judgeWith ? { ...built, judge: options.judgeWith } : built;
   let watch: readonly string[] = [];
   let shown = new Set<string>();
   const onRequest: CandidateOptions['onRequest'] = (
     request: LanguageModelRequest,
   ) => {
+    options.onRequest?.(request);
     if (watch.length === 0) return;
     const sent = JSON.stringify(request).toLowerCase();
     for (const word of watch) {
@@ -196,6 +213,7 @@ export async function runRealQuestions(
 
         let violations: EvalViolation[];
         let text: string | null = null;
+        let errored = false;
         try {
           const answer = await agent.ask(evalCase.invocation);
           text = answer.text;
@@ -203,6 +221,7 @@ export async function runRealQuestions(
         } catch (error) {
           if (!(error instanceof LanguageModelError)) throw error;
           violations = [{ rule: `error:${error.kind}`, detail: error.message }];
+          errored = true;
         }
         const seconds = (performance.now() - startedAt) / 1000;
         for (const word of shown) {
@@ -221,17 +240,27 @@ export async function runRealQuestions(
 
         let judged: AttemptResult['judge'] = null;
         if (judging && text !== null) {
-          const verdict = await judging.judge.grade(question, text);
-          judgeCostUsd += costUsd(
-            priceOn(judging.candidate, date),
-            verdict.usage,
-          );
-          judged = {
-            pass: verdict.pass,
-            failed: (Object.keys(verdict.criteria) as JudgeCriterion[]).filter(
-              (criterion) => !verdict.criteria[criterion],
-            ),
-          };
+          try {
+            const verdict = await judging.judge.grade(question, text);
+            judgeCostUsd += costUsd(
+              priceOn(judging.candidate, date),
+              verdict.usage,
+            );
+            judged = {
+              pass: verdict.pass,
+              failed: (
+                Object.keys(verdict.criteria) as JudgeCriterion[]
+              ).filter((criterion) => !verdict.criteria[criterion]),
+            };
+          } catch (error) {
+            // A judge that fails on one answer (a rate limit, a reply off
+            // its schema) costs that answer its verdict, not the whole run
+            // and everything already paid for.
+            violations.push({
+              rule: 'error:judge',
+              detail: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
 
         attempts.push({
@@ -239,6 +268,7 @@ export async function runRealQuestions(
           group: question.group,
           violations,
           judge: judged,
+          errored,
           modelCalls: arm.metered.calls.length - callsFrom,
           seconds,
           ...tokens,
@@ -267,16 +297,6 @@ export function isRight(attempt: AttemptResult): boolean {
   return attempt.violations.length === 0 && (attempt.judge?.pass ?? true);
 }
 
-function percentile(values: number[], fraction: number): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[
-    Math.max(
-      0,
-      Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1),
-    )
-  ];
-}
-
 export interface ArmSummary {
   model: string;
   effort: ArmEffort;
@@ -298,7 +318,14 @@ export interface ArmSummary {
 export function summariseArm(arm: ArmResult): ArmSummary {
   const { attempts } = arm;
   const total = attempts.reduce((sum, a) => sum + a.costUsd, 0);
-  const perQuestion = total / attempts.length;
+  // Cost, calls and time describe a question that was answered. An attempt
+  // that died on a provider error spent little, and averaging it in would
+  // make a flaky model look cheap and fast.
+  const answered = attempts.filter((a) => !a.errored);
+  const perQuestion =
+    answered.length === 0
+      ? 0
+      : answered.reduce((sum, a) => sum + a.costUsd, 0) / answered.length;
   const judged = attempts.some((a) => a.judge !== null);
   return {
     model: arm.candidate.model,
@@ -317,15 +344,19 @@ export function summariseArm(arm: ArmResult): ArmSummary {
       }),
     ) as ArmSummary['byGroup'],
     meanModelCalls:
-      attempts.reduce((sum, a) => sum + a.modelCalls, 0) / attempts.length,
-    secondsP50: percentile(
-      attempts.map((a) => a.seconds),
-      0.5,
-    ),
-    secondsP95: percentile(
-      attempts.map((a) => a.seconds),
-      0.95,
-    ),
+      answered.length === 0
+        ? 0
+        : answered.reduce((sum, a) => sum + a.modelCalls, 0) / answered.length,
+    secondsP50:
+      percentile(
+        answered.map((a) => a.seconds),
+        0.5,
+      ) ?? 0,
+    secondsP95:
+      percentile(
+        answered.map((a) => a.seconds),
+        0.95,
+      ) ?? 0,
     costUsd: total,
     costPerQuestionUsd: perQuestion,
     questionsPerCap:

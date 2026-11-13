@@ -187,7 +187,7 @@ describe('the real-question set', () => {
   it('carries the question Paul asked in production, as a miss', () => {
     const miss = REAL_QUESTIONS.filter((q) => q.origin === 'miss');
     expect(miss.map((q) => q.question)).toContain(
-      'Are there any tasks we should give me based on our discussions?',
+      'Which tasks from what we have been talking about should be mine?',
     );
   });
 
@@ -281,6 +281,25 @@ describe("Paul's questions", () => {
   });
 });
 
+describe('the service-hour records', () => {
+  it('leave out exactly the members the question expects, so a tool and the answer agree', () => {
+    const logged = new Set(
+      TERM_CHAPTER.serviceEntries.map((entry) => entry.memberId),
+    );
+    const none = ROSTER.filter(
+      (person) => person.role !== 'Alumni' && !logged.has(person.id),
+    ).map((person) => person.id);
+    expect([...none].sort()).toEqual(
+      [...TERM_CHAPTER.noServiceHoursThisMonth].sort(),
+    );
+    expect(
+      TERM_CHAPTER.serviceEntries.every((entry) =>
+        entry.day.startsWith('2026-11-'),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe('the code checks', () => {
   const question = findQuestion('exec-overdue');
   const good = referenceAnswer(question);
@@ -324,14 +343,14 @@ describe('the code checks', () => {
         text: 'One hearing was held this month, about a missed chore.',
       }),
     ).toEqual(['decline']);
-    // A product refusal counts as declining, whatever its words.
+    // An outage or an empty search, reported as refused, is not a decline.
     expect(
       rules(closed, {
         ...referenceAnswer(closed),
         text: 'Nothing found.',
         refused: true,
       }),
-    ).toEqual([]);
+    ).toEqual(['decline']);
   });
 
   it('tools: a read the answer needed was never made', () => {
@@ -601,13 +620,79 @@ describe('asked of the one-shot Ask, with a scripted model', () => {
     );
   });
 
-  it('runs each arm at the effort it was given', async () => {
+  it('runs each arm at the effort it was given, on every request', async () => {
+    const sent: Array<string | undefined> = [];
     const two = await runRealQuestions({
       models: ['scripted'],
       efforts: ['low', 'medium'],
       only: ['member-late-fee'],
+      onRequest: (request) => sent.push(request.effort),
     });
     expect(two.arms.map((arm) => arm.effort)).toEqual(['low', 'medium']);
+    // Two calls an arm (the planner, the answer), each at the arm's effort.
+    expect(sent).toEqual(['low', 'low', 'medium', 'medium']);
+  });
+
+  it('tells the model who is asking and what office they hold', async () => {
+    const sources: string[] = [];
+    await runRealQuestions({
+      models: ['scripted'],
+      only: ['exec-tasks-for-me'],
+      onRequest: (request) => {
+        if (request.kind !== 'cited') return;
+        const asker = request.sources.find((source) => source.id === 'asker');
+        if (asker) sources.push(asker.text);
+      },
+    });
+    expect(sources).toHaveLength(1);
+    expect(sources[0]).toContain('Owen Hale');
+    expect(sources[0]).toContain('President');
+  });
+
+  it('stops on a question id it does not have, before asking anything', async () => {
+    await expect(
+      runRealQuestions({
+        models: ['scripted'],
+        only: ['member-late-fee', 'membr-chores'],
+      }),
+    ).rejects.toThrow(/no such question: membr-chores/);
+  });
+
+  it('keeps the run when the judge fails on one answer', async () => {
+    const kept = await runRealQuestions({
+      models: ['scripted'],
+      only: ['member-late-fee'],
+      judge: 'scripted',
+      judgeWith: {
+        model: 'failing',
+        grade: () => Promise.reject(new Error('rate limited')),
+      },
+    });
+    const [attempt] = kept.arms[0].attempts;
+    expect(attempt.judge).toBeNull();
+    expect(attempt.violations.map((v) => v.rule)).toContain('error:judge');
+  });
+
+  it('leaves an attempt that never answered out of cost, calls and time', () => {
+    const [answered] = run.arms[0].attempts;
+    const summary = summariseArm({
+      ...run.arms[0],
+      attempts: [
+        { ...answered, costUsd: 0.02, seconds: 4, modelCalls: 2 },
+        {
+          ...answered,
+          errored: true,
+          violations: [{ rule: 'error:rate_limited', detail: '' }],
+          costUsd: 0,
+          seconds: 0.1,
+          modelCalls: 1,
+        },
+      ],
+    });
+    expect(summary.costPerQuestionUsd).toBe(0.02);
+    expect(summary.meanModelCalls).toBe(2);
+    expect(summary.secondsP95).toBe(4);
+    expect(summary.right).toBeLessThan(2);
   });
 
   it('refuses a paid model before any call unless the run may spend', async () => {

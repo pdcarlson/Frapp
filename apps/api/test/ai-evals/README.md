@@ -155,17 +155,22 @@ One row per model and effort:
 | --- | --- |
 | Right | Questions that passed every code check and, when a judge ran, all five of its criteria. The number to compare |
 | Code checks | Questions with no code-check failure |
-| Judge | Questions the judge passed on all five criteria. A dash when no judge ran |
+| Judge | Questions the judge passed on all five criteria. `n/a` when no judge ran |
 | Member, Chair, Exec, Refuse | Right, by who asked |
-| Model calls | Model requests per question, the agent's rounds |
-| Time p50, p95 | Seconds from question to answer |
-| Cost per question | Tokens at the prices in `bake-off/candidates.ts`, judge not included |
+| Model calls | Model requests per answered question, the agent's rounds |
+| Time p50 / p95 | Seconds from question to answer |
+| Cost per question | Tokens at the prices in `bake-off/candidates.ts` per answered question, judge not included. A question that died on a provider error counts as wrong and is left out of cost, calls and time |
 | Questions per $25 | How many such questions a chapter's monthly cap buys |
 
 Under the table, every failure is listed by question id and rule, never by its text. A rule name is
 a row of the table at the top of `code-grader.ts`; a judge failure names the criterion in
-`judge-rubric.md`. With the scripted model the one-shot Ask passes 23 of 40 code checks: it cannot
-propose a card or read a channel, and the questions that need those are the ones it fails.
+`judge-rubric.md`.
+
+With the scripted model the one-shot Ask passes 23 of 40 code checks, every miss a `tools` failure
+(two also `cards`). That is not a baseline: the answers are the reference answers, and the scripted
+planner asks for every read while Ask runs the first three, so `my_tasks` is never called. What it
+does show is where the one-shot Ask has no read at all (chapter tasks, attendance, service hours) and
+that it cannot propose a card. The baseline is this run with a real model.
 
 ### The judge
 

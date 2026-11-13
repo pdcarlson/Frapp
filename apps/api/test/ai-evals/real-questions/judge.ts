@@ -226,7 +226,11 @@ export async function judgeAgreement(
   return out;
 }
 
-export function formatAgreement(result: JudgeAgreement): string {
+export function formatAgreement(
+  result: JudgeAgreement,
+  /** What the judge's calls cost, when it has a price. */
+  costUsd?: number,
+): string {
   const pct = (n: number) =>
     result.graded === 0 ? 'n/a' : `${((n / result.graded) * 100).toFixed(0)}%`;
   return [
@@ -242,5 +246,8 @@ export function formatAgreement(result: JudgeAgreement): string {
       (criterion) =>
         `| \`${criterion}\` | ${result.byCriterion[criterion]}/${result.graded} (${pct(result.byCriterion[criterion])}) |`,
     ),
+    '',
+    `Tokens: ${result.usage.inputTokens} in, ${result.usage.outputTokens} out.` +
+      (costUsd === undefined ? '' : ` Cost: about $${costUsd.toFixed(2)}.`),
   ].join('\n');
 }

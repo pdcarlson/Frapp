@@ -29,14 +29,14 @@ export const PaulQuestionSchema = z
     fromChannel: z.string().optional(),
     fromEvent: z.string().optional(),
     question: z.string().min(3),
-    rightAnswer: z.string().min(20),
+    rightAnswer: z.string().min(41),
     reference: z.string().optional(),
     decline: z.boolean().optional(),
     facts: Facts.default([]),
     never: z.array(z.string()).optional(),
     neverShown: z.array(z.string()).optional(),
     tools: z.array(z.array(z.enum(KNOWN_TOOLS))).default([]),
-    maxWords: z.number().int().positive().max(400).default(120),
+    maxWords: z.number().int().positive().max(200).default(120),
     cards: z
       .object({ min: z.number().int().min(0), max: z.number().int().min(0) })
       .optional(),

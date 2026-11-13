@@ -32,9 +32,11 @@ export type RealQuestionAgentFactory = (
 
 /**
  * The one-shot Ask searches documents, minutes and chat once on every
- * question, without a tool call to show for it. It is recorded as the two
- * searches it stands for, so the baseline is not marked down for looking
- * something up the only way it can.
+ * question, without a tool call to show for it. An answer it gave is recorded
+ * as the two searches it stands for, so the baseline is not marked down for
+ * looking something up the only way it can. Ask turns an answer with no kept
+ * citation into "couldn't find that", which comes back as refused, and
+ * nothing is recorded for that: it found nothing it could use.
  */
 function oneShot({ gateway }: RealQuestionAgentDeps): AgentUnderTest {
   const ask = createAskAgent({ gateway, name: 'one-shot Ask' });
@@ -51,8 +53,9 @@ function oneShot({ gateway }: RealQuestionAgentDeps): AgentUnderTest {
       return {
         ...answer,
         toolCalls: [
-          search('search_records'),
-          search('search_messages'),
+          ...(answer.refused
+            ? []
+            : [search('search_records'), search('search_messages')]),
           ...answer.toolCalls,
         ],
       };

@@ -4,6 +4,7 @@
  * and where they asked from.
  */
 import { ALUMNUS, MEMBER, PRESIDENT, TREASURER } from '../cases/fixtures';
+import { EVAL_NOW } from '../harness/ask-agent';
 import { termReadsFor } from '../harness/term-reads';
 import type { AgentInvocation, EvalCaller, EvalCase } from '../harness/types';
 import {
@@ -14,8 +15,11 @@ import {
 import { TERM_CHAPTER, type TermChapter } from '../synthetic-chapter/term';
 import type { RealQuestion } from './types';
 
-/** When every real question is asked: Thursday, November 12, 2026, noon Eastern. */
-export const ASKED_AT = new Date('2026-11-12T17:00:00.000Z');
+/**
+ * When every real question is asked: Thursday, November 12, 2026, noon
+ * Eastern. The one clock: Ask's "today" and the reads' "past due" agree.
+ */
+export const ASKED_AT = EVAL_NOW;
 
 const TREASURER_ONLY = new Set([
   'billing:view',
