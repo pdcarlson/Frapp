@@ -2,7 +2,6 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useId,
@@ -17,13 +16,15 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, WifiOff } from "lucide-react";
 import {
   FORM_YES_NO_OPTIONS,
   fetchOwnFormResponse,
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
+  formOpenRead,
+  formOpenReadNote,
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
@@ -175,34 +176,19 @@ function FormFillBody({
   const closed = isFormClosed(payload, now);
   const deadline = formDeadlineLine(payload, now);
 
+  // Read again on open, whatever the card's copy's age (#4727): answers sent
+  // from the phone since must not be overwritten by a stale prefill. A read
+  // the card already has in flight is joined, not sent twice (#4752). Until
+  // a read lands the questions are drawn but held, unless it is waiting for
+  // the network or has failed, where they become editable on the copy there
+  // is and a note says why (`formOpenRead`).
   const response = useQuery({
     queryKey: formResponseKey(messageId),
     queryFn: () => fetchOwnFormResponse(apiClient, messageId),
+    refetchOnMount: "always",
   });
-  // Read again on open: the card's copy can be a minute old, and answers
-  // sent from the phone since must not be overwritten by a stale prefill
-  // (#4727). Until that read settles the questions are drawn but not
-  // editable, so the first edit is made on the newest answers. It joins a
-  // read already in flight rather than sending a second.
-  const { refetch } = response;
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void refetch({ cancelRefetch: false }).finally(() => {
-      if (live) setSettled(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [refetch]);
-  // A read that fails its first attempt (and goes on to retry), or waits for
-  // the browser to come back online, doesn't hold the questions: they become
-  // editable on the copy there is, and a send reaches the server, which has
-  // the say.
-  const synced =
-    settled ||
-    response.fetchStatus === "paused" ||
-    (response.isFetching && response.failureCount > 0);
+  const read = formOpenRead(response);
+  const synced = read !== "reading";
   // The member's edits, or `null` before their first: until then the form
   // shows the answers they last sent.
   const [edited, setEdited] = useState<FormAnswers | null>(null);
@@ -226,19 +212,22 @@ function FormFillBody({
   );
   const problemCount = Object.keys(problems).length;
   const answered = !!response.data;
+  // Why the answers on screen may be behind the server's. A closed form only
+  // shows what was sent, so it has nothing to say once they're loaded.
+  const note = closed && loaded ? null : formOpenReadNote(read, loaded);
 
-  const setAnswer = useCallback(
-    (questionId: string, value: string | string[] | undefined) => {
-      setFailure(null);
-      setEdited((prev) => {
-        const next = { ...(prev ?? saved ?? {}) };
-        if (value === undefined) delete next[questionId];
-        else next[questionId] = value;
-        return next;
-      });
-    },
-    [saved],
-  );
+  const setAnswer = (
+    questionId: string,
+    value: string | string[] | undefined,
+  ) => {
+    setFailure(null);
+    setEdited((prev) => {
+      const next = { ...(prev ?? saved ?? {}) };
+      if (value === undefined) delete next[questionId];
+      else next[questionId] = value;
+      return next;
+    });
+  };
 
   // A save that lands after this page closed (or another form opened in its
   // place) must not close whatever is open by then.
@@ -333,8 +322,27 @@ function FormFillBody({
         <p className="mt-3 text-caption text-muted-foreground">
           {formPageNotice(closed, loaded, answered)}
         </p>
+        {note ? (
+          <p
+            role="status"
+            className="mt-3 flex items-start gap-2 text-sm text-muted-foreground"
+          >
+            {read === "offline" ? (
+              <WifiOff
+                aria-hidden="true"
+                className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+              />
+            ) : (
+              <AlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+              />
+            )}
+            <span>{note}</span>
+          </p>
+        ) : null}
 
-        {response.isPending ? (
+        {response.isPending && note ? null : response.isPending ? (
           <div className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your answers…

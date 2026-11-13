@@ -258,6 +258,61 @@ export function formPageNotice(
     : "This form is closed. You didn't answer it.";
 }
 
+/**
+ * Where the form page's open-time read of the viewer's answers stands
+ * (#4727, #4752), from the TanStack query state both twins share. The page
+ * reads again on open (`refetchOnMount: "always"`), because the card's copy
+ * can be a minute old and answers sent from the other device since must not
+ * be overwritten by a stale prefill.
+ *
+ * - `reading`: the read is in flight. The questions are drawn but held, so
+ *   the first edit is made on the newest answers.
+ * - `read`: one read since the page opened has landed.
+ * - `offline`: the read is waiting for the network. Nothing would settle it,
+ *   so the page doesn't wait: the answers already on screen become
+ *   editable, and {@link formOpenReadNote} says why they may be behind.
+ * - `unchecked`: the read failed, or failed once and is retrying. Same as
+ *   offline: editable on the copy there is, and a send reaches the server,
+ *   which has the say.
+ *
+ * `isFetchedAfterMount` counts a data or an error update, so a refetch that
+ * cancels another can't pass for a read that landed. A failure is checked
+ * first: `failureCount` survives the error, and resets only when a later
+ * read starts.
+ */
+export type FormOpenRead = "reading" | "read" | "offline" | "unchecked";
+
+export function formOpenRead(query: {
+  fetchStatus: "fetching" | "paused" | "idle";
+  failureCount: number;
+  isFetchedAfterMount: boolean;
+}): FormOpenRead {
+  if (query.fetchStatus === "paused") return "offline";
+  if (query.failureCount > 0) return "unchecked";
+  return query.isFetchedAfterMount ? "read" : "reading";
+}
+
+/**
+ * The line a form page shows while its answers may be behind the server's,
+ * or `null` when they aren't. `loaded` is whether there are answers on screen
+ * at all: without them, offline says the answers will load, not that they're
+ * being edited.
+ */
+export function formOpenReadNote(
+  read: FormOpenRead,
+  loaded: boolean,
+): string | null {
+  if (read === "offline") {
+    return loaded
+      ? "You're offline, so newer answers from another device may not show here. Send needs a connection."
+      : "You're offline. Your answers load when you're back online.";
+  }
+  if (read === "unchecked" && loaded) {
+    return "Couldn't check for newer answers, so these are the ones last loaded here.";
+  }
+  return null;
+}
+
 /** Above Send once it was pressed with questions still to answer. */
 export function formProblemCountLine(count: number): string {
   return count === 1

@@ -12,6 +12,8 @@ import {
   readFormPayload,
   saveFormResponse,
   type FormPayload,
+  formOpenRead,
+  formOpenReadNote,
 } from "./forms";
 import type { FrappApiClient } from "./chat-client";
 import type { ChatMessage } from "./types";
@@ -108,7 +110,9 @@ describe("forms (#3926 step 3)", () => {
     expect(formDeadlineLine(card, NOW)).toBeNull();
     expect(
       formDeadlineLine({ ...card, closes_at: "2026-11-14T12:00:00Z" }, NOW),
-    ).toMatch(/^Closes (today|tomorrow|[A-Z][a-z]+day|[A-Z][a-z]{2} \d+) at \d/);
+    ).toMatch(
+      /^Closes (today|tomorrow|[A-Z][a-z]+day|[A-Z][a-z]{2} \d+) at \d/,
+    );
     expect(formQuestionCountLine(card)).toBe("3 questions");
   });
 
@@ -184,6 +188,40 @@ describe("forms (#3926 step 3)", () => {
     } as unknown as FrappApiClient;
     await expect(saveFormResponse(refusing, "m1", {})).rejects.toThrow(
       "This form is closed",
+    );
+  });
+});
+
+describe("formOpenRead (#4752)", () => {
+  const state = (
+    fetchStatus: "fetching" | "paused" | "idle",
+    failureCount: number,
+    isFetchedAfterMount: boolean,
+  ) => ({ fetchStatus, failureCount, isFetchedAfterMount });
+
+  it("holds until a read since the page opened lands", () => {
+    expect(formOpenRead(state("fetching", 0, false))).toBe("reading");
+    expect(formOpenRead(state("idle", 0, true))).toBe("read");
+    // A background refetch after the read landed doesn't hold it again.
+    expect(formOpenRead(state("fetching", 0, true))).toBe("read");
+  });
+
+  it("doesn't wait on a read the network or a failure holds up", () => {
+    expect(formOpenRead(state("paused", 0, false))).toBe("offline");
+    expect(formOpenRead(state("paused", 1, false))).toBe("offline");
+    expect(formOpenRead(state("fetching", 1, false))).toBe("unchecked");
+    // A failed read is a data-or-error update, but not a read that landed.
+    expect(formOpenRead(state("idle", 4, true))).toBe("unchecked");
+  });
+
+  it("says why only while the answers may be behind", () => {
+    expect(formOpenReadNote("read", true)).toBeNull();
+    expect(formOpenReadNote("reading", true)).toBeNull();
+    expect(formOpenReadNote("unchecked", false)).toBeNull();
+    expect(formOpenReadNote("offline", true)).toContain("You're offline");
+    expect(formOpenReadNote("offline", false)).toContain("load when");
+    expect(formOpenReadNote("unchecked", true)).toContain(
+      "Couldn't check for newer answers",
     );
   });
 });

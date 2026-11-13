@@ -24,6 +24,8 @@ import {
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
+  formOpenRead,
+  formOpenReadNote,
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
@@ -277,29 +279,24 @@ function FormFillBody({
   const closed = isFormClosed(payload, now);
   const deadline = formDeadlineLine(payload, now);
 
-  const response = useOwnFormResponse(messageId, true);
-  // Read again on open: the card's copy can be a minute old, and answers
-  // sent from web since must not be overwritten by a stale prefill. Until
-  // that read settles the questions are drawn but not editable, so the first
-  // edit is made on the newest answers; if it fails, they become editable on
-  // the copy there is (a send then reaches the server, which has the say).
-  const { refetch } = response;
-  const [synced, setSynced] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void refetch().finally(() => {
-      if (live) setSynced(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [refetch]);
+  // Read again on open (#4727): answers sent from web since must not be
+  // overwritten by a stale prefill. Until that read lands the questions are
+  // drawn but held, so the first edit is made on the newest answers; if it
+  // waits for the network or fails, they become editable on the copy there
+  // is, a note says why, and a send reaches the server, which has the say
+  // (`formOpenRead`, #4752).
+  const response = useOwnFormResponse(messageId, true, true);
+  const read = formOpenRead(response);
+  const synced = read !== "reading";
   const saved = response.data?.answers;
   // Loaded at least once (`null` is "not answered yet"). A failed background
   // refetch keeps the questions and the member's edits on screen rather than
   // swapping them for an error mid-edit.
   const loaded = response.data !== undefined;
   const answered = !!response.data;
+  // Why the answers on screen may be behind the server's. A closed form only
+  // shows what was sent, so it has nothing to say once they're loaded.
+  const note = closed && loaded ? null : formOpenReadNote(read, loaded);
 
   // The member's edits, or `null` before their first: until then the page
   // shows the answers they last sent.
@@ -416,8 +413,13 @@ function FormFillBody({
               <Text style={styles.description}>{payload.description}</Text>
             ) : null}
             <Text style={styles.notice}>{notice}</Text>
+            {note ? (
+              <Text accessibilityLiveRegion="polite" style={styles.readNote}>
+                {note}
+              </Text>
+            ) : null}
 
-            {response.isPending ? (
+            {response.isPending && note ? null : response.isPending ? (
               // The questions' own shape, a title over its control, so the
               // page doesn't jump when the answers land (components.md §10).
               <SkeletonRegion
@@ -699,6 +701,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    readNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
     },
     loading: {
       gap: tokens.spacing.sm,

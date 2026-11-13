@@ -9,7 +9,16 @@ import { useFrappClient } from "@repo/hooks";
  * card's Fill out into Edit your answers at once. `enabled` is off for a
  * card still in the outbox, which the server doesn't hold yet.
  */
-export function useOwnFormResponse(messageId: string, enabled: boolean) {
+export function useOwnFormResponse(
+  messageId: string,
+  enabled: boolean,
+  /**
+   * The form page reads again on every open, whatever the copy's age
+   * (#4727); a read the card already has in flight is joined, not sent twice
+   * (#4752).
+   */
+  readOnOpen = false,
+) {
   const apiClient = useFrappClient();
   return useQuery({
     queryKey: formResponseKey(messageId),
@@ -17,5 +26,6 @@ export function useOwnFormResponse(messageId: string, enabled: boolean) {
     enabled,
     // The card asks once a minute at most; the page refetches when it opens.
     staleTime: 60_000,
+    refetchOnMount: readOnOpen ? "always" : true,
   });
 }
