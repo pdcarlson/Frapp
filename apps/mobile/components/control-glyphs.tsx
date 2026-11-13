@@ -156,9 +156,14 @@ export function LinkGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/** A chevron pointing right, shared by the two glyphs that draw one. */
+const RIGHT_CHEVRON = "M9.5 6l6 6-6 6";
+
 /**
- * A disclosure chevron: down while what it opens is shown, right while it is
- * hidden, as a "More options" row or a row that opens a picker draws it.
+ * A disclosure chevron, for something that opens in place: down while what
+ * it opens is shown, right while it is hidden, as a "More options" row and a
+ * collapsed channel section draw it. A row that goes somewhere else (a
+ * screen, a sheet, a picker) ends in {@link ForwardGlyph} instead.
  */
 export function DisclosureGlyph({
   color,
@@ -168,7 +173,7 @@ export function DisclosureGlyph({
   const { detail } = paint({ color });
   const d =
     direction === "right"
-      ? "M9.5 6l6 6-6 6"
+      ? RIGHT_CHEVRON
       : direction === "down"
         ? "M6 9.5l6 6 6-6"
         : "M6 14.5l6-6 6 6";
@@ -198,6 +203,30 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M14.5 6l-6 6 6 6" {...detail} strokeWidth={BACK_STROKE_WIDTH} />
+    </Frame>
+  );
+}
+
+/** The row chevron's side: smaller than a control, it only marks a row. */
+const FORWARD_GLYPH_SIZE = 16;
+
+/**
+ * Forward: the right chevron at the end of a row that opens a screen, a sheet
+ * or a picker (`ListRow`, the Activity rows, `ChoiceRow`, the study zone
+ * picker, the event and channel forms' option rows). The mirror of
+ * {@link BackGlyph} at the same stroke, drawn for the same reason:
+ * a typed `›` sits on the text's x-height and scales with the type role, so
+ * its ink landed below the middle of every row (#3628; foundations.md §7,
+ * Aligning a row).
+ */
+export function ForwardGlyph({
+  color,
+  size = FORWARD_GLYPH_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d={RIGHT_CHEVRON} {...detail} strokeWidth={BACK_STROKE_WIDTH} />
     </Frame>
   );
 }

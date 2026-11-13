@@ -1,12 +1,13 @@
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useNotifications } from "@repo/hooks";
-import { SignetTokens } from "@repo/theme/signet";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { HeaderButton } from "@/components/header-button";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
+import { NavGlyph } from "@/components/nav-glyph";
+import { useTourAnchor } from "@/components/onboarding/tour";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { useGuardedBySwipe } from "@/lib/swipe-claim";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * Chat home's top-right pair: a door to Messages, the member's direct
@@ -21,26 +22,18 @@ import { useGuardedBySwipe } from "@/lib/swipe-claim";
  * beside the conversations, not behind the profile.
  */
 
-const BUTTON = 36;
-
-/** A speech bubble, the Messages door's glyph, on the 24pt grid. */
-function MessagesGlyph({ color }: { color: string }) {
-  return (
-    <Svg width={21} height={21} viewBox="0 0 24 24" accessible={false}>
-      <Path
-        d="M4.5 5.5h15v10.5h-8.5l-4.5 3.5v-3.5h-2z"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Svg>
-  );
-}
+/** The glyph inside a header round (`components/header-button.tsx`). */
+const GLYPH = 20;
 
 /**
  * The door to Messages. Its badge counts conversations with anything unread,
  * in mention red: a direct message addresses the member (foundations.md §5).
+ *
+ * The glyph is the shared nav set's `direct`, the paper plane web's sidebar
+ * draws beside Direct messages and Instagram draws on this same door (#4610).
+ * Until then it was a speech bubble, which the Chat tab under it also is, so
+ * two different places wore one picture. A plane pointing off to the right
+ * also says which way the screen comes from on the swipe (#3774).
  */
 export function MessagesButton({
   unreadConversations,
@@ -48,49 +41,38 @@ export function MessagesButton({
   unreadConversations: number;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   const router = useRouter();
-  // A leftward flick that starts on the door is also the swipe to Messages:
-  // the door drops that press, so Messages opens once (`lib/swipe-claim.ts`).
-  const openMessages = useGuardedBySwipe(() => router.push("/messages"));
+  // The first-run tour's second stop points here. A real view of its own, so
+  // the tour can measure it.
+  const tourAnchor = useTourAnchor("messages");
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Messages"
-      accessibilityValue={
-        unreadConversations > 0
-          ? {
-              text: `${unreadConversations} unread ${
+    <View ref={tourAnchor} collapsable={false}>
+      <HeaderButton
+        label="Messages"
+        value={
+          unreadConversations > 0
+            ? `${unreadConversations} unread ${
                 unreadConversations === 1 ? "conversation" : "conversations"
-              }`,
-            }
-          : undefined
-      }
-      hitSlop={4}
-      android_ripple={{
-        color: tint(tokens.color.text.foreground, 0.12),
-        borderless: true,
-        radius: 22,
-      }}
-      onPress={openMessages}
-      style={({ pressed }) => [
-        styles.glass,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
-    >
-      <MessagesGlyph color={tokens.color.text.foreground} />
-      {unreadConversations > 0 ? (
-        <View
-          testID="messages-badge"
-          pointerEvents="none"
-          style={[styles.count, styles.countBadge, styles.countMention]}
-        >
-          <Text style={[styles.countText, styles.countTextMention]}>
-            {unreadConversations > 99 ? "99+" : unreadConversations}
-          </Text>
-        </View>
-      ) : null}
-    </Pressable>
+              }`
+            : undefined
+        }
+        // A leftward flick that starts on the door is also the swipe to
+        // Messages: the round drops that press, so Messages opens once
+        // (`lib/swipe-claim.ts`).
+        onPress={() => router.push("/messages")}
+        badge={{
+          count: unreadConversations,
+          tone: "mention",
+          testID: "messages-badge",
+        }}
+      >
+        <NavGlyph
+          paths={NAV_GLYPHS.direct}
+          color={tokens.color.text.foreground}
+          size={GLYPH}
+        />
+      </HeaderButton>
+    </View>
   );
 }
 
@@ -119,79 +101,17 @@ export function MessagesButton({
  */
 export function NotificationsButton() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   const router = useRouter();
   const unread = selectUnreadNonChatCount(useNotifications().data);
-  // A leftward flick that starts on the bell is the swipe to Messages, not a
-  // tap on the bell (`lib/swipe-claim.ts`).
-  const openInbox = useGuardedBySwipe(() => router.push("/notifications"));
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Notifications"
-      accessibilityHint="Opens your notification history."
-      accessibilityValue={
-        unread > 0 ? { text: `${unread} unread` } : undefined
-      }
-      hitSlop={4}
-      android_ripple={{
-        color: tint(tokens.color.text.foreground, 0.12),
-        borderless: true,
-        radius: 22,
-      }}
-      onPress={openInbox}
-      style={({ pressed }) => [
-        styles.glass,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
+    <HeaderButton
+      label="Notifications"
+      hint="Opens your notification history."
+      value={unread > 0 ? `${unread} unread` : undefined}
+      onPress={() => router.push("/notifications")}
+      badge={{ count: unread, tone: "inbox", testID: "notifications-badge" }}
     >
       <NotificationsGlyph color={tokens.color.text.foreground} neutral />
-      {unread > 0 ? (
-        <View
-          testID="notifications-badge"
-          pointerEvents="none"
-          style={[styles.count, styles.countBadge, styles.countInbox]}
-        >
-          <Text style={[styles.countText, styles.countTextInbox]}>
-            {unread > 99 ? "99+" : unread}
-          </Text>
-        </View>
-      ) : null}
-    </Pressable>
+    </HeaderButton>
   );
-}
-
-function createStyles(tokens: SignetTokens) {
-  return StyleSheet.create({
-    // The glass round of the tab bar's "+" (2026-11-06 glass direction), at
-    // the header's control size.
-    glass: {
-      width: BUTTON,
-      height: BUTTON,
-      borderRadius: BUTTON / 2,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: tokens.color.surface.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
-    pressed: { backgroundColor: tokens.color.surface.popover },
-    count: {
-      minWidth: 18,
-      height: 18,
-      paddingHorizontal: tokens.spacing.xs,
-      borderRadius: 9,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    countBadge: { position: "absolute", top: -4, right: -6 },
-    countMention: { backgroundColor: tokens.color.semantic.mention },
-    countInbox: { backgroundColor: tokens.color.gold.house },
-    countText: {
-      ...typeRole({ size: 11, weight: tokens.typography.weight.bold }),
-      lineHeight: 14,
-    },
-    countTextMention: { color: tokens.color.semantic.mentionForeground },
-    countTextInbox: { color: tokens.color.gold.onHouse },
-  });
 }

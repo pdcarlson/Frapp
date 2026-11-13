@@ -134,7 +134,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 import YouScreen from "@/app/(app)/(tabs)/you";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LeadTile } from "@/components/lead-tile";
 import { ListRow, ListSection } from "@/components/list-section";
+import { ROLE_COLOR_HEXES } from "@repo/validation";
 import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
@@ -336,8 +339,12 @@ describe("You tab anatomy (#1048, #3839)", () => {
   it("draws the skeleton head and no Details while the profile loads, and keeps every row", () => {
     currentUser = { isPending: true, isError: false, data: undefined };
     const tree = render();
-    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileSkeleton")).toHaveLength(1);
-    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails")).toHaveLength(0);
+    expect(
+      tree.root.findAll((n) => (n.type as unknown) === "ProfileSkeleton"),
+    ).toHaveLength(1);
+    expect(
+      tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails"),
+    ).toHaveLength(0);
     expect(screenText(tree)).toContain("Switch chapter");
   });
 
@@ -353,8 +360,12 @@ describe("You tab anatomy (#1048, #3839)", () => {
     const text = screenText(tree);
     expect(text).toContain("Couldn't load your profile");
     expect(text).toContain("Switch chapter");
-    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileHead")).toHaveLength(0);
-    expect(tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails")).toHaveLength(0);
+    expect(
+      tree.root.findAll((n) => (n.type as unknown) === "ProfileHead"),
+    ).toHaveLength(0);
+    expect(
+      tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails"),
+    ).toHaveLength(0);
   });
 
   it("names the picked status and its end on the Status row, and opens the sheet from it (#3845)", () => {
@@ -514,22 +525,43 @@ describe("You tab anatomy (#1048, #3839)", () => {
     }
   });
 
-  // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
-  // labels a row is neutral, so member and Admin rows draw the same muted hue.
-  // The Status row's leading mark is the status dot, whose hue is the status.
-  it("draws a neutral leading glyph on every hub row, never the chapter accent", () => {
-    permissions = ["events:update"];
+  // foundations.md §6 "A place's hue" (Paul, 2026-11-12): a row that opens a
+  // place leads with that place's tile in its own fixed hue, from the role
+  // palette, which has no gold and no red. Never the chapter accent. The
+  // Status row's leading mark is the status dot, whose hue is the status.
+  it("leads every hub row with its place's tinted tile, never the chapter accent", () => {
+    permissions = ["events:update", "members:invite"];
     const rows = render().root.findAllByType(ListRow).slice(1);
     expect(rows.length).toBeGreaterThan(0);
+    const paletteHexes: readonly string[] = ROLE_COLOR_HEXES;
     for (const row of rows) {
-      const glyph = row.props.leading as React.ReactElement<{
-        color: string;
+      const tile = row.props.leading as React.ReactElement<{
+        hue?: string;
+        on: string;
+        children: React.ReactElement<{ color: string }>;
       }>;
-      expect(glyph, row.props.label).toBeTruthy();
-      expect(glyph.props.color, row.props.label).toBe(
-        signetDarkTokens.color.text.muted,
-      );
+      expect(tile.type, row.props.label).toBe(LeadTile);
+      expect(tile.props.on).toBe("card");
+      if (row.props.disabled) {
+        // Nothing to host: the tile goes grey with the label.
+        expect(tile.props.hue).toBeUndefined();
+        expect(tile.props.children.props.color).toBe(
+          signetDarkTokens.color.text.disabled,
+        );
+        continue;
+      }
+      expect(paletteHexes, row.props.label).toContain(tile.props.hue);
+      expect(tile.props.children.props.color).toBe(tile.props.hue);
     }
+  });
+
+  it("gives each of the member's own places a hue no other one has", () => {
+    const rows = render().root.findAllByType(ListRow).slice(1);
+    const hues = rows.map(
+      (row) =>
+        (row.props.leading as React.ReactElement<{ hue: string }>).props.hue,
+    );
+    expect(new Set(hues).size).toBe(hues.length);
   });
 
   it("has no Notifications row: the inbox is the bell on Chat home (#3362)", () => {
@@ -559,14 +591,15 @@ describe("You tab anatomy (#1048, #3839)", () => {
       "Settings",
       "Switch chapter",
     ]);
-    // One chevron inside each press target.
+    // One drawn chevron inside each press target (#3628: never a typed `›`).
     for (const button of buttons) {
+      expect(button.findAllByType(ForwardGlyph)).toHaveLength(1);
       expect(
         button.findAll(
           (node) =>
             (node.type as unknown) === "Text" && node.props.children === "›",
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
     }
   });
 
@@ -586,12 +619,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     expect(host.props.accessibilityValue).toEqual({
       text: "No upcoming event",
     });
-    expect(
-      host.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" && node.props.children === "›",
-      ),
-    ).toHaveLength(0);
+    expect(host.findAllByType(ForwardGlyph)).toHaveLength(0);
   });
 
   it("shows the Admin section only to a member who can host", () => {

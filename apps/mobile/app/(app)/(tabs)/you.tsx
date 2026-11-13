@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { type ComponentType, useMemo, useRef } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -20,6 +20,7 @@ import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
+import { LeadTile } from "@/components/lead-tile";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
   ChapterGlyph,
@@ -45,6 +46,10 @@ import {
 } from "@/components/you/profile-sections";
 import { useOwnStatus } from "@/lib/account/own-status";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
+import {
+  destinationHue,
+  type YouDestination,
+} from "@/lib/more/destination-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { selectViewerProfile } from "@/lib/more/profile";
@@ -153,10 +158,23 @@ export default function YouScreen() {
   const { tokens } = useFrappTheme();
   const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
-  // Every row's leading glyph is neutral, member and Admin rows alike: an icon
-  // that labels a row never takes the chapter accent (foundations.md §6,
-  // "Where the accent goes", 2026-11-05).
-  const glyphColor = tokens.color.text.muted;
+  // Every row that opens a place leads with that place's tile, in its own
+  // fixed hue (`lib/more/destination-hue.ts`; Paul, 2026-11-12). Never the
+  // chapter accent: an icon that labels a row doesn't take it (foundations.md
+  // §6, "Where the accent goes"). A row that can't be opened now goes grey
+  // with its label.
+  const tile = (
+    Glyph: ComponentType<{ color: string }>,
+    place: YouDestination,
+    disabled = false,
+  ) => {
+    const hue = disabled ? undefined : destinationHue(place);
+    return (
+      <LeadTile on="card" hue={hue} testID={`you-tile-${place}`}>
+        <Glyph color={hue ?? tokens.color.text.disabled} />
+      </LeadTile>
+    );
+  };
 
   const userQuery = useCurrentUser();
   const profile = useMemo(
@@ -300,7 +318,7 @@ export default function YouScreen() {
         {hiddenFeatures.has("study") ? null : (
           <ListRow
             label="Study hours"
-            leading={<StudyGlyph color={glyphColor} />}
+            leading={tile(StudyGlyph, "study")}
             value={studyThisWeek}
             accessibilityHint="Opens study hours and session tracking."
             onPress={() => router.push("/study")}
@@ -308,14 +326,14 @@ export default function YouScreen() {
         )}
         <ListRow
           label="Service hours"
-          leading={<ServiceGlyph color={glyphColor} />}
+          leading={tile(ServiceGlyph, "service")}
           accessibilityHint="Opens your logged service hours."
           onPress={() => router.push("/service-hours")}
         />
         {duesOn ? (
           <ListRow
             label="Dues"
-            leading={<DuesGlyph color={glyphColor} />}
+            leading={tile(DuesGlyph, "dues")}
             accessibilityHint="Opens your dues and payment history."
             accessibilityValue={duesDue?.label}
             trailing={
@@ -339,7 +357,7 @@ export default function YouScreen() {
         {hiddenFeatures.has("documents") ? null : (
           <ListRow
             label="Documents"
-            leading={<DocumentsGlyph color={glyphColor} />}
+            leading={tile(DocumentsGlyph, "documents")}
             accessibilityHint="Opens the chapter's documents."
             onPress={() => router.push("/documents")}
           />
@@ -348,14 +366,14 @@ export default function YouScreen() {
         {moduleGate?.("meetings") ? (
           <ListRow
             label="Minutes"
-            leading={<MinutesGlyph color={glyphColor} />}
+            leading={tile(MinutesGlyph, "minutes")}
             accessibilityHint="Opens your chapter's meeting minutes."
             onPress={() => router.push("/minutes")}
           />
         ) : null}
         <ListRow
           label="Directory"
-          leading={<DirectoryGlyph color={glyphColor} />}
+          leading={tile(DirectoryGlyph, "directory")}
           accessibilityHint="Opens the member directory."
           onPress={() => router.push("/directory")}
         />
@@ -364,21 +382,21 @@ export default function YouScreen() {
       <ListSection>
         <ListRow
           label="Settings"
-          leading={<SettingsGlyph color={glyphColor} />}
+          leading={tile(SettingsGlyph, "settings")}
           accessibilityHint="Opens notifications, quiet hours and your account."
           onPress={() => router.push("/preferences")}
         />
         {hasNoChapters ? (
           <ListRow
             label="Create a chapter"
-            leading={<ChapterGlyph color={glyphColor} />}
+            leading={tile(ChapterGlyph, "chapter")}
             accessibilityHint="Opens the chapter setup wizard."
             onPress={() => router.push("/(auth)/create-chapter")}
           />
         ) : (
           <ListRow
             label="Switch chapter"
-            leading={<ChapterGlyph color={glyphColor} />}
+            leading={tile(ChapterGlyph, "chapter")}
             value={chapterName}
             accessibilityHint="Opens the list of chapters you belong to."
             onPress={() =>
@@ -402,7 +420,7 @@ export default function YouScreen() {
             {canInvite ? (
               <ListRow
                 label="Invite members"
-                leading={<InviteGlyph color={glyphColor} />}
+                leading={tile(InviteGlyph, "invite")}
                 accessibilityHint="Opens invites to email or share with new members."
                 onPress={() => router.push("/invite")}
               />
@@ -410,7 +428,7 @@ export default function YouScreen() {
             {canHost ? (
               <ListRow
                 label="Host check-in"
-                leading={<HostCheckInGlyph color={glyphColor} />}
+                leading={tile(HostCheckInGlyph, "hostCheckIn", !nextEvent)}
                 accessibilityValue={
                   nextEvent ? nextEvent.name : "No upcoming event"
                 }
@@ -441,7 +459,7 @@ export default function YouScreen() {
             {canChapterSettings ? (
               <ListRow
                 label="Chapter settings"
-                leading={<SettingsGlyph color={glyphColor} />}
+                leading={tile(SettingsGlyph, "chapterSettings")}
                 accessibilityHint="Opens the chapter's accent, chat background and roles."
                 onPress={() => router.push("/chapter-settings")}
               />
