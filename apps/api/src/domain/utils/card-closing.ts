@@ -35,7 +35,8 @@ export function normalizeClosesAt(
 
 /**
  * Whether the card takes no more answers: closed early, or past its end time.
- * The sign-up claim RPC decides this again under its lock; this lets the API
+ * The sign-up claim RPC and the form-answer RPC (`save_chat_form_response`)
+ * decide this again under the card's lock; this lets the API
  * refuse without a round trip and the close route refuse a second close.
  */
 export function isCardClosed(

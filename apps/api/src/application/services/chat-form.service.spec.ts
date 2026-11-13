@@ -71,6 +71,33 @@ describe('ChatFormService (#3926 step 3)', () => {
     expect(repo.findOwn).not.toHaveBeenCalled();
   });
 
+  it('reads the caller’s answers back on a closed or past-end form', async () => {
+    repo.findOwn.mockResolvedValue(row);
+    for (const patch of [
+      { closed_at: '2026-11-12T00:00:00Z', closed_by: 'user-9' },
+      { closes_at: '2020-01-01T00:00:00Z' },
+    ]) {
+      access.assertMessageAccess.mockResolvedValue({
+        ...form,
+        payload: { ...(form.payload as object), ...patch },
+      });
+      await expect(
+        service.getOwnResponse('msg-1', 'ch-1', 'user-1'),
+      ).resolves.toEqual({
+        answers: { name: 'Sam' },
+        updated_at: row.updated_at,
+      });
+    }
+  });
+
+  it('refuses to read answers on a message that is not a form', async () => {
+    access.assertMessageAccess.mockResolvedValue({ ...form, kind: 'signup' });
+    await expect(
+      service.getOwnResponse('msg-1', 'ch-1', 'user-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.findOwn).not.toHaveBeenCalled();
+  });
+
   it('refuses a caller who cannot read the channel, reading nothing', async () => {
     access.assertMessageAccess.mockRejectedValue(
       new NotFoundException('Message not found'),
@@ -95,6 +122,13 @@ describe('ChatFormService (#3926 step 3)', () => {
       name: 'Sam',
       room: 'a',
     });
+    // The `answer` check: refused in an archived channel or the audit log.
+    expect(access.assertMessageAccess).toHaveBeenCalledWith(
+      'msg-1',
+      'ch-1',
+      'user-1',
+      'answer',
+    );
   });
 
   it.each([

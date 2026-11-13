@@ -27,9 +27,10 @@ export interface OwnFormResponse {
 /**
  * Members' answers to form cards in chat (#3926 step 3).
  *
- * A member reads and writes only their own answers. Reaching the card is a
- * channel read, the same check a sign-up claim or a poll vote makes: anyone
- * who can see the card can answer it. Nobody else's answers are reachable
+ * A member reads and writes only their own answers. Reading them back is a
+ * channel read. Saving is the `answer` check: anyone who can see the card can
+ * answer it, as with a sign-up claim, but not in an archived channel or the
+ * audit log, which take no writes (and where Close form is refused too). Nobody else's answers are reachable
  * here; the creator's responses view is step 4.
  */
 @Injectable()
@@ -77,6 +78,7 @@ export class ChatFormService {
       messageId,
       chapterId,
       userId,
+      'answer',
     );
     if (message.kind !== 'form') throw new BadRequestException(NOT_A_FORM);
     if (message.is_deleted) {

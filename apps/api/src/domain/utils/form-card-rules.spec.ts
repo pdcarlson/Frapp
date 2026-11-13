@@ -111,6 +111,22 @@ describe('normalizeFormCard (#3926 step 3)', () => {
       'Each question needs an id, a type and a question',
     ],
     [
+      'a question id an object inherits',
+      {
+        title: 'T',
+        questions: [{ id: 'constructor', type: 'short_answer', title: 'Q' }],
+      },
+      'Each question needs an id, a type and a question',
+    ],
+    [
+      'the question id __proto__',
+      {
+        title: 'T',
+        questions: [{ id: '__proto__', type: 'short_answer', title: 'Q' }],
+      },
+      'Each question needs an id, a type and a question',
+    ],
+    [
       'a repeated question id',
       {
         title: 'T',
@@ -175,6 +191,20 @@ describe('normalizeFormAnswers (#3926 step 3)', () => {
       choice('dropdown', { id: 'floor' }),
       { id: 'stay', type: 'yes_no', title: 'Staying?' },
     ],
+  });
+
+  it('reads only the answers object’s own keys', () => {
+    // A card stored before ids were checked: `toString` is inherited by
+    // every object, and a blank answer to it must still read as blank.
+    const inherited = [
+      {
+        id: 'toString',
+        type: 'short_answer' as const,
+        title: 'Q',
+        required: false,
+      },
+    ];
+    expect(normalizeFormAnswers(inherited, {})).toEqual({ answers: {} });
   });
 
   it('stores each answer as its question takes it, dropping blanks', () => {
