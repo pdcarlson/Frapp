@@ -14,14 +14,17 @@ describe('AuthSyncInterceptor', () => {
     handle: () => of({ result: 'ok' }),
   };
 
-  const mockExecutionContext = (supabaseUser?: {
-    id: string;
-    email: string | null | undefined;
-    user_metadata?: Record<string, unknown>;
-  }): ExecutionContext => {
+  const mockExecutionContext = (
+    supabaseUser?: {
+      id: string;
+      email: string | null | undefined;
+      user_metadata?: Record<string, unknown>;
+    },
+    appUser?: { id: string },
+  ): ExecutionContext => {
     const request = {
       supabaseUser,
-      appUser: undefined as unknown,
+      appUser: appUser as unknown,
       headers: { 'x-time-zone': 'America/Chicago' },
     };
     return {
@@ -119,5 +122,116 @@ describe('AuthSyncInterceptor', () => {
       'n@privaterelay.appleid.com',
       { full_name: 'Ada Lovelace' },
     );
+  });
+
+  describe('when a guard already resolved the users row', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    it("keeps the guard's id and does not wait on the sync", async () => {
+      let finish: (value: { id: string }) => void = () => undefined;
+      mockAuthService.syncUser.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      const ctx = mockExecutionContext(
+        { id: 'auth-1', email: 'a@example.com' },
+        { id: 'user-1' },
+      );
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      const request = ctx.switchToHttp().getRequest();
+      expect(request.appUser).toEqual({ id: 'user-1' });
+      expect(mockAuthService.syncUser).toHaveBeenCalledWith(
+        'auth-1',
+        'a@example.com',
+        undefined,
+      );
+      expect(mockTimeZones.record).toHaveBeenCalledWith(
+        'user-1',
+        'America/Chicago',
+      );
+      finish({ id: 'user-1' });
+    });
+
+    it('syncs a session once while its email and metadata stay the same', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const session = { id: 'auth-1', email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it("syncs again when the session's email changes", async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+
+      await interceptor.intercept(
+        mockExecutionContext(
+          { id: 'auth-1', email: 'a@example.com' },
+          { id: 'user-1' },
+        ),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(
+          { id: 'auth-1', email: 'b@example.com' },
+          { id: 'user-1' },
+        ),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(mockAuthService.syncUser).toHaveBeenLastCalledWith(
+        'auth-1',
+        'b@example.com',
+        undefined,
+      );
+    });
+
+    it('tries again on the next request after a failed sync', async () => {
+      mockAuthService.syncUser
+        .mockRejectedValueOnce(new Error('pool timeout'))
+        .mockResolvedValue({ id: 'user-1' });
+      const session = { id: 'auth-1', email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips the background sync after a waited sync of the same session', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const session = { id: 'auth-1', email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
   });
 });
