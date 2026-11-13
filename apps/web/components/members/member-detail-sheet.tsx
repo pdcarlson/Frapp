@@ -69,7 +69,7 @@ import {
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
-import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
+import { parseChapterRoles, toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   DETAIL_LIST,
   DetailRow,
@@ -378,7 +378,7 @@ export function MemberDetailSheet({
     memberRoleIds.length > 0;
 
   const roleOptions = useMemo(
-    () => normalizeRoleOptions(rolesQuery.data),
+    () => toRoleOptions(rolesQuery.data),
     [rolesQuery.data],
   );
 
@@ -468,9 +468,9 @@ export function MemberDetailSheet({
         rolesAfterSave(
           selectedRoleIds,
           memberRoleIds,
-          roleAccessRows(rolesQuery.data),
+          parseChapterRoles(rolesQuery.data),
         ),
-        memberAccessRoleIds(roleAccessRows(rolesQuery.data)),
+        memberAccessRoleIds(parseChapterRoles(rolesQuery.data)),
       )
     ) {
       const confirmed = await confirm({

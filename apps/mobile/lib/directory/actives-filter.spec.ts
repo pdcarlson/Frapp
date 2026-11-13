@@ -1,12 +1,13 @@
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { describe, expect, it } from "vitest";
 import {
+  activesFilterRoles,
   countActivesFilters,
   effectiveActivesFilter,
   filterActives,
   graduationYearOptions,
   hasRoleQuery,
   NO_ACTIVES_FILTER,
-  parseFilterRoles,
   searchFilterRoles,
 } from "./actives-filter";
 
@@ -60,13 +61,15 @@ describe("the filter's options", () => {
 
   it("leaves the Alumni system role and unnamed rows out of the roles", () => {
     expect(
-      parseFilterRoles([
-        { id: "r-1", name: "Member", color: "#f2994a" },
-        { id: "r-2", name: "Off palette", color: "#123456" },
-        { id: "r-al", name: "Alumni", system_key: "ALUMNI" },
-        { id: "r-x", name: "" },
-        "junk",
-      ]),
+      activesFilterRoles(
+        parseChapterRoles([
+          { id: "r-1", name: "Member", color: "#f2994a" },
+          { id: "r-2", name: "Off palette", color: "#123456" },
+          { id: "r-al", name: "Alumni", system_key: "ALUMNI" },
+          { id: "r-x", name: "" },
+          "junk",
+        ]),
+      ),
     ).toEqual([
       // Palette colors only, as every other role-color path paints them.
       { id: "r-1", name: "Member", color: "#F2994A" },
@@ -128,13 +131,15 @@ describe("effectiveActivesFilter", () => {
   });
 });
 
-describe("parseFilterRoles and the Everyone role (#4191)", () => {
+describe("activesFilterRoles and the Everyone role (#4191)", () => {
   it("offers no filter for it", () => {
     expect(
-      parseFilterRoles([
-        { id: "r-everyone", name: "Everyone", system_key: "MEMBER" },
-        { id: "r-chair", name: "Rush Chair", system_key: null },
-      ]).map((role) => role.id),
+      activesFilterRoles(
+        parseChapterRoles([
+          { id: "r-everyone", name: "Everyone", system_key: "MEMBER" },
+          { id: "r-chair", name: "Rush Chair", system_key: null },
+        ]),
+      ).map((role) => role.id),
     ).toEqual(["r-chair"]);
   });
 });

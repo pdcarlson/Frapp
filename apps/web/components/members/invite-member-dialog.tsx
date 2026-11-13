@@ -42,7 +42,7 @@ import {
   copyWhenReady,
 } from "@/components/members/invite-composer";
 import { getErrorMessage, cn } from "@/lib/utils";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { EVERYONE_ROLE_NAME, isEveryoneRole } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -113,7 +113,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     typeof everyoneRole?.id === "string" ? everyoneRole.id : undefined;
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data, "keep").sort(
+      toRoleOptions(rolesQuery.data, "keep").sort(
         (first, second) =>
           Number(second.id === everyoneRoleId) -
             Number(first.id === everyoneRoleId) ||

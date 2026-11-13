@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { useMyPermissions, useRoles } from "@repo/hooks";
 import { isEveryoneRole } from "@repo/validation";
 import {
@@ -152,7 +152,7 @@ function DefaultInviteRoleCard({
 
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+      toRoleOptions(rolesQuery.data).sort((first, second) =>
         first.name.localeCompare(second.name),
       ),
     [rolesQuery.data],

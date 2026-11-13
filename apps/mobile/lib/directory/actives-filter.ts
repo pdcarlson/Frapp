@@ -9,8 +9,8 @@
  * `GET /v1/members` takes no filter params.
  */
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
-import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
-import { num, records, str } from "../more/narrow";
+import type { ChapterRole } from "@repo/hooks/chapter-roles";
+import { num, str } from "../more/narrow";
 
 export type ActivesStatus = "active" | "pending";
 
@@ -37,31 +37,21 @@ export const STATUS_OPTIONS: readonly {
   { value: "pending", label: "Pending" },
 ];
 
-export interface FilterRole {
-  id: string;
-  name: string;
-  color: string | null;
-}
+export type FilterRole = Pick<ChapterRole, "id" | "name" | "color">;
 
 /**
  * The roles an active can be narrowed by, in the order `GET /v1/roles` returns
- * them (web's order). The Alumni system role is left out: nobody on the
- * Actives tab holds it, as web leaves it out of its role filter outside a
- * search. Read defensively, since the endpoint declares no response schema.
+ * them (web's order), from `parseChapterRoles` (`@repo/hooks/chapter-roles`).
+ * The Alumni system role is left out: nobody on the Actives tab holds it, as
+ * web leaves it out of its role filter outside a search. Everyone (#4191): no
+ * list offers it.
  */
-export function parseFilterRoles(rolesData: unknown): FilterRole[] {
-  return records(rolesData).flatMap((row) => {
-    const id = str(row, "id");
-    const name = str(row, "name");
-    // Alumni: nobody on the Actives tab holds it. Everyone (#4191): no list
-    // offers it.
-    if (!id || !name || row.system_key === "ALUMNI" || isEveryoneRole(row)) {
-      return [];
-    }
-    // Palette colors only, as every other role-color path paints them
-    // (`roleColorOrNull`): a legacy or free-typed value paints no dot.
-    return [{ id, name, color: roleColorOrNull(row.color) }];
-  });
+export function activesFilterRoles(
+  roles: readonly ChapterRole[],
+): FilterRole[] {
+  return roles
+    .filter((role) => role.system_key !== "ALUMNI" && !role.everyone)
+    .map(({ id, name, color }) => ({ id, name, color }));
 }
 
 /**

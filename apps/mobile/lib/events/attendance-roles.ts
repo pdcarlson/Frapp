@@ -1,4 +1,4 @@
-import { isEveryoneRole } from "@repo/validation";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 
 /**
  * The role list the attendance picker draws (`components/events/
@@ -18,18 +18,18 @@ export interface RoleOption {
   hidden: boolean;
 }
 
-/** `GET /v1/roles` rows as `{ id, name, hidden }`, by name. Malformed rows drop. */
+/**
+ * `GET /v1/roles` rows (`parseChapterRoles`, shared with web) as
+ * `{ id, name, hidden }`, by name.
+ */
 export function roleOptionsFrom(data: unknown): RoleOption[] {
-  if (!Array.isArray(data)) return [];
-  const options: RoleOption[] = [];
-  for (const row of data) {
-    if (!row || typeof row !== "object") continue;
-    const { id, name } = row as { id?: unknown; name?: unknown };
-    if (typeof id === "string" && typeof name === "string" && name.trim()) {
-      options.push({ id, name: name.trim(), hidden: isEveryoneRole(row) });
-    }
-  }
-  return options.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-  );
+  return parseChapterRoles(data)
+    .map((role) => ({
+      id: role.id,
+      name: role.name.trim(),
+      hidden: role.everyone,
+    }))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
 }

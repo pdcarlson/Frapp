@@ -49,7 +49,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
-import { parseRoleOptions } from "@/lib/directory/role-editor";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import {
   MemberRolesSheet,
   type MemberRolesSession,
@@ -227,7 +227,7 @@ export const MemberDetailSheet = forwardRef<
     null,
   );
   const roleOptions = useMemo(
-    () => parseRoleOptions(rolesQuery.data),
+    () => parseChapterRoles(rolesQuery.data),
     [rolesQuery.data],
   );
   const rolesSheetRef = useRef<BottomSheetModal>(null);

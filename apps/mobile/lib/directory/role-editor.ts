@@ -8,65 +8,20 @@
  * import, so the list is searched, and its order is fixed when the editor
  * opens (held roles first) so a row never jumps out from under a finger.
  */
+import type { ChapterRole } from "@repo/hooks/chapter-roles";
 import {
-  isEveryoneRole,
   memberAccessRoleIds,
   removesMemberAccess,
-  roleColorOrNull,
   rolesAfterSave,
-  WILDCARD_PERMISSION,
 } from "@repo/validation";
-import { records, str } from "../more/narrow";
 
-export interface RoleOption {
-  id: string;
-  name: string;
-  color: string | null;
-  /**
-   * Carries `*` (President). The API refuses to move such a role here; it
-   * changes hands only through Transfer presidency.
-   */
-  locked: boolean;
-  /**
-   * Holding it is enough to open chat, the roster and events: it carries
-   * `members:view` (or `*`), the permission the API checks. The seeded flag
-   * doesn't count, because a seeded role's permissions can be edited. A
-   * Discord-imported role carries only its channel reads, so on its own it
-   * locks a member out (2026-11-07).
-   */
-  grantsBase: boolean;
-  /**
-   * The Everyone role (#4191): never listed, since nobody ticks it, but kept
-   * so a save's access question settles it as the API does.
-   */
-  everyone: boolean;
-  /** The seeded role's rename-proof key, or `null`. */
-  systemKey: string | null;
-}
-
-/** `GET /v1/roles` declares no response schema, so it is read defensively. */
-export function parseRoleOptions(rolesData: unknown): RoleOption[] {
-  const options: RoleOption[] = [];
-  for (const row of records(rolesData)) {
-    const id = str(row, "id");
-    const name = str(row, "name");
-    if (!id || !name) continue;
-    const permissions = Array.isArray(row.permissions)
-      ? row.permissions.filter((p): p is string => typeof p === "string")
-      : [];
-    options.push({
-      id,
-      name,
-      color: roleColorOrNull(row.color),
-      locked: permissions.includes(WILDCARD_PERMISSION),
-      // The shared rule web's member sheet uses too (`@repo/validation`).
-      grantsBase: memberAccessRoleIds([{ id, permissions }]).has(id),
-      everyone: isEveryoneRole(row),
-      systemKey: typeof row.system_key === "string" ? row.system_key : null,
-    });
-  }
-  return options;
-}
+/**
+ * A role as the editor lists it: `GET /v1/roles` read once, by
+ * `parseChapterRoles` (`@repo/hooks/chapter-roles`), which web reads too. A
+ * `locked` role carries `*` (President); the API refuses to move it here, so it
+ * changes hands only through Transfer presidency.
+ */
+export type RoleOption = ChapterRole;
 
 /**
  * The editor's row order, taken once when it opens: the roles the member holds,
@@ -112,11 +67,6 @@ export function toggleRole(
     : [...unique, roleId];
 }
 
-/** The ids among `options` whose holder has member access. */
-function baseAccessIds(options: readonly RoleOption[]): Set<string> {
-  return new Set(options.filter((o) => o.grantsBase).map((o) => o.id));
-}
-
 /**
  * True when this change is the one that takes away chat, the roster and
  * events. A member who already lacked base access is not warned again on
@@ -130,16 +80,8 @@ export function removesBaseAccess(
   after: readonly string[],
   options: readonly RoleOption[],
 ): boolean {
-  const settled = rolesAfterSave(
-    after,
-    before,
-    options.map((o) => ({
-      id: o.id,
-      system_key: o.systemKey,
-      permissions: o.grantsBase ? ["members:view"] : [],
-    })),
-  );
-  return removesMemberAccess(before, settled, baseAccessIds(options));
+  const settled = rolesAfterSave(after, before, options);
+  return removesMemberAccess(before, settled, memberAccessRoleIds(options));
 }
 
 export const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";
