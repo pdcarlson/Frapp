@@ -106,6 +106,8 @@
 // (`stagingRuntimeVersion`). An update from newer native code then has a
 // runtime no older staging binary asks for. The staging profile refuses to
 // build or publish without it; a run with no profile keeps app.json's policy.
+// It reaches a build only through the shell of `eas build --local`: a build on
+// Expo's workers has no such shell, and the value is never stored in EAS.
 //
 // Source of truth for the credential inventory:
 // docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
@@ -491,11 +493,12 @@ const STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR = [
 const STAGING_RUNTIME_ENV = "FRAPP_STAGING_RUNTIME";
 
 const STAGING_RUNTIME_ERROR = [
-  `The staging profile requires ${STAGING_RUNTIME_ENV}: this app's version, a dash,`,
-  "and twelve hex digits (the hash of its native inputs). Without it a staging",
-  "update would reach staging binaries built from other native code and could",
-  "crash them at launch. `npm run eas -- update --channel staging` sets it; a",
-  "build sets it from `node scripts/staging-runtime.mjs`.",
+  `The staging variant's ${STAGING_RUNTIME_ENV} must be this app's version, a dash,`,
+  "and twelve hex digits (the hash of its native inputs), and the staging profile",
+  "requires it. Without it a staging update would reach staging binaries built",
+  "from other native code and could crash them at launch. `npm run eas -- update",
+  "--channel staging` sets it; an `eas build --local` takes it from the shell",
+  "(`node scripts/staging-runtime.mjs` prints it). Unset it for a run with no profile.",
 ].join(" ");
 
 /**

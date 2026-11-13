@@ -176,6 +176,16 @@ export function parsePulledEnv(text) {
   return vars;
 }
 
+/** Every variable name in the file `eas env:pull` writes, Secret ones (commented out) included. */
+export function pulledNames(text) {
+  const names = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /^(?:#\s*)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(line);
+    if (m) names.push(m[1]);
+  }
+  return names;
+}
+
 /** True when an installed package directory carries iOS or Android code a binary links. */
 export function isNativePackage(dir, { exists = existsSync, readdir = readdirSync } = {}) {
   // Any android/, ios/ or apple/ directory counts, not only a module's build.gradle: tooling such
@@ -240,6 +250,14 @@ export function staleInstall(headLock, installedLock) {
     const want = headLock?.packages?.[key]?.version;
     if (entry?.version && want && entry.version !== want) stale.push(`${key} ${entry.version} (lockfile: ${want})`);
   }
+  // A lockfile package that isn't installed can't be asked whether it is native, so it would drop
+  // out of the comparison unseen. Optional ones are absent on other platforms by design, and an
+  // `--omit=dev` install has no dev ones.
+  const installed = installedLock.packages ?? {};
+  for (const [key, entry] of Object.entries(headLock?.packages ?? {})) {
+    if (!packageNameFromLockPath(key) || entry?.link || entry?.optional || entry?.dev || entry?.devOptional) continue;
+    if (!(key in installed)) stale.push(`${key} is in the lockfile but not installed`);
+  }
   return stale;
 }
 
@@ -295,8 +313,10 @@ export function compareNativeInputs({ builds, git, headLock, isNative, head = "H
  * builds is needed to make an update safe.
  *
  * `apps/mobile/app.config.js` takes it from `STAGING_RUNTIME_ENV` and refuses a staging build or
- * update without it. The guard sets it for an update; the build pipeline sets it from
- * `node scripts/staging-runtime.mjs`.
+ * update without it. The guard sets it for an update. A build gets it from the shell that runs
+ * `eas build --local` (`node scripts/staging-runtime.mjs` prints it); a build on Expo's workers
+ * never sees that shell, and the variable must not be stored in the EAS environment, where it would
+ * go stale and an update's export would take it over the computed one (the guard refuses that).
  */
 export function stagingRuntimeVersion({
   readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
@@ -328,7 +348,9 @@ export function stagingRuntimeVersion({
     native.push(`${name}@${entry.version}`);
   }
   const hash = createHash("sha256");
-  for (const part of [appJson, readFile(APP_CONFIG), [...new Set(native)].sort().join("\n")]) {
+  // Line endings are a checkout setting (`core.autocrlf` on Windows), not a native input.
+  const text = (t) => String(t).replace(/\r\n/g, "\n");
+  for (const part of [text(appJson), text(readFile(APP_CONFIG)), [...new Set(native)].sort().join("\n")]) {
     hash.update(String(part.length)).update("\0").update(part).update("\0");
   }
   return { runtime: `${version}-${hash.digest("hex").slice(0, 12)}` };
@@ -521,6 +543,15 @@ export function prepareUpdate(
   const pulled = pullEnv(profile.environment);
   if (pulled.error) {
     return { ok: false, errors: [`Couldn't read the ${profile.environment} EAS environment's variables: ${pulled.error}`] };
+  }
+  if (profileName === STAGING_PROFILE && (pulled.names ?? Object.keys(pulled.vars)).includes(STAGING_RUNTIME_ENV)) {
+    return {
+      ok: false,
+      errors: [
+        `${STAGING_RUNTIME_ENV} is stored in the ${profile.environment} EAS environment. It names one tree's native inputs, ` +
+          "and an update's export would take it over the value computed for HEAD: delete the EAS variable.",
+      ],
+    };
   }
   // A build takes eas.json's value when both set a name (eas-cli build/evaluateConfigWithEnvVarsAsync)
   // and an update's export takes EAS's, so a difference would make the bundle disagree with its binary.
