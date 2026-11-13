@@ -159,11 +159,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     payload.assignee_user_id,
     live,
   );
-  const controls = taskCardControls({
-    live,
-    isAssignee: isAssigneeNow,
-    canManage,
-  });
+  // No lifecycle control while the chapter has Tasks turned off, as on the
+  // phone (#4136): every one would be refused (`@RequireModule('tasks')`).
+  const controls = tasksOff
+    ? []
+    : taskCardControls({
+        live,
+        isAssignee: isAssigneeNow,
+        canManage,
+      });
   const memberControls = controls.filter(
     (control) => control === "start" || control === "complete",
   );
@@ -175,11 +179,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // (their own Reject). Any other officer whose permissions couldn't be read
   // never reads the task, so their card offers nothing, the way every card
   // does before its live task arrives.
-  const managerControls = taskCardControls({
-    live,
-    isAssignee: isAssigneeNow,
-    canManage: true,
-  }).filter((control) => control !== "start" && control !== "complete");
+  const managerControls = tasksOff
+    ? []
+    : taskCardControls({
+        live,
+        isAssignee: isAssigneeNow,
+        canManage: true,
+      }).filter((control) => control !== "start" && control !== "complete");
   // Edit, wherever the card is shown (chat and Activity, #4512): the board's
   // rule, a tasks:manage holder until the task is confirmed.
   // Not while the chapter has Tasks turned off, as on mobile: every save

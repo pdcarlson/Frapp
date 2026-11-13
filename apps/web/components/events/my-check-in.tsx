@@ -7,7 +7,7 @@ import {
   useNow,
   type OwnAttendanceRow,
 } from "@repo/hooks";
-import { checkInWindowBounds } from "@repo/validation";
+import { checkInWindowBounds, isValidZoneOutline } from "@repo/validation";
 import {
   formatRelativeDayTime,
   formatTimeOfDay,
@@ -27,6 +27,29 @@ import { attendanceStatusLabel } from "@/components/events/attendance-status";
 
 /** Where the event's check-in zone leaves a web viewer. */
 export type ZoneState = "none" | "zone" | "malformed";
+
+/**
+ * An event's `check_in_zone` as a {@link ZoneState}. Three states, not two:
+ * an outline that isn't a usable polygon is not "no zone", because the server
+ * (`isValidZone`, which runs `isValidZoneOutline`) then refuses every
+ * check-in, so calling it "check in from anywhere" would say the opposite of
+ * what members get. The same check the server runs; only a missing zone is
+ * none. The event sheet and the chat event card both read it.
+ */
+export function checkInZoneState(zone: unknown): ZoneState {
+  if (zone === null || zone === undefined) return "none";
+  return isValidZoneOutline(zone) ? "zone" : "malformed";
+}
+
+/**
+ * What an open check-in says when web can't take it: the sheet's detail line,
+ * and the chat card's note in place of its Check in button.
+ */
+export const ZONE_CHECK_IN_LINE: Record<"zone" | "malformed", string> = {
+  zone: "This event checks your location, so check in from the Frapp mobile app.",
+  malformed:
+    "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it.",
+};
 
 export type MyCheckInView =
   | { kind: "loading" }
@@ -190,11 +213,9 @@ export function MyCheckIn({
     case "open":
       title = "Check-in is open";
       detail =
-        view.zone === "zone"
-          ? "This event checks your location, so check in from the Frapp mobile app."
-          : view.zone === "malformed"
-            ? "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it."
-            : `Closes ${clockLabel(view.closesAt, now)}`;
+        view.zone === "none"
+          ? `Closes ${clockLabel(view.closesAt, now)}`
+          : ZONE_CHECK_IN_LINE[view.zone];
       break;
     case "upcoming":
       title = `Check-in opens ${clockLabel(view.opensAt, now)}`;

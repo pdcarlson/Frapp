@@ -209,11 +209,14 @@ function Body({ children }: { children: React.ReactNode }) {
 function EventCard({ t }: { t: number }) {
   const checkedIn = Math.round(
     CHECKED_IN.from +
-      (CHECKED_IN.to - CHECKED_IN.from) * progress(t, AT.checkInFrom, AT.checkInTo),
+      (CHECKED_IN.to - CHECKED_IN.from) *
+        progress(t, AT.checkInFrom, AT.checkInTo),
   );
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
-      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+      <div
+        className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+      >
         <EventsGlyph className="h-4 w-4" /> Event
       </div>
       <p className="mt-2 text-base font-bold">Chapter meeting</p>
@@ -241,13 +244,19 @@ function EventCard({ t }: { t: number }) {
 
 function TaskCard({ t }: { t: number }) {
   const status: TaskStatus =
-    t >= AT.taskDone ? "COMPLETED" : t >= AT.taskStarted ? "IN_PROGRESS" : "TODO";
+    t >= AT.taskDone
+      ? "COMPLETED"
+      : t >= AT.taskStarted
+        ? "IN_PROGRESS"
+        : "TODO";
   const confirmed = t >= AT.taskConfirmed;
   const label = taskStatusLabel({ status, points_awarded: confirmed });
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
       <div className="flex items-center justify-between gap-6">
-        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <div
+          className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+        >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
         {/* Keyed on the status so each change re-enters, which is the scene's one flourish. */}
@@ -260,7 +269,9 @@ function TaskCard({ t }: { t: number }) {
           {label}
         </Badge>
       </div>
-      <p className="mt-2 text-base font-bold">Grab the projector from the library</p>
+      <p className="mt-2 text-base font-bold">
+        Grab the projector from the library
+      </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span>Sam Okafor → Eli Park</span>
         <span aria-hidden="true">·</span>
@@ -279,7 +290,7 @@ function PollCard({ t }: { t: number }) {
   ];
   const total = options.reduce((sum, option) => sum + option.count, 0);
   return (
-    <Card className={cn(MESSAGE_CARD, "w-72", ENTER)}>
+    <Card className={cn(MESSAGE_CARD, ENTER)}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>Poll</p>
       <div className="mt-2 text-base font-bold">Formal theme?</div>
       <ul className="mt-3 space-y-2">
@@ -300,7 +311,10 @@ function PollCard({ t }: { t: number }) {
               </span>
               <div className={cn("mt-1", meterTrackDenseClassName)}>
                 <div
-                  className={cn(meterFillClassName, "transition-[width] duration-200")}
+                  className={cn(
+                    meterFillClassName,
+                    "transition-[width] duration-200",
+                  )}
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -324,7 +338,12 @@ function Typing() {
   );
 }
 
-const CHANNELS = ["general", "announcements", "social", "philanthropy"] as const;
+const CHANNELS = [
+  "general",
+  "announcements",
+  "social",
+  "philanthropy",
+] as const;
 
 /**
  * The scene's frame: a chapter rail from `xl` up (below it the thread column
@@ -366,7 +385,9 @@ export function ChapterShowcase({ className }: { className?: string }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-5">
               <span className="font-bold text-foreground"># general</span>
-              <span className="text-caption text-muted-foreground">48 members</span>
+              <span className="text-caption text-muted-foreground">
+                48 members
+              </span>
             </div>
             <div
               className={cn(
