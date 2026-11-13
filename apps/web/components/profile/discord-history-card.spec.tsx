@@ -104,6 +104,32 @@ function holdsThread(client: QueryClient) {
   return client.getQueryData([CHAT_MESSAGE_QUERY_ROOT, "chan-1"]) !== undefined;
 }
 
+/** An open chat timeline holding one imported message by `externalId`, as the chat panel beside this page keeps it. */
+function openTimeline(
+  client: QueryClient,
+  channelId: string,
+  externalId: string,
+) {
+  const cache = mergeServerRow(emptyCache(), {
+    id: `m-${channelId}`,
+    channel_id: channelId,
+    sender_id: "me",
+    author_external_id: externalId,
+    content: "from the Discord archive",
+    kind: "imported",
+    created_at: "2026-01-01T12:00:00Z",
+    client_message_id: null,
+  } as RawChatMessage);
+  const queryFn = vi.fn(async () => cache);
+  client.setQueryData(chatMessagesKey(channelId), cache);
+  new QueryObserver(client, {
+    queryKey: chatMessagesKey(channelId),
+    queryFn,
+    staleTime: Infinity,
+  }).subscribe(() => {});
+  return queryFn;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -162,28 +188,8 @@ describe("DiscordHistoryCard (#2878)", () => {
     };
     state.unlink.mockResolvedValue({ unlinked: true, messages_restored: 1 });
     const client = new QueryClient();
-    const open = (channelId: string, externalId: string) => {
-      const cache = mergeServerRow(emptyCache(), {
-        id: `m-${channelId}`,
-        channel_id: channelId,
-        sender_id: "me",
-        author_external_id: externalId,
-        content: "from the Discord archive",
-        kind: "imported",
-        created_at: "2026-01-01T12:00:00Z",
-        client_message_id: null,
-      } as RawChatMessage);
-      const queryFn = vi.fn(async () => cache);
-      client.setQueryData(chatMessagesKey(channelId), cache);
-      new QueryObserver(client, {
-        queryKey: chatMessagesKey(channelId),
-        queryFn,
-        staleTime: Infinity,
-      }).subscribe(() => {});
-      return queryFn;
-    };
-    const mine = open("chan-mine", "1100000000000000001");
-    const theirs = open("chan-theirs", "1100000000000000002");
+    const mine = openTimeline(client, "chan-mine", "1100000000000000001");
+    const theirs = openTimeline(client, "chan-theirs", "1100000000000000002");
     renderCard(client);
 
     await userEvent.click(screen.getByRole("button", { name: "Unlink" }));
@@ -230,6 +236,38 @@ describe("DiscordHistoryCard (#2878)", () => {
     expect(window.location.search).toBe("");
     expect(holdsThread(client)).toBe(false);
     expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
+  });
+
+  it("on a confirmed link, refetches open threads holding the new or the replaced account's messages, and no other", async () => {
+    state.link.data = {
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000009",
+      discord_username: "old-account",
+      linked_at: "2026-09-01T12:00:00Z",
+    };
+    window.history.replaceState(
+      null,
+      "",
+      "/profile?discord=pending&handshake=cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    );
+    state.confirm.mockResolvedValue({
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000001",
+      discord_username: "jkslayer",
+      linked_at: "2026-09-29T12:00:00Z",
+      messages_linked: 2,
+    });
+    const client = new QueryClient();
+    const linked = openTimeline(client, "chan-new", "1100000000000000001");
+    const replaced = openTimeline(client, "chan-old", "1100000000000000009");
+    const other = openTimeline(client, "chan-other", "1100000000000000002");
+    renderCard(client);
+
+    await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));
+    expect(replaced).toHaveBeenCalledTimes(1);
+    expect(other).not.toHaveBeenCalled();
   });
 
   it("reports a declined link by its code, never by text from the URL", async () => {

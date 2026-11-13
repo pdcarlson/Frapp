@@ -71,7 +71,7 @@ describe("refreshTimelinesForDiscordAuthor", () => {
       true,
     );
 
-    await refreshTimelinesForDiscordAuthor(client, ME);
+    await refreshTimelinesForDiscordAuthor(client, [ME]);
 
     expect(mine).toHaveBeenCalledTimes(1);
     expect(theirs).not.toHaveBeenCalled();
@@ -90,10 +90,60 @@ describe("refreshTimelinesForDiscordAuthor", () => {
     );
     client.setQueryData(["profile", "me"], { id: "me" });
 
-    await refreshTimelinesForDiscordAuthor(client, ME);
+    await refreshTimelinesForDiscordAuthor(client, [ME]);
 
     expect(client.getQueryData(chatMessagesKey("chan-closed"))).toBeUndefined();
     expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
+  });
+
+  it("on a re-link, also refetches a timeline holding only the replaced account's messages", async () => {
+    const client = new QueryClient();
+    const replaced = seed(
+      client,
+      "chan-old",
+      timeline(imported("m-1", "chan-old", SOMEONE_ELSE)),
+      true,
+    );
+
+    await refreshTimelinesForDiscordAuthor(client, [ME, SOMEONE_ELSE]);
+
+    expect(replaced).toHaveBeenCalledTimes(1);
+  });
+
+  // The link-return race: the open thread's first read left before the link
+  // committed and is still out, so its cache holds nothing to match.
+  it("cancels an open timeline's read still in flight and reads it again", async () => {
+    const client = new QueryClient();
+    let release: (cache: ChannelCache) => void = () => {};
+    const fresh = timeline(imported("m-1", "chan-loading", ME));
+    const queryFn = vi
+      .fn<() => Promise<ChannelCache>>()
+      .mockImplementationOnce(
+        () => new Promise<ChannelCache>((resolve) => (release = resolve)),
+      )
+      .mockResolvedValue(fresh);
+    new QueryObserver(client, {
+      queryKey: chatMessagesKey("chan-loading"),
+      queryFn,
+      staleTime: Infinity,
+    }).subscribe(() => {});
+    expect(
+      client.getQueryState(chatMessagesKey("chan-loading"))?.fetchStatus,
+    ).toBe("fetching");
+
+    await refreshTimelinesForDiscordAuthor(client, [ME]);
+    // The stale first read lands late; it must not be what the cache keeps.
+    release(
+      timeline({
+        ...imported("m-1", "chan-loading", ME),
+        author_name: "stale",
+      } as RawChatMessage),
+    );
+
+    await vi.waitFor(() =>
+      expect(client.getQueryData(chatMessagesKey("chan-loading"))).toBe(fresh),
+    );
+    expect(queryFn).toHaveBeenCalledTimes(2);
   });
 
   it("without the account's id, refetches every open timeline holding an imported message", async () => {

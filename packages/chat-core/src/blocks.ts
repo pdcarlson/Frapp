@@ -47,6 +47,7 @@ import {
 import { mergeServerRow, trimOlderThan } from "./cache";
 import {
   CHAT_MESSAGE_QUERY_ROOT,
+  chatMessagesChannelId,
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
@@ -678,17 +679,6 @@ export const maskedRefresh = {
 
 type FrappClient = ReturnType<typeof createFrappClient>;
 
-/** The channel id in a `chatMessagesKey`, or `null` for any other `["chat", …]` key. */
-function channelIdOf(queryKey: readonly unknown[]): string | null {
-  const [root, channelId, leaf] = queryKey;
-  return root === CHAT_MESSAGE_QUERY_ROOT &&
-    typeof channelId === "string" &&
-    leaf === "messages" &&
-    queryKey.length === 3
-    ? channelId
-    : null;
-}
-
 /** Rows per page of the re-read. Under the API's cap of 200. */
 export const MASKED_REFRESH_PAGE_LIMIT = 100;
 
@@ -779,7 +769,7 @@ export async function refreshMaskedCopies(
   const channelIds = queryClient
     .getQueryCache()
     .findAll({ queryKey: [CHAT_MESSAGE_QUERY_ROOT] })
-    .map((query) => channelIdOf(query.queryKey))
+    .map((query) => chatMessagesChannelId(query.queryKey))
     .filter((channelId): channelId is string => channelId !== null)
     .filter(holdsMaskedCopy);
 

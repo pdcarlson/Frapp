@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { markMessageDeleted } from "@repo/chat-core/cache";
 import {
-  CHAT_MESSAGE_QUERY_ROOT,
+  chatMessagesChannelId,
   chatMessagesKey,
   type ChannelCache,
 } from "@repo/chat-core/types";
@@ -45,8 +45,7 @@ export const reportedMessageTimeline: ReportedMessageTimeline = {
 function refetchTimelinesHolding(queryClient: QueryClient, messageId: string) {
   return queryClient.invalidateQueries({
     predicate: (query) => {
-      const [root, , leaf] = query.queryKey;
-      if (root !== CHAT_MESSAGE_QUERY_ROOT || leaf !== "messages") return false;
+      if (chatMessagesChannelId(query.queryKey) === null) return false;
       const cache = query.state.data as ChannelCache | undefined;
       return cache?.byId[messageId] !== undefined;
     },

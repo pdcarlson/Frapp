@@ -60,8 +60,8 @@ export function linkedMessage(count: number): string {
  *
  * Linking and unlinking change who a message's sender is on the server.
  * Imported messages never arrive over Realtime, so afterwards cached chat
- * threads no screen shows are dropped, and an open one holding that author's
- * imported messages is refetched (`refreshTimelinesForDiscordAuthor`, #4543):
+ * threads no screen shows are dropped, and an open one holding the affected
+ * accounts' imported messages is refetched (`refreshTimelinesForDiscordAuthor`, #4543):
  * chat stays mounted beside this page.
  */
 export function DiscordHistoryCard() {
@@ -108,11 +108,18 @@ export function DiscordHistoryCard() {
   }, [toast]);
 
   const refreshThreads = useCallback(
-    (discordUserId: string | null) => {
-      void refreshTimelinesForDiscordAuthor(queryClient, discordUserId);
+    (discordUserIds: string[] | null) => {
+      void refreshTimelinesForDiscordAuthor(queryClient, discordUserIds);
     },
     [queryClient],
   );
+  // The link status as of now, for the confirm below: a link to a different
+  // account replaces the one held, and that account's rows go back to its
+  // Discord name too. `undefined` while the status hasn't loaded.
+  const linkedRef = useRef(link.data);
+  useEffect(() => {
+    linkedRef.current = link.data;
+  }, [link.data]);
 
   // Spent exactly once, as soon as a chapter is active. Clearing the ref is
   // what stops React's development double-invoke from spending it twice, which
@@ -124,7 +131,18 @@ export function DiscordHistoryCard() {
     handshake.current = null;
     confirmLink({ handshake: token })
       .then((result) => {
-        refreshThreads(result?.discord_user_id ?? null);
+        const linked = result?.discord_user_id ?? null;
+        const before = linkedRef.current;
+        // Unknown if either account is: then every open thread holding an
+        // imported row is refreshed.
+        refreshThreads(
+          linked === null || before === undefined
+            ? null
+            : [
+                linked,
+                ...(before.discord_user_id ? [before.discord_user_id] : []),
+              ],
+        );
         toast({ description: linkedMessage(result?.messages_linked ?? 0) });
       })
       .catch((error: unknown) => {
@@ -166,7 +184,7 @@ export function DiscordHistoryCard() {
     const discordUserId = link.data?.discord_user_id ?? null;
     try {
       const result = await unlink.mutateAsync();
-      refreshThreads(discordUserId);
+      refreshThreads(discordUserId === null ? null : [discordUserId]);
       toast({
         description:
           result && result.messages_restored > 0
