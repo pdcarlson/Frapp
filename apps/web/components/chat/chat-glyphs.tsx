@@ -303,22 +303,12 @@ export function StartThreadGlyph({ className, active }: ChatGlyphProps) {
  * a channel's alert level must not draw the same silhouette.
  */
 export function MuteGlyph({ className, active }: ChatGlyphProps) {
+  const paths = MARK_GLYPH_PATHS.mute;
   return (
     <Svg className={className}>
-      <path
-        d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M7.5 9.5v5" {...detail} />
-      {active ? (
-        <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
-      ) : (
-        <path
-          d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4"
-          {...detail}
-        />
-      )}
+      <path d={paths.body} {...stroke} {...fillProps(active)} />
+      <path d={paths.split} {...detail} />
+      <path d={active ? paths.muted : paths.waves} {...detail} />
     </Svg>
   );
 }

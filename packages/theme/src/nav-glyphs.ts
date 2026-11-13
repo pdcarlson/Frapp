@@ -255,4 +255,16 @@ export const MARK_GLYPH_PATHS = {
   star: {
     body: "M12 3.6l2.55 5.2 5.7.83-4.13 4.02.98 5.68L12 16.65l-5.1 2.68.98-5.68-4.13-4.02 5.7-.83z",
   },
+  /**
+   * A channel's notification level (web's `MuteGlyph` in `chat-glyphs.tsx`,
+   * mobile's in `components/chat/card-glyphs.tsx`, #4738): a speaker's box and
+   * cone, split by `split`, with `waves`, or `muted`'s × in their place. Not a
+   * bell, which is the notification inbox's (#3362).
+   */
+  mute: {
+    body: "M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z",
+    split: "M7.5 9.5v5",
+    waves: "M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4",
+    muted: "M15.5 9.5l5 5M20.5 9.5l-5 5",
+  },
 } as const;
