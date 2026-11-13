@@ -76,7 +76,7 @@ function primaryKeyOf(table: string): string {
   const sql = readFileSync(
     join(
       __dirname,
-      '../../../../../../supabase/migrations/20261113152811_member_nudges.sql',
+      '../../../../../../supabase/migrations/20261113181721_member_nudges.sql',
     ),
     'utf8',
   );

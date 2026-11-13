@@ -34,13 +34,8 @@ import {
   type ActivityPart,
   type ActivityRow,
 } from "@repo/hooks";
-import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
-import {
-  can,
-  isModuleEnabled,
-  joinNames,
-  memberNudgeAskPrompt,
-} from "@repo/validation";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { can, isModuleEnabled, memberNudgeAskPrompt } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,

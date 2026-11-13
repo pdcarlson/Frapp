@@ -16,7 +16,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * The upsert target, the primary key of `member_nudge_settings` in
- * `20261113152811_member_nudges.sql`. The repository's spec checks it against
+ * `20261113181721_member_nudges.sql`. The repository's spec checks it against
  * the migration, because a target that names no unique constraint fails every
  * write with 42P10 and no mocked client notices.
  */
