@@ -14,6 +14,7 @@ const {
   mockInvites,
   mockRefetchRoles,
   mockRefetchInvites,
+  mockInvitableRoleIds,
   activeChapterId,
 } = vi.hoisted(() => ({
   activeChapterId: { current: "chapter-1" as string | null },
@@ -27,6 +28,8 @@ const {
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
+  // Undefined: the list hasn't loaded, so every role is offered.
+  mockInvitableRoleIds: vi.fn((): string[] | undefined => undefined),
 }));
 
 const NOW = Date.now();
@@ -49,6 +52,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // `refetch`: opening the panel re-reads invites and roles.
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
+  useInvitableRoleIds: () => ({
+    data: mockInvitableRoleIds(),
+    refetch: vi.fn(),
+  }),
   useInvites: () => ({
     data: mockInvites(),
     isError: false,
@@ -98,6 +105,7 @@ async function revoke() {
 
 /** Default hook state every test starts from; individual tests override. */
 function primeHooks() {
+  mockInvitableRoleIds.mockReturnValue(undefined);
   mockRoles.mockReturnValue({
     data: [{ id: "r1", name: "Member" }],
     isError: false,
@@ -260,6 +268,34 @@ describe("InviteMemberDialog default role", () => {
     view.rerender(<InviteMemberDialog trigger={<button>Invite</button>} />);
 
     expect(rolePicker().value).toBe("New Member");
+  });
+
+  // #4546: a chair invites a peer or a brother, never a role above them.
+  it("offers only the roles the sender may invite into", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("combobox", { name: /role they join as/i }),
+    );
+
+    expect(
+      await screen.findByRole("option", { name: "New Member" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Alumni" })).toBeNull();
+  });
+
+  it("skips a configured default ranked above the sender", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-alumni" },
+      isError: false,
+    });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Member");
   });
 
   it("keeps an explicit pick over the configured default", async () => {

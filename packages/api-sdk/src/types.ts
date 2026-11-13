@@ -774,7 +774,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List chapter invites, newest first */
+        /**
+         * List chapter invites, newest first
+         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.
+         */
         get: operations["InviteController_list_v1"];
         put?: never;
         /** Generate an invite token */
@@ -870,6 +873,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The roles the caller may invite someone into
+         * @description Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.
+         */
+        get: operations["InviteController_listInvitableRoles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/{id}": {
         parameters: {
             query?: never;
@@ -880,7 +903,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Revoke an invite */
+        /**
+         * Revoke an invite
+         * @description Not found (404) for an invite the list leaves out for the caller (#4546).
+         */
         delete: operations["InviteController_revoke_v1"];
         options?: never;
         head?: never;
@@ -5834,6 +5860,10 @@ export interface components {
             expires_at: string;
             /** @description The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller. */
             token: string;
+        };
+        InvitableRolesDto: {
+            /** @description Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names. */
+            role_ids: string[];
         };
         RegisterPushTokenDto: {
             /** @description Expo push token */
@@ -11405,6 +11435,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingInviteDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_listInvitableRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitableRolesDto"];
                 };
             };
             /** @description Error */
