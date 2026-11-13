@@ -924,7 +924,7 @@ export interface Database {
         };
         Returns: SemesterArchive;
       };
-      /** `20261113040009`. Raises `form_card_missing` or `form_closed`. */
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
       save_chat_form_response: {
         Args: {
           p_message_id: string;
