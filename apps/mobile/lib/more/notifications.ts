@@ -11,7 +11,12 @@
  * from `data.target.screen` here until #4346; the kind's badge or tile says it
  * now, and its words are read to a screen reader.
  */
-import { notificationWhen } from "@repo/hooks/notification-rows";
+import {
+  groupNotificationsBySource,
+  notificationEntryCount,
+  notificationWhen,
+  type NotificationFilter,
+} from "@repo/hooks/notification-rows";
 import { isRecord, records, str } from "./narrow";
 import {
   resolveNotificationTarget,
@@ -39,7 +44,18 @@ export interface NotificationRow {
   /** Local clock time, e.g. `"4:00 PM"`. */
   time: string;
   createdAt: string;
+  /** Unread while any row in the entry is (#3948). */
   isUnread: boolean;
+  /**
+   * "14 messages" when the entry stands for a conversation's rows, newest
+   * first, collapsed into one (#3948); absent or `null` for a single row.
+   */
+  count?: string | null;
+  /**
+   * Ids of the entry's unread rows, which opening it reads (#3948); absent
+   * means just `id` when `isUnread`.
+   */
+  unreadIds?: string[];
 }
 
 export interface NotificationGroup {
@@ -82,19 +98,33 @@ function toRow(
 }
 
 /**
- * Rows grouped TODAY / EARLIER, newest first within each, as drawn.
+ * Entries grouped TODAY / EARLIER, newest first within each, as drawn.
  *
- * Empty groups are dropped so a member with only older activity does not see a
- * TODAY heading over nothing.
+ * One entry per conversation (`groupNotificationsBySource`, shared with the
+ * web drawer, #3948): a channel's rows collapse into its newest, which says
+ * how many messages it stands for and is unread while any of them is. Under
+ * `"unread"` read rows are left out first. An entry sits on its newest row's
+ * day. Empty groups are dropped so a member with only older activity does not
+ * see a TODAY heading over nothing.
  */
 export function selectNotificationGroups(
   data: unknown,
   now: Date,
+  filter: NotificationFilter = "all",
 ): NotificationGroup[] {
-  const rows = records(data)
+  const sorted = records(data)
     .map((row) => toRow(row, now))
     .filter((row): row is NotificationRow & { isToday: boolean } => !!row)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const rows = groupNotificationsBySource(sorted, {
+    isUnread: (row) => row.isUnread,
+    filter,
+  }).map((entry) => ({
+    ...entry.lead,
+    isUnread: entry.unreadIds.length > 0,
+    count: notificationEntryCount(entry),
+    unreadIds: entry.unreadIds,
+  }));
 
   const groups: NotificationGroup[] = [
     { heading: "TODAY", rows: rows.filter((row) => row.isToday) },

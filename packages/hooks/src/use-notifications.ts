@@ -546,6 +546,12 @@ export function useMarkNotificationRead({
   });
 }
 
+function isIdScope(
+  scope: readonly string[] | { ids: readonly string[] } | undefined,
+): scope is { ids: readonly string[] } {
+  return !!scope && !Array.isArray(scope) && "ids" in scope;
+}
+
 /** Identifies {@link useMarkNotificationsRead}, for Sentry grouping (#3393). */
 const markNotificationsReadMutationKey = [
   "notifications",
@@ -555,7 +561,9 @@ const markNotificationsReadMutationKey = [
 /**
  * Mark the member's unread notifications read in one request (#3929):
  * `POST /v1/notifications/read`. Called with no screens it is "Mark all
- * read"; with screens it reads only the rows that point at them.
+ * read"; with screens it reads only the rows that point at them; with
+ * `{ ids }` only those rows, which is how opening an inbox entry reads every
+ * row the entry stands for (#3948).
  *
  * The server answers with the instant it stamped. On success that stamp goes
  * onto the matching cached rows created at or before it, so the dots clear at
@@ -567,20 +575,28 @@ export function useMarkNotificationsRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: markNotificationsReadMutationKey,
-    mutationFn: async (screens?: readonly string[]) => {
-      const result = await client.POST("/v1/notifications/read", {
-        body: screens && screens.length > 0 ? { screens: [...screens] } : {},
-      });
+    mutationFn: async (
+      scope?: readonly string[] | { ids: readonly string[] },
+    ) => {
+      const body = isIdScope(scope)
+        ? { ids: [...scope.ids] }
+        : scope && scope.length > 0
+          ? { screens: [...scope] }
+          : {};
+      const result = await client.POST("/v1/notifications/read", { body });
       throwUnlessOk(result);
       return result.data;
     },
-    onSuccess: (result, screens) => {
+    onSuccess: (result, scope) => {
       const readAt = result?.read_at;
+      const ids = isIdScope(scope) ? new Set(scope.ids) : null;
+      const screens = isIdScope(scope) ? undefined : scope;
       if (typeof readAt === "string") {
         const through = Date.parse(readAt);
         markCachedRowsRead(
           queryClient,
           (row) => {
+            if (ids && !ids.has(row.id as string)) return false;
             if (screens && screens.length > 0) {
               const screen = targetScreenOf(row);
               if (screen === null || !screens.includes(screen)) return false;

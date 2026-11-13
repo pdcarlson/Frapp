@@ -425,7 +425,8 @@ the title with the person's name in their role colour and the time beside it; th
 A mention is not a tinted row: the list stays flat.
 The unread dot is `--foreground`, as on web (it was the chapter accent until #4346), and a read row's title drops to regular weight and the body's tone.
 The category word that sat under each row until #4346 was derived from `data.target.screen`; the badge and the row's spoken label carry it now.
-A tap marks the row read **and** deep-links: the destination comes from `lib/notifications/targets.ts`, the same resolver the push handler uses, so an in-app tap and a push tap cannot name different screens.
+Since 2026-11-13 (#3948) a conversation's rows are one row, its newest, with how many messages it stands for under the preview ("14 messages") and in its spoken label, and an All / Unread segmented control spans the top of the list (shown once there is a row, and kept under Unread when it empties the list, so All is a tap away); [`notifications.md` § The in-app list](../../behavior/notifications.md#the-in-app-list) owns the rules.
+A tap marks the row read (every unread row a conversation's row stands for) **and** deep-links: the destination comes from `lib/notifications/targets.ts`, the same resolver the push handler uses, so an in-app tap and a push tap cannot name different screens.
 An unrecognized target resolves to this screen, so the row marks itself read and stays put rather than guessing
 
 ### s15 Profile (on the You tab)
