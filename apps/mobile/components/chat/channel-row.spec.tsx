@@ -35,6 +35,7 @@ import {
   HIDE_ACTION,
   PIN_ACTION,
 } from "./channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -496,5 +497,75 @@ describe("accessibilityLabelFor, muted and previewed rows", () => {
         preview: "",
       }),
     ).toBe("#social");
+  });
+});
+
+describe("ChannelRow mark (#4134)", () => {
+  const hashes = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "#",
+    );
+  const marked = (tree: ReactTestRenderer, mark: string) =>
+    tree.root.findAll((node) => node.props.testID === `channel-row-${mark}`);
+  const labelOf = (tree: ReactTestRenderer) =>
+    tree.root.findByProps({ accessibilityRole: "button" }).props
+      .accessibilityLabel;
+
+  it("draws a lock, not #, on a PRIVATE row", () => {
+    const tree = renderRow({
+      name: "exec",
+      mark: channelMarkFor({ type: "PRIVATE", name: "exec" }),
+    });
+    expect(marked(tree, "lock")).toHaveLength(1);
+    expect(hashes(tree)).toHaveLength(0);
+  });
+
+  it("draws # and no lock on a PUBLIC row", () => {
+    const tree = renderRow({
+      mark: channelMarkFor({ type: "PUBLIC", name: "general" }),
+    });
+    expect(hashes(tree)).toHaveLength(1);
+    expect(marked(tree, "lock")).toHaveLength(0);
+  });
+
+  it("draws the lock on a ROLE_GATED row and the shield on the audit channel", () => {
+    expect(marked(renderRow({ mark: "role-gated" }), "lock")).toHaveLength(1);
+    expect(marked(renderRow({ mark: "audit" }), "audit")).toHaveLength(1);
+  });
+
+  it("paints the lock in the sigil's read, unread and muted colours", () => {
+    const strokeOf = (
+      props: Partial<React.ComponentProps<typeof ChannelRow>>,
+    ) =>
+      renderRow({ name: "exec", mark: "private", ...props })
+        .root.findAll((node) => (node.type as unknown) === "Path")
+        .map((node) => node.props.stroke)[0];
+    expect(strokeOf({})).toBe(signetDarkTokens.color.text.muted);
+    expect(strokeOf({ unreadCount: 3 })).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    expect(strokeOf({ isMuted: true })).toBe(
+      signetDarkTokens.color.text.disabled,
+    );
+  });
+
+  it("says a private row is private, and a role-gated one only that roles limit it", () => {
+    expect(
+      labelOf(renderRow({ name: "exec", mark: "private", unreadCount: 2 })),
+    ).toBe("#exec, private channel, 2 unread");
+    // A role-gated channel may be open to every member, so it is never
+    // called private (`channelStartCopy`).
+    expect(labelOf(renderRow({ name: "officers", mark: "role-gated" }))).toBe(
+      "#officers, limited to some roles",
+    );
+    expect(labelOf(renderRow({ name: "general" }))).toBe("#general");
+  });
+
+  it("lets the # grow past its slot rather than clip at a large text size", () => {
+    const sigil = hashes(renderRow({}))[0]!;
+    const flat = flatten(sigil.props.style);
+    expect(flat.width).toBeUndefined();
+    expect(flat.minWidth).toBe(signetDarkTokens.typography.role.title.size);
   });
 });

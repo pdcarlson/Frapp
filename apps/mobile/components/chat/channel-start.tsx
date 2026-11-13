@@ -1,14 +1,14 @@
 import { StyleSheet, Text, View } from "react-native";
 import {
+  channelMarkFor,
   channelStartCopy,
-  isSystemChannel,
   type ChannelStartType,
 } from "@repo/hooks/channel-start";
 import { SignetTokens } from "@repo/theme/signet";
 import { isDirectChannel } from "@repo/validation";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
-import { AuditGlyph } from "@/components/chat/card-glyphs";
+import { AuditGlyph, LockGlyph } from "@/components/chat/card-glyphs";
 import {
   type ChapterBranding,
   useChapterBranding,
@@ -38,8 +38,9 @@ function startType(type: string): ChannelStartType {
  * message will land, and a channel with history draws it above the oldest
  * message once nothing earlier is left to load (`ThreadHistoryEdge`).
  *
- * The mark is a `#` for a channel and the audit shield for `#chapter-audit`.
- * A direct message takes the same mark its channel-list row draws (the other
+ * The mark is the one the channel's chat-home row draws (`channelMarkFor`):
+ * a `#`, a lock for a private or role-gated channel (#4134), or the audit
+ * shield for `#chapter-audit`, as web's start draws them. A direct message takes the same mark its channel-list row draws (the other
  * member's photo, else their initials: `channel-row.tsx`), so one
  * conversation has one mark.
  * Mobile has no Chat admin, so there is no Edit channel here.
@@ -70,6 +71,9 @@ export function ChannelStart({
   const kind = startType(type);
   const copy = channelStartCopy({ type: kind, name: displayName, description });
   const isDirect = isDirectChannel({ type: kind });
+  // The mark its chat-home row draws (#4134), so one conversation has one
+  // mark: the audit shield, a lock for a private or role-gated channel, `#`.
+  const mark = channelMarkFor({ name: channelName, type });
 
   return (
     <View style={styles.block} accessibilityRole="summary">
@@ -78,14 +82,7 @@ export function ChannelStart({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        {isSystemChannel({ name: channelName }) && !isDirect ? (
-          <AuditGlyph
-            focused
-            accent={brand.accent}
-            muted={brand.accent}
-            size={32}
-          />
-        ) : isDirect ? (
+        {isDirect ? (
           <MemberAvatar
             uri={photoUrl}
             tint={photoTint}
@@ -94,6 +91,8 @@ export function ChannelStart({
             style={styles.photoTile}
             textStyle={styles.mark}
           />
+        ) : mark !== "hash" ? (
+          <MarkGlyph mark={mark} accent={brand.accent} />
         ) : (
           <Text style={styles.mark}>#</Text>
         )}
@@ -155,4 +154,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.foreground,
     },
   });
+}
+
+/** The start tile's audit shield or lock, at the tile's 32, in the accent. */
+function MarkGlyph({
+  mark,
+  accent,
+}: {
+  mark: "audit" | "private" | "role-gated";
+  accent: string;
+}) {
+  const Glyph = mark === "audit" ? AuditGlyph : LockGlyph;
+  return <Glyph focused accent={accent} muted={accent} size={32} />;
 }

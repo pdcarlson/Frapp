@@ -5,10 +5,12 @@ import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
 import {
   countCheckedIn,
+  eventCardRequiresViewer,
   useAttendance,
   useEventCardExcuse,
   useMyPermissions,
   useNow,
+  useRequiredOfViewer,
 } from "@repo/hooks";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
@@ -79,7 +81,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const eventId = payload?.event_id ?? "";
   const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
-  const excuse = useEventCardExcuse(payload, new Date(now));
+  // One rule for the Mandatory badge and the excuse offer (#4132).
+  const requiredOf = useRequiredOfViewer();
+  const excuse = useEventCardExcuse(payload, new Date(now), requiredOf);
 
   if (!payload) {
     return (
@@ -115,10 +119,10 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         >
           <EventsGlyph className="h-4 w-4" /> Event
         </div>
-        {payload.is_mandatory ? (
-          // A status, so the danger badge, never the accent (components.md §5),
-          // as the Events list and detail sheet draw it.
-          <Badge variant="destructive">Mandatory</Badge>
+        {eventCardRequiresViewer(payload, requiredOf) ? (
+          // Required of this viewer, in the hairline kind, as the Events list
+          // and the phone draw it (#3822, #4132).
+          <Badge variant="outline">Mandatory</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>

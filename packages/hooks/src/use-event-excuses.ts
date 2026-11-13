@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { statusOf, throwUnlessOk } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
@@ -188,10 +188,15 @@ export function useRequiredOfViewer(): (
     const alumniId = alumniRoleIdOf(roles.data);
     return alumniId !== undefined && roleIds.includes(alumniId);
   }, [roles.data, roleIds]);
-  return (event) => {
-    const attendance = eventAttendanceFor(event, roleIds);
-    return attendance.status === "required" && (attendance.byRole || !alumni);
-  };
+  // Stable while the roles hold, so a list filter that depends on it
+  // (the web Events page's) doesn't recompute on every render.
+  return useCallback(
+    (event: EventAttendanceFields) => {
+      const attendance = eventAttendanceFor(event, roleIds);
+      return attendance.status === "required" && (attendance.byRole || !alumni);
+    },
+    [roleIds, alumni],
+  );
 }
 
 /** Who the excuse goes to, as the member reads it. */
@@ -389,6 +394,20 @@ export interface ExcuseCardEvent extends EventAttendanceFields {
 }
 
 /**
+ * Whether a chat event card's event requires the viewer: the card's own
+ * `viewer_required` when it carries one, else its role fields through
+ * `requiredOf` ({@link useRequiredOfViewer}; a card posted before them goes
+ * by `is_mandatory`). The card's Mandatory badge (#4132) and its Can't make
+ * it offer ({@link useEventCardExcuse}) both read it, so they never disagree.
+ */
+export function eventCardRequiresViewer(
+  card: Pick<ExcuseCardEvent, "viewer_required"> & EventAttendanceFields,
+  requiredOf: (event: EventAttendanceFields) => boolean,
+): boolean {
+  return card.viewer_required ?? requiredOf(card);
+}
+
+/**
  * The excuse view for a chat event card (#4660): {@link myExcuseView} over
  * the card's snapshot, so the card offers Can't make it, or says where an
  * excuse stands, as the event page would while the excuse window is open.
@@ -397,9 +416,10 @@ export interface ExcuseCardEvent extends EventAttendanceFields {
  *
  * A channel holds many cards, so whether the event requires the viewer comes
  * from the card itself: `viewer_required` when it carries one, else its role
- * fields through {@link useRequiredOfViewer} (a card posted before them goes
- * by `is_mandatory`). That rule reads the viewer's memberships and the
- * chapter's roles, one shared cached read each, not one per card. The two
+ * fields through `requiredOf`, the card's own {@link useRequiredOfViewer} (a
+ * card posted before them goes by `is_mandatory`), which its Mandatory badge
+ * reads too (#4132), so the card asks once. That rule reads the viewer's
+ * memberships and the chapter's roles, one shared cached read each. The two
  * reads the view needs (the viewer's excuse and attendance row) run only for
  * a card that requires them, until its excuse window closes. Pass `null` for
  * a card whose payload didn't read.
@@ -407,15 +427,15 @@ export interface ExcuseCardEvent extends EventAttendanceFields {
 export function useEventCardExcuse(
   card: ExcuseCardEvent | null,
   now: Date,
+  requiredOf: (event: EventAttendanceFields) => boolean,
 ): MyExcuseView {
-  const requiredOf = useRequiredOfViewer();
   const end = card ? new Date(card.end_time) : null;
   const windowOpen =
     !!end &&
     !isNaN(end.getTime()) &&
     now.getTime() <= eventExcuseClosesAt(end).getTime();
   const required =
-    !!card && windowOpen && (card.viewer_required ?? requiredOf(card));
+    !!card && windowOpen && eventCardRequiresViewer(card, requiredOf);
   const eventId = required ? card.event_id : "";
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId, { enabled: required });

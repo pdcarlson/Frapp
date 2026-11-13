@@ -36,6 +36,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyPermissions: () => mockUseMyPermissions(),
   useNow: () => Date.now(),
   useEventCardExcuse: (payload: unknown) => mockEventCardExcuse(payload),
+  // A viewer with no roles: the event's default decides (the rule is the
+  // hook's own spec).
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -94,13 +98,24 @@ describe("EventCard", () => {
     expect(screen.getByText(/\+15 pts/)).toBeInTheDocument();
   });
 
-  it("draws Mandatory as the danger badge, never the accent", () => {
+  it("draws Mandatory as the hairline badge, as the Events list does (#4132)", () => {
     render(
       <EventCard message={makeMessage({ is_mandatory: true })} isConfirmed />,
     );
     const badge = screen.getByText("Mandatory");
-    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).toContain("text-muted-foreground");
+    expect(badge.className).not.toContain("text-destructive-text");
     expect(badge.className).not.toContain("text-accent-text");
+  });
+
+  it("shows Mandatory only when the event requires this viewer (#4132)", () => {
+    render(
+      <EventCard
+        message={makeMessage({ is_mandatory: true, viewer_required: false })}
+        isConfirmed
+      />,
+    );
+    expect(screen.queryByText("Mandatory")).not.toBeInTheDocument();
   });
 
   // #4660: the rule is `useEventCardExcuse`'s (its own spec in @repo/hooks);
