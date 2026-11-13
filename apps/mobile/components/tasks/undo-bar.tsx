@@ -9,6 +9,7 @@ import { CREATE_BUTTON_SIZE } from "@/components/floating-create-button";
 import {
   FLOATING_TAB_BAR,
   floatingTabBarTop,
+  useAskBarLift,
   useFloatingChrome,
 } from "@/lib/floating-chrome";
 
@@ -51,9 +52,10 @@ export function UndoBar({
     AccessibilityInfo.announceForAccessibility(`${message}. Undo available.`);
   }, [message]);
 
+  const askLift = useAskBarLift();
   const offset =
     (tabBar
-      ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
+      ? floatingTabBarTop(bottom) + askLift + FLOATING_TAB_BAR.gap
       : bottom + tokens.spacing.lg) +
     (aboveCreate ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
 

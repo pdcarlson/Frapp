@@ -1,10 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type {
-  ActivityAgenda,
-  ActivityAgendaFilter,
-  ActivityRow,
-  ActivityWeekLine,
-  ActivityWeekSummary,
+import {
+  ACTIVITY_WEEK_HINT,
+  type ActivityAgenda,
+  type ActivityAgendaFilter,
+  type ActivityRow,
+  type ActivityWeekLine,
+  type ActivityWeekSummary,
 } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { eyebrowStyle } from "@/components/eyebrow";
@@ -14,7 +15,10 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { ActivityListRow } from "./activity-row";
+import {
+  ActivityRowItem,
+  type ActivityRowActions,
+} from "./activity-row-action";
 import { ProgressRing } from "./progress-ring";
 
 /** The week ring: big enough to hold "12" over "of 24" at the type scale. */
@@ -47,6 +51,7 @@ export function WeekCard({
   nextLabel,
   filter,
   onFilter,
+  rowActions = null,
   onOpenNext,
 }: {
   summary: ActivityWeekSummary;
@@ -54,6 +59,11 @@ export function WeekCard({
   nextLabel: ActivityAgenda["nextLabel"];
   filter: ActivityAgendaFilter;
   onFilter: (filter: ActivityAgendaFilter) => void;
+  /**
+   * The Next row's ask as a button when it is one press (#4427: Check in on
+   * an event happening now), as the To do rows carry it.
+   */
+  rowActions?: ActivityRowActions | null;
   onOpenNext: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -112,15 +122,15 @@ export function WeekCard({
                 ))}
               </View>
             ) : summary.incomplete ? null : (
-              <Text style={styles.quiet}>
-                Your events, tasks and polls for the week count here.
-              </Text>
+              <Text style={styles.quiet}>{ACTIVITY_WEEK_HINT}</Text>
             )}
           </View>
         </View>
       ) : null}
       {known && summary.warning ? (
-        <Text style={styles.warning}>{summary.warning}</Text>
+        <Text style={styles.warning}>
+          {`${summary.warning} Pull down to try again.`}
+        </Text>
       ) : null}
       {next ? (
         <View style={known ? styles.next : null}>
@@ -132,9 +142,10 @@ export function WeekCard({
           >
             {nextLabel}
           </Text>
-          <ActivityListRow
+          <ActivityRowItem
             row={next}
             isFirst
+            actions={rowActions}
             onCard
             solo
             onPress={() => onOpenNext(next)}

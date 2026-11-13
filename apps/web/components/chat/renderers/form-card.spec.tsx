@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FormCard } from "./form-card";
-import { FormFillHost } from "../form-fill-dialog";
+import { FormFillDialog, FormFillHost } from "../form-fill-dialog";
 import { FormResponsesHost } from "../form-responses-dialog";
 import { memberFallbackLabel } from "@repo/hooks";
 
@@ -458,6 +458,56 @@ describe("FormCard (#3926 step 3)", () => {
     expect(api.GET).toHaveBeenCalledTimes(2);
   });
 
+  it("reads once on open when the card's copy is between 30 and 60 seconds old", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    const { client } = wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
+    const edit = await screen.findByRole("button", {
+      name: "Edit your answers",
+    });
+    // Fresh for the card (60s), stale for the dialog's useQuery (30s): its
+    // mount read and the open-time read must be one request.
+    client.setQueryData(["chat", "form-response", "m1"], SAVED.data.response, {
+      updatedAt: Date.now() - 45_000,
+    });
+    await user.click(edit);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(api.GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads on open even when the card's copy is fresh", async () => {
+    const user = userEvent.setup();
+    let land: (value: unknown) => void = () => {};
+    api.GET.mockResolvedValueOnce(SAVED).mockReturnValue(
+      new Promise((resolve) => (land = resolve)),
+    );
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    ).toBeDisabled();
+    expect(api.GET).toHaveBeenCalledTimes(2);
+    land(SAVED);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("lets the cached answers be edited when the open-time read fails", async () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValueOnce(SAVED).mockResolvedValue({
@@ -477,6 +527,39 @@ describe("FormCard (#3926 step 3)", () => {
     );
     expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
     expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Couldn't check for newer answers",
+    );
+  });
+
+  it("lets the cached answers be edited, and says why, while the open-time read retries", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValueOnce(SAVED).mockResolvedValue({
+      error: { message: "Server error" },
+    });
+    const { client } = wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
+    const edit = await screen.findByRole("button", {
+      name: "Edit your answers",
+    });
+    // The app's retry backoff, long enough that the read is still retrying
+    // when the assertions run.
+    client.setDefaultOptions({
+      queries: { retry: 3, retryDelay: 60_000, staleTime: 30_000 },
+    });
+    await user.click(edit);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(api.GET).toHaveBeenCalledTimes(2);
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Couldn't check for newer answers",
+    );
   });
 
   it("lets the cached answers be edited when the open-time read waits for the network", async () => {
@@ -497,6 +580,46 @@ describe("FormCard (#3926 step 3)", () => {
       ).toBeEnabled(),
     );
     expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "You're offline",
+    );
+    // The member edits offline, then comes back online: the read goes out,
+    // lands answers sent from the phone meanwhile, and the note goes. The
+    // question they didn't touch shows the newer answer; the one they did
+    // keeps their edit, and the questions never lock again.
+    await user.type(within(dialog).getByRole("textbox"), "Late checkout");
+    let land: (value: unknown) => void = () => {};
+    api.GET.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    onlineManager.setOnline(true);
+    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(2));
+    expect(within(dialog).getByRole("textbox")).not.toHaveAttribute("readonly");
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+    land({
+      data: {
+        response: { answers: { room: "double" }, updated_at: "2026-11-14" },
+      },
+    });
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("status")).not.toBeInTheDocument(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeChecked();
+    expect(within(dialog).getByRole("textbox")).toHaveValue("Late checkout");
+  });
+
+  it("says the answers load once back online when none were loaded", async () => {
+    api.GET.mockResolvedValue(SAVED);
+    onlineManager.setOnline(false);
+    // The dialog on its own: no card has read the answers.
+    wrap(<FormFillDialog message={form()} onOpenChange={() => {}} />);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Your answers load when you're back online.",
+    );
+    expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Loading your answers…"),
+    ).not.toBeInTheDocument();
+    expect(api.GET).not.toHaveBeenCalled();
   });
 
   it("holds a reopened form until a save sent before it closed lands and is read again", async () => {

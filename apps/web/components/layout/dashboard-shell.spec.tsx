@@ -111,7 +111,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       fetchStatus: mockPermissions.value === undefined ? "fetching" : "idle",
     }),
     useHiddenUnsetFeatures: () => new Set(),
-    // A server with no AI, the default: the Ask pill is its "not ready" shell.
+    // A server with no AI, the default. Ask's entry is in the chat composer
+    // (`ask/ask-host.tsx`), and the bar never carries one (#4702).
     aiAvailableFrom: actual.aiAvailableFrom,
     useAiConsent: () => ({ data: null, isError: false }),
     useAiChapterSettings: () => ({ data: undefined, isPending: true }),
@@ -178,6 +179,10 @@ vi.mock("@/components/auth/terms-prompt", () => ({
 }));
 vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
   OnboardingTutorial: () => null,
+}));
+// Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
+vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
+  MeetFrappAiHost: () => null,
 }));
 vi.mock("@/components/layout/notifications-popover", () => ({
   NotificationsPopover: ({ children }: { children: unknown }) => children,
@@ -468,7 +473,7 @@ describe("DashboardShell", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("carries the find field, Ask and the account avatar in the bar", () => {
+  it("carries the find field and the account avatar in the bar, and no Ask button (#4702)", () => {
     render(
       <DashboardShell>
         <p>route content</p>
@@ -480,11 +485,11 @@ describe("DashboardShell", () => {
       screen.getByRole("button", { name: /^Find channels/ }),
     );
     expect(
-      screen.getByRole("button", { name: /Ask a question/i }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("button", { name: /account menu/i }),
     ).toBeInTheDocument();
+    // Paul, 2026-11-13: no Ask button in the corner of the top bar. Its
+    // entry is in the chat composer.
+    expect(within(banner).queryByRole("button", { name: /Ask/ })).toBeNull();
   });
 
   it("keeps the skip link ahead of the content", () => {

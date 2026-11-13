@@ -24,6 +24,7 @@ import { StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 
 /**
@@ -459,9 +460,7 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.sm,
     },
     sectionLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
     },
     reviewRow: {

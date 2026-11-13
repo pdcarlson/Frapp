@@ -18,12 +18,19 @@ import { getErrorMessage } from "@/lib/utils";
  * the server answers 409 for any row, an officer's excused or absent mark
  * included. `useCheckIn` re-reads the member's own row on it, so the block
  * then says which.
+ *
+ * `run` resolves `true` once the member is on the list (checked in now, or a
+ * 409 saying they already were), `false` for any other failure, which it has
+ * already toasted. Activity's row button reads it to settle (#4427).
  */
 export function useSelfCheckIn() {
   const checkIn = useCheckIn();
   const { toast } = useToast();
 
-  const run = async (eventId: string, pointValue: unknown): Promise<void> => {
+  const run = async (
+    eventId: string,
+    pointValue: unknown,
+  ): Promise<boolean> => {
     try {
       await checkIn.mutateAsync({ eventId });
       toast({
@@ -33,6 +40,7 @@ export function useSelfCheckIn() {
             ? formatPointsChip(pointValue)
             : undefined,
       });
+      return true;
     } catch (error) {
       const alreadyIn = statusOf(error) === 409;
       toast({
@@ -42,6 +50,7 @@ export function useSelfCheckIn() {
           : getErrorMessage(error, "Couldn't check in."),
         variant: alreadyIn ? "default" : "destructive",
       });
+      return alreadyIn;
     }
   };
 
@@ -49,6 +58,8 @@ export function useSelfCheckIn() {
     run,
     isPending: checkIn.isPending,
     /** The event this session last checked in to, once the POST succeeded. */
-    checkedInEventId: checkIn.isSuccess ? checkIn.variables?.eventId : undefined,
+    checkedInEventId: checkIn.isSuccess
+      ? checkIn.variables?.eventId
+      : undefined,
   };
 }

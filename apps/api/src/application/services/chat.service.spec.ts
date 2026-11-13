@@ -694,6 +694,39 @@ describe('ChatService', () => {
       });
     });
 
+    // #3633: a DM or group DM belongs to its members, so a `channels:manage`
+    // holder with its id can't rename it, describe it or file it in a
+    // category, and the refusal returns no row (with its `member_ids`).
+    describe('a DM or group DM (#3633)', () => {
+      const fields = [
+        { name: 'renamed' },
+        { description: 'Ours now' },
+        { category_id: 'cat-1' },
+        { is_default: false },
+        { activity_excluded: false },
+        { default_notification_level: null },
+        { match_category_access: true },
+        { who_can_post: null },
+      ];
+      it.each(
+        (['DM', 'GROUP_DM'] as const).flatMap((type) =>
+          fields.map((input) => [type, input] as const),
+        ),
+      )('refuses a %s change of %o', async (type, input) => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type,
+          member_ids: ['user-1', 'user-2'],
+        });
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', input),
+        ).rejects.toThrow('A DM or group DM has no channel settings to change');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+    });
+
     describe('Leave out of Activity (#3897)', () => {
       it('saves it on a chapter channel', async () => {
         mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -720,7 +753,9 @@ describe('ChatService', () => {
             service.updateChannel('chan-1', 'ch-1', {
               activity_excluded: true,
             }),
-          ).rejects.toThrow("A DM or group DM can't be left out of Activity");
+          ).rejects.toThrow(
+            'A DM or group DM has no channel settings to change',
+          );
           expect(mockChannelRepo.update).not.toHaveBeenCalled();
         },
       );
@@ -1971,6 +2006,24 @@ describe('ChatService', () => {
       );
       expect(mockChannelRepo.delete).not.toHaveBeenCalled();
     });
+
+    // #3633: a DM or group DM belongs to its members, not the officers.
+    it.each(['DM', 'GROUP_DM'] as const)(
+      'refuses deleting a %s and deletes nothing',
+      async (type) => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type,
+          member_ids: ['user-1', 'user-2'],
+        });
+
+        await expect(
+          service.deleteChannel('ch-chan-1', 'ch-1'),
+        ).rejects.toThrow("A DM or group DM can't be deleted");
+        expect(mockChannelRepo.delete).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      },
+    );
 
     it('should throw if channel not found', async () => {
       mockChannelRepo.findById.mockResolvedValue(null);
@@ -5498,6 +5551,161 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ mentions: [] }),
       );
+    });
+
+    describe('picked mentions (#3835)', () => {
+      // "Jane Smith" left after the sender's picker loaded the roster; the
+      // only Jane left is Jane Doe (user-2).
+      const departed = { user_id: 'user-9', label: 'Jane Smith' };
+
+      beforeEach(() => {
+        seedRoster();
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      it('reads a picked member who left as nobody, not as the Jane still here', async () => {
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: '@Jane Smith can you cover?',
+        });
+        // An old client, with no pick: the first word reaches Jane Doe.
+        expect(mockMessageRepo.create).toHaveBeenLastCalledWith(
+          expect.objectContaining({ mentions: ['user-2'] }),
+        );
+
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: '@Jane Smith can you cover?',
+          mention_picks: [departed],
+        });
+        expect(mockMessageRepo.create).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            mentions: [],
+            metadata: expect.objectContaining({ mention_picks: [departed] }),
+          }),
+        );
+      });
+
+      it('stores only the picks the body writes, never a client metadata copy', async () => {
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: 'hi @Jane Doe',
+          metadata: {
+            mention_picks: [{ user_id: 'user-3', label: 'Jane Doe' }],
+          },
+          mention_picks: [
+            { user_id: 'user-2', label: 'Jane Doe' },
+            { user_id: 'user-3', label: 'Janet Roe' },
+          ],
+        });
+        expect(mockMessageRepo.create).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            mentions: ['user-2'],
+            metadata: {
+              mention_picks: [{ user_id: 'user-2', label: 'Jane Doe' }],
+            },
+          }),
+        );
+      });
+
+      it('keeps the stored picks through an edit from a client that sends none', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          content: '@Jane Smith can you cover?',
+          mentions: [],
+          metadata: { mention_picks: [departed] },
+        });
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+        await service.editMessage(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          '@Jane Smith can you cover Friday?',
+        );
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({
+            mentions: [],
+            metadata: { mention_picks: [departed] },
+          }),
+        );
+
+        // Edited out, the pick goes with it; a pick made in the edit lands.
+        mockMessageRepo.update.mockClear();
+        await service.editMessage('msg-1', 'ch-1', 'user-1', 'ask @Janet Roe', [
+          { user_id: 'user-3', label: 'Janet Roe' },
+        ]);
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({
+            mentions: ['user-3'],
+            metadata: {
+              mention_picks: [{ user_id: 'user-3', label: 'Janet Roe' }],
+            },
+          }),
+        );
+      });
+
+      it('drops a client metadata copy of the picks even when it sends none of its own', async () => {
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: 'hi @Jane Doe',
+          metadata: {
+            mention_picks: [{ user_id: 'user-3', label: 'Jane Doe' }],
+          },
+        });
+        const stored = mockMessageRepo.create.mock.calls.at(-1)?.[0];
+        expect(stored?.metadata).not.toHaveProperty('mention_picks');
+        expect(stored?.mentions).toEqual(['user-2']);
+      });
+
+      it('lets an edit re-pick a label, replacing the stored pick for it', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          content: '@Jane Doe hi',
+          mentions: ['user-2'],
+          metadata: {
+            mention_picks: [{ user_id: 'user-2', label: 'Jane Doe' }],
+          },
+        });
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        // Someone else now holds the name; the sender picked them instead.
+        mockMemberRepo.findChapterMemberIdentities.mockResolvedValue([
+          ...roster,
+          { user_id: 'user-4', display_name: 'Jane Doe', role_ids: [] },
+        ]);
+
+        await service.editMessage('msg-1', 'ch-1', 'user-1', '@Jane Doe hi!', [
+          { user_id: 'user-4', label: 'Jane Doe' },
+        ]);
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({
+            mentions: ['user-4'],
+            metadata: {
+              mention_picks: [{ user_id: 'user-4', label: 'Jane Doe' }],
+            },
+          }),
+        );
+      });
+
+      it('leaves metadata alone on an edit with no picks either side', async () => {
+        mockMessageRepo.findById.mockResolvedValue(baseMessage);
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        await service.editMessage('msg-1', 'ch-1', 'user-1', 'plain edit');
+        expect(
+          mockMessageRepo.update.mock.calls.at(-1)?.[1],
+        ).not.toHaveProperty('metadata');
+      });
     });
 
     it('never trusts a client-supplied mention list', async () => {

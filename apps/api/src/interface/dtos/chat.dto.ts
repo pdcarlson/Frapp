@@ -23,6 +23,8 @@ import {
   CHANNEL_ACCESS_LIST_MAX,
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  MAX_MENTION_LABEL_LENGTH,
+  MAX_MENTION_PICKS,
   CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
   type ChatChapterLevel,
@@ -248,7 +250,7 @@ export class UpdateChannelDto {
     type: String,
     nullable: true,
     description:
-      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.",
+      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.",
   })
   @IsOptional()
   @IsIn(CHAT_NOTIFICATION_LEVELS)
@@ -256,7 +258,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM.",
+      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none.",
   })
   // Not `@IsOptional()`, which lets `null` through to a not-null column (a
   // 500): absent skips validation, `null` is refused as not a boolean.
@@ -266,7 +268,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM.",
+      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business.",
   })
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
@@ -534,6 +536,25 @@ export class MessageGifDto {
   token: string;
 }
 
+/**
+ * A member a mention picker wrote into the body (#3835): their id, and the
+ * label it wrote after the `@`. A token spelling the label exactly reaches
+ * that member, or nobody when they have left the chapter or no longer go by
+ * that name; it never falls back to another member by name. The body itself
+ * stays `@Name`, so every reader draws it as before.
+ */
+export class MentionPickDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  user_id: string;
+
+  @ApiProperty({ minLength: 1, maxLength: MAX_MENTION_LABEL_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MAX_MENTION_LABEL_LENGTH)
+  label: string;
+}
+
 export class SendMessageDto {
   /**
    * Client-generated idempotency key. The server dedupes on
@@ -629,6 +650,19 @@ export class SendMessageDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835). Left
+   * out (every client before it, and a hand-typed mention), `@Name` resolves
+   * by name as it always has.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 /**
@@ -661,6 +695,18 @@ export class EditMessageDto {
   @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  /**
+   * Members picked while editing (#3835), as on a send. The picks the message
+   * was sent with are kept server-side, so an edit needn't repeat them.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 export class SetMessageFlagDto {

@@ -75,7 +75,10 @@ describe('RbacService rank rules (#4071)', () => {
         return next;
       },
     );
-    roleRepo.delete.mockResolvedValue(undefined);
+    roleRepo.delete.mockResolvedValue({
+      strippedMemberIds: [],
+      givenEveryoneMemberIds: [],
+    });
     memberRepo.findByUserAndChapter.mockImplementation(
       async (userId: string) =>
         members.find((member) => member.user_id === userId) ?? null,
@@ -221,7 +224,7 @@ describe('RbacService rank rules (#4071)', () => {
         service.deleteAsMember(ROLE.socialChair, CHAPTER_ID, USER.riskChair),
       ).rejects.toBeInstanceOf(ForbiddenException);
       await service.deleteAsMember(ROLE.pledge, CHAPTER_ID, USER.riskChair);
-      expect(roleRepo.delete).toHaveBeenCalledWith(ROLE.pledge);
+      expect(roleRepo.delete).toHaveBeenCalledWith(CHAPTER_ID, ROLE.pledge);
     });
   });
 

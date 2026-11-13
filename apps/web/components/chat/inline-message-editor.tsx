@@ -7,7 +7,7 @@ import {
   useRef,
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { MentionChipTest } from "@repo/validation";
+import type { MentionChipTest, MentionPick } from "@repo/validation";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
@@ -15,6 +15,7 @@ import {
   chatMentionExtension,
   chatText,
   chatTextKit,
+  editorMentionPicks,
   createKeymap,
   pasteAsLines,
   useMentionSourceRefs,
@@ -38,7 +39,8 @@ export interface InlineMessageEditorProps {
    */
   resetKey?: number;
   disabled?: boolean;
-  onChange: (text: string) => void;
+  /** `picks`: the members the `@` list put in the text (#3835). */
+  onChange: (text: string, picks: MentionPick[]) => void;
   /** Enter. Shift+Enter is a line break. */
   onSave: () => void;
   /** Escape. */
@@ -59,7 +61,8 @@ export interface InlineMessageEditorProps {
  * composes in.
  *
  * What it sends is still plain text (`chatText`): mentions resolve server-side
- * from the `@token` body, so the wire format is unchanged.
+ * from the `@token` body, with the members picked here riding beside it
+ * (`editorMentionPicks`, #3835).
  */
 export const InlineMessageEditor = forwardRef<
   InlineMessageEditorHandle,
@@ -104,7 +107,7 @@ export const InlineMessageEditor = forwardRef<
       },
     },
     onUpdate({ editor: current }) {
-      onChangeRef.current(chatText(current));
+      onChangeRef.current(chatText(current), editorMentionPicks(current));
     },
     immediatelyRender: false,
   });

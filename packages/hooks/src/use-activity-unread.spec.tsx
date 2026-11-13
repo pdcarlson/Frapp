@@ -2,7 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { activityGroups, type Activity } from "./activity-rows";
+import {
+  activityGroups,
+  activityReviewRows,
+  activityToDos,
+  type Activity,
+} from "./activity-rows";
 import { activityKeys } from "./use-activity";
 import {
   markActivityItemsRead,
@@ -104,14 +109,23 @@ const read = (overrides: Partial<Record<string, unknown>> = {}) =>
     ...overrides,
   }) as unknown as Activity;
 
+/** Every row the page draws: the review queue, the to-dos, then the groups. */
+const pageRows = (data: Activity) => {
+  const now = new Date("2026-11-12T00:00:00.000Z");
+  return [
+    ...activityReviewRows(data, now),
+    ...activityToDos(data, now).map((todo) => todo.dated),
+    ...activityGroups(data, now).flatMap((group) => group.rows),
+  ];
+};
+
 const unreadKeys = (data: Activity) =>
-  activityGroups(data, "all", new Date("2026-11-12T00:00:00.000Z"))
-    .flatMap((group) => group.rows)
+  pageRows(data)
     .filter((row) => row.unread)
     .map((row) => row.key);
 
 describe("Activity rows' unread (#4405)", () => {
-  it("dots the rows the read serves unread, never one under Made by you", () => {
+  it("dots the rows the read serves unread, never one under Waiting on others", () => {
     expect(unreadKeys(read()).sort()).toEqual(
       [
         "coming:event:e1",
@@ -125,11 +139,7 @@ describe("Activity rows' unread (#4405)", () => {
   });
 
   it("names each row's item the way the reads route takes it", () => {
-    const rows = activityGroups(
-      read(),
-      "all",
-      new Date("2026-11-12T00:00:00.000Z"),
-    ).flatMap((group) => group.rows);
+    const rows = pageRows(read());
     const refOf = (key: string) => rows.find((row) => row.key === key)?.readRef;
     expect(refOf("needs:poll:p1")).toEqual({ kind: "poll", item_id: "p1" });
     expect(refOf("needs:hours:h1")).toEqual({

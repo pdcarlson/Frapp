@@ -10,6 +10,7 @@ import {
 import { TASK_CONFIRM_FAILURE } from "@/components/chat/renderers/task-card";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { useServiceReview } from "@/components/service/use-service-review";
+import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -18,23 +19,25 @@ import { rowActionGateProps } from "./activity-row-action-gate";
 const LABELS: Record<RowAction, string> = {
   confirm: TASK_ACTION_LABELS.confirm,
   approve: "Approve",
+  "check-in": "Check in",
 };
 
 /**
  * A row's ask as a button where the ask was drawn (#4402): Confirm a
- * completed task or Approve service hours in one press, as GitHub's
- * notifications and Slack's Activity put quick actions on the row.
- * Everything else (Reject, a send-back, a vote, a check-in) is still the
- * row's panel.
+ * completed task, Approve service hours or Check in to an event in one
+ * press, as GitHub's notifications and Slack's Activity put quick actions on
+ * the row. Everything else (Reject, a send-back, a vote, a check-in that
+ * needs a location, #4427) is still the row's panel.
  *
  * Each calls what the panel calls, with the panel's words: the task card's
- * `useConfirmTask` and failure copy, the Service hours review's `approve`.
+ * `useConfirmTask` and failure copy, the Service hours review's `approve`,
+ * the event card's `useSelfCheckIn`.
  * The page draws this only while the chapter's plan allows those writes
  * (`activityRowActionGate`); offline or still loading the chapter, it is
  * disabled with the gate's reason.
  *
- * Once the write lands the button stays disabled: the row leaves Needs you
- * on the page's re-read, and a second press before then would be refused
+ * Once the write lands the button stays disabled: the row leaves the To
+ * review card on the page's re-read, and a second press before then would be refused
  * as a repeat. `onActed` re-reads and resolves when that read settles, and
  * focus then moves to the row after this one (or before it, at the end of a
  * list), so a keyboard user carries on down the list instead of starting
@@ -53,6 +56,7 @@ export function ActivityRowActionButton({
 }) {
   const confirmTask = useConfirmTask();
   const review = useServiceReview();
+  const checkIn = useSelfCheckIn();
   const { toast } = useToast();
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const ref = useRef<HTMLButtonElement>(null);
@@ -74,6 +78,10 @@ export function ActivityRowActionButton({
     if (action === "approve" && row.kind === "hours") {
       // Toasts its own outcome; `false` is a refusal it has already said.
       return review.approve(row.entry);
+    }
+    if (action === "check-in" && row.kind === "event") {
+      // Toasts its own outcome, as on the event card.
+      return checkIn.run(row.event.id, row.event.point_value);
     }
     return false;
   }

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_SHOW_EVERYTHING,
+  ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityCouldNotLoad,
   activityGroups,
+  activityNarrowedNote,
   activityReview,
   activityWeekSummary,
   findActivityTaskRow,
@@ -72,18 +75,9 @@ import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
+import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** The groups under To do, in the order they are drawn. */
-const BELOW_ORDER: ActivityGroup["id"][] = ["made-by-you", "links"];
-
-/** What the To do list says it is narrowed to, under a week line. */
-const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
-  events: "events",
-  tasks: "tasks",
-  answers: "polls and sign-ups",
-};
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -107,8 +101,8 @@ const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
  *
  * It is drawn and checked for four people (`principles.md` § Three people):
  * a member with nothing due, an average member, a committee chair and the
- * president. The count tiles, the filter chips and the Now and Later split
- * are gone; web's `/activity` follows in its own change.
+ * president. Web's `/activity` is the same page from the same model
+ * (`apps/web/components/activity/activity-page.tsx`).
  *
  * A row opens the record in a sheet drawn with chat's own card, where the
  * member acts on it (`components/activity/activity-sheet.tsx`). The read is
@@ -158,13 +152,15 @@ export default function ActivityScreen() {
 
   const permissions = useMyPermissions().data?.permissions;
   const summary = useMemo(
-    () => (activity.data ? activityWeekSummary(activity.data) : null),
-    [activity.data],
+    () => (activity.data ? activityWeekSummary(activity.data, now) : null),
+    [activity.data, now],
   );
   // The week line picked while the app is open. Never stored: a fresh launch
-  // opens on everything. A line that has left the card (its last item done,
-  // its module turned off, a new week) takes its narrowing with it for good,
-  // so the list doesn't narrow itself again when the line comes back.
+  // opens on everything. A line that has left the card (its module turned
+  // off, or nothing of its kind in the week's count any more, as on a new
+  // week) takes its narrowing with it for good, so the list doesn't narrow
+  // itself again when the line comes back. Finishing the last item keeps the
+  // line, at "3 of 3", and the list says nothing of that kind is left.
   const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
   const pickedLineGone =
     picked !== "all" &&
@@ -197,21 +193,19 @@ export default function ActivityScreen() {
     [activity.data, permissions, moduleOn, now],
   );
   // What the member made, and the links posted for them, as the shared
-  // groups build them. Narrowed to a kind, the page is the To do list alone.
+  // groups build them, in order. Narrowed to a kind, the page is the To do
+  // list alone.
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, "all", now) : []),
+    () => (activity.data ? activityGroups(activity.data, now) : []),
     [activity.data, now],
   );
   const below =
     filter === "all"
-      ? BELOW_ORDER.flatMap((id) =>
-          groups.filter(
-            (group) =>
-              group.id === id &&
-              (group.rows.length > 0 ||
-                group.archive !== null ||
-                group.unavailable.length > 0),
-          ),
+      ? groups.filter(
+          (group) =>
+            group.rows.length > 0 ||
+            group.archive !== null ||
+            group.unavailable.length > 0,
         )
       : [];
   // The open row as the latest read has it. A row that has left the list (a
@@ -254,9 +248,10 @@ export default function ActivityScreen() {
     setOpened(row);
     setOpenedKey(row.key);
   };
-  // Confirm and Approve on the To review card's rows (#4437), while the
-  // chapter's plan allows them; acting there reads the item, as opening it
-  // does, and re-reads so the row leaves the card.
+  // Confirm and Approve on the To review card's rows (#4437), and Check in
+  // on the To do list's (#4427), while the chapter's plan allows them;
+  // acting there reads the item, as opening it does, and re-reads so the
+  // row leaves the card or the list.
   const { actions: rowActions, stateOf: rowActionStateOf } =
     useActivityRowActions({
       allowed: activityRowActionsAllowed(chapter),
@@ -369,6 +364,7 @@ export default function ActivityScreen() {
           nextLabel={agenda.nextLabel}
           filter={filter}
           onFilter={setPicked}
+          rowActions={rowActions}
           onOpenNext={open}
         />
         {nudge ? (
@@ -397,6 +393,7 @@ export default function ActivityScreen() {
           // The one thing left is already on the week card.
           onCard={agenda.next !== null}
           onShowAll={() => setPicked("all")}
+          rowActions={rowActions}
           onOpen={open}
         />
         {below.map((group) => (
@@ -504,14 +501,24 @@ function useLinkActions() {
   // Each write's own promise, not `mutate`'s per-call callbacks, which a
   // second Done before the first answers would cancel (`useLinkWrite`).
   type Write = { mutateAsync: (id: string) => Promise<unknown> };
-  const failed = (title: string) => (error: unknown) =>
-    Alert.alert(title, errorCopy(error));
-  const act =
-    (write: Write, message: string, takeBack: Write, failure: string) =>
-    (row: LinkRow) => {
-      // The sheet closes as this starts; the write re-reads Activity itself
-      // when it settles, and a re-read on close would race it.
-      skipCloseReread.current = true;
+  const failed = (title: string, retry: () => void) => (error: unknown) =>
+    alertFailure({ title, error, retry });
+  function act(
+    write: Write,
+    message: string,
+    takeBack: Write,
+    failure: string,
+  ): (row: LinkRow) => void {
+    // `send` is the write itself; Try again repeats only it. The sheet's
+    // close flag is set once, by the press that closes the sheet: a retry
+    // from the alert closes nothing, and setting it then would skip the
+    // re-read of whatever sheet the member closes next.
+    const send = (row: LinkRow) => {
+      const undoWrite = () => {
+        takeBack
+          .mutateAsync(row.link.id)
+          .catch(failed("Couldn't undo", undoWrite));
+      };
       write.mutateAsync(row.link.id).then(
         () =>
           setUndo((open) => ({
@@ -520,12 +527,19 @@ function useLinkActions() {
             key: (open?.key ?? 0) + 1,
             run: () => {
               setUndo(null);
-              takeBack.mutateAsync(row.link.id).catch(failed("Couldn't undo"));
+              undoWrite();
             },
           })),
-        failed(failure),
+        failed(failure, () => send(row)),
       );
     };
+    return (row: LinkRow) => {
+      // The sheet closes as this starts; the write re-reads Activity itself
+      // when it settles, and a re-read on close would race it.
+      skipCloseReread.current = true;
+      send(row);
+    };
+  }
 
   const linkActions: LinkSheetActions = {
     canRemove: can("channels:manage", permissions.data?.permissions ?? []),
@@ -571,6 +585,7 @@ function ToDoSection({
   filter,
   onCard,
   onShowAll,
+  rowActions,
   onOpen,
 }: {
   days: ActivityAgendaDay[];
@@ -579,6 +594,8 @@ function ToDoSection({
   /** The week card holds the next thing, so an empty list isn't "nothing". */
   onCard: boolean;
   onShowAll: () => void;
+  /** Check in on an open event's row (#4427); `null` while refused. */
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -592,26 +609,29 @@ function ToDoSection({
     <View style={styles.group}>
       <SectionHeader count={count || null}>To do</SectionHeader>
       {filter !== "all" ? (
-        <InlineNote action={{ label: "Show everything", onPress: onShowAll }}>
-          {count === 0
-            ? `No ${FILTER_NOUN[filter]} left to do.`
-            : `Showing only ${FILTER_NOUN[filter]}.`}
+        <InlineNote
+          action={{ label: ACTIVITY_SHOW_EVERYTHING, onPress: onShowAll }}
+        >
+          {activityNarrowedNote(filter, count, unavailable.length > 0)}
         </InlineNote>
       ) : null}
       {unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty:
         // "nothing to do" must not be a failed read.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {count === 0 && filter === "all" && unavailable.length === 0 ? (
-        <InlineNote>Nothing to do right now.</InlineNote>
+        <InlineNote>{ACTIVITY_TO_DO_EMPTY}</InlineNote>
       ) : null}
       {days.map((day) => (
-        <DaySection key={day.id} day={day} onOpen={onOpen} />
+        <DaySection
+          key={day.id}
+          day={day}
+          rowActions={rowActions}
+          onOpen={onOpen}
+        />
       ))}
     </View>
   );
@@ -624,9 +644,11 @@ function ToDoSection({
  */
 function DaySection({
   day,
+  rowActions,
   onOpen,
 }: {
   day: ActivityAgendaDay;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -658,10 +680,11 @@ function DaySection({
         <SectionCount count={day.rows.length} />
       </View>
       {rows.map((row, index) => (
-        <ActivityListRow
+        <ActivityRowItem
           key={row.key}
           row={row}
           isFirst={index === 0}
+          actions={rowActions}
           onPress={() => onOpen(row)}
         />
       ))}
@@ -683,12 +706,6 @@ function DaySection({
   );
 }
 
-/** The phone's name for a group the shared model still calls by web's. */
-const GROUP_LABEL: Partial<Record<ActivityGroup["id"], string>> = {
-  // What the member made is listed for what it still waits on (#4766).
-  "made-by-you": "Waiting on others",
-};
-
 /**
  * A group under the To do list: Waiting on others (the polls the member
  * posted, the events they made, the tasks they assigned), or Links. The
@@ -708,14 +725,12 @@ function GroupSection({
   return (
     <View style={styles.group}>
       <SectionHeader count={group.rows.length || null}>
-        {GROUP_LABEL[group.id] ?? group.label}
+        {group.label}
       </SectionHeader>
       {group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            group.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(group.unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {group.parts.map((part) => (
@@ -735,7 +750,7 @@ function GroupSection({
 
 /**
  * The rows a group keeps behind one control (#4258): the member's closed
- * polls, under Made by you, closed until pressed, as web draws them. Each
+ * polls, under Waiting on others, closed until pressed, as web draws them. Each
  * row opens the poll's card with its final result.
  */
 function ArchivePart({

@@ -91,7 +91,11 @@ export function useUpdateRoleTier() {
   });
 }
 
-/** Reorder: every tier id, highest first. 409 when the list changed since read. */
+/**
+ * Reorder: every tier id, highest first. 409 when the list changed since
+ * read; 400 `role_tier.below_everyone` when it would lift the New members or
+ * Alumni tier above the Everyone tier (#4548).
+ */
 export function useReorderRoleTiers() {
   const client = useFrappClient();
   const invalidate = useInvalidateAfterTierWrite();

@@ -199,6 +199,8 @@ describe('Mass assignment — privileged fields never come from the client (e2e)
           chapter_id: GUARD_CHAPTER_ID,
           created_by: 'admin-1',
         }),
+        // No x-time-zone sent: the series falls back to the zone on file.
+        undefined,
       );
     });
 

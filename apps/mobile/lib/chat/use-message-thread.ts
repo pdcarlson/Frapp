@@ -7,6 +7,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { randomClientId } from "@repo/api-sdk";
+import type { MentionPick } from "@repo/validation";
 import { useFrappClient } from "@repo/hooks";
 import {
   chatRealtime,
@@ -264,16 +266,29 @@ export function useMessageThread(
     [api, channelId, rootId, patchFollow],
   );
 
+  // A failed reply's picks, by its client id, until it sends or is discarded.
+  const replyPicksRef = useRef(new Map<string, readonly MentionPick[]>());
   const send = useCallback(
-    async (content: string, clientMessageId?: string) => {
+    async (
+      content: string,
+      clientMessageId?: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       if (!viewerId) return { error: "You're signed out." };
+      // The id is minted here, not in `sendThreadReply`, so a failed reply's
+      // picks can be held for its Retry (#3835): the row keeps only its text.
+      const clientId = clientMessageId ?? randomClientId();
+      const picks = mentionPicks ?? replyPicksRef.current.get(clientId);
+      if (picks?.length) replyPicksRef.current.set(clientId, picks);
       const result = await sendThreadReply(queryClient, api, {
         channelId,
         rootId,
         senderId: viewerId,
         content,
-        clientMessageId,
+        clientMessageId: clientId,
+        mentionPicks: picks,
       });
+      if (!result.error) replyPicksRef.current.delete(clientId);
       // Replying follows the thread (the server's rule); show it now.
       if (!result.error && !meta.data?.follow_state) patchFollow("following");
       return result;
@@ -293,8 +308,10 @@ export function useMessageThread(
   );
 
   const discard = useCallback(
-    (clientMessageId: string) =>
-      discardThreadReply(queryClient, channelId, rootId, clientMessageId),
+    (clientMessageId: string) => {
+      replyPicksRef.current.delete(clientMessageId);
+      discardThreadReply(queryClient, channelId, rootId, clientMessageId);
+    },
     [queryClient, channelId, rootId],
   );
 

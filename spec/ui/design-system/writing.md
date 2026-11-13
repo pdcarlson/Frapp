@@ -40,10 +40,10 @@ Three things already pointed the same way:
   `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
   case. These four rows were the document's only Title Case strings.
 
-**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** One
-Title Case control ships on the web dashboard today — `Open Documents`
-(`apps/web/components/layout/ask-pill.tsx`); `/events`' `New Event` became `New event` in November
-2026 — and
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** The
+Title Case controls this document knew of on the web dashboard are gone (corrected 2026-11-13:
+`Open Documents`, in the top bar's Ask pill, went with the pill in #4702, and `/events`' `New Event`
+became `New event` in November 2026; nobody has swept for others), but
 [`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
 which outranks written docs on the web surface
 ([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),
@@ -79,6 +79,8 @@ Example:
 **One map for failures (2026-11-06).** A failed call reaches the member through one shared map, never as the server's own text: `errorCopy` in `@repo/hooks` (web's `getErrorMessage` and mobile both call it), over the strings in [`packages/validation/src/error-copy.ts`](../../../packages/validation/src/error-copy.ts), which `@repo/chat-core` uses for chat refusals too. The screen's toast title says what failed; the map says why and what next. A server sentence shows only when the map rewrites it (`Role name already exists in this chapter` becomes `A role with that name already exists. Pick another name.`); anything else falls back to what the status means (`403`: `Your role can't do this. Ask an officer if you need it.`) or the screen's own sentence. A message client code wrote for members is thrown as `MemberFacingError`; a plain `Error`'s message is never shown. The one exception is a screen whose routes already write for the officer (the Discord import): it opts in with `serverWritesForMembers`, and an unmapped 400, 403, 409 or 503 sentence then shows when it names no permission key or route. A new API refusal a member can act on gets a line in the map in the same change.
 
 Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error names the cause it can see, never a guess: the **load-failure line** (`describeLoadFailure` in `packages/hooks/src/error-copy.ts`, imported from `@repo/hooks/error-copy`, shared by web and mobile, 2026-11-07) reads the same map as `errorCopy` above, so a load and an action say the same words for the same cause: the offline line when no response came back, the status line for a 403 or 404 (module off and subscription lapsed get their own lines), `Refreshing your sign-in. This reloads in a moment.` for a 401, which on mobile is a token that lapsed in the background and is retried when the new one lands (2026-11-12; a 401 used to read `You've been signed out`, which was never true on a screen the member was still on), and `Something went wrong on our side. Retry in a moment.` for any other failure. A screen shows its load failure only when it has nothing loaded: a failed background read keeps what is on screen (components.md §10). A session the API refuses signs the member out with one notice (§ Sign in, `Session ended`), a lost active chapter shows the switcher's `Chapter unavailable` card, and a one-chapter member whose roles grant nothing lands on `/no-access` (2026-11-06); [#3637](https://github.com/pdcarlson/Frapp/issues/3637) tracks routing a revoked membership to one state instead of each screen's 403 line; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in the permission registry, [`permission-registry.ts`](../../../packages/validation/src/permission-registry.ts) (2026-11-05; shared with the API and mobile since 2026-11-10, #4069).
+
+**Failed writes offer Try again when asking again can fix it (2026-11-13).** A write that fails says what failed (the title, `Couldn't start study session`) and why (the shared map's line), and adds a **Try again** action only when sending the same write again may go through: no response, a 5xx, or a proxy timeout (`canTryAgain` in `@repo/hooks/error-copy`, the API retry policy's predicate). A refusal the API decided (a 4xx: outside the study zone, check-in not open, not allowed, too many requests) shows its reason and no button, because pressing it would be refused again. Web shows it as a destructive toast with a `Try again` action (`toastFailure`, `apps/web/lib/failure-toast.tsx`); mobile as a system alert with `Not now` and `Try again` (`alertFailure`, `apps/mobile/lib/failure-alert.ts`), as Messages and Mail offer a failed send. Try again repeats the write itself, never a confirm the member already answered. New write failures use these helpers; the older toasts and alerts move to them as their screens are touched.
 
 ## 3a. Form copy
 
@@ -1230,6 +1232,8 @@ Also shown, with the same wording, after a sign-in **magic link** that created a
 | New account | `New account created` | `This is a new Frapp account for <email>. Already a member? Sign out and use the method you joined with.` (no email on the account: `This is a new Frapp account.` then the same second sentence) |
 | Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
 | Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
+
+The phone shows the same title, line and actions, for the same two cases (a first Google or Apple sign-in, and the sign-in magic link for an address that had no account), as a card at the top of s02, the screen a new account with no chapter lands on (#4769, 2026-11-13; [`screens.md`](../mobile/screens.md) s02). Both surfaces take the title and line from `@repo/validation` (`NEW_ACCOUNT_TITLE`, `newAccountDescription`). The phone has no sign-out-failed line: its sign-out always ends the local session.
 
 ### Onboarding wizard (dashboard overlay)
 

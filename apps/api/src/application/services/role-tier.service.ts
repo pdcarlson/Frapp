@@ -204,6 +204,16 @@ export class RoleTierService {
         "The chapter's tiers changed since this page loaded. Reload and try again.",
       );
     }
+    // spec/behavior/rbac.md § The Everyone role (#4548): New members and
+    // Alumni rank at or below Everyone, so they never reach presidency's claim
+    // walk. The database checks it with the tiers and keyed roles locked.
+    if (reordered === 'below_everyone') {
+      throw new BadRequestException({
+        code: 'role_tier.below_everyone',
+        message:
+          'The New members and Alumni tiers stay below the Everyone tier.',
+      });
+    }
     await this.audit.record({
       chapterId,
       actorUserId,

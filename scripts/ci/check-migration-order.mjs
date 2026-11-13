@@ -177,6 +177,14 @@ export function removedMigrations({ head, base }) {
  * "every new migration sorts after everything on main" is an invariant a person
  * can hold in their head, where "after everything on main that some environment
  * has already applied, as of when your check happened to run" is not.
+ *
+ * (2026-11-13) The 10:02 step above assumed branch protection forced B to
+ * rebase. It no longer does: `REQUIRE_UP_TO_DATE` in lib/required-checks.mjs
+ * has been false since 2026-11-11, so B can merge on a check that ran against
+ * a base without A, and this rule does not see A. That is how #4757's
+ * `20261113130014` landed after #4771's `20261113132007` and halted staging.
+ * `pr-base-sync` renumbers B once `main` moves, but only if B has not already
+ * merged. The open window and its options are #4795.
  */
 export function classifyLocalOrder({ introduced, surviving }) {
   const floor = newestVersion(surviving);

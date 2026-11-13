@@ -25,6 +25,9 @@ export interface MentionCandidate {
  */
 const MAX_TOKEN_LENGTH = 64;
 
+/** The longest label a mention pick may carry: the token bound (#3835). */
+export const MAX_MENTION_LABEL_LENGTH = MAX_TOKEN_LENGTH;
+
 /**
  * `@` followed by a run of name-ish characters.
  *
@@ -105,8 +108,8 @@ export interface MentionSpanOptions {
    * Names with a space in them that someone can be mentioned by, from
    * {@link spacedMentionNames}: members' display names and role names
    * (2026-11-09, #3825: "Winston Hewitt" is mentionable as written). After an
-   * `@`, text that spells one of them, ignoring case, is one token, the
-   * longest name first. Without the list every token stops at whitespace, as
+   * `@`, text that spells one of them, ignoring case, is one token, tried in
+   * the order given: longest first, after any picked labels (#3835). Without the list every token stops at whitespace, as
    * all of them did before.
    */
   names?: readonly string[];
@@ -329,12 +332,135 @@ function matchTiers<T extends MentionCandidate>(
 }
 
 /**
+ * A member a mention picker wrote into a body (#3835, Shawn 2026-11-13): who
+ * was picked, and the label it wrote after the `@` ({@link mentionPickLabel}).
+ *
+ * The body stays `@Jane Doe`, which every reader already draws (both clients,
+ * every shipped mobile build, push text, search); the id rides beside it on
+ * the send (`mention_picks`). Without it the server had only the name, and a
+ * name the roster no longer holds (she left, or renamed, after the picker's
+ * roster loaded) was read as `@Jane`, which the first-word tier could hand to
+ * another member: a push past her mute, to the wrong person.
+ */
+export interface MentionPick {
+  /** `users.id` of the member picked. */
+  user_id: string;
+  /** What the picker wrote after the `@`, exactly. */
+  label: string;
+}
+
+/** Most picks one message carries; more is not a message, it is a list. */
+export const MAX_MENTION_PICKS = 50;
+
+/** A pick's label as a spaced name, or `null` when it has no space or can't be one. */
+function spacedPickLabel(label: string): string | null {
+  return spacedMentionName(label) === label ? label : null;
+}
+
+/**
+ * The picks `content` still writes: each whose label is read as a token there,
+ * one per label, at most {@link MAX_MENTION_PICKS}. What a send stores
+ * (`metadata.mention_picks`) so a later edit reads the same `@`s the same
+ * way, and what a client sends: picks made in a draft whose text has since
+ * been deleted are dropped here, not resolved.
+ *
+ * **One label is one member: the first pick for it in `picks` wins.** So a
+ * caller lists the picks it trusts most first: the newest (a member who
+ * deleted `@Chris Lee` and picked the other Chris Lee meant the second), and
+ * an edit's own picks ahead of the stored ones. Two members sharing a name
+ * can't both be reached by one label, since the text can't say which `@` was
+ * which; the one picked last is.
+ */
+export function mentionPicksIn(
+  content: string,
+  picks: readonly MentionPick[],
+): MentionPick[] {
+  if (picks.length === 0) return [];
+  const labels = new Set(picks.map((pick) => pick.label));
+  const names = [...labels]
+    .map(spacedPickLabel)
+    .filter((name): name is string => name !== null)
+    .sort((a, b) => b.length - a.length);
+  const written = new Set(
+    findMentionSpans(content, {
+      names,
+      accept: (token) => !token.includes(" ") || labels.has(token),
+    }).map((span) => span.token),
+  );
+  const seen = new Set<string>();
+  const kept: MentionPick[] = [];
+  for (const pick of picks) {
+    if (kept.length >= MAX_MENTION_PICKS) break;
+    if (!written.has(pick.label)) continue;
+    if (seen.has(pick.label)) continue;
+    seen.add(pick.label);
+    kept.push({ user_id: pick.user_id, label: pick.label });
+  }
+  return kept;
+}
+
+/**
+ * The picks a message row stores (`metadata.mention_picks`), read
+ * defensively: anything that isn't a list of `{ user_id, label }` strings
+ * reads as no picks, which resolves the body by name as before.
+ */
+export function readMentionPicks(value: unknown): MentionPick[] {
+  if (!Array.isArray(value)) return [];
+  const picks: MentionPick[] = [];
+  for (const entry of value) {
+    if (picks.length >= MAX_MENTION_PICKS) break;
+    if (!entry || typeof entry !== "object") continue;
+    const { user_id: userId, label } = entry as Record<string, unknown>;
+    if (typeof userId !== "string" || typeof label !== "string") continue;
+    if (!userId || !label) continue;
+    picks.push({ user_id: userId, label });
+  }
+  return picks;
+}
+
+/**
+ * Who each picked label reaches: for every label, the picked members still in
+ * the chapter under the name it was written from. A label whose member left,
+ * or renamed so the label no longer spells them, reaches nobody (an empty
+ * list), and never falls through to the name tiers: a wrong recipient is
+ * worse than none (`spec/behavior/chat/README.md` § Mentions).
+ *
+ * The name check is what keeps a pick honest. Without it a sender could
+ * write `@pizza` with anyone's id beside it and ping them under a word that
+ * names nobody; with it, a pick reaches only someone the text already names.
+ */
+function pickedTargets(
+  candidates: readonly MentionCandidate[],
+  picks: readonly MentionPick[],
+): Map<string, string[]> {
+  const byId = new Map(candidates.map((member) => [member.user_id, member]));
+  const targets = new Map<string, string[]>();
+  // One label, one member: the first pick for it (`mentionPicksIn`).
+  for (const pick of picks) {
+    if (targets.has(pick.label)) continue;
+    const ids: string[] = [];
+    targets.set(pick.label, ids);
+    const member = byId.get(pick.user_id);
+    if (!member) continue;
+    const folded = fold(pick.label);
+    if (folded.length === 0 || fold(member.display_name) !== folded) continue;
+    ids.push(member.user_id);
+  }
+  return targets;
+}
+
+/**
  * Every `users.id` mentioned in `content`, resolved against `candidates`.
  *
  * Unresolvable tokens are dropped silently — an `@` in prose is not an error,
  * and a message that fails to send because someone wrote "email me @ noon"
  * would be a worse bug than a missed highlight. Order follows first appearance;
  * duplicates collapse.
+ *
+ * `picks` are the members a picker wrote into the body ({@link MentionPick}):
+ * a token spelling a picked label exactly reaches that member or nobody, ahead
+ * of every role and name tier. Every other token, a hand-typed `@Jane` and
+ * any body from a client that sends no picks, resolves by name as before.
  *
  * `candidates` MUST be scoped to the chapter (and ideally the channel) the
  * message is being sent to. Passing a wider set would let a member mention
@@ -344,6 +470,7 @@ export function resolveMentions(
   content: string,
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[] = [],
+  picks: readonly MentionPick[] = [],
 ): string[] {
   if (candidates.length === 0) return [];
 
@@ -355,11 +482,17 @@ export function resolveMentions(
     seen.add(userId);
     resolved.push(userId);
   };
+  const picked = pickedTargets(candidates, picks);
 
   for (const token of extractMentionTokens(
     content,
-    sendMentionReading(candidates, roles),
+    sendMentionReading(candidates, roles, picks),
   )) {
+    const pickedIds = picked.get(token);
+    if (pickedIds !== undefined) {
+      pickedIds.forEach(add);
+      continue;
+    }
     const role = matchMentionRole(candidates, roles, token);
     if (role !== undefined) {
       // A role token is consumed even when it reaches nobody, so a role this
@@ -380,6 +513,8 @@ export function resolveMentions(
  * for the resolver and for the API's "does this name a switched-off role"
  * pre-read, so the two can't read one body differently.
  *
+ * - **A picked label is read as written** ({@link MentionPick}), whether or
+ *   not the roster still holds it.
  * - **A role nobody holds lends no name.** It is no target
  *   (`matchMentionRole`), so it must not claim `@Vice President` from a member
  *   or a held role named "Vice".
@@ -396,14 +531,32 @@ export function resolveMentions(
 export function sendMentionReading(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
+  picks: readonly MentionPick[] = [],
 ): MentionSpanOptions {
   const held = roles.filter((role) => role.member_ids.length > 0);
-  const names = spacedMentionNames(
+  const pickedLabels = new Set(picks.map((pick) => pick.label));
+  const roster = spacedMentionNames(
     candidates,
     held.map((role) => role.name),
   );
+  // A picked label is read whole even when the roster no longer has the
+  // name (#3835): that is the stale case, and reading it as `@Jane` is how
+  // it reached someone else.
+  //
+  // Picked labels come first, ahead of longer roster names: the picker wrote
+  // `@Jane Doe`, so `@Jane Doe Smith` after it is Jane Doe and prose, not a
+  // roster "Jane Doe Smith" the member never picked.
+  const pickedSpaced = [...pickedLabels]
+    .map(spacedPickLabel)
+    .filter((name): name is string => name !== null)
+    .sort((a, b) => b.length - a.length);
+  const firsts = new Set(pickedSpaced.map((name) => name.toLowerCase()));
+  const names = [
+    ...pickedSpaced,
+    ...roster.filter((name) => !firsts.has(name.toLowerCase())),
+  ];
   if (names.length === 0) return {};
-  const asWritten = new Set(names);
+  const asWritten = new Set([...roster, ...pickedLabels]);
   const namesSomeoneExactly = (bare: string): boolean => {
     const folded = fold(bare);
     if (held.some((role) => fold(role.name) === folded)) return true;
@@ -416,6 +569,10 @@ export function sendMentionReading(
     accept: (token) => {
       const space = token.indexOf(" ");
       if (space === -1) return true;
+      if (pickedLabels.has(token)) return true;
+      // A one-word pick (`@Jane`) followed by more words stays the pick, as
+      // a spaced one does: a roster "Jane Doe" doesn't take it.
+      if (pickedLabels.has(token.slice(0, space))) return false;
       if (asWritten.has(token)) return true;
       return !namesSomeoneExactly(token.slice(0, space));
     },

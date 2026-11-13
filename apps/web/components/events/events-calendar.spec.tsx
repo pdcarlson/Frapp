@@ -6,7 +6,24 @@ import {
   calendarTasksByDay,
   selectCalendarTasks,
 } from "@repo/hooks/calendar-tasks";
+import { useState, type ComponentProps } from "react";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
+
+// The page owns the anchor (the compact month's picked day is the anchor,
+// #4818); this holds it the way the page does, so a picked day sticks.
+function ControlledCalendar(props: ComponentProps<typeof EventsCalendar>) {
+  const [anchorDay, setAnchorDay] = useState(props.anchor);
+  return (
+    <EventsCalendar
+      {...props}
+      anchor={anchorDay}
+      onAnchorChange={(next) => {
+        props.onAnchorChange(next);
+        setAnchorDay(next);
+      }}
+    />
+  );
+}
 
 // The rule itself is the hook's own spec; the calendar follows its answer
 // (#4132). By default, a viewer with no roles: the event's default decides.
@@ -36,8 +53,10 @@ function renderCalendar() {
           is_mandatory: true,
         },
       ]}
-      monthAnchor={anchor}
-      onMonthAnchorChange={vi.fn()}
+      anchor={anchor}
+      onAnchorChange={vi.fn()}
+      view="month"
+      onViewChange={vi.fn()}
       onSelectEvent={vi.fn()}
       onCreateOnDay={vi.fn()}
       canCreate
@@ -53,8 +72,10 @@ function renderEmptyCalendar(canCreate: boolean) {
   const view = render(
     <EventsCalendar
       events={[]}
-      monthAnchor={startOfMonth(new Date())}
-      onMonthAnchorChange={vi.fn()}
+      anchor={new Date()}
+      onAnchorChange={vi.fn()}
+      view="month"
+      onViewChange={vi.fn()}
       onSelectEvent={vi.fn()}
       onCreateOnDay={onCreateOnDay}
       canCreate={canCreate}
@@ -120,8 +141,10 @@ describe("EventsCalendar", () => {
     render(
       <EventsCalendar
         events={[]}
-        monthAnchor={startOfMonth(new Date())}
-        onMonthAnchorChange={vi.fn()}
+        anchor={startOfMonth(new Date())}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate
@@ -157,8 +180,10 @@ describe("EventsCalendar", () => {
         events={[
           { id: "evt-1", name: "Rush", start_time: new Date().toISOString() },
         ]}
-        monthAnchor={startOfMonth(new Date())}
-        onMonthAnchorChange={vi.fn()}
+        anchor={startOfMonth(new Date())}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate
@@ -220,7 +245,7 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     const onSelectEvent = vi.fn();
     const onCreateOnDay = vi.fn();
     render(
-      <EventsCalendar
+      <ControlledCalendar
         events={[
           {
             id: "evt-1",
@@ -229,8 +254,10 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
             is_mandatory: true,
           },
         ]}
-        monthAnchor={anchor}
-        onMonthAnchorChange={vi.fn()}
+        anchor={anchor}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={onSelectEvent}
         onCreateOnDay={onCreateOnDay}
         canCreate
@@ -277,8 +304,10 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     render(
       <EventsCalendar
         events={[]}
-        monthAnchor={startOfMonth(now)}
-        onMonthAnchorChange={vi.fn()}
+        anchor={now}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate
@@ -299,14 +328,16 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
 
   it("opens the next month from one of its days on the grid", () => {
     stubCalendarWidth(480);
-    const onMonthAnchorChange = vi.fn();
+    const onAnchorChange = vi.fn();
     // November 2026 starts on a Sunday and has 30 days, so the grid ends
     // with December 1–12.
     render(
       <EventsCalendar
         events={[]}
-        monthAnchor={anchor}
-        onMonthAnchorChange={onMonthAnchorChange}
+        anchor={anchor}
+        onAnchorChange={onAnchorChange}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate
@@ -318,7 +349,9 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "December 3, no events" }),
     );
-    expect(onMonthAnchorChange).toHaveBeenCalledWith(new Date(2026, 11, 1));
+    // The picked day is the anchor, so its month opens and Week or Day
+    // would open on it.
+    expect(onAnchorChange).toHaveBeenCalledWith(new Date(2026, 11, 3));
   });
 
   it("tells a creator with no events to pick a day, then New event", () => {
@@ -326,8 +359,10 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     render(
       <EventsCalendar
         events={[]}
-        monthAnchor={startOfMonth(new Date())}
-        onMonthAnchorChange={vi.fn()}
+        anchor={startOfMonth(new Date())}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate
@@ -348,8 +383,10 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     render(
       <EventsCalendar
         events={[]}
-        monthAnchor={anchor}
-        onMonthAnchorChange={vi.fn()}
+        anchor={anchor}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate={false}
@@ -394,7 +431,7 @@ describe("EventsCalendar with tasks (#4144)", () => {
 
   function renderWithTasks() {
     return render(
-      <EventsCalendar
+      <ControlledCalendar
         events={[
           {
             id: "evt-1",
@@ -409,8 +446,10 @@ describe("EventsCalendar with tasks (#4144)", () => {
             id
           ] ?? "A member"
         }
-        monthAnchor={anchor}
-        onMonthAnchorChange={vi.fn()}
+        anchor={anchor}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
         onSelectEvent={vi.fn()}
         onCreateOnDay={vi.fn()}
         canCreate

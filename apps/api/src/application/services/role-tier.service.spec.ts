@@ -45,7 +45,7 @@ describe('RoleTierService', () => {
           _chapterId: string,
           ids: string[],
           _fixedIds: string[],
-        ): Promise<RoleTier[] | 'stale'> =>
+        ): Promise<RoleTier[] | 'stale' | 'below_everyone'> =>
           ids.map((id, index) => ({
             ...tiers.find((tier) => tier.id === id)!,
             position: index + 1,
@@ -166,6 +166,23 @@ describe('RoleTierService', () => {
         TIER.pledges,
       ]),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  // #4548: the database refuses an order lifting New members or Alumni
+  // above the Everyone tier, and the API answers 400.
+  it('answers a reorder lifting New members above Everyone with 400', async () => {
+    repo.reorder.mockResolvedValueOnce('below_everyone');
+    const refusal = service.reorder(CHAPTER_ID, USER.president, [
+      TIER.board,
+      TIER.chairs,
+      TIER.pledges,
+      TIER.brothers,
+    ]);
+    await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
+    await expect(refusal).rejects.toMatchObject({
+      response: { code: 'role_tier.below_everyone' },
+    });
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('never puts the wildcard on a tier', async () => {

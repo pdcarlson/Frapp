@@ -106,17 +106,13 @@ export function useDeleteRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
-      // The roster's `role_color` is computed from role colors and order
-      // (#3485), so a role edit or delete repaints chat names now, not after
-      // the roster's 60s staleTime.
-      queryClient.invalidateQueries({
-        queryKey: ["members", chapterId, "roster"],
-      });
-      // A role's permissions decide who reads a ROLE_GATED channel, and its
-      // order ranks the channel member list (#3536).
-      queryClient.invalidateQueries({
-        queryKey: ["members", chapterId, "channel"],
-      });
+      // Every members query (#4547): the delete takes the role off its
+      // holders' `role_ids` and may give them Everyone, so the Members list
+      // must not keep sending the deleted id back (the API refuses an id that
+      // names no role and the member no longer holds). The prefix also covers
+      // the roster, whose `role_color` comes from role colors and order
+      // (#3485), and the channel member list a role's permissions gate (#3536).
+      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       // Deleting a role can clear `chapters.default_invite_role_id` server-side
       // via `on delete set null` (#422). The config query has a 5-minute
       // staleTime, so without this the Settings card keeps showing the deleted

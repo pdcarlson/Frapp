@@ -388,6 +388,26 @@ export class RbacService {
     return tier;
   }
 
+  /** 400 when `tierId` ranks above the tier holding the Everyone role. */
+  private async assertNotAboveEveryone(
+    chapterId: string,
+    tierId: string,
+  ): Promise<void> {
+    const [roles, tiers] = await Promise.all([
+      this.roleRepo.findByChapter(chapterId),
+      this.tierRepo.findByChapter(chapterId),
+    ]);
+    const everyone = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const floor = tiers.find((t) => t.id === everyone?.tier_id);
+    const target = tiers.find((t) => t.id === tierId);
+    if (floor && target && target.position < floor.position) {
+      throw new BadRequestException({
+        code: 'role.below_everyone',
+        message: 'New Member and Alumni stay below the Everyone tier.',
+      });
+    }
+  }
+
   /** The role, 404 when there is none and 403 when it is another chapter's. */
   private async roleInChapter(
     roleId: string,
@@ -549,6 +569,19 @@ export class RbacService {
       assertNotReservedMentionName(data.name);
     }
 
+    // New Member and Alumni rank at or below Everyone (#4548): neither moves
+    // into a tier above the Everyone role's, as no tier reorder lifts theirs
+    // there (`reorder_role_tiers`).
+    if (
+      (role.system_key === SystemRoleKeys.NEW_MEMBER ||
+        role.system_key === SystemRoleKeys.ALUMNI) &&
+      data.tier_id !== undefined &&
+      data.tier_id !== null &&
+      data.tier_id !== role.tier_id
+    ) {
+      await this.assertNotAboveEveryone(chapterId, data.tier_id);
+    }
+
     if (data.name && data.name !== role.name) {
       const existing = await this.roleRepo.findByChapterAndName(
         role.chapter_id,
@@ -592,14 +625,32 @@ export class RbacService {
     if (role.is_system)
       throw new ForbiddenException('Cannot delete system roles');
 
-    await this.roleRepo.delete(roleId);
+    // One transaction (#4547): the id leaves every holder's role_ids, and a
+    // holder left with no member-access role gets Everyone, as
+    // `rolesAfterSave` gives it back, so nobody is locked out by a delete.
+    const deletion = await this.roleRepo.delete(chapterId, roleId);
+    if (!deletion) throw new NotFoundException('Role not found');
     await this.chapterAuditLogService.record({
       chapterId,
       actorUserId,
       action: 'role_deleted',
       targetType: AUDIT_TARGET_TYPE,
       targetId: roleId,
-      diff: { role: { from: role, to: null } } satisfies AuditDiff,
+      diff: {
+        role: { from: role, to: null },
+        ...(deletion.strippedMemberIds.length > 0 && {
+          removed_from_member_ids: {
+            from: deletion.strippedMemberIds,
+            to: null,
+          },
+        }),
+        ...(deletion.givenEveryoneMemberIds.length > 0 && {
+          given_everyone_member_ids: {
+            from: null,
+            to: deletion.givenEveryoneMemberIds,
+          },
+        }),
+      } satisfies AuditDiff,
     });
   }
 
@@ -689,23 +740,21 @@ export class RbacService {
   }
 
   /**
-   * Walk the chapter's roles by ascending `display_order` (i.e. descending
-   * rank), skipping the vacant President role, and return the first role that
-   * still has at least one live member holding it. That role's holders are
-   * the pool "the next member with the highest-ranked **admin** role" in
-   * spec/behavior/rbac.md resolves to — not a hardcoded `SystemRoleKeys` list,
-   * since `display_order` is chapter-editable and a chapter may add, rename or
-   * reorder roles freely.
+   * The members who may claim a vacant presidency: the holders of the
+   * highest-ranked role, by tier (`display_order` breaks ties within a tier),
+   * that has a live holder, skipping the President role. That is "the next
+   * member with the highest-ranked **admin** role" in spec/behavior/rbac.md,
+   * read from the chapter's own tiers rather than a hardcoded key list.
    *
-   * The walk is floored at the chapter's seeded "Member" role's
-   * `display_order` — roles ranked at or below that are the ordinary-member
-   * baseline, not an admin tier, and every active chapter has at least one
-   * member holding one. Without this floor, a chapter with every officer
-   * seat vacant would fall all the way through to "Member" and let any
-   * ordinary member (there may be dozens) claim the wildcard. Returns `null`
-   * (the support-fallback case) when the chapter's Member role cannot be
-   * resolved by `system_key` at all (the legacy backfill gap) — fail closed
-   * rather than removing the floor, since this decision grants `*`.
+   * Only roles in a tier ranked above the Everyone role's (the seeded Member
+   * role, by `system_key`) are candidates: roles at or below it are the
+   * ordinary-member baseline, and without the floor a chapter with every
+   * officer seat empty would let any member claim the wildcard. New Member
+   * and Alumni are never candidates, whatever tier they sit in (#4548). A
+   * role outside the tiers never is either. Returns `null` (the
+   * support-fallback case) when nobody qualifies or the Everyone role can't
+   * be resolved (the legacy backfill gap): this decision grants `*`, so it
+   * fails closed rather than dropping the floor.
    */
   private async resolveEligibleClaimants(
     chapterId: string,
@@ -735,6 +784,11 @@ export class RbacService {
         return (
           r.id !== presidentRole.id &&
           r.id !== memberRole.id &&
+          // Floored on the keys too (#4548): the tier reorder refuses to lift
+          // New members or Alumni above Everyone, and this holds even if a
+          // role edit moves one of them into a higher tier.
+          r.system_key !== SystemRoleKeys.NEW_MEMBER &&
+          r.system_key !== SystemRoleKeys.ALUMNI &&
           Number.isFinite(rank) &&
           rank < memberRank
         );

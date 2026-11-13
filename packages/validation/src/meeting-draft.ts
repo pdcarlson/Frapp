@@ -82,7 +82,7 @@ export type MeetingDraftStatus = (typeof MEETING_DRAFT_STATUSES)[number];
 export const MEETING_DRAFT_FAILURES = [
   /** The president has not turned meeting notes on. */
   "chapter_off",
-  /** The officer has not said yes on the AI sheet. */
+  /** The officer has not turned Frapp AI on. */
   "consent_required",
   /** The chapter's, the member's or the platform's AI limit was reached. */
   "spend_limit",
@@ -109,7 +109,7 @@ export const MEETING_DRAFT_FAILURE_COPY: Readonly<
   chapter_off:
     "Drafting from notes is turned off for your chapter. The president can turn it on in Chapter settings.",
   consent_required:
-    "Drafting sends your notes to an AI provider, and you haven't agreed to that yet.",
+    "Turn on Frapp AI to draft from your notes.",
   spend_limit:
     "Your chapter has reached its AI limit for now. Your notes are saved, and you can write the minutes yourself below.",
   unavailable:

@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -22,7 +23,6 @@ import {
   BottomSheetTextInput,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import Svg, { Path } from "react-native-svg";
 import {
   useAsk,
   useAskStatus,
@@ -40,7 +40,7 @@ import {
   type AskSource,
   type AskSuggestion,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import {
   useAiReport,
   type AiReportTarget,
@@ -50,18 +50,24 @@ import {
   type ActLink,
   type KeptTargets,
 } from "@/components/ask/ask-proposal";
+import { AskSendGlyph } from "@/components/ask/ask-bar";
 import { AskTurn } from "@/components/ask/ask-turn";
 import { PencilGlyph } from "@/components/control-glyphs";
+import { FrappCrest } from "@/components/frapp-crest";
+import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
 import {
   SheetGrabber,
   SheetScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
+  SheetCloseButton,
   useSheetClose,
+  useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { askSourceOpening } from "@/lib/ask/source-route";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { asRoute, openHref } from "@/lib/href";
 import { selectDownloadUrl } from "@/lib/more/documents";
 import { notificationHref } from "@/lib/notifications/targets";
@@ -82,9 +88,17 @@ import {
  * panel does (`useAsk`), in the same words (`ASK_COPY`).
  *
  * A member asks walking to class, so the whole thing is one sheet, opened
- * from the tab bar's + (`quick-actions-panel.tsx`). ChatGPT's, Claude's and
- * Perplexity's phone apps put the field at the bottom above the keyboard and
- * the thread above it; so does this.
+ * from the Ask Frapp bar above the tab bar (`ask-bar.tsx`, #4702). ChatGPT's,
+ * Claude's and Perplexity's phone apps put the field at the bottom above the
+ * keyboard and the thread above it; so does this.
+ *
+ * **Full height** (#4702; it was 78%). A thread of two or three answers with
+ * their sources did not fit in the shorter sheet, and the bar it opens from
+ * is drawn as this sheet's own field, so a tap should land in a conversation,
+ * not in a drawer over the tab. It is the app's tall sheet
+ * (`useTallSheetProps`): it stops just under the status bar, the grabber
+ * drags it away, and because no scrim is left to tap the header carries a
+ * close X (`components.md` § Surface size).
  *
  * **One conversation, one field** (2026-11-13, owner). There were two sides
  * here, Ask and Do, under a switch, each showing one exchange at a time, and
@@ -128,24 +142,33 @@ import {
  * is a screen: the sheet closes and the screen opens, and the thread is back
  * when the sheet is reopened.
  *
- * **Fixed gold, never the chapter accent** (`components.md` §11): nothing in
- * this file, `ask-turn.tsx` or `ask-proposal.tsx` reaches
- * `useChapterBranding()`.
+ * **What is the member's is the chapter's colour** (Paul, 2026-11-13: default
+ * 2 on #4698 for the crest, then on the first captures "if Ask Frapp is blue,
+ * then so should the button also be blue"): the crest in the header, as on
+ * the bar that opened the sheet, the send button, the member's own bubble
+ * (`ask-turn.tsx`) and Confirm (`ask-proposal.tsx`). Web's send and Confirm
+ * were already the accent. What is Frapp's keeps Ask's fixed gold
+ * (`components.md` §11): the source markers and the number on a source chip.
  *
- * ## Why fixed snap points rather than dynamic sizing
+ * **It is drawn on the page's own background, not a sheet's.** At full height
+ * this is a screen, and Paul did not like a whole screen of the sheet grey
+ * (2026-11-13, on the first captures; his reference is Bevel's assistant,
+ * which talks on the app's own dark background). So the fill is
+ * `surface.background`, and what sits on it takes the page's ladder
+ * (`lib/surfaces.ts`): `surface1` for a suggestion, the field and a card.
+ *
+ * ## Why one fixed detent rather than dynamic sizing
  *
  * The thread grows as an answer streams in, and dynamic sizing would resize
- * the sheet with every line. The drawing caps at 78% (`patterns.md`), so
- * that is the one detent; the thread scrolls, and the header and composer
- * are the scrollable's siblings so one stays at the top and the other pinned
- * above the keyboard. `BottomSheetScrollView` is a direct child of the sheet
- * for the reason `new-task-sheet.tsx` gives.
+ * the sheet with every line. So there is one detent, full height; the thread
+ * scrolls, and the header and composer are the scrollable's siblings so one
+ * stays at the top and the other pinned above the keyboard.
+ * `BottomSheetScrollView` is a direct child of the sheet for the reason
+ * `new-task-sheet.tsx` gives.
  *
  * Whether a member has Ask at all is the host's question (`useAiSurfaces`):
  * with the server's AI off, nothing mounts this.
  */
-
-const ASK_SNAP_POINTS = ["78%"];
 
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK = 80;
@@ -173,8 +196,19 @@ export const AskSheet = forwardRef<
   const closeSheet = useSheetClose(ref);
   const router = useRouter();
   const { tokens } = useFrappTheme();
+  const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
-  const backgroundStyle = useSheetBackgroundStyle();
+  const sheetBackground = useSheetBackgroundStyle();
+  // The sheet's shape with the page's fill: see "drawn on the page's own
+  // background" above.
+  const backgroundStyle = useMemo(
+    () => [
+      sheetBackground,
+      { backgroundColor: tokens.color.surface.background },
+    ],
+    [sheetBackground, tokens],
+  );
+  const tallSheet = useTallSheetProps();
 
   const {
     exchanges,
@@ -330,11 +364,10 @@ export const AskSheet = forwardRef<
       <BottomSheetModal
         ref={ref}
         stackBehavior={SHEET_STACK_BEHAVIOR}
-        // Required: with dynamic sizing on (gorhom v5's default) the sheet
-        // opens at its content height, a header and three rows, and the
-        // composer lays out below the screen edge.
-        enableDynamicSizing={false}
-        snapPoints={ASK_SNAP_POINTS}
+        // Full height, with dynamic sizing off: left on (gorhom v5's
+        // default) the sheet opens at its content height, a header and three
+        // rows, and the composer lays out below the screen edge.
+        {...tallSheet}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
@@ -346,31 +379,32 @@ export const AskSheet = forwardRef<
       >
         <SheetBackToClose onClose={closeSheet} />
         <View style={styles.headerRow}>
-          <Text accessibilityRole="header" style={styles.headerTitle}>
-            {ASK_COPY.name}
-          </Text>
-          {exchanges.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={ASK_COPY.new_conversation}
-              // 36pt drawn against the 44pt minimum.
-              hitSlop={4}
-              onPress={() => {
-                reset();
-                setKept({});
-                setSourceNotice(null);
-              }}
-              style={({ pressed }) => [
-                styles.headerAction,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <PencilGlyph
-                size={18}
-                color={tokens.color.text.mutedForeground}
-              />
-            </Pressable>
-          ) : null}
+          <View style={styles.headerName}>
+            <FrappCrest height={20} color={accent} />
+            <Text accessibilityRole="header" style={styles.headerTitle}>
+              {ASK_COPY.name}
+            </Text>
+          </View>
+          <View style={styles.headerActions}>
+            {exchanges.length > 0 ? (
+              <IconButton
+                label={ASK_COPY.new_conversation}
+                onPress={() => {
+                  reset();
+                  setKept({});
+                  setSourceNotice(null);
+                }}
+              >
+                <PencilGlyph color={tokens.color.text.mutedForeground} />
+              </IconButton>
+            ) : null}
+            {/* At full height no scrim is left to tap: every tall sheet's
+                own close control (`sheet-scaffold.tsx`). */}
+            <SheetCloseButton
+              accessibilityLabel={ASK_COPY.close}
+              onPress={closeSheet}
+            />
+          </View>
         </View>
         <BottomSheetScrollView
           ref={scroller}
@@ -481,11 +515,12 @@ export const AskSheet = forwardRef<
               onPress={() => submit(draft)}
               style={({ pressed }) => [
                 styles.send,
+                { backgroundColor: accentPrimary },
                 !canSend ? styles.sendDisabled : null,
                 pressed && canSend ? styles.pressed : null,
               ]}
             >
-              <SendGlyph color={tokens.color.gold.onHouse} />
+              <AskSendGlyph color={accentOnPrimary} />
             </Pressable>
           </View>
         </View>
@@ -568,26 +603,6 @@ function reportFor(
 
 const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
 
-/**
- * The send arrow, transcribed from `canvas-screens.dc.html` s17 — the visual
- * truth that wins over prose per #937. Colour arrives as a prop for the reason
- * `components/tab-glyphs.tsx` gives.
- */
-function SendGlyph({ color, size = 17 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 17 17">
-      <Path
-        d="M2.5 8.5h9M8 3.5l6 5-6 5"
-        stroke={color}
-        strokeWidth={1.9}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
@@ -606,10 +621,10 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "space-between",
       gap: tokens.spacing.md,
-      paddingLeft: tokens.spacing.lg,
-      paddingRight: tokens.spacing.sm,
-      // The button's height, with or without it, so the title never moves
-      // when the first turn arrives.
+      // The close X sits on the thread's right edge.
+      paddingHorizontal: tokens.spacing.lg,
+      // The buttons' height, so the title never moves when the first turn
+      // brings New conversation in beside the close.
       minHeight: 36,
     },
     headerTitle: {
@@ -617,14 +632,19 @@ function createStyles(tokens: SignetTokens) {
       // per-weight family (`lib/theme.tsx`).
       ...typeRole(tokens.typography.role.body),
       fontFamily: fontFamilyFor(700),
-      color: tokens.color.gold.askText,
+      color: tokens.color.text.foreground,
     },
-    headerAction: {
-      width: 36,
-      height: 36,
+    headerName: {
+      flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
-      borderRadius: tokens.radius.navItem,
+      gap: tokens.spacing.sm,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      // Each icon button's slop reaches 12pt past its box, so the two touch
+      // areas never overlap (`sheet-scaffold.tsx` § headerActions).
+      gap: ICON_BUTTON_HIT_SLOP * 2,
     },
     turn: {
       gap: tokens.spacing.sm,
@@ -676,22 +696,22 @@ function createStyles(tokens: SignetTokens) {
     composerField: {
       flex: 1,
       height: tokens.touch.button,
-      borderRadius: tokens.radius.control,
+      // A capsule, the shape of the bar that opened the sheet.
+      borderRadius: tokens.touch.button / 2,
       borderWidth: 1,
       borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     send: {
       width: 40,
       height: 40,
-      borderRadius: tokens.radius.navItem,
+      borderRadius: 20,
       alignItems: "center",
       justifyContent: "center",
-      // House gold, fixed. Never the chapter accent on this surface.
-      backgroundColor: tokens.color.gold.house,
+      // The fill is the chapter's solid accent, set where it is drawn.
     },
     sendDisabled: {
       opacity: 0.5,

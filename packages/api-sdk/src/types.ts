@@ -559,7 +559,7 @@ export interface paths {
         get?: never;
         /**
          * Reorder the role tiers
-         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.
+         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them; 400 when a tier holding the New Member or Alumni role would go above the Everyone role's tier.
          */
         put: operations["RoleTierController_reorder_v1"];
         post?: never;
@@ -1175,11 +1175,17 @@ export interface paths {
         get: operations["ChatController_getChannel_v1"];
         put?: never;
         post?: never;
-        /** Delete a channel */
+        /**
+         * Delete a channel
+         * @description Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.
+         */
         delete: operations["ChatController_deleteChannel_v1"];
         options?: never;
         head?: never;
-        /** Update a channel */
+        /**
+         * Update a channel
+         * @description Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).
+         */
         patch: operations["ChatController_updateChannel_v1"];
         trace?: never;
     };
@@ -3259,12 +3265,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the AI sheet and the caller’s answer
+         * Get what Meet Frapp AI shows and the caller’s answer
          * @description The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.
          */
         get: operations["AiConsentController_getConsent_v1"];
         /**
-         * Answer the AI sheet
+         * Answer Meet Frapp AI (turn Frapp AI on or off)
          * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
          */
         put: operations["AiConsentController_answerConsent_v1"];
@@ -6181,13 +6187,13 @@ export interface components {
              */
             is_read_only?: boolean;
             /**
-             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
+             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.
              * @enum {string|null}
              */
             default_notification_level?: "all" | "mentions" | "off" | null;
-            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
+            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. */
             is_default?: boolean;
-            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM. */
+            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. */
             activity_excluded?: boolean;
         };
         SetChannelDisplayLockDto: {
@@ -6336,6 +6342,11 @@ export interface components {
             /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
             token: string;
         };
+        MentionPickDto: {
+            /** Format: uuid */
+            user_id: string;
+            label: string;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
@@ -6349,6 +6360,7 @@ export interface components {
             /** Format: uuid */
             thread_root_id?: string;
             metadata?: Record<string, never>;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         ResolveAuthorAvatarsDto: {
             /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
@@ -6356,6 +6368,7 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         SetMessageFlagDto: {
             /**
@@ -8587,6 +8600,8 @@ export interface components {
             check_in_opens_minutes: number;
             /** @description Whether the caller can check in right now: the window is open and check-in would not refuse them. */
             check_in_open: boolean;
+            /** @description Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses. */
+            check_in_needs_location: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
             /**

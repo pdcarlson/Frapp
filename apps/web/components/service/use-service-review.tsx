@@ -2,6 +2,7 @@
 
 import { useReviewServiceEntry } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -37,13 +38,15 @@ export function useServiceReview() {
       });
       return true;
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't approve entry",
-        description: getErrorMessage(
-          error,
+        error,
+        fallback:
           "Only a pending entry someone else submitted can be approved.",
-        ),
-        variant: "destructive",
+        // No Try again here: the callers (the Service queue, the Activity row
+        // and sheet) act on this function's answer, and a retry from the
+        // toast would land with none of them told. Their Approve button is
+        // back and is the retry.
       });
       return false;
     }

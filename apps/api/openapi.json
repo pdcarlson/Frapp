@@ -1731,7 +1731,7 @@
     },
     "/v1/role-tiers/order": {
       "put": {
-        "description": "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.",
+        "description": "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them; 400 when a tier holding the New Member or Alumni role would go above the Everyone role's tier.",
         "operationId": "RoleTierController_reorder_v1",
         "parameters": [],
         "requestBody": {
@@ -3615,6 +3615,7 @@
         ]
       },
       "patch": {
+        "description": "Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).",
         "operationId": "ChatController_updateChannel_v1",
         "parameters": [
           {
@@ -3662,6 +3663,7 @@
         ]
       },
       "delete": {
+        "description": "Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.",
         "operationId": "ChatController_deleteChannel_v1",
         "parameters": [
           {
@@ -11166,7 +11168,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the AI sheet and the caller’s answer",
+        "summary": "Get what Meet Frapp AI shows and the caller’s answer",
         "tags": [
           "AI"
         ]
@@ -11218,7 +11220,7 @@
             "bearer": []
           }
         ],
-        "summary": "Answer the AI sheet",
+        "summary": "Answer Meet Frapp AI (turn Frapp AI on or off)",
         "tags": [
           "AI"
         ]
@@ -20196,15 +20198,15 @@
               "off"
             ],
             "nullable": true,
-            "description": "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`."
+            "description": "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`."
           },
           "is_default": {
             "type": "boolean",
-            "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM."
+            "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none."
           },
           "activity_excluded": {
             "type": "boolean",
-            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM."
+            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business."
           }
         }
       },
@@ -20658,6 +20660,24 @@
           "token"
         ]
       },
+      "MentionPickDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "user_id",
+          "label"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -20710,6 +20730,12 @@
           },
           "metadata": {
             "type": "object"
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
           }
         },
         "required": [
@@ -20740,6 +20766,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 10000
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
           }
         },
         "required": [
@@ -27109,6 +27141,10 @@
             "type": "boolean",
             "description": "Whether the caller can check in right now: the window is open and check-in would not refuse them."
           },
+          "check_in_needs_location": {
+            "type": "boolean",
+            "description": "Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses."
+          },
           "checked_in": {
             "type": "boolean",
             "nullable": true,
@@ -27139,6 +27175,7 @@
           "point_value",
           "check_in_opens_minutes",
           "check_in_open",
+          "check_in_needs_location",
           "checked_in",
           "created_by",
           "created_at",

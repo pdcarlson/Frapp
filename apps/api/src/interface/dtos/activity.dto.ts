@@ -350,6 +350,12 @@ export class ActivityEventDto implements ActivityEvent {
   check_in_open: boolean;
 
   @ApiProperty({
+    description:
+      'Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses.',
+  })
+  check_in_needs_location: boolean;
+
+  @ApiProperty({
     type: Boolean,
     nullable: true,
     description:

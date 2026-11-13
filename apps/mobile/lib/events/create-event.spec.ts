@@ -5,6 +5,7 @@ import {
   repeatDraftFromRule,
 } from "@repo/validation";
 import {
+  calendarHourStart,
   CHECK_IN_OPENS_ERROR,
   defaultEventStart,
   applyEventType,
@@ -406,5 +407,27 @@ describe("a member who can't edit events", () => {
         false,
       ),
     ).not.toMatch(/pts/);
+  });
+});
+
+// #4818: an hour pressed in the Calendar's 3 days or Day grid.
+describe("calendarHourStart", () => {
+  const day = local(6, 0);
+  it("starts a later hour on the hour", () => {
+    expect(calendarHourStart(day, 19, AFTERNOON)).toEqual(local(6, 19));
+    expect(calendarHourStart(local(7, 0), 9, AFTERNOON)).toEqual(local(7, 9));
+  });
+
+  it("starts the hour under way at the next quarter hour, which the form accepts", () => {
+    const start = calendarHourStart(day, 14, AFTERNOON);
+    expect(start).toEqual(local(6, 14, 30));
+    expect(validateNewEvent(draft({ start, end: null }), AFTERNOON).ok).toBe(
+      true,
+    );
+  });
+
+  it("offers nothing for an hour that is over", () => {
+    expect(calendarHourStart(day, 13, AFTERNOON)).toBeNull();
+    expect(calendarHourStart(local(5, 0), 20, AFTERNOON)).toBeNull();
   });
 });

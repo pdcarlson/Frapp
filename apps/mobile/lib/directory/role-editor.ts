@@ -54,8 +54,9 @@ export function filterRoleOptions(
 
 /**
  * The member's role ids with `roleId` turned on or off. Ids the list doesn't
- * know (a deleted role) are kept: the API exempts ids a member already holds,
- * and dropping them here would be a change the officer never made.
+ * know are kept: the API exempts ids a member already holds, and dropping
+ * them here would be a change the officer never made. A role delete takes its
+ * id off its holders (#4547), so one only lingers here from a stale read.
  */
 export function toggleRole(
   heldIds: readonly string[],

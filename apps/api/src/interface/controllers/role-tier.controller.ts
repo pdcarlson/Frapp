@@ -78,7 +78,7 @@ export class RoleTierController {
   @ApiOperation({
     summary: 'Reorder the role tiers',
     description:
-      "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.",
+      "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them; 400 when a tier holding the New Member or Alumni role would go above the Everyone role's tier.",
   })
   @ApiOkResponse({ type: RoleTierDto, isArray: true })
   async reorder(

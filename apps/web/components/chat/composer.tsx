@@ -31,6 +31,7 @@ import {
   buildEditDoc,
   chatMentionExtension,
   chatText,
+  composerMentionPicks,
   chatTextKit,
   createKeymap,
   pasteAsLines,
@@ -62,8 +63,10 @@ import {
   isBetaOffModule,
   readPreviewUpload,
   readSignedUpload,
+  type MentionPick,
 } from "@repo/validation";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
+import { AskComposerButton } from "@/components/ask/ask-host";
 import { GifPickerButton } from "./gif-picker";
 import type { GifResult } from "@repo/hooks";
 import { ComposerPlusCard } from "./composer-plus-card";
@@ -460,6 +463,11 @@ interface ComposerBaseProps {
   onSend: (
     body: string,
     attachments: OutboxAttachment[],
+    /**
+     * The members the `@` list put in the body (#3835), so a picked name
+     * reaches that member or nobody, never another member by name.
+     */
+    mentionPicks: MentionPick[],
   ) => void | Promise<void>;
   /**
    * Send a GIF picked from the GIF button's picker as its own message
@@ -1120,6 +1128,8 @@ export function Composer({
     onUpdate({ editor }) {
       const text = chatText(editor);
       onChangeDraft(text);
+      // Held for the channel, so a remount from the text draft keeps them.
+      composerMentionPicks(channelId, editor);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
       // for four seconds under the message that had just landed.
@@ -1441,7 +1451,8 @@ export function Composer({
     const sentPending = pending;
     const sentReplyId = replyTo?.id ?? null;
     const sentUploads = uploadsStartedRef.current;
-    const sent = (async () => onSend(text, sentPending))();
+    const sentPicks = composerMentionPicks(channelId, editor);
+    const sent = (async () => onSend(text, sentPending, sentPicks))();
     editor.commands.clearContent(true);
     setPending([]);
     void sent.catch((error: unknown) => {
@@ -1479,6 +1490,7 @@ export function Composer({
       });
     });
   }, [
+    channelId,
     editor,
     onChangeDraft,
     onRestoreReply,
@@ -1883,18 +1895,26 @@ export function Composer({
   // above, which needs it too.)
   if (!resolvedCanPost) {
     return (
-      <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        {isAuditLog ? (
-          <>{AUDIT_LOG_COMPOSER_NOTE}</>
-        ) : isReadOnly ? (
-          <>This channel is read-only for your role.</>
-        ) : (
-          <>
-            Alumni can read this channel but not post. Alumni may post in{" "}
-            <code className="font-mono">#alumni</code> and direct messages.
-          </>
-        )}
-      </p>
+      <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+        <p className="min-w-0 flex-1 text-caption text-muted-foreground">
+          {isAuditLog ? (
+            <>{AUDIT_LOG_COMPOSER_NOTE}</>
+          ) : isReadOnly ? (
+            <>This channel is read-only for your role.</>
+          ) : (
+            <>
+              Alumni can read this channel but not post. Alumni may post in{" "}
+              <code className="font-mono">#alumni</code> and direct messages.
+            </>
+          )}
+        </p>
+        {/*
+          A member who can't post here can still ask about what was posted.
+          The negative margin keeps the row the height of its one line of
+          text, so the button arriving moves nothing.
+        */}
+        <AskComposerButton className="-my-2 pointer-coarse:-my-3.5" />
+      </div>
     );
   }
 
@@ -2060,6 +2080,13 @@ export function Composer({
               />
             ) : null}
             <ComposerHelp />
+            {/*
+              Ask Frapp, the one highlighted control on the row (#4702, Paul
+              2026-11-13: "a nice big highlighted one" beside GIF and the
+              help mark). It opens the conversation over the thread. Drawn
+              only for a member who has Ask; `ask-host.tsx` decides.
+            */}
+            <AskComposerButton className="ml-1" />
           </div>
           {/*
             A round arrow, the mobile composer's send (principles.md P6.5):

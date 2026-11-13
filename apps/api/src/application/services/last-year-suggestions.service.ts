@@ -219,22 +219,24 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
     const modules = chapter.enabled_modules ?? null;
     const moduleOn = (key: string) =>
       modules === null || isModuleEnabled(modules, key);
-    const [mayAddEvents, mayManageTasks] = await Promise.all([
+    // The same permissions the suggestions ask for (#4549): a run raises
+    // nothing its own member couldn't see.
+    const [mayPlanEvents, mayManageTasks] = await Promise.all([
       moduleOn('events') &&
         this.rbac.memberHasAnyPermission(chapterId, actor, [
-          SystemPermissions.EVENTS_CREATE,
+          SystemPermissions.EVENTS_UPDATE,
         ]),
       moduleOn('tasks') &&
         this.rbac.memberHasAnyPermission(chapterId, actor, [
           SystemPermissions.TASKS_MANAGE,
         ]),
     ]);
-    if (!mayAddEvents && !mayManageTasks) return { proposed: 0, withdrawn: 0 };
+    if (!mayPlanEvents && !mayManageTasks) return { proposed: 0, withdrawn: 0 };
 
     const now = new Date();
     const windows = lastYearWindows(now);
     const [lastYearEvents, thisYearEvents, allTasks] = await Promise.all([
-      mayAddEvents
+      mayPlanEvents
         ? this.events.findByChapter(chapterId, actor, {
             endsAfter: windows.lastYear.from.toISOString(),
             startsBefore: windows.lastYear.to.toISOString(),

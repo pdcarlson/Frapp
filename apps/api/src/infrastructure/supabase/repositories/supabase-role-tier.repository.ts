@@ -7,6 +7,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
 import {
   PG_CHECK_VIOLATION,
   PG_FOREIGN_KEY_VIOLATION,
+  PG_INVALID_PARAMETER_VALUE,
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
 
@@ -74,7 +75,7 @@ export class SupabaseRoleTierRepository implements IRoleTierRepository {
     chapterId: string,
     ids: string[],
     fixedIds: string[],
-  ): Promise<RoleTier[] | 'stale'> {
+  ): Promise<RoleTier[] | 'stale' | 'below_everyone'> {
     const { data, error } = await this.supabase.rpc('reorder_role_tiers', {
       p_chapter_id: chapterId,
       p_ids: ids,
@@ -82,6 +83,7 @@ export class SupabaseRoleTierRepository implements IRoleTierRepository {
     });
     if (error) {
       if (error.code === PG_CHECK_VIOLATION) return 'stale';
+      if (error.code === PG_INVALID_PARAMETER_VALUE) return 'below_everyone';
       throw new SupabaseQueryError(error);
     }
     return [...(data ?? [])].sort((a, b) => a.position - b.position);

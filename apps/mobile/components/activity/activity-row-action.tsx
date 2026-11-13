@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, AppState } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { statusOf } from "@repo/api-sdk";
 import {
   activityRowAction,
   TASK_ACTION_LABELS,
+  useCheckIn,
   useConfirmTask,
   useReviewServiceEntry,
   type ActivityRow,
   type ActivityRowAction,
 } from "@repo/hooks";
 import { useConnection } from "@/lib/connection/use-connection";
+import { alertFailure } from "@/lib/failure-alert";
+import {
+  CHECK_IN_LOCATION_DENIED_COPY,
+  needsLocationRefusal,
+  needsScannedCode,
+} from "@/lib/events/check-in-outcome";
+import { latLngOf, requireForegroundFix } from "@/lib/location";
 import {
   rowActionFailure,
   type ActivityRowActionState,
@@ -19,13 +28,23 @@ import { ActivityListRow, type ActivityRowActionControl } from "./activity-row";
 const LABELS: Record<ActivityRowAction, string> = {
   confirm: TASK_ACTION_LABELS.confirm,
   approve: "Approve",
+  "check-in": "Check in",
 };
 
 /** What the button says once its write has landed, and a screen reader hears. */
 const DONE: Record<ActivityRowAction, string> = {
   confirm: TASK_ACTION_LABELS.confirmed,
   approve: "Approved",
+  "check-in": "Checked in",
 };
+
+/**
+ * A row check-in answered 409: the member already has an attendance row,
+ * a check-in or an officer's mark, so it says no more than that (web's
+ * `useSelfCheckIn` says the same, "Already on the list").
+ */
+export const ALREADY_ON_LIST_COPY =
+  "You're already on the attendance list for this event.";
 
 /** What the screen hands its rows, or `null` while those writes are refused. */
 export interface ActivityRowActions {
@@ -38,11 +57,23 @@ export interface ActivityRowActions {
 }
 
 /**
- * The rows' one-press asks (#4437): Confirm a completed task or Approve
- * service hours from the row, through what the sheet calls, in the sheet's
- * words: `useConfirmTask` with the task card's failure line, and
- * `useReviewServiceEntry` with the hours sheet's (`rowActionFailure`). Web's
- * twin is `apps/web/components/activity/activity-row-action.tsx`.
+ * The rows' one-press asks (#4437): Confirm a completed task, Approve
+ * service hours or Check in to an event from the row, through what the sheet
+ * calls, in the sheet's words: `useConfirmTask` with the task card's failure
+ * line, `useReviewServiceEntry` with the hours sheet's, and `useCheckIn` with
+ * the chat event card's (`rowActionFailure`). Web's twin is
+ * `apps/web/components/activity/activity-row-action.tsx`.
+ *
+ * Check in is on the row of any event the member can check in to now, a
+ * zoned one included (#4427): the phone can supply the location web can't,
+ * so the press asks for it, as the chat event card does, only when the read
+ * says the event has a zone. Otherwise it sends the plain check-in, and if
+ * the server answers that the event needs a location (a zone drawn since the
+ * read, or a read from before the field) it asks then and sends once more.
+ * A 409 is a row the member already has, which may be an officer's mark, so
+ * the alert says only that and the screen re-reads. Once an officer's screen
+ * has shown the code the server wants it (#4532), and the alert offers s18
+ * to point the camera at it or type it.
  *
  * Held by the screen, not by each row, so where an item's write stands
  * outlives the row drawing it. A row drawn again (Show all, a chip) still
@@ -81,6 +112,8 @@ export function useActivityRowActions({
 } {
   const confirmTask = useConfirmTask();
   const reviewEntry = useReviewServiceEntry();
+  const checkIn = useCheckIn();
+  const router = useRouter();
   const { writeBlockedReason } = useConnection();
   const [states, setStates] = useState<
     ReadonlyMap<string, ActivityRowActionState>
@@ -115,7 +148,33 @@ export function useActivityRowActions({
         body: { status: "APPROVED" },
       });
     }
+    if (action === "check-in" && row.kind === "event") {
+      return checkInFromRow(row.event);
+    }
     return null;
+  };
+
+  const checkInFromRow = async (
+    event: Extract<ActivityRow, { kind: "event" }>["event"],
+  ) => {
+    // Coordinates only, as the card sends them: an API from before #4532
+    // refuses an `accuracy_meters` it doesn't declare.
+    const send = async (withLocation: boolean) => {
+      const position = withLocation
+        ? latLngOf(await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY))
+        : {};
+      await checkIn.mutateAsync({ eventId: event.id, ...position });
+    };
+    const zoned = event.check_in_needs_location === true;
+    try {
+      await send(zoned);
+    } catch (error) {
+      // A zone drawn since the read, or a read from before the field: the
+      // server says the event needs a location, which the phone can send,
+      // so ask once now rather than show a refusal written for web.
+      if (zoned || !needsLocationRefusal(error)) throw error;
+      await send(true);
+    }
   };
 
   const run = async (row: ActivityRow, action: ActivityRowAction) => {
@@ -134,7 +193,38 @@ export function useActivityRowActions({
       setState(key, "idle");
       const failure = rowActionFailure(action, error);
       if (failure.gate) setRefused(true);
-      Alert.alert(row.title, failure.text);
+      if (action === "check-in" && statusOf(error) === 409) {
+        // A row already exists, which may be an officer's excused or
+        // absent mark rather than a check-in, so say only that and re-read:
+        // the row then shows which.
+        Alert.alert(row.title, ALREADY_ON_LIST_COPY);
+        onActed(row);
+        return;
+      }
+      if (
+        action === "check-in" &&
+        row.kind === "event" &&
+        needsScannedCode(error)
+      ) {
+        const eventId = row.event.id;
+        Alert.alert(row.title, failure.text, [
+          { text: "Not now", style: "cancel" },
+          {
+            text: "Enter code",
+            onPress: () =>
+              router.push({ pathname: "/check-in", params: { eventId } }),
+          },
+        ]);
+        return;
+      }
+      alertFailure({
+        title: row.title,
+        error,
+        message: failure.text,
+        retry: () => {
+          void run(row, action);
+        },
+      });
       return;
     }
     inFlight.current.delete(key);
@@ -158,7 +248,8 @@ export function useActivityRowActions({
 
 /**
  * An Activity row, with its ask as a button when it is one press with
- * nothing to choose (`activityRowAction`: Confirm, Approve; #4437), as web's
+ * nothing to choose (`activityRowAction`: Confirm, Approve, Check in;
+ * #4437, #4427), as web's
  * rows carry them (#4428). Any other row, or every row while those writes
  * are refused (`actions` is `null`), is the plain row.
  */
@@ -167,6 +258,7 @@ export function ActivityRowItem({
   isFirst,
   actions,
   onCard = false,
+  solo = false,
   onPress,
 }: {
   row: ActivityRow;
@@ -174,9 +266,14 @@ export function ActivityRowItem({
   actions: ActivityRowActions | null;
   /** The row sits in a card (the To review card): `ActivityListRow`'s. */
   onCard?: boolean;
+  /** The week card's Next row: `ActivityListRow`'s. */
+  solo?: boolean;
   onPress: () => void;
 }) {
-  const action = actions ? activityRowAction(row) : null;
+  // The phone can supply a location, so a zoned event checks in here too.
+  const action = actions
+    ? activityRowAction(row, { canSupplyLocation: true })
+    : null;
   const control: ActivityRowActionControl | null =
     action && actions ? rowActionControl(row, action, actions) : null;
   return (
@@ -185,6 +282,7 @@ export function ActivityRowItem({
       isFirst={isFirst}
       action={control}
       onCard={onCard}
+      solo={solo}
       onPress={onPress}
     />
   );

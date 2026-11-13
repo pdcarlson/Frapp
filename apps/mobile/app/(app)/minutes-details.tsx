@@ -35,7 +35,7 @@ import {
   RecordingRow,
   RecordingRowPlaceholder,
 } from "@/components/minutes/recording-row";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";

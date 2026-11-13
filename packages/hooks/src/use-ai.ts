@@ -1,12 +1,13 @@
 "use client";
 
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { codeOf, throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
- * The AI switches and the member's AI sheet (#4308, `spec/behavior/ai.md` §
- * Consent), shared by web and mobile.
+ * The AI switches and the member's Frapp AI answer (#4308, #4790,
+ * `spec/behavior/ai.md` § Consent), shared by web and mobile.
  *
  * **Whether this server has AI at all** is read from the same calls: with
  * `AI_ENABLED` off, every AI route answers 404 `ai.not_available`, which
@@ -173,4 +174,133 @@ export function useUpdateAiChapterSettings() {
       void queryClient.invalidateQueries({ queryKey: aiSettingsKey(chapterId) });
     },
   });
+}
+
+/**
+ * True when the caller is the president of a chapter whose AI switches have
+ * never been set: nobody has turned one on or off (`updated_at` is null).
+ * That president's Continue on Meet Frapp AI turns the chapter's switches on
+ * too, so a chapter that was just created has its AI working from the start
+ * (Paul, 2026-11-13: "get these features going from the start"). A chapter
+ * whose switches someone already set is left as it is.
+ */
+export function chapterAiNeverSet(
+  settings: AiChapterSettings | null | undefined,
+): boolean {
+  return (
+    !!settings &&
+    settings.can_change &&
+    settings.updated_at === null &&
+    !settings.ask &&
+    !settings.meeting_notes &&
+    !settings.chat_source
+  );
+}
+
+/**
+ * The two answers on the Meet Frapp AI screen (#4790), for every place that
+ * shows it: onboarding, the one ask on next open, an AI entry point, and
+ * Settings.
+ *
+ * - `turnOn` records the member's Yes on the server's current version, and,
+ *   for a president whose chapter never had its switches set
+ *   ({@link chapterAiNeverSet}), turns the chapter's three switches on.
+ *   Resolves `false` when the server has no AI. Rejects when a save fails,
+ *   so the screen can say so and stay.
+ * - `notNow` records a No, so the screen isn't put in front of them again by
+ *   itself. They can turn it on in Settings or from an AI feature.
+ */
+export function useFrappAiChoice(options?: {
+  /**
+   * False when the active chapter may not be the one the member is in the
+   * middle of (chapter setup before the new chapter is active): Continue
+   * then never touches a chapter's switches.
+   */
+  includeChapter?: boolean;
+}) {
+  const consent = useAiConsent();
+  const available = consent.data !== null && consent.data !== undefined;
+  const includeChapter = options?.includeChapter ?? true;
+  const settings = useAiChapterSettings({
+    enabled: available && includeChapter,
+  });
+  const answer = useAnswerAiConsent();
+  const updateSettings = useUpdateAiChapterSettings();
+  const forChapter = includeChapter && chapterAiNeverSet(settings.data);
+  const { refetch } = consent;
+  const { mutateAsync: answerAsync } = answer;
+  const { mutateAsync: updateSettingsAsync } = updateSettings;
+
+  const readState = useCallback(async (): Promise<AiConsentState | null> => {
+    if (consent.data !== undefined) return consent.data;
+    const read = await refetch();
+    if (read.error) throw read.error;
+    return read.data ?? null;
+  }, [consent.data, refetch]);
+
+  const turnOn = useCallback(async (): Promise<boolean> => {
+    const state = await readState();
+    if (!state) return false;
+    if (state.answer !== "yes") {
+      await answerAsync({ sheet_version: state.sheet.version, answer: "yes" });
+    }
+    if (forChapter) {
+      // The member's yes is saved by now, so a failure here is not a failed
+      // Continue: Frapp AI is on for them, and the president can still turn
+      // the chapter's switches on in Chapter settings. Reporting it as one
+      // would hold them on the screen with their yes already counted.
+      try {
+        await updateSettingsAsync({
+          ask: true,
+          meeting_notes: true,
+          chat_source: true,
+        });
+      } catch {
+        // Left for Chapter settings, as above.
+      }
+    }
+    return true;
+  }, [answerAsync, forChapter, readState, updateSettingsAsync]);
+
+  const notNow = useCallback(async (): Promise<void> => {
+    const state = await readState();
+    if (!state) return;
+    await answerAsync({ sheet_version: state.sheet.version, answer: "no" });
+  }, [answerAsync, readState]);
+
+  return {
+    /** The member's standing, `null` with AI off, `undefined` while read. */
+    consent: consent.data,
+    /** The read failed and nothing is cached: treat AI as unknown. */
+    consentFailed: consent.isError && consent.data === undefined,
+    /** The standing now, read again when nothing is cached yet. */
+    readConsent: readState,
+    providers: consent.data?.sheet.providers.map((p) => p.name) ?? [],
+    forChapter,
+    /**
+     * Whether `forChapter` is known: the chapter's switches have been read,
+     * or the read failed, or this screen never touches a chapter. A step
+     * that waits on it never shows the member's wording and then the
+     * chapter's under their finger.
+     */
+    chapterSettled:
+      !includeChapter ||
+      !available ||
+      settings.data !== undefined ||
+      settings.isError,
+    turnOn,
+    notNow,
+    pending: answer.isPending || updateSettings.isPending,
+  };
+}
+
+/**
+ * Whether Meet Frapp AI should be put in front of the member by itself: the
+ * server has AI and they have never answered on its current version. A
+ * member who chose Not now has answered; they are not asked again unprompted.
+ */
+export function shouldMeetFrappAi(
+  consent: AiConsentState | null | undefined,
+): boolean {
+  return !!consent && consent.answer === null;
 }

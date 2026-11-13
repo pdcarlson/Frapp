@@ -505,6 +505,20 @@ export interface Database {
         Returns: EventExcuse[];
       };
       /**
+       * `20261113164050` (#4547). Deletes a non-system role, takes it off
+       * every holder and gives Everyone to a holder left with no
+       * member-access role, in one transaction. Null when the chapter has no
+       * such role; raises `insufficient_privilege` for a system role.
+       */
+      delete_role: {
+        Args: { p_chapter_id: string; p_role_id: string };
+        Returns: {
+          role: Role;
+          stripped_member_ids: string[];
+          given_everyone_member_ids: string[];
+        } | null;
+      };
+      /**
        * `20261106170000`. An import's rows being imported, added up per
        * Discord category, a thread under its parent's category.
        */
@@ -888,7 +902,9 @@ export interface Database {
       /**
        * `20261112001000` (#4071) — `returns setof role_tiers`. Raises
        * `check_violation` when `p_ids` is not exactly the chapter's tiers or
-       * its order no longer starts with `p_fixed_ids`.
+       * its order no longer starts with `p_fixed_ids`; since `20261113164050`
+       * (#4548), `invalid_parameter_value` when the order puts a New Member or
+       * Alumni tier above the Everyone tier.
        */
       reorder_role_tiers: {
         Args: { p_chapter_id: string; p_ids: string[]; p_fixed_ids: string[] };

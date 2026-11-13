@@ -61,6 +61,7 @@ import {
 } from "@repo/validation";
 import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
 import { useAiSurfaces } from "@/lib/ai/availability";
+import type { SendOptions } from "@/lib/chat/use-chat-channel";
 import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -324,12 +325,14 @@ export function MessageThreadScreen({
   // failure stays there with Retry and Delete (rule 6), the line over the
   // composer saying why. So the composer clears on the tap.
   const sendReply = useCallback(
-    (content: string) => {
+    (content: string, options?: SendOptions) => {
       const body = content.trim();
       if (!body) return Promise.resolve(false);
       setDraft("");
       setSendError(null);
-      void send(body).then(({ error }) => setSendError(error));
+      void send(body, undefined, options?.mentionPicks ?? undefined).then(
+        ({ error }) => setSendError(error),
+      );
       return Promise.resolve(true);
     },
     [send],
@@ -914,6 +917,7 @@ export function MessageThreadScreen({
             value={staging.value}
             onChangeText={onChangeText}
             onSend={staging.submit}
+            onPickMember={staging.addMentionPick}
             canSend={
               !!viewerId &&
               !writeBlockedReason &&

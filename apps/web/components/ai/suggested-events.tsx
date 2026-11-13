@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
  *
  * The same rows the Tasks board's Suggested list reads
  * (`suggested-tasks.tsx`), from the same hooks: the server lists a suggestion
- * only for an officer who could add the event and can open last year's, so
+ * only for an officer who can edit events and open last year's (#4549), so
  * nobody else sees the section, and with nothing waiting it draws nothing.
  *
  * A row says what happened and that it isn't on the calendar, and asks to be

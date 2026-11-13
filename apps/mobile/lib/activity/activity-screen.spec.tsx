@@ -147,10 +147,20 @@ const chapter = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   confirm: vi.fn(),
   review: vi.fn(),
+  checkIn: vi.fn(),
+  fix: vi.fn(),
   writeBlockedReason: null as string | null,
 }));
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: writes.writeBlockedReason }),
+}));
+// A zoned event's row check-in asks for the phone's position (#4427).
+vi.mock("@/lib/location", () => ({
+  requireForegroundFix: writes.fix,
+  latLngOf: (fix: { lat: number; lng: number }) => ({
+    lat: fix.lat,
+    lng: fix.lng,
+  }),
 }));
 
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
@@ -212,6 +222,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useConfirmTask: () => ({ mutateAsync: writes.confirm }),
   useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
+  useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
@@ -258,6 +269,7 @@ import {
   ActivityListRow,
 } from "@/components/activity/activity-row";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { OFFLINE_COPY } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
@@ -386,6 +398,8 @@ describe("Activity screen (#3897)", () => {
     chapter.isPending = false;
     writes.confirm.mockReset().mockResolvedValue(undefined);
     writes.review.mockReset().mockResolvedValue(undefined);
+    writes.checkIn.mockReset().mockResolvedValue(undefined);
+    writes.fix.mockReset();
     writes.writeBlockedReason = null;
     nudge.ask = false;
     nudge.data = null;
@@ -500,12 +514,16 @@ describe("Activity screen (#3897)", () => {
       const card = tree.root.findByType(WeekCard);
       expect(card.props.next.title).toBe("Chapter");
       expect(drawnText(card)).toContain("Happening now");
-      const asks = tree.root.findAllByType(ActivityAsk);
-      expect(asks.filter((ask) => ask.props.filled)).toHaveLength(1);
-      expect(card.findByType(ActivityAsk).props).toMatchObject({
-        label: "Check in",
-        filled: true,
-      });
+      // Check in is one press (#4427), so the Next row's filled ask is the
+      // button itself, and still the only filled one on the screen.
+      const filled = [
+        ...tree.root.findAllByType(ActivityAsk),
+        ...tree.root.findAllByType(ActivityAskButton),
+      ].filter((ask) => ask.props.filled);
+      expect(filled).toHaveLength(1);
+      const button = card.findByType(ActivityAskButton);
+      expect(button.props.filled).toBe(true);
+      expect(button.props.action.label).toBe("Check in");
       // The task it displaced is the list's now.
       expect(hasSection(tree, "To do")).toBe(true);
     });
@@ -841,6 +859,26 @@ describe("Activity screen (#3897)", () => {
         expanded: true,
       });
       expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(3);
+    });
+
+    it("stays open when a re-read takes the queue past three", () => {
+      activity.value = { ...activity.value, data: queue(3) };
+      const tree = render();
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      // Two more finish while the officer works through it: the card they
+      // are in doesn't close under them. Only a press changes it.
+      activity.value = { ...activity.value, data: queue(5) };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      expect(
+        rowLabels(tree).filter((label) => label.startsWith("Chore")),
+      ).toHaveLength(5);
     });
 
     it("keeps a long queue behind its count until pressed, five at a time", () => {
@@ -1583,16 +1621,42 @@ describe("Activity screen (#3897)", () => {
 
     it("says any other refusal in the sheet's words, naming the item, and can be pressed again", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      writes.review.mockRejectedValueOnce(new Error("boom"));
+      writes.review.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
-      expect(alert).toHaveBeenCalledWith(
-        "Food bank",
-        "Only a pending entry someone else submitted can be approved.",
-      );
+      // No answer came back, so asking again may work: Try again beside
+      // Not now, and it sends the same approval.
+      expect(alert).toHaveBeenCalledWith("Food bank", OFFLINE_COPY, [
+        expect.objectContaining({ text: "Not now", style: "cancel" }),
+        expect.objectContaining({ text: "Try again" }),
+      ]);
       expect(button(tree, "Food bank").props.disabled).toBe(false);
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = writes.review.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(sent + 1);
+      alert.mockRestore();
+    });
+
+    it("offers no Try again for a refusal asking again can't change", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.review.mockRejectedValueOnce({
+        statusCode: 409,
+        error: "Conflict",
+        message: "x",
+      });
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0]).toHaveLength(2);
       alert.mockRestore();
     });
 
@@ -1662,7 +1726,7 @@ describe("Activity screen (#3897)", () => {
       expect(sheet.props?.rowActionState).toBe("done");
     });
 
-    it("leaves Vote and Check in as the row's ask, which opens the sheet", () => {
+    it("leaves Vote as the row's ask, which opens the sheet", () => {
       activity.value = {
         ...activity.value,
         data: read({
@@ -1676,19 +1740,170 @@ describe("Activity screen (#3897)", () => {
               },
             ],
           },
-          coming_up: [eventIn(1, { check_in_open: true })],
         }),
       };
       const tree = render();
-      for (const [label, ask] of [
-        ["Formal theme", "Vote"],
-        ["Chapter", "Check in"],
-      ] as const) {
-        expect(row(tree, label).findAllByType(ActivityAskButton)).toHaveLength(
-          0,
-        );
-        expect(row(tree, label).findByType(ActivityAsk).props.label).toBe(ask);
-      }
+      expect(
+        row(tree, "Formal theme").findAllByType(ActivityAskButton),
+      ).toHaveLength(0);
+      expect(
+        row(tree, "Formal theme").findByType(ActivityAsk).props.label,
+      ).toBe("Vote");
+    });
+
+    const openEvent = (id: string, name: string, zoned: boolean) => ({
+      id,
+      name,
+      start_time: new Date(Date.now() + 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 7_200_000).toISOString(),
+      location: "Great Hall",
+      attendance: "required",
+      point_value: 10,
+      check_in_opens_minutes: 15,
+      check_in_open: true,
+      check_in_needs_location: zoned,
+      checked_in: false,
+    });
+
+    it("checks in from the row, asking for the phone's position only for a zoned event (#4427)", async () => {
+      writes.checkIn.mockResolvedValue({});
+      writes.fix.mockResolvedValue({ lat: 1, lng: 2, accuracy: 5 });
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            openEvent("ev-plain", "Chapter", false),
+            openEvent("ev-zoned", "Formal", true),
+          ],
+        }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.fix).not.toHaveBeenCalled();
+      expect(writes.checkIn).toHaveBeenLastCalledWith({ eventId: "ev-plain" });
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.fix).toHaveBeenCalledTimes(1);
+      expect(writes.checkIn).toHaveBeenLastCalledWith({
+        eventId: "ev-zoned",
+        lat: 1,
+        lng: 2,
+      });
+      expect(button(tree, "Formal").props.disabled).toBe(true);
+    });
+
+    it("says only that a row exists on a 409, and re-reads so the row shows which (#4427)", async () => {
+      // A 409 may be an officer's excused or absent mark, not a check-in.
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.checkIn.mockRejectedValue({ status: 409 });
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            { ...openEvent("ev-plain", "Chapter", false), unread: true },
+          ],
+        }),
+      };
+      links.markRead.mockClear();
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledWith(
+        "Chapter",
+        "You're already on the attendance list for this event.",
+      );
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "event", item_id: "ev-plain" },
+      ]);
+      alert.mockRestore();
+    });
+
+    it("asks for the position and sends again when the server says the event now needs one", async () => {
+      // A zone drawn since the read, or a read from before the field.
+      const { CHECK_IN_NEEDS_LOCATION_MESSAGES } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValueOnce({
+        status: 400,
+        message: CHECK_IN_NEEDS_LOCATION_MESSAGES[0],
+      });
+      writes.fix.mockResolvedValue({ lat: 3, lng: 4, accuracy: 5 });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.checkIn.mock.calls).toEqual([
+        [{ eventId: "ev-plain" }],
+        [{ eventId: "ev-plain", lat: 3, lng: 4 }],
+      ]);
+      expect(button(tree, "Chapter").props.disabled).toBe(true);
+    });
+
+    it("says a refused location in the card's words, and leaves the button to try again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_LOCATION_DENIED_COPY } =
+        await import("@/lib/events/check-in-outcome");
+      const { MemberFacingError } = await import("@repo/hooks/error-copy");
+      // What `requireForegroundFix` throws when permission is refused.
+      writes.fix.mockRejectedValue(
+        new MemberFacingError(CHECK_IN_LOCATION_DENIED_COPY),
+      );
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-zoned", "Formal", true)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.checkIn).not.toHaveBeenCalled();
+      expect(alert).toHaveBeenCalledWith(
+        "Formal",
+        CHECK_IN_LOCATION_DENIED_COPY,
+      );
+      expect(button(tree, "Formal").props.disabled).toBe(false);
+      alert.mockRestore();
+    });
+
+    it("offers Enter code, opening s18 on the event, once an officer's screen wants the code", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_NEEDS_CODE_MESSAGE } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValue({
+        status: 403,
+        message: CHECK_IN_NEEDS_CODE_MESSAGE,
+      });
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      const buttons = alert.mock.calls.at(-1)![2] as {
+        text: string;
+        onPress?: () => void;
+      }[];
+      expect(buttons.map((each) => each.text)).toEqual([
+        "Not now",
+        "Enter code",
+      ]);
+      buttons[1]!.onPress!();
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/check-in",
+        params: { eventId: "ev-plain" },
+      });
+      alert.mockRestore();
     });
 
     it("is offered to a screen reader as the row's named action", async () => {
@@ -1942,7 +2157,9 @@ describe("Activity screen (#3897)", () => {
 
     it("says a failed write with the platform alert, and offers no Undo", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      links.hidden.mockRejectedValueOnce(new Error("nope"));
+      links.hidden.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         sheet.props!.linkActions.hide(linkRow());
@@ -1950,8 +2167,21 @@ describe("Activity screen (#3897)", () => {
       expect(alert).toHaveBeenCalledWith(
         "Couldn't hide it",
         expect.any(String),
+        [
+          expect.objectContaining({ text: "Not now" }),
+          expect.objectContaining({ text: "Try again" }),
+        ],
       );
       expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+      // Try again sends the same hide, and this time it lands with its Undo.
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = links.hidden.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(links.hidden).toHaveBeenCalledTimes(sent + 1);
+      expect(links.hidden).toHaveBeenLastCalledWith("l1");
+      expect(tree.root.findAllByType(UndoBar)).toHaveLength(1);
     });
 
     it("opens the link in the in-app browser", () => {

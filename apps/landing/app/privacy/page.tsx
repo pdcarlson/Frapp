@@ -33,18 +33,18 @@ const sections = [
     ],
   },
   {
-    heading: "3. AI Features",
-    paragraphs: [
-      "Frapp has optional AI features: answers to questions about your chapter, summaries of channels you can read, minutes drafted from an officer's notes, and short notes on your Activity page about your own tasks. They run only when your chapter has them on and you have agreed to them, and you can turn them off for yourself at any time in the app's settings.",
-      "When one runs, Frapp sends the text it needs to an AI provider to produce the result: your question, chapter records you are already allowed to open, an officer's meeting notes, or the details of your own task and how long similar tasks took before. Messages you wrote in chat are read only if you agreed to that and your chapter turned it on. Our AI providers are Anthropic and Google, and AssemblyAI to transcribe a meeting recording an officer uploads. They process what they are sent only to return the result, and may hold a request briefly to check for abuse. Member data is never sent to a free tier or to a consumer AI app.",
-      "Frapp does not keep the text of AI questions and answers, except for an exchange you choose to report (kept 30 days) and a time-limited diagnostics period a chapter's president can turn on during the beta (kept 14 days), both encrypted. The text of a note on your Activity page is deleted when the note closes.",
-    ],
-  },
-  {
-    heading: "4. Service Providers",
+    heading: "3. Service Providers",
     paragraphs: [
       "Frapp uses trusted infrastructure providers such as Supabase (data/auth/storage), Render and Vercel (hosting), Stripe (billing), Expo (push delivery), Resend (sign-in and invite email delivery), Sentry (crash and error diagnostics), and PostHog (product and marketing analytics) to deliver core functionality.",
       "On the marketing site, Sentry receives anonymous crash reports and PostHog receives anonymous page views and call-to-action clicks. Session replay is not recorded in production. These providers process data only as needed to operate the service under contractual protections.",
+    ],
+  },
+  {
+    heading: "4. Frapp AI",
+    paragraphs: [
+      "Frapp AI features, such as asking about your chapter, channel summaries and drafting meeting minutes, work with Anthropic, Google and AssemblyAI. You turn Frapp AI on for your account when you sign up or later in Settings, and your chapter's president turns each feature on for the chapter. When a feature runs, Frapp sends it what it needs: your question; your chapter's documents, announcements, events, tasks and posted minutes; roster details (name, role, points, dues status and attendance, never your phone number, email or address); messages in chapter channels from members who have Frapp AI on, never direct messages; and, for meeting features, an officer's notes and a meeting's recording and transcript. AssemblyAI receives only meeting recordings, to transcribe them.",
+      "These companies process it only to return a result to Frapp, and Frapp's agreements with them do not allow them to use it to train their models. A provider may hold a request for a short time to check for abuse, on its own terms. Frapp does not keep the text of your questions or of AI answers, except an answer you report to us, kept encrypted for 30 days, and, during the beta, the questions and answers of one chapter whose president turns on diagnostics, kept encrypted for 14 days. A meeting recording is deleted once it is transcribed. A short note Frapp AI writes on your Activity page about one of your own tasks is deleted when the note closes. Frapp keeps a search index of your chapter's records, and of channel messages from members who have Frapp AI on, so answers can point to their sources.",
+      "You can turn Frapp AI off any time in Settings. Your channel messages then stop being read and leave the index within a day, and anything an AI feature kept that quotes you is deleted. Your chapter's own records, such as documents, announcements, roster details and minutes that name you, can still be used while your president has a feature on.",
     ],
   },
   {

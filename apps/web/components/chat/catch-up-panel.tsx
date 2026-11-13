@@ -27,7 +27,7 @@ import {
   type ChatCatchUpPoint,
   type ChatCatchUpRange,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { PanelBody } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
@@ -47,11 +47,13 @@ import { cn } from "@/lib/utils";
  * Discord's summaries sit above the channel as a strip to jump from. This
  * takes both halves: a strip above the timeline offers it when a channel
  * opens with many new messages (`CatchUpOffer`), and the summary itself is a
- * panel on the right edge, in Ask's place and at Ask's width, so the member
- * reads a line, opens its message, and the summary is still there.
+ * panel on the right edge, 440px wide (the place and width Ask's panel had
+ * until #4702 moved Ask over the chat), so the member reads a line, opens
+ * its message, and the summary is still there.
  *
- * **Not a dialog**, for `ask-panel.tsx`'s reasons: nothing dims, the channel
- * stays live, and from `lg` up the shell moves over to make room
+ * **Not a dialog**: nothing dims, the channel stays live, a Radix dialog
+ * would take Escape from the composer beside it, and from `lg` up the shell
+ * moves over to make room
  * (`CATCH_UP_OPEN_ATTRIBUTE`). Below `lg` it covers the page and opening a
  * line closes it.
  *

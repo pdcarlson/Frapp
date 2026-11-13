@@ -19,8 +19,9 @@ import {
   formatAiAnswerDate,
   type AskSuggestion,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskTurn } from "@/components/ask/ask-answer";
+import { FrappCrest } from "@/components/ask/frapp-crest";
 import {
   AskCardEditsContext,
   type AskCardEditsStore,
@@ -32,34 +33,49 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 /**
- * Ask Frapp on web (#450, #451, #718): a panel on the right edge that holds
- * one conversation with Frapp. The member types in one field; Frapp answers
- * from the chapter's sources, each claim marked with the source it came
- * from, or shows a card for something they asked to have done.
+ * Ask Frapp on web (#450, #451, #718): one conversation with Frapp, in a
+ * card that opens over the chat. The member types in one field; Frapp
+ * answers from the chapter's sources, each claim marked with the source it
+ * came from, or shows a card for something they asked to have done.
  *
- * **Beside the page, not over it.** Slack AI and Notion AI both answer in a
- * side panel that leaves the workspace usable, because the next thing a
- * member does with an answer is open what it cites. So this is not a dialog:
- * nothing dims, the page stays live, and from `lg` up the shell moves over
- * to make room (`ASK_OPEN_ATTRIBUTE`, read by `dashboard-shell.tsx`), so the
- * top bar and the page a source opens are never under the panel. Following a
- * source leaves the conversation where it was. Below `lg` there is no room
- * for both, so the panel covers the page and following a source closes it;
- * the conversation is there when the panel reopens.
+ * **Over the chat, from the composer** (#4702, Paul 2026-11-13). It was a
+ * 440px panel docked to the right edge of the window, opened from a pill in
+ * the top bar, and the shell moved over to make room. Paul: "I don't want it
+ * to be that side card", and Ask belongs "in the channels, and that's where
+ * we want everything to live anyway". So the conversation rises from the
+ * chat composer, where its button is (`ask-host.tsx`), and covers the lower
+ * part of the thread at the composer's own width. Nothing dims and nothing
+ * moves: the channel header, the messages above the card and the composer
+ * under it stay live, as they do behind the composer's + card
+ * (`composer-plus-card.tsx`). Following a source opens its page beside the
+ * chat and leaves the conversation where it was, with two exceptions. A
+ * cited chat message is in the thread the card covers, so following one
+ * closes the card (the conversation is kept, and the button reopens it). And
+ * in a window too narrow for a page beside chat, the page takes chat's place
+ * and the card waits with it, as below.
  *
- * It closes by its X, by the pill, or by Escape pressed inside it. It is its
- * own small `aside`, not the Radix sheet: a Radix dialog takes Escape from
- * the whole document while it is the top layer, which would close the panel
- * (and drop an answer in flight) when a member dismissed a mention list in
- * the chat composer beside it. It is narrower than a form panel
- * (`panel.tsx`'s 576px) because it shares the screen.
+ * **The app's own background, not a raised surface** (Paul, 2026-11-13: the
+ * popover grey was "way too different from the rest of the app"). The card
+ * is `bg-background`, the colour of the thread it sits over, and is told
+ * from it by its border and the shadow above it.
+ *
+ * It is drawn into the slot chat provides (`AskSlot`) and owned by
+ * `AskHost` above the whole dashboard, so the thread is the same thread in
+ * every channel, and is still there after a tool page covered the chat. With
+ * no slot on screen there is nothing to draw it over, and it waits.
+ *
+ * It closes by its X, by the composer's button, or by Escape pressed inside
+ * it. It is its own small `section`, not a Radix popover or dialog: either
+ * would take Escape and outside clicks from the whole document, which would
+ * close the conversation (and drop an answer in flight) when a member
+ * dismissed a mention list or clicked into the composer beside it.
  *
  * **One conversation, one field** (2026-11-13, owner; `spec/behavior/ai.md`
  * § One conversation). There were two sides here, Ask and Do, under a
  * switch, and each showed one exchange at a time. ChatGPT, Claude, Slack's
  * assistant and Notion AI all take a question and a request in the same
  * field and let the assistant work out which it is, and all keep the thread
- * on screen so a follow-up can lean on what came before. So the panel is a
+ * on screen so a follow-up can lean on what came before. So the card is a
  * thread: each turn stays, the turns before a question are sent with it,
  * and a member who may have Frapp act gets a card to confirm when what they
  * typed asks for something to be done. A member who may not gets answers
@@ -67,20 +83,20 @@ import { cn } from "@/lib/utils";
  * the thread.
  *
  * The thread is this sitting's: it survives a close and reopen, and is gone
- * on reload. A question still being answered when the panel closes is
+ * on reload. A question still being answered when the card closes is
  * dropped; the turns before it stay.
  *
  * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
- * just be like some presets"). Before the first turn the panel offers up to
+ * just be like some presets"). Before the first turn the card offers up to
  * three questions and one request the server built from what this member's
  * account holds now: their next event, their open tasks, minutes they can
  * read, their points. There is no fixed list; a member with nothing to ask
  * about sees the two lines of the opening and the field. They are read when
- * the panel opens and fade in under the opening words, where nothing sits
+ * the card opens and fade in under the opening words, where nothing sits
  * below them to move. A tapped question is sent as a suggestion, never as
  * words the member typed (`useAsk`'s `suggested`).
  *
- * **Consent is asked at the first question**, not when the panel opens
+ * **Consent is asked at the first question**, not when the card opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
  * first, so the sheet opens over the words it is about. The server checks
  * again.
@@ -90,27 +106,32 @@ import { cn } from "@/lib/utils";
  * until when, where the member reads it as they type, and only then does a
  * question carry `saved_notice_shown`: the server keeps nothing from a
  * client that did not show it. The status is read as soon as the entry
- * exists, and again each time the panel opens, so the line is in place when
- * the panel slides in and is true at the moment of asking.
+ * exists, and again each time the card opens, so the line is in place when
+ * the card comes up and is true at the moment of asking.
  */
-/** On `<html>` while the panel is open: the shell makes room from `lg` up. */
-const ASK_OPEN_ATTRIBUTE = "data-ask-open";
-
-/** Tailwind's `lg`: from here the page and the panel fit side by side. */
-const BESIDE_PAGE_QUERY = "(min-width: 1024px)";
+/**
+ * The entry on screen (`AskComposerButton` carries the attribute). The
+ * composer is remounted for each channel, so the button that opened the
+ * conversation is often not the one there when it closes; the card looks the
+ * live one up to return focus to it.
+ */
+const ASK_ENTRY_SELECTOR = "[data-ask-entry]";
 
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK_PX = 80;
 
-export function AskPanel({
+export function AskCard({
   open,
   onOpenChange,
   returnFocus,
+  container,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The control that opened it, which takes focus back when it closes. */
   returnFocus?: RefObject<HTMLElement | null>;
+  /** Where it is drawn (`AskSlot`), or `null` while chat is not on screen. */
+  container: HTMLElement | null;
 }) {
   const {
     exchanges,
@@ -131,7 +152,7 @@ export function AskPanel({
   const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
   const canAct = actions !== null && actions.length > 0;
   const { suggestions } = useAskSuggestions({ enabled: open });
-  // What was changed on waiting cards, kept while the panel is closed.
+  // What was changed on waiting cards, kept while the card is closed.
   const [cardEdits] = useState<AskCardEditsStore>(() => new Map());
   const [draft, setDraft] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
@@ -145,7 +166,7 @@ export function AskPanel({
   const saving = savedUntil !== null;
   const last = exchanges.at(-1);
 
-  // A question still being answered is dropped with the panel, however it
+  // A question still being answered is dropped with the card, however it
   // was closed; the turns before it are there when it reopens.
   useEffect(() => {
     if (!open && working) stop();
@@ -156,29 +177,59 @@ export function AskPanel({
     if (open) void refetchStatus({ cancelRefetch: false });
   }, [open, refetchStatus]);
 
+  // On screen only where chat gave it a place to be.
+  const shown = open && container !== null;
+
+  // Focus follows the member's own open and close, not the card coming and
+  // going with chat: a card left open while a tool page covered the chat is
+  // drawn again on the way back, and must not pull the cursor into its field
+  // (on a phone, that raises the keyboard).
+  const focusOnShow = useRef(false);
   useEffect(() => {
     if (!open) return;
-    const root = document.documentElement;
+    focusOnShow.current = true;
     const opener = returnFocus?.current ?? null;
-    root.setAttribute(ASK_OPEN_ATTRIBUTE, "");
-    field.current?.focus({ preventScroll: true });
     return () => {
-      root.removeAttribute(ASK_OPEN_ATTRIBUTE);
+      focusOnShow.current = false;
       // Only when focus would otherwise fall to the body: a member who
-      // closed the panel from the page keeps their place there.
-      if (opener?.isConnected && !document.activeElement?.closest("main")) {
-        opener.focus({ preventScroll: true });
-      }
+      // closed the card from the page keeps their place there.
+      if (document.activeElement && document.activeElement !== document.body)
+        return;
+      // The button that opened it, or the one on screen now: the composer is
+      // remounted for each channel, so after a change of channel the opener
+      // is a detached node.
+      const entry = opener?.isConnected
+        ? opener
+        : document.querySelector<HTMLElement>(ASK_ENTRY_SELECTOR);
+      entry?.focus({ preventScroll: true });
     };
   }, [open, returnFocus]);
+  useEffect(() => {
+    if (!shown || !focusOnShow.current) return;
+    focusOnShow.current = false;
+    field.current?.focus({ preventScroll: true });
+  }, [shown]);
 
-  // A new turn, or the panel opening on a thread, shows the newest words.
+  // The field grows with what is typed. `field-sizing: content` does that
+  // where the browser has it; elsewhere the height is set from the text, or a
+  // long question would be read one line at a time.
+  useEffect(() => {
+    const element = field.current;
+    if (!shown || !element) return;
+    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content"))
+      return;
+    element.style.height = "auto";
+    if (element.scrollHeight > 0)
+      element.style.height = `${element.scrollHeight}px`;
+  }, [shown, draft]);
+
+  // A new turn, or the card opening on a thread, shows the newest words.
   useEffect(() => {
     const element = scroller.current;
-    if (!open || !element) return;
+    if (!shown || !element) return;
     element.scrollTop = element.scrollHeight;
     following.current = true;
-  }, [open, last?.id]);
+  }, [shown, last?.id]);
 
   // The newest turn growing keeps its last line in view, unless the member
   // scrolled up to read something else.
@@ -196,7 +247,7 @@ export function AskPanel({
   const hasTurn = last !== undefined;
   useEffect(() => {
     const element = thread.current;
-    if (!open || !hasTurn || !element || typeof ResizeObserver === "undefined")
+    if (!shown || !hasTurn || !element || typeof ResizeObserver === "undefined")
       return;
     const observer = new ResizeObserver(() => {
       const view = scroller.current;
@@ -204,14 +255,10 @@ export function AskPanel({
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [open, hasTurn]);
+  }, [shown, hasTurn]);
 
   function close() {
     onOpenChange(false);
-  }
-
-  function leave() {
-    if (!window.matchMedia?.(BESIDE_PAGE_QUERY).matches) close();
   }
 
   const options = (): AskOptions => ({
@@ -239,15 +286,18 @@ export function AskPanel({
     });
   }
 
-  if (!open) return consentDialog;
+  if (!shown) return consentDialog;
   return (
     <>
       {createPortal(
-        <aside
+        <section
           aria-label={ASK_COPY.name}
-          className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-border bg-popover text-popover-foreground animate-in slide-in-from-right duration-300 sm:w-[440px] sm:rounded-l-2xl sm:border-l"
+          // Hung from the slot's top edge, which is the composer's: it grows
+          // upward over the thread as the conversation does, to a height that
+          // leaves the channel's header and the composer in view.
+          className="absolute inset-x-3 bottom-2 flex max-h-[min(40rem,calc(100dvh-15rem))] min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-[0_-16px_48px_-12px_rgb(0_0_0/0.7)] animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none"
           onKeyDown={(event) => {
-            // Escape inside the panel only, and only when nothing inside
+            // Escape inside the card only, and only when nothing inside
             // (the consent sheet, a menu) took it first.
             if (event.key !== "Escape" || event.defaultPrevented) return;
             event.preventDefault();
@@ -255,8 +305,9 @@ export function AskPanel({
             close();
           }}
         >
-          <div className="flex min-h-14 shrink-0 items-center gap-1 py-2.5 pl-5 pr-3">
-            <h2 className="min-w-0 flex-1 text-lg font-bold leading-[26px]">
+          <div className="flex min-h-12 shrink-0 items-center gap-1 py-1.5 pl-4 pr-2">
+            <FrappCrest className="h-[18px] w-[15px] shrink-0 text-primary" />
+            <h2 className="ml-1.5 min-w-0 flex-1 text-base font-bold leading-6">
               {ASK_COPY.name}
             </h2>
             {exchanges.length > 0 ? (
@@ -290,19 +341,20 @@ export function AskPanel({
                   element.clientHeight <
                 FOLLOW_SLACK_PX;
             }}
-            className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3"
+            className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1"
           >
             <AskCardEditsContext.Provider value={cardEdits}>
-              <div ref={thread} className="flex flex-col gap-6">
+              {/* A column for reading: the card is as wide as the chat. */}
+              <div ref={thread} className="flex max-w-2xl flex-col gap-6">
                 {exchanges.length > 0 ? (
                   exchanges.map((exchange) => (
                     <AskTurn
                       key={exchange.id}
                       exchange={exchange}
                       busy={working && exchange.phase !== "working"}
+                      onFollowMessage={close}
                       onRetry={() => void retry(exchange.id, options())}
                       onAnswerConsent={() => void retry(exchange.id, options())}
-                      onFollowSource={leave}
                       onProposal={(proposal) =>
                         setProposal(exchange.id, proposal)
                       }
@@ -322,7 +374,7 @@ export function AskPanel({
             </AskCardEditsContext.Provider>
           </div>
           <form
-            className="shrink-0 border-t border-border px-5 py-4"
+            className="shrink-0 border-t border-border px-4 py-3"
             onSubmit={(event) => {
               event.preventDefault();
               submit(draft);
@@ -348,11 +400,11 @@ export function AskPanel({
                     submit(draft);
                   }
                 }}
-                rows={2}
+                rows={1}
                 maxLength={ASK_QUESTION_MAX_LENGTH}
                 placeholder={ASK_COPY.placeholder}
                 aria-label={ASK_COPY.placeholder}
-                className="min-h-[64px] resize-none"
+                className="max-h-40 min-h-10 resize-none [field-sizing:content]"
               />
               <Button
                 type="submit"
@@ -366,8 +418,8 @@ export function AskPanel({
               </Button>
             </div>
           </form>
-        </aside>,
-        document.body,
+        </section>,
+        container,
       )}
       {consentDialog}
     </>

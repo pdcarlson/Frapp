@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import type {
   AiSuggestionClaim,
@@ -145,7 +149,7 @@ interface FakeEvent {
   name: string;
   start_time: string;
   end_time: string;
-  /** Left out of a member's list unless they may update events. */
+  /** Left out of a member's list unless they are in the Exec group. */
   execOnly?: boolean;
   created_by?: string | null;
 }
@@ -192,6 +196,20 @@ const aTask = (
   ...extra,
 });
 
+/**
+ * Who plans the calendar (#4549): a chair the chapter gave "Edit events" but
+ * who is not in the Exec group, and a member as #3709 starts one, who can add
+ * an event but doesn't plan the chapter's.
+ */
+/** Not a real permission: stands for being in a role-gated event's group. */
+const EXEC_GROUP = 'test:exec-group';
+
+const CALENDAR_PERMISSIONS: Record<string, string[]> = {
+  [PRESIDENT]: ['*'],
+  [SOCIAL_CHAIR]: ['members:view', 'events:create', 'events:update'],
+  [MEMBER]: ['members:view', 'events:create'],
+};
+
 function build(
   options: {
     events?: FakeEvent[];
@@ -209,11 +227,7 @@ function build(
     tasks: options.tasks ?? [],
     askOn: options.askOn ?? true,
   };
-  const permissions = options.permissions ?? {
-    [PRESIDENT]: ['*'],
-    [SOCIAL_CHAIR]: ['members:view', 'events:create'],
-    [MEMBER]: ['members:view'],
-  };
+  const permissions = options.permissions ?? CALENDAR_PERMISSIONS;
   const holds = (userId: string, wanted: readonly string[]) => {
     const held = permissions[userId] ?? [];
     return held.includes('*') || wanted.some((p) => held.includes(p));
@@ -228,7 +242,7 @@ function build(
     ),
   };
   const visible = (event: FakeEvent, viewerId?: string) =>
-    !viewerId || !event.execOnly || holds(viewerId, ['events:update']);
+    !viewerId || !event.execOnly || holds(viewerId, [EXEC_GROUP]);
   const events = {
     findByChapter: jest.fn(
       async (
@@ -417,7 +431,7 @@ describe('LastYearSuggestionsService', () => {
         source_id: LAST_PHIL,
         run_id: RUN,
         requested_for: PRESIDENT,
-        required_permission: 'events:create',
+        required_permission: 'events:update',
         quote: 'Philanthropy Week',
         payload: {
           name: 'Philanthropy Week',
@@ -678,6 +692,13 @@ describe('LastYearSuggestionsService', () => {
       expect(eventsOff.rows.rows.map((row) => row.kind)).toEqual(['task']);
     });
 
+    it('reads no events for a member who can add one but not edit events (#4549)', async () => {
+      const { run, rows, events } = build({ events: LAST_YEAR.slice(0, 1) });
+      await expect(run(MEMBER)).resolves.toEqual({ proposed: 0, withdrawn: 0 });
+      expect(events.findByChapter).not.toHaveBeenCalled();
+      expect(rows.rows).toEqual([]);
+    });
+
     it('fails without reading anything when the president has turned Ask off', async () => {
       const { run, events, tasks } = build({ events: LAST_YEAR, askOn: false });
       await expect(run()).rejects.toMatchObject({
@@ -691,8 +712,10 @@ describe('LastYearSuggestionsService', () => {
   });
 
   describe('who sees and decides one', () => {
-    it('lists an event suggestion for an officer who can add events, and not for a member', async () => {
-      const { run, suggestions } = build({ events: LAST_YEAR.slice(0, 1) });
+    it('lists an event suggestion for an officer who can edit events, and not for a member who can only add one (#4549)', async () => {
+      const { run, suggestions } = build({
+        events: LAST_YEAR.slice(0, 1),
+      });
       await run();
       const chair = await suggestions.listForUser(CHAPTER, SOCIAL_CHAIR, {
         enabledModules: {},
@@ -702,6 +725,24 @@ describe('LastYearSuggestionsService', () => {
         enabledModules: {},
       });
       expect(member.items).toEqual([]);
+    });
+
+    it('refuses a member who can only add events, so the planners’ list is theirs to clear (#4549)', async () => {
+      const { run, rows, suggestions } = build({
+        events: LAST_YEAR.slice(0, 1),
+      });
+      await run();
+      const id = rows.rows[0].id;
+      await expect(
+        suggestions.dismiss(CHAPTER, MEMBER, id, 'already_doing'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        suggestions.accept(CHAPTER, MEMBER, id, { enabledModules: {} }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(rows.rows[0].status).toBe('pending');
+
+      await suggestions.dismiss(CHAPTER, SOCIAL_CHAIR, id, 'already_doing');
+      expect(rows.rows[0].status).toBe('dismissed');
     });
 
     it('accepting an event records the event the officer added, and makes none', async () => {

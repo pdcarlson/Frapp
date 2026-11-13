@@ -5,7 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
-  useAiConsent,
+  useFrappAiChoice,
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
@@ -16,13 +16,14 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  AI_CONSENT_COPY,
+  FRAPP_AI_COPY,
+  joinNames,
   chatChapterLevelLabel,
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { chatDensityLabel } from "@repo/chat-core/density";
-import { AiConsentSheet } from "@/components/ai/ai-consent-sheet";
+import { MeetFrappAiSheet } from "@/components/ai/meet-frapp-ai";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_YOU } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
@@ -200,12 +201,15 @@ export default function PreferencesScreen() {
   // only stated off a confirmed read: "None" from a failed one would claim
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
-  const aiConsentSheetRef = useRef<BottomSheetModal>(null);
-  const aiConsent = useAiConsent();
+  // Frapp AI (#4790): on opens Meet Frapp AI, whose Continue is the yes;
+  // off is immediate.
+  const meetAiSheetRef = useRef<BottomSheetModal>(null);
+  const frappAi = useFrappAiChoice();
+  const [aiOffFailed, setAiOffFailed] = useState(false);
   // The nudge card on Activity (#4781): the member's own switch, offered
-  // only once they have said yes to AI, since the card is an AI feature.
+  // only once they have Frapp AI on, since the card is an AI feature.
   const aiYes =
-    aiConsent.data?.answer === "yes" && !aiConsent.data.sheet_changed;
+    frappAi.consent?.answer === "yes" && !frappAi.consent.sheet_changed;
   const nudgeSettings = useMemberNudgeSettings({ enabled: aiYes });
   const setNudgesEnabled = useSetMemberNudgesEnabled();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
@@ -460,20 +464,29 @@ export default function PreferencesScreen() {
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
         {/* Only where the server has AI (`AI_ENABLED`): with it off this
-            row, like every AI entry, isn't drawn. Opens the same sheet the
-            first AI action does, to change the answer any time. */}
-        {aiConsent.data ? (
+            row, like every AI entry, isn't drawn. On opens Meet Frapp AI, so
+            the yes is given where the companies are named; off is at once. */}
+        {frappAi.consent ? (
           <ListRow
-            label={AI_CONSENT_COPY.settingsSwitch}
-            value={
-              aiConsent.data.sheet_changed || !aiConsent.data.answer
-                ? "Not answered"
-                : aiConsent.data.answer === "yes"
-                  ? "Yes"
-                  : "No"
+            label={FRAPP_AI_COPY.settingsSwitch}
+            description={FRAPP_AI_COPY.settingsCaption(
+              joinNames(frappAi.providers),
+            )}
+            trailing={
+              <Toggle
+                value={frappAi.consent.answer === "yes"}
+                disabled={frappAi.pending}
+                onValueChange={(next) => {
+                  setAiOffFailed(false);
+                  if (next) {
+                    meetAiSheetRef.current?.present();
+                    return;
+                  }
+                  frappAi.notNow().catch(() => setAiOffFailed(true));
+                }}
+                accessibilityLabel={FRAPP_AI_COPY.settingsSwitch}
+              />
             }
-            accessibilityHint="Shows what AI features use, and lets you change your answer."
-            onPress={() => aiConsentSheetRef.current?.present()}
           />
         ) : null}
         {aiYes && nudgeSettings.data ? (
@@ -541,15 +554,18 @@ export default function PreferencesScreen() {
           onPress={handleDeleteAccount}
         />
       </ListSection>
+      {aiOffFailed ? (
+        <Text style={styles.footnoteError}>
+          {FRAPP_AI_COPY.turnOffFailed}. Try again.
+        </Text>
+      ) : null}
       {linkFailed ? (
         <Text style={styles.footnoteError}>
           {linkFailed} couldn&apos;t be opened. Try again in a moment.
         </Text>
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
-      {aiConsent.data ? (
-        <AiConsentSheet ref={aiConsentSheetRef} consent={aiConsent.data} />
-      ) : null}
+      {frappAi.consent ? <MeetFrappAiSheet ref={meetAiSheetRef} /> : null}
       <ChatDensitySheet ref={chatDensitySheetRef} />
       <ChatLevelSheet
         ref={chatLevelSheetRef}

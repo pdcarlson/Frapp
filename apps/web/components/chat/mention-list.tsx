@@ -37,6 +37,12 @@ export interface MentionSuggestionItem {
   roleKind?: string;
   /** A member row's initials paint (#3860); `null` on a role row. */
   avatarTint?: MemberAvatarTint | null;
+  /**
+   * The picked member's `users.id`, on a member row only (#3835). Picking
+   * spreads the row onto the mention node's attributes, so this lands on the
+   * node and rides the send as a pick (`editorMentionPicks`).
+   */
+  memberId?: string | null;
 }
 
 export interface MentionListHandle {

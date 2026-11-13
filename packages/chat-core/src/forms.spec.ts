@@ -12,6 +12,9 @@ import {
   readFormPayload,
   saveFormResponse,
   type FormPayload,
+  formAnswersWithEdits,
+  formOpenRead,
+  formOpenReadNote,
 } from "./forms";
 import type { FrappApiClient } from "./chat-client";
 import type { ChatMessage } from "./types";
@@ -108,7 +111,9 @@ describe("forms (#3926 step 3)", () => {
     expect(formDeadlineLine(card, NOW)).toBeNull();
     expect(
       formDeadlineLine({ ...card, closes_at: "2026-11-14T12:00:00Z" }, NOW),
-    ).toMatch(/^Closes (today|tomorrow|[A-Z][a-z]+day|[A-Z][a-z]{2} \d+) at \d/);
+    ).toMatch(
+      /^Closes (today|tomorrow|[A-Z][a-z]+day|[A-Z][a-z]{2} \d+) at \d/,
+    );
     expect(formQuestionCountLine(card)).toBe("3 questions");
   });
 
@@ -185,5 +190,105 @@ describe("forms (#3926 step 3)", () => {
     await expect(saveFormResponse(refusing, "m1", {})).rejects.toThrow(
       "This form is closed",
     );
+  });
+});
+
+describe("formOpenRead (#4752)", () => {
+  const state = (
+    status: "pending" | "error" | "success",
+    fetchStatus: "fetching" | "paused" | "idle",
+    failureCount: number,
+    isFetchedAfterMount: boolean,
+  ) => ({ status, fetchStatus, failureCount, isFetchedAfterMount });
+  const live = { online: true, gaveUp: false };
+
+  it("holds until a read since the page opened lands", () => {
+    expect(formOpenRead(state("success", "fetching", 0, false), live)).toBe(
+      "reading",
+    );
+    expect(formOpenRead(state("success", "idle", 0, true), live)).toBe("read");
+    // A background refetch after the read landed doesn't hold it again.
+    expect(formOpenRead(state("success", "fetching", 0, true), live)).toBe(
+      "read",
+    );
+  });
+
+  it("doesn't wait on a read the network or a failure holds up", () => {
+    // Offline, whether the read is paused or (the phone's offlineFirst) its
+    // first attempt hangs.
+    for (const fetchStatus of ["paused", "fetching"] as const) {
+      expect(
+        formOpenRead(state("success", fetchStatus, 0, false), {
+          online: false,
+          gaveUp: false,
+        }),
+      ).toBe("offline");
+    }
+    expect(formOpenRead(state("success", "fetching", 1, false), live)).toBe(
+      "unchecked",
+    );
+    // A failed read is a data-or-error update, but not a read that landed.
+    expect(formOpenRead(state("error", "idle", 4, true), live)).toBe(
+      "unchecked",
+    );
+    // Paused while online (the phone waiting for focus) isn't "offline".
+    expect(formOpenRead(state("success", "paused", 1, false), live)).toBe(
+      "unchecked",
+    );
+  });
+
+  it("stays unchecked once it gave up, through a read tried again", () => {
+    const gaveUp = { online: true, gaveUp: true };
+    // Resumed after a pause, or refetched on focus after a failure: the
+    // failure count starts again at 0.
+    expect(formOpenRead(state("success", "fetching", 0, false), gaveUp)).toBe(
+      "unchecked",
+    );
+    expect(formOpenRead(state("error", "fetching", 0, true), gaveUp)).toBe(
+      "unchecked",
+    );
+    expect(formOpenRead(state("success", "idle", 0, true), gaveUp)).toBe(
+      "read",
+    );
+  });
+});
+
+describe("formOpenReadNote (#4752)", () => {
+  const at = (loaded: boolean, closed = false, pending = !loaded) => ({
+    loaded,
+    closed,
+    pending,
+  });
+
+  it("says why only while the answers may be behind", () => {
+    expect(formOpenReadNote("read", at(true))).toBeNull();
+    expect(formOpenReadNote("reading", at(true))).toBeNull();
+    expect(formOpenReadNote("offline", at(true))).toContain("You're offline");
+    expect(formOpenReadNote("offline", at(false))).toContain("load when");
+    expect(formOpenReadNote("unchecked", at(true))).toContain(
+      "Couldn't check for newer answers",
+    );
+    expect(formOpenReadNote("unchecked", at(false))).toContain("Trying again");
+    // Out of retries with nothing loaded: the page's error and Try again say it.
+    expect(formOpenReadNote("unchecked", at(false, false, false))).toBeNull();
+  });
+
+  it("says nothing on a closed form once its answers are loaded", () => {
+    expect(formOpenReadNote("offline", at(true, true))).toBeNull();
+    expect(formOpenReadNote("offline", at(false, true))).toContain("load when");
+  });
+});
+
+describe("formAnswersWithEdits (#4752)", () => {
+  it("lays the member's edits over the saved answers, per question", () => {
+    expect(
+      formAnswersWithEdits(
+        { room: "double", notes: "x", diet: ["veg"] },
+        { notes: "y", diet: null },
+      ),
+    ).toEqual({ room: "double", notes: "y" });
+    expect(formAnswersWithEdits(null, { room: "single" })).toEqual({
+      room: "single",
+    });
   });
 });

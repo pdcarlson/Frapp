@@ -3,17 +3,21 @@ import { AppState, Linking } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { onlineManager } from "@tanstack/react-query";
 import * as Updates from "expo-updates";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { isMeetingRecorderBusy } from "@/lib/minutes/recorder/session";
 import { addNotificationResponseListener } from "@/lib/notifications/push";
 import { createResumeUpdates, type UpdatesPort } from "./resume-updates";
 
 /**
- * The screen a reload shows for the moment it takes: the splash screen's own
- * near-black (`app.json` `expo-splash-screen.backgroundColor`), with no
- * spinner, fading out, so it reads as the app opening rather than a load.
+ * The screen a reload shows for the moment it takes: the app's own
+ * background, with no spinner, fading out, so it reads as the app opening
+ * rather than a load. Read from the token, so the next ladder change can't
+ * leave it behind (#4392). The native splash (`app.json`
+ * `expo-splash-screen.backgroundColor`) still says #0A0A0A until the next
+ * `expo.version` bump can carry it (#4392).
  */
 const RELOAD_SCREEN = {
-  backgroundColor: "#0A0A0A",
+  backgroundColor: signetDarkTokens.color.surface.background,
   spinner: { enabled: false },
   fade: true,
 } as const;

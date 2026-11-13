@@ -504,7 +504,7 @@ export function useUpdateChannel() {
         is_default?: boolean;
         /**
          * Leave out of Activity (#3897): its sign-up links reach no one's
-         * Activity page. Refused as `true` on a DM or group DM.
+         * Activity page.
          */
         activity_excluded?: boolean;
       };
