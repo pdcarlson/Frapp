@@ -95,6 +95,28 @@ export function useInvites(options?: {
 }
 
 /**
+ * The ids of the roles the caller may invite someone into
+ * (`GET /v1/invites/roles`, #4546): ranked at or below them, holding only
+ * permissions they hold, never the President's. Web's role picker offers only
+ * these. Undefined until it loads, or if it fails; a picker then offers every
+ * role and the API still refuses the rest.
+ */
+export function useInvitableRoleIds(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["invites", chapterId, "roles"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/invites/roles");
+      if (error) throw error;
+      return data.role_ids;
+    },
+    staleTime: 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
  * `role` is optional on every create route (#422). Omitting it makes the
  * API resolve the chapter's configured default invite role, then the seeded
  * Member role. Typed optional here so a caller can actually express "use the

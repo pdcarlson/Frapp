@@ -2425,6 +2425,7 @@
         ]
       },
       "get": {
+        "description": "Only invites whose role the caller could invite someone into now (#4546): an invite ranked above the caller is left out, and still works.",
         "operationId": "InviteController_list_v1",
         "parameters": [],
         "responses": {
@@ -2677,8 +2678,47 @@
         ]
       }
     },
+    "/v1/invites/roles": {
+      "get": {
+        "description": "Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.",
+        "operationId": "InviteController_listInvitableRoles_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitableRolesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The roles the caller may invite someone into",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/{id}": {
       "delete": {
+        "description": "Not found (404) for an invite ranked above the caller, which the list leaves out (#4546).",
         "operationId": "InviteController_revoke_v1",
         "parameters": [
           {
@@ -19338,6 +19378,21 @@
           "role",
           "expires_at",
           "token"
+        ]
+      },
+      "InvitableRolesDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "description": "Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
         ]
       },
       "RegisterPushTokenDto": {

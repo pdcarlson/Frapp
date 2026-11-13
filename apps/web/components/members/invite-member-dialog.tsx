@@ -5,6 +5,7 @@ import { AlertTriangle, Link2, Mail, RotateCw, Trash2 } from "lucide-react";
 import {
   useActiveChapterId,
   useEmailInvites,
+  useInvitableRoleIds,
   useInvites,
   useOrgConfig,
   useRevokeInvite,
@@ -82,6 +83,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
+  const invitableRolesQuery = useInvitableRoleIds();
   const emailInvites = useEmailInvites();
   const revokeInviteMutation = useRevokeInvite();
   // `POST /invites` and `POST /invites/email` are `@FreeTier` +
@@ -108,17 +110,23 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   );
   const everyoneRoleId = everyoneRole?.id;
   // A role holding `*` is left out: an invite can't grant it (the API answers
-  // 403); it changes hands only through Transfer presidency.
-  const roleOptions = useMemo(
-    () =>
-      toRoleOptions(rolesQuery.data, "keep", { dropLocked: true }).sort(
+  // 403); it changes hands only through Transfer presidency. So is a role
+  // ranked above the sender, or carrying a permission they lack (#4546, Paul
+  // 2026-11-13): a chair invites a peer or a brother, never an officer. Until
+  // that list loads, or if it fails, every role is offered and the API still
+  // refuses the rest.
+  const invitableRoleIds = invitableRolesQuery.data;
+  const roleOptions = useMemo(() => {
+    const allowed = invitableRoleIds ? new Set(invitableRoleIds) : null;
+    return toRoleOptions(rolesQuery.data, "keep", { dropLocked: true })
+      .filter((role) => !allowed || allowed.has(role.id))
+      .sort(
         (first, second) =>
           Number(second.id === everyoneRoleId) -
             Number(first.id === everyoneRoleId) ||
           first.name.localeCompare(second.name),
-      ),
-    [rolesQuery.data, everyoneRoleId],
-  );
+      );
+  }, [rolesQuery.data, everyoneRoleId, invitableRoleIds]);
 
   // The Everyone role's current name: by `system_key` (`parseChapterRoles`),
   // then by the seeded Member name. `undefined` when neither exists.
@@ -213,7 +221,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * panel's own ways out (the back arrow, Escape; the sheet's X and overlay
    * where it falls back to one), so none of them skips the reset.
    *
-   * Opening re-reads invites and roles: the list is mounted with the page and
+   * Opening re-reads invites and roles (and which roles the sender may
+   * invite into): the list is mounted with the page and
    * cached for a minute, so an invite another officer revoked, or someone
    * joining, would otherwise not show here.
    */
@@ -223,6 +232,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     if (!activeChapterId) return;
     void invitesQuery.refetch();
     void rolesQuery.refetch();
+    void invitableRolesQuery.refetch();
   }
 
   function handleOpenChange(next: boolean) {

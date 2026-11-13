@@ -1688,7 +1688,7 @@ describe('InviteService', () => {
     ];
     mockInviteRepo.findByChapter.mockResolvedValue(invites);
 
-    const result = await service.findByChapter('ch-1');
+    const result = await service.findByChapter('ch-1', 'user-1');
 
     expect(mockInviteRepo.findByChapter).toHaveBeenCalledWith('ch-1');
     // Who sent it and the chapter stay server-side; the status is derived.
@@ -2208,7 +2208,7 @@ describe('InviteService', () => {
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
 
-      await service.revoke('inv-1', 'ch-1');
+      await service.revoke('inv-1', 'ch-1', 'user-1');
 
       expect(mockInviteRepo.findById).toHaveBeenCalledWith('inv-1');
       expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('inv-1');
@@ -2229,10 +2229,10 @@ describe('InviteService', () => {
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
 
-      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+      await expect(service.revoke('inv-1', 'ch-1', 'user-1')).rejects.toThrow(
         BadRequestException,
       );
-      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+      await expect(service.revoke('inv-1', 'ch-1', 'user-1')).rejects.toThrow(
         'Invite has already been used',
       );
       expect(mockInviteRepo.markRevoked).not.toHaveBeenCalled();
@@ -2241,7 +2241,7 @@ describe('InviteService', () => {
     it('should throw NotFoundException when invite does not exist', async () => {
       mockInviteRepo.findById.mockResolvedValue(null);
 
-      await expect(service.revoke('inv-x', 'ch-1')).rejects.toThrow(
+      await expect(service.revoke('inv-x', 'ch-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -2261,7 +2261,7 @@ describe('InviteService', () => {
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
 
-      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+      await expect(service.revoke('inv-1', 'ch-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -2369,6 +2369,149 @@ describe('InviteService', () => {
         chapter_id: 'ch-1',
         role_ids: [memberRole.id],
       });
+    });
+  });
+
+  // #4546 (Paul, 2026-11-13: "no"): officers cannot hand out an invite above
+  // their own rank, by minting it or by reusing one a higher officer sent.
+  describe('invites above the caller rank stay out of reach (#4546)', () => {
+    function pending(id: string, role: string, email: string | null = null) {
+      return {
+        id,
+        token: `tok-${id}`,
+        chapter_id: CHAPTER_ID,
+        role,
+        expires_at: '2099-01-01',
+        created_by: USER.president,
+        used_at: null,
+        created_at: '2026-11-12',
+        email,
+        revoked_at: null,
+      } satisfies Invite;
+    }
+
+    const invites = [
+      pending('inv-treasurer', 'Treasurer', 'pat@example.com'),
+      pending('inv-vp', 'Vice President'),
+      pending('inv-social', 'Social chair'),
+      pending('inv-brother', 'Brother'),
+      pending('inv-assistant', 'Treasury assistant'),
+      // A role since deleted: the redeem grants Member, so it lists.
+      pending('inv-gone', 'Deleted role'),
+    ];
+
+    beforeEach(() => {
+      mockInviteRepo.findByChapter.mockResolvedValue(invites);
+    });
+
+    it("leaves a chair's list without the officers' invites or their links", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+
+      const rows = await service.findByChapter(CHAPTER_ID, USER.riskChair);
+
+      // A peer's role and a brother's list; the board's, and a junior role
+      // carrying billing:view the chair lacks, do not.
+      expect(rows.map((row) => row.id)).toEqual([
+        'inv-social',
+        'inv-brother',
+        'inv-gone',
+      ]);
+      expect(rows.map((row) => row.token)).not.toContain('tok-inv-treasurer');
+    });
+
+    it('lists a peer officer only what they could send themselves', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.vicePresident),
+      );
+
+      const rows = await service.findByChapter(CHAPTER_ID, USER.vicePresident);
+
+      // Equal rank lists (the VP's own role), but the Treasurer's carries
+      // billing:manage, which the VP does not hold.
+      expect(rows.map((row) => row.id)).toEqual([
+        'inv-vp',
+        'inv-social',
+        'inv-brother',
+        'inv-gone',
+      ]);
+    });
+
+    it('lists every invite to the President', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
+      );
+
+      const rows = await service.findByChapter(CHAPTER_ID, USER.president);
+
+      expect(rows).toHaveLength(invites.length);
+    });
+
+    it("won't let a chair revoke an officer's invite", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      mockInviteRepo.findById.mockResolvedValue(invites[0]);
+
+      await expect(
+        service.revoke('inv-treasurer', CHAPTER_ID, USER.riskChair),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mockInviteRepo.markRevoked).not.toHaveBeenCalled();
+    });
+
+    it('lets a chair revoke a brother invite', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      mockInviteRepo.findById.mockResolvedValue(invites[3]);
+
+      await service.revoke('inv-brother', CHAPTER_ID, USER.riskChair);
+
+      expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('inv-brother');
+    });
+
+    it("keeps the President's invite live when a chair emails the same address", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue(tieredChapterRoles());
+      mockInviteRepo.createMany.mockImplementation((rows) =>
+        Promise.resolve(
+          (rows as Invite[]).map((row, i) => ({ ...row, id: `new-${i}` })),
+        ),
+      );
+
+      await service.createWithEmails(CHAPTER_ID, USER.riskChair, 'Brother', [
+        'pat@example.com',
+      ]);
+
+      expect(mockInviteRepo.revokePending).toHaveBeenCalledWith([]);
+    });
+
+    it('offers each officer only the roles they may invite into', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      expect(
+        await service.findInvitableRoleIds(CHAPTER_ID, USER.riskChair),
+      ).toEqual([
+        'role-risk-chair',
+        'role-social-chair',
+        'role-brother',
+        'role-pledge',
+      ]);
+
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
+      );
+      // Everything but the President's own role, which no invite grants.
+      expect(
+        await service.findInvitableRoleIds(CHAPTER_ID, USER.president),
+      ).not.toContain('role-president');
+      expect(
+        await service.findInvitableRoleIds(CHAPTER_ID, USER.president),
+      ).toHaveLength(tieredChapterRoles().length - 1);
     });
   });
 

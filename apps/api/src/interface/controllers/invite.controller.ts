@@ -43,6 +43,7 @@ import {
   InviteListItemDto,
   BulkEmailInviteResponseDto,
   PendingInviteDto,
+  InvitableRolesDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -193,23 +194,57 @@ export class InviteController {
     );
   }
 
+  @Get('roles')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({
+    summary: 'The roles the caller may invite someone into',
+    description:
+      'Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.',
+  })
+  @ApiOkResponse({ type: InvitableRolesDto })
+  async listInvitableRoles(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<InvitableRolesDto> {
+    return {
+      role_ids: await this.inviteService.findInvitableRoleIds(
+        chapterId,
+        userId,
+      ),
+    };
+  }
+
   @Get()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
-  @ApiOperation({ summary: 'List chapter invites, newest first' })
+  @ApiOperation({
+    summary: 'List chapter invites, newest first',
+    description:
+      'Only invites whose role the caller could invite someone into now (#4546): an invite ranked above the caller is left out, and still works.',
+  })
   @ApiOkResponse({ type: InviteListItemDto, isArray: true })
   async list(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
   ): Promise<InviteListItemDto[]> {
-    return this.inviteService.findByChapter(chapterId);
+    return this.inviteService.findByChapter(chapterId, userId);
   }
 
   @Delete(':id')
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
-  @ApiOperation({ summary: 'Revoke an invite' })
-  async revoke(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    await this.inviteService.revoke(id, chapterId);
+  @ApiOperation({
+    summary: 'Revoke an invite',
+    description:
+      'Not found (404) for an invite ranked above the caller, which the list leaves out (#4546).',
+  })
+  async revoke(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    await this.inviteService.revoke(id, chapterId, userId);
     return { success: true };
   }
 }
