@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   ACTIVITY_GLYPH_NAV,
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_REVIEW_OPEN_LIMIT,
+  ACTIVITY_REVIEW_ROW_LIMIT,
+  activityCouldNotLoad,
   type ActivityReview,
   type ActivityRow,
 } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { joinNames } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
@@ -21,11 +22,6 @@ import {
   ActivityRowItem,
   type ActivityRowActions,
 } from "./activity-row-action";
-
-/** A queue this short is drawn open; a longer one opens on a press. */
-const REVIEW_OPEN_LIMIT = 3;
-/** How many rows the open card draws before "Show all". */
-const REVIEW_ROW_LIMIT = 5;
 
 /**
  * "To review" on the phone's Activity (#4766): what waits on an officer's
@@ -57,18 +53,26 @@ export function ReviewCard({
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   // A short queue is open from the start, so its one-press Confirm stays
-  // one press; a long one waits behind its count. A press either way sticks.
-  const [picked, setPicked] = useState<boolean | null>(null);
-  const open = picked ?? review.rows.length <= REVIEW_OPEN_LIMIT;
+  // one press; a long one waits behind its count. Decided once, when the
+  // card first has rows: a queue that grows past the limit on a re-read must
+  // not close under the officer mid-way through it, nor a long one open
+  // itself as it shrinks. Only a press changes it after that.
+  const [decided, setDecided] = useState<boolean | null>(null);
+  // Adjusted while rendering, as React documents for state that follows a
+  // prop: no frame is drawn before the choice.
+  if (decided === null && review.rows.length > 0) {
+    setDecided(review.rows.length <= ACTIVITY_REVIEW_OPEN_LIMIT);
+  }
+  const open = decided ?? true;
   const [all, setAll] = useState(false);
-  const cappable = review.rows.length > REVIEW_ROW_LIMIT;
+  const cappable = review.rows.length > ACTIVITY_REVIEW_ROW_LIMIT;
   const rows =
-    cappable && !all ? review.rows.slice(0, REVIEW_ROW_LIMIT) : review.rows;
+    cappable && !all
+      ? review.rows.slice(0, ACTIVITY_REVIEW_ROW_LIMIT)
+      : review.rows;
   const failed =
     review.unavailable.length > 0
-      ? `Couldn't load ${joinNames(
-          review.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-        )}. Pull down to try again.`
+      ? `${activityCouldNotLoad(review.unavailable)} Pull down to try again.`
       : null;
   return (
     <View style={styles.card} testID="activity-review-card">
@@ -78,7 +82,7 @@ export function ReviewCard({
         accessibilityHint={review.detail || undefined}
         accessibilityState={{ expanded: open }}
         disabled={review.rows.length === 0}
-        onPress={() => setPicked(!open)}
+        onPress={() => setDecided(!open)}
         onCard
         testID="activity-review-toggle"
         style={styles.head}

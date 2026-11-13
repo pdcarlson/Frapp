@@ -141,6 +141,7 @@ import {
 } from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { AskSlot } from "@/components/ask/ask-host";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
@@ -3793,7 +3794,10 @@ export function ChatShell({
                   // post here, such as an alumnus in an ordinary channel, isn't
                   // offered one (#2775).
                   onEdit={
-                    activeChannel?.can_post !== false ? channel.edit : undefined
+                    activeChannel?.can_post !== false
+                      ? (messageId, content, mentionPicks) =>
+                          channel.edit(messageId, content, null, mentionPicks)
+                      : undefined
                   }
                   onDelete={handleDeleteMessage}
                   onClosePoll={handleClosePoll}
@@ -3815,6 +3819,8 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
+        {/* Where Ask Frapp's conversation rises from: the composer's top edge. */}
+        {activeChannel ? <AskSlot /> : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -3857,7 +3863,7 @@ export function ChatShell({
             // `replyTo?.id`, not `replyToId`: the derived target is the one the
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
-            onSend={(body, attachments) => {
+            onSend={(body, attachments, mentionPicks) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to
               // the Dexie outbox and resolves on its own schedule, and a strip
@@ -3873,7 +3879,11 @@ export function ChatShell({
               // to #general to a per-channel draft still in the composer and no
               // strip above it, so Enter posts the reply as a top-level message.
               if (replyTo) setReplyTarget(null);
-              return channel.send(body, { replyToId: target, attachments });
+              return channel.send(body, {
+                replyToId: target,
+                attachments,
+                mentionPicks,
+              });
             }}
             // A GIF goes out as its own message (#4631); the reply strip
             // attaches to it as it would to typed text.

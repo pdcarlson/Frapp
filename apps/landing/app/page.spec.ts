@@ -88,7 +88,7 @@ describe("landing marketing copy rules", () => {
 
   it("ships no Ask control and no machine that answers", () => {
     // `spec/behavior/ai.md`: no shipped surface can answer a question, and the
-    // web Ask pill opens an "isn't ready" notice.
+    // web dashboard draws no Ask entry on a server with no AI (#4702).
     expect(renderedAll).not.toMatch(/\bAsk\b/);
     expect(renderedAll).not.toMatch(/\bAI\b/);
     expect(renderedAll).not.toMatch(/assistant/i);

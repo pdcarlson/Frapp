@@ -14,6 +14,7 @@ import {
   askAnswerSegments,
   askHistory,
   askLeftOutLine,
+  askReadLine,
   askSourceKindLabel,
   askSourceTarget,
   askStepLine,
@@ -281,6 +282,25 @@ describe("Ask copy", () => {
       askUnavailableLine("not_available"),
     );
     expect(askUnavailableLine(null)).toBe(askUnavailableLine("not_available"));
+  });
+});
+
+describe("askReadLine", () => {
+  it("says in the past tense what a finished answer was read from, in the step line's words", () => {
+    expect(askReadLine({ reads: ["events"], found: 0 })).toBe(
+      "Read the events calendar",
+    );
+    expect(askReadLine({ reads: ["roster"], found: 3 })).toBe(
+      "Read the roster and 3 sources",
+    );
+    expect(askReadLine({ reads: [], found: 1 })).toBe("Read 1 source");
+  });
+
+  it("is no line at all when the server named nothing this build has words for", () => {
+    expect(askReadLine(null)).toBeNull();
+    expect(askReadLine(undefined)).toBeNull();
+    expect(askReadLine({})).toBeNull();
+    expect(askReadLine({ reads: ["constructor"], found: 0 })).toBeNull();
   });
 });
 

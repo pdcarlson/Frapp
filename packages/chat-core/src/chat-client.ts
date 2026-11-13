@@ -18,7 +18,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   isDefinitiveClientError,
   randomClientId,
@@ -380,6 +380,11 @@ export interface SendMessageArgs {
    * a GIF the API's own search returned is accepted.
    */
   gif?: OutgoingGif | null;
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835), so a
+   * picked `@Jane Doe` reaches her or nobody, never another member by name.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -528,6 +533,7 @@ export async function sendMessage(
     replyToId: args.replyToId ?? null,
     attachments,
     gif: args.gif ?? null,
+    mentionPicks: args.mentionPicks?.length ? [...args.mentionPicks] : null,
   } as const;
 
   let enqueued: OutboxRow;
@@ -592,6 +598,7 @@ export async function sendMessage(
                 token: args.gif.token,
               }
             : undefined,
+          mention_picks: intent.mentionPicks ?? undefined,
         },
       },
     );
@@ -915,6 +922,7 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     replyToId: row.replyToId ?? null,
     attachments: row.attachments ?? null,
     gif: row.gif ?? null,
+    mentionPicks: row.mentionPicks ?? null,
     clientMessageId: row.clientId,
     priorAttempts: row.attempts,
     keepDraft: true,
@@ -1156,6 +1164,11 @@ async function writeHeldRow(
 export interface EditMessageArgs extends RowTarget {
   messageId: string;
   content: string;
+  /**
+   * Members picked while editing (#3835). The ones the message was sent with
+   * are kept by the server, so these are only the new ones.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
 }
 
 /**
@@ -1177,7 +1190,12 @@ export async function editMessage(
   await writeHeldRow(ctx, args, "Couldn't edit message", () =>
     ctx.apiClient.PATCH("/v1/channels/messages/{messageId}", {
       params: { path: { messageId: args.messageId } },
-      body: { content: args.content },
+      body: {
+        content: args.content,
+        mention_picks: args.mentionPicks?.length
+          ? [...args.mentionPicks]
+          : undefined,
+      },
     }),
   );
 }

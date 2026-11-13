@@ -101,6 +101,15 @@ const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
+// Ask Frapp's entry decides for itself who gets it (`ask-host.spec.tsx`).
+// Here it only has to be where the composer puts it.
+vi.mock("@/components/ask/ask-host", () => ({
+  AskComposerButton: ({ className }: { className?: string }) => (
+    <button type="button" data-testid="ask-entry" className={className}>
+      Ask Frapp
+    </button>
+  ),
+}));
 
 import {
   COMPOSER_BOX_CLASS,
@@ -117,6 +126,7 @@ import {
   uploadFailureDescription,
   type CommandFormOutcome,
 } from "./composer";
+import { composerMentionPicks } from "./chat-editor";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { ChatDropTarget } from "./chat-drop-target";
 import type { SlashCommand } from "@repo/chat-core/integrations";
@@ -794,7 +804,7 @@ describe("Composer send failure (#1728)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => toastSaying(BACK));
-    expect(onSend).toHaveBeenCalledWith("hello", []);
+    expect(onSend).toHaveBeenCalledWith("hello", [], []);
     expect(editor.getText()).toBe("hello");
     // Reported to the draft too, so it survives a reload like any other text.
     expect(props.onChangeDraft).toHaveBeenLastCalledWith("hello");
@@ -821,9 +831,11 @@ describe("Composer send failure (#1728)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => toastSaying(BACK));
-    expect(onSend).toHaveBeenCalledWith("hello", [
-      expect.objectContaining({ filename: "notes.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "hello",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      [],
+    );
     expect(chip()).toBeInTheDocument();
   });
 
@@ -999,9 +1011,11 @@ describe("Composer send failure (#1728)", () => {
     await act(async () => finish());
     expect(await stageFileChip("photo.pdf")).toBeInTheDocument();
     fireEvent.click(sendButton());
-    expect(onSend).toHaveBeenCalledWith("hello", [
-      expect.objectContaining({ filename: "photo.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "hello",
+      [expect.objectContaining({ filename: "photo.pdf" })],
+      [],
+    );
   });
 
   it("never stages an upload cancelled before it finished", async () => {
@@ -1073,6 +1087,35 @@ describe("Composer send failure (#1728)", () => {
 
     toastSaying(GONE);
     expect(editor.commands.setContent).not.toHaveBeenCalled();
+  });
+
+  it("sends the members picked into the text beside it (#3835)", async () => {
+    // The channel's draft held a pick before the composer was rebuilt from
+    // its text, as a channel switch does: what the send finds.
+    composerMentionPicks("chan-1", {
+      getText: () => "@Jane Doe hi",
+      state: {
+        doc: {
+          descendants: (visit: (node: unknown) => void) =>
+            visit({
+              type: { name: "mention" },
+              attrs: { memberId: "u-jane", label: "Jane Doe" },
+            }),
+        },
+      },
+    } as unknown as Parameters<typeof composerMentionPicks>[1]);
+    editor = fakeEditor("@Jane Doe hi");
+    editorDouble.current = editor;
+    const onSend = vi.fn(async () => undefined);
+    renderComposer({ onSend, draft: "@Jane Doe hi" });
+
+    await act(async () => fireEvent.click(sendButton()));
+
+    expect(onSend).toHaveBeenCalledWith(
+      "@Jane Doe hi",
+      [],
+      [{ user_id: "u-jane", label: "Jane Doe" }],
+    );
   });
 
   it("clears the text and files, silently, once the send is queued", async () => {
@@ -1409,15 +1452,19 @@ describe("Composer attachment ticket contract", () => {
     await sendOnceUploaded();
 
     await waitFor(() =>
-      expect(onSend).toHaveBeenCalledWith("look", [
-        expect.objectContaining({
-          storagePath: "chapters/c/chat/ch/m/beach.jpg",
-          width: 4032,
-          height: 3024,
-          thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
-          previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
-        }),
-      ]),
+      expect(onSend).toHaveBeenCalledWith(
+        "look",
+        [
+          expect.objectContaining({
+            storagePath: "chapters/c/chat/ch/m/beach.jpg",
+            width: 4032,
+            height: 3024,
+            thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+            previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
+          }),
+        ],
+        [],
+      ),
     );
   });
 
@@ -2531,6 +2578,36 @@ describe("Composer in the audit log", () => {
   });
 });
 
+/**
+ * Ask Frapp's entry is in the composer (#4702, Paul 2026-11-13): "a card that
+ * says Ask Frapp next to like GIF and question mark", not a button in the top
+ * bar.
+ */
+describe("Composer carries Ask Frapp's entry (#4702)", () => {
+  it("puts it on the row of controls, straight after the help mark", () => {
+    render(<Composer {...baseProps()} />);
+    const help = screen.getByRole("button", { name: "Composing help" });
+    const entry = screen.getByTestId("ask-entry");
+    expect(help.parentElement).toBe(entry.parentElement);
+    expect(help.nextElementSibling).toBe(entry);
+  });
+
+  it.each([
+    ["a channel that is read-only for the member's role", { isReadOnly: true }],
+    ["the audit log", { isReadOnly: true, isAuditLog: true }],
+    ["an alumnus who can read but not post", { canPost: false }],
+  ])("keeps it where there is no composer to type in: %s", (_, props) => {
+    render(<Composer {...baseProps(props)} />);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // On the same row as the line that says why, not under it.
+    const entry = screen.getByTestId("ask-entry");
+    expect(entry.parentElement).toHaveTextContent(
+      /read-only|read this channel|audit|log/i,
+    );
+    expect(entry.parentElement?.className).toContain("items-center");
+  });
+});
+
 describe("Composer takes files dropped on the chat column (#4143)", () => {
   /*
     The column as chat-shell builds it: a section with the drop target and
@@ -2765,9 +2842,11 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
 
     fireEvent.click(sendButton());
 
-    expect(onSend).toHaveBeenCalledWith("", [
-      expect.objectContaining({ filename: "notes.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      [],
+    );
     expect(editor.getText()).toBe("");
   });
 
@@ -2775,7 +2854,7 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
     const { onSend } = mount("/ shrug");
     expect(sendButton()).toBeEnabled();
     fireEvent.click(sendButton());
-    expect(onSend).toHaveBeenCalledWith("/ shrug", []);
+    expect(onSend).toHaveBeenCalledWith("/ shrug", [], []);
   });
 
   it("takes the `/` back when the palette is closed with Escape", async () => {

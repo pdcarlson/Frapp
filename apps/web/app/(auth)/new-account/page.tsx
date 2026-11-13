@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { NewAccountActions } from "@/components/auth/new-account-actions";
+import { NEW_ACCOUNT_TITLE, newAccountDescription } from "@repo/validation";
 import { isNewAccount } from "@/lib/auth/new-account-detection";
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -57,12 +58,10 @@ export default async function NewAccountPage({
     redirect(next);
   }
 
-  const account = user.email ? ` for ${user.email}` : "";
-
   return (
     <AuthScreen
-      title="New account created"
-      subtitle={`This is a new Frapp account${account}. Already a member? Sign out and use the method you joined with.`}
+      title={NEW_ACCOUNT_TITLE}
+      subtitle={newAccountDescription(user.email)}
     >
       <NewAccountActions next={next} />
     </AuthScreen>

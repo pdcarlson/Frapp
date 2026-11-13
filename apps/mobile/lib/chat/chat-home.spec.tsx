@@ -222,6 +222,7 @@ vi.mock("@repo/hooks", async () => {
     arrangeChannelSidebar: actual.arrangeChannelSidebar,
     sidebarSections: actual.sidebarSections,
     countsAddressMember: actual.countsAddressMember,
+    countsLookUnread: actual.countsLookUnread,
     foldedSectionAnnouncement: actual.foldedSectionAnnouncement,
     sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
     sidebarUnreadCounts: actual.sidebarUnreadCounts,

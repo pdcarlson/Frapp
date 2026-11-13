@@ -40,10 +40,10 @@ Three things already pointed the same way:
   `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
   case. These four rows were the document's only Title Case strings.
 
-**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** One
-Title Case control ships on the web dashboard today — `Open Documents`
-(`apps/web/components/layout/ask-pill.tsx`); `/events`' `New Event` became `New event` in November
-2026 — and
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** The
+Title Case controls this document knew of on the web dashboard are gone (corrected 2026-11-13:
+`Open Documents`, in the top bar's Ask pill, went with the pill in #4702, and `/events`' `New Event`
+became `New event` in November 2026; nobody has swept for others), but
 [`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
 which outranks written docs on the web surface
 ([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),
@@ -1232,6 +1232,8 @@ Also shown, with the same wording, after a sign-in **magic link** that created a
 | New account | `New account created` | `This is a new Frapp account for <email>. Already a member? Sign out and use the method you joined with.` (no email on the account: `This is a new Frapp account.` then the same second sentence) |
 | Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
 | Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
+
+The phone shows the same title, line and actions, for the same two cases (a first Google or Apple sign-in, and the sign-in magic link for an address that had no account), as a card at the top of s02, the screen a new account with no chapter lands on (#4769, 2026-11-13; [`screens.md`](../mobile/screens.md) s02). Both surfaces take the title and line from `@repo/validation` (`NEW_ACCOUNT_TITLE`, `newAccountDescription`). The phone has no sign-out-failed line: its sign-out always ends the local session.
 
 ### Onboarding wizard (dashboard overlay)
 

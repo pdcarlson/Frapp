@@ -78,8 +78,11 @@ vi.mock("@/lib/ai/availability", () => ({
 vi.mock("@/components/quick-actions/quick-actions-panel", () => ({
   QuickActionsPanel: "QuickActionsPanel",
 }));
+// So has the Ask Frapp bar (`ask/ask-bar.spec.tsx`).
+vi.mock("@/components/ask/ask-bar", () => ({ AskBar: "AskBar" }));
 
 import { BackHandler } from "react-native";
+import { floatingScreenLayout, useAskBarLift } from "@/lib/floating-chrome";
 import { GlassTabBar } from "./glass-tab-bar";
 
 type Node = ReactTestRenderer["root"];
@@ -109,6 +112,8 @@ beforeEach(() => {
   quick.run.mockReset();
   quick.ready = true;
   quick.notice = null;
+  quick.hasAsk = false;
+  quick.ask.mockClear();
   activity.data = undefined;
   device.bottomInset = 0;
   vi.mocked(BackHandler.addEventListener).mockClear();
@@ -300,22 +305,6 @@ describe("the +", () => {
     expect(panel(tree.root)).toBeUndefined();
   });
 
-  it("offers Ask in the panel only to a member who has it", () => {
-    quick.hasAsk = false;
-    const without = render();
-    act(() => plus(without.root)!.props.onPress());
-    expect(panel(without.root).props.onAsk).toBeUndefined();
-
-    quick.hasAsk = true;
-    const tree = render();
-    act(() => plus(tree.root)!.props.onPress());
-    act(() => panel(tree.root).props.onAsk());
-    expect(quick.ask).toHaveBeenCalledTimes(1);
-    // Ask opens over the tabs, so the panel is gone behind it.
-    expect(panel(tree.root)).toBeUndefined();
-    quick.hasAsk = false;
-  });
-
   it("goes straight to editing on a hold", () => {
     const tree = render();
     act(() => plus(tree.root)!.props.onLongPress());
@@ -394,7 +383,119 @@ describe("the +", () => {
   });
 });
 
+/**
+ * Ask Frapp's front door (#4702, Paul 2026-11-13): "in a bar above the normal
+ * liquid glass bottom, not only when you open the plus menu".
+ */
+describe("the Ask Frapp bar", () => {
+  const askBar = (root: Node) =>
+    root.findAll((node) => (node.type as unknown) === "AskBar")[0];
+  /** The wrapper the tab bar places it with. */
+  const placed = (root: Node) => flat(askBar(root).parent!.props.style);
+  /** What a tab screen is told to lift its floating things by. */
+  function liftOnATab(): number {
+    let seen = -1;
+    function Probe() {
+      seen = useAskBarLift();
+      return null;
+    }
+    act(() => {
+      create(
+        floatingScreenLayout({
+          route: { name: "index" },
+          navigation: { addListener: () => () => {} },
+          children: <Probe />,
+        } as unknown as Parameters<typeof floatingScreenLayout>[0]),
+      );
+    });
+    return seen;
+  }
+
+  it("is not there for a member without Ask, and the screens are not told to make room", () => {
+    const tree = render();
+    expect(askBar(tree.root)).toBeUndefined();
+    expect(liftOnATab()).toBe(0);
+  });
+
+  it("sits 8pt above the tab bar, as wide as the bar and its + together, on every tab", () => {
+    quick.hasAsk = true;
+    for (const tab of ["index", "activity", "events", "you"]) {
+      const tree = render(tab);
+      // No inset: the tab bar's top is 12 + 62 off the edge.
+      expect(placed(tree.root)).toMatchObject({
+        position: "absolute",
+        left: 14,
+        right: 14,
+        bottom: 12 + 62 + 8,
+      });
+      act(() => tree.unmount());
+    }
+  });
+
+  it("rides up with the tab bar over a home indicator", () => {
+    quick.hasAsk = true;
+    device.bottomInset = 34;
+    expect(placed(render().root).bottom).toBe(26 + 62 + 8);
+  });
+
+  it("opens the conversation", () => {
+    quick.hasAsk = true;
+    const tree = render();
+    act(() => askBar(tree.root).props.onPress());
+    expect(quick.ask).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the tab screens to make room while it is there, and stops when it goes", () => {
+    quick.hasAsk = true;
+    const tree = render();
+    expect(liftOnATab()).toBe(48 + 8);
+    // The president turns Ask off: the bar goes and the room is given back.
+    quick.hasAsk = false;
+    act(() => tree.update(element("index")));
+    expect(askBar(tree.root)).toBeUndefined();
+    expect(liftOnATab()).toBe(0);
+  });
+
+  it("gives the room back when the tab bar itself goes", () => {
+    quick.hasAsk = true;
+    const tree = render();
+    act(() => tree.unmount());
+    expect(liftOnATab()).toBe(0);
+  });
+
+  it("is covered by the open + panel, which no longer holds an Ask row of its own", () => {
+    quick.hasAsk = true;
+    const tree = render();
+    act(() => plus(tree.root)!.props.onPress());
+    expect(askBar(tree.root)).toBeUndefined();
+    expect(panel(tree.root).props.onAsk).toBeUndefined();
+    act(() => plus(tree.root)!.props.onPress());
+    expect(askBar(tree.root)).toBeDefined();
+  });
+});
+
 describe("a confirmation", () => {
+  /** How far off the bottom edge the confirmation's row is placed. */
+  const noticeBottom = (root: Node): number => {
+    let node: Node | null = root
+      .findAll((candidate) => (candidate.type as unknown) === "Text")
+      .find((text) => text.props.children === "Assigned to Sam Rivera.")!;
+    while (node && flat(node.props.style).bottom === undefined) {
+      node = node.parent;
+    }
+    return flat(node!.props.style).bottom as number;
+  };
+
+  it("sits above the Ask Frapp bar for a member who has one, never over it", () => {
+    quick.notice = "Assigned to Sam Rivera.";
+    const without = noticeBottom(render().root);
+    quick.hasAsk = true;
+    const withBar = noticeBottom(render().root);
+    // The Ask bar's own top edge, plus the gap a notice keeps.
+    expect(withBar).toBe(12 + 62 + 8 + 48 + 10);
+    expect(withBar).toBeGreaterThan(without);
+  });
+
   it("shows above the bar, and not over an open panel", () => {
     quick.notice = "Assigned to Sam Rivera.";
     const tree = render();

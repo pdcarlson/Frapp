@@ -9,6 +9,7 @@ import {
   react as reactAction,
   unreact as unreactAction,
 } from "@repo/chat-core/chat-client";
+import type { MentionPick } from "@repo/validation";
 import { MemberFacingError } from "@repo/hooks/error-copy";
 import { closeCardFailure, withFailureMessage } from "./use-chat-channel";
 import { useChatActionContext } from "./use-chat-runtime";
@@ -36,7 +37,12 @@ export interface ThreadRowWrites {
     payload?: Record<string, unknown>,
   ) => Promise<void>;
   /** Rejects with the member-facing reason, so the edit keeps its text. */
-  edit: (messageId: string, content: string) => Promise<void>;
+  edit: (
+    messageId: string,
+    content: string,
+    /** Members picked while editing (#3835). */
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /** Rejects with the member-facing reason, for the confirm's alert. */
   remove: (messageId: string) => Promise<void>;
   /** Rejects with the member-facing reason, for the confirm's alert. */
@@ -178,7 +184,11 @@ export function useThreadRowWrites({
   );
 
   const edit = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       const failure = "Couldn't edit message. Try again.";
       if (!ctx) throw new MemberFacingError(failure);
       await settle(
@@ -192,6 +202,7 @@ export function useThreadRowWrites({
                 messageId,
                 content,
                 threadRootId: targetOf(messageId),
+                mentionPicks,
               },
             ),
           failure,

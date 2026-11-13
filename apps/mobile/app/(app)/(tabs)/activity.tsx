@@ -3,9 +3,12 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_SHOW_EVERYTHING,
+  ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityCouldNotLoad,
   activityGroups,
+  activityNarrowedNote,
   activityReview,
   activityWeekSummary,
   findActivityTaskRow,
@@ -28,7 +31,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { can, isModuleEnabled, joinNames } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -64,16 +67,6 @@ import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** The groups under To do, in the order they are drawn. */
-const BELOW_ORDER: ActivityGroup["id"][] = ["made-by-you", "links"];
-
-/** What the To do list says it is narrowed to, under a week line. */
-const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
-  events: "events",
-  tasks: "tasks",
-  answers: "polls and sign-ups",
-};
-
 /**
  * Activity: the member's week, what they still have to do, and what waits on
  * others (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a
@@ -96,8 +89,8 @@ const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
  *
  * It is drawn and checked for four people (`principles.md` § Three people):
  * a member with nothing due, an average member, a committee chair and the
- * president. The count tiles, the filter chips and the Now and Later split
- * are gone; web's `/activity` follows in its own change.
+ * president. Web's `/activity` is the same page from the same model
+ * (`apps/web/components/activity/activity-page.tsx`).
  *
  * A row opens the record in a sheet drawn with chat's own card, where the
  * member acts on it (`components/activity/activity-sheet.tsx`). The read is
@@ -147,13 +140,15 @@ export default function ActivityScreen() {
 
   const permissions = useMyPermissions().data?.permissions;
   const summary = useMemo(
-    () => (activity.data ? activityWeekSummary(activity.data) : null),
-    [activity.data],
+    () => (activity.data ? activityWeekSummary(activity.data, now) : null),
+    [activity.data, now],
   );
   // The week line picked while the app is open. Never stored: a fresh launch
-  // opens on everything. A line that has left the card (its last item done,
-  // its module turned off, a new week) takes its narrowing with it for good,
-  // so the list doesn't narrow itself again when the line comes back.
+  // opens on everything. A line that has left the card (its module turned
+  // off, or nothing of its kind in the week's count any more, as on a new
+  // week) takes its narrowing with it for good, so the list doesn't narrow
+  // itself again when the line comes back. Finishing the last item keeps the
+  // line, at "3 of 3", and the list says nothing of that kind is left.
   const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
   const pickedLineGone =
     picked !== "all" &&
@@ -186,21 +181,19 @@ export default function ActivityScreen() {
     [activity.data, permissions, moduleOn, now],
   );
   // What the member made, and the links posted for them, as the shared
-  // groups build them. Narrowed to a kind, the page is the To do list alone.
+  // groups build them, in order. Narrowed to a kind, the page is the To do
+  // list alone.
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, "all", now) : []),
+    () => (activity.data ? activityGroups(activity.data, now) : []),
     [activity.data, now],
   );
   const below =
     filter === "all"
-      ? BELOW_ORDER.flatMap((id) =>
-          groups.filter(
-            (group) =>
-              group.id === id &&
-              (group.rows.length > 0 ||
-                group.archive !== null ||
-                group.unavailable.length > 0),
-          ),
+      ? groups.filter(
+          (group) =>
+            group.rows.length > 0 ||
+            group.archive !== null ||
+            group.unavailable.length > 0,
         )
       : [];
   // The open row as the latest read has it. A row that has left the list (a
@@ -549,23 +542,21 @@ function ToDoSection({
     <View style={styles.group}>
       <SectionHeader count={count || null}>To do</SectionHeader>
       {filter !== "all" ? (
-        <InlineNote action={{ label: "Show everything", onPress: onShowAll }}>
-          {count === 0
-            ? `No ${FILTER_NOUN[filter]} left to do.`
-            : `Showing only ${FILTER_NOUN[filter]}.`}
+        <InlineNote
+          action={{ label: ACTIVITY_SHOW_EVERYTHING, onPress: onShowAll }}
+        >
+          {activityNarrowedNote(filter, count, unavailable.length > 0)}
         </InlineNote>
       ) : null}
       {unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty:
         // "nothing to do" must not be a failed read.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {count === 0 && filter === "all" && unavailable.length === 0 ? (
-        <InlineNote>Nothing to do right now.</InlineNote>
+        <InlineNote>{ACTIVITY_TO_DO_EMPTY}</InlineNote>
       ) : null}
       {days.map((day) => (
         <DaySection key={day.id} day={day} onOpen={onOpen} />
@@ -640,12 +631,6 @@ function DaySection({
   );
 }
 
-/** The phone's name for a group the shared model still calls by web's. */
-const GROUP_LABEL: Partial<Record<ActivityGroup["id"], string>> = {
-  // What the member made is listed for what it still waits on (#4766).
-  "made-by-you": "Waiting on others",
-};
-
 /**
  * A group under the To do list: Waiting on others (the polls the member
  * posted, the events they made, the tasks they assigned), or Links. The
@@ -665,14 +650,12 @@ function GroupSection({
   return (
     <View style={styles.group}>
       <SectionHeader count={group.rows.length || null}>
-        {GROUP_LABEL[group.id] ?? group.label}
+        {group.label}
       </SectionHeader>
       {group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            group.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(group.unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {group.parts.map((part) => (
@@ -692,7 +675,7 @@ function GroupSection({
 
 /**
  * The rows a group keeps behind one control (#4258): the member's closed
- * polls, under Made by you, closed until pressed, as web draws them. Each
+ * polls, under Waiting on others, closed until pressed, as web draws them. Each
  * row opens the poll's card with its final result.
  */
 function ArchivePart({

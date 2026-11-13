@@ -812,6 +812,26 @@ describe("Activity screen (#3897)", () => {
       expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(3);
     });
 
+    it("stays open when a re-read takes the queue past three", () => {
+      activity.value = { ...activity.value, data: queue(3) };
+      const tree = render();
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      // Two more finish while the officer works through it: the card they
+      // are in doesn't close under them. Only a press changes it.
+      activity.value = { ...activity.value, data: queue(5) };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      expect(
+        rowLabels(tree).filter((label) => label.startsWith("Chore")),
+      ).toHaveLength(5);
+    });
+
     it("keeps a long queue behind its count until pressed, five at a time", () => {
       activity.value = { ...activity.value, data: queue(8) };
       const tree = render();

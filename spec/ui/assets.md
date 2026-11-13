@@ -25,7 +25,7 @@ The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1
 | **Open Graph image**                      | Product | Preview card when a marketing URL is shared (Slack, iMessage, etc.)                                                   |
 | **Chapter logo**                          | Tenant  | In-app surfaces, PDFs, onboarding — from Storage (`logo_path`); **does not** replace product marks on marketing or docs |
 
-The product mark NEVER takes the chapter accent, and chapter accent applies inside chapter context only — see [brand-identity.md](brand-identity.md).
+The product mark NEVER takes the chapter accent, and chapter accent applies inside chapter context only — see [brand-identity.md](brand-identity.md). (There is one exception since #4702, Paul's: the crest drawn as a one-colour glyph on Ask Frapp's front doors, §2 there.)
 
 ---
 

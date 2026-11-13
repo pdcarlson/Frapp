@@ -70,6 +70,7 @@ import {
   can,
   chatCatchUpOfferLine,
   draftWithMention,
+  mentionPickLabel,
   type ChatCatchUpPoint,
   type ChatMessageFlag,
 } from "@repo/validation";
@@ -940,6 +941,7 @@ function ChannelThreadScreen() {
     onSending: followSend,
   });
   const submitComposer = staging.submit;
+  const addMentionPick = staging.addMentionPick;
   const handleSend = useCallback(() => {
     // Clear first: `attachError` sits ahead of `sendError` in the hint chain
     // below, and a stale photo-permission line would hide the one report that
@@ -989,9 +991,18 @@ function ChannelThreadScreen() {
       if (!message) return;
       const name = resolveAuthorName(message, nameFor);
       const next = name ? draftWithMention(draft, name) : null;
-      if (next !== null) handleChangeText(next);
+      if (next === null || !name) return;
+      handleChangeText(next);
+      // The member it names rides the send as a pick (#3835), as the
+      // picker's would.
+      if (message.sender_id) {
+        addMentionPick({
+          user_id: message.sender_id,
+          label: mentionPickLabel(name),
+        });
+      }
     },
-    [byId, draft, handleChangeText, nameFor],
+    [addMentionPick, byId, draft, handleChangeText, nameFor],
   );
 
   // A reaction chip's tap and the actions sheet's quick row, through the same
@@ -1744,6 +1755,7 @@ function ChannelThreadScreen() {
               avatarFor={memberAvatarFor}
               avatarTintFor={avatarTintFor}
               mentionRoles={mentionRoles.data}
+              onPickMember={addMentionPick}
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show
               // (nothing was queued), so this line is the only report of it.

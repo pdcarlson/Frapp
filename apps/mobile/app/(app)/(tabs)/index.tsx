@@ -12,6 +12,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   arrangeChannelSidebar,
+  countsLookUnread,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
   NO_MATCHING_CHANNELS,
@@ -546,18 +547,25 @@ export default function ChatHomeScreen() {
 
   // Read ahead the unread channels and DMs the member is likely to open next
   // (#3699), so the thread paints rows as it slides in rather than its
-  // skeleton. Muted ones are skipped unless they mention the member: chat home
-  // draws them as read. Held while the launch jump may still open the last
-  // channel, whose own read must not queue behind these.
+  // skeleton. Muted ones are skipped unless they address the member (a
+  // mention, or a DM): their rows draw them as read. Held while the launch
+  // jump may still open the last channel, whose own read must not queue
+  // behind these.
   const unreadChannelIds = useMemo(
     () =>
       listedChannels(allChannels)
-        .filter((channel) => {
-          const counts = unreadByChannelId?.get(channel.id);
-          const mentions = counts?.mentionCount ?? 0;
-          if (mutedChannelIds?.has(channel.id)) return mentions > 0;
-          return (counts?.unreadCount ?? 0) > 0 || mentions > 0;
-        })
+        .filter((channel) =>
+          // The rows' own rule (#3999), so a muted DM, which its row draws
+          // unread, is read ahead too.
+          countsLookUnread(
+            isDirectChannel(channel),
+            unreadByChannelId?.get(channel.id) ?? {
+              unreadCount: 0,
+              mentionCount: 0,
+            },
+            mutedChannelIds?.has(channel.id) ?? false,
+          ),
+        )
         .map((channel) => channel.id),
     [allChannels, unreadByChannelId, mutedChannelIds],
   );

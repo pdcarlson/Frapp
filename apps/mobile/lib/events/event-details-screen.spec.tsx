@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
+import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { formatEventClock } from "@/lib/events/format";
@@ -60,6 +61,8 @@ let myAttendancePending = false;
 let myAttendancePaused = false;
 // `GET /v1/events`, which the series section reads: none by default.
 let chapterEvents: unknown[] = [];
+// Whether that read is still loading: settled by default.
+let chapterEventsLoading = false;
 // Excuses (#3735): whether the event requires the viewer, the viewer's own
 // excuse, and the receiver's list.
 // `null` reads the event as a viewer with no roles would.
@@ -91,7 +94,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPaused: myAttendancePaused,
     data: myAttendancePending ? undefined : myAttendance,
   }),
-  useEvents: () => ({ data: chapterEvents }),
+  useEvents: () => ({ data: chapterEvents, isLoading: chapterEventsLoading }),
   useRequiredOfViewer:
     () => (fields: Parameters<typeof eventAttendanceFor>[0]) =>
       requiredOfViewer ?? eventAttendanceFor(fields, []).status === "required",
@@ -577,6 +580,40 @@ describe("Event details editing", () => {
   it("gives an owner's wildcard the pencil too", () => {
     permissions = ["*"];
     expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+
+  // #4746: a Repeat change on a started series steps from its real next
+  // meeting, which the sheet reads off the chapter's events.
+  describe("a series", () => {
+    const head = { ...EVENT, recurrence_rule: "WEEKLY", parent_event_id: null };
+    const next = {
+      ...EVENT,
+      id: "evt-2",
+      start_time: "2099-01-07T04:30:00.000Z",
+      end_time: "2099-01-07T05:30:00.000Z",
+      recurrence_rule: null,
+      parent_event_id: "evt-1",
+    };
+    afterEach(() => {
+      chapterEvents = [];
+      chapterEventsLoading = false;
+    });
+
+    it("hands the edit sheet the series' meetings", () => {
+      permissions = ["members:view", "events:update"];
+      event = head;
+      chapterEvents = [head, next, { ...next, id: "x", parent_event_id: "y" }];
+      const sheet = render().root.findByType(NewEventSheet);
+      expect(sheet.props.editing.seriesStarts).toEqual([next.start_time]);
+    });
+
+    it("holds the pencil while the chapter's events load", () => {
+      permissions = ["members:view", "events:update"];
+      event = head;
+      chapterEventsLoading = true;
+      const [button] = editButton(render());
+      expect(button!.props.accessibilityState?.disabled).toBe(true);
+    });
   });
 });
 

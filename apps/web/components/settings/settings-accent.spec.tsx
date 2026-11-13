@@ -41,8 +41,8 @@ const settingsPage = readFileSync(
 // does. How the palette is derived and checked is the engine's business, and
 // the warnings below say so when it matters.
 const DESCRIPTION =
-  "Paints primary buttons, your own name in chat and the active nav item. " +
-  "The Frapp mark and the Ask pill keep their own colors.";
+  "Paints primary buttons, your own name in chat, the active nav item and " +
+  "the Ask Frapp button. The Frapp mark keeps its own color.";
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 
@@ -232,7 +232,7 @@ describe("the three things the copy promises never change", () => {
     expect(applied.some((token) => token.includes("gold"))).toBe(false);
   });
 
-  it("the Ask pill: --gold-ask-* is not in the bridge's output", () => {
+  it("Ask's source markers: --gold-ask-* is not in the bridge's output", () => {
     // `tokens.md` L-01 names the merge trap: the board's Ask family and its
     // accent family are identical *only* because its demo tenant is the house
     // tenant. Merging them on that evidence breaks every other chapter.

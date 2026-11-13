@@ -455,7 +455,7 @@ both re-exporting the shell's silhouettes rather than redrawing them. Rendered a
 16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
 or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
 § Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
-onboarding tutorial's per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
+onboarding tutorial's per-slide glyphs (§6.2.7) and the mark on s17's "Ask Frapp" (components.md §11; the ✦ until #4702, the crest since) stay.
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -637,8 +637,10 @@ holding its kind's glyph at 20px in `--muted-foreground`
 or, for an event, its month and day in place of a glyph. The phone's Activity
 rows draw the same lead at the same sizes in `text.mutedForeground`
 ([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
-#4173 step 2), except that since #4766 an event listed under a day's heading
-leads with the events glyph, the heading having said the day. Both read which shape a kind takes from one map,
+#4173 step 2). Since #4766 an event listed under a day's heading leads with
+the events glyph on both clients, the heading having said the day; the month
+and day stay where a row stands apart from a day (the week card, Now, Later,
+Events you made). Both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.
