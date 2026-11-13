@@ -127,6 +127,13 @@ function build(
   };
 }
 
+/** The level of the one event the last `reportSwallowed` call built. */
+function reportedLevel(): unknown {
+  const call = jest.mocked(reportSwallowed).mock.calls.at(-1);
+  const build = call?.[2] as (() => { level?: unknown }) | undefined;
+  return build?.().level;
+}
+
 describe('AskController', () => {
   beforeEach(() => jest.mocked(reportSwallowed).mockClear());
 
@@ -251,6 +258,39 @@ describe('AskController', () => {
     });
     expect(response.ended).toBe(true);
     expect(reportSwallowed).toHaveBeenCalledTimes(1);
+    // The provider's weather, retried and offered again: a warning.
+    expect(reportedLevel()).toBe('warning');
+  });
+
+  it('reports a stream that broke on our side at error level', async () => {
+    const { ask, response } = build(async function* () {
+      yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
+      throw new TypeError('cannot read properties of undefined');
+    });
+    await ask();
+    expect(response.events().at(-1)).toMatchObject({
+      type: 'error',
+      retryable: true,
+    });
+    expect(reportedLevel()).toBe('error');
+  });
+
+  it('reports a provider refusal that Try again cannot fix at error level', async () => {
+    const { ask } = build(async function* () {
+      yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
+      throw new LanguageModelError('invalid_request', 'anthropic');
+    });
+    await ask();
+    expect(reportedLevel()).toBe('error');
+  });
+
+  it('keeps a timeout at error level: it can be ours (egress, a short timeout)', async () => {
+    const { ask } = build(async function* () {
+      yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
+      throw new LanguageModelError('timeout', 'anthropic');
+    });
+    await ask();
+    expect(reportedLevel()).toBe('error');
   });
 
   it('stops quietly when the member went away: aborts the work, writes no error, reports nothing', async () => {

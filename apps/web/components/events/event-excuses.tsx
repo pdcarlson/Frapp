@@ -26,6 +26,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 
 /**
@@ -142,10 +143,12 @@ export function MyExcuse({
       await withdraw.mutateAsync({ eventId });
       toast({ title: "Excuse withdrawn" });
     } catch (failure) {
-      toast({
+      toastFailure({
         title: "Couldn't withdraw your excuse",
-        description: errorCopy(failure, "Try again in a moment.", COPY_OPTIONS),
-        variant: "destructive",
+        error: failure,
+        fallback: "Try again in a moment.",
+        copyOptions: COPY_OPTIONS,
+        retry: takeBack,
       });
     }
   }
@@ -277,7 +280,6 @@ export function ExcuseReview({
   const excuses = useEventExcuses(eventId);
   const decide = useDecideEventExcuse();
   const gate = useSubscriptionGate();
-  const { toast } = useToast();
   const [deciding, setDeciding] = useState<string | null>(null);
 
   const rows = excuses.data ?? [];
@@ -294,10 +296,12 @@ export function ExcuseReview({
     try {
       await decide.mutateAsync({ eventId, userId: row.user_id, decision });
     } catch (failure) {
-      toast({
+      toastFailure({
         title: "Couldn't save that decision",
-        description: errorCopy(failure, "Try again in a moment.", COPY_OPTIONS),
-        variant: "destructive",
+        error: failure,
+        fallback: "Try again in a moment.",
+        copyOptions: COPY_OPTIONS,
+        retry: () => run(row, decision),
       });
     } finally {
       setDeciding(null);

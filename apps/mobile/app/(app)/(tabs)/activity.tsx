@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -30,7 +30,7 @@ import {
   type ActivityPart,
   type ActivityRow,
 } from "@repo/hooks";
-import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { can, isModuleEnabled } from "@repo/validation";
 import {
   ActivityFaces,
@@ -63,6 +63,7 @@ import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
+import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -436,14 +437,24 @@ function useLinkActions() {
   // Each write's own promise, not `mutate`'s per-call callbacks, which a
   // second Done before the first answers would cancel (`useLinkWrite`).
   type Write = { mutateAsync: (id: string) => Promise<unknown> };
-  const failed = (title: string) => (error: unknown) =>
-    Alert.alert(title, errorCopy(error));
-  const act =
-    (write: Write, message: string, takeBack: Write, failure: string) =>
-    (row: LinkRow) => {
-      // The sheet closes as this starts; the write re-reads Activity itself
-      // when it settles, and a re-read on close would race it.
-      skipCloseReread.current = true;
+  const failed = (title: string, retry: () => void) => (error: unknown) =>
+    alertFailure({ title, error, retry });
+  function act(
+    write: Write,
+    message: string,
+    takeBack: Write,
+    failure: string,
+  ): (row: LinkRow) => void {
+    // `send` is the write itself; Try again repeats only it. The sheet's
+    // close flag is set once, by the press that closes the sheet: a retry
+    // from the alert closes nothing, and setting it then would skip the
+    // re-read of whatever sheet the member closes next.
+    const send = (row: LinkRow) => {
+      const undoWrite = () => {
+        takeBack
+          .mutateAsync(row.link.id)
+          .catch(failed("Couldn't undo", undoWrite));
+      };
       write.mutateAsync(row.link.id).then(
         () =>
           setUndo((open) => ({
@@ -452,12 +463,19 @@ function useLinkActions() {
             key: (open?.key ?? 0) + 1,
             run: () => {
               setUndo(null);
-              takeBack.mutateAsync(row.link.id).catch(failed("Couldn't undo"));
+              undoWrite();
             },
           })),
-        failed(failure),
+        failed(failure, () => send(row)),
       );
     };
+    return (row: LinkRow) => {
+      // The sheet closes as this starts; the write re-reads Activity itself
+      // when it settles, and a re-read on close would race it.
+      skipCloseReread.current = true;
+      send(row);
+    };
+  }
 
   const linkActions: LinkSheetActions = {
     canRemove: can("channels:manage", permissions.data?.permissions ?? []),
