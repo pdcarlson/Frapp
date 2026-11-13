@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { formatTimer } from "@repo/formatting";
 import { CardMessages } from "@/components/card-messages";
 import { Chip } from "@/components/filter-chips";
@@ -144,6 +145,7 @@ export function SessionCard({
         <View style={styles.options}>
           {onToggleFocus ? (
             <Chip
+              onCard
               label="Focus timer"
               on={focus !== null}
               onPress={onToggleFocus}
@@ -154,6 +156,7 @@ export function SessionCard({
           ) : null}
           {onToggleKeepScreenOn ? (
             <Chip
+              onCard
               label="Keep screen on"
               on={keepScreenOn}
               onPress={onToggleKeepScreenOn}
@@ -190,12 +193,13 @@ export function SessionCard({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.xl,
       paddingHorizontal: tokens.spacing.lg,
       alignItems: "center",
@@ -280,7 +284,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: surfaces.raised,
       alignItems: "center",
       justifyContent: "center",
       marginTop: tokens.spacing.lg,

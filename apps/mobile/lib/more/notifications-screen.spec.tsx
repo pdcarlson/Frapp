@@ -349,7 +349,7 @@ describe("Notification row press feedback", () => {
       // The suite's react-native stub runs as iOS.
       const held = row.props.style({ pressed: true });
       expect(held).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.card,
+        backgroundColor: signetDarkTokens.color.surface.surface1,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
     }

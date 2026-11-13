@@ -10,6 +10,7 @@ import { PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The top of the phone's Activity (#4173, step 2), web's `ActivitySummary` on
@@ -126,6 +127,7 @@ function pairs<T>(items: readonly T[]): T[][] {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     summary: {
       gap: tokens.spacing.md,
@@ -158,7 +160,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     tileSpacer: {
       flex: 1,

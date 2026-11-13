@@ -4,6 +4,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Platform } from "react-native";
+import { useBottomSheetInternal } from "@gorhom/bottom-sheet";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ForwardGlyph } from "@/components/control-glyphs";
@@ -12,6 +13,7 @@ import {
   ListRow,
   listRowHint,
   type ListRowProps,
+  ListSection,
   PressableRow,
   type PressFeedback,
   usePressFeedback,
@@ -61,10 +63,11 @@ describe("ListRow — press feedback", () => {
     const row = pressable({ label: "Documents", onPress: vi.fn() });
     expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS. A ListRow sits on its
-    // ListSection's `card` fill, so it lifts a step above that, to `popover`:
-    // a lift to `card` would paint the row its own colour and show nothing.
+    // ListSection's fill, which on a screen is `surface1`, so it lifts a step
+    // above that, to `card`: a lift to the section's own fill would paint the
+    // row its own colour and show nothing.
     expect(row.props.style({ pressed: true })).toMatchObject({
-      backgroundColor: signetDarkTokens.color.surface.popover,
+      backgroundColor: signetDarkTokens.color.surface.card,
     });
     expect(row.props.style({ pressed: false })).toBeNull();
   });
@@ -227,6 +230,40 @@ describe("ListRow — detail", () => {
   });
 });
 
+describe("ListSection", () => {
+  function fill() {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListSection>
+            <ListRow label="Documents" onPress={vi.fn()} />
+          </ListSection>
+        </FrappThemeProvider>,
+      );
+    });
+    const section = tree.root.findAll(
+      (node) => (node.type as unknown) === "View",
+    )[0]!;
+    return Object.assign({}, ...[section.props.style].flat(Infinity))
+      .backgroundColor as string;
+  }
+
+  // #4682: a list on a screen sat two steps above the page.
+  it("is one step above the page on a screen", () => {
+    expect(fill()).toBe(signetDarkTokens.color.surface.surface1);
+  });
+
+  it("keeps `card` in a sheet, one step under the sheet's own fill", () => {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      expect(fill()).toBe(signetDarkTokens.color.surface.card);
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
+  });
+});
+
 describe("usePressFeedback", () => {
   function feedbackOn(
     os: string,
@@ -254,19 +291,33 @@ describe("usePressFeedback", () => {
     return captured;
   }
 
-  it("lifts to the card step on iOS, and never fades", () => {
+  it("lifts one step above the page on iOS, and never fades", () => {
     const feedback = feedbackOn("ios");
     expect(feedback.lift(true)).toEqual({
-      backgroundColor: signetDarkTokens.color.surface.card,
+      backgroundColor: signetDarkTokens.color.surface.surface1,
     });
     expect(feedback.lift(true)).not.toHaveProperty("opacity");
     expect(feedback.lift(false)).toBeNull();
   });
 
-  it("lifts a row that is itself a card to the popover step", () => {
+  it("lifts a row that is itself a card to the step above the card", () => {
     expect(feedbackOn("ios", { onCard: true }).lift(true)).toEqual({
-      backgroundColor: signetDarkTokens.color.surface.popover,
+      backgroundColor: signetDarkTokens.color.surface.card,
     });
+  });
+
+  it("keeps a sheet's steps: a card there is `card`, and what lifts on it `popover`", () => {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      expect(feedbackOn("ios").lift(true)).toEqual({
+        backgroundColor: signetDarkTokens.color.surface.card,
+      });
+      expect(feedbackOn("ios", { onCard: true }).lift(true)).toEqual({
+        backgroundColor: signetDarkTokens.color.surface.popover,
+      });
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
   });
 
   it("leaves Android to its ripple, with no lift on top", () => {
@@ -340,13 +391,31 @@ describe("PressableRow", () => {
     expect(resting).toEqual({ flexGrow: 1, flexDirection: "row" });
   });
 
-  it("lifts on iOS while held, and to the popover step for a card", () => {
+  it("lifts on iOS while held, and to the step above for a card", () => {
     // The suite's react-native stub runs as iOS.
     expect(renderRow({}).props.style({ pressed: true })).toContainEqual({
-      backgroundColor: signetDarkTokens.color.surface.card,
+      backgroundColor: signetDarkTokens.color.surface.surface1,
     });
     expect(
       renderRow({ onCard: true }).props.style({ pressed: true }),
+    ).toContainEqual({
+      backgroundColor: signetDarkTokens.color.surface.card,
+    });
+  });
+
+  it("lifts a control on the input step to the step above its own fill", () => {
+    // A filter chip is filled with `surface1`: the page lift would paint it
+    // its own colour and show nothing.
+    expect(
+      renderRow({ onControl: true }).props.style({ pressed: true }),
+    ).toContainEqual({
+      backgroundColor: signetDarkTokens.color.surface.card,
+    });
+    // A chip on a card is filled with `card`, so it lifts one more.
+    expect(
+      renderRow({ onControl: true, onCard: true }).props.style({
+        pressed: true,
+      }),
     ).toContainEqual({
       backgroundColor: signetDarkTokens.color.surface.popover,
     });

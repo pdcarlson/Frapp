@@ -57,6 +57,7 @@ import { lastYearTemplate } from "@/lib/events/last-year-template";
 import { selectEventDetail } from "@/lib/events/select";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Suggested tasks on the phone (#4313, `spec/behavior/meetings.md`
@@ -771,6 +772,7 @@ function SuggestionsSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     group: {
       gap: tokens.spacing.sm,
@@ -779,7 +781,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.md,
       gap: tokens.spacing.sm,
     },
@@ -830,7 +832,7 @@ function createStyles(tokens: SignetTokens) {
     dismiss: {
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     dismissText: {
       ...typeRole(tokens.typography.role.label),

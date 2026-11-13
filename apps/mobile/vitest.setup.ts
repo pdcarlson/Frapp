@@ -430,6 +430,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   // renders its props but never invokes `renderItem` — a spec needing a row
   // should render that row's component directly.
   BottomSheetFlatList: "BottomSheetFlatList",
+  // What `useInSheet` (`lib/surfaces.ts`) reads: `null` outside a sheet. The
+  // stand-ins above provide no context, so a spec that needs "in a sheet"
+  // has this return a value (`vi.mocked(useBottomSheetInternal)`).
+  useBottomSheetInternal: vi.fn(() => null),
 }));
 
 // A native module: a string stand-in for the iOS picker, and the Android

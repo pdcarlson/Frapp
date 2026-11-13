@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { meterStyles } from "@/components/meter";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -85,6 +86,7 @@ export function WeekSummary({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     block: {
       gap: tokens.spacing.sm,
@@ -109,7 +111,7 @@ function createStyles(tokens: SignetTokens) {
     },
     meterTrack: {
       ...meterStyles(tokens).track,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     meterFill: meterStyles(tokens).fill,
   });

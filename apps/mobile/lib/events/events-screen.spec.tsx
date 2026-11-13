@@ -254,7 +254,7 @@ describe("Event card", () => {
     const held = StyleSheet.flatten(card.props.style({ pressed: true }));
 
     // The suite's stub is iOS: the card lifts one rung up the surface ladder.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(held).not.toHaveProperty("opacity");
     // The ripple is rounded by a parent clip with the card's radius
     // (`PressableRow`); the card's own `overflow` would leave it square.
