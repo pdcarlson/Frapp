@@ -17,6 +17,8 @@ const UNREADABLE = 'channel-unreadable';
 
 const NOW = new Date('2026-11-10T18:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
+/** The week `NOW` (a Tuesday) falls in when a client names none: from Sunday 00:00 UTC. */
+const WEEK_START = '2026-11-08T00:00:00.000Z';
 const iso = (offsetMs: number) =>
   new Date(NOW.getTime() + offsetMs).toISOString();
 
@@ -127,9 +129,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   };
   const attendanceRepo = {
     findByEventAndUser: jest.fn().mockResolvedValue(null),
+    findByUserForEvents: jest.fn().mockResolvedValue([]),
   };
   const formResponseRepo = {
-    findAnsweredMessageIds: jest.fn().mockResolvedValue([]),
+    findAnswered: jest.fn().mockResolvedValue([]),
   };
   const readRepo = {
     // No client has begun this member's dots: every row is read.
@@ -261,7 +264,10 @@ function serveTasks(
         (options.createdBy === undefined ||
           row.created_by === options.createdBy) &&
         (options.notAssigneeId === undefined ||
-          row.assignee_id !== options.notAssigneeId),
+          row.assignee_id !== options.notAssigneeId) &&
+        (options.completedSince === undefined ||
+          (row.completed_at !== null &&
+            row.completed_at >= options.completedSince)),
     );
   taskService.list.mockImplementation(
     (
@@ -630,10 +636,7 @@ describe('ActivityService', () => {
         unread: false,
       });
       expect(view.needs_you_count).toBe(3);
-      expect(formResponseRepo.findAnsweredMessageIds).toHaveBeenCalledWith(
-        ['form'],
-        ME,
-      );
+      expect(formResponseRepo.findAnswered).toHaveBeenCalledWith(['form'], ME);
     });
 
     it('leaves out a card the caller answered, either headcount answer included, but keeps a cleared claim', async () => {
@@ -662,8 +665,8 @@ describe('ActivityService', () => {
           payload: { slot_ids: ['not_going'] },
         },
       ]);
-      formResponseRepo.findAnsweredMessageIds.mockResolvedValue([
-        'answered-form',
+      formResponseRepo.findAnswered.mockResolvedValue([
+        { message_id: 'answered-form', created_at: iso(-HOUR) },
       ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
@@ -783,9 +786,7 @@ describe('ActivityService', () => {
     it('serves the section empty and names it when the answers can’t be read', async () => {
       const { service, messageRepo, formResponseRepo } = build();
       serveCards(messageRepo, [formCard({ id: 'form' })]);
-      formResponseRepo.findAnsweredMessageIds.mockRejectedValue(
-        new Error('down'),
-      );
+      formResponseRepo.findAnswered.mockRejectedValue(new Error('down'));
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -1039,9 +1040,12 @@ describe('ActivityService', () => {
 
       await service.getActivity(CHAPTER, ME, null);
 
-      // And only the window: a day behind (the check-in grace) to 14 days ahead.
+      // And only the window: from the start of the week (Sunday, here two
+      // days back, which reaches past the day of check-in grace) to 14 days
+      // ahead. One read serves Coming up and the week.
+      expect(eventService.findByChapter).toHaveBeenCalledTimes(1);
       expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
-        endsAfter: iso(-24 * HOUR),
+        endsAfter: WEEK_START,
         startsBefore: iso(14 * 24 * HOUR),
       });
     });
@@ -1884,5 +1888,284 @@ describe('ActivityService', () => {
 
     expect(view.needs_you.tasks).toHaveLength(25);
     expect(view.needs_you_count).toBe(30);
+  });
+
+  describe('week', () => {
+    const attended = (eventId: string, status: string) => ({
+      event_id: eventId,
+      user_id: ME,
+      status,
+    });
+
+    it('counts from last Sunday at midnight UTC when the client names no week', async () => {
+      const { service } = build();
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.week).toEqual({
+        start: WEEK_START,
+        end: '2026-11-15T00:00:00.000Z',
+        events: { done: 0, total: 0 },
+        tasks: { done: 0, total: 0 },
+        polls: { done: 0, total: 0 },
+        cards: { done: 0, total: 0 },
+        unavailable: [],
+      });
+    });
+
+    it('counts from the week the client names, and falls back when it names another week', async () => {
+      const { service, taskService } = build();
+      const localSunday = new Date('2026-11-08T05:00:00.000Z');
+
+      const named = await service.getActivity(CHAPTER, ME, null, {
+        weekStart: localSunday,
+      });
+      // A caller that skipped the route's check can't widen the read.
+      const wide = await service.getActivity(CHAPTER, ME, null, {
+        weekStart: new Date('2025-11-08T05:00:00.000Z'),
+      });
+
+      expect(named.week.start).toBe('2026-11-08T05:00:00.000Z');
+      expect(named.week.end).toBe('2026-11-15T05:00:00.000Z');
+      expect(taskService.count).toHaveBeenCalledWith(CHAPTER, ME, false, {
+        status: TaskStatus.COMPLETED,
+        completedSince: '2026-11-08T05:00:00.000Z',
+      });
+      expect(wide.week.start).toBe(WEEK_START);
+    });
+
+    it('counts the caller’s tasks done this week and those still due in it, overdue included', async () => {
+      const { service, taskService } = build();
+      const done = (id: string, completedAt: string, confirmed = false) =>
+        task({
+          id,
+          status: TaskStatus.COMPLETED,
+          stored_status: TaskStatus.COMPLETED,
+          completed_at: completedAt,
+          confirmed_at: confirmed ? completedAt : null,
+        });
+      serveTasks(taskService, [
+        // Done this week: one waiting on a confirm, one already confirmed.
+        done('done-waiting', iso(-HOUR)),
+        done('done-confirmed', iso(-2 * HOUR), true),
+        // Done before the week began.
+        done('done-last-week', iso(-10 * 24 * HOUR), true),
+        task({ id: 'overdue', due_date: '2026-11-01' }),
+        // Saturday, the week's last day, by date and by time.
+        task({ id: 'saturday', due_date: '2026-11-14' }),
+        task({
+          id: 'saturday-night',
+          due_date: '2026-11-14',
+          due_at: '2026-11-14T23:30:00.000Z',
+        }),
+        // Next week's.
+        task({ id: 'next-sunday', due_date: '2026-11-15' }),
+        task({ id: 'later', due_date: '2026-11-20' }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.week.tasks).toEqual({ done: 2, total: 5 });
+      // The list still carries every open task, next week's too.
+      expect(view.needs_you.tasks).toHaveLength(5);
+    });
+
+    it('counts a vote in the week it was cast, on a poll that has since closed too', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      const closed = pollCard({ id: 'closed' });
+      closed.payload = { ...closed.payload, closes_at: iso(-HOUR) };
+      servePolls(
+        messageRepo,
+        [
+          pollCard({ id: 'open-unvoted' }),
+          pollCard({ id: 'voted-today' }),
+          pollCard({ id: 'voted-last-week' }),
+          pollCard({ id: 'cleared' }),
+          closed,
+        ],
+        [pollCard({ id: 'mine', sender_id: ME })],
+      );
+      const vote = (messageId: string, at: string, picks = ['a']) => ({
+        message_id: messageId,
+        payload: { option_id: picks },
+        created_at: at,
+      });
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        vote('voted-today', iso(-HOUR)),
+        vote('voted-last-week', iso(-9 * 24 * HOUR)),
+        // A cleared vote is not a vote: the poll needs them again.
+        vote('cleared', iso(-HOUR), []),
+        vote('closed', iso(-3 * HOUR)),
+        // Their own poll asks nothing of them.
+        vote('mine', iso(-HOUR)),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
+        'open-unvoted',
+        'cleared',
+      ]);
+      expect(view.week.polls).toEqual({ done: 2, total: 4 });
+    });
+
+    it('counts sign-ups and forms answered this week beside the ones still open', async () => {
+      const { service, messageRepo, actionRepo, formResponseRepo } = build();
+      serveCards(messageRepo, [
+        signupCard({ id: 'open-sheet' }),
+        signupCard({ id: 'claimed-sheet' }),
+        signupCard({ id: 'closed-sheet' }, { closes_at: iso(-HOUR) }),
+        formCard({ id: 'open-form' }),
+        formCard({ id: 'answered-form' }),
+        formCard({ id: 'old-form' }),
+      ]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        {
+          message_id: 'claimed-sheet',
+          user_id: ME,
+          payload: { slot_ids: ['fri'] },
+          created_at: iso(-HOUR),
+        },
+        // Someone else's claim is not the caller's answer.
+        {
+          message_id: 'open-sheet',
+          user_id: OTHER,
+          payload: { slot_ids: ['fri'] },
+          created_at: iso(-HOUR),
+        },
+      ]);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        {
+          message_id: 'closed-sheet',
+          payload: { slot_ids: ['sat'] },
+          created_at: iso(-2 * HOUR),
+        },
+      ]);
+      formResponseRepo.findAnswered.mockResolvedValue([
+        { message_id: 'answered-form', created_at: iso(-HOUR) },
+        { message_id: 'old-form', created_at: iso(-9 * 24 * HOUR) },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.cards.map((card) => card.message_id)).toEqual([
+        'open-sheet',
+        'open-form',
+      ]);
+      // The closed sheet's claims are read for the caller alone.
+      expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
+        ['closed-sheet'],
+        ME,
+        'signup',
+      );
+      expect(view.week.cards).toEqual({ done: 3, total: 5 });
+    });
+
+    it('counts the week’s events by what each asks of the caller', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      const at = (id: string, startOffset: number, overrides = {}) =>
+        event({
+          id,
+          start_time: iso(startOffset),
+          end_time: iso(startOffset + HOUR),
+          ...overrides,
+        });
+      eventService.findByChapter.mockResolvedValue([
+        at('attended', -24 * HOUR),
+        at('late', -30 * HOUR),
+        at('excused', -20 * HOUR),
+        // Required and missed: it stays, so the week can't close.
+        at('missed-required', -26 * HOUR),
+        at('skipped-optional', -28 * HOUR, { is_mandatory: false }),
+        at('required-ahead', 24 * HOUR),
+        at('optional-ahead', 48 * HOUR, { is_mandatory: false }),
+        // Leaves the caller out.
+        at('not-invited', 30 * HOUR, {
+          excluded_role_ids: ['role-member'],
+        }),
+        // Last week's and next week's.
+        at('before-the-week', -70 * HOUR),
+        at('after-the-week', 6 * 24 * HOUR),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        attended('attended', 'PRESENT'),
+        attended('late', 'LATE'),
+        attended('excused', 'EXCUSED'),
+        attended('missed-required', 'ABSENT'),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(attendanceRepo.findByUserForEvents).toHaveBeenCalledWith(ME, [
+        'attended',
+        'late',
+        'excused',
+        'missed-required',
+        'skipped-optional',
+        'required-ahead',
+        'optional-ahead',
+        'not-invited',
+      ]);
+      // Done: attended, late. Open: missed-required, required-ahead,
+      // optional-ahead.
+      expect(view.week.events).toEqual({ done: 2, total: 5 });
+    });
+
+    it('holds an alumnus to no event the default alone requires', async () => {
+      const { service, eventService, rbacService } = build();
+      rbacService.isAlumni.mockResolvedValue(true);
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'missed',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.week.events).toEqual({ done: 0, total: 0 });
+    });
+
+    it('serves a part null with no name while its module is off', async () => {
+      const { service, attendanceRepo } = build();
+
+      const view = await service.getActivity(CHAPTER, ME, {
+        events: false,
+        tasks: false,
+        polls: false,
+      });
+
+      expect(view.week).toMatchObject({
+        events: null,
+        tasks: null,
+        polls: null,
+        // Cards are chat messages: no module switches them off.
+        cards: { done: 0, total: 0 },
+        unavailable: [],
+      });
+      expect(attendanceRepo.findByUserForEvents).not.toHaveBeenCalled();
+    });
+
+    it('serves a part that failed null and names it, so it never reads as zero', async () => {
+      const { service, taskService, eventService, attendanceRepo } = build();
+      taskService.count.mockRejectedValue(new Error('boom'));
+      eventService.findByChapter.mockResolvedValue([
+        event({ id: 'e', start_time: iso(HOUR), end_time: iso(2 * HOUR) }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockRejectedValue(new Error('boom'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.week).toMatchObject({
+        events: null,
+        tasks: null,
+        polls: { done: 0, total: 0 },
+        unavailable: ['events', 'tasks'],
+      });
+      // The list's own events section is a different read and still serves.
+      expect(view.coming_up.map((row) => row.id)).toEqual(['e']);
+      expect(view.unavailable).toEqual(['tasks']);
+    });
   });
 });

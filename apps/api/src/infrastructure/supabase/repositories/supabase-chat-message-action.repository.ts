@@ -93,11 +93,13 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     messageIds: string[],
     userId: string,
     actionType: string,
-  ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]> {
+  ): Promise<
+    Pick<ChatMessageAction, 'message_id' | 'payload' | 'created_at'>[]
+  > {
     if (messageIds.length === 0) return [];
     const { data, error } = await this.supabase
       .from('chat_message_actions')
-      .select('message_id, payload')
+      .select('message_id, payload, created_at')
       .in('message_id', messageIds)
       .eq('user_id', userId)
       .eq('action_type', actionType);
@@ -105,17 +107,23 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     return (data ?? []).map((row) => ({
       message_id: row.message_id,
       payload: row.payload ?? {},
+      created_at: row.created_at,
     }));
   }
 
   async findAllActionsOnMessages(
     messageIds: string[],
     actionType: string,
-  ): Promise<Pick<ChatMessageAction, 'message_id' | 'user_id' | 'payload'>[]> {
+  ): Promise<
+    Pick<
+      ChatMessageAction,
+      'message_id' | 'user_id' | 'payload' | 'created_at'
+    >[]
+  > {
     if (messageIds.length === 0) return [];
     const { data, error } = await this.supabase
       .from('chat_message_actions')
-      .select('message_id, user_id, payload')
+      .select('message_id, user_id, payload, created_at')
       .in('message_id', messageIds)
       .eq('action_type', actionType);
     if (error) throw new SupabaseQueryError(error);
@@ -123,6 +131,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       message_id: row.message_id,
       user_id: row.user_id,
       payload: row.payload ?? {},
+      created_at: row.created_at,
     }));
   }
 

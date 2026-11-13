@@ -14,11 +14,12 @@ import { StyleSheet } from "react-native";
 import { getSignetTokens } from "@repo/theme/signet";
 
 /**
- * The phone's Activity screen (#3897; its redesign, #4173 step 2), rendered
- * for real over a stubbed read and a stubbed sheet: the summary and its
- * tiles, the groups and their parts, the rows it draws, what a row opens, and
- * when it reads again. The sheet has its own spec
- * (`activity-sheet.spec.tsx`); the row model's is in `@repo/hooks`.
+ * The phone's Activity screen (#3897; rebuilt around the week ring, #4766),
+ * rendered for real over a stubbed read and a stubbed sheet: the week card,
+ * the semester gauges, the To review card, the To do list by day, what the
+ * member made, what a row opens, and when it reads again. The sheet has its
+ * own spec (`activity-sheet.spec.tsx`); the models' are in `@repo/hooks`
+ * (`activity-agenda.spec.ts`, `activity-rows.spec.ts`).
  *
  * It renders `app/(app)/(tabs)/activity.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -58,6 +59,31 @@ const myPoll = (id: string, question: string, closed = false) => ({
   message: {},
 });
 
+/** The member's week: two events (one made), one task still open. */
+const week = (overrides: Record<string, unknown> = {}) => ({
+  start: "2026-11-08T05:00:00.000Z",
+  end: "2026-11-15T05:00:00.000Z",
+  events: { done: 1, total: 2 },
+  tasks: { done: 0, total: 1 },
+  polls: { done: 0, total: 0 },
+  cards: { done: 0, total: 0 },
+  unavailable: [] as string[],
+  ...overrides,
+});
+
+/** An event that invites the member, `hours` from now. */
+const eventIn = (hours: number, overrides: Record<string, unknown> = {}) => ({
+  id: "ev-1",
+  name: "Chapter",
+  start_time: new Date(Date.now() + hours * 3_600_000).toISOString(),
+  end_time: null,
+  location: "Great Hall",
+  attendance: "required",
+  check_in_open: false,
+  checked_in: false,
+  ...overrides,
+});
+
 const read = (overrides: Record<string, unknown> = {}) => ({
   needs_you: {
     tasks: [task()],
@@ -87,6 +113,7 @@ const read = (overrides: Record<string, unknown> = {}) => ({
   },
   needs_you_count: 2,
   unavailable: [] as string[],
+  week: week(),
   ...overrides,
 });
 
@@ -102,8 +129,8 @@ const activity = vi.hoisted(() => ({
 }));
 
 /**
- * The chapter read: its module switches, which hide a module's tile, and its
- * plan, which decides whether rows carry Confirm and Approve (#4437).
+ * The chapter read: its module switches, which hide the Task board door,
+ * and its plan, which decides whether rows carry Confirm and Approve (#4437).
  */
 const chapter = vi.hoisted(() => ({
   data: undefined as
@@ -137,7 +164,7 @@ const links = vi.hoisted(() => ({
   markRead: vi.fn(),
 }));
 
-/** The standing read (`GET /v1/activity/standing`) the screen draws on top. */
+/** The standing read (`GET /v1/activity/standing`) behind the gauges. */
 const standing = vi.hoisted(() => ({
   value: {
     data: undefined as unknown,
@@ -153,7 +180,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
   useActivityUnread: () => ({ markRead: links.markRead }),
-  // Read by the back row and the chips for the chapter's accent.
+  // Read for the chapter's accent, its modules and its plan.
   useCurrentChapter: () => ({
     data: chapter.data,
     isPending: chapter.isPending,
@@ -199,26 +226,26 @@ vi.mock("@/components/activity/activity-sheet", () => ({
   },
 }));
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import ActivityScreen from "@/app/(app)/(tabs)/activity";
-import { resetActivityFilterForTests } from "@/lib/activity/activity-filter";
 import {
   ActivityAsk,
   ActivityAskButton,
   ActivityListRow,
 } from "@/components/activity/activity-row";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
-import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
 import { UndoBar } from "@/components/tasks/undo-bar";
+import { ProgressRing } from "@/components/activity/progress-ring";
+import { ReviewCard } from "@/components/activity/review-card";
 import {
-  ActivityStanding,
-  ActivityStandingSkeleton,
-} from "@/components/activity/activity-standing";
+  SemesterStrip,
+  SemesterStripSkeleton,
+} from "@/components/activity/semester-strip";
+import { WeekCard } from "@/components/activity/week-card";
 
 const mounted: ReactTestRenderer[] = [];
 let queryClient: QueryClient;
@@ -281,23 +308,42 @@ const sectionCount = (tree: ReactTestRenderer, label: string) => {
   return count;
 };
 
-/** A tile's resting style, flattened. */
-const tileStyle = (tree: ReactTestRenderer, id: string) =>
-  StyleSheet.flatten(tile(tree, id).props.style({ pressed: false }));
-
 const tokens = getSignetTokens("dark");
 
-/** The pressable a tile draws, by its summary id. */
-const tile = (tree: ReactTestRenderer, id: string) =>
+/** Any pressable the screen draws, by its test id. */
+const pressable = (tree: ReactTestRenderer, testID: string) =>
   tree.root.find(
     (node) =>
-      (node.type as unknown) === "Pressable" &&
-      node.props.testID === `activity-tile-${id}`,
+      (node.type as unknown) === "Pressable" && node.props.testID === testID,
   );
 
-/** The chip `FilterChips` shows as on (`null` is All). */
-const litChip = (tree: ReactTestRenderer) =>
-  tree.root.findByType(FilterChips).props.selected;
+/** A line of the week card, by the kind it counts. */
+const weekLine = (tree: ReactTestRenderer, id: string) =>
+  pressable(tree, `activity-week-line-${id}`);
+
+/** The day headings the To do list draws, in order, each with its count. */
+const dayHeadings = (tree: ReactTestRenderer) =>
+  tree.root
+    .findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        String(node.props.testID ?? "").startsWith("activity-day-"),
+    )
+    .map(
+      (day) =>
+        day.find((node) => node.props.accessibilityRole === "header").props
+          .accessibilityLabel as string,
+    );
+
+/** Whether a section heading is drawn at all. */
+const hasSection = (tree: ReactTestRenderer, label: string) =>
+  tree.root
+    .findAllByType(SectionHeader)
+    .some((node) => node.props.children === label);
+
+/** The To review card's own row: its count, and what opens or closes it. */
+const reviewToggle = (tree: ReactTestRenderer) =>
+  pressable(tree, "activity-review-toggle");
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
@@ -306,8 +352,6 @@ describe("Activity screen (#3897)", () => {
       isPending: false,
       refetch: vi.fn(() => Promise.resolve()),
     };
-    // The remembered chip (#4402) must not carry from one test to the next.
-    resetActivityFilterForTests();
     queryClient = new QueryClient();
     sheet.props = null;
     // Reset here, not at a test's end: a failing test must not leave the
@@ -365,44 +409,511 @@ describe("Activity screen (#3897)", () => {
     expect(links).toHaveLength(0);
   });
 
-  it("lists what needs the member first, then what they made, each group with its count", () => {
-    const tree = render();
-    // The approval is for now and the task, due in 2099, is for later.
-    expect(rowLabels(tree)).toEqual([
-      "Food bank",
-      "Book the venue",
-      "Dues vote",
-    ]);
-    expect(sectionCount(tree, "Needs you")).toBe(2);
-    // Open polls only: the closed one is archived, outside the count.
-    expect(sectionCount(tree, "Made by you")).toBe(1);
-    // The count is its own muted text, not part of the caption.
-    expect(screenText(tree)).not.toContain("Needs you · 2");
-    // Nothing is coming up, and the group says so instead of vanishing.
-    expect(sectionCount(tree, "Coming up")).toBeNull();
-    expect(screenText(tree)).toContain("No events in the next two weeks.");
+  describe("the week card (#4766)", () => {
+    const ring = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(ProgressRing)
+        .find((node) => node.props.testID === "activity-week-ring")!;
+
+    it("draws the week as one ring, done of total, with a line per kind", () => {
+      const tree = render();
+      expect(ring(tree).props.progress).toBeCloseTo(1 / 3);
+      expect(drawnText(ring(tree))).toBe("1of 3");
+      const text = screenText(tree);
+      expect(text).toContain("2 left this week");
+      // One sentence to a screen reader, where the ring is decoration.
+      expect(
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel ===
+            "1 of 3 things done this week. 2 left this week.",
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(weekLine(tree, "events").props.accessibilityLabel).toBe(
+        "Events: 1 of 2 done",
+      );
+      expect(drawnText(weekLine(tree, "tasks"))).toBe("Tasks0 of 1");
+      // Nothing to answer this week: no line, never "0 of 0".
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-week-line-answers",
+        ),
+      ).toHaveLength(0);
+      expect(text).not.toContain("0 of 0");
+      // The count tiles and the chips are gone.
+      expect(text).not.toMatch(/need you|Your tasks|Polls to vote on/);
+    });
+
+    it("puts the one thing to do next on the card, and no heading over an empty list", () => {
+      const tree = render();
+      const card = tree.root.findByType(WeekCard);
+      expect(card.props.next.title).toBe("Book the venue");
+      expect(drawnText(card)).toContain("Next");
+      // It is on the card, not repeated under To do.
+      expect(
+        rowLabels(tree).filter((label) => label === "Book the venue"),
+      ).toHaveLength(1);
+      expect(hasSection(tree, "To do")).toBe(false);
+      expect(screenText(tree)).not.toContain("Nothing to do right now.");
+    });
+
+    it("leads with an event open for check-in, whose ask is the one filled button", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [eventIn(0.1, { check_in_open: true })],
+        }),
+      };
+      const tree = render();
+      const card = tree.root.findByType(WeekCard);
+      expect(card.props.next.title).toBe("Chapter");
+      expect(drawnText(card)).toContain("Happening now");
+      const asks = tree.root.findAllByType(ActivityAsk);
+      expect(asks.filter((ask) => ask.props.filled)).toHaveLength(1);
+      expect(card.findByType(ActivityAsk).props).toMatchObject({
+        label: "Check in",
+        filled: true,
+      });
+      // The task it displaced is the list's now.
+      expect(hasSection(tree, "To do")).toBe(true);
+    });
+
+    it("says nothing is due, with a quiet check and no zero", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          week: week({
+            events: { done: 0, total: 0 },
+            tasks: { done: 0, total: 0 },
+          }),
+        }),
+      };
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("Nothing due this week");
+      expect(ring(tree).props.progress).toBe(0);
+      expect(drawnText(ring(tree))).toBe("");
+      expect(text).not.toMatch(/\b0 of 0\b|0 left/);
+      expect(text).toContain("Nothing to do right now.");
+    });
+
+    it("closes the ring in the success hue when everything is done", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          week: week({
+            events: { done: 2, total: 2 },
+            tasks: { done: 1, total: 1 },
+          }),
+        }),
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain("All done this week");
+      expect(ring(tree).props).toMatchObject({
+        progress: 1,
+        color: tokens.color.semantic.success,
+      });
+    });
+
+    it("draws a part that couldn't load as a dash, says at least, and names it", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          unavailable: ["tasks"],
+          week: week({ tasks: null, unavailable: ["tasks"] }),
+        }),
+      };
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("At least 1 left this week");
+      expect(drawnText(weekLine(tree, "tasks"))).toBe("Tasks–");
+      expect(weekLine(tree, "tasks").props.accessibilityLabel).toBe(
+        "Tasks: couldn't load",
+      );
+      expect(text).toContain("Couldn't load tasks. Pull down to try again.");
+      expect(text).not.toMatch(/All done|Nothing due/);
+    });
+
+    it("has no line for a kind the chapter has off", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ week: week({ events: null, polls: null }) }),
+      };
+      const tree = render();
+      expect(
+        tree.root
+          .findAll((node) =>
+            String(node.props.testID ?? "").startsWith("activity-week-line-"),
+          )
+          .map((node) => node.props.testID),
+      ).toContain("activity-week-line-tasks");
+      expect(screenText(tree)).not.toContain("Events");
+      expect(screenText(tree)).toContain("1 left this week");
+    });
+
+    it("draws only the next thing against an API from before the week", () => {
+      const data = read() as Record<string, unknown>;
+      delete data.week;
+      activity.value = { ...activity.value, data };
+      const tree = render();
+      expect(
+        tree.root
+          .findAllByType(ProgressRing)
+          .filter((node) => node.props.testID === "activity-week-ring"),
+      ).toHaveLength(0);
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe(
+        "Book the venue",
+      );
+      expect(screenText(tree)).not.toMatch(/this week/);
+    });
   });
 
-  it("splits Needs you into Now and Later, and Made by you by kind", () => {
-    const text = screenText(render());
-    expect(text).toMatch(
-      /Now\n1\n[\s\S]*Food bank[\s\S]*Later\n1\n[\s\S]*Book the venue/,
-    );
-    expect(text).toContain("Polls you posted");
-    expect(text).not.toContain("Files you uploaded");
+  describe("To do, by day (#4766)", () => {
+    const busy = () =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          tasks: [
+            task({
+              id: "late",
+              title: "Receipts",
+              status: "OVERDUE",
+              due_date: "2020-01-01",
+            }),
+            task({
+              id: "late-2",
+              title: "Old form",
+              status: "OVERDUE",
+              due_date: "2020-01-02",
+            }),
+            ...Array.from({ length: 5 }, (_, index) =>
+              task({
+                id: `far-${index}`,
+                title: `Far ${index}`,
+                due_date: "2099-01-01",
+              }),
+            ),
+          ],
+          polls: [
+            {
+              ...myPoll("p-ask", "Formal theme"),
+              sender_id: "officer",
+              has_voted: false,
+            },
+          ],
+        },
+        coming_up: [eventIn(30)],
+        week: week({ polls: { done: 0, total: 1 } }),
+      });
+
+    it("lists the member's own things under their days, Overdue first", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      // The first overdue task is the card's; the rest lead the list.
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe("Receipts");
+      const headings = dayHeadings(tree);
+      expect(headings[0]).toBe("Overdue, 1");
+      expect(headings.at(-2)).toBe("Later, 5");
+      expect(headings.at(-1)).toBe("No deadline, 1");
+      expect(sectionCount(tree, "To do")).toBe(8);
+      // What waits on the member's review is never in this list.
+      const toDo = tree.root
+        .findAll((node) =>
+          String(node.props.testID ?? "").startsWith("activity-day-"),
+        )
+        .flatMap((day) => day.findAllByType(ActivityListRow))
+        .map((node) => node.props.row.title);
+      expect(toDo).not.toContain("Food bank");
+    });
+
+    it("draws Overdue in the warning hue, without repeating it as a chip", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      const overdue = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.testID === "activity-day-overdue",
+      );
+      const label = overdue.find(
+        (node) =>
+          (node.type as unknown) === "Text" && drawnText(node) === "Overdue",
+      );
+      expect(StyleSheet.flatten(label.props.style).color).toBe(
+        tokens.color.semantic.warning,
+      );
+      expect(overdue.findAllByType(StatusChip)).toHaveLength(0);
+    });
+
+    it("says only what is news on a row: no To do chip, and Required on an event", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      expect(row(tree, "Far 0").findAllByType(HairlineChip)).toHaveLength(0);
+      expect(row(tree, "Chapter").findByType(HairlineChip).props.label).toBe(
+        "Required",
+      );
+      // An ask that isn't the card's stays the tinted ask, which opens it.
+      expect(
+        row(tree, "Formal theme").findByType(ActivityAsk).props,
+      ).toMatchObject({ label: "Vote", filled: false });
+    });
+
+    it("draws a day's first three, then the rest on Show more", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      const far = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Far"));
+      // Later is not a day, so nothing is held back there.
+      expect(far()).toHaveLength(5);
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            tasks: Array.from({ length: 6 }, (_, index) =>
+              task({
+                id: `soon-${index}`,
+                title: `Soon ${index}`,
+                due_date: null,
+                due_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+              }),
+            ),
+          },
+        }),
+      };
+      const days = render();
+      const soon = () =>
+        rowLabels(days).filter((label) => label.startsWith("Soon"));
+      // One is the card's next thing; the day draws three of the other five.
+      expect(soon()).toHaveLength(4);
+      const more = days.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityState?.expanded === false &&
+          drawnText(node) === "Show 2 more",
+      );
+      act(() => {
+        more.props.onPress();
+      });
+      expect(soon()).toHaveLength(6);
+      expect(screenText(days)).toContain("Show fewer");
+    });
+
+    it("narrows to one kind from a week line, and back from the same line or the note", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      act(() => {
+        weekLine(tree, "events").props.onPress();
+      });
+      expect(weekLine(tree, "events").props.accessibilityState).toEqual({
+        selected: true,
+      });
+      expect(dayHeadings(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain("Showing only events.");
+      // The card keeps its next thing; the rest of the page steps back.
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe("Receipts");
+      expect(hasSection(tree, "Waiting on others")).toBe(false);
+      const note = tree.root
+        .findAllByType(InlineNote)
+        .find((node) => node.props.action?.label === "Show everything")!;
+      act(() => {
+        note.props.action.onPress();
+      });
+      expect(weekLine(tree, "events").props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(hasSection(tree, "Waiting on others")).toBe(true);
+      // The same line clears it too.
+      act(() => {
+        weekLine(tree, "tasks").props.onPress();
+      });
+      expect(sectionCount(tree, "To do")).toBe(7);
+      act(() => {
+        weekLine(tree, "tasks").props.onPress();
+      });
+      expect(sectionCount(tree, "To do")).toBe(8);
+    });
+
+    it("drops a narrowing when its line leaves the card", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      act(() => {
+        weekLine(tree, "answers").props.onPress();
+      });
+      expect(screenText(tree)).toContain("Showing only polls and sign-ups.");
+      activity.value = {
+        ...activity.value,
+        data: { ...busy(), week: week() },
+      };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(screenText(tree)).not.toContain("Showing only");
+      expect(sectionCount(tree, "To do")).toBe(8);
+    });
   });
 
-  it("draws one part with no heading when everything is for now", () => {
-    activity.value = {
-      ...activity.value,
-      data: read({
-        needs_you: { ...read().needs_you, tasks: [] },
-      }),
-    };
-    const text = screenText(render());
-    expect(text).toContain("Food bank");
-    expect(text).not.toMatch(/^Now$/m);
-    expect(text).not.toMatch(/^Later$/m);
+  describe("To review (#4766)", () => {
+    const queue = (length: number) =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          hours_approvals: [],
+          task_confirmations: Array.from({ length }, (_, index) =>
+            task({
+              id: `done-${index}`,
+              title: `Chore ${index}`,
+              status: "COMPLETED",
+              stored_status: "COMPLETED",
+            }),
+          ),
+        },
+      });
+
+    it("is one card with one count, and the week never counts it", () => {
+      const tree = render();
+      const card = tree.root.findByType(ReviewCard);
+      expect(reviewToggle(tree).props.accessibilityLabel).toBe("To review, 1");
+      expect(drawnText(card)).toContain("1 hours entry");
+      expect(screenText(tree)).toContain("2 left this week");
+    });
+
+    it("draws no card with nothing to review", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, hours_approvals: [] },
+        }),
+      };
+      const tree = render();
+      expect(tree.root.findAllByType(ReviewCard)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("To review");
+    });
+
+    it("starts a short queue open, so Confirm is still one press", () => {
+      activity.value = { ...activity.value, data: queue(3) };
+      const tree = render();
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(3);
+    });
+
+    it("keeps a long queue behind its count until pressed, five at a time", () => {
+      activity.value = { ...activity.value, data: queue(8) };
+      const tree = render();
+      const chores = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Chore"));
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: false,
+      });
+      expect(reviewToggle(tree).props.accessibilityHint).toBe("8 tasks");
+      expect(chores()).toHaveLength(0);
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(chores()).toHaveLength(5);
+      const all = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          drawnText(node) === "Show all 8",
+      );
+      act(() => {
+        all.props.onPress();
+      });
+      expect(chores()).toHaveLength(8);
+      // A press sticks: it stays closed once the member closes it.
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(chores()).toHaveLength(0);
+    });
+
+    it("says its part couldn't load to the officer whose queue it is", () => {
+      links.permissions = ["service:approve"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, hours_approvals: [] },
+          unavailable: ["hours_approvals"],
+        }),
+      };
+      const tree = render();
+      expect(drawnText(tree.root.findByType(ReviewCard))).toContain(
+        "Couldn't load hours waiting for approval. Pull down to try again.",
+      );
+      // A member is not told about a queue they don't have.
+      links.permissions = [];
+      expect(render().root.findAllByType(ReviewCard)).toHaveLength(0);
+    });
+  });
+
+  describe("Waiting on others, and Links", () => {
+    it("lists what the member made under its own name, by kind, with its count", () => {
+      const tree = render();
+      // Open polls only: the closed one is archived, outside the count.
+      expect(sectionCount(tree, "Waiting on others")).toBe(1);
+      expect(screenText(tree)).toContain("Polls you posted");
+      expect(hasSection(tree, "Made by you")).toBe(false);
+    });
+
+    it("leaves out a group with nothing in it, rather than an empty line", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ made_by_you: { polls: [], tasks: [], events: [] } }),
+      };
+      const tree = render();
+      expect(hasSection(tree, "Waiting on others")).toBe(false);
+      expect(hasSection(tree, "Links")).toBe(false);
+      expect(hasSection(tree, "Coming up")).toBe(false);
+      expect(screenText(tree)).not.toMatch(/show up here/);
+    });
+
+    it("draws the first few of a long part, then all of them on Show all", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            ...read().made_by_you,
+            tasks: Array.from({ length: 5 }, (_, index) =>
+              task({ id: `made-${index}`, title: `Assigned ${index}` }),
+            ),
+          },
+        }),
+      };
+      const tree = render();
+      const assigned = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Assigned"));
+      expect(assigned()).toHaveLength(3);
+      const showAll = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityState?.expanded === false &&
+          drawnText(node) === "Show all 5",
+      );
+      act(() => {
+        showAll.props.onPress();
+      });
+      expect(assigned()).toHaveLength(5);
+      expect(screenText(tree)).toContain("Show fewer");
+    });
+
+    it("says a part of it couldn't load instead of leaving it out", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: { polls: [], tasks: [], events: [] },
+          unavailable: ["made_events"],
+        }),
+      };
+      const tree = render();
+      expect(hasSection(tree, "Waiting on others")).toBe(true);
+      expect(screenText(tree)).toContain(
+        "Couldn't load events you made. Pull down to try again.",
+      );
+    });
   });
 
   it("names what a row asks of the member as the action, for the eye and for a screen reader", () => {
@@ -413,37 +924,29 @@ describe("Activity screen (#3897)", () => {
       "Approve",
     );
     expect(approval.findAllByType(StatusChip)).toHaveLength(0);
-    const pressable = approval.find(
+    const press = approval.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "button",
     );
-    expect(pressable.props.accessibilityValue).toEqual({ text: "Approve" });
-    expect(pressable.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
-    // A state is a chip, never the ask: "To do" is quiet metadata, so the
-    // hairline kind, as web's outline badge (#4132).
-    const task = row(tree, "Book the venue");
-    expect(task.findByType(HairlineChip).props.label).toBe("To do");
-    expect(task.findAllByType(StatusChip)).toHaveLength(0);
-    expect(task.findAllByType(ActivityAsk)).toHaveLength(0);
+    expect(press.props.accessibilityValue).toEqual({ text: "Approve" });
+    expect(press.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
   });
 
   it("leads a row with the face of who it is from, its kind on the corner, else its glyph", () => {
     activity.value = {
       ...activity.value,
       data: read({
-        coming_up: [
-          {
-            id: "ev-1",
-            name: "Chapter",
-            start_time: "2099-03-07T19:00:00.000Z",
-            end_time: null,
-            location: "Great Hall",
-            attendance: "optional",
-            check_in_open: false,
-            checked_in: false,
-          },
-        ],
+        coming_up: [eventIn(30, { attendance: "optional" })],
+        needs_you: {
+          ...read().needs_you,
+          tasks: [
+            task({
+              due_date: null,
+              due_at: new Date(Date.now() + 3_600_000).toISOString(),
+            }),
+          ],
+        },
       }),
     };
     const tree = render();
@@ -466,6 +969,22 @@ describe("Activity screen (#3897)", () => {
     ).toBeGreaterThan(0);
     // A poll the member made shows no face of their own.
     expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
+    // Under its day's heading an event leads with its glyph: the heading
+    // says the date, and the detail the time and place.
+    expect(lead("Chapter", "activity-glyph-event").length).toBeGreaterThan(0);
+    expect(lead("Chapter", "activity-date-block")).toHaveLength(0);
+    expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
+  });
+
+  it("leads the card's event with its date, month over day", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: { ...read().needs_you, tasks: [] },
+        coming_up: [eventIn(30)],
+      }),
+    };
+    const tree = render();
     const block = row(tree, "Chapter").findAll(
       (node) =>
         (node.type as unknown) === "View" &&
@@ -474,7 +993,6 @@ describe("Activity screen (#3897)", () => {
     expect(block).toHaveLength(1);
     // The block is decoration; the detail still says the day in words.
     expect(block[0]!.props.accessibilityElementsHidden).toBe(true);
-    expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
   });
 
   it("says a closing time less than a day away relatively, in the warning hue (#4402)", () => {
@@ -556,204 +1074,6 @@ describe("Activity screen (#3897)", () => {
       { kind: "form", item_id: "m-form" },
     ]);
     expect(sheet.props?.row ?? null).toBeNull();
-  });
-
-  describe("summary", () => {
-    it("says how much is waiting, with a tile per kind of ask", () => {
-      const tree = render();
-      expect(screenText(tree)).toContain("2 things need you");
-      // A member who confirms nothing and approves nothing gets neither tile.
-      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
-      expect(tile(tree, "tasks").props.accessibilityValue).toEqual({
-        text: "1",
-      });
-      expect(tile(tree, "polls").props.accessibilityValue).toEqual({
-        text: "0",
-      });
-      expect(
-        tree.root.findAll(
-          (node) => node.props.testID === "activity-tile-confirm",
-        ),
-      ).toHaveLength(0);
-    });
-
-    it("gives an officer the To confirm and Hours to approve tiles", () => {
-      links.permissions = ["tasks:manage", "service:approve"];
-      const tree = render();
-      expect(tile(tree, "confirm").props.accessibilityLabel).toBe("To confirm");
-      expect(tile(tree, "approve").props.accessibilityValue).toEqual({
-        text: "1",
-      });
-    });
-
-    it("sets its chip from a tile, and clears it from the lit tile", () => {
-      const tree = render();
-      act(() => {
-        tile(tree, "tasks").props.onPress();
-      });
-      expect(litChip(tree)).toBe("task");
-      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
-        selected: true,
-      });
-      expect(rowLabels(tree)).toEqual(["Book the venue"]);
-      act(() => {
-        tile(tree, "tasks").props.onPress();
-      });
-      expect(litChip(tree)).toBeNull();
-    });
-
-    it("keeps the Tasks chip lit under To confirm, which narrows to the confirmations", () => {
-      links.permissions = ["tasks:manage"];
-      activity.value = {
-        ...activity.value,
-        data: read({
-          needs_you: {
-            ...read().needs_you,
-            task_confirmations: [
-              task({
-                id: "task-2",
-                title: "Sweep the porch",
-                status: "COMPLETED",
-              }),
-            ],
-          },
-        }),
-      };
-      const tree = render();
-      act(() => {
-        tile(tree, "confirm").props.onPress();
-      });
-      expect(litChip(tree)).toBe("task");
-      expect(rowLabels(tree)).toEqual(["Sweep the porch"]);
-      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
-        selected: false,
-      });
-    });
-
-    it("is all caught up at zero, and never over a section that failed", () => {
-      const empty = {
-        tasks: [],
-        task_confirmations: [],
-        hours_approvals: [],
-        polls: [],
-      };
-      activity.value = {
-        ...activity.value,
-        data: read({ needs_you: empty, needs_you_count: 0 }),
-      };
-      const tree = render();
-      expect(screenText(tree)).toContain("You're all caught up");
-      act(() => tree.unmount());
-      activity.value = {
-        ...activity.value,
-        data: read({
-          needs_you: empty,
-          needs_you_count: 0,
-          unavailable: ["polls"],
-        }),
-      };
-      const failed = render();
-      const text = screenText(failed);
-      expect(text).not.toContain("You're all caught up");
-      expect(text).toContain("Some of what needs you couldn't load");
-      // Unknown, never 0: a dash on the tile, "Couldn't load" to a reader.
-      expect(tile(failed, "polls").props.accessibilityValue).toEqual({
-        text: "Couldn't load",
-      });
-      expect(drawnText(tile(failed, "polls"))).toBe("–Polls to vote on");
-    });
-
-    it("dims a tile with nothing waiting, and not one that has something", () => {
-      const tree = render();
-      expect(tileStyle(tree, "polls").opacity).toBe(0.6);
-      expect(tileStyle(tree, "tasks").opacity).toBeUndefined();
-    });
-
-    it("shows no tile for a module the chapter has off", () => {
-      chapter.data = { enabled_modules: { polls: false } };
-      const tree = render();
-      expect(
-        tree.root.findAll(
-          (node) => node.props.testID === "activity-tile-polls",
-        ),
-      ).toHaveLength(0);
-      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
-    });
-
-    it("names the next event under the headline", () => {
-      activity.value = {
-        ...activity.value,
-        data: read({
-          coming_up: [
-            {
-              id: "ev-1",
-              name: "Exec Board Sync",
-              start_time: "2099-03-07T19:00:00.000Z",
-              end_time: null,
-              location: null,
-              attendance: "optional",
-              check_in_open: false,
-              checked_in: false,
-            },
-          ],
-        }),
-      };
-      expect(screenText(render())).toMatch(/Next up: Exec Board Sync · /);
-    });
-  });
-
-  describe("Show all", () => {
-    it("draws the first few of a long part, then all of them on Show all", () => {
-      activity.value = {
-        ...activity.value,
-        data: read({
-          made_by_you: {
-            ...read().made_by_you,
-            tasks: Array.from({ length: 5 }, (_, index) =>
-              task({ id: `made-${index}`, title: `Assigned ${index}` }),
-            ),
-          },
-        }),
-      };
-      const tree = render();
-      const assigned = () =>
-        rowLabels(tree).filter((label) => label.startsWith("Assigned"));
-      expect(assigned()).toHaveLength(3);
-      const showAll = tree.root.find(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityState?.expanded === false &&
-          drawnText(node) === "Show all 5",
-      );
-      expect(screenText(tree)).toContain("Show all 5");
-      act(() => {
-        showAll.props.onPress();
-      });
-      expect(assigned()).toHaveLength(5);
-      expect(screenText(tree)).toContain("Show fewer");
-    });
-
-    it("holds nothing back under a chip", () => {
-      activity.value = {
-        ...activity.value,
-        data: read({
-          made_by_you: {
-            ...read().made_by_you,
-            tasks: Array.from({ length: 5 }, (_, index) =>
-              task({ id: `made-${index}`, title: `Assigned ${index}` }),
-            ),
-          },
-        }),
-      };
-      const tree = render();
-      act(() => {
-        tree.root.findByType(FilterChips).props.onSelect("task");
-      });
-      expect(
-        rowLabels(tree).filter((label) => label.startsWith("Assigned")),
-      ).toHaveLength(5);
-      expect(screenText(tree)).not.toMatch(/Show all/);
-    });
   });
 
   it("opens a row's record in the sheet, with the viewer's id", () => {
@@ -906,41 +1226,72 @@ describe("Activity screen (#3897)", () => {
     ).toBe("Book the venue (moved)");
   });
 
-  describe("This semester (the standing)", () => {
+  describe("This semester (the gauges)", () => {
     const standingRead = {
       points: { total: 42, rank: 5, ranked: 58, goal: null },
       required_events: { required: 8, attended: 6, excused: 0 },
       service: {
         approved_minutes: 270,
         pending_minutes: 0,
-        goal_minutes: null,
+        goal_minutes: 600,
       },
       study: {
-        minutes: 125,
+        minutes: 0,
         week_start: "2026-11-08T05:00:00.000Z",
         goal_minutes: null,
       },
       unavailable: [],
     };
-    const standingRow = (tree: ReactTestRenderer, id: string) =>
-      tree.root.find(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.testID === `activity-standing-${id}`,
-      );
+    const gauge = (tree: ReactTestRenderer, id: string) =>
+      pressable(tree, `activity-standing-${id}`);
+    const gaugeRings = (tree: ReactTestRenderer) =>
+      tree.root
+        .findByType(SemesterStrip)
+        .findAllByType(ProgressRing)
+        .map((node) => node.props.testID);
 
-    it("draws above what needs the member, one row per part", () => {
+    it("draws a gauge per number, with a ring only where there is a target", () => {
       standing.value = { ...standing.value, data: standingRead };
       const tree = render();
-      const block = tree.root.findByType(ActivityStanding);
-      expect(drawnText(block)).toContain("This semester");
-      expect(drawnText(standingRow(tree, "points"))).toContain("#5 of 58");
-      expect(drawnText(standingRow(tree, "required_events"))).toContain(
-        "6 of 8",
+      const strip = tree.root.findByType(SemesterStrip);
+      expect(drawnText(strip)).toContain("This semester");
+      expect(drawnText(gauge(tree, "points"))).toBe("42Points · #5 of 58");
+      expect(drawnText(gauge(tree, "required_events"))).toBe("6 of 8Events");
+      expect(drawnText(gauge(tree, "service"))).toBe("4h 30m of 10hService");
+      expect(gauge(tree, "required_events").props.accessibilityLabel).toBe(
+        "Attended 6 of 8 required events this semester",
       );
+      // Points have no goal here: the number stands alone.
+      expect(gaugeRings(tree)).toEqual([
+        "activity-gauge-ring-required_events",
+        "activity-gauge-ring-service",
+      ]);
+    });
+
+    it("leaves out a zero with nothing to aim at, and the whole strip with none left", () => {
+      standing.value = { ...standing.value, data: standingRead };
+      const tree = render();
+      // No study this week and no study goal: no gauge, not a zero.
       expect(
-        standingRow(tree, "required_events").props.accessibilityLabel,
-      ).toBe("Attended 6 of 8 required events this semester");
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-standing-study",
+        ),
+      ).toHaveLength(0);
+      standing.value = {
+        ...standing.value,
+        data: {
+          points: { total: 0, rank: null, ranked: 0, goal: null },
+          required_events: { required: 0, attended: 0, excused: 0 },
+          service: {
+            approved_minutes: 0,
+            pending_minutes: 0,
+            goal_minutes: null,
+          },
+          study: standingRead.study,
+          unavailable: [],
+        },
+      };
+      expect(screenText(render())).not.toContain("This semester");
     });
 
     it("opens the screen that owns each number, switching tabs rather than stacking them", () => {
@@ -948,27 +1299,27 @@ describe("Activity screen (#3897)", () => {
       vi.mocked(useRouter().push).mockClear();
       standing.value = { ...standing.value, data: standingRead };
       const tree = render();
-      act(() => standingRow(tree, "required_events").props.onPress());
+      act(() => gauge(tree, "required_events").props.onPress());
       expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/events");
-      act(() => standingRow(tree, "service").props.onPress());
+      act(() => gauge(tree, "service").props.onPress());
       expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
         "/service-hours",
       );
       // The board left the tab bar (#4610), so Points pushes it.
       vi.mocked(useRouter().navigate).mockClear();
-      act(() => standingRow(tree, "points").props.onPress());
+      act(() => gauge(tree, "points").props.onPress());
       expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
       expect(vi.mocked(useRouter)().navigate).not.toHaveBeenCalled();
     });
 
     it("holds its place while it loads, and draws nothing when its read fails", () => {
       standing.value = { ...standing.value, isPending: true };
-      expect(
-        render().root.findAllByType(ActivityStandingSkeleton),
-      ).toHaveLength(1);
+      expect(render().root.findAllByType(SemesterStripSkeleton)).toHaveLength(
+        1,
+      );
       standing.value = { ...standing.value, isPending: false, data: undefined };
       const tree = render();
-      expect(tree.root.findAllByType(ActivityStanding)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("This semester");
       // The rest of the page is unaffected.
       expect(rowLabels(tree)).toContain("Book the venue");
     });
@@ -1172,12 +1523,13 @@ describe("Activity screen (#3897)", () => {
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
-      // Narrowing to one chip and back draws every row afresh.
+      // Closing the card and opening it again draws every row afresh.
       act(() => {
-        tree.root.findByType(FilterChips).props.onSelect("hours");
+        reviewToggle(tree).props.onPress();
       });
+      expect(rowLabels(tree)).not.toContain("Food bank");
       act(() => {
-        tree.root.findByType(FilterChips).props.onSelect(null);
+        reviewToggle(tree).props.onPress();
       });
       expect(button(tree, "Food bank").props.disabled).toBe(true);
       await act(async () => {
@@ -1206,18 +1558,7 @@ describe("Activity screen (#3897)", () => {
               },
             ],
           },
-          coming_up: [
-            {
-              id: "ev-1",
-              name: "Chapter",
-              start_time: new Date(Date.now() + 3_600_000).toISOString(),
-              end_time: null,
-              location: "Great Hall",
-              attendance: "required",
-              check_in_open: true,
-              checked_in: false,
-            },
-          ],
+          coming_up: [eventIn(1, { check_in_open: true })],
         }),
       };
       const tree = render();
@@ -1311,123 +1652,6 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.row?.key).toBe("made:poll:p-closed");
   });
 
-  describe("the Needs you chip and the remembered chip (#4402)", () => {
-    it("narrows to what is waiting on the member and leaves the other groups out", () => {
-      const tree = render();
-      const before = rowLabels(tree);
-      act(() => {
-        tree.root.findByType(FilterChips).props.onSelect("waiting");
-      });
-      expect(litChip(tree)).toBe("waiting");
-      const after = rowLabels(tree);
-      // Every kind under Needs you stays; nothing from another group does.
-      expect(after).toContain("Book the venue");
-      expect(after.length).toBeLessThan(before.length);
-      const text = screenText(tree);
-      expect(text).not.toContain("Coming up");
-      expect(text).not.toContain("Made by you");
-      expect(text).not.toContain("Nothing of this kind here.");
-    });
-
-    it("remembers a chip on the phone, and opens on it next time", () => {
-      const first = render();
-      act(() => {
-        first.root.findByType(FilterChips).props.onSelect("poll");
-      });
-      expect(vi.mocked(AsyncStorage.setItem)).toHaveBeenCalledWith(
-        "frapp.activity.filter",
-        "poll",
-      );
-      act(() => first.unmount());
-      mounted.splice(mounted.indexOf(first), 1);
-      const second = render();
-      expect(litChip(second)).toBe("poll");
-    });
-
-    it("opens on a chip stored by an earlier launch, read from the phone's storage", async () => {
-      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("poll");
-      const tree = render();
-      await act(async () => {});
-      expect(litChip(tree)).toBe("poll");
-    });
-
-    it("opens on All for a stored value that isn't a chip", async () => {
-      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("confirm");
-      const tree = render();
-      await act(async () => {});
-      expect(litChip(tree)).toBeNull();
-    });
-
-    it("says nothing is waiting, in Needs you's own words, under its chip", () => {
-      activity.value = {
-        ...activity.value,
-        data: read({
-          needs_you: {
-            tasks: [],
-            task_confirmations: [],
-            hours_approvals: [],
-            polls: [],
-          },
-        }),
-      };
-      const tree = render();
-      act(() => {
-        tree.root.findByType(FilterChips).props.onSelect("waiting");
-      });
-      const text = screenText(tree);
-      expect(text).toContain("Nothing is waiting on you.");
-      expect(text).not.toContain("Nothing of this kind here.");
-    });
-
-    it("leaves out the chip of a module the chapter has off, and a stored chip for it opens on All", async () => {
-      chapter.data = { enabled_modules: { hours: false } };
-      vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("hours");
-      const tree = render();
-      await act(async () => {});
-      const chips = tree.root.findByType(FilterChips).props.chips as {
-        value: string | null;
-      }[];
-      expect(chips.map((chip) => chip.value)).not.toContain("hours");
-      expect(litChip(tree)).toBeNull();
-    });
-
-    it("keeps the stored chip when the To confirm tile is cleared", () => {
-      links.permissions = ["tasks:manage"];
-      const tree = render();
-      vi.mocked(AsyncStorage.setItem).mockClear();
-      act(() => {
-        tile(tree, "confirm").props.onPress();
-      });
-      act(() => {
-        tile(tree, "confirm").props.onPress();
-      });
-      expect(litChip(tree)).toBeNull();
-      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalled();
-    });
-
-    it("doesn't remember the To confirm tile's narrowing", () => {
-      links.permissions = ["tasks:manage"];
-      vi.mocked(AsyncStorage.setItem).mockClear();
-      const tree = render();
-      act(() => {
-        tile(tree, "confirm").props.onPress();
-      });
-      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalled();
-    });
-  });
-
-  it("narrows every group to one kind under a chip, keeping Needs you", () => {
-    const tree = render();
-    act(() => {
-      tree.root.findByType(FilterChips).props.onSelect("poll");
-    });
-    expect(rowLabels(tree)).toEqual(["Dues vote"]);
-    const text = screenText(tree);
-    expect(text).toContain("Needs you");
-    expect(text).toContain("Nothing of this kind here.");
-    expect(text).not.toContain("Coming up");
-  });
-
   it("says which section couldn't load instead of showing it as empty", () => {
     activity.value = {
       ...activity.value,
@@ -1439,7 +1663,7 @@ describe("Activity screen (#3897)", () => {
     const tree = render();
     const text = screenText(tree);
     expect(text).toContain("Couldn't load polls. Pull down to try again.");
-    expect(text).not.toContain("Nothing is waiting on you.");
+    expect(text).not.toContain("Nothing to do right now.");
     // In the warning hue, as web says it, so it can't read as an empty list.
     const note = tree.root
       .findAllByType(InlineNote)
@@ -1454,15 +1678,12 @@ describe("Activity screen (#3897)", () => {
     activity.value = { ...activity.value, data: undefined, isPending: true };
     const tree = render();
     expect(rowLabels(tree)).toEqual([]);
-    // The skeleton mirrors the screen: the fixed caption is real, the
-    // headline and the tiles are not drawn until the read lands.
+    // The skeleton mirrors the screen: the fixed captions are real, the
+    // ring and its headline are not drawn until the read lands.
     const text = screenText(tree);
-    expect(text).not.toMatch(/need you|caught up/);
-    expect(
-      tree.root.findAll((node) =>
-        String(node.props.testID ?? "").startsWith("activity-tile-"),
-      ),
-    ).toHaveLength(0);
+    expect(text).not.toMatch(/this week|Next/);
+    expect(tree.root.findAllByType(WeekCard)).toHaveLength(0);
+    expect(hasSection(tree, "To do")).toBe(true);
     expect(
       tree.root.findAll(
         (node) => node.props.accessibilityLabel === "Loading activity",

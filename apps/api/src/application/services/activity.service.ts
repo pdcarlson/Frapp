@@ -50,6 +50,10 @@ import {
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ActivityLinkService } from './activity-link.service';
+import {
+  acceptableWeekStart,
+  defaultWeekStart,
+} from './activity-standing.service';
 import type { ActivityLink, ChatReads } from './activity-link.service';
 import { displayNamesById } from './display-names';
 import { maskBlockedMessages } from './chat-block-mask';
@@ -236,6 +240,44 @@ export interface ActivityEvent {
   unread: boolean;
 }
 
+/** The kinds of thing the week counts, as `week.unavailable` names them. */
+export const ACTIVITY_WEEK_PARTS = [
+  'events',
+  'tasks',
+  'polls',
+  'cards',
+] as const;
+export type ActivityWeekPart = (typeof ACTIVITY_WEEK_PARTS)[number];
+
+/** How much of one kind the member has done this week, out of how much. */
+export interface ActivityWeekCount {
+  done: number;
+  /** `done` plus what is still open; never less than `done`. */
+  total: number;
+}
+
+/**
+ * The member's week (`spec/behavior/activity.md` § Week): what they finished
+ * since `start` and what is still theirs to do before `end`, by kind. It
+ * counts only the member's own things, never what waits on their review.
+ */
+export interface ActivityWeek {
+  /** Where the week begins: the client's `week_start`, or Sunday 00:00 UTC. */
+  start: string;
+  /** Seven days after `start`. */
+  end: string;
+  /** `null` when the chapter has Events off, or the read failed. */
+  events: ActivityWeekCount | null;
+  /** `null` when the chapter has Tasks off, or the read failed. */
+  tasks: ActivityWeekCount | null;
+  /** `null` when the chapter has Polls off, or the read failed. */
+  polls: ActivityWeekCount | null;
+  /** Sign-up sheets, headcounts and forms. `null` when the read failed. */
+  cards: ActivityWeekCount | null;
+  /** Parts that could not be read this time; each is served `null`. */
+  unavailable: ActivityWeekPart[];
+}
+
 export interface ActivityView {
   needs_you: {
     /** Open tasks assigned to the caller, soonest due first. */
@@ -288,6 +330,8 @@ export interface ActivityView {
   needs_you_count: number;
   /** Sections that could not be read this time and are served empty. */
   unavailable: ActivitySection[];
+  /** How the member's week is going, for the ring at the top of the page. */
+  week: ActivityWeek;
   /**
    * When the caller's unread dots began in this chapter; `null` until a
    * client that draws them calls {@link ActivityService.startUnread}, and
@@ -310,6 +354,31 @@ const COMING_UP_LIMIT = 10;
  * meeting: enough for a weekly series or two to sit beside one-off events.
  */
 const MADE_EVENTS_SCAN_LIMIT = 200;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+
+/**
+ * Whether an open task falls in the week that ends at `weekEnd`: due before
+ * it, which takes in everything overdue. A task with a time is judged by that
+ * moment. One with only a date is read as noon UTC of that day, since the
+ * server doesn't know the member's time zone: the week ends at their local
+ * midnight, which is within twelve hours of midnight UTC everywhere the
+ * product is used, so the last day of the week stays in and the next one out.
+ */
+function dueBefore(
+  task: Pick<ActivityTask, 'due_date' | 'due_at'>,
+  weekEnd: number,
+): boolean {
+  const at = Date.parse(task.due_at ?? `${task.due_date}T12:00:00Z`);
+  // An unreadable date is still the member's to do.
+  return Number.isNaN(at) || at < weekEnd;
+}
+
+/** Whether a row written at `at` was written in the week that began at `weekStart`. */
+function since(at: string, weekStart: number): boolean {
+  const written = Date.parse(at);
+  return !Number.isNaN(written) && written >= weekStart;
+}
 
 interface PollCardFields {
   question: string;
@@ -388,6 +457,10 @@ function byNewest<T extends { created_at: string }>(a: T, b: T): number {
 
 type Settled<T> = { ok: true; value: T } | { ok: false };
 
+function weekCount(done: number, open: number): ActivityWeekCount {
+  return { done, total: done + open };
+}
+
 /** What the event sections need to know about the caller, read once per request. */
 interface EventViewer {
   roleIds: string[];
@@ -451,6 +524,7 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     enabledModules: EnabledModules,
+    options: { weekStart?: Date; now?: Date } = {},
   ): Promise<ActivityView> {
     const permissions = await this.rbacService.getEffectivePermissions(
       chapterId,
@@ -458,7 +532,16 @@ export class ActivityService {
     );
     const on = (moduleKey: string) =>
       isModuleEnabled(enabledModules, moduleKey);
-    const now = Date.now();
+    const nowDate = options.now ?? new Date();
+    const now = nowDate.getTime();
+    // The member's week. A start the route would refuse (a direct caller's)
+    // falls back to the default rather than widening the read.
+    const weekStart = (
+      options.weekStart && acceptableWeekStart(options.weekStart, nowDate)
+        ? options.weekStart
+        : defaultWeekStart(nowDate)
+    ).getTime();
+    const weekEnd = weekStart + WEEK_MS;
     // Read once and shared by both event sections, and only when one of them
     // has an event to answer for.
     let viewerRead: Promise<EventViewer> | null = null;
@@ -481,16 +564,30 @@ export class ActivityService {
         this.chatBlocks.listBlockedUserIds(chapterId, userId),
       ]).then(([channels, blockedUserIds]) => ({ channels, blockedUserIds })));
 
-    const [tasks, hours, polls, cards, events, madeEvents, links] =
+    // The events that invite the caller, read once for Coming up and for the
+    // week: from the start of the week (or a day back, for the check-in
+    // grace) to the end of Coming up's window, which always reaches past the
+    // week's end.
+    let eventsRead: Promise<Event[]> | null = null;
+    const invitedEvents = () =>
+      (eventsRead ??= this.eventService.findByChapter(chapterId, userId, {
+        endsAfter: new Date(Math.min(weekStart, now - DAY_MS)).toISOString(),
+        startsBefore: new Date(
+          Math.max(now + COMING_UP_WINDOW_MS, weekEnd),
+        ).toISOString(),
+      }));
+
+    const [tasks, hours, polls, cards, events, madeEvents, links, weekEvents] =
       await Promise.all([
         this.settle('tasks', chapterId, () =>
           on('tasks')
-            ? this.readTasks(chapterId, userId, permissions)
+            ? this.readTasks(chapterId, userId, permissions, weekStart)
             : Promise.resolve({
                 mine: [],
                 confirmations: [],
                 confirmationsWaiting: 0,
                 assigned: [],
+                doneThisWeek: 0,
               }),
         ),
         this.settle('hours_approvals', chapterId, () =>
@@ -500,17 +597,17 @@ export class ActivityService {
         ),
         this.settle('polls', chapterId, () =>
           on('polls')
-            ? this.readPolls(chapterId, userId, now, chatReads)
-            : Promise.resolve({ unvoted: [], mine: [] }),
+            ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
+            : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
         ),
         // Sign-ups and forms are chat cards with no module switch, as a
         // message has none (#3926).
         this.settle('cards', chapterId, () =>
-          this.readCards(chapterId, userId, now, chatReads),
+          this.readCards(chapterId, userId, now, chatReads, weekStart),
         ),
         this.settle('coming_up', chapterId, () =>
           on('events')
-            ? this.readComingUp(chapterId, userId, now, viewer)
+            ? this.readComingUp(userId, now, viewer, invitedEvents)
             : Promise.resolve([]),
         ),
         this.settle('made_events', chapterId, () =>
@@ -523,6 +620,17 @@ export class ActivityService {
           chatReads().then((reads) =>
             this.linkService.listFor(chapterId, userId, now, reads),
           ),
+        ),
+        this.settle('week_events', chapterId, () =>
+          on('events')
+            ? this.readWeekEvents(
+                userId,
+                now,
+                { start: weekStart, end: weekEnd },
+                viewer,
+                invitedEvents,
+              )
+            : Promise.resolve(null),
         ),
       ]);
 
@@ -542,10 +650,19 @@ export class ActivityService {
       confirmations: [],
       confirmationsWaiting: 0,
       assigned: [],
+      doneThisWeek: 0,
     });
     const hoursApprovals = valueOf('hours_approvals', hours, []);
-    const pollLists = valueOf('polls', polls, { unvoted: [], mine: [] });
-    const openCards = valueOf('cards', cards, []);
+    const pollLists = valueOf('polls', polls, {
+      unvoted: [],
+      mine: [],
+      votedThisWeek: 0,
+    });
+    const cardLists = valueOf('cards', cards, {
+      open: [],
+      answeredThisWeek: 0,
+    });
+    const openCards = cardLists.open;
     const comingUp = valueOf('coming_up', events, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
@@ -578,6 +695,33 @@ export class ActivityService {
       },
       needs_you_count: needsYouCount,
       unavailable,
+      week: {
+        start: new Date(weekStart).toISOString(),
+        end: new Date(weekEnd).toISOString(),
+        events: weekEvents.ok ? weekEvents.value : null,
+        // Counted before the 25-row cap on each list, as `needs_you_count` is.
+        tasks:
+          on('tasks') && tasks.ok
+            ? weekCount(
+                taskLists.doneThisWeek,
+                taskLists.mine.filter((task) => dueBefore(task, weekEnd))
+                  .length,
+              )
+            : null,
+        polls:
+          on('polls') && polls.ok
+            ? weekCount(pollLists.votedThisWeek, pollLists.unvoted.length)
+            : null,
+        cards: cards.ok
+          ? weekCount(cardLists.answeredThisWeek, openCards.length)
+          : null,
+        unavailable: [
+          ...(weekEvents.ok ? [] : (['events'] as const)),
+          ...(tasks.ok ? [] : (['tasks'] as const)),
+          ...(polls.ok ? [] : (['polls'] as const)),
+          ...(cards.ok ? [] : (['cards'] as const)),
+        ],
+      },
       unread_since: null,
     });
   }
@@ -782,7 +926,7 @@ export class ActivityService {
    * as a quiet gap on the page for as long as it stays broken (#4096).
    */
   private async settle<T>(
-    section: ActivitySection,
+    section: ActivitySection | 'week_events',
     chapterId: string,
     read: () => Promise<T>,
   ): Promise<Settled<T>> {
@@ -803,12 +947,15 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     permissions: string[],
+    weekStart: number,
   ): Promise<{
     mine: ActivityTask[];
     confirmations: ActivityTask[];
     /** All of them, not only the 25 read. */
     confirmationsWaiting: number;
     assigned: ActivityTask[];
+    /** The caller's own tasks marked done since the week began. */
+    doneThisWeek: number;
   }> {
     const canManage = can(SystemPermissions.TASKS_MANAGE, permissions);
     // Each list is its own read, filtered in SQL, so none depends on reading
@@ -822,7 +969,7 @@ export class ActivityService {
       confirmed: false,
       notAssigneeId: userId,
     };
-    const [own, waiting, waitingCount, made] = await Promise.all([
+    const [own, waiting, waitingCount, made, doneThisWeek] = await Promise.all([
       this.taskService.list(chapterId, userId, false, { confirmed: false }),
       canManage
         ? this.taskService.list(chapterId, userId, true, {
@@ -843,6 +990,12 @@ export class ActivityService {
             limit: LIST_LIMIT,
           })
         : Promise.resolve([]),
+      // Done this week, confirmed or not: marking it done was the member's
+      // part. One sent back since is open again and is not counted here.
+      this.taskService.count(chapterId, userId, false, {
+        status: TaskStatus.COMPLETED,
+        completedSince: new Date(weekStart).toISOString(),
+      }),
     ]);
 
     const mine = own
@@ -884,6 +1037,7 @@ export class ActivityService {
       confirmations: confirmations.map(toRow),
       confirmationsWaiting: waitingCount,
       assigned: assigned.map(toRow),
+      doneThisWeek,
     };
   }
 
@@ -917,7 +1071,13 @@ export class ActivityService {
     userId: string,
     now: number,
     chatReads: () => Promise<ChatReads>,
-  ): Promise<{ unvoted: ActivityPoll[]; mine: ActivityPoll[] }> {
+    weekStart: number,
+  ): Promise<{
+    unvoted: ActivityPoll[];
+    mine: ActivityPoll[];
+    /** Other members' polls the caller first voted on since the week began. */
+    votedThisWeek: number;
+  }> {
     // The channel list is the access rule: `getChannels` is what chat itself
     // shows this caller, filtered through `ChannelAccessService`. A poll in a
     // channel that is not in it is never listed, whoever posted it; that
@@ -952,9 +1112,14 @@ export class ActivityService {
 
     const readable = (message: ChatMessage) =>
       channelById.has(message.channel_id);
-    const openOthers = recent.filter((message) => {
+    // Other members' polls the caller can read, open or closed: the closed
+    // ones only to count a vote cast this week on a poll that has since ended.
+    const others = recent.filter((message) => {
       if (!readable(message) || message.sender_id === userId) return false;
       if (message.sender_id && blocked.has(message.sender_id)) return false;
+      return readPollCard(message) !== null;
+    });
+    const openOthers = others.filter((message) => {
       const card = readPollCard(message);
       return !!card && !pollCardClosed(card, nowDate);
     });
@@ -963,16 +1128,20 @@ export class ActivityService {
     // A vote row with no picks is a cleared vote, not a vote: a member who
     // clears every pick on a multi-choice card keeps the row with an empty
     // list (#3793), and the poll goes back to needing them.
-    const voteRows = await this.actionRepo.findActionsOnMessages(
-      [...openOthers, ...mine].map((message) => message.id),
-      userId,
-      CARD_VOTE_ACTION_TYPE,
-    );
-    const votedIds = new Set(
-      voteRows
-        .filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0)
-        .map((row) => row.message_id),
-    );
+    const voteRows = (
+      await this.actionRepo.findActionsOnMessages(
+        [...others, ...mine].map((message) => message.id),
+        userId,
+        CARD_VOTE_ACTION_TYPE,
+      )
+    ).filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0);
+    const votedIds = new Set(voteRows.map((row) => row.message_id));
+    // By when the vote row was first written: changing a vote later updates
+    // the row in place (ADR-07), so a vote counts in the week it was cast.
+    const otherIds = new Set(others.map((message) => message.id));
+    const votedThisWeek = voteRows.filter(
+      (row) => otherIds.has(row.message_id) && since(row.created_at, weekStart),
+    ).length;
 
     const toRow = (message: ChatMessage): ActivityPoll | null => {
       const card = readPollCard(message);
@@ -1014,6 +1183,7 @@ export class ActivityService {
           .filter((row) => row.is_closed)
           .slice(0, LIST_LIMIT),
       ].sort(byNewest),
+      votedThisWeek,
     };
   }
 
@@ -1034,7 +1204,12 @@ export class ActivityService {
     userId: string,
     now: number,
     chatReads: () => Promise<ChatReads>,
-  ): Promise<ActivityCard[]> {
+    weekStart: number,
+  ): Promise<{
+    open: ActivityCard[];
+    /** Other members' cards the caller first answered since the week began. */
+    answeredThisWeek: number;
+  }> {
     const [{ channels, blockedUserIds }, signups, forms] = await Promise.all([
       chatReads(),
       this.messageRepo.findCardsByChapter(chapterId, {
@@ -1050,34 +1225,58 @@ export class ActivityService {
       channels.map((channel) => [channel.id, channel]),
     );
     const blocked = new Set(blockedUserIds);
-    const waiting = (message: ChatMessage) =>
+    const fromOthers = (message: ChatMessage) =>
       channelById.has(message.channel_id) &&
       message.sender_id !== userId &&
-      !(message.sender_id && blocked.has(message.sender_id)) &&
-      !isCardClosed(message.payload, now);
+      !(message.sender_id && blocked.has(message.sender_id));
+    const waiting = (message: ChatMessage) =>
+      fromOthers(message) && !isCardClosed(message.payload, now);
 
     const openSignups = signups.filter(waiting);
     const openForms = forms.filter(waiting);
+    // Cards that have closed since, read only to count an answer the caller
+    // gave this week.
+    const closedSignups = signups.filter(
+      (message) => fromOthers(message) && !waiting(message),
+    );
     // Every member's claims, not only the caller's: a sheet whose every
     // slot is at its limit can't be signed up for, so it no longer waits on
     // anyone who doesn't hold a slot. Claims are channel-readable (the card
     // names each holder), so reading them all reveals nothing.
-    const [claims, answeredForms] = await Promise.all([
+    const [claims, closedClaims, answeredForms] = await Promise.all([
       this.actionRepo.findAllActionsOnMessages(
         openSignups.map((message) => message.id),
         SIGNUP_ACTION_TYPE,
       ),
-      this.formResponseRepo.findAnsweredMessageIds(
-        openForms.map((message) => message.id),
+      this.actionRepo.findActionsOnMessages(
+        closedSignups.map((message) => message.id),
+        userId,
+        SIGNUP_ACTION_TYPE,
+      ),
+      this.formResponseRepo.findAnswered(
+        forms.filter(fromOthers).map((message) => message.id),
         userId,
       ),
     ]);
     const heldBySlot = new Map<string, number>();
-    const answered = new Set<string>(answeredForms);
+    const answered = new Set<string>(
+      answeredForms.map((row) => row.message_id),
+    );
+    // By when the answer was first written, as a vote is counted.
+    let answeredThisWeek =
+      answeredForms.filter((row) => since(row.created_at, weekStart)).length +
+      closedClaims.filter(
+        (row) =>
+          (signupClaimSlotIds(row.payload) ?? []).length > 0 &&
+          since(row.created_at, weekStart),
+      ).length;
     for (const row of claims) {
       const slotIds = signupClaimSlotIds(row.payload) ?? [];
       if (slotIds.length === 0) continue;
-      if (row.user_id === userId) answered.add(row.message_id);
+      if (row.user_id === userId) {
+        answered.add(row.message_id);
+        if (since(row.created_at, weekStart)) answeredThisWeek += 1;
+      }
       for (const slotId of slotIds) {
         const key = `${row.message_id}:${slotId}`;
         heldBySlot.set(key, (heldBySlot.get(key) ?? 0) + 1);
@@ -1156,29 +1355,88 @@ export class ActivityService {
     // No end time sorts last, then newest first.
     const closesAtMs = (row: ActivityCard) =>
       row.closes_at ? Date.parse(row.closes_at) : Number.MAX_VALUE;
-    return rows.sort((a, b) => closesAtMs(a) - closesAtMs(b) || byNewest(a, b));
+    return {
+      open: rows.sort(
+        (a, b) => closesAtMs(a) - closesAtMs(b) || byNewest(a, b),
+      ),
+      answeredThisWeek,
+    };
   }
 
   private async readComingUp(
-    chapterId: string,
     userId: string,
     now: number,
     viewer: () => Promise<EventViewer>,
+    invitedEvents: () => Promise<Event[]>,
   ): Promise<ActivityEvent[]> {
     const horizon = now + COMING_UP_WINDOW_MS;
-    // With the viewer, always: the row carries the event's name and location,
-    // so a chapter-wide read would republish an event that leaves this member
-    // out (`spec/behavior/events.md` § Attendance by role). Bounded to the
-    // window in SQL, with a day's margin behind for the check-in grace, so
-    // the chapter's whole event history is not read to keep ten rows.
-    const events = await this.eventService.findByChapter(chapterId, userId, {
-      endsAfter: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
-      startsBefore: new Date(horizon).toISOString(),
-    });
+    // `invitedEvents` reads with the viewer, always: the row carries the
+    // event's name and location, so a chapter-wide read would republish an
+    // event that leaves this member out (`spec/behavior/events.md` §
+    // Attendance by role). It is bounded in SQL, from the start of the week
+    // or a day back (the check-in grace) to this window's end, so the
+    // chapter's whole event history is not read to keep ten rows.
+    const events = await invitedEvents();
     return this.toEventRows(userId, now, events, viewer, {
       startsBefore: horizon,
       limit: COMING_UP_LIMIT,
     });
+  }
+
+  /**
+   * The member's events this week (`spec/behavior/activity.md` § Week): of
+   * the events that start in the week and invite them, how many they
+   * attended and how many are theirs to attend.
+   *
+   * - Marked present or late: done.
+   * - Excused: left out, as the standing leaves it out.
+   * - Required of them and not attended: counted, whether it is still ahead
+   *   or was missed, so a missed required event keeps the week from closing.
+   * - Optional: counted while its check-in can still open or is open, and
+   *   dropped once that closes without them: nobody is held to an optional
+   *   event they skipped.
+   */
+  private async readWeekEvents(
+    userId: string,
+    now: number,
+    week: { start: number; end: number },
+    viewer: () => Promise<EventViewer>,
+    invitedEvents: () => Promise<Event[]>,
+  ): Promise<ActivityWeekCount> {
+    const inWeek = (await invitedEvents()).filter((event) => {
+      const start = new Date(event.start_time).getTime();
+      return start >= week.start && start < week.end;
+    });
+    if (inWeek.length === 0) return { done: 0, total: 0 };
+    const [{ roleIds, isAlumni }, attendance] = await Promise.all([
+      viewer(),
+      this.attendanceRepo.findByUserForEvents(
+        userId,
+        inWeek.map((event) => event.id),
+      ),
+    ]);
+    const statusByEvent = new Map(
+      attendance.map((row) => [row.event_id, row.status]),
+    );
+    let done = 0;
+    let open = 0;
+    for (const event of inWeek) {
+      const answer = attendanceFor(event, roleIds);
+      if (answer.status === 'not_invited') continue;
+      const status = statusByEvent.get(event.id);
+      if (status === 'PRESENT' || status === 'LATE') {
+        done += 1;
+        continue;
+      }
+      if (status === 'EXCUSED') continue;
+      // An alumnus the default alone would require is held to nothing
+      // (`toEventRows`).
+      const required =
+        answer.status === 'required' && !(isAlumni && !answer.byRole);
+      const window = this.checkInWindowOf(event);
+      if (required || (window !== null && window.closesAt > now)) open += 1;
+    }
+    return weekCount(done, open);
   }
 
   /**

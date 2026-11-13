@@ -119,6 +119,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       is(column: string, value: null): Q;
       not(column: string, operator: string, value: unknown): Q;
       lte(column: string, value: unknown): Q;
+      gte(column: string, value: unknown): Q;
       or(filters: string): Q;
     },
   >(q: Q, chapterId: string, query: TaskListFilter & TaskListQuery): Q {
@@ -129,6 +130,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (query.status) q = q.eq('status', query.status);
     if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
     if (query.confirmed === false) q = q.is('confirmed_at', null);
+    if (query.completedSince) q = q.gte('completed_at', query.completedSince);
     if (query.after) {
       // Strictly after the cursor in (created_at desc, id desc): an earlier
       // `created_at`, or the same one and a lower `id`. Spelled without a

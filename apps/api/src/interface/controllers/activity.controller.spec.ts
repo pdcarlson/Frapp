@@ -67,6 +67,7 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      {},
     );
 
     // The toggles are what keeps a switched-off module out of the page, so
@@ -75,8 +76,36 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      { weekStart: undefined, now: expect.any(Date) },
     );
     expect(result).toBe(view);
+  });
+
+  it('hands the service the week the client named', async () => {
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
+    const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: weekStart.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart, now: expect.any(Date) },
+    );
+  });
+
+  it('refuses a week start that would widen "this week"', async () => {
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    await expect(
+      controller.getActivity('chapter-1', 'user-1', null, {
+        week_start: yearAgo.toISOString(),
+      }),
+    ).rejects.toThrow('week_start must be between');
+    expect(activityService.getActivity).not.toHaveBeenCalled();
   });
 
   describe('standing', () => {

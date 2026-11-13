@@ -33,7 +33,7 @@ describe('ChatFormService (#3926 step 3)', () => {
 
   let repo: {
     findOwn: jest.Mock;
-    findAnsweredMessageIds: jest.Mock;
+    findAnswered: jest.Mock;
     save: jest.Mock;
   };
   let access: { assertMessageAccess: jest.Mock };
@@ -42,7 +42,7 @@ describe('ChatFormService (#3926 step 3)', () => {
   beforeEach(() => {
     repo = {
       findOwn: jest.fn(),
-      findAnsweredMessageIds: jest.fn(),
+      findAnswered: jest.fn(),
       save: jest.fn().mockResolvedValue(row),
     };
     access = { assertMessageAccess: jest.fn().mockResolvedValue(form) };

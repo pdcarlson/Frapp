@@ -50,12 +50,34 @@ export function useActivityStanding(options: { enabled?: boolean } = {}) {
   });
 }
 
+const SHORT_LABEL: Record<ActivityStandingSection, string> = {
+  points: "Points",
+  required_events: "Events",
+  service: "Service",
+  study: "Study",
+};
+
 /** One line of the standing: what it counts, the number, and its context. */
 export interface StandingRow {
   id: ActivityStandingSection;
   label: string;
+  /** The label in one word, for a gauge a quarter of a phone wide. */
+  shortLabel: string;
   /** The number as drawn; `null` when the part couldn't be read. */
   value: string | null;
+  /**
+   * `value` in two pieces, for a gauge that draws the number large and its
+   * target small (#4766): "45" and "of 150", "4h" and "of 10h". `target` is
+   * `null` with nothing to measure against, `figure` when unreadable.
+   */
+  figure: string | null;
+  target: string | null;
+  /**
+   * Nothing yet and nothing to aim at: zero points or hours with no goal, or
+   * no required event so far. A row still lists it; a gauge strip leaves it
+   * out (`activityStandingGauges`), since a bare zero says nothing.
+   */
+  empty: boolean;
   /** The line beside or under it, or `null` for none. */
   detail: string | null;
   /**
@@ -83,7 +105,11 @@ export function activityStandingRows(
     rows.push({
       id,
       label,
+      shortLabel: SHORT_LABEL[id],
       value: null,
+      figure: null,
+      target: null,
+      empty: false,
       detail: "Couldn't load",
       progress: null,
       spokenLabel: `${label}: couldn't load`,
@@ -98,7 +124,11 @@ export function activityStandingRows(
     rows.push({
       id: "points",
       label: "Points",
+      shortLabel: SHORT_LABEL.points,
       value: goal === null ? String(total) : `${total} of ${goal}`,
+      figure: String(total),
+      target: goal === null ? null : `of ${goal}`,
+      empty: goal === null && total === 0,
       detail: place,
       progress: towards(total, goal),
       spokenLabel:
@@ -114,7 +144,11 @@ export function activityStandingRows(
     rows.push({
       id: "required_events",
       label: "Required events",
+      shortLabel: SHORT_LABEL.required_events,
       value: required === 0 ? "None yet" : `${attended} of ${required}`,
+      figure: String(attended),
+      target: `of ${required}`,
+      empty: required === 0,
       detail: excusedLine,
       progress: required === 0 ? null : attended / required,
       spokenLabel:
@@ -141,7 +175,11 @@ export function activityStandingRows(
     rows.push({
       id: "service",
       label: "Service hours",
+      shortLabel: SHORT_LABEL.service,
       value: goal === null ? approved : `${approved} of ${goal}`,
+      figure: approved,
+      target: goal === null ? null : `of ${goal}`,
+      empty: goal === null && approved_minutes === 0 && pending_minutes === 0,
       detail: pending,
       progress: towards(approved_minutes, goal_minutes),
       spokenLabel: `${approved}${goal === null ? "" : ` of ${goal}`} of service approved this semester${
@@ -158,7 +196,11 @@ export function activityStandingRows(
     rows.push({
       id: "study",
       label: "Study hours",
+      shortLabel: SHORT_LABEL.study,
       value: goal === null ? minutes : `${minutes} of ${goal}`,
+      figure: minutes,
+      target: goal === null ? null : `of ${goal}`,
+      empty: goal === null && standing.study.minutes === 0,
       detail: "This week",
       progress: towards(standing.study.minutes, goal_minutes),
       spokenLabel: `${minutes}${goal === null ? "" : ` of ${goal}`} of study this week`,
@@ -166,6 +208,18 @@ export function activityStandingRows(
   } else if (failed.has("study")) unreadable("study", "Study hours");
 
   return rows;
+}
+
+/**
+ * The standing as gauges, for the strip under the week card (#4766): the
+ * rows, less the ones with nothing yet and nothing to aim at. A part that
+ * couldn't be read stays, so a failed read never looks like nothing. Empty
+ * when no gauge is left, and the strip is not drawn at all.
+ */
+export function activityStandingGauges(
+  standing: ActivityStanding,
+): StandingRow[] {
+  return activityStandingRows(standing).filter((row) => !row.empty);
 }
 
 /** How far `done` is toward `goal`, 0 to 1, or `null` when there is no goal. */

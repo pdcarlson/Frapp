@@ -166,11 +166,14 @@ export function ActivityRowItem({
   row,
   isFirst,
   actions,
+  onCard = false,
   onPress,
 }: {
   row: ActivityRow;
   isFirst: boolean;
   actions: ActivityRowActions | null;
+  /** The row sits in a card (the To review card): `ActivityListRow`'s. */
+  onCard?: boolean;
   onPress: () => void;
 }) {
   const action = actions ? activityRowAction(row) : null;
@@ -181,6 +184,7 @@ export function ActivityRowItem({
       row={row}
       isFirst={isFirst}
       action={control}
+      onCard={onCard}
       onPress={onPress}
     />
   );

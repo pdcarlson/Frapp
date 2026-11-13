@@ -91,6 +91,9 @@ member's own answer, not the event's default:
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
+**`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
+phone's page. See [Week](#week).
+
 ## Rules
 
 - **A module that is off contributes nothing.** Each section checks its own module
@@ -103,6 +106,50 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
+
+## Week
+
+`week` on `GET /v1/activity` is the member's week as done of total, by kind
+([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13: the count tiles "tell
+me no information", "maybe there's like a percentage or like a dial"). The count tiles say how
+much is waiting; this says how far along the member is, which needs what they already finished,
+and nothing else in the read carries that. The phone draws it as one ring
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+
+- **The week is the Study screen's:** Sunday at the member's local midnight to the next. The
+  client names it (`week_start`), under [Standing](#standing)'s rule for the same parameter: a
+  start from eight days back to a day ahead is accepted, anything else is a 400, and Sunday at
+  midnight UTC is used when none is given. `week.start` and `week.end` say what was counted.
+- **The member's own things only.** What waits on their review (confirmations, hours approvals)
+  is never counted: reviewing is an officer's queue, not their week.
+- **Each kind is `{ done, total }`,** where `total` is `done` plus what is still open, so a ring
+  drawn from it never passes full. Counted before any list cap.
+- **Events** that start in the week and invite the member. Done: marked present or late. Still
+  open: a required event not attended, ahead or missed (a missed one stays open, so the ring
+  does not close on a week with an absence in it). An optional event counts while its check-in
+  has not closed and is dropped once the member has skipped it: skipping something optional is
+  not a miss. An excused event is left out of both, as [Standing](#standing) leaves it out of
+  `required`. Required is the absence sweep's rule, so an alumnus required only by the event's
+  default is held to nothing.
+- **Tasks** the member holds. Done: marked done since the week began (`completed_at`), confirmed
+  or not, since the member's part is finished. Still open: not done and due before the week ends,
+  overdue ones included, however old. A task with no due date is in neither until it is done.
+- **Polls** from other members that the caller can read. Done: first voted on since the week
+  began. Still open: every open one they haven't voted on (`needs_you.polls`, before its cap).
+- **Cards** (sign-up sheets, headcounts and forms from others). Done: first answered since the
+  week began. Still open: every `needs_you.cards` row, before its cap.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in
+  `week.unavailable` (`events`, `tasks`, `polls`, `cards`). A client draws a failed part as
+  unknown and says "at least", never as zero and never as a finished week.
+- **It adds little to the read.** The week's events come from the one events read Coming up
+  already makes, widened to reach back to the week's start; the rest is a count of finished
+  tasks, the member's attendance on those events, and the vote and answer times the poll and card
+  sections already hold. That matters because the page is read on every app open, when the
+  phone sends its largest burst of requests.
+
+Open points, Paul's to settle, each a one-line change here and in `ActivityService`: whether the
+week should run Monday to Sunday instead; and whether an optional event the member skipped should
+count against them.
 
 ## Standing
 
