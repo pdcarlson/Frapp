@@ -228,6 +228,8 @@ describe("TaskDetailSheet", () => {
           isDone: true,
           pointsAwarded: true,
           pointReward: null,
+          completedAt: "2026-11-13T10:00:00.000Z",
+          confirmedAt: "2026-11-13T10:00:00.000Z",
         })}
         assignedBy="Jordan Lee"
         onToggle={() => {}}

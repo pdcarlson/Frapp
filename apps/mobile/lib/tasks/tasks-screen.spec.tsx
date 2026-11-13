@@ -382,6 +382,25 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(row(tree).props.onToggle).toBeDefined();
     act(() => tree.unmount());
   });
+
+  // #4635: Mark done is a compare-and-set, refused with a 400 and a sentence
+  // when the task changed after the board read it. That reason is said.
+  it("says why when the server refuses Mark done with a 400", async () => {
+    failure = {
+      statusCode: 400,
+      error: "Bad Request",
+      message:
+        "This task changed while you were marking it done. Look again and retry.",
+      requestId: "req_changed",
+    };
+    const tree = render();
+    await tapRow(tree);
+    expect(screenText(tree)).toContain(
+      "This task changed while you were marking it done. Look again and retry.",
+    );
+    expect(row(tree).props.onToggle).toBeDefined();
+    act(() => tree.unmount());
+  });
 });
 
 /**

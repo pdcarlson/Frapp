@@ -273,7 +273,7 @@ describe("editing a task (#4296)", () => {
         status: "TODO",
         stored_status: undefined,
         subtasks: [],
-        reference_photos: [photo("a")],
+        photos: [photo("a"), { ...photo("b"), kind: "proof" }],
         proof_kind: "link",
       }),
     ).toEqual({

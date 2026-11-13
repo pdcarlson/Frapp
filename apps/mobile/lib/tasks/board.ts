@@ -16,7 +16,11 @@ import {
   readLiveTaskPhotos,
   type LiveTaskPhoto,
 } from "@repo/hooks";
-import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import {
+  taskNeedsSignOff,
+  taskSignedOffAutomatically,
+  type TaskProofKind,
+} from "@repo/validation";
 import { num, records, str } from "@/lib/more/narrow";
 import { daysSinceCompletion, parseTaskDate } from "./format";
 import { isOpenTask } from "./transitions";
@@ -94,6 +98,21 @@ export function rowIsSentBack(row: TaskRowModel): boolean {
 /** Whether a completion of this task waits on an officer (#4635, decision C). */
 export function rowNeedsSignOff(row: TaskRowModel): boolean {
   return taskNeedsSignOff({
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  });
+}
+
+/**
+ * Whether the completion was signed off as it was marked done, needing no
+ * sign-off (#4635), rather than confirmed by an officer: it can still be
+ * taken back.
+ */
+export function rowSignedOffAutomatically(row: TaskRowModel): boolean {
+  return taskSignedOffAutomatically({
+    points_awarded: row.pointsAwarded,
+    completed_at: row.completedAt,
+    confirmed_at: row.confirmedAt,
     point_reward: row.pointReward,
     proof_kind: row.proofKind,
   });

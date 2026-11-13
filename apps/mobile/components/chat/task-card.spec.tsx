@@ -440,10 +440,26 @@ describe("TaskCard — actions", () => {
       points_awarded: true,
       point_reward: null,
       proof_kind: "none",
+      completed_at: "2026-11-13T10:00:00.000Z",
+      confirmed_at: "2026-11-13T10:00:00.000Z",
     });
     const tree = render("admin-2");
     expect(actions(tree)).toEqual(["Send back"]);
     expect(screenText(tree)).toContain("Done");
+  });
+
+  it("leaves an officer's own confirmation of a no-points task Confirmed (#4635)", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      points_awarded: true,
+      point_reward: null,
+      proof_kind: "none",
+      completed_at: "2026-11-13T10:00:00.000Z",
+      confirmed_at: "2026-11-13T11:00:00.000Z",
+    });
+    expect(actions(render("admin-2"))).toEqual(["Confirmed"]);
   });
 
   it("never offers Confirm on the admin's own task (#1056)", () => {

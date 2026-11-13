@@ -185,7 +185,9 @@ export function MarkDoneSheet({
         setProblem(
           taskStatusGateRefusal(error) ??
             taskProofRefusal(error) ??
-            errorCopy(error, "Couldn't mark the task done. Try again."),
+            errorCopy(error, "Couldn't mark the task done. Try again.", {
+              serverWritesForMembers: true,
+            }),
         );
         return;
       }

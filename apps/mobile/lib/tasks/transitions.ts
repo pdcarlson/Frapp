@@ -29,7 +29,10 @@ import {
   isTaskStatus,
   type TaskStatus,
 } from "@repo/hooks";
-import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import {
+  taskSignedOffAutomatically,
+  type TaskProofKind,
+} from "@repo/validation";
 
 /**
  * The full write sequence one tap should send, keyed by the stored status.
@@ -98,7 +101,8 @@ export function nextTapSequence(
  * hasn't confirmed (`canReopenOwnTask`), the way a checked reminder unchecks.
  * Empty once confirmed: points have moved, and the server refuses the reopen.
  * A task that needed no sign-off (no points, no proof; #4635) is Done as it
- * is marked, confirmed with nothing paid, so its box still unchecks.
+ * is marked, signed off with nothing paid, so its box still unchecks; one an
+ * officer confirmed doesn't (`taskSignedOffAutomatically`).
  *
  * Every row on the board is the viewer's own (`selectTaskRows` filters by
  * assignee), so this takes no assignee argument.
@@ -110,6 +114,8 @@ export function checkboxSequence(row: {
   pointReward?: number | null;
   /** Omitted reads as needing sign-off, the safe side. */
   proofKind?: TaskProofKind;
+  completedAt?: string | null;
+  confirmedAt?: string | null;
 }): TaskStatus[] {
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
   if (
@@ -117,13 +123,15 @@ export function checkboxSequence(row: {
       stored,
       pointsAwarded: row.pointsAwarded,
       isAssignee: true,
-      needsSignOff:
-        row.proofKind === undefined
-          ? true
-          : taskNeedsSignOff({
-              point_reward: row.pointReward,
-              proof_kind: row.proofKind,
-            }),
+      signedOffAutomatically:
+        row.proofKind !== undefined &&
+        taskSignedOffAutomatically({
+          points_awarded: row.pointsAwarded,
+          completed_at: row.completedAt,
+          confirmed_at: row.confirmedAt,
+          point_reward: row.pointReward,
+          proof_kind: row.proofKind,
+        }),
     })
   ) {
     return ["IN_PROGRESS"];

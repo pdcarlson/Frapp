@@ -97,8 +97,26 @@ describe("checkboxSequence — Done without sign-off (#4635)", () => {
 
   it("still unchecks a Done that needed no sign-off: nothing was paid", () => {
     expect(
-      checkboxSequence({ ...done, pointReward: null, proofKind: "none" }),
+      checkboxSequence({
+        ...done,
+        pointReward: null,
+        proofKind: "none",
+        completedAt: "2026-11-13T10:00:00.000Z",
+        confirmedAt: "2026-11-13T10:00:00.000Z",
+      }),
     ).toEqual(["IN_PROGRESS"]);
+  });
+
+  it("leaves a no-points task an officer confirmed later alone", () => {
+    expect(
+      checkboxSequence({
+        ...done,
+        pointReward: null,
+        proofKind: "none",
+        completedAt: "2026-11-13T10:00:00.000Z",
+        confirmedAt: "2026-11-13T11:00:00.000Z",
+      }),
+    ).toEqual([]);
   });
 
   it("leaves a confirmed task with points or proof alone", () => {

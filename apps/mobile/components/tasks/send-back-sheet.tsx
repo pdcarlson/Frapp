@@ -106,7 +106,9 @@ export function SendBackSheet({
       if (isSameVisit(sentFrom)) {
         setProblem(
           taskStatusGateRefusal(error) ??
-            errorCopy(error, "Couldn't send it back. Try again."),
+            errorCopy(error, "Couldn't send it back. Try again.", {
+              serverWritesForMembers: true,
+            }),
         );
       }
     } finally {

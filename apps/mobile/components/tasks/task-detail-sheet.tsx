@@ -24,6 +24,7 @@ import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import {
   rowIsSentBack,
   rowNeedsSignOff,
+  rowSignedOffAutomatically,
   type TaskRowModel,
 } from "@/lib/tasks/board";
 import { markDoneLabel } from "@/lib/tasks/task-photos";
@@ -103,7 +104,7 @@ export const TaskDetailSheet = forwardRef<
         stored,
         pointsAwarded: row.pointsAwarded,
         isAssignee: true,
-        needsSignOff: signOff,
+        signedOffAutomatically: rowSignedOffAutomatically(row),
       })
     : false;
   const chip = row

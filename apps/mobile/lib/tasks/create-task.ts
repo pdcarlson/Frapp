@@ -293,7 +293,7 @@ export function editTargetOfCardTask(task: EditableCardTask): TaskEditTarget {
     dueAt: task.due_at,
     pointReward: task.point_reward,
     storedStatus: task.stored_status ?? null,
-    referencePhotos: task.reference_photos,
+    referencePhotos: task.photos.filter((photo) => photo.kind === "reference"),
     proofKind: task.proof_kind,
   };
 }

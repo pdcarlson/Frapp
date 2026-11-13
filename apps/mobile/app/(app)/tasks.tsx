@@ -1,4 +1,5 @@
-import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import { statusOf } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -136,6 +137,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 const TAKE_BACK_FAILED =
   "Couldn't mark that task not done. An officer may have confirmed it already.";
+const MARK_DONE_FAILED = "Couldn't mark that task done. Try again.";
 
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
@@ -388,6 +390,19 @@ export default function TasksScreen() {
       const proofProblem = taskProofRefusal(error);
       if (proofProblem) setMarking({ id: row.id, problem: proofProblem });
       if (outcome === "failed" && !completes) setNotice(TAKE_BACK_FAILED);
+      // A 400 is the server refusing this Mark done for a reason it states,
+      // such as the task changing under the member (#4635's compare-and-set:
+      // "This task changed…"), so it is said rather than the box reverting
+      // in silence. Any other failure keeps the quiet revert and the retap.
+      else if (
+        outcome === "failed" &&
+        !proofProblem &&
+        statusOf(error) === 400
+      ) {
+        setNotice(
+          errorCopy(error, MARK_DONE_FAILED, { serverWritesForMembers: true }),
+        );
+      }
     },
     [run, completed],
   );
