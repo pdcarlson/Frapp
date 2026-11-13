@@ -262,6 +262,13 @@ function passageEntry(
   };
 }
 
+/** The kinds that come from the index. Every other kind is a live record. */
+const INDEXED_KINDS: ReadonlySet<string> = new Set([
+  'document',
+  'minutes',
+  'chat',
+]);
+
 /**
  * What the model reads as the name of something a tool returned. Chat is
  * labelled as chat, with its channel and day, and live data as read just
@@ -271,7 +278,7 @@ function passageEntry(
 function agentSourceTitle(source: AgentSource, timeZone: string): string {
   const title = source.chat
     ? `Chat message in ${source.title}, ${sourceDay(source.date, timeZone)}`
-    : source.date === null
+    : !INDEXED_KINDS.has(source.kind)
       ? `${source.title} (live data, read just now)`
       : [source.title, source.detail, sourceDay(source.date, timeZone)]
           .filter(Boolean)
@@ -638,11 +645,20 @@ export class AskService {
       promptVersion: ASK_AGENT_PROMPT_VERSION,
       tools: [...ran],
     };
-    const answer = this.answerFrom(
+    let answer = this.answerFrom(
       outcome.result,
       entries,
       outcome.leftOutMessages,
     );
+    // A turn cut off at the length limit before it wrote anything that
+    // stands did not look and find nothing. It is not an answer at all.
+    if (
+      outcome.result.status === 'ok' &&
+      outcome.result.truncated &&
+      answer.status === 'not_found'
+    ) {
+      answer = emptyAnswer('unavailable', { reason: 'not_available' });
+    }
     const written = outcome.result.status === 'ok' ? outcome.result.text : '';
     answer.saved = await this.keep(input, answer, written, entries, run, now);
     answer.report_receipt = this.receipt(

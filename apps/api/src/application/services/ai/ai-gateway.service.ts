@@ -366,11 +366,15 @@ export class AiGatewayService {
       round.results.flatMap((result) => result.sources),
     );
     const admitted = await this.admit(task, 'agent', prompt, context, [
-      ...prompt.context,
-      ...returned,
-      ...prompt.rounds.flatMap((round) =>
-        round.results.map((result) => ({ text: result.note ?? '' })),
-      ),
+      ...prompt.context.map(titled),
+      ...returned.map(titled),
+      ...prompt.rounds.flatMap((round) => [
+        // The model's own earlier turn goes back in whole: what it wrote,
+        // what it asked for, and its reasoning. Its shape is the provider's,
+        // so it is sized as the text it serialises to.
+        { text: JSON.stringify(round.replay ?? '') },
+        ...round.results.map((result) => ({ text: result.note ?? '' })),
+      ]),
       ...prompt.tools.map((tool) => ({
         text: `${tool.description}\n${JSON.stringify(tool.inputSchema)}`,
       })),
@@ -757,4 +761,9 @@ function sanitized(error: unknown, entry: AiCatalogEntry): LanguageModelError {
   return error instanceof LanguageModelError
     ? error
     : new LanguageModelError('unknown', entry.provider);
+}
+
+/** A source as it is sized for a reservation: its title is sent too. */
+function titled(source: LanguageModelSource): { text: string } {
+  return { text: `${source.title}\n${source.text}` };
 }

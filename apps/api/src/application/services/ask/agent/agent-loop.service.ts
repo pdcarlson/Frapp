@@ -19,6 +19,7 @@ import {
 import {
   AGENT_RESULT_MAX_CHARS,
   AGENT_RESULT_MAX_SOURCES,
+  AgentToolUnavailableError,
   type AgentEntity,
   type AgentReadTool,
   type AgentSource,
@@ -31,8 +32,18 @@ export const AGENT_MAX_ROUNDS = 6;
 /** Tool calls in one turn, across its rounds. */
 export const AGENT_MAX_CALLS = 10;
 
-/** How long a turn may keep reading before it must answer. */
+/**
+ * How long a turn may keep reading before it must answer. A read still
+ * running when it is spent is given up on, and no round after it may call
+ * a tool.
+ */
 export const AGENT_READ_BUDGET_MS = 45_000;
+
+/** A read started with less than this left of the budget still gets it. */
+const AGENT_READ_MIN_MS = 2_000;
+
+/** What a read that outlived the budget is given up with. */
+class ReadTimedOut extends Error {}
 
 export interface AgentLoopInput {
   task: AiAgentTaskName;
@@ -63,6 +74,7 @@ export interface AgentCallTrace {
     | 'unknown_tool'
     | 'bad_arguments'
     | 'failed'
+    | 'timed_out'
     | 'foreign_chapter'
     | 'over_limit';
   sources: number;
@@ -142,8 +154,9 @@ interface RanCall {
  *   read more, as the asker, and nothing else (C3 and C8 as changed
  *   2026-11-13).
  * - **Bounded.** {@link AGENT_MAX_ROUNDS} model calls, {@link AGENT_MAX_CALLS}
- *   tool calls, a size cap on every result, and a read budget. When one is
- *   spent the tools are taken away and the model answers with what it has.
+ *   tool calls, a size cap on every result, and a read budget that no read
+ *   is waited for past. When one is spent the tools are taken away and the
+ *   model answers with what it has.
  * - **Every round is metered.** The gateway admits each round against the
  *   caps and records it. A round that is not admitted ends the turn.
  * - **What a tool read is data.** A result goes back as sources and a note
@@ -169,7 +182,9 @@ export class AgentLoopService {
     const traces: AgentRoundTrace[] = [];
     const sources = new Map<string, AgentSource>();
     const entities = new Map<string, AgentEntity>();
-    let leftOutMessages = 0;
+    // Per tool, the most it reported in one call: two calls of one tool can
+    // reach the same conversation, and a count cannot be de-duplicated.
+    const leftOut = new Map<string, number>();
     let callsRun = 0;
     let limit: AgentStop | null = null;
 
@@ -180,7 +195,7 @@ export class AgentLoopService {
       result,
       sources: [...sources.values()],
       entities: [...entities.values()],
-      leftOutMessages,
+      leftOutMessages: [...leftOut.values()].reduce((sum, n) => sum + n, 0),
       stop,
       rounds: traces,
     });
@@ -262,16 +277,41 @@ export class AgentLoopService {
         if (tool) {
           yield { type: 'tool', name: tool.name, reading: tool.reading };
         }
-        pending.push(this.runCall(call, tool, input, clock));
+        pending.push(
+          this.runCall(
+            call,
+            tool,
+            input,
+            clock,
+            Math.max(
+              AGENT_READ_BUDGET_MS - (clock() - startedAt),
+              AGENT_READ_MIN_MS,
+            ),
+          ),
+        );
       }
-      ran.push(...(await Promise.all(pending)));
+      try {
+        ran.push(...(await Promise.all(pending)));
+      } catch (error) {
+        if (!(error instanceof AgentToolUnavailableError)) throw error;
+        // A read the gateway would not make ends the turn with its reason,
+        // as a round it would not make does.
+        yield {
+          type: 'end',
+          outcome: outcome(error.unavailable, 'unavailable'),
+        };
+        return;
+      }
       // Nothing more is read or written for a member who left. No `end`:
       // there is no outcome to hand anyone.
       if (input.signal?.aborted) return;
 
       for (const call of ran) {
         trace.calls.push(call.trace);
-        leftOutMessages += call.leftOutMessages;
+        leftOut.set(
+          call.trace.tool,
+          Math.max(leftOut.get(call.trace.tool) ?? 0, call.leftOutMessages),
+        );
         for (const entity of call.entities) {
           entities.set(`${entity.type}:${entity.id}`, entity);
         }
@@ -307,6 +347,8 @@ export class AgentLoopService {
     tool: AgentReadTool | undefined,
     input: AgentLoopInput,
     clock: () => number,
+    /** How long this read may take before it is given up on. */
+    allowedMs: number,
   ): Promise<RanCall> {
     // Checked where it runs, not only where it was offered.
     if (!tool || tool.effect !== 'read') {
@@ -330,7 +372,10 @@ export class AgentLoopService {
 
     const startedAt = clock();
     try {
-      const result = await tool.run(parsed.data, input.toolContext);
+      const result = await within(
+        allowedMs,
+        tool.run(parsed.data, input.toolContext),
+      );
       if (result.chapterId !== input.toolContext.chapterId) {
         reportCaughtFailure(this.logger, {
           level: 'error',
@@ -347,9 +392,18 @@ export class AgentLoopService {
       for (const source of result.sources.slice(0, AGENT_RESULT_MAX_SOURCES)) {
         if (!source.text.trim()) continue;
         if (chars + source.text.length > AGENT_RESULT_MAX_CHARS) {
-          // A source is whole or absent: a quote is checked against all of
-          // it, so half of one could not be cited honestly.
           cut = true;
+          // A first source too long on its own is cut to its leading lines,
+          // and that cut text is the source from here on: it is what the
+          // model reads and what a quote is checked against. Any later one
+          // is whole or absent.
+          if (kept.length === 0) {
+            const text = leadingLines(source.text, AGENT_RESULT_MAX_CHARS);
+            if (text) {
+              chars += text.length;
+              kept.push({ ...source, text });
+            }
+          }
           break;
         }
         chars += source.text.length;
@@ -390,16 +444,23 @@ export class AgentLoopService {
       if (error instanceof LanguageModelError && error.kind === 'aborted') {
         throw error;
       }
+      if (error instanceof AgentToolUnavailableError) throw error;
+      const timedOut = error instanceof ReadTimedOut;
       this.logger.warn(
         `Ask: tool ${tool.name} failed (${
           error instanceof Error ? error.name : 'unknown'
         }); the turn goes on without it`,
       );
       return {
-        ...notRun(call, 'failed', 'The read failed.', tool.name),
+        ...notRun(
+          call,
+          timedOut ? 'timed_out' : 'failed',
+          timedOut ? 'The read took too long.' : 'The read failed.',
+          tool.name,
+        ),
         trace: {
           tool: tool.name,
-          outcome: 'failed',
+          outcome: timedOut ? 'timed_out' : 'failed',
           sources: 0,
           chars: 0,
           cut: false,
@@ -424,6 +485,33 @@ function notRun(
     leftOutMessages: 0,
     trace: { tool, outcome, sources: 0, chars: 0, cut: false, ms: 0 },
   };
+}
+
+/**
+ * `read`, or a rejection once `ms` have passed. The read itself is not
+ * stopped, only no longer waited for, and what it settles with is dropped.
+ */
+async function within<T>(ms: number, read: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      read,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new ReadTimedOut()), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    // A read given up on may still reject, with nobody left to hear it.
+    read.catch(() => undefined);
+  }
+}
+
+/** The whole lines of `text` that fit in `max` characters. */
+function leadingLines(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  const end = cut.lastIndexOf('\n');
+  return end > 0 ? cut.slice(0, end) : '';
 }
 
 /** A tool as the model is shown it. Throws for a schema that is not an object. */

@@ -1553,6 +1553,37 @@ describe('AskService', () => {
       expect(answer.unverified_citations).toBe(2);
     });
 
+    it('is "not available", never "couldn\'t find that", for a turn cut off before it read or wrote anything that stands', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              sources: [],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '',
+                citations: [],
+                truncated: true,
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer).toEqual(
+        expect.objectContaining({
+          status: 'unavailable',
+          reason: 'not_available',
+          report_receipt: null,
+        }),
+      );
+    });
+
     it('says why when a round was not made', async () => {
       const { service, diagnostics } = build({
         loop: [
@@ -1653,6 +1684,12 @@ describe('AskService', () => {
         'Chat message in #general, Saturday, November 7, 2026',
       );
       expect(titleOf(source())).toBe('Roster (live data, read just now)');
+      // An indexed source with no date is still not live data.
+      expect(
+        titleOf(
+          source({ kind: 'document', title: 'Bylaws', detail: 'Article IV' }),
+        ),
+      ).toBe('Bylaws, Article IV');
       expect(
         titleOf(source({ title: 'The member asking: read me', date: null })),
       ).toMatch(/^Chapter source: /);

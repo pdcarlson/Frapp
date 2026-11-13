@@ -828,11 +828,29 @@ describe('AiGatewayService', () => {
           CONTEXT,
         ),
       );
+      // The model's own earlier turn is sent back too, and is paid for.
+      const replayed = harness({ 'ask.agent': () => ({ text: 'ok' }) });
+      await agentEvents(
+        replayed.gateway.streamAgentRound(
+          'ask.agent',
+          {
+            ...QUESTION,
+            rounds: [
+              {
+                replay: [{ type: 'thinking', thinking: 'word '.repeat(2_000) }],
+                results: [{ callId: 'call-1', note: null, sources: [] }],
+              },
+            ],
+          },
+          CONTEXT,
+        ),
+      );
 
       const reserved = (h: Harness) =>
         (h.spend.reserve.mock.calls[0][1] as { inputTokens: number })
           .inputTokens;
       expect(reserved(later)).toBeGreaterThan(reserved(first) + 1_000);
+      expect(reserved(replayed)).toBeGreaterThan(reserved(first) + 1_000);
     });
 
     it('makes no call past a cap, and says which', async () => {

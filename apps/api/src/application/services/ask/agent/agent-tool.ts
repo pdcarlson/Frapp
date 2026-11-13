@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { AskSourceKind, AskSourceTarget } from '@repo/validation';
+import type { AiUnavailable } from '../../ai/ai-gateway.service';
 import type { AgentToolSpec } from '../ask-tool';
 
 /**
@@ -7,7 +8,7 @@ import type { AgentToolSpec } from '../ask-tool';
  * #4898, `spec/behavior/ai.md` § Ask Frapp). Paul approved the loop and the
  * rule changes it needs on 2026-11-13; this file is the shape every tool is
  * written against, so the tools and the loop can be built side by side.
- * Nothing calls it yet.
+ * `AgentLoopService` runs them, for a server with `ASK_AGENT=on`.
  *
  * What differs from `AskTool` (`../ask-tool.ts`), the no-argument read the
  * one-shot pipeline runs:
@@ -23,7 +24,12 @@ import type { AgentToolSpec } from '../ask-tool';
  *   as a citable block, and a claim in the answer is checked word for word
  *   against the source it cites (C6). So a source's `text` is plain, one
  *   fact per line where it is live data, and a tool that found nothing
- *   returns no sources and says so in `note`.
+ *   returns no sources and says so in `note`. A result's sources go to the
+ *   model most useful first: the loop keeps whole sources until the size
+ *   cap, and cuts only a first source that is over it on its own.
+ * - **Left-out chat is a count per tool.** Two calls of one tool can reach
+ *   the same conversation, so the loop takes the largest count a tool
+ *   reported in a turn, and adds the tools' counts together.
  * - **A result names the people and channels in it.** `entities` lets the
  *   answer show `@Jordan Lee` and `#general` as links without the model
  *   writing an id.
@@ -111,6 +117,21 @@ export interface AgentReadTool<Args = unknown> extends AgentToolSpec {
   /** The line under a working turn while this runs: "Searching messages". */
   readonly reading: string;
   run(args: Args, context: AgentToolContext): Promise<AgentToolResult>;
+}
+
+/**
+ * Thrown by a tool whose read went through the AI gateway and was not made:
+ * the chapter or the member is past a cap, AI is off, or no provider is set
+ * up. The loop ends the turn with that reason, as a refused model call
+ * would, so the member is told why and not that nothing was found. For
+ * nothing else: a read that failed some other way throws an ordinary error
+ * and the turn goes on without it.
+ */
+export class AgentToolUnavailableError extends Error {
+  constructor(readonly unavailable: AiUnavailable) {
+    super('An agent tool could not read: AI is not available');
+    this.name = 'AgentToolUnavailableError';
+  }
 }
 
 /** The most text one result may hand the model; the loop cuts past it. */

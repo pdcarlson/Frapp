@@ -17,6 +17,7 @@ import {
 import {
   AGENT_RESULT_MAX_CHARS,
   AGENT_RESULT_MAX_SOURCES,
+  AgentToolUnavailableError,
   type AgentReadTool,
   type AgentSource,
   type AgentToolResult,
@@ -493,20 +494,119 @@ describe('AgentLoopService', () => {
     expect(outcome?.sources).toHaveLength(1);
   });
 
-  it('adds up the messages left out, and says nothing found for an empty read', async () => {
+  it('counts left-out messages once per tool, across tools, and says nothing found for an empty read', async () => {
+    const counts = [3, 5];
     const empty = tool('search_messages', () =>
-      Promise.resolve(found({ sources: [], entities: [], leftOutMessages: 3 })),
+      Promise.resolve(
+        found({
+          sources: [],
+          entities: [],
+          leftOutMessages: counts.shift() ?? 0,
+        }),
+      ),
+    );
+    const other = tool('read_channel', () =>
+      Promise.resolve(found({ leftOutMessages: 2 })),
     );
     const { loop, prompts } = build([
-      round({ toolCalls: [call('search_messages')] }),
+      round({ toolCalls: [call('search_messages'), call('read_channel')] }),
       round({ toolCalls: [call('search_messages')] }),
       round({ text: 'done' }),
     ]);
 
-    const { outcome } = await run(loop, input({ tools: [empty] }));
+    const { outcome } = await run(loop, input({ tools: [empty, other] }));
 
     expect(prompts[1].rounds[0].results[0].note).toBe('Nothing found.');
-    expect(outcome?.leftOutMessages).toBe(6);
+    // Two searches can reach the same conversation: the larger count, not
+    // their sum, and the other tool's on top.
+    expect(outcome?.leftOutMessages).toBe(7);
+  });
+
+  it('cuts a first source that is too long on its own to its leading lines, and checks quotes against the cut', async () => {
+    const line = `${'x'.repeat(99)}\n`;
+    const long = tool('events', () =>
+      Promise.resolve(
+        found({
+          sources: [
+            source({ id: 'tool:events', text: line.repeat(200), chat: false }),
+            source({ id: 'tool:other', text: 'short', chat: false }),
+          ],
+        }),
+      ),
+    );
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('events')] }),
+      round({ text: 'done' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [long] }));
+
+    const sent = prompts[1].rounds[0].results[0];
+    expect(sent.sources).toHaveLength(1);
+    expect(sent.sources[0].text.length).toBeLessThanOrEqual(
+      AGENT_RESULT_MAX_CHARS,
+    );
+    expect(sent.sources[0].text.length).toBeGreaterThan(
+      AGENT_RESULT_MAX_CHARS - 200,
+    );
+    // Whole lines only.
+    expect(sent.sources[0].text.endsWith('x')).toBe(true);
+    expect(sent.note).toContain('more than fits');
+    // What the turn keeps as the source is what the model read.
+    expect(outcome?.sources.map((kept) => kept.text)).toEqual([
+      sent.sources[0].text,
+    ]);
+  });
+
+  it('ends the turn with the reason when a read was one the gateway would not make', async () => {
+    const unavailable = {
+      status: 'unavailable',
+      reason: 'spend_cap',
+      detail: 'chapter_cap',
+    } as const;
+    const search = tool('search_messages', () =>
+      Promise.reject(new AgentToolUnavailableError(unavailable)),
+    );
+    const { loop, gateway } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'never' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [search] }));
+
+    expect(outcome?.stop).toBe('unavailable');
+    expect(outcome?.result).toEqual(unavailable);
+    expect(gateway.streamAgentRound).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up on a read that outlives the budget, and tells the model to answer', async () => {
+    jest.useFakeTimers();
+    try {
+      const hung = tool('search_messages', () => new Promise(() => undefined));
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages')] }),
+        round({ text: 'done' }),
+      ]);
+      let now = 0;
+      const running = run(loop, input({ tools: [hung], clock: () => now }));
+      await jest.advanceTimersByTimeAsync(AGENT_READ_BUDGET_MS - 1);
+      expect(prompts).toHaveLength(1);
+      now = AGENT_READ_BUDGET_MS;
+      await jest.advanceTimersByTimeAsync(1);
+      const { outcome } = await running;
+
+      expect(prompts[1].rounds[0].results[0]).toEqual(
+        expect.objectContaining({
+          failed: true,
+          note: 'The read took too long.',
+        }),
+      );
+      expect(prompts[1].mustAnswer).toBe(true);
+      expect(outcome?.stop).toBe('time_limit');
+      expect(outcome?.rounds[0].calls[0].outcome).toBe('timed_out');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('ends the turn when a round is not made', async () => {

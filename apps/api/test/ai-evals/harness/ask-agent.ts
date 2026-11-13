@@ -47,6 +47,7 @@ import type {
   LanguageModelRequest,
 } from '#domain/adapters/language-model.interface';
 import type { AiGatewayService } from '../../../src/application/services/ai/ai-gateway.service';
+import { askAgentEnabled } from '../../../src/config/ai-config';
 import { AgentLoopService } from '../../../src/application/services/ask/agent/agent-loop.service';
 import { AskService } from '../../../src/application/services/ask/ask.service';
 import type { AskTool } from '../../../src/application/services/ask/ask-tool';
@@ -194,6 +195,11 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
   return {
     name: options.name ?? 'Ask + scripted model',
     async ask(invocation: AgentInvocation): Promise<AgentAnswer> {
+      if (askAgentEnabled()) {
+        throw new Error(
+          'Unset ASK_AGENT: these cases grade the one-shot Ask, and the tool loop has no tools here',
+        );
+      }
       const { caller } = invocation;
       const corpus = createEvalCorpus(invocation, embedGateway);
       const toolCalls: RecordedToolCall[] = [];
@@ -218,7 +224,8 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         { findDisplayIdentitiesByIds: () => Promise.resolve([]) } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
-        // The tool loop is off here (`ASK_AGENT`); #4903 grades it.
+        // These cases grade the one-shot path; `agent()` refuses to run with
+        // the tool loop switched on. #4903 grades the loop.
         new AgentLoopService(gateway),
         [],
       );

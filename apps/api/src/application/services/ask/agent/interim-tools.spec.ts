@@ -1,7 +1,7 @@
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { CorpusPassage } from '../../corpus/corpus-retrieval.service';
 import type { AskTool } from '../ask-tool';
-import type { AgentToolContext } from './agent-tool';
+import { AgentToolUnavailableError, type AgentToolContext } from './agent-tool';
 import { SearchChapterAgentTool, agentToolFromAskTool } from './interim-tools';
 
 const CHAPTER = 'chapter-a';
@@ -218,7 +218,7 @@ describe('SearchChapterAgentTool', () => {
     expect(JSON.stringify(result)).not.toContain('lee');
   });
 
-  it('says so when nothing matched or the search could not run', async () => {
+  it('says so when nothing matched, and ends the turn when the search could not run', async () => {
     const none = await build({ passages: [] }).tool.run(
       { query: 'x' },
       context,
@@ -226,14 +226,12 @@ describe('SearchChapterAgentTool', () => {
     expect(none).toEqual(
       expect.objectContaining({ sources: [], note: 'No passage matched.' }),
     );
-    const off = await build({
-      retrieved: { status: 'unavailable', reason: 'spend_cap' },
-    }).tool.run({ query: 'x' }, context);
-    expect(off).toEqual(
-      expect.objectContaining({
-        sources: [],
-        note: 'The search is not available.',
-      }),
+    const unavailable = { status: 'unavailable', reason: 'spend_cap' };
+    const off = build({ retrieved: unavailable }).tool.run(
+      { query: 'x' },
+      context,
     );
+    await expect(off).rejects.toBeInstanceOf(AgentToolUnavailableError);
+    await expect(off).rejects.toEqual(expect.objectContaining({ unavailable }));
   });
 });

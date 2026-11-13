@@ -16,10 +16,11 @@ import {
   passageTarget,
 } from '../ask-passage';
 import type { AskTool } from '../ask-tool';
-import type {
-  AgentReadTool,
-  AgentToolContext,
-  AgentToolResult,
+import {
+  AgentToolUnavailableError,
+  type AgentReadTool,
+  type AgentToolContext,
+  type AgentToolResult,
 } from './agent-tool';
 
 /**
@@ -139,11 +140,11 @@ export class SearchChapterAgentTool implements AgentReadTool<
       },
       context.now,
     );
+    // The search itself was not allowed or not paid for. Its embedding is
+    // another provider's call than the round's, so the next round may well
+    // be admitted: the turn ends here, with the reason.
     if (retrieved.status !== 'ok') {
-      // The search itself was not allowed or not paid for. The next round is
-      // refused for the same reason, and that refusal is what the member is
-      // told.
-      return nothing(context.chapterId, 'The search is not available.');
+      throw new AgentToolUnavailableError(retrieved);
     }
     const allowed = await chatPassagesStillAllowed(
       retrieved.passages,
