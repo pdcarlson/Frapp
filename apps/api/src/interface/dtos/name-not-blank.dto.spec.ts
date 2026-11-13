@@ -37,15 +37,29 @@ const nameErrors = async (cls: ClassConstructor<object>, name: string) =>
     (e) => e.property === 'name',
   );
 
-describe.each(NAMED)('%p name', (cls) => {
-  it.each(['﻿', ' ', ' ', '　', '  ﻿\t'])(
-    'refuses a name of only %j',
-    async (name) => {
-      expect(await nameErrors(cls, name)).not.toEqual([]);
-    },
+// Test titles name each character by code point, since most are invisible.
+const BLANK = [
+  '',
+  '  ',
+  '\t\n',
+  '\ufeff',
+  '\u00a0',
+  '\u202f',
+  '\u3000',
+  ' \u00a0\ufeff\t',
+].map((name) => {
+  const codes = [...name].map(
+    (c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`,
   );
+  return [codes.join(' ') || 'nothing', name];
+});
+
+describe.each(NAMED)('%p name', (cls) => {
+  it.each(BLANK)('refuses a name of %s', async (_codes, name) => {
+    expect(await nameErrors(cls, name)).not.toEqual([]);
+  });
 
   it('accepts a name wrapped in Unicode spaces', async () => {
-    expect(await nameErrors(cls, ' Rush Chair﻿')).toEqual([]);
+    expect(await nameErrors(cls, '\u00a0Rush\u202fChair\ufeff')).toEqual([]);
   });
 });

@@ -38,7 +38,8 @@ describe('role color input', () => {
 });
 
 // #4749: a role's (or tier's) name must have something besides whitespace;
-// the database holds the same rule (`roles_name_not_blank`).
+// the database holds the same rule (`roles_name_not_blank`). The blank names
+// it refuses are in `name-not-blank.dto.spec.ts`, with every other named DTO.
 describe('role and tier name', () => {
   type NamedDto =
     CreateRoleDto | UpdateRoleDto | CreateRoleTierDto | UpdateRoleTierDto;
@@ -50,12 +51,6 @@ describe('role and tier name', () => {
   ];
 
   describe.each(classes)('%p', (cls) => {
-    it.each(['', '  ', '\t\n'])('refuses %j', async (name) => {
-      const dto = plainToInstance(cls, { name, permissions: [] });
-      const errors = await validate(dto);
-      expect(errors.map((e) => e.property)).toContain('name');
-    });
-
     it('accepts a name with surrounding spaces', async () => {
       const dto = plainToInstance(cls, {
         name: ' Rush Chair ',

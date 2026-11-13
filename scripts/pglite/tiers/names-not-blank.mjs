@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { db, miss } from "../harness.mjs";
 
 // ─── Name not-blank checks agree with the API (#4770) ────────────────────────
@@ -11,6 +14,10 @@ import { db, miss } from "../harness.mjs";
 //   character dropped from or added to the list);
 // - each table refuses a name of only U+FEFF, and of only U+00A0 and U+202F,
 //   through a real insert (the constraint is attached to its table).
+// - the migration's backfill renames a stored name of only U+FEFF in each
+//   table to "Unnamed …" before adding the check, and a pledge class's group
+//   follows its class (replay runs it on tables with no such rows, so this
+//   re-runs the migration on seeded rows inside a rolled-back transaction).
 // `\s` matches nothing outside the BMP, so the BMP sweep covers all of it.
 const TABLES = [
   "chapter_groups",
@@ -95,6 +102,65 @@ try {
       await refusedInsert(insert[tbl](`U&'\\00A0\\202F'`)),
       `${tbl}: a name of only U+00A0 and U+202F is refused`,
     ]);
+  }
+
+  // The backfill: drop the checks, store a U+FEFF-only name in each table,
+  // re-run the migration, and read the names back. Rolled back after.
+  const migration = readFileSync(
+    join(
+      process.cwd(),
+      "supabase/migrations/20261113161332_names_not_blank_unicode.sql",
+    ),
+    "utf8",
+  );
+  const id = (n) => `d4770000-0000-4000-8000-00000000000${n}`;
+  try {
+    await db.exec(`
+      begin;
+      ${TABLES.map((t) => `alter table ${t} drop constraint ${t}_name_not_blank;`).join("\n")}
+      insert into chapter_groups (id, chapter_id, kind, name)
+        values ('${id(1)}', '${CH}', 'manual', U&'\\FEFF');
+      insert into chapter_pledge_classes (id, chapter_id, name, position)
+        values ('${id(2)}', '${CH}', U&'\\FEFF', 99);
+      insert into event_types (id, chapter_id, name, position)
+        values ('${id(3)}', '${CH}', U&'\\FEFF', 99);
+      insert into role_tiers (id, chapter_id, position, name, permissions)
+        values ('${id(4)}', '${CH}', 99, U&'\\FEFF', '{}');
+      insert into roles (id, chapter_id, name, permissions)
+        values ('${id(5)}', '${CH}', U&'\\FEFF', '{}');
+    `);
+    await db.exec(migration);
+    const renamed = Object.fromEntries(
+      (
+        await db.query(
+          `select 'chapter_groups' as t, name from chapter_groups where id = $1
+           union all select 'chapter_pledge_classes', name from chapter_pledge_classes where id = $2
+           union all select 'event_types', name from event_types where id = $3
+           union all select 'role_tiers', name from role_tiers where id = $4
+           union all select 'roles', name from roles where id = $5
+           union all select 'class_group', name from chapter_groups where pledge_class_id = $2`,
+          [id(1), id(2), id(3), id(4), id(5)],
+        )
+      ).rows.map((r) => [r.t, r.name]),
+    );
+    const expected = {
+      chapter_groups: `Unnamed group ${id(1).slice(0, 8)}`,
+      chapter_pledge_classes: `Unnamed class ${id(2).slice(0, 8)}`,
+      event_types: `Unnamed type ${id(3).slice(0, 8)}`,
+      role_tiers: `Unnamed tier ${id(4).slice(0, 8)}`,
+      roles: `Unnamed role ${id(5).slice(0, 8)}`,
+      class_group: `Unnamed class ${id(2).slice(0, 8)}`,
+    };
+    for (const [t, name] of Object.entries(expected)) {
+      checks.push([
+        renamed[t] === name,
+        t === "class_group"
+          ? `the backfill renames a pledge class's group with its class (got ${JSON.stringify(renamed[t])})`
+          : `${t}: the backfill renames a U+FEFF-only name to "${name.split(" ").slice(0, 2).join(" ")} …" (got ${JSON.stringify(renamed[t])})`,
+      ]);
+    }
+  } finally {
+    await db.exec("rollback;").catch(() => {});
   }
 
   console.log("\n=== Name not-blank checks agree with JS \\s (#4770) ===");

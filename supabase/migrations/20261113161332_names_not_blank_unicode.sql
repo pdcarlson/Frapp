@@ -17,50 +17,50 @@
 
 update public.chapter_pledge_classes
    set name = 'Unnamed class ' || substr(id::text, 1, 8)
- where name !~ '[^\t\n\v\f\r    -     　﻿]';
+ where name !~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 update public.role_tiers
    set name = 'Unnamed tier ' || substr(id::text, 1, 8)
- where name !~ '[^\t\n\v\f\r    -     　﻿]';
+ where name !~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 update public.event_types
    set name = 'Unnamed type ' || substr(id::text, 1, 8)
- where name !~ '[^\t\n\v\f\r    -     　﻿]';
+ where name !~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 update public.chapter_groups
    set name = 'Unnamed group ' || substr(id::text, 1, 8)
- where name !~ '[^\t\n\v\f\r    -     　﻿]';
+ where name !~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 update public.roles
    set name = 'Unnamed role ' || substr(id::text, 1, 8)
- where name !~ '[^\t\n\v\f\r    -     　﻿]';
+ where name !~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
 
 alter table public.chapter_pledge_classes
   drop constraint if exists chapter_pledge_classes_name_not_blank;
 alter table public.chapter_pledge_classes
   add constraint chapter_pledge_classes_name_not_blank
-  check (name ~ '[^\t\n\v\f\r    -     　﻿]');
+  check (name ~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]');
 
 alter table public.role_tiers
   drop constraint if exists role_tiers_name_not_blank;
 alter table public.role_tiers
   add constraint role_tiers_name_not_blank
-  check (name ~ '[^\t\n\v\f\r    -     　﻿]');
+  check (name ~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]');
 
 alter table public.event_types
   drop constraint if exists event_types_name_not_blank;
 alter table public.event_types
   add constraint event_types_name_not_blank
-  check (name ~ '[^\t\n\v\f\r    -     　﻿]');
+  check (name ~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]');
 
 alter table public.chapter_groups
   drop constraint if exists chapter_groups_name_not_blank;
 alter table public.chapter_groups
   add constraint chapter_groups_name_not_blank
-  check (name ~ '[^\t\n\v\f\r    -     　﻿]');
+  check (name ~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]');
 
 alter table public.roles
   drop constraint if exists roles_name_not_blank;
 alter table public.roles
   add constraint roles_name_not_blank
-  check (name ~ '[^\t\n\v\f\r    -     　﻿]');
+  check (name ~ '[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]');
