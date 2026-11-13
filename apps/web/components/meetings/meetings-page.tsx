@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import {
   useMeetings,
@@ -22,7 +22,11 @@ import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { cn } from "@/lib/utils";
-import { StartMinutesPanel } from "@/components/meetings/start-minutes-panel";
+import {
+  MINUTES_DRAFT,
+  StartMinutesPanel,
+} from "@/components/meetings/start-minutes-panel";
+import { useKeptPanelOpen } from "@repo/hooks/kept-drafts";
 import { MeetingRowsSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -45,7 +49,8 @@ function ChapterMeetingsPage() {
   const meetingsQuery = useMeetings();
   const viewerId = useViewerUserId();
   const names = useMemberDisplayNames();
-  const [starting, setStarting] = useState(false);
+  // Reopens on return when the page was left mid-form (#4593).
+  const [starting, setStarting] = useKeptPanelOpen("meetings", MINUTES_DRAFT);
   const { drafts, posted } = useMemo(() => {
     const rows = meetingsQuery.data ?? [];
     return {

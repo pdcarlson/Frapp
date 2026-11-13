@@ -96,3 +96,87 @@ describe("StartMinutesPanel docked (#4593)", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * Leaving mid-form keeps the draft (Paul, 2026-11-13, #4593): no "are you
+ * sure", and the form opens on what was typed next time.
+ */
+describe("StartMinutesPanel keeps its draft (#4593)", () => {
+  beforeEach(() => {
+    mocks.start.mockReset().mockResolvedValue({ id: "m-1" });
+    mocks.push.mockReset();
+  });
+
+  it("opens on what was typed after the page was left, and says so", () => {
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    fillNewMeeting("yesterday");
+    first.unmount();
+
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.getByLabelText("Meeting name")).toHaveValue("Exec meeting");
+    expect(screen.getByLabelText("Started")).toHaveValue("19:00");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps nothing for a form opened and left untouched", () => {
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    first.unmount();
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", () => {
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fillNewMeeting("yesterday");
+    first.unmount();
+    const second = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    expect(screen.queryByLabelText("Meeting name")).toBeNull();
+    second.unmount();
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("drops the draft on Cancel", () => {
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fillNewMeeting("yesterday");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    first.unmount();
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("drops the draft once the minutes start", async () => {
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fillNewMeeting("yesterday");
+    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    await vi.waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1));
+    first.unmount();
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("doesn't pull the officer to the new minutes once they have left the page", async () => {
+    let land: (value: { id: string }) => void = () => {};
+    mocks.start.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const onOpenChange = vi.fn();
+    const first = render(
+      <StartMinutesPanel open onOpenChange={onOpenChange} />,
+    );
+    fillNewMeeting("yesterday");
+    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
+    first.unmount();
+    land({ id: "m-1" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});

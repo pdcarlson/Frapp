@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  useEffect,
   useRef,
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
@@ -93,6 +94,12 @@ import {
   EventEditorDialog,
   isoToLocalInput,
 } from "@/components/events/event-editor-dialog";
+import {
+  hasKeptDraft,
+  readKeptPanel,
+  useKeptDraftKeys,
+  writeKeptPanel,
+} from "@repo/hooks/kept-drafts";
 import { EventsCalendar } from "@/components/events/events-calendar";
 import { pointsLabel } from "@/components/events/event-labels";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -201,6 +208,24 @@ function groupByDay(
   return groups;
 }
 
+/** The editor a page was left with open (#4593). */
+type KeptEditor = {
+  mode: "create" | "edit";
+  event: EventRow | null;
+  plan: EventPlan | null;
+  day: Date | null;
+};
+
+/** The editor's kept draft, by how it was opened. */
+function editorDraftNameOf(editor: KeptEditor): string {
+  if (editor.mode === "edit") {
+    return `event-edit:${editor.event ? eventIdOf(editor.event) : ""}`;
+  }
+  if (editor.plan) return `event-create:plan:${editor.plan.suggestionId}`;
+  if (editor.day) return `event-create:at:${editor.day.toISOString()}`;
+  return "event-create";
+}
+
 export function EventsPage() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
@@ -255,6 +280,42 @@ export function EventsPage() {
   // Set only by a calendar day or hour click, so the "New event" button
   // keeps opening a blank form. Holds the start, hour included.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
+  // The editor's kept draft (#4593): one per way in, so a calendar slot or a
+  // suggestion opens on its own prefill rather than on what New event left.
+  const keptKeys = useKeptDraftKeys();
+  const editorDraftName = editorDraftNameOf({
+    mode: editorMode,
+    event: activeEvent,
+    plan: eventPlan,
+    day: calendarCreateDay,
+  });
+
+  // Which form the page had open, kept when the page is left with it open
+  // (#4593). Read once when the page mounts: if that form still holds a
+  // draft, the officer comes back to it, beside chat, as they left it.
+  function keepEditorOpen(next: KeptEditor | null) {
+    writeKeptPanel(keptKeys.panel("events"), next);
+  }
+  const reopenedEditor = useRef(false);
+  useEffect(() => {
+    if (reopenedEditor.current) return;
+    reopenedEditor.current = true;
+    const left = readKeptPanel<KeptEditor>(keptKeys.panel("events"));
+    if (!left) return;
+    if (!hasKeptDraft(keptKeys.draft(editorDraftNameOf(left)))) {
+      keepEditorOpen(null);
+      return;
+    }
+    /* eslint-disable react-hooks/set-state-in-effect -- reopen, once, the form the page was left with */
+    setEditorMode(left.mode);
+    setActiveEvent(left.event);
+    setActiveSeriesKey(left.event ? eventSeriesKey(left.event) : null);
+    setCalendarCreateDay(left.day);
+    setEventPlan(left.plan);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    editorDialog.setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, []);
   // Lifted here (not local to EventsCalendar) because the calendar unmounts
   // when the list is showing — see EventsCalendar's own comment.
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() =>
@@ -712,11 +773,13 @@ export function EventsPage() {
   // A day from the month starts at the default hour; an hour from the Week
   // or Day view starts then.
   function openCreate(day: Date | null, startHour?: number) {
+    const start = day ? calendarCreateStart(day, startHour) : null;
     setEditorMode("create");
     setActiveEvent(null);
     setActiveSeriesKey(null);
-    setCalendarCreateDay(day ? calendarCreateStart(day, startHour) : null);
+    setCalendarCreateDay(start);
     setEventPlan(null);
+    keepEditorOpen({ mode: "create", event: null, plan: null, day: start });
     editorDialog.setOpen(true);
   }
 
@@ -728,6 +791,7 @@ export function EventsPage() {
     setActiveSeriesKey(null);
     setCalendarCreateDay(null);
     setEventPlan(plan);
+    keepEditorOpen({ mode: "create", event: null, plan, day: null });
     editorDialog.setOpen(true);
   }
 
@@ -1237,6 +1301,7 @@ export function EventsPage() {
           setActiveEvent(event);
           setDetailSheetOpen(false);
           setEditorMode("edit");
+          keepEditorOpen({ mode: "edit", event, plan: null, day: null });
           editorDialog.setOpen(true);
         }}
         onEventDeleted={async () => {
@@ -1249,6 +1314,9 @@ export function EventsPage() {
         open={editorDialog.open}
         onOpenChange={(open) => {
           editorDialog.setOpen(open);
+          // Closed from inside the page: coming back opens the page, not the
+          // form. Its draft, if any, waits for the form to open again.
+          if (!open) keepEditorOpen(null);
           // Edit opened from the event's own view, so leaving it (Back,
           // Cancel or Save) goes back there, as Google Calendar does.
           // Unless a series save rebuilt or moved it: its id may be gone,
@@ -1272,6 +1340,7 @@ export function EventsPage() {
         initialStartAt={eventPlan?.startAt ?? calendarCreateDefaults?.startAt}
         initialEndAt={eventPlan?.endAt ?? calendarCreateDefaults?.endAt}
         template={eventPlan?.template}
+        keptDraft={editorDraftName}
         onCreated={async (eventId) => {
           if (eventPlan) {
             await recordPlannedEvent(eventPlan.suggestionId, eventId);

@@ -36,6 +36,15 @@ export function useFrappClient() {
   return context.client;
 }
 
+/**
+ * The active chapter id, or `null` outside a `FrappClientProvider` rather
+ * than a throw: for state that only scopes itself by chapter (kept form
+ * drafts) and must not take down a surface rendered without the client.
+ */
+export function useActiveChapterIdIfAny(): string | null {
+  return useContext(FrappClientContext)?.chapterId ?? null;
+}
+
 export function useActiveChapterId() {
   const context = useContext(FrappClientContext);
   if (!context) {
