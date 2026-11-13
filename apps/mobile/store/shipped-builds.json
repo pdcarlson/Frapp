@@ -177,6 +177,20 @@
       "build": "14",
       "sha": "c85e2c3a5468a34388dfca64f9bc776f3c008b46",
       "recorded": "2026-11-13"
+    },
+    {
+      "platform": "ios",
+      "version": "0.12.0",
+      "build": "23",
+      "sha": "5f0bd6c953c24cad01e7d5668bc119d899a9f79c",
+      "recorded": "2026-11-13"
+    },
+    {
+      "platform": "android",
+      "version": "0.12.0",
+      "build": "15",
+      "sha": "5f0bd6c953c24cad01e7d5668bc119d899a9f79c",
+      "recorded": "2026-11-13"
     }
   ]
 }
