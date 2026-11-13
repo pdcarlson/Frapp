@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import {
   activityEventMessage,
   activityHoursMessage,
@@ -16,6 +16,7 @@ import { EventCard } from "@/components/chat/renderers/event-card";
 import { HoursCard } from "@/components/chat/renderers/hours-card";
 import { PollCard } from "@/components/chat/renderers/poll-card";
 import { TaskCard } from "@/components/chat/renderers/task-card";
+import { TaskReview } from "@/components/tasks/task-review";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
 import {
@@ -33,6 +34,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { eventDeepLink } from "@/lib/events/event-links";
 import type { ActivityRow } from "@repo/hooks";
+import { ActivityFaces } from "./activity-row-lead";
 import { useActivityPoll } from "./use-activity-poll";
 
 const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
@@ -84,7 +86,11 @@ export function ActivityPanel({
     >
       {row ? (
         <PanelContent aria-describedby={undefined}>
-          <PanelHeader>{PANEL_TITLES[row.kind]}</PanelHeader>
+          <PanelHeader>
+            {row.kind === "task" && row.glyph === "confirm"
+              ? "Review task"
+              : PANEL_TITLES[row.kind]}
+          </PanelHeader>
           <PanelBody>
             {viewerId ? (
               <PanelCard
@@ -120,7 +126,14 @@ function PanelCard({
 }) {
   switch (row.kind) {
     case "task":
-      return <TaskPanel row={row} viewerId={viewerId} />;
+      return (
+        <TaskPanel
+          row={row}
+          viewerId={viewerId}
+          onClose={onClose}
+          onActed={onActed}
+        />
+      );
     case "event":
       return <EventPanel row={row} />;
     case "poll":
@@ -140,14 +153,38 @@ function PanelCard({
   }
 }
 
+/**
+ * A task waiting on the viewer's sign-off opens as its review (#4693); any
+ * other task opens as chat's card.
+ */
 function TaskPanel({
   row,
   viewerId,
+  onClose,
+  onActed,
 }: {
   row: Extract<ActivityRow, { kind: "task" }>;
   viewerId: string;
+  onClose: (key?: string) => void;
+  onActed: () => void;
 }) {
   const message = useMemo(() => activityTaskMessage(row.task), [row.task]);
+  const faceFor = useContext(ActivityFaces);
+  if (row.glyph === "confirm") {
+    return (
+      <TaskReview
+        taskId={row.task.id}
+        assigneeName={row.task.assignee_name}
+        face={faceFor(row.task.assignee_id)}
+        onDone={() => {
+          // As the hours review: the list re-reads, and only this row's
+          // panel closes if the officer has already moved on.
+          onActed();
+          onClose(row.key);
+        }}
+      />
+    );
+  }
   return <TaskCard message={message} viewerId={viewerId} isConfirmed />;
 }
 

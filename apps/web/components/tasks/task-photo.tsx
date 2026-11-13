@@ -1,18 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Camera,
-  ImagePlus,
-  Link2,
-  Loader2,
-  X,
-} from "lucide-react";
+import { Camera, ImagePlus, Link2, Loader2, X } from "lucide-react";
 import {
   MemberFacingError,
   putSignedUpload,
   useRequestTaskPhotoUploadUrl,
   useTaskPhotoUrl,
+  withReasonChip,
   type LiveTaskPhoto,
 } from "@repo/hooks";
 import {
@@ -240,6 +235,55 @@ export function TaskPhotoStrip({
   );
 }
 
+/**
+ * Proof as big as the review allows (#4693): one photo across the panel's
+ * width, several in two columns, each opening the full-size viewer. The
+ * review judges the work, so it gets more room than the card's thumbnails.
+ */
+export function TaskProofGallery({
+  taskId,
+  photos,
+  label,
+}: {
+  taskId: string;
+  photos: LiveTaskPhoto[];
+  label: string;
+}) {
+  const [open, setOpen] = useState<number | null>(null);
+  if (photos.length === 0) return null;
+  const single = photos.length === 1;
+  return (
+    <div className={cn("grid gap-2", single ? "grid-cols-1" : "grid-cols-2")}>
+      {photos.map((photo, i) => (
+        <button
+          key={photo.id}
+          type="button"
+          className="overflow-hidden rounded-[10px] border border-border hover:opacity-90"
+          aria-label={`${label}, photo ${i + 1} of ${photos.length}, opens full size`}
+          onClick={() => setOpen(i)}
+        >
+          <StoredPhoto
+            taskId={taskId}
+            photoId={photo.id}
+            className={cn(
+              "w-full object-cover",
+              single ? "aspect-[4/3] max-h-80" : "aspect-square",
+            )}
+          />
+        </button>
+      ))}
+      <TaskPhotoViewer
+        taskId={taskId}
+        photos={photos}
+        index={open}
+        label={label}
+        onIndexChange={setOpen}
+        onClose={() => setOpen(null)}
+      />
+    </div>
+  );
+}
+
 /** A proof link as a chip showing its domain; opens in a new tab. */
 export function ProofLinkChip({ link }: { link: string }) {
   return (
@@ -333,7 +377,8 @@ function PickedPhoto({ file, className }: { file: File; className?: string }) {
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [file]);
-  if (!url) return <span className={cn("block bg-muted/40", className)} aria-hidden />;
+  if (!url)
+    return <span className={cn("block bg-muted/40", className)} aria-hidden />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" className={className} />;
 }
@@ -588,7 +633,9 @@ export function MarkDoneControl({
         className="gap-1.5"
         {...controlProps}
         disabled={disabled}
-        onClick={() => (asks ? setOpen(true) : void onComplete({}).catch(() => {}))}
+        onClick={() =>
+          asks ? setOpen(true) : void onComplete({}).catch(() => {})
+        }
       >
         {kind === "photo" ? (
           <Camera className="h-4 w-4" aria-hidden="true" />
@@ -797,12 +844,15 @@ export interface SendBackInput {
 export function SendBackDialog({
   title,
   proofKind,
+  reasons = [],
   open,
   onClose,
   onSubmit,
 }: {
   title: string;
   proofKind: TaskProofKind | null | undefined;
+  /** One-tap reasons above the field (#4693); none by default. */
+  reasons?: string[];
   open: boolean;
   onClose: () => void;
   onSubmit: (input: SendBackInput) => Promise<void>;
@@ -852,6 +902,35 @@ export function SendBackDialog({
         >
           <div className="grid gap-1">
             <Label htmlFor="send-back-reason">What needs to change</Label>
+            {reasons.length > 0 ? (
+              <div
+                className="flex flex-wrap gap-1.5 pb-1"
+                role="group"
+                aria-label="Common reasons"
+              >
+                {reasons.map((chip) => (
+                  <Button
+                    key={chip}
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="rounded-full"
+                    disabled={busy}
+                    onClick={() => {
+                      setReason((typed) =>
+                        withReasonChip(typed, chip).slice(
+                          0,
+                          TASK_SEND_BACK_REASON_MAX,
+                        ),
+                      );
+                      setProblem(null);
+                    }}
+                  >
+                    {chip}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
             <Input
               id="send-back-reason"
               autoFocus

@@ -17,7 +17,12 @@ vi.mock("@/components/chat/renderers/poll-card", () => ({
   PollCard: () => null,
 }));
 vi.mock("@/components/chat/renderers/task-card", () => ({
-  TaskCard: () => null,
+  TaskCard: () => <div data-testid="task-card" />,
+}));
+vi.mock("@/components/tasks/task-review", () => ({
+  TaskReview: ({ taskId }: { taskId: string }) => (
+    <div data-testid="task-review">{taskId}</div>
+  ),
 }));
 vi.mock("@/components/service/use-service-review", () => ({
   useServiceReview: () => ({}),
@@ -87,5 +92,59 @@ describe("ActivityPanel docked (#4593)", () => {
     expect(region.parentElement).toHaveAttribute("data-tool-column");
     fireEvent.click(screen.getByRole("button", { name: "Back to activity" }));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("ActivityPanel: a task (#4693)", () => {
+  const taskRow = (glyph: "confirm" | "task") =>
+    ({
+      kind: "task",
+      key: `needs:task:task-1`,
+      title: "Clean his room",
+      detail: "",
+      badge: null,
+      glyph,
+      task: {
+        id: "task-1",
+        title: "Clean his room",
+        assignee_id: "user-1",
+        assignee_name: "Shawn Klein",
+        created_by: "admin-1",
+        created_by_name: "Paul Carlson",
+        due_date: "2099-11-05",
+        due_at: null,
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        point_reward: 10,
+        completed_at: null,
+        confirmed_at: null,
+      },
+    }) as unknown as ActivityRow;
+
+  it("opens a task waiting on the viewer's sign-off as its review", () => {
+    render(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={() => {}}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getByText("Review task")).toBeTruthy();
+    expect(screen.getByTestId("task-review").textContent).toBe("task-1");
+    expect(screen.queryByTestId("task-card")).toBeNull();
+  });
+
+  it("opens any other task as chat's card", () => {
+    render(
+      <ActivityPanel
+        row={taskRow("task")}
+        viewerId="user-1"
+        onClose={() => {}}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("task-card")).toBeTruthy();
+    expect(screen.queryByTestId("task-review")).toBeNull();
   });
 });
