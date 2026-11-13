@@ -95,6 +95,7 @@ export * from "./use-org-config";
 export * from "./use-own-status-at";
 export * from "./use-pledge-classes";
 export * from "./use-points";
+export * from "./use-query-online";
 export * from "./use-reports";
 export * from "./use-role-tiers";
 export * from "./use-roles";

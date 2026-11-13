@@ -15,24 +15,42 @@ import {
 vi.mock("@repo/hooks", async () => {
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
-  return { ...actual, useFrappClient: () => ({}) };
+  return {
+    ...actual,
+    useFrappClient: () => ({}),
+    useQueryOnline: () => own.online,
+  };
 });
 
 // The page's read of the viewer's answers. `data` is what loaded (`undefined`
-// before anything did); `isPending` and `error` are the query's own.
+// before anything did); the rest is the query's own state. `readOnOpen` is
+// what the page asked the hook for.
 const own = vi.hoisted(() => ({
   data: undefined as unknown,
   isPending: false,
   error: null as Error | null,
+  status: "success" as "pending" | "error" | "success",
+  online: true,
+  fetchStatus: "idle" as "fetching" | "paused" | "idle",
+  failureCount: 0,
+  isFetchedAfterMount: true,
+  readOnOpen: [] as boolean[],
   refetch: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/chat/use-own-form-response", () => ({
-  useOwnFormResponse: () => ({
-    data: own.data,
-    isPending: own.isPending,
-    error: own.error,
-    refetch: own.refetch,
-  }),
+  useOwnFormResponse: (_id: string, _enabled: boolean, readOnOpen = false) => {
+    own.readOnOpen.push(readOnOpen);
+    return {
+      data: own.data,
+      isPending: own.isPending,
+      error: own.error,
+      status: own.status,
+      fetchStatus: own.fetchStatus,
+      failureCount: own.failureCount,
+      isFetchedAfterMount: own.isFetchedAfterMount,
+      refetch: own.refetch,
+    };
+  },
 }));
 
 const save = vi.hoisted(() => ({
@@ -98,6 +116,12 @@ beforeEach(() => {
   own.data = null;
   own.isPending = false;
   own.error = null;
+  own.status = "success";
+  own.online = true;
+  own.fetchStatus = "idle";
+  own.failureCount = 0;
+  own.isFetchedAfterMount = true;
+  own.readOnOpen = [];
   own.refetch.mockClear();
   save.calls = [];
   save.next = null;
@@ -338,23 +362,100 @@ describe("FormFillPage (#3926 step 3)", () => {
 
   it("holds edits and Send until the open-time read lands, then shows the newest answers", async () => {
     own.data = { answers: { q1: "Old" }, updated_at: "x" };
-    let land!: () => void;
-    own.refetch.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          land = resolve;
-        }),
-    );
+    own.fetchStatus = "fetching";
+    own.isFetchedAfterMount = false;
     const { tree, host, rerender } = setup([form()]);
     await act(async () => host().open("m1"));
+    // One read, made by the query as the page mounts (#4752): no second one
+    // of the page's own.
+    expect(own.readOnOpen.at(-1)).toBe(true);
+    expect(own.refetch).not.toHaveBeenCalled();
     expect(answerField(tree).props.editable).toBe(false);
     expect(pressable(tree, "Update answers")!.props.disabled).toBe(true);
-    // Answers sent from web since land, then the read settles.
+    // Answers sent from web since land.
     own.data = { answers: { q1: "From web" }, updated_at: "y" };
+    own.fetchStatus = "idle";
+    own.isFetchedAfterMount = true;
     rerender([form()]);
-    await act(async () => land());
     expect(answerField(tree).props.editable).toBe(true);
     expect(answerField(tree).props.value).toBe("From web");
+    expect(text(tree)).not.toContain("offline");
+  });
+
+  it("lets the answers on screen be edited, and says why, while the open-time read waits for the network", async () => {
+    own.data = { answers: { q1: "Old" }, updated_at: "x" };
+    own.online = false;
+    // offlineFirst: the first attempt is still out, hanging.
+    own.fetchStatus = "fetching";
+    own.isFetchedAfterMount = false;
+    const { tree, host } = setup([form()]);
+    await act(async () => host().open("m1"));
+    expect(answerField(tree).props.editable).toBe(true);
+    expect(pressable(tree, "Update answers")!.props.disabled).toBe(false);
+    expect(text(tree)).toContain("You're offline");
+  });
+
+  it("keeps edits made offline and shows newer answers to the rest when the read lands", async () => {
+    own.data = { answers: { q1: "Old" }, updated_at: "x" };
+    own.online = false;
+    own.fetchStatus = "paused";
+    own.failureCount = 1;
+    own.isFetchedAfterMount = false;
+    const { tree, host, rerender } = setup([form()]);
+    await act(async () => host().open("m1"));
+    act(() => answerField(tree).props.onChangeText("Mine"));
+    // Back online: the read is tried again with its failure count back at
+    // 0, and the questions stay editable.
+    own.online = true;
+    own.fetchStatus = "fetching";
+    own.failureCount = 0;
+    rerender([form()]);
+    expect(answerField(tree).props.editable).toBe(true);
+    expect(text(tree)).toContain("Couldn't check for newer answers");
+    // It lands: the note goes and the member's edit stays.
+    own.data = { answers: { q1: "From web" }, updated_at: "y" };
+    own.fetchStatus = "idle";
+    own.isFetchedAfterMount = true;
+    rerender([form()]);
+    expect(answerField(tree).props.value).toBe("Mine");
+    expect(text(tree)).not.toContain("Couldn't check");
+  });
+
+  it("doesn't say offline when a retry waits for the app's focus while online", async () => {
+    own.data = { answers: { q1: "Old" }, updated_at: "x" };
+    own.fetchStatus = "paused";
+    own.failureCount = 1;
+    own.isFetchedAfterMount = false;
+    const { tree, host } = setup([form()]);
+    await act(async () => host().open("m1"));
+    expect(answerField(tree).props.editable).toBe(true);
+    expect(text(tree)).not.toContain("offline");
+    expect(text(tree)).toContain("Couldn't check for newer answers");
+  });
+
+  it("lets the answers on screen be edited, and says why, when the open-time read fails or retries", async () => {
+    own.data = { answers: { q1: "Old" }, updated_at: "x" };
+    own.fetchStatus = "fetching";
+    own.failureCount = 1;
+    own.isFetchedAfterMount = false;
+    const { tree, host } = setup([form()]);
+    await act(async () => host().open("m1"));
+    expect(answerField(tree).props.editable).toBe(true);
+    expect(pressable(tree, "Update answers")!.props.disabled).toBe(false);
+    expect(text(tree)).toContain("Couldn't check for newer answers");
+  });
+
+  it("says the answers load once back online when none are on the phone", async () => {
+    own.data = undefined;
+    own.isPending = true;
+    own.status = "pending";
+    own.online = false;
+    own.fetchStatus = "paused";
+    own.isFetchedAfterMount = false;
+    const { tree, host } = setup([form()]);
+    await act(async () => host().open("m1"));
+    expect(text(tree)).toContain("Your answers load when you're back online.");
+    expect(text(tree)).not.toContain("Which room?");
   });
 
   it("re-reads rather than writes the cache when a save lands after the page closed", async () => {

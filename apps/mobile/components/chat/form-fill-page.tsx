@@ -24,18 +24,26 @@ import {
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
+  formOpenRead,
+  formOpenReadNote,
+  formAnswersWithEdits,
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
   isFormClosed,
   readFormPayload,
   saveFormResponse,
-  type FormAnswers,
+  type FormAnswerEdits,
   type FormPayload,
   type FormQuestion,
 } from "@repo/chat-core/forms";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useFrappClient, useNow, type NameResolver } from "@repo/hooks";
+import {
+  useFrappClient,
+  useNow,
+  useQueryOnline,
+  type NameResolver,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
@@ -277,40 +285,43 @@ function FormFillBody({
   const closed = isFormClosed(payload, now);
   const deadline = formDeadlineLine(payload, now);
 
-  const response = useOwnFormResponse(messageId, true);
-  // Read again on open: the card's copy can be a minute old, and answers
-  // sent from web since must not be overwritten by a stale prefill. Until
-  // that read settles the questions are drawn but not editable, so the first
-  // edit is made on the newest answers; if it fails, they become editable on
-  // the copy there is (a send then reaches the server, which has the say).
-  const { refetch } = response;
-  const [synced, setSynced] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void refetch().finally(() => {
-      if (live) setSynced(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [refetch]);
+  // Read again on open (#4727): answers sent from web since must not be
+  // overwritten by a stale prefill. Until that read lands the questions are
+  // drawn but held, so the first edit is made on the newest answers; if it
+  // waits for the network or fails, they become editable on the copy there
+  // is, a note says why, and a send reaches the server, which has the say
+  // (`formOpenRead`, #4752).
+  const response = useOwnFormResponse(messageId, true, true);
+  // Once the page stops waiting for the read, it doesn't start again: a read
+  // resumed after a pause, or tried again, mustn't lock the questions
+  // mid-edit (`formOpenRead`).
+  const [gaveUp, setGaveUp] = useState(false);
+  const online = useQueryOnline();
+  const read = formOpenRead(response, { online, gaveUp });
+  if (!gaveUp && (read === "offline" || read === "unchecked")) setGaveUp(true);
+  const synced = read !== "reading";
   const saved = response.data?.answers;
   // Loaded at least once (`null` is "not answered yet"). A failed background
   // refetch keeps the questions and the member's edits on screen rather than
   // swapping them for an error mid-edit.
   const loaded = response.data !== undefined;
   const answered = !!response.data;
+  // Why the answers on screen may be behind the server's.
+  const note = formOpenReadNote(read, {
+    loaded,
+    closed,
+    pending: response.isPending,
+  });
 
-  // The member's edits, or `null` before their first: until then the page
-  // shows the answers they last sent.
-  const [edited, setEdited] = useState<FormAnswers | null>(null);
+  // The member's edits, per question, over the answers they last sent.
+  const [edits, setEdits] = useState<FormAnswerEdits>({});
   const [showProblems, setShowProblems] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // A closed form shows what was sent, never edits that didn't go out.
   const current = useMemo(
-    () => (closed ? (saved ?? {}) : (edited ?? saved ?? {})),
-    [closed, edited, saved],
+    () => (closed ? (saved ?? {}) : formAnswersWithEdits(saved, edits)),
+    [closed, edits, saved],
   );
   const problems = useMemo(
     () => formAnswerProblems(payload.questions, current),
@@ -321,14 +332,9 @@ function FormFillBody({
   const setAnswer = useCallback(
     (questionId: string, value: string | string[] | undefined) => {
       setFailure(null);
-      setEdited((prev) => {
-        const next = { ...(prev ?? saved ?? {}) };
-        if (value === undefined) delete next[questionId];
-        else next[questionId] = value;
-        return next;
-      });
+      setEdits((prev) => ({ ...prev, [questionId]: value ?? null }));
     },
-    [saved],
+    [],
   );
 
   // A save that lands after this page closed (or another form opened in its
@@ -416,8 +422,13 @@ function FormFillBody({
               <Text style={styles.description}>{payload.description}</Text>
             ) : null}
             <Text style={styles.notice}>{notice}</Text>
+            {note ? (
+              <Text accessibilityLiveRegion="polite" style={styles.readNote}>
+                {note}
+              </Text>
+            ) : null}
 
-            {response.isPending ? (
+            {response.isPending && note ? null : response.isPending ? (
               // The questions' own shape, a title over its control, so the
               // page doesn't jump when the answers land (components.md §10).
               <SkeletonRegion
@@ -699,6 +710,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    readNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
     },
     loading: {
       gap: tokens.spacing.sm,
