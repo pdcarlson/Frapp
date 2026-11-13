@@ -9,6 +9,7 @@
  * here was written for a developer, and the caller's own sentence or the
  * status's stands in for it.
  */
+import { askPostRefusalCopy } from "./ask-post";
 import { moduleRefusalFromServerMessage } from "./module-refusal";
 import { subscriptionRefusalFromServerMessage } from "./subscription";
 
@@ -92,7 +93,8 @@ export function copyForErrorCode(code: string | null): string | null {
   if (code === "ai.settings.president_only") {
     return "Only your chapter's president can turn AI features on or off.";
   }
-  return null;
+  // Posting an Ask Frapp answer to a channel (#4713).
+  return askPostRefusalCopy(code);
 }
 
 /**

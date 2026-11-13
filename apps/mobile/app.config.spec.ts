@@ -77,6 +77,12 @@ function loadConfig() {
     }) => void;
     publicValueProfile: (env: NodeJS.Dict<string>) => string | undefined;
     PRODUCTION_UPDATE_SENTRY_DSN_ERROR: string;
+    STAGING_PROFILE: string;
+    STAGING_IDENTITY: { name: string; scheme: string; applicationId: string };
+    APP_VARIANT_VALUE_ERROR: string;
+    STAGING_RUNTIME_ERROR: string;
+    APP_VARIANT_PROFILE_ERROR: string;
+    STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR: string;
   };
 }
 
@@ -521,6 +527,193 @@ describe("native Google Sign-In plugin", () => {
     expect(appJson.expo.extra.googleSignIn.webClientId).toMatch(
       /\.apps\.googleusercontent\.com$/,
     );
+  });
+});
+
+describe("the staging variant (#2511)", () => {
+  const appJson = (
+    requireConfig("./app.json") as { expo: Record<string, unknown> }
+  ).expo;
+  const easStagingEnv = (
+    requireConfig("./eas.json") as {
+      build: { staging: { channel: string; env: Record<string, string> } };
+    }
+  ).build.staging;
+  const stagingRuntime = `${appJson.version as string}-0123456789ab`;
+  const stagingBuildEnv = {
+    EAS_BUILD_PROFILE: "staging",
+    EAS_BUILD_PLATFORM: "ios",
+    FRAPP_STAGING_RUNTIME: stagingRuntime,
+    ...easStagingEnv.env,
+    EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin,
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: PUBLISHABLE_KEY_FIXTURE,
+  };
+
+  it("is what eas.json's staging profile builds, on a channel of its own", () => {
+    const { applyMobileConfig, STAGING_IDENTITY, STAGING_PROFILE } =
+      loadConfig();
+    expect(STAGING_PROFILE).toBe("staging");
+    expect(easStagingEnv.channel).toBe("staging");
+    const result = applyMobileConfig(appJson, {
+      env: stagingBuildEnv,
+      existsSync: missing,
+    }) as {
+      name: string;
+      scheme: string;
+      slug: string;
+      ios: Record<string, unknown>;
+      android: Record<string, unknown>;
+      updates: unknown;
+    };
+    expect(STAGING_IDENTITY).toEqual({
+      name: "Frapp Staging",
+      scheme: "frapp-staging",
+      applicationId: "live.frapp.mobile.staging",
+    });
+    expect(result.name).toBe("Frapp Staging");
+    expect(result.scheme).toBe("frapp-staging");
+    expect(result.ios.bundleIdentifier).toBe("live.frapp.mobile.staging");
+    expect(result.android.package).toBe("live.frapp.mobile.staging");
+    // The production app's https links stay the production app's.
+    expect(result.ios).not.toHaveProperty("associatedDomains");
+    expect(result.android).not.toHaveProperty("intentFilters");
+    // Shared with the production app, and the rest of each platform block kept.
+    expect(result.slug).toBe(appJson.slug);
+    expect(result.updates).toEqual(appJson.updates);
+    expect(result.ios.usesAppleSignIn).toBe(true);
+    expect(result.android.adaptiveIcon).toEqual(
+      (appJson.android as { adaptiveIcon: unknown }).adaptiveIcon,
+    );
+  });
+
+  it("takes its runtime version from the native-input hash, for a build and a guarded update", () => {
+    const { applyMobileConfig } = loadConfig();
+    const { EAS_BUILD_PROFILE: profile, ...rest } = stagingBuildEnv;
+    for (const env of [
+      stagingBuildEnv,
+      { ...rest, FRAPP_EAS_UPDATE_PROFILE: profile },
+    ]) {
+      const result = applyMobileConfig(appJson, { env, existsSync: missing });
+      expect(result.runtimeVersion).toBe(stagingRuntime);
+    }
+  });
+
+  it("refuses the staging profile with no runtime, a malformed one, or another version's", () => {
+    const { applyMobileConfig, STAGING_RUNTIME_ERROR } = loadConfig();
+    for (const value of [
+      "",
+      appJson.version as string,
+      `${appJson.version as string}-xyz`,
+      `${appJson.version as string}-0123456789AB`,
+      "0.0.1-0123456789ab",
+      ` ${stagingRuntime}`,
+    ]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { ...stagingBuildEnv, FRAPP_STAGING_RUNTIME: value },
+          existsSync: missing,
+        }),
+      ).toThrow(STAGING_RUNTIME_ERROR);
+    }
+  });
+
+  it("keeps app.json's runtime policy by hand with no profile, and never touches the production app's", () => {
+    const { applyMobileConfig } = loadConfig();
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_APP_VARIANT: "staging" },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_STAGING_RUNTIME: stagingRuntime },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
+  });
+
+  it("leaves app.json's config untouched", () => {
+    const { applyMobileConfig } = loadConfig();
+    const before = structuredClone(appJson);
+    applyMobileConfig(appJson, { env: stagingBuildEnv, existsSync: missing });
+    expect(appJson).toEqual(before);
+  });
+
+  it("is off without the variable, so every other run builds the production app", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(appJson, {
+      env: { EAS_BUILD_PROFILE: "preview" },
+      existsSync: missing,
+    }) as { name: string; scheme: string; ios: Record<string, unknown> };
+    expect(result.name).toBe("Frapp");
+    expect(result.scheme).toBe("frapp");
+    expect(result.ios.bundleIdentifier).toBe("live.frapp.mobile");
+    expect(result.ios.associatedDomains).toEqual(["applinks:app.frapp.live"]);
+  });
+
+  it("may be set by hand on a run with no profile (expo start, a local prebuild)", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(appJson, {
+      env: { FRAPP_APP_VARIANT: "staging" },
+      existsSync: missing,
+    });
+    expect(result.scheme).toBe("frapp-staging");
+  });
+
+  it("refuses any value but staging", () => {
+    const { applyMobileConfig, APP_VARIANT_VALUE_ERROR } = loadConfig();
+    for (const value of ["production", "Staging", "preview", "1"]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { FRAPP_APP_VARIANT: value },
+          existsSync: missing,
+        }),
+      ).toThrow(APP_VARIANT_VALUE_ERROR);
+    }
+  });
+
+  it("refuses the variant on every other profile, for a build or a guarded update", () => {
+    const { applyMobileConfig, APP_VARIANT_PROFILE_ERROR } = loadConfig();
+    for (const profile of ["production", "preview", "development", "e2e"]) {
+      for (const key of ["EAS_BUILD_PROFILE", "FRAPP_EAS_UPDATE_PROFILE"]) {
+        expect(() =>
+          applyMobileConfig(appJson, {
+            env: {
+              ...productionPublicEnv,
+              [key]: profile,
+              FRAPP_APP_VARIANT: "staging",
+            },
+            existsSync: present,
+          }),
+        ).toThrow(APP_VARIANT_PROFILE_ERROR);
+      }
+    }
+  });
+
+  it("refuses the staging profile without the variant", () => {
+    const { applyMobileConfig, APP_VARIANT_PROFILE_ERROR } = loadConfig();
+    const withoutVariant: Record<string, string> = { ...stagingBuildEnv };
+    delete withoutVariant.FRAPP_APP_VARIANT;
+    expect(() =>
+      applyMobileConfig(appJson, { env: withoutVariant, existsSync: missing }),
+    ).toThrow(APP_VARIANT_PROFILE_ERROR);
+  });
+
+  it("refuses the production API or Supabase project", () => {
+    const { applyMobileConfig, STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR } =
+      loadConfig();
+    for (const override of [
+      { EXPO_PUBLIC_API_URL: `${easProductionApiUrl}/` },
+      { EXPO_PUBLIC_SUPABASE_URL: easProductionSupabaseOrigin },
+    ]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { ...stagingBuildEnv, ...override },
+          existsSync: missing,
+        }),
+      ).toThrow(STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR);
+    }
   });
 });
 
@@ -1358,11 +1551,12 @@ describe("invite links open the app (#4002)", () => {
   // app.frapp.live, which claim `APP_LINK_PATHS` (the invite and the
   // check-in code); the two must agree, except a path whose Android claim
   // waits on the next native version (an intent filter is in the binary, and
-  // a change to it would stop 0.12.0 getting updates over the air).
-  // `/check-in` (2026-11-13) reaches Android with #4763; until then its web
-  // page hands off with Open in Frapp. iOS reads its paths from the web's
-  // file, so it needs no build for a new one.
-  const ANDROID_CLAIMS_LATER: readonly string[] = ["/check-in"];
+  // a change to it would stop the installed version getting updates over the
+  // air). Such a path goes in ANDROID_CLAIMS_LATER until that version; its web
+  // page hands off with Open in Frapp meanwhile. iOS reads its paths from the
+  // web's file, so it needs no build for a new one. Empty since 0.13.0, which
+  // claimed `/check-in` (#4763).
+  const ANDROID_CLAIMS_LATER: readonly string[] = [];
   it("claims exactly the web's app-link paths on app.frapp.live, on both platforms", () => {
     const appJson = JSON.parse(
       readFileSync(new URL("./app.json", import.meta.url), "utf8"),

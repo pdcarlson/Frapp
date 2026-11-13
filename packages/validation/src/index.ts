@@ -25,6 +25,14 @@ export * from "./analytics-opt-out";
 export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+// People and channels named in an Ask answer (#4904).
+export * from "./ask-entities";
+// Thumbs on an Ask answer and the taps under it (#4902).
+export * from "./ask-feedback";
+// An Ask Frapp answer posted to a channel (#4713).
+export * from "./ask-find";
+export * from "./ask-post";
+export * from "./ask-source-chip";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";
@@ -58,6 +66,9 @@ export * from "./discord-export";
 // offers a Clear the API refuses. See ./discord-import.
 export * from "./discord-import";
 export * from "./error-copy";
+// An event's agenda and attachments (#4934): their limits and shapes, which
+// the API enforces and both editors read.
+export * from "./event-agenda";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
@@ -179,6 +190,8 @@ export * from "./role-colors";
 export * from "./screen-copy";
 export * from "./service-points";
 export * from "./service-receipt";
+// The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).
+export * from "./sign-up-links";
 export * from "./signed-upload";
 export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle

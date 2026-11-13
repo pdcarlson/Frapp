@@ -193,6 +193,11 @@ export interface AskExchange {
    */
   suggested?: boolean;
   /**
+   * Earlier turns were sent with this question. Its answer leaned on them,
+   * so it is not offered to the channel (`ai.ask.post.follow_up`, #4713).
+   */
+  followedUp?: boolean;
+  /**
    * The server's id for this ask, from the stream's `start` event: what
    * "Report this" names (#4315). Null until the stream begins.
    */
@@ -267,7 +272,13 @@ export function applyAskEvent(
         step: event.step,
         // Each step replaces the last one's detail, so "3 sources" never
         // outlives the step that counted them.
-        stepDetail: { reads: event.reads, found: event.found },
+        // `label` is the tool loop's own line for the read that just
+        // started ("Searching messages"); `askStepLine` shows it whole.
+        stepDetail: {
+          reads: event.reads,
+          found: event.found,
+          label: event.label,
+        },
         // What was read is also what the finished answer says it read.
         ...(event.step === "reading"
           ? { read: { reads: event.reads, found: event.found } }
@@ -588,6 +599,7 @@ function useAskConversation(): AskConversation {
           id,
           question: trimmed,
           ...(options?.suggested ? { suggested: true } : {}),
+          ...(history.length > 0 ? { followedUp: true } : {}),
           phase: "working",
           // Nothing is being searched while the AI question is still on
           // screen, so the turn says nothing until the request is sent.

@@ -99,7 +99,8 @@ export class GoogleLanguageModel implements ILanguageModel {
     );
   }
 
-  async generate(request: LanguageModelRequest): Promise<LanguageModelResult> {
+  async generate(asked: LanguageModelRequest): Promise<LanguageModelResult> {
+    const request = oneShot(asked);
     try {
       const response = await this.client.models.generateContent(
         this.params(request),
@@ -111,8 +112,9 @@ export class GoogleLanguageModel implements ILanguageModel {
   }
 
   async *stream(
-    request: LanguageModelRequest,
+    asked: LanguageModelRequest,
   ): AsyncIterable<LanguageModelStreamEvent> {
+    const request = oneShot(asked);
     // A cited answer's prose and quotes arrive together in one JSON value,
     // and a half-written JSON value is not prose a member can read. So a
     // cited request with sources is answered in one piece. Streaming it word
@@ -207,7 +209,7 @@ export class GoogleLanguageModel implements ILanguageModel {
     return { vectors, inputTokens };
   }
 
-  private params(request: LanguageModelRequest): GenerateContentParameters {
+  private params(request: OneShotRequest): GenerateContentParameters {
     const contents: Content[] = request.messages.map((message) => ({
       role: message.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: message.content }],
@@ -284,7 +286,22 @@ const CITED_ANSWER_SCHEMA = {
   required: ['answer', 'citations'],
 } as const;
 
-function isCitedWithSources(request: LanguageModelRequest): boolean {
+/** The kinds this adapter answers: everything but a round of a tool loop. */
+type OneShotRequest = Exclude<LanguageModelRequest, { kind: 'agent' }>;
+
+/**
+ * Refuses an `agent` request (#4899). Ask's loop runs on Claude; Gemini's
+ * function calling is mapped here when a bake-off puts a Gemini model in
+ * that loop, not before there is something to grade it with.
+ */
+function oneShot(request: LanguageModelRequest): OneShotRequest {
+  if (request.kind === 'agent') {
+    throw new LanguageModelError('unsupported', 'google');
+  }
+  return request;
+}
+
+function isCitedWithSources(request: OneShotRequest): boolean {
   return request.kind === 'cited' && request.sources.length > 0;
 }
 
@@ -343,7 +360,7 @@ function toUsage(
 }
 
 function toResult(
-  request: LanguageModelRequest,
+  request: OneShotRequest,
   response: GenerateContentResponse | undefined,
   streamed?: {
     text: string;

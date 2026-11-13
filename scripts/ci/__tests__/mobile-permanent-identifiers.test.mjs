@@ -24,7 +24,11 @@
 // - `apps/mobile/app.config.js`, evaluated the way a build evaluates it
 //   (required afresh inside that build's `process.env`, then its default
 //   export called with `{ config }`), leaves every one of them, and
-//   `expo.name`, exactly as app.json has them. It runs once with no EAS
+//   `expo.name`, exactly as app.json has them, on every build but one. The
+//   `staging` profile builds the staging variant (#2511, #4917), a second app
+//   beside the store app: there the name, scheme, bundle id and package must
+//   be the STAGING_* values below, the production app's https link claims
+//   must be gone, and everything else stays as app.json has it. It runs once with no EAS
 //   profile (`expo start`, a bare `eas update`), then for every `eas.json` build
 //   profile on each platform, with that profile's `env` block (and any profile
 //   it `extends`) and the `EAS_BUILD*` values easBuildEnvs lists. The lock
@@ -53,7 +57,8 @@
 //
 // WHAT OTHER LOCKS OWN. Not restated here:
 // - `expo.name` is `Frapp`: frapp-naming.test.mjs. This lock checks only
-//   that app.config.js doesn't change it.
+//   that app.config.js doesn't change it, and that the staging variant's is
+//   `Frapp Staging`, which no other lock owns.
 // - The exact API origin production and preview bake in:
 //   eas-production-profile.test.mjs pins it, and `app.config.js` refuses a
 //   production build whose `EXPO_PUBLIC_API_URL` differs. This lock's eas.json
@@ -64,7 +69,8 @@
 // - The magic-link callback (`frapp:///?`) needs `frapp://**` on both hosted
 //   projects' redirect allow lists: staging and production Auth conformance
 //   check it daily. From the binary's side it needs only the scheme, pinned
-//   below.
+//   below. The staging variant's `frapp-staging://**` entry is not checked
+//   anywhere yet (#4917).
 //
 // THE PROVIDER HOSTNAMES THAT STAY. A binary can't avoid baking some provider
 // hosts: `<ref>.supabase.co` (EXPO_PUBLIC_SUPABASE_URL, which `app.config.js`
@@ -105,6 +111,13 @@ export const SLUG = "frapp";
 export const BUNDLE_ID = "live.frapp.mobile";
 export const SENTRY_ORG = "frapp-live";
 export const EAS_PROJECT_ID = "4ba05e35-7d91-4bb4-9597-be754127de95";
+// The staging variant (#2511): a second app beside the store app, built only
+// by the eas.json profile named here. Its three names are as permanent as
+// production's once its first build reaches TestFlight and Play.
+export const STAGING_PROFILE = "staging";
+export const STAGING_NAME = "Frapp Staging";
+export const STAGING_SCHEME = "frapp-staging";
+export const STAGING_BUNDLE_ID = "live.frapp.mobile.staging";
 
 const SENTRY_PLUGIN = "@sentry/react-native/expo";
 const WORKSPACE_SCOPE = "@repo/";
@@ -136,22 +149,28 @@ function sentryOrganization(expo) {
   return entry?.[1]?.organization;
 }
 
-/** Every permanent identifier in one Expo config (app.json's `expo`, or app.config.js's output). */
-export function identityProblems(expo) {
+/**
+ * Every permanent identifier in one Expo config (app.json's `expo`, or
+ * app.config.js's output). `staging` checks the staging variant's scheme and
+ * bundle id instead of production's; everything else is shared.
+ */
+export function identityProblems(expo, { staging = false } = {}) {
+  const scheme = staging ? STAGING_SCHEME : SCHEME;
+  const bundleId = staging ? STAGING_BUNDLE_ID : BUNDLE_ID;
   const problems = [];
   if (expo?.slug !== SLUG) {
     problems.push(`expo.slug must be ${SLUG}, not ${describe(expo?.slug)}`);
   }
-  if (expo?.scheme !== SCHEME) {
-    problems.push(`expo.scheme must be ${SCHEME}, not ${describe(expo?.scheme)}`);
+  if (expo?.scheme !== scheme) {
+    problems.push(`expo.scheme must be ${scheme}, not ${describe(expo?.scheme)}`);
   }
-  if (expo?.ios?.bundleIdentifier !== BUNDLE_ID) {
+  if (expo?.ios?.bundleIdentifier !== bundleId) {
     problems.push(
-      `expo.ios.bundleIdentifier must be ${BUNDLE_ID}, not ${describe(expo?.ios?.bundleIdentifier)}`,
+      `expo.ios.bundleIdentifier must be ${bundleId}, not ${describe(expo?.ios?.bundleIdentifier)}`,
     );
   }
-  if (expo?.android?.package !== BUNDLE_ID) {
-    problems.push(`expo.android.package must be ${BUNDLE_ID}, not ${describe(expo?.android?.package)}`);
+  if (expo?.android?.package !== bundleId) {
+    problems.push(`expo.android.package must be ${bundleId}, not ${describe(expo?.android?.package)}`);
   }
   if (expo?.extra?.eas?.projectId !== EAS_PROJECT_ID) {
     problems.push(
@@ -174,16 +193,14 @@ export function identityProblems(expo) {
  * must hand back every identifier, and the home-screen name, as app.json has
  * them. The values themselves are identityProblems' and frapp-naming's.
  */
-export function dynamicLayerProblems(staticExpo, resolved) {
+export function dynamicLayerProblems(staticExpo, resolved, { staging = false } = {}) {
+  if (staging) return stagingLayerProblems(staticExpo, resolved);
   const fields = [
     ["expo.name", (expo) => expo?.name],
-    ["expo.slug", (expo) => expo?.slug],
     ["expo.scheme", (expo) => expo?.scheme],
     ["expo.ios.bundleIdentifier", (expo) => expo?.ios?.bundleIdentifier],
     ["expo.android.package", (expo) => expo?.android?.package],
-    ["expo.extra.eas.projectId", (expo) => expo?.extra?.eas?.projectId],
-    ["expo.updates.url", (expo) => expo?.updates?.url],
-    [`the ${SENTRY_PLUGIN} organization`, sentryOrganization],
+    ...SHARED_FIELDS,
   ];
   const problems = [];
   for (const [label, read] of fields) {
@@ -195,6 +212,40 @@ export function dynamicLayerProblems(staticExpo, resolved) {
   }
   return [...problems, ...identityProblems(resolved)];
 }
+
+/**
+ * The staging profile's build: the variant's own name, scheme and bundle id,
+ * no claim on the production app's https links, and every shared identifier
+ * as app.json has it.
+ */
+function stagingLayerProblems(staticExpo, resolved) {
+  const problems = [];
+  if (resolved?.name !== STAGING_NAME) {
+    problems.push(`the staging variant's expo.name must be ${STAGING_NAME}, not ${describe(resolved?.name)}`);
+  }
+  if (resolved?.ios?.associatedDomains !== undefined) {
+    problems.push("the staging variant must not claim the production app's associated domains");
+  }
+  if (resolved?.android?.intentFilters !== undefined) {
+    problems.push("the staging variant must not claim the production app's App Links");
+  }
+  for (const [label, read] of SHARED_FIELDS) {
+    if (read(resolved) !== read(staticExpo)) {
+      problems.push(
+        `app.config.js changes ${label} from ${describe(read(staticExpo))} to ${describe(read(resolved))}`,
+      );
+    }
+  }
+  return [...problems, ...identityProblems(resolved, { staging: true })];
+}
+
+/** What both apps share, and app.config.js must hand back as app.json has it. */
+const SHARED_FIELDS = [
+  ["expo.slug", (expo) => expo?.slug],
+  ["expo.extra.eas.projectId", (expo) => expo?.extra?.eas?.projectId],
+  ["expo.updates.url", (expo) => expo?.updates?.url],
+  [`the ${SENTRY_PLUGIN} organization`, sentryOrganization],
+];
 
 /**
  * `.ics` files members exported before the export was withdrawn (#3708) carry
@@ -358,6 +409,10 @@ export function lockSelfProblems(source) {
     ["BUNDLE_ID", "live.frapp.mobile"],
     ["SENTRY_ORG", "frapp-live"],
     ["EAS_PROJECT_ID", "4ba05e35-7d91-4bb4-9597-be754127de95"],
+    ["STAGING_PROFILE", "staging"],
+    ["STAGING_NAME", "Frapp Staging"],
+    ["STAGING_SCHEME", "frapp-staging"],
+    ["STAGING_BUNDLE_ID", "live.frapp.mobile.staging"],
   ];
   for (const [name, value] of pins) {
     const match = source.match(new RegExp(`^export const ${name} = "([^"]+)";?$`, "m"));
@@ -513,14 +568,22 @@ test("app.config.js, as a build evaluates it, leaves every permanent identifier 
         }
       : {}),
     ...(platform === "android" ? { GOOGLE_SERVICES_JSON: googleServicesFile } : {}),
+    // The staging profile refuses to build without its runtime, which the pipeline computes.
+    ...(profile === STAGING_PROFILE ? { FRAPP_STAGING_RUNTIME: `${staticExpo.version}-000000000000` } : {}),
   });
   try {
     const builds = easBuildEnvs(liveEas(), dashboard);
     assert.ok(builds.length >= 7, `expected no-profile plus 3 profiles × 2 platforms, got ${builds.length}`);
+    const stagingBuilds = [];
     for (const { kind, env } of builds) {
+      // Only the staging profile builds the variant. Every other build, and a
+      // run with no profile, must come out as the production app.
+      const staging = env.EAS_BUILD_PROFILE === STAGING_PROFILE;
+      if (staging) stagingBuilds.push(kind);
       const resolved = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, env);
-      assert.deepEqual(dynamicLayerProblems(staticExpo, resolved), [], kind);
+      assert.deepEqual(dynamicLayerProblems(staticExpo, resolved, { staging }), [], kind);
     }
+    assert.deepEqual(stagingBuilds, PLATFORMS.map((platform) => `${STAGING_PROFILE} ${platform}`));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -693,6 +756,52 @@ for (const [label, override, expected, envFrom] of [
     }
   });
 }
+
+function stagingIosBuild(staticExpo) {
+  const build = easBuildEnvs(liveEas(), (profile) =>
+    profile === STAGING_PROFILE ? { FRAPP_STAGING_RUNTIME: `${staticExpo.version}-000000000000` } : {},
+  ).find((candidate) => candidate.kind === `${STAGING_PROFILE} ios`);
+  assert.ok(build, "no staging ios build in easBuildEnvs");
+  return build;
+}
+
+// The staging variant: each drift must fail too.
+for (const [label, mutate, expected] of [
+  ["keeping the production scheme", (expo) => (expo.scheme = SCHEME), "expo.scheme"],
+  ["keeping the production bundle id", (expo) => (expo.ios.bundleIdentifier = BUNDLE_ID), "bundleIdentifier"],
+  ["keeping the production package", (expo) => (expo.android.package = BUNDLE_ID), "expo.android.package"],
+  ["keeping the production name", (expo) => (expo.name = "Frapp"), "expo.name"],
+  [
+    "claiming the production app's associated domains",
+    (expo) => (expo.ios.associatedDomains = ["applinks:app.frapp.live"]),
+    "associated domains",
+  ],
+  ["claiming the production app's App Links", (expo) => (expo.android.intentFilters = []), "App Links"],
+  ["moving to another EAS project", (expo) => (expo.updates.url = "https://u.expo.dev/other"), "expo.updates.url"],
+]) {
+  test(`a staging build ${label} fails the dynamic-layer check`, () => {
+    const staticExpo = liveAppJson().expo;
+    const build = stagingIosBuild(staticExpo);
+    const resolved = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, build.env);
+    assert.deepEqual(dynamicLayerProblems(staticExpo, resolved, { staging: true }), []);
+    mutate(resolved);
+    const problems = dynamicLayerProblems(staticExpo, resolved, { staging: true });
+    assert.ok(
+      problems.some((problem) => problem.includes(expected)),
+      `${expected}: ${problems.join("; ") || "no problems"}`,
+    );
+  });
+}
+
+test("a production build that comes out as the staging variant fails the dynamic-layer check", () => {
+  const staticExpo = liveAppJson().expo;
+  const build = stagingIosBuild(staticExpo);
+  const staging = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, build.env);
+  const problems = dynamicLayerProblems(staticExpo, staging);
+  for (const field of ["expo.name", "expo.scheme", "expo.ios.bundleIdentifier", "expo.android.package"]) {
+    assert.ok(problems.some((problem) => problem.includes(`changes ${field} `)), field);
+  }
+});
 
 test("the simulated builds carry each profile's eas.json env and the EAS build values", () => {
   const eas = {

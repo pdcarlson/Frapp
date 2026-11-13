@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsISO8601,
@@ -25,6 +26,14 @@ import {
   MAX_REPEAT_INTERVAL,
   MAX_REPEAT_RULE_LENGTH,
   MAX_SERIES_MEETINGS,
+  EVENT_AGENDA_ITEM_MAX,
+  EVENT_AGENDA_MAX,
+  EVENT_ATTACHMENT_KINDS,
+  EVENT_ATTACHMENT_TITLE_MAX,
+  EVENT_ATTACHMENTS_MAX,
+  TASK_PROOF_LINK_MAX,
+  type EventAgendaItem,
+  type EventAttachment,
 } from '@repo/validation';
 import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 import type { Event } from '#domain/entities/event.entity';
@@ -50,6 +59,76 @@ const RECURRENCE_RULE_DESCRIPTION =
   'BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), ' +
   `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
   'and TZID (the zone whose wall clock the series keeps).';
+
+/** One agenda item (#4934, `spec/behavior/events.md` § Agenda and attachments). */
+export class EventAgendaItemDto implements EventAgendaItem {
+  @ApiProperty({
+    maxLength: 64,
+    description:
+      "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ maxLength: EVENT_AGENDA_ITEM_MAX })
+  @IsString()
+  @MaxLength(EVENT_AGENDA_ITEM_MAX)
+  text: string;
+
+  @ApiProperty({ description: 'Checked off during the meeting.' })
+  @IsStrictBoolean()
+  done: boolean;
+}
+
+/**
+ * One attachment (#4934): a titled link, or one of the chapter's Chapter
+ * Files documents. A flat shape rather than a `oneOf`, so the SDK type stays
+ * one object; `kind` says which of `url` and `document_id` it carries.
+ */
+export class EventAttachmentDto {
+  @ApiProperty({
+    maxLength: 64,
+    description: "The client's id for the attachment. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ enum: EVENT_ATTACHMENT_KINDS })
+  @IsIn([...EVENT_ATTACHMENT_KINDS])
+  kind: EventAttachment['kind'];
+
+  @ApiPropertyOptional({
+    maxLength: TASK_PROOF_LINK_MAX,
+    description: "A `link` attachment's address: http or https only.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'link')
+  @IsString()
+  @MaxLength(TASK_PROOF_LINK_MAX)
+  url?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'document')
+  @IsUUID()
+  document_id?: string;
+
+  @ApiProperty({
+    maxLength: EVENT_ATTACHMENT_TITLE_MAX,
+    description:
+      'What the list shows. For a document, its name when it was attached.',
+  })
+  @IsString()
+  @MaxLength(EVENT_ATTACHMENT_TITLE_MAX)
+  title: string;
+}
+
+const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGENDA_MAX} short items. Sent whole; it replaces the stored list, and \`[]\` clears it (null is refused). Belongs to this one meeting: with \`scope: 'series'\` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.`;
+const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list, and \`[]\` clears it. Per meeting, like \`agenda\`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.`;
 
 export class CreateEventDto {
   @ApiProperty()
@@ -152,6 +231,32 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: AGENDA_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
 
   @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],
@@ -282,6 +387,15 @@ export class EventResponseDto implements Event {
 
   @ApiProperty({ type: String, nullable: true })
   notes: string | null;
+
+  @ApiProperty({ type: [EventAgendaItemDto], description: AGENDA_DESCRIPTION })
+  agenda: EventAgendaItem[];
+
+  @ApiProperty({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  attachments: EventAttachment[];
 
   @ApiProperty({
     type: [GeofenceCoordinateDto],
@@ -456,6 +570,32 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: AGENDA_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
 
   @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],

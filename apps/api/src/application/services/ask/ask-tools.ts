@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eventAttendanceFor } from '@repo/validation';
+import { eventAttendanceFor, eventLimitsAudience } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TaskStatus } from '#domain/entities/task.entity';
 import { localDateIn } from '#domain/utils/zoned-time';
@@ -116,6 +116,7 @@ export class RosterAskTool implements AskTool {
   readonly page = 'members' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = null;
+  readonly reach = 'chapter' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -164,6 +165,7 @@ export class EventsAskTool implements AskTool {
   readonly page = 'events' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'events';
+  readonly reach = 'events' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -238,10 +240,16 @@ export class EventsAskTool implements AskTool {
         `${cut} more events in this period are not listed here. The Events page has all of them.`,
       );
     }
-    return result(chapterId, [
+    const read = result(chapterId, [
       `Today is ${longDate(now.toISOString(), timeZone)}. Times are in ${timeZone}.`,
       ...lines,
     ]);
+    // Which of the listed events not every member can see, for the check a
+    // post to a channel makes (#4713). Ids only.
+    const limited = kept.filter(eventLimitsAudience).map((event) => event.id);
+    return read && limited.length > 0
+      ? { ...read, limitedEventIds: limited }
+      : read;
   }
 }
 
@@ -256,6 +264,7 @@ export class MyPointsAskTool implements AskTool {
   readonly page = 'points' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'points';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly points: PointsService) {}
@@ -294,6 +303,7 @@ export class PointsLeaderboardAskTool implements AskTool {
   readonly page = 'points' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'points';
+  readonly reach = 'chapter' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -339,6 +349,7 @@ export class MyDuesAskTool implements AskTool {
   // Off for every chapter during the beta (`BETA_OFF_MODULES`), so this tool
   // is not offered until dues come back.
   readonly module = 'dues';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly invoices: FinancialInvoiceService) {}
@@ -384,6 +395,7 @@ export class MyTasksAskTool implements AskTool {
   readonly page = 'tasks' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'tasks';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly tasks: TaskService) {}

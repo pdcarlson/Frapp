@@ -1,0 +1,30 @@
+{
+  "$comment": "Shared fixtures for the sign-up link list (#4215). Each URL is read by signUpLinkKind in src/sign-up-links.ts (sign-up-links.spec.ts) and by activity_action_links in the database (scripts/pglite/tiers/activity-links.mjs). kind null means neither may accept it. Add a row here when the list changes.",
+  "fixtures": [
+    { "url": "https://docs.google.com/forms/d/e/abc/viewform", "kind": "Google Form" },
+    { "url": "https://docs.google.com/a/school.edu/forms/d/abc/viewform", "kind": "Google Form" },
+    { "url": "https://www.docs.google.com/spreadsheets/d/abc/edit", "kind": "Google Sheet" },
+    { "url": "https://docs.google.com/Document/d/abc/edit", "kind": "Google Doc" },
+    { "url": "https://forms.gle/abc", "kind": "Google Form" },
+    { "url": "https://FORMS.GLE/abc", "kind": "Google Form" },
+    { "url": "https://forms.office.com/r/abc", "kind": "Microsoft Form" },
+    { "url": "https://forms.microsoft.com/r/abc", "kind": "Microsoft Form" },
+    { "url": "https://forms.cloud.microsoft/r/abc", "kind": "Microsoft Form" },
+    { "url": "https://typeform.com/to/abc", "kind": "Typeform" },
+    { "url": "https://chapter.typeform.com/to/abc", "kind": "Typeform" },
+    { "url": "https://signupgenius.com/go/abc", "kind": "SignUpGenius" },
+    { "url": "https://www2.signupgenius.com/go/abc", "kind": "SignUpGenius" },
+    { "url": "https://calendly.com/olive/rush", "kind": "Calendly" },
+    { "url": "https://www.calendly.com/olive/rush", "kind": "Calendly" },
+    { "url": "https://sub.calendly.com/olive", "kind": null },
+    { "url": "https://www.www.forms.gle/abc", "kind": null },
+    { "url": "https://calendly.com.evil.example/x", "kind": null },
+    { "url": "https://docs.google.com/presentation/d/abc", "kind": null },
+    { "url": "https://docs.google.com/", "kind": null },
+    { "url": "https://drive.google.com/file/d/abc", "kind": null },
+    { "url": "https://accounts.google.com/ServiceLogin", "kind": null },
+    { "url": "https://eviltypeform.com/to/abc", "kind": null },
+    { "url": "https://typeform.com.evil.example/to/abc", "kind": null },
+    { "url": "https://example.com/forms/abc", "kind": null }
+  ]
+}

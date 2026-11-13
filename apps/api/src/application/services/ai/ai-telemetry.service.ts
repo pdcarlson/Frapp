@@ -6,14 +6,14 @@ import { AnalyticsService } from '../analytics.service';
 
 /** What the gateway knows about a finished call beyond its usage record. */
 export interface AiCallShape {
-  kind: 'structured' | 'cited' | 'embedding' | 'transcription';
+  kind: 'structured' | 'cited' | 'agent' | 'embedding' | 'transcription';
   /**
    * A streamed call has no span of its own (a span cannot stay open across
    * the reader's pauses), so its counts are not put on whatever span is
    * active, which would be the request's.
    */
   streamed: boolean;
-  /** Citations that passed the word-for-word check; 0 for other kinds. */
+  /** Citations that passed the word-for-word check; 0 for kinds that cite nothing. */
   citationsKept: number;
   /** Citations the check dropped; 0 for other kinds. */
   citationsDropped: number;

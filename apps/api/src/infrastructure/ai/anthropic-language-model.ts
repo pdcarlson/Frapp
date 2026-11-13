@@ -6,9 +6,13 @@ import {
   type ILanguageModel,
   type LanguageModelCitation,
   type LanguageModelErrorKind,
+  type AgentLanguageModelRequest,
   type LanguageModelRequest,
   type LanguageModelResult,
+  type LanguageModelSource,
   type LanguageModelStreamEvent,
+  type LanguageModelToolCall,
+  type LanguageModelToolResult,
   type LanguageModelUsage,
 } from '#domain/adapters/language-model.interface';
 
@@ -28,6 +32,23 @@ export type AnthropicMessagesClient = Pick<Anthropic, 'messages'>;
  *   adaptively by default and reject a fixed budget or a temperature; depth
  *   is set by `effort`, from the catalog.
  * - No forced `tool_choice` for JSON. A strict shape uses structured outputs.
+ * - No tool runner. An `agent` request is one round: the model's calls come
+ *   back to the caller, which runs them and asks again (#4899).
+ *
+ * How an `agent` round is built:
+ * - A tool's result goes back as `search_result` blocks, one per source, with
+ *   citations on, so the answer cites what a tool read through the same
+ *   mechanism a `cited` request uses. A citation of one names the block's
+ *   `source`, which is Frapp's source id. The smallest thing the provider
+ *   cites there is a whole text block, so a source is sent as one block per
+ *   line: a quote is then a line or a run of lines, and is word for word in
+ *   the source's text, which is what the gateway checks.
+ * - The model's own turn is passed back exactly as it came (`replay`),
+ *   thinking blocks included: the API rejects a tool result whose turn was
+ *   edited.
+ * - With `cache`, the tools and system text, and the rounds so far, are
+ *   marked for the provider's prompt cache. That is a cache of the request's
+ *   own prefix for a few minutes, not a stored document or thread.
  */
 export class AnthropicLanguageModel implements ILanguageModel {
   readonly provider = 'anthropic' as const;
@@ -82,6 +103,8 @@ export class AnthropicLanguageModel implements ILanguageModel {
   private params(
     request: LanguageModelRequest,
   ): Anthropic.MessageCreateParamsNonStreaming {
+    if (request.kind === 'agent') return agentParams(request);
+
     const messages: Anthropic.MessageParam[] = request.messages.map(
       (message) => ({ role: message.role, content: message.content }),
     );
@@ -147,9 +170,25 @@ export class AnthropicLanguageModel implements ILanguageModel {
 
     let text = '';
     const citations: LanguageModelCitation[] = [];
+    const toolCalls: LanguageModelToolCall[] = [];
     for (const block of message.content) {
+      if (block.type === 'tool_use' && request.kind === 'agent') {
+        toolCalls.push({ id: block.id, name: block.name, input: block.input });
+      }
       if (block.type !== 'text') continue;
       text += block.text;
+      if (request.kind === 'agent') {
+        for (const citation of block.citations ?? []) {
+          if (citation.type !== 'search_result_location') continue;
+          // `source` is the id the result's block was sent under.
+          citations.push({
+            sourceId: citation.source,
+            quote: citation.cited_text,
+            at: text.length,
+          });
+        }
+        continue;
+      }
       if (request.kind !== 'cited') continue;
       for (const citation of block.citations ?? []) {
         if (!('document_index' in citation)) continue;
@@ -166,6 +205,18 @@ export class AnthropicLanguageModel implements ILanguageModel {
     }
 
     const truncated = message.stop_reason === 'max_tokens';
+    if (request.kind === 'agent') {
+      return {
+        outcome: 'completed',
+        text,
+        citations,
+        // A turn cut off at the ceiling may hold half a call; none is run.
+        toolCalls: truncated ? [] : toolCalls,
+        replay: message.content,
+        truncated,
+        usage,
+      };
+    }
     if (request.kind !== 'structured') {
       return { outcome: 'completed', text, citations, truncated, usage };
     }
@@ -181,6 +232,139 @@ export class AnthropicLanguageModel implements ILanguageModel {
     }
     return { outcome: 'completed', text, object, citations, truncated, usage };
   }
+}
+
+const CACHED = { cache_control: { type: 'ephemeral' as const } };
+
+/** One round of a tool loop, as the Messages API takes it. */
+function agentParams(
+  request: AgentLanguageModelRequest,
+): Anthropic.MessageCreateParamsNonStreaming {
+  const messages: Anthropic.MessageParam[] = request.messages.map(
+    (message, index): Anthropic.MessageParam => {
+      const last = index === request.messages.length - 1;
+      if (!last || message.role !== 'user' || request.context.length === 0) {
+        return { role: message.role, content: message.content };
+      }
+      // What Frapp knows about this turn goes ahead of the question, as its
+      // own blocks: read, and never something an answer can cite.
+      return {
+        role: 'user',
+        content: [
+          ...request.context.map((source): Anthropic.TextBlockParam => ({
+            type: 'text',
+            text: `${source.title}\n${source.text}`,
+          })),
+          { type: 'text', text: message.content },
+        ],
+      };
+    },
+  );
+
+  request.rounds.forEach((round, index) => {
+    const results = round.results.map(toolResultBlock);
+    if (
+      request.cache &&
+      index === request.rounds.length - 1 &&
+      results.length > 0
+    ) {
+      // Everything up to here is the same bytes next round.
+      results[results.length - 1] = {
+        ...results[results.length - 1],
+        ...CACHED,
+      };
+    }
+    messages.push(
+      {
+        role: 'assistant',
+        content: round.replay as Anthropic.ContentBlockParam[],
+      },
+      { role: 'user', content: results },
+    );
+  });
+
+  return {
+    model: request.model,
+    max_tokens: request.maxOutputTokens,
+    ...(request.system === undefined
+      ? {}
+      : {
+          system: [
+            {
+              type: 'text',
+              text: request.system,
+              // Tools come before the system text in the cached prefix, so
+              // this one mark covers both.
+              ...(request.cache ? CACHED : {}),
+            },
+          ],
+        }),
+    messages,
+    ...(request.tools.length === 0
+      ? {}
+      : {
+          tools: request.tools.map((tool): Anthropic.Tool => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema as Anthropic.Tool.InputSchema,
+          })),
+        }),
+    // `none` is not a forced choice, which current models reject: it only
+    // takes the tools away for a round.
+    ...(request.mustAnswer && request.tools.length > 0
+      ? { tool_choice: { type: 'none' as const } }
+      : {}),
+    output_config: {
+      ...(request.effort === undefined ? {} : { effort: request.effort }),
+    },
+  };
+}
+
+function toolResultBlock(
+  result: LanguageModelToolResult,
+): Anthropic.ToolResultBlockParam {
+  const content: Array<
+    Anthropic.TextBlockParam | Anthropic.SearchResultBlockParam
+  > = result.sources.map(searchResultBlock);
+  if (result.note) content.push({ type: 'text', text: result.note });
+  // An empty result is rejected by the API, and tells the model nothing.
+  if (content.length === 0) content.push({ type: 'text', text: 'Nothing.' });
+  return {
+    type: 'tool_result',
+    tool_use_id: result.callId,
+    content,
+    ...(result.failed ? { is_error: true } : {}),
+  };
+}
+
+/**
+ * A source as a citable block: one text block per line, each keeping its
+ * line break, so the blocks joined are the source's text exactly.
+ */
+function searchResultBlock(
+  source: LanguageModelSource,
+): Anthropic.SearchResultBlockParam {
+  // The API rejects a block of only white space, so a blank line rides with
+  // the line beside it.
+  const blocks: string[] = [];
+  for (const piece of source.text.split(/(?<=\n)/)) {
+    const last = blocks.length - 1;
+    if (last >= 0 && (piece.trim() === '' || blocks[last].trim() === '')) {
+      blocks[last] += piece;
+    } else {
+      blocks.push(piece);
+    }
+  }
+  return {
+    type: 'search_result',
+    source: source.id,
+    title: source.title,
+    content: blocks.map((text) => ({
+      type: 'text',
+      text: text.trim() === '' ? '(empty)' : text,
+    })),
+    citations: { enabled: true },
+  };
 }
 
 /**

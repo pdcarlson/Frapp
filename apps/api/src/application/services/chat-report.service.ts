@@ -254,14 +254,21 @@ export class ChatReportService {
         input.message_id,
         chapterId,
       );
+    // A posted Ask Frapp answer is the Frapp sender's row, but the member
+    // who chose to post it is who a report is about (#4713).
+    const postedBy =
+      message.kind === 'ask_answer' &&
+      typeof message.payload?.asked_by === 'string'
+        ? message.payload.asked_by
+        : null;
     const { report, created } = await this.reportRepo.create({
       chapter_id: chapterId,
       message_id: input.message_id,
       channel_id: message.channel_id,
       reporter_user_id: reporterUserId,
       reported_content: reportedContentSnapshot(message),
-      reported_sender_id: message.sender_id,
-      reported_author_name: message.author_name ?? null,
+      reported_sender_id: postedBy ?? message.sender_id,
+      reported_author_name: postedBy ? null : (message.author_name ?? null),
       reported_attachments: reportedAttachments,
       reason: input.reason,
       details: input.details ?? null,
@@ -1023,6 +1030,11 @@ export class ChatReportService {
  * A malformed card falls back to `content`, the same as any other message:
  * this runs on the filing path and must not fail it.
  *
+ * An Ask Frapp answer posted to a channel (`kind: 'ask_answer'`, #4713)
+ * keeps the question it answers on its own line first: `content` is the
+ * answer alone, and an answer is judged against what was asked. Its report
+ * names the member who posted it as the sender (`fileReport`).
+ *
  * A forward (#4864) adds its copy of the original after its comment
  * ({@link forwardedText}), unless the original was deleted.
  */
@@ -1076,6 +1088,12 @@ function ownContentSnapshot(
 ): string {
   const gif = gifText(message.metadata);
   if (gif) return gif;
+  if (message.kind === 'ask_answer') {
+    const question: unknown = message.payload?.question;
+    return typeof question === 'string' && question.trim()
+      ? `Asked Frapp: ${question.trim()}\n${message.content}`
+      : message.content;
+  }
   const poll = pollText(message);
   if (!poll || poll.labels.length === 0) return message.content;
   const lines = [message.content];

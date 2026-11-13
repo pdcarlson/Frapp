@@ -65,6 +65,7 @@ export const CHAT_MESSAGE_KINDS = [
   "announcement",
   "signup",
   "form",
+  "ask_answer",
 ] as const;
 
 export const SendChatMessageSchema = z.object({

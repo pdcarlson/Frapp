@@ -3,6 +3,7 @@ import { MemberFacingError } from "@repo/hooks/error-copy";
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
+import { StyleSheet } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-core/cards";
@@ -611,18 +612,32 @@ describe("EventCard — Can't make it (#4660)", () => {
     state.excuse = { kind: "offer" };
     const tree = render();
     expect(screenText(tree)).toContain("Check in");
-    await press(tree, "Can't make it");
+    await press(tree, "Can't make it?");
     expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1", excuse: "1" },
     });
   });
 
+  it("draws it as a quiet underlined link with a 44pt target (#4933)", () => {
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    const link = button(tree, "Can't make it?");
+    const box = StyleSheet.flatten(link.props.style({ pressed: false }));
+    expect(box.borderWidth).toBeUndefined();
+    expect(box.minHeight).toBeGreaterThanOrEqual(44);
+    expect(box.minWidth).toBeGreaterThanOrEqual(44);
+    const label = link.find((node) => (node.type as unknown) === "Text");
+    expect(StyleSheet.flatten(label.props.style).textDecorationLine).toBe(
+      "underline",
+    );
+  });
+
   it("offers it before the check-in window opens", () => {
     state.now = new Date("2026-11-04T12:00:00.000Z");
     state.excuse = { kind: "offer" };
     const tree = render();
-    expect(screenText(tree)).toContain("Can't make it");
+    expect(screenText(tree)).toContain("Can't make it?");
     expect(screenText(tree)).not.toContain("Check in");
   });
 
@@ -663,7 +678,7 @@ describe("EventCard — Can't make it (#4660)", () => {
     vi.mocked(push).mockClear();
     state.excuse = { kind: "offer" };
     const tree = render({ onNavigate });
-    await press(tree, "Can't make it");
+    await press(tree, "Can't make it?");
     expect(onNavigate).toHaveBeenCalledTimes(1);
     expect(onNavigate.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(push).mock.invocationCallOrder[0],

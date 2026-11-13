@@ -27,7 +27,9 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
-import { canAny } from "@repo/validation";
+import { ASK_COPY, ASK_FIND_PLACEHOLDER, canAny } from "@repo/validation";
+import { useAskEntry } from "@/components/ask/ask-host";
+import { FrappCrest } from "@/components/ask/frapp-crest";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { asArray, cn } from "@/lib/utils";
@@ -35,6 +37,7 @@ import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { DialogOverlay } from "@/components/ui/dialog";
 import { EYEBROW } from "@/components/ui/typography";
+import { asksFirst } from "@/components/layout/find-ask";
 import {
   FIND_GROUPS,
   buildFindResults,
@@ -54,20 +57,31 @@ import {
  * chips narrow it without retyping. The top-bar field stays as the visible way
  * in, so the shortcut is still a convenience rather than the only door.
  *
- * **Find is not Ask.** Find lists places to go, from everything the member
- * can read, chat included. Ask (the ✦ pill) answers a question from the
- * chapter's official sources only (`spec/behavior/ai.md`) and paints in house
- * gold. This dialog never uses the `gold-ask-*` tokens and never mentions Ask
- * until Ask can answer on web. Per foundations §6 the highlighted result is
- * a neutral `--card-hover` fill, like every menu highlight; only the active
- * filter chip takes the chapter accent, because it is a filter the member
- * switched on.
+ * **The same field asks Frapp** (#4904, Paul's pick of 2026-11-13: one
+ * field for search and Ask). For a member with Ask (`useAskEntry`), the
+ * first row of the list is "Ask Frapp" with what they typed; choosing it
+ * closes this dialog and opens the conversation in its place with the
+ * question already asked (`ask-card.tsx`). Slack's search and Linear's and
+ * Notion's command menus offer a question the same way. Which of the two
+ * Enter means is decided from the words alone (`find-ask.ts`), never from
+ * results arriving, so the highlight does not move under a keypress: words
+ * that read as a question highlight the Ask row, anything else highlights
+ * the first result, and the Ask row takes over only once a search has
+ * settled with nothing to show. A member without Ask sees none of this.
+ *
+ * Find lists places to go, from everything the member can read. Ask answers
+ * a question from the chapter's sources (`spec/behavior/ai.md`). Per
+ * foundations §6 the highlighted row is a neutral `--card-hover` fill, like
+ * every menu highlight; only the active filter chip and the Ask row's crest
+ * take the chapter accent.
  *
  * Focus never leaves the input while arrowing: the list is an
  * `aria-activedescendant` listbox, as the field's dropdown was.
  */
 
 export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
+/** The field's words for a member who can also ask Frapp from it. */
+export const FIND_ASK_PLACEHOLDER = ASK_FIND_PLACEHOLDER;
 
 const GROUP_ICON: Record<FindGroup, LucideIcon> = {
   Channels: Hash,
@@ -112,6 +126,11 @@ type FindDialogProps = {
    * that character in the query: selecting it would let the next one erase it.
    */
   selectOnOpen?: boolean;
+  /**
+   * The member chose the Ask row: hand the question (or none, to open the
+   * conversation as it stands) to Ask. The caller closes this dialog.
+   */
+  onAsk?: (question: string) => void;
 };
 
 export function FindDialog({
@@ -122,6 +141,7 @@ export function FindDialog({
   inputRef,
   onCloseFocus,
   selectOnOpen = true,
+  onAsk,
 }: FindDialogProps) {
   /*
    * The last query a `search-completed` event went out for. Held here, not in
@@ -158,6 +178,7 @@ export function FindDialog({
           <DialogPrimitive.Description className="sr-only">
             Search channels, members, messages, events and backwork. Use the
             arrow keys to move through results and Enter to open one.
+            {onAsk ? " The first row asks Frapp what you typed." : ""}
           </DialogPrimitive.Description>
           <FindPanel
             query={query}
@@ -165,6 +186,7 @@ export function FindDialog({
             inputRef={inputRef}
             onDone={() => onOpenChange(false)}
             lastTrackedQueryRef={lastTrackedQueryRef}
+            onAsk={onAsk}
           />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
@@ -183,16 +205,23 @@ function FindPanel({
   inputRef,
   onDone,
   lastTrackedQueryRef,
+  onAsk,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   onDone: () => void;
   lastTrackedQueryRef: React.MutableRefObject<string | null>;
+  onAsk?: (question: string) => void;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FindFilter>("All");
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Null until the member moves the highlight: it then sits where the words
+  // put it (`defaultRow` below).
+  const [movedTo, setMovedTo] = useState<number | null>(null);
+  // Drawn only for a member with Ask, and only where a caller takes it.
+  const askRow = useAskEntry() !== null && onAsk !== undefined;
+  const placeholder = askRow ? FIND_ASK_PLACEHOLDER : FIND_PLACEHOLDER;
 
   // The server search is debounced; the channel match is not, in effect,
   // because it reads the same debounced query and the channel list is cached.
@@ -276,7 +305,7 @@ function FindPanel({
   const [keyForIndex, setKeyForIndex] = useState(listKey);
   if (keyForIndex !== listKey) {
     setKeyForIndex(listKey);
-    setActiveIndex(0);
+    setMovedTo(null);
   }
 
   /*
@@ -360,29 +389,64 @@ function FindPanel({
     [router, onDone, onQueryChange],
   );
 
+  // "Searching..." only for text that will actually be searched.
+  const showResults =
+    hasMinQuery ||
+    (isDebouncing && query.trim().length >= SEARCH_MIN_QUERY_LENGTH);
+  const isLoading = search.isFetching || isDebouncing;
+
+  /*
+   * Rows are the Ask row (when there is one), then the results. Where the
+   * highlight starts is read from the words, not from what has arrived:
+   * a question starts on the Ask row; anything else starts on the first
+   * result, which may not be there yet (no row is lit, and Enter waits). The
+   * Ask row takes it only when there is nothing to search for, or the search
+   * has settled empty.
+   */
+  const offset = askRow ? 1 : 0;
+  const rowCount = results.length + offset;
+  const nothingToOpen = !showResults || (!isLoading && results.length === 0);
+  const defaultRow = !askRow
+    ? 0
+    : asksFirst(query) || nothingToOpen
+      ? 0
+      : results.length > 0
+        ? 1
+        : -1;
+  const activeRow =
+    movedTo !== null && movedTo < rowCount ? movedTo : defaultRow;
+  const askActive = askRow && activeRow === 0;
+  const activeIndex = activeRow - offset;
+
+  const chooseAsk = useCallback(() => {
+    const question = query.trim();
+    onQueryChange("");
+    onAsk?.(question);
+  }, [query, onQueryChange, onAsk]);
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     // An IME's Enter commits a candidate, and its arrows move between them.
     if (event.nativeEvent.isComposing) return;
-    if (results.length === 0) return;
+    if (rowCount === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((i) => (i + 1) % results.length);
+      setMovedTo((activeRow + 1) % rowCount);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((i) => (i - 1 + results.length) % results.length);
+      setMovedTo((Math.max(activeRow, 0) - 1 + rowCount) % rowCount);
     } else if (event.key === "Enter") {
       event.preventDefault();
+      // The Ask row sends the words as typed, so it never waits on a list.
+      if (askActive) {
+        chooseAsk();
+        return;
+      }
       // The list still belongs to the previous text; see `hasMinQuery`.
       if (isDebouncing) return;
       openResult(results[activeIndex]);
     }
   }
 
-  // "Searching..." only for text that will actually be searched.
-  const showResults =
-    hasMinQuery ||
-    (isDebouncing && query.trim().length >= SEARCH_MIN_QUERY_LENGTH);
-  const isLoading = search.isFetching || isDebouncing;
   /*
    * Only a timeout in a group the member is looking at counts. Channels are
    * matched here and never time out, so under the Channels chip a slow message
@@ -422,8 +486,9 @@ function FindPanel({
       : "No matches.";
   }
 
-  const activeId =
-    showResults && results[activeIndex]
+  const activeId = askActive
+    ? "find-option-ask"
+    : showResults && results[activeIndex]
       ? `find-option-${results[activeIndex]!.id}`
       : undefined;
 
@@ -438,12 +503,12 @@ function FindPanel({
           ref={inputRef}
           type="text"
           role="combobox"
-          aria-expanded={showResults}
+          aria-expanded={showResults || askRow}
           aria-controls="find-results"
           aria-autocomplete="list"
           aria-activedescendant={activeId}
-          aria-label={FIND_PLACEHOLDER}
-          placeholder={FIND_PLACEHOLDER}
+          aria-label={placeholder}
+          placeholder={placeholder}
           value={query}
           onChange={(e) => {
             typedRef.current = true;
@@ -495,16 +560,53 @@ function FindPanel({
       <div
         id="find-results"
         role="listbox"
-        aria-label={FIND_PLACEHOLDER}
+        aria-label={placeholder}
         className="min-h-0 flex-1 overflow-y-auto p-2"
       >
-        {!showResults ? (
+        {askRow ? (
+          <button
+            type="button"
+            role="option"
+            id="find-option-ask"
+            aria-selected={askActive}
+            tabIndex={-1}
+            onPointerEnter={() => setMovedTo(0)}
+            onClick={chooseAsk}
+            className={cn(
+              // One step taller than a result: it is a different thing to do.
+              "flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-left text-sm text-foreground transition hover:bg-card-hover pointer-coarse:min-h-11 pointer-coarse:text-base",
+              askActive && "bg-card-hover",
+            )}
+          >
+            <span className="grid w-4 shrink-0 place-items-center">
+              <FrappCrest className="h-4 w-[13px] text-primary" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-semibold">{ASK_COPY.name}</span>
+              <span className="ml-2 text-muted-foreground">
+                {query.trim() || ASK_COPY.empty_title}
+              </span>
+            </span>
+            {askActive ? (
+              <span
+                aria-hidden="true"
+                className="shrink-0 text-caption text-muted-foreground"
+              >
+                Enter
+              </span>
+            ) : null}
+          </button>
+        ) : null}
+
+        {!showResults && !(askRow && asksFirst(query)) ? (
           <p className="px-2.5 py-3 text-sm text-muted-foreground">
             Type at least {SEARCH_MIN_QUERY_LENGTH} characters.
           </p>
         ) : null}
 
-        {statusMessage ? (
+        {/* Under a question the Ask row is the answer to "nothing found";
+            the live region above still says it. */}
+        {statusMessage && !(askRow && asksFirst(query) && !isLoading) ? (
           <p className="px-2.5 py-3 text-sm text-muted-foreground">
             {statusMessage}
           </p>
@@ -548,7 +650,7 @@ function FindPanel({
                 aria-selected={active}
                 // Focus stays in the input, so options are not tab stops.
                 tabIndex={-1}
-                onPointerEnter={() => setActiveIndex(index)}
+                onPointerEnter={() => setMovedTo(index + offset)}
                 onClick={() => openResult(result)}
                 className={cn(
                   // The Row step (foundations.md §9, #3515): 32 with a 14px

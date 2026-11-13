@@ -1,6 +1,5 @@
 "use client";
 
-import type { MouseEvent } from "react";
 import Link from "next/link";
 import { Check, Copy } from "lucide-react";
 import type {
@@ -10,13 +9,17 @@ import type {
 } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_POST_COPY,
+  askAnswerEntities,
   askAnswerSegments,
   askLeftOutLine,
+  askPostedSourceTitle,
   askReadLine,
-  askSourceMetaLine,
+  askSourceChip,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
+  type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -24,6 +27,11 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
+import {
+  AskEntityText,
+  AskChannelOpens,
+  onPlainClick,
+} from "@/components/ask/ask-entity-text";
 import { AskProposal } from "@/components/ask/ask-proposal";
 import {
   askSourceHref,
@@ -291,21 +299,7 @@ function AskAnswerBody({
   }
   return (
     <>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-        {askAnswerSegments(answer).map((segment, position) =>
-          segment.type === "text" ? (
-            <span key={position}>{segment.text}</span>
-          ) : (
-            <CitationMarker
-              key={position}
-              number={segment.citation.source + 1}
-              source={answer.sources[segment.citation.source]}
-              quote={segment.citation.quote}
-              onFollowMessage={onFollowMessage}
-            />
-          ),
-        )}
-      </p>
+      <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>
@@ -324,6 +318,78 @@ function AskAnswerBody({
         </ol>
       ) : null}
     </>
+  );
+}
+
+/**
+ * An answer its asker posted to a channel (#4713), for everyone who reads
+ * it: the same words, markers and chips the asker saw, so an answer reads
+ * one way wherever it is. What differs is what the channel is owed. A marker
+ * shows its source's name and not the quoted passage, which stays with the
+ * asker; the asker's own records are named as theirs and open nothing, since
+ * a reader's Tasks page is their own; and a line says so when some sources
+ * were not open to everyone when it was posted.
+ */
+export function AskPostedBody({
+  text,
+  posted,
+  askerName,
+}: {
+  /** The row's `content`: the answer's words, which the markers count into. */
+  text: string;
+  posted: AskPostedAnswer;
+  /** The asker's roster name, or null when the roster can't name them. */
+  askerName: string | null;
+}) {
+  const sources: AskSource[] = posted.sources.map((source, index) => ({
+    id: String(index),
+    kind: source.kind,
+    title: askPostedSourceTitle(source, askerName),
+    detail: source.detail,
+    date: source.date,
+    target: source.target,
+  }));
+  const segments = askAnswerSegments({
+    text,
+    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
+  });
+  const notes: string[] = [
+    ...(posted.truncated ? [ASK_COPY.truncated] : []),
+    ...(posted.sources.some((source) => source.limited)
+      ? [ASK_POST_COPY.limited]
+      : []),
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        {segments.map((segment, position) =>
+          segment.type === "text" ? (
+            <span key={position}>{segment.text}</span>
+          ) : (
+            <CitationMarker
+              key={position}
+              number={segment.citation.source + 1}
+              source={sources[segment.citation.source]}
+              quote=""
+            />
+          ),
+        )}
+      </p>
+      {sources.length > 0 ? (
+        <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
+          {sources.map((source, index) => (
+            <SourceChip key={source.id} number={index + 1} source={source} />
+          ))}
+        </ol>
+      ) : null}
+      {notes.length > 0 ? (
+        <ul className="space-y-1 text-caption text-muted-foreground">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -347,16 +413,49 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
 }
 
 /**
- * Runs on a click that follows the link here. A click that opens it in a new
- * tab or window leaves this page, and so the conversation, as it was.
+ * The answer's own words: each cited sentence ends in its marker, and a
+ * person or channel the server named is drawn as chat draws a mention
+ * (`ask-entity-text.tsx`). With no names listed, as from a server before the
+ * agent build, it is the text and its markers, as it was.
  */
-function onPlainClick(run: (() => void) | undefined) {
-  if (!run) return undefined;
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-      return;
-    run();
-  };
+function AnswerText({
+  answer,
+  onFollowMessage,
+}: {
+  answer: AskAnswer;
+  onFollowMessage?: () => void;
+}) {
+  const entities = askAnswerEntities(answer);
+  const draw = (canOpenChannel: (channelId: string) => boolean) => (
+    <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+      {askAnswerSegments(answer).map((segment, position) =>
+        segment.type === "text" ? (
+          <span key={position}>
+            <AskEntityText
+              text={segment.text}
+              entities={entities}
+              canOpenChannel={canOpenChannel}
+              onFollow={onFollowMessage}
+            />
+          </span>
+        ) : (
+          <CitationMarker
+            key={position}
+            number={segment.citation.source + 1}
+            source={answer.sources[segment.citation.source]}
+            quote={segment.citation.quote}
+            onFollowMessage={onFollowMessage}
+          />
+        ),
+      )}
+    </p>
+  );
+  // The reader's channel list is only read for an answer that names one.
+  return entities.some((entity) => entity.type === "channel") ? (
+    <AskChannelOpens>{draw}</AskChannelOpens>
+  ) : (
+    draw(() => false)
+  );
 }
 
 /**
@@ -380,10 +479,11 @@ function CitationMarker({
 }) {
   if (!source) return null;
   const href = askSourceHref(source);
-  const label = `Source ${number}: ${source.title}`;
+  const { name } = askSourceChip(source);
+  const label = `Source ${number}: ${name}`;
   // The words the server found in the source, on hover, so the member can
   // check the claim before opening anything.
-  const title = quote ? `${source.title}: "${quote}"` : source.title;
+  const title = quote ? `${name}: "${quote}"` : name;
   if (!href) {
     return (
       <span className={MARKER} aria-label={label} title={title}>
@@ -421,10 +521,9 @@ function SourceChip({
   onFollowMessage?: () => void;
 }) {
   const href = askSourceHref(source);
-  const meta = askSourceMetaLine(source);
-  const name = [`Source ${number}: ${source.title}`, meta]
-    .filter(Boolean)
-    .join(", ");
+  // A quoted message says whose it is and when (`askSourceChip`, #4904).
+  const { name: words, when, meta } = askSourceChip(source);
+  const name = [`Source ${number}: ${words}`, meta].filter(Boolean).join(", ");
   const chip =
     "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-1 pl-2.5 pr-3 text-caption pointer-coarse:h-11";
   const body = (
@@ -436,8 +535,11 @@ function SourceChip({
         {number}
       </span>
       <span className="min-w-0 truncate font-medium text-foreground">
-        {source.title}
+        {words}
       </span>
+      {when ? (
+        <span className="shrink-0 text-muted-foreground">{when}</span>
+      ) : null}
     </>
   );
   return (

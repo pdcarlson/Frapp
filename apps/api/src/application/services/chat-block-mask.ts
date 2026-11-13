@@ -155,7 +155,7 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
 }
 
 /**
- * The same rule over the bookmarks endpoint's **nine-field projection**.
+ * The same rule over the bookmarks endpoint's **narrow projection**.
  *
  * A separate function rather than a call to {@link maskBlockedMessages}, and
  * the reason is the projection itself. `BookmarkedMessage` is narrow as a
@@ -180,7 +180,15 @@ export function maskBlockedBookmarkMessage(
   blockedUserIds: ReadonlySet<string>,
 ): BookmarkedMessage {
   if (!isFromBlockedSender(message.sender_id, blockedUserIds)) {
-    return { ...message, sender_blocked: false };
+    return {
+      ...message,
+      // A forward's copy (#4875) answers to the original author's block,
+      // whoever forwarded it, as the timeline's does.
+      forwarded_from: message.forwarded_from
+        ? maskForwardedCopy(message.forwarded_from, blockedUserIds)
+        : null,
+      sender_blocked: false,
+    };
   }
   return {
     id: message.id,
@@ -193,6 +201,8 @@ export function maskBlockedBookmarkMessage(
     is_deleted: message.is_deleted,
     created_at: message.created_at,
     thread_root_id: message.thread_root_id,
+    // What the blocked member put in front of the blocker, as above.
+    forwarded_from: null,
     sender_blocked: true,
   };
 }

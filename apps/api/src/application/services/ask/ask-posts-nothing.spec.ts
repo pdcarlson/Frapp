@@ -6,6 +6,11 @@ import { join } from 'node:path';
  * (#4713, `spec/behavior/ai.md` § Asking from a channel): nothing is written
  * to the channel and nobody is notified, from any door.
  *
+ * The one place an answer does reach a channel is outside everything this
+ * spec reads: `../ask-post/ask-post.service.ts`, a separate request the asker
+ * makes on an answer they already have, which calls no model (§ Posting an
+ * answer to the channel).
+ *
  * What asking runs is the route (`ask.controller.ts`), the answer lane (this
  * folder) and the request lane (`../act`), which only ever proposes a card.
  * Confirming a card is a different request, through the ordinary services.
@@ -23,7 +28,10 @@ import { join } from 'node:path';
  *    does and lists it.
  *
  * What this does not see: a call made through a local alias of a service,
- * and what a listed method does inside. The one listed method that can
+ * and what a listed method does inside. The tool loop runs a tool through
+ * such an alias (`tool.run`), so what keeps a tool from writing is the tool's
+ * own file, which is read here like every other: an agent tool is a class
+ * under `agent/`, and each call it makes on what it holds must be listed. The one listed method that can
  * notify is `suggestions.proposeBatch`, and `act.service.spec.ts` ("pushes
  * nobody") pins that Act calls it with nobody to notify.
  */
@@ -92,8 +100,51 @@ const CALLS = new Set([
   'suggestions.suggest',
   'people.resolve',
   'tools.filter',
+  // The tool loop (epic #4898): which reads to offer, and the loop itself,
+  // which runs only what it was offered (`agent/agent-loop.service.ts`).
+  'agentTools.filter',
+  'loop.run',
+  // The turn's trace (#4902): names, sizes and counts, and no text.
+  'trace.record',
+  // The agent's chapter tools (#4901, `agent/tools-chapter/`): reads of
+  // people, tasks, events, attendance, points, hours and dues, each through
+  // the service its own page's route calls. The ones above that these tools
+  // also make are not repeated.
+  'attendance.getMyAttendance',
+  'attendance.getMyAttendanceForEvents',
+  'excuses.getMine',
+  'groups.list',
+  'rbac.getAlumniRoleId',
+  'service.findByChapterFiltered',
+  'service.leaderboard',
+  'standing.getStanding',
+  // The agent's conversation tools (#4900, `agent/tools-conversation/`):
+  // reads of channels, messages, documents and minutes, as the asker.
+  'catchUp.readStretch',
+  'catchUp.readableAmong',
+  'channelReads.list',
+  'channelReads.unreadCounts',
+  'meetings.get',
+  'meetings.list',
+  'retrieval.readSource',
+  'scope.findChannel',
+  'scope.findMember',
+  'scope.openChannels',
+  'search.searchMessagesIn',
+  // The trace of a turn and its thumbs (#4902, `observe/`): rows about the
+  // turn with no text in them, and their removal. No message, no notice.
+  'traces.deleteByUser',
+  'traces.deleteExpired',
+  'traces.deleteFeedback',
+  'traces.deleteTrace',
+  'traces.findFeedback',
+  'traces.findForAsker',
+  'traces.insertTrace',
+  'traces.lastStartedAt',
+  'traces.upsertFeedback',
   // The model.
   'gateway.generateObject',
+  'gateway.streamAgentRound',
   'gateway.streamCited',
   // What asking writes: a proposal card for the asker (nobody is notified),
   // the diagnostics window's own rows, its audit entries, and the count.
@@ -115,10 +166,15 @@ const CALLS = new Set([
   'logger.warn',
 ]);
 
+/** Every source under `dir`, its folders included: the agent's tools live in them. */
 function sourcesIn(dir: string): string[] {
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.ts') && !name.includes('.spec.'))
-    .map((name) => join(dir, name));
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? sourcesIn(join(dir, entry.name))
+      : entry.name.endsWith('.ts') && !entry.name.includes('.spec.')
+        ? [join(dir, entry.name)]
+        : [],
+  );
 }
 
 describe('Asking never posts to a channel or notifies (#4713)', () => {
@@ -132,6 +188,8 @@ describe('Asking never posts to a channel or notifies (#4713)', () => {
   it('has sources to read', () => {
     expect(named).toContain('ask.service.ts');
     expect(named).toContain('ask-conversation.service.ts');
+    expect(named).toContain('agent-loop.service.ts');
+    expect(named).toContain('agent-turn-trace.ts');
     expect(named).toContain('act.service.ts');
     expect(named).toContain('ask.controller.ts');
   });
