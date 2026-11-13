@@ -306,6 +306,91 @@ describe("seriesChildStarts", () => {
     ).toBe("2027-02-28T10:00:00.000Z");
   });
 
+  // #4505: Thu Feb 25 2027, 7 PM in New York; DST starts Sun Mar 14.
+  const thursdaySeven = "2027-02-26T00:00:00Z";
+
+  it("keeps a legacy token's wall-clock time across DST in the zone it is given", () => {
+    const zoned = seriesChildStarts("WEEKLY", thursdaySeven, undefined, {
+      legacyTimeZone: NY,
+    })!;
+    expect(zoned).toHaveLength(12);
+    expect(zoned.slice(0, 4).map(ny)).toEqual([
+      "2027-03-04 19:00",
+      "2027-03-11 19:00",
+      "2027-03-18 19:00",
+      "2027-03-25 19:00",
+    ]);
+    expect(zoned.every((at) => ny(at).endsWith(" 19:00"))).toBe(true);
+    // The same series as a structured rule makes the same meetings.
+    expect(zoned).toEqual(
+      seriesChildStarts(
+        `FREQ=WEEKLY;BYDAY=TH;COUNT=13;TZID=${NY}`,
+        thursdaySeven,
+      ),
+    );
+  });
+
+  it("keeps the 12, 6 and 6 run lengths in a zone, from skipBefore too", () => {
+    const zone = { legacyTimeZone: NY };
+    expect(
+      seriesChildStarts("WEEKLY", thursdaySeven, undefined, zone),
+    ).toHaveLength(12);
+    expect(
+      seriesChildStarts("BIWEEKLY", thursdaySeven, undefined, zone),
+    ).toHaveLength(6);
+    expect(
+      seriesChildStarts("MONTHLY", thursdaySeven, undefined, zone),
+    ).toHaveLength(6);
+    const after = new Date("2027-03-15T00:00:00Z").getTime();
+    const later = seriesChildStarts("BIWEEKLY", thursdaySeven, after, zone)!;
+    expect(later).toHaveLength(6);
+    expect(later.map(ny).slice(0, 2)).toEqual([
+      "2027-03-25 19:00",
+      "2027-04-08 19:00",
+    ]);
+  });
+
+  it("steps a legacy monthly token on the zone's calendar day", () => {
+    // Jan 31, 9 PM New York is Feb 1 in UTC: stepped in UTC it would land on
+    // the 1st of each month; in New York it clamps to Feb 28 and keeps 9 PM.
+    const starts = seriesChildStarts(
+      "MONTHLY",
+      "2027-02-01T02:00:00Z",
+      undefined,
+      { legacyTimeZone: NY },
+    )!;
+    expect(starts.slice(0, 3).map(ny)).toEqual([
+      "2027-02-28 21:00",
+      "2027-03-31 21:00",
+      "2027-04-30 21:00",
+    ]);
+  });
+
+  it("steps a legacy token in UTC when the zone is missing or unknown", () => {
+    const utc = seriesChildStarts("WEEKLY", thursdaySeven)!;
+    expect(utc.map(ny).slice(2, 3)).toEqual(["2027-03-18 20:00"]);
+    for (const legacyTimeZone of [
+      null,
+      "",
+      "Mars/Olympus",
+      " America/New_York",
+    ]) {
+      expect(
+        seriesChildStarts("WEEKLY", thursdaySeven, undefined, {
+          legacyTimeZone,
+        }),
+      ).toEqual(utc);
+    }
+  });
+
+  it("ignores the legacy zone for a structured rule", () => {
+    const text = rule({ byDay: ["MO"], end: { kind: "count", count: 4 } });
+    const start = new Date("2027-01-05T00:00:00Z");
+    expect(
+      seriesChildStarts(text, start, undefined, { legacyTimeZone: BERLIN }),
+    ).toEqual(seriesChildStarts(text, start));
+  });
+
   it("returns null for an unreadable rule or start", () => {
     expect(seriesChildStarts("NOPE", "2027-01-01T00:00:00Z")).toBeNull();
     expect(seriesChildStarts("WEEKLY", "not a date")).toBeNull();
@@ -449,6 +534,18 @@ describe("describeSeriesLength", () => {
         rule({ end: { kind: "until", until: "2027-01-11" } }),
       ),
     ).toBe("7 meetings, the last on Jan 11, 2027.");
+  });
+
+  it("steps and reads a legacy token in the zone it is given", () => {
+    // Oct 30, 9 PM New York is Oct 31 in UTC. Stepped in UTC the last meeting
+    // is Apr 30 01:00Z, Apr 29 in New York; stepped in New York it is Apr 30.
+    const start = new Date("2026-10-31T01:00:00Z");
+    expect(describeSeriesLength(start, "MONTHLY", { legacyTimeZone: NY })).toBe(
+      "7 meetings, the last on Apr 30, 2027.",
+    );
+    expect(ny(seriesChildStarts("MONTHLY", start)!.at(-1)!)).toBe(
+      "2027-04-29 21:00",
+    );
   });
 });
 

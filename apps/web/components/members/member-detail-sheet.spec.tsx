@@ -520,6 +520,40 @@ describe("MemberDetailSheet role editor", () => {
     ).toBeInTheDocument();
   });
 
+  it("locks a role holding *, President or legacy, as mobile does (#4164)", () => {
+    mockRoles.current = [
+      { id: "r-member", name: "Member", permissions: ["members:view"] },
+      {
+        id: "r-pres",
+        name: "President",
+        is_system: true,
+        system_key: "PRESIDENT",
+        permissions: ["*"],
+      },
+      {
+        id: "r-legacy",
+        name: "Old Admin",
+        is_system: false,
+        permissions: ["*"],
+      },
+    ];
+    renderProfile({ ...baseMember, role_ids: ["r-member", "r-pres"] });
+    openRoleEditor();
+
+    const checkbox = (name: string) =>
+      screen
+        .getByText(name, { selector: "p" })
+        .closest("label")!
+        .querySelector("input")!;
+    expect(checkbox("Member").disabled).toBe(false);
+    expect(checkbox("President").disabled).toBe(true);
+    expect(checkbox("President").checked).toBe(true);
+    expect(checkbox("Old Admin").disabled).toBe(true);
+    expect(
+      screen.getAllByText("Changes with Transfer presidency"),
+    ).toHaveLength(2);
+  });
+
   it("drops the editor and its unsaved picks when the sheet closes", () => {
     mockRoles.current = [{ id: "r-member", name: "Member", permissions: [] }];
     memberQueryState.data = { ...baseMember, role_ids: ["r-member"] };

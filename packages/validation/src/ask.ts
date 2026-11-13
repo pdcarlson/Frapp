@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatAiAnswerDate } from "./ai-copy";
+import { formatAiAnswerDate, joinNames } from "./ai-copy";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -43,6 +43,13 @@ export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
 export const AskHistoryTurnSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
   answer: z.string().max(ASK_HISTORY_ANSWER_MAX_LENGTH),
+  /**
+   * True when the member did not type this turn's question: they tapped an
+   * opening suggestion that names a record someone else may have written
+   * (#4700). The answer call still reads the turn; the request reading, which
+   * is shown only what the member typed, does not.
+   */
+  suggested: z.boolean().optional(),
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
@@ -72,9 +79,43 @@ export const AskRequestSchema = z.object({
 });
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
-/** What the server is doing before the first word arrives. */
-export const ASK_STEPS = ["searching", "reading", "writing"] as const;
+/**
+ * What the server is doing while a turn works, each named when it happens
+ * (`ai.md` § Ask Frapp, #4701):
+ *
+ * - `searching`: the index is being searched and the question read for which
+ *   live records it needs.
+ * - `reading`: something was found, or a live read was picked, and it is
+ *   being read. Carries which reads (`reads`) and how many sources the
+ *   search found (`found`). Not sent when there is nothing to read.
+ * - `writing`: the first word of the answer has been written.
+ * - `proposing`: the member's words were read as something to do, and the
+ *   card's details are being looked up.
+ *
+ * Open on the wire: a build shows a step it does not know as `searching`.
+ */
+export const ASK_STEPS = [
+  "searching",
+  "reading",
+  "writing",
+  "proposing",
+] as const;
 export type AskStep = (typeof ASK_STEPS)[number];
+
+/** What a `reading` step says is being read. */
+export interface AskStepDetail {
+  /**
+   * The live reads being made, by the read's name (`roster`, `events`,
+   * `my_tasks`): open strings, and a name this build has no words for is
+   * left out of the line.
+   */
+  reads?: readonly string[] | undefined;
+  /**
+   * How many sources the search found for this question: documents, minutes
+   * and conversations, each counted once.
+   */
+  found?: number | undefined;
+}
 
 /**
  * How an ask ended.
@@ -117,6 +158,7 @@ export const ASK_SOURCE_KINDS = [
   "events",
   "points",
   "dues",
+  "tasks",
 ] as const;
 export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
 
@@ -126,6 +168,7 @@ export const ASK_SOURCE_PAGES = [
   "events",
   "points",
   "dues",
+  "tasks",
 ] as const;
 export type AskSourcePage = (typeof ASK_SOURCE_PAGES)[number];
 
@@ -209,7 +252,15 @@ const version = z.literal(ASK_STREAM_VERSION);
 
 export const AskStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ v: version, type: z.literal("start"), ask_id: z.string() }),
-  z.object({ v: version, type: z.literal("status"), step: z.string() }),
+  z.object({
+    v: version,
+    type: z.literal("status"),
+    step: z.string(),
+    /** With `reading`: the live reads being made (`AskStepDetail`). */
+    reads: z.array(z.string()).optional(),
+    /** With `reading`: how many sources the search found. */
+    found: z.number().int().nonnegative().optional(),
+  }),
   z.object({ v: version, type: z.literal("text"), delta: z.string() }),
   z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
   /**
@@ -311,21 +362,29 @@ function cutWhole(text: string, max: number): string {
  * again, so its words are not sent a second time.
  */
 export function askHistory(
-  turns: readonly { question: string; answer: AskAnswer | null }[],
+  turns: readonly {
+    question: string;
+    answer: AskAnswer | null;
+    /** The question was a tapped suggestion, not typed. */
+    suggested?: boolean;
+  }[],
 ): AskHistoryTurn[] {
-  return turns.slice(-ASK_HISTORY_MAX_TURNS).map(({ question, answer }) => {
-    const carried =
-      answer !== null &&
-      answer.status === "answered" &&
-      answer.read_chat !== true &&
-      !answer.sources.some((source) => source.kind === "chat");
-    return {
-      question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
-      answer: carried
-        ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
-        : "",
-    };
-  });
+  return turns
+    .slice(-ASK_HISTORY_MAX_TURNS)
+    .map(({ question, answer, suggested }) => {
+      const carried =
+        answer !== null &&
+        answer.status === "answered" &&
+        answer.read_chat !== true &&
+        !answer.sources.some((source) => source.kind === "chat");
+      return {
+        question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
+        answer: carried
+          ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
+          : "",
+        ...(suggested ? { suggested: true } : {}),
+      };
+    });
 }
 
 /** A source's target as a known shape, or null when this build has no page for it. */
@@ -362,6 +421,80 @@ export function askSourceTarget(source: AskSource): AskSourceTarget | null {
   }
 }
 
+/**
+ * What Ask opens on (#4700): a few things to ask, each built by the server
+ * from what the member's own account holds at that moment (their next event,
+ * their open tasks, their dues, minutes they can read, their points). There
+ * is no fixed list: a member whose account holds nothing gets none.
+ *
+ * `request` is true for the one suggestion that asks for something to be
+ * done. Its words hold nothing anyone else wrote (only days), so a tap sends
+ * it as the member's own request. Every other suggestion names a record
+ * another member may have written, so a tap sends it as a question only, and
+ * it is never among the earlier messages the request reading is shown
+ * (`docs/security/ai-prompt-injection.md` C3).
+ */
+export const ASK_SUGGESTION_KINDS = [
+  "event",
+  "tasks",
+  "dues",
+  "minutes",
+  "points",
+  "request",
+] as const;
+export type AskSuggestionKind = (typeof ASK_SUGGESTION_KINDS)[number];
+
+/** At most this many questions, and one request after them. */
+export const ASK_SUGGESTED_QUESTIONS_MAX = 3;
+
+/**
+ * A record's name is put in a suggestion only when it is this short. A
+ * longer one is left out whole: cut, it would no longer name the record.
+ */
+export const ASK_SUGGESTION_NAME_MAX = 60;
+
+export const AskSuggestionSchema = z.object({
+  /** Open: a client shows a kind it does not know like any other. */
+  kind: z.string(),
+  /** What a tap sends, as the member would type it. */
+  text: z.string(),
+  request: z.boolean(),
+});
+export type AskSuggestion = z.infer<typeof AskSuggestionSchema>;
+
+/**
+ * A record's name as it goes into a suggestion: on one line, or null when it
+ * is empty or too long to put in a sentence.
+ */
+export function askSuggestionName(
+  name: string | null | undefined,
+): string | null {
+  const flat = (name ?? "").replace(/\s+/g, " ").trim();
+  return flat.length > 0 && flat.length <= ASK_SUGGESTION_NAME_MAX
+    ? flat
+    : null;
+}
+
+/**
+ * The words of each suggestion. One place, so web and the phone show the
+ * same ones and the server that builds them is tested against the same text.
+ * `day` and `date` are written out in full by the caller ("Saturday",
+ * "November 9"), never abbreviated. An event's `when` is how a member would
+ * say its day ("today", "tomorrow", "on Sunday", "on November 22"), so a
+ * meeting that repeats is asked about on the right day.
+ */
+export const askSuggestionText = {
+  event: (name: string, when: string) => `When and where is ${name} ${when}?`,
+  task: (title: string) => `When is my task "${title}" due?`,
+  tasks: (count: number) => `Which of my ${count} open tasks is due first?`,
+  dues: (title: string) => `How much do I owe for ${title}?`,
+  minutes: (name: string, date: string) =>
+    `What was decided at ${name} on ${date}?`,
+  points: () => "How many points do I have this semester?",
+  request: (eventDay: string, dueDay: string) =>
+    `Make a task for me to get ready for ${eventDay}'s event, due ${dueDay}`,
+} as const;
+
 /** The words Ask shows, shared so web and mobile cannot drift. */
 export const ASK_COPY = {
   name: "Ask Frapp",
@@ -373,16 +506,25 @@ export const ASK_COPY = {
   /** Added for a member Frapp can also act for. */
   empty_body_act:
     "Or say what needs doing. You'll see exactly what will happen, and nothing changes until you confirm.",
-  examples: [
-    "When is the next chapter meeting?",
-    "What do the bylaws say about quorum?",
-    "Who is the treasurer?",
-  ],
   steps: {
     searching: "Searching your chapter's sources",
     reading: "Reading what it found",
     writing: "Writing",
+    proposing: "Working out what that would change",
   } satisfies Record<AskStep, string>,
+  /**
+   * What each live read is called in the reading line ("Reading the roster"),
+   * by the read's name. `ask-tools.spec.ts` in the API holds every class in
+   * `ASK_TOOL_CLASSES`, the list the server offers from, to an entry here.
+   */
+  reads: {
+    roster: "the roster",
+    events: "the events calendar",
+    my_points: "your points",
+    points_leaderboard: "the points standings",
+    my_dues: "your dues",
+    my_tasks: "your tasks",
+  } as Record<string, string>,
   not_found:
     "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
@@ -413,6 +555,7 @@ export const ASK_COPY = {
     events: "Events",
     points: "Points",
     dues: "Dues",
+    tasks: "Tasks",
   } satisfies Record<AskSourceKind, string>,
   send: "Send",
   try_again: "Try again",
@@ -421,6 +564,47 @@ export const ASK_COPY = {
   consent_action: "Answer the AI question",
   entry_label: "Ask a question about your chapter",
 } as const;
+
+/** An own entry only: the key is an open string from the wire. */
+function ownWords(
+  words: Readonly<Record<string, string>>,
+  key: string,
+): string | null {
+  return Object.prototype.hasOwnProperty.call(words, key)
+    ? (words[key] as string)
+    : null;
+}
+
+/**
+ * The one line under a working turn: what Frapp is doing at that moment, from
+ * the step the server last named (#4701). Web and the phone both draw this,
+ * so the words cannot drift.
+ *
+ * `reading` names what is being read when the server said: the live reads
+ * this build has words for, then how many sources the search found ("Reading
+ * the events calendar and 3 sources"). A step this build does not know reads
+ * as searching, which every turn does first.
+ */
+export function askStepLine(
+  step: string | null | undefined,
+  detail?: AskStepDetail | null,
+): string {
+  if (step === "reading") {
+    const parts = (detail?.reads ?? [])
+      .map((name) => ownWords(ASK_COPY.reads, name))
+      .filter((words): words is string => words !== null);
+    const found = detail?.found ?? 0;
+    if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
+    return parts.length === 0
+      ? ASK_COPY.steps.reading
+      : `Reading ${joinNames(parts)}`;
+  }
+  // Every other step is its own words, so a step added to `ASK_COPY.steps`
+  // needs nothing here.
+  return (
+    (step ? ownWords(ASK_COPY.steps, step) : null) ?? ASK_COPY.steps.searching
+  );
+}
 
 /** A source kind's label, or null for a kind this build does not know. */
 export function askSourceKindLabel(kind: string): string | null {

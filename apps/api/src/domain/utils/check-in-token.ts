@@ -1,11 +1,12 @@
 import { createHmac } from 'node:crypto';
+import { checkInLinkUrl } from '@repo/validation';
 import { constantTimeEquals } from './constant-time';
 
 /**
  * Rotating event check-in tokens (`spec/ui/mobile/patterns.md` § QR check-in).
  *
  * The host screen (s22) displays a server-signed token that rotates every 30
- * seconds; the member scanner (s18) redeems it. This is a **signed nonce**
+ * seconds, inside a check-in link the member's camera opens; s18 redeems it. This is a **signed nonce**
  * scheme, not TOTP — there is no shared secret on member devices, so nothing a
  * member holds can mint a code.
  *
@@ -24,14 +25,30 @@ import { constantTimeEquals } from './constant-time';
  * ## Why the token carries no window index
  *
  * A token is the signature alone, and verification recomputes the expected
- * signature for the current and previous window. The obvious alternative —
+ * signature for each window it may be from. The obvious alternative —
  * embedding the window index so the server knows which one to check — hands the
  * attacker a field they control and makes replay protection depend on
- * remembering to bound it. Trying both windows costs one extra HMAC and removes
- * that class of bug structurally.
+ * remembering to bound it. Trying each window costs one HMAC and removes that
+ * class of bug structurally.
  *
  * Accepting the previous window is required, not lax: a scan that races a
  * rotation must still land (`patterns.md`).
+ *
+ * ## A scanned link may last longer, when presence is checked (2026-11-13)
+ *
+ * The code is read by the phone's own camera now, not Frapp's scanner: a
+ * member taps the camera's banner, the app starts, and it may have to ask for
+ * location (a permission prompt, then up to 15 seconds for a GPS fix) before
+ * it can send. That is expected to outrun one spare window, though no
+ * check-in has yet been refused for it (the first ones, on 2026-11-13, were
+ * refused for a missing location). So when the server will also check where
+ * the member is (a drawn zone, or an officer's screen that stored its
+ * location), a scanned token is accepted for
+ * {@link LOCATED_TOKEN_PREVIOUS_WINDOWS} windows back (90 to 120 seconds):
+ * there, a forwarded link fails the location check anyway. When nothing checks
+ * presence, the token is the only proof, and it keeps one spare window, as
+ * does the typed code, whose five characters are guessable where a 256-bit
+ * signature is not.
  */
 
 /** Rotation period. `patterns.md` specifies ~30 seconds. */
@@ -44,10 +61,17 @@ export const CHECK_IN_TOKEN_WINDOW_MS = 30_000;
  */
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
-/** The QR payload prefix. Mobile pins this exact string in a spec — see
- * `apps/mobile/lib/events/check-in-code.ts`. Versioned so a future format change
- * is detectable by an old scanner rather than silently mis-parsed. */
-export const CHECK_IN_QR_PREFIX = 'frapp-checkin:v1';
+/** How many past windows a code stays good for: a scan racing a rotation. */
+export const PREVIOUS_WINDOWS = 1;
+
+/** How many past windows a scanned token stays good for when the check-in's
+ * location is checked too (see above). */
+export const LOCATED_TOKEN_PREVIOUS_WINDOWS = 3;
+
+/** The windows a code minted in `current - n` is still accepted in. */
+function acceptedWindows(current: number, previous: number): number[] {
+  return Array.from({ length: previous + 1 }, (_, back) => current - back);
+}
 
 export function currentCheckInWindow(nowMs: number): number {
   return Math.floor(nowMs / CHECK_IN_TOKEN_WINDOW_MS);
@@ -106,9 +130,12 @@ export function normalizeManualCode(input: string): string {
 export interface MintedCheckInToken {
   token: string;
   manualCode: string;
+  /** What the host screen draws as the QR: an `https://…/check-in` link the
+   * phone's camera opens (`@repo/validation` `checkInLinkUrl`). */
   qrPayload: string;
   /** ISO timestamp at which this token stops being the *current* one. It stays
-   * redeemable for one further window as the previous token. */
+   * redeemable for {@link PREVIOUS_WINDOWS} further window, or
+   * {@link LOCATED_TOKEN_PREVIOUS_WINDOWS} when the location is checked. */
   expiresAt: string;
   /** Milliseconds until rotation, so the host screen can draw its countdown
    * without re-deriving the window boundary. */
@@ -119,6 +146,7 @@ export function mintCheckInToken(
   eventId: string,
   secret: string,
   nowMs: number,
+  appOrigin: string,
 ): MintedCheckInToken {
   const windowIndex = currentCheckInWindow(nowMs);
   const token = sign(eventId, windowIndex, secret);
@@ -127,29 +155,31 @@ export function mintCheckInToken(
   return {
     token,
     manualCode: checkInManualCode(eventId, windowIndex, secret),
-    qrPayload: `${CHECK_IN_QR_PREFIX}:${eventId}:${token}`,
+    qrPayload: checkInLinkUrl(appOrigin, eventId, token),
     expiresAt: new Date(endOfWindowMs).toISOString(),
     rotatesInMs: endOfWindowMs - nowMs,
   };
 }
 
 /**
- * Verify a scanned token or a typed manual code against the current and previous
- * windows.
+ * Verify a scanned token, or a typed manual code, against the current window
+ * and the past ones it stays good for: {@link PREVIOUS_WINDOWS}, or
+ * `previousWindows` for a token whose check-in is located too.
  *
- * Both candidates are always evaluated — the `|| matched` ordering keeps the
- * comparison itself unconditional rather than short-circuiting after the first
- * hit, so the work done does not depend on *which* window matched.
+ * Every candidate window is always evaluated — the `|| matched` ordering keeps
+ * the comparison itself unconditional rather than short-circuiting after the
+ * first hit, so the work done does not depend on *which* window matched.
  */
 export function verifyCheckInToken(
   token: string,
   eventId: string,
   secret: string,
   nowMs: number,
+  previousWindows: number = PREVIOUS_WINDOWS,
 ): boolean {
   const current = currentCheckInWindow(nowMs);
   let matched = false;
-  for (const windowIndex of [current, current - 1]) {
+  for (const windowIndex of acceptedWindows(current, previousWindows)) {
     matched =
       constantTimeEquals(token, sign(eventId, windowIndex, secret)) || matched;
   }
@@ -165,7 +195,7 @@ export function verifyManualCode(
   const normalized = normalizeManualCode(code);
   const current = currentCheckInWindow(nowMs);
   let matched = false;
-  for (const windowIndex of [current, current - 1]) {
+  for (const windowIndex of acceptedWindows(current, PREVIOUS_WINDOWS)) {
     matched =
       constantTimeEquals(
         normalized,

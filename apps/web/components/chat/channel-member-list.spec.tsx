@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { memberAvatarHue } from "@repo/hooks";
 import { ChannelMemberList } from "./channel-member-list";
+import { ROLE_NAME_CLASS } from "@/components/roles/role-name-paint";
 
 const membersQuery = vi.hoisted(() => ({
   value: {} as {
@@ -132,7 +133,11 @@ describe("ChannelMemberList", () => {
     expect(members[0]).toHaveTextContent("Bob Member");
     // A reader the roster cannot name is still listed, under the fallback.
     expect(members[1]).toHaveTextContent(/Member u-gon/);
-    expect(screen.getByText("Amy Officer")).toHaveStyle({ color: "#5865F2" });
+    // The name paints from a --role-name custom property, lifted toward white
+    // on hover so Rose/Violet clear AA on --card-hover (#4387).
+    const amy = screen.getByText("Amy Officer");
+    expect(amy).toHaveStyle({ "--role-name": "#5865F2" });
+    expect(amy).toHaveClass(...ROLE_NAME_CLASS.split(" "));
   });
 
   // #3726: a row opens that member's profile, as on mobile.
@@ -145,6 +150,9 @@ describe("ChannelMemberList", () => {
     const row = within(screen.getByText("Bob Member").closest("li")!).getByRole(
       "button",
     );
+    // A clickable row hovers to --card-hover, so it carries the named group the
+    // role-name lift keys off (#4387); without it hovered Rose/Violet drop under AA.
+    expect(row).toHaveClass("group/row");
     fireEvent.click(row);
     expect(onOpenProfile).toHaveBeenCalledWith("u-member");
 
@@ -275,7 +283,7 @@ describe("ChannelMemberList", () => {
     const blank = screen.getByText(/^Member u-bla/).closest("li")!;
     // A role-colored offline name keeps its full color: only the avatar fades.
     const coloredName = within(colored).getByText("Bob Member");
-    expect(coloredName).toHaveStyle({ color: "#5865F2" });
+    expect(coloredName).toHaveStyle({ "--role-name": "#5865F2" });
     expect(coloredName.className).not.toMatch(/opacity/);
     expect(colored.querySelector("[aria-hidden='true']")?.className).toMatch(
       /opacity-50/,

@@ -19,6 +19,7 @@ import { getSlashCommand } from "./integrations";
 export const PLUS_MENU_COMMANDS = [
   "poll",
   "signup",
+  "form",
   "event",
   "task",
   "hours",
@@ -33,6 +34,7 @@ const PLUS_MENU_ROW_COPY: Record<
 > = {
   poll: { label: "Poll", noun: "polls" },
   signup: { label: "Sign-up sheet", noun: "sign-up sheets" },
+  form: { label: "Form", noun: "forms" },
   event: { label: "Event", noun: "events" },
   task: { label: "Task", noun: "tasks" },
   hours: { label: "Service hours", noun: "service hours" },
@@ -52,12 +54,13 @@ const PLUS_MENU_ROW_COPY: Record<
  * should enforce it is #3007's open decision.
  *
  * A sign-up sheet (#3926) needs nothing: anyone who can post in the channel
- * can post one, as they can a message.
+ * can post one, as they can a message. So does a form (#3926 step 3).
  */
 export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
   {
     poll: ["polls:create"],
     signup: [],
+    form: [],
     event: EVENT_CREATE_PERMISSIONS,
     task: ["tasks:manage", "members:view"],
     hours: ["service:log"],
@@ -66,7 +69,7 @@ export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
 
 /**
  * The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS`
- * entry's. A sign-up sheet has no slash command and no module.
+ * entry's. A sign-up sheet and a form have no slash command and no module.
  */
 function rowModule(command: PlusMenuCommand): string | null {
   return getSlashCommand(command)?.requiredModule ?? null;
@@ -74,7 +77,7 @@ function rowModule(command: PlusMenuCommand): string | null {
 
 /**
  * The typed shortcut a row shows beside its label, or `null` for a form with
- * no slash command (a sign-up sheet).
+ * no slash command (a sign-up sheet, a form).
  */
 export function plusMenuShortcut(command: PlusMenuCommand): string | null {
   return getSlashCommand(command) ? `/${command}` : null;
@@ -84,6 +87,7 @@ export function plusMenuShortcut(command: PlusMenuCommand): string | null {
 const QUEUED_COMMANDS: ReadonlySet<PlusMenuCommand> = new Set([
   "poll",
   "signup",
+  "form",
 ]);
 
 /**
@@ -250,7 +254,7 @@ function rowDisabledReason(
   command: PlusMenuCommand,
   ctx: PlusMenuContext,
 ): string | null {
-  // A poll or a sign-up goes through the outbox, so it works offline.
+  // A poll, a sign-up or a form goes through the outbox, so it works offline.
   if (ctx.offline && !QUEUED_COMMANDS.has(command)) return "Reconnect first";
   // The module read only holds back a form that needs a module.
   if (rowModule(command)) {

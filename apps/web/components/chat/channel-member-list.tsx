@@ -26,6 +26,7 @@ import {
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { ROLE_NAME_CLASS, roleNameStyle } from "@/components/roles/role-name-paint";
 import { cn, initials } from "@/lib/utils";
 
 /** One row of the list, joined from the channel read, the roster and presence. */
@@ -259,10 +260,13 @@ function MemberRow({
         <span
           className={cn(
             "min-w-0 truncate text-label",
-            !row.roleColor &&
-              (offline ? "text-muted-foreground" : "text-foreground"),
+            row.roleColor
+              ? ROLE_NAME_CLASS
+              : offline
+                ? "text-muted-foreground"
+                : "text-foreground",
           )}
-          style={row.roleColor ? { color: row.roleColor } : undefined}
+          style={row.roleColor ? roleNameStyle(row.roleColor) : undefined}
         >
           {row.name}
         </span>
@@ -286,7 +290,7 @@ function MemberRow({
           onClick={onOpen}
           className={cn(
             rowClass,
-            "text-left transition-colors hover:bg-card-hover pointer-coarse:h-11",
+            "group/row text-left transition-colors hover:bg-card-hover pointer-coarse:h-11",
             FOCUS_RING_OFFSET,
           )}
         >

@@ -109,6 +109,21 @@ const MOBILE_DIR = "apps/mobile";
 const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
 
 /**
+ * A permission whose feature is gone but whose declaration is native, so it
+ * leaves with the next native version rather than in the change that removed
+ * the feature: removing it sooner would change the native inputs of a version
+ * already in the stores, which stops that version getting updates over the air
+ * (`check-mobile-native-version.mjs`). While `expo.version` is still `version`,
+ * its missing requester is no problem; once the version moves, it is, so the
+ * bump that can remove it has to.
+ *
+ * The camera: the in-app QR scanner went on 2026-11-13, when the check-in code
+ * became a link the phone's own camera opens. expo-camera, its plugin and the
+ * two declarations go with #4763.
+ */
+const CAMERA_RETIRING = { version: "0.12.0", issue: "#4763" };
+
+/**
  * Every iOS purpose string the binary ships, keyed by its Info.plist key.
  * `requestedBy` is the call that shows the permission dialog: a purpose string
  * with no such call is a Guideline 5.1.1(i) rejection, and a call with no
@@ -147,6 +162,7 @@ export const IOS_PURPOSE_STRINGS = new Map([
     {
       text: "Frapp uses the camera to scan the check-in code at chapter events.",
       requestedBy: { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" },
+      retiring: CAMERA_RETIRING,
     },
   ],
   [
@@ -221,7 +237,7 @@ export const ANDROID_RUNTIME_PERMISSIONS = new Map([
   ["android.permission.POST_NOTIFICATIONS", { file: RECORDER_DEVICE, call: "requestNotificationPermissionsAsync(" }],
   ["android.permission.FOREGROUND_SERVICE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
   ["android.permission.FOREGROUND_SERVICE_MICROPHONE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
-  ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" }],
+  ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(", retiring: CAMERA_RETIRING }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
 ]);
@@ -388,24 +404,42 @@ export function withoutComments(source) {
   return out;
 }
 
+/** app.json's `expo.version`, or null when it can't be read. */
+export function appVersionOf(readSource) {
+  try {
+    return JSON.parse(readSource(`${MOBILE_DIR}/app.json`) ?? "null")?.expo?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Problems with the roster's `requestedBy` calls, given a reader from a
  * repo-relative path to its text (null when the file is missing). A call that
- * survives only in a comment doesn't count.
+ * survives only in a comment doesn't count. `appVersion` is app.json's
+ * `expo.version`, which excuses a `retiring` entry (CAMERA_RETIRING) while it
+ * still matches; unknown (null), nothing is excused.
  */
-export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, ANDROID_RUNTIME_PERMISSIONS]) {
+export function requesterProblems(
+  readSource,
+  rosters = [IOS_PURPOSE_STRINGS, ANDROID_RUNTIME_PERMISSIONS],
+  appVersion = null,
+) {
   const problems = [];
   for (const roster of rosters) {
     for (const [key, entry] of roster) {
       // A linked-only purpose string has no requester; linkedApiProblems checks it.
       if (entry.linkedBy) continue;
+      if (entry.retiring && appVersion !== null && appVersion === entry.retiring.version) continue;
       const { file, call } = entry.requestedBy ?? entry;
       const source = readSource(file);
       if (source === null) {
         problems.push(`${key}: its requester ${file} no longer exists`);
       } else if (!withoutComments(source).includes(call)) {
         problems.push(
-          `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+          entry.retiring && appVersion !== null
+            ? `${key}: retiring with ${entry.retiring.issue}, and expo.version moved past ${entry.retiring.version}, so this native change is the one that drops the permission and its roster entry`
+            : `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
         );
       }
     }
@@ -824,7 +858,7 @@ export function main(root = process.cwd(), run = expoCli(root)) {
       ...setupProblems,
       ...purposeStringProblems(modResults.ios.infoPlist),
       ...backgroundModeProblems(modResults.ios.infoPlist),
-      ...requesterProblems(readSource),
+      ...requesterProblems(readSource, undefined, appVersionOf(readSource)),
       ...linkedApiProblems({ pods, sources: appSources(root) }),
       ...androidPermissionProblems(modResults.android.manifest),
       ...requiredReasonProblems(scanned, declared, { reactNativeCore }),

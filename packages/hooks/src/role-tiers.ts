@@ -13,7 +13,8 @@ function asArray<T>(value: unknown): T[] {
 
 /**
  * A role as the Roles pages read it from `GET /v1/roles`, which declares no
- * response schema, so it is read defensively, like `normalizeRoleOptions`.
+ * response schema, so it is read defensively, like `parseChapterRoles`
+ * (`./chapter-roles`), which reads the rows every other surface lists.
  */
 export type TieredRole = {
   id: string;

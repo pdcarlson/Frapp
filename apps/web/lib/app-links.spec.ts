@@ -13,7 +13,7 @@ const PLAY_KEY =
 const UPLOAD_KEY_BARE = "0f".repeat(32);
 
 describe("apple-app-site-association (#4002)", () => {
-  it("claims only /join for the Team ID's live.frapp.mobile", () => {
+  it("claims /join and /check-in for the Team ID's live.frapp.mobile", () => {
     expect(appleAppSiteAssociation(" ABCDE12345 ")).toEqual({
       applinks: {
         details: [
@@ -23,6 +23,11 @@ describe("apple-app-site-association (#4002)", () => {
               {
                 "/": "/join",
                 comment: "An invite link opens the app's join step (#4002)",
+              },
+              {
+                "/": "/check-in",
+                comment:
+                  "The check-in code a phone camera reads opens check-in",
               },
             ],
           },
@@ -54,10 +59,7 @@ describe("assetlinks.json (#4002)", () => {
         target: {
           namespace: "android_app",
           package_name: "live.frapp.mobile",
-          sha256_cert_fingerprints: [
-            PLAY_KEY,
-            Array(32).fill("0F").join(":"),
-          ],
+          sha256_cert_fingerprints: [PLAY_KEY, Array(32).fill("0F").join(":")],
         },
       },
     ]);

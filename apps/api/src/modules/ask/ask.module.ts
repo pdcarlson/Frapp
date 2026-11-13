@@ -1,14 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
-import { ASK_TOOLS } from '../../application/services/ask/ask-tool';
 import {
-  EventsAskTool,
-  MyDuesAskTool,
-  MyPointsAskTool,
-  PointsLeaderboardAskTool,
-  RosterAskTool,
-} from '../../application/services/ask/ask-tools';
+  ASK_TOOLS,
+  type AskTool,
+} from '../../application/services/ask/ask-tool';
+import { ASK_TOOL_CLASSES } from '../../application/services/ask/ask-tools';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
@@ -31,16 +29,25 @@ import { AiModule } from '../ai/ai.module';
 import { CorpusModule } from '../corpus/corpus.module';
 import { EventModule } from '../event/event.module';
 import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
+import { MeetingModule } from '../meeting/meeting.module';
 import { MemberModule } from '../member/member.module';
 import { PointsModule } from '../points/points.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { TaskModule } from '../task/task.module';
 
 /**
  * Ask Frapp (#450, #451) and its beta diagnostics window (#4315).
  *
- * A new live-data tool is a class added to the `ASK_TOOLS` list. The list is
- * closed: the plan step can only pick from it, and `AskService` checks each
- * pick against the asker's permissions before it runs.
+ * A new live-data tool is a class added to `ASK_TOOL_CLASSES`
+ * (`ask-tools.ts`), which is the whole of what `ASK_TOOLS` provides. The list
+ * is closed: the plan step can only pick from it, and `AskService` checks
+ * each pick against the asker's permissions before it runs. A tool also
+ * needs its words for the line under a working turn (`ASK_COPY.reads` in
+ * `@repo/validation`, "Reading the roster"); `ask-tools.spec.ts` holds every
+ * class in that list to it.
+ *
+ * `AskSuggestionsService` builds what Ask opens with (#4700) from the same
+ * services the tools read through; it calls no model.
  *
  * `AskConversationService` is what the route calls: it runs a question
  * through `AskService` and, for a client that shows proposal cards, through
@@ -56,36 +63,23 @@ import { RbacModule } from '../rbac/rbac.module';
     EventModule,
     PointsModule,
     FinancialInvoiceModule,
+    TaskModule,
+    MeetingModule,
     ActModule,
   ],
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
     AskService,
     AskConversationService,
+    AskSuggestionsService,
     AskDiagnosticsService,
     AskDiagnosticsSweepService,
     AiEnabledGuard,
-    RosterAskTool,
-    EventsAskTool,
-    MyPointsAskTool,
-    PointsLeaderboardAskTool,
-    MyDuesAskTool,
+    ...ASK_TOOL_CLASSES,
     {
       provide: ASK_TOOLS,
-      useFactory: (
-        roster: RosterAskTool,
-        events: EventsAskTool,
-        myPoints: MyPointsAskTool,
-        leaderboard: PointsLeaderboardAskTool,
-        myDues: MyDuesAskTool,
-      ) => [roster, events, myPoints, leaderboard, myDues],
-      inject: [
-        RosterAskTool,
-        EventsAskTool,
-        MyPointsAskTool,
-        PointsLeaderboardAskTool,
-        MyDuesAskTool,
-      ],
+      useFactory: (...tools: AskTool[]) => tools,
+      inject: [...ASK_TOOL_CLASSES],
     },
     {
       provide: ASK_DIAGNOSTICS_REPOSITORY,

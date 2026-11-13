@@ -18,8 +18,9 @@ import {
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { memberLabel } from "@repo/hooks/display-names";
-import { parseInstant } from "@repo/formatting";
+import { formatPoints, parseInstant } from "@repo/formatting";
 import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -70,7 +71,7 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
-import { isEveryoneRole } from "@repo/validation";
+import { directoryNoSearchMatches } from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -79,13 +80,6 @@ import {
 } from "@/components/members/directory-skeleton";
 
 const PAGE_SIZE = 25;
-
-type RoleOption = {
-  id: string;
-  name: string;
-  isPresident: boolean;
-  isAlumni: boolean;
-};
 
 type SortKey = "name" | "role" | "points" | "order";
 type SortDir = "asc" | "desc";
@@ -257,37 +251,22 @@ export function MembersDirectory() {
       : rows.filter((member) => member.is_alumni !== true);
   }, [activeQuery.data, usingSearch]);
 
-  const roleOptions = useMemo<RoleOption[]>(() => {
-    return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
-      if (!role || typeof role !== "object") return [];
-      if (typeof role.id !== "string" || typeof role.name !== "string")
-        return [];
-      // The Everyone role (#4191) is no filter, column or assignment.
-      if (isEveryoneRole(role)) return [];
-      // The President role carries the wildcard (`*`) permission. `PATCH
-      // /members/:id/roles` rejects president changes (they go through the
-      // dedicated presidency-transfer flow), so flag it to keep it out of the
-      // bulk-assign dropdown below.
-      const permissions = Array.isArray(role.permissions)
-        ? role.permissions
-        : [];
-      const isPresident = role.is_system === true && permissions.includes("*");
-      // Read defensively, as the Discord import wizard reads it: `GET
-      // /v1/roles` returns the whole row, `system_key` included, but declares
-      // no response schema (#1049), so the SDK doesn't type it.
-      const isAlumni = role.system_key === "ALUMNI";
-      return [{ id: role.id, name: role.name, isPresident, isAlumni }];
-    });
-  }, [rolesQuery.data]);
+  // The Everyone role (#4191) is no filter, column or assignment.
+  const roleOptions = useMemo(
+    () => parseChapterRoles(rolesQuery.data).filter((role) => !role.everyone),
+    [rolesQuery.data],
+  );
   const roleNameById = useMemo(
     () => new Map(roleOptions.map((role) => [role.id, role.name])),
     [roleOptions],
   );
-  // Bulk role assignment can't set the President role — the endpoint rejects it
-  // — so offering it would guarantee a failing action. It stays available in the
-  // filter dropdown (filtering by President is valid); only assignment excludes it.
+  // Bulk role assignment can't set a locked role (one holding `*`, President
+  // above all): `PATCH /members/:id/roles` refuses it, since it moves only
+  // through Transfer presidency, so offering it would guarantee a failing
+  // action. It stays in the filter dropdown (filtering by President is valid);
+  // only assignment excludes it.
   const assignableRoleOptions = useMemo(
-    () => roleOptions.filter((role) => !role.isPresident),
+    () => roleOptions.filter((role) => !role.locked),
     [roleOptions],
   );
   // The filters offer what the list on screen can hold (#2484). Outside a
@@ -297,7 +276,9 @@ export function MembersDirectory() {
   // is how a graduating class moves.
   const filterRoleOptions = useMemo(
     () =>
-      usingSearch ? roleOptions : roleOptions.filter((role) => !role.isAlumni),
+      usingSearch
+        ? roleOptions
+        : roleOptions.filter((role) => role.system_key !== "ALUMNI"),
     [roleOptions, usingSearch],
   );
   // A choice whose option has gone (Alumni picked during a search that has
@@ -958,7 +939,7 @@ export function MembersDirectory() {
          */
         usingSearch ? (
           <InlineNote>
-            Nobody matches “{deferredQuery}”.{" "}
+            {directoryNoSearchMatches(deferredQuery)}{" "}
             <InlineNoteAction onClick={() => setQuery("")}>
               Clear search
             </InlineNoteAction>
@@ -1171,7 +1152,7 @@ export function MembersDirectory() {
                         </span>
                       </span>
                       <span className="shrink-0 text-caption tabular-nums text-muted">
-                        {points} pts
+                        {formatPoints(points)}
                       </span>
                     </button>
                   </li>

@@ -15,8 +15,11 @@
  * - **Legacy tokens** `WEEKLY`, `BIWEEKLY`, `MONTHLY`: what every series held
  *   before 2026-11 and what shipped phone builds still send. A token has no
  *   end of its own; it makes a fixed number of meetings after the first
- *   (12, 6, 6), stepped in UTC as the API always stepped them. Still accepted
- *   and still read, so no row needs migrating.
+ *   (12, 6, 6). Still accepted and still read, so no row needs migrating.
+ *   A token carries no zone, so the caller names the one it steps in
+ *   ({@link SeriesStepOptions}): the API passes the saving officer's, so a
+ *   7 PM weekly meeting stays at 7 PM across a DST change (#4505); without
+ *   one it steps in UTC, as the API did before.
  * - **A structured rule**, a subset of iCalendar's RRULE (RFC 5545) written as
  *   `KEY=VALUE` pairs joined by `;`, for example
  *   `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`.
@@ -41,7 +44,7 @@
  * meetings after it.
  */
 
-import { isSupportedTimeZone } from "./time-zone";
+import { isSupportedTimeZone, localTimeZone } from "./time-zone";
 
 /**
  * The legacy tokens. Shipped phone builds send and read only these, so the
@@ -148,7 +151,9 @@ export interface RepeatRule {
 
 /**
  * Any rule read back: a structured one, or a legacy token read as the
- * equivalent pattern with its fixed, rolling length.
+ * equivalent pattern with its fixed, rolling length. A token's `timeZone` is
+ * the UTC default; the stepper takes the caller's zone over it
+ * ({@link SeriesStepOptions}).
  */
 export type ParsedRepeatRule =
   | (RepeatRule & { legacy: null })
@@ -235,12 +240,8 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   const interval = Number(intervalText);
   if (interval > MAX_REPEAT_INTERVAL) return null;
 
-  const zoneText = fields.get("TZID");
-  // Untrimmed is refused rather than trimmed: the zone check trims, Intl
-  // doesn't, so " America/New_York" would pass here and throw when stepped.
-  if (!zoneText || zoneText !== zoneText.trim()) return null;
-  if (!isSupportedTimeZone(zoneText)) return null;
-  const timeZone = canonicalZone(zoneText);
+  const timeZone = readZone(fields.get("TZID"));
+  if (!timeZone) return null;
 
   const countText = fields.get("COUNT");
   const untilText = fields.get("UNTIL");
@@ -299,6 +300,18 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
     end,
     timeZone,
   };
+}
+
+/**
+ * A zone this module can step in, in its canonical spelling, or `null`.
+ * Untrimmed is refused rather than trimmed: the zone check trims, Intl
+ * doesn't, so " America/New_York" would pass it and throw when stepped. The
+ * one check for a rule's `TZID` and a caller's legacy zone alike.
+ */
+function readZone(text: string | null | undefined): string | null {
+  if (!text || text !== text.trim()) return null;
+  if (!isSupportedTimeZone(text)) return null;
+  return canonicalZone(text);
 }
 
 /**
@@ -557,6 +570,24 @@ function untilDayNumber(until: string): number {
   return dayNumber(y!, m!, d!);
 }
 
+/** How a caller steps a series whose rule is a legacy token. */
+export interface SeriesStepOptions {
+  /**
+   * The zone whose wall clock a legacy token keeps (IANA name): the API
+   * passes the saving officer's or the series creator's, a caption the
+   * device's. Missing, `null` or
+   * not a zone this runtime knows steps in UTC, as tokens always did. A
+   * structured rule ignores it and keeps its own `TZID`.
+   */
+  legacyTimeZone?: string | null;
+}
+
+/** The zone a parsed rule steps in. */
+function stepZone(rule: ParsedRepeatRule, options: SeriesStepOptions): string {
+  if (!rule.legacy) return rule.timeZone;
+  return readZone(options.legacyTimeZone) ?? "UTC";
+}
+
 /**
  * The starts of a series' meetings after its first, as the API writes them.
  *
@@ -565,7 +596,8 @@ function untilDayNumber(until: string): number {
  *   regenerating a series from `skipBefore` drops the ones already past
  *   rather than adding more at the end.
  * - A legacy token makes its fixed number of meetings *after* `skipBefore`,
- *   which is how the API always regenerated one.
+ *   which is how the API always regenerated one, on the wall clock of
+ *   `options.legacyTimeZone` (UTC without one).
  *
  * Never more than {@link MAX_SERIES_MEETINGS} - 1 (the cap is checked on write
  * by {@link checkSeriesLength}). `null` for a rule this module can't read.
@@ -574,11 +606,13 @@ export function seriesChildStarts(
   rule: string | null | undefined,
   start: Date | string,
   skipBefore?: number,
+  options: SeriesStepOptions = {},
 ): Date[] | null {
   const parsed = parseRepeatRule(rule);
   const firstMs = new Date(start).getTime();
   if (!parsed || Number.isNaN(firstMs)) return null;
-  const first = wallClockAt(firstMs, parsed.timeZone);
+  const timeZone = stepZone(parsed, options);
+  const first = wallClockAt(firstMs, timeZone);
   const limit = MAX_SERIES_MEETINGS - 1;
   const until =
     parsed.end.kind === "until" ? untilDayNumber(parsed.end.until) : null;
@@ -590,7 +624,7 @@ export function seriesChildStarts(
     if (parsed.end.kind === "count" && made >= parsed.end.count - 1) break;
     if (made >= limit) break;
     const date = fromDayNumber(day);
-    const instant = instantAt({ ...first, ...date }, parsed.timeZone);
+    const instant = instantAt({ ...first, ...date }, timeZone);
     if (parsed.end.kind !== "rolling") made += 1;
     if (skipBefore !== undefined && instant <= skipBefore) continue;
     starts.push(new Date(instant));
@@ -640,8 +674,9 @@ export function checkSeriesLength(
 export function seriesExtent(
   start: Date,
   rule: string | null | undefined,
+  options: SeriesStepOptions = {},
 ): { count: number; last: Date } | null {
-  const children = seriesChildStarts(rule, start);
+  const children = seriesChildStarts(rule, start, undefined, options);
   if (children === null) return null;
   return {
     count: children.length + 1,
@@ -652,17 +687,22 @@ export function seriesExtent(
 /**
  * How long a new series runs, for the line under a Repeat control: "13
  * meetings, the last on Feb 5." (the year added when it differs). Dates read
- * in the rule's zone, or the device's for a legacy token. `null` for a value
- * that is not a rule.
+ * in the rule's zone. A legacy token is stepped and read in
+ * `options.legacyTimeZone`, or the device's zone without one: the zone the
+ * API steps it in is the saving officer's, this device's (#4505). `null` for a value that is not a rule.
  */
 export function describeSeriesLength(
   start: Date,
   rule: string | null | undefined,
+  options: SeriesStepOptions = {},
 ): string | null {
   const parsed = parseRepeatRule(rule);
-  const extent = seriesExtent(start, rule);
-  if (!parsed || !extent) return null;
-  const timeZone = parsed.legacy ? undefined : parsed.timeZone;
+  if (!parsed) return null;
+  const timeZone = stepZone(parsed, {
+    legacyTimeZone: options.legacyTimeZone ?? localTimeZone(),
+  });
+  const extent = seriesExtent(start, rule, { legacyTimeZone: timeZone });
+  if (!extent) return null;
   const year = (at: Date) =>
     new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(at);
   const day = extent.last.toLocaleDateString("en-US", {

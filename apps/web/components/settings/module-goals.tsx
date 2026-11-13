@@ -35,7 +35,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useToast } from "@/lib/hooks/use-toast";
-import { normalizeRoleOptions, type RoleOption } from "@/lib/roles";
+import { toRoleOptions, type RoleOption } from "@repo/hooks/chapter-roles";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,7 +100,7 @@ export function ModuleGoals({
 }) {
   const goals = useChapterGoals();
   const roles = useRoles();
-  const roleOptions = normalizeRoleOptions(roles.data);
+  const roleOptions = toRoleOptions(roles.data);
 
   return (
     <ProfileSection

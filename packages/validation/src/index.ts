@@ -42,6 +42,8 @@ export * from "./chat-message";
 export * from "./chat-message-flags";
 export * from "./chat-notification-defaults";
 export * from "./chat-sidebar";
+// The check-in QR as a link the phone camera opens. See ./check-in-link.
+export * from "./check-in-link";
 export * from "./check-in-window";
 export * from "./check-in-zone-copy";
 // Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
@@ -168,6 +170,7 @@ export {
 // editor and the phone's New event sheet (#4488).
 export * from "./repeat-draft";
 export * from "./role-colors";
+export * from "./screen-copy";
 export * from "./service-points";
 export * from "./service-receipt";
 export * from "./signed-upload";

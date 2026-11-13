@@ -1,5 +1,9 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import type { AskStreamEvent } from '@repo/validation';
+import {
+  ASK_STREAM_VERSION,
+  type AskStep,
+  type AskStreamEvent,
+} from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { ActService, type ActOutcome } from '../act/act.service';
@@ -26,14 +30,6 @@ export type AskProposal = Extract<
 export type AskConversationEvent =
   AskStreamEvent | { type: 'act'; outcome: AskProposal };
 
-/** The events that mean nothing has been read for an answer yet. */
-function beforeReading(event: AskStreamEvent): boolean {
-  return (
-    event.type === 'start' ||
-    (event.type === 'status' && event.step === 'searching')
-  );
-}
-
 /**
  * One conversation (`spec/behavior/ai.md` § One conversation): the member
  * types one thing in one place, and Frapp either answers it or proposes a
@@ -58,11 +54,19 @@ function beforeReading(event: AskStreamEvent): boolean {
  * event, or an action with a detail left unsaid), its card is the turn. It is
  * sent the moment the request lane has it, and the answer lane is stopped
  * where it stands: it may have searched the index and picked its tools by
- * then, but it has run no tool and written no word, because its first step
- * past searching is held until the request lane has spoken. Otherwise the
- * answer goes on as if the request lane had not run. A request lane that
- * fails, is refused or is unavailable is the same as one that found nothing
- * to do: the member still gets their answer.
+ * then, but it has run no tool, kept nothing and written no word, because it
+ * asks before it goes past its search (`AskInput.mayGoOn`) and is told only
+ * once the request lane has spoken. Otherwise the answer goes on as if the
+ * request lane had not run. A request lane that fails, is refused or is
+ * unavailable is the same as one that found nothing to do: the member still
+ * gets their answer.
+ *
+ * **The turn says when it is becoming a card** (#4701). The moment the
+ * request lane has read the words as an action the member was offered, and
+ * before it looks up that action's details, the stream carries the
+ * `proposing` step. It is said from the request lane's own progress, never
+ * guessed from the words, and a request lane that then comes back with
+ * nothing is followed by the answer's own steps.
  */
 @Injectable()
 export class AskConversationService {
@@ -87,45 +91,84 @@ export class AskConversationService {
     const left = () => stop.abort();
     if (input.signal?.aborted) stop.abort();
     input.signal?.addEventListener('abort', left, { once: true });
+    // Resolved when the request lane has picked an action, and never if it
+    // does not.
+    let picked: () => void = () => undefined;
+    let acting: Promise<void> | null = new Promise<void>((resolve) => {
+      picked = resolve;
+    });
     // Started before the answer lane's first await, so both run side by side.
-    let request: Promise<AskProposal | null> | null = this.proposal(input, now);
-    const answer = this.askService.ask({ ...input, signal: stop.signal }, now);
+    const card = this.proposal(input, now, picked);
+    let request: Promise<AskProposal | null> | null = card;
+    const answer = this.askService.ask(
+      {
+        ...input,
+        signal: stop.signal,
+        // The answer lane goes past its search only for a turn that is not
+        // a card.
+        mayGoOn: async () => (await card) === null,
+      },
+      now,
+    );
     try {
       let next = answer.next();
       // `start` names the turn, so it goes out first whichever lane is ahead.
       let started = false;
+      // Whether the answer lane has said its first step.
+      let searching = false;
       for (;;) {
-        if (request !== null && started) {
-          const first = await Promise.race([
-            request.then((outcome) => ({ lane: 'request', outcome }) as const),
-            next.then((result) => ({ lane: 'answer', result }) as const),
-          ]);
-          if (first.lane === 'request') {
-            request = null;
-            if (first.outcome === null) continue;
-            // The step still being waited on ends with the lane.
-            next.catch(() => undefined);
-            yield { type: 'act', outcome: first.outcome };
-            return;
-          }
-          if (!first.result.done && !beforeReading(first.result.value)) {
-            // Nothing past searching is shown, or run, before the request
-            // lane has said whether this turn is a card.
-            const outcome = await request;
-            request = null;
-            if (outcome !== null) {
-              yield { type: 'act', outcome };
-              return;
-            }
-          }
-          if (first.result.done) return;
-          yield first.result.value;
-        } else {
+        if (!started) {
           const result = await next;
           if (result.done) return;
           started = true;
           yield result.value;
+          next = answer.next();
+          continue;
         }
+        // The order settles a tie. The request lane is first: when it and
+        // the answer lane have both settled by now, the card is what the turn
+        // is. "Working out a card" waits for the answer lane's first step,
+        // so it is never said and then replaced by "searching".
+        const first = await Promise.race([
+          ...(request === null
+            ? []
+            : [
+                request.then(
+                  (outcome) => ({ lane: 'request', outcome }) as const,
+                ),
+              ]),
+          next.then((result) => ({ lane: 'answer', result }) as const),
+          ...(acting === null || !searching
+            ? []
+            : [acting.then(() => ({ lane: 'acting' }) as const)]),
+        ]);
+        if (first.lane === 'acting') {
+          acting = null;
+          yield {
+            v: ASK_STREAM_VERSION,
+            type: 'status',
+            step: 'proposing' satisfies AskStep,
+          };
+          continue;
+        }
+        if (first.lane === 'request') {
+          request = null;
+          acting = null;
+          if (first.outcome === null) continue;
+          // The step still being waited on ends with the lane.
+          next.catch(() => undefined);
+          yield { type: 'act', outcome: first.outcome };
+          return;
+        }
+        if (first.result.done) {
+          // The answer lane ends with no answer only because the turn is a
+          // card, which it was told before this loop was.
+          const outcome = request === null ? null : await request;
+          if (outcome !== null) yield { type: 'act', outcome };
+          return;
+        }
+        searching = true;
+        yield first.result.value;
         next = answer.next();
       }
     } finally {
@@ -144,6 +187,7 @@ export class AskConversationService {
   private async proposal(
     input: AskConversationInput,
     now: Date,
+    onAction: () => void,
   ): Promise<AskProposal | null> {
     try {
       const outcome = await this.actService.act(
@@ -153,10 +197,15 @@ export class AskConversationService {
           enabledModules: input.enabledModules,
           timeZone: input.timeZone,
           request: input.question,
-          // The member's own earlier messages, never an answer. How many of
-          // them the planner reads is the request lane's own rule.
-          earlier: (input.history ?? []).map((turn) => turn.question),
+          // The member's own earlier messages, never an answer. A turn they
+          // tapped from the opening suggestions is not their words: it can
+          // name a record another member wrote, so it is left out (C3). How
+          // many of the rest the planner reads is the request lane's own rule.
+          earlier: (input.history ?? [])
+            .filter((turn) => turn.suggested !== true)
+            .map((turn) => turn.question),
           keepEarlier: true,
+          onAction,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
         now,

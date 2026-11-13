@@ -6,6 +6,7 @@ import {
   postHours,
   postPointsAdjustment,
   postPoll,
+  postForm,
   postSignup,
   postTask,
   retryPointsDispatch,
@@ -1271,6 +1272,48 @@ describe("postSignup — the New sign-up sheet's send (#3926)", () => {
     expect(await postSignup(ctx, CHANNEL_ID, SIGNUP)).toEqual({
       ok: false,
       error: "Couldn't post that sign-up sheet. Try again.",
+      cause: expect.any(Error),
+    });
+  });
+});
+
+describe("postForm — the New form builder's send (#3926 step 3)", () => {
+  const FORM = {
+    content: "Formal housing",
+    payload: {
+      title: "Formal housing",
+      questions: [
+        {
+          id: "q1",
+          type: "multiple_choice" as const,
+          title: "What room do you want?",
+          required: true,
+          options: [{ id: "o1", label: "Single" }],
+        },
+      ],
+    },
+  };
+
+  it("queues a form card with its title as the text, leaving the draft alone", async () => {
+    const clearDraft = vi.fn();
+    const ctx = buildSimpleCtx(postingApi(), stubOutbox({ clearDraft }));
+
+    expect(await postForm(ctx, CHANNEL_ID, FORM)).toEqual({ ok: true });
+    expect(onlyRow(ctx).kind).toBe("form");
+    expect(onlyRow(ctx).content).toBe("Formal housing");
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("says what failed, in its own words, when the outbox refuses it", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+      }),
+    );
+    expect(await postForm(ctx, CHANNEL_ID, FORM)).toEqual({
+      ok: false,
+      error: "Couldn't post that form. Try again.",
       cause: expect.any(Error),
     });
   });

@@ -76,12 +76,6 @@ export const ACT_PROPOSAL_EXPIRY_DAYS = 1;
  * is `ASK_COPY`'s.
  */
 export const ACT_COPY = {
-  /** One request to try, per action, on Ask's empty state. */
-  examples: {
-    give_points: "Give 5 points to everyone who came to chapter tonight",
-    create_task: "Make a task for Jordan to book the bus by Friday",
-    create_event: "Put a study night on the calendar for Tuesday at 7",
-  } satisfies Record<ActAction, string>,
   confirm: "Confirm",
   cancel: "Cancel",
   confirming: "Confirming",

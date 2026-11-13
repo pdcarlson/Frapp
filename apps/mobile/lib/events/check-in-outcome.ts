@@ -3,6 +3,10 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
 import {
+  CHECK_IN_CODE_REFUSED_MESSAGE,
+  CHECK_IN_NEEDS_LOCATION_MESSAGES,
+} from "@repo/validation";
+import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
@@ -56,27 +60,35 @@ export type CheckInOutcome =
       attemptOnly: boolean;
     };
 
-/** The scanner's own words when location access is refused. */
+/** The chat card's words when location access is refused at a zoned event. */
 export const CHECK_IN_LOCATION_DENIED_COPY =
   "This event checks you in by location. Allow location access to check in.";
 
 /**
- * The API's refusal of a scanned or typed code: stale, screenshotted, or
- * another event's. It carries no `code` (`@repo/api-sdk`'s `codeOf`), so the
- * message is what identifies it; a spec reads it from
- * `apps/api/src/application/services/attendance.service.ts` so the two can't
- * drift apart in silence.
+ * The API's refusal of a scanned or typed code, and its two refusals of a
+ * check-in with no location. One home in `@repo/validation`, which the web's
+ * check-in page reads too; this module's spec pins them to the API's source.
  */
-export const CHECK_IN_CODE_REFUSED_MESSAGE =
-  "That check-in code is not valid for this event, or it has expired";
+export { CHECK_IN_CODE_REFUSED_MESSAGE, CHECK_IN_NEEDS_LOCATION_MESSAGES };
 
 /**
  * The API's refusal of a check-in with no code once an officer's screen has
  * shown one for the event (#4532). The chat event card reads it to swap its
- * Check in for Scan code; a spec reads it from the API's source.
+ * Check in for Enter code; a spec reads it from the API's source.
  */
 export const CHECK_IN_NEEDS_CODE_MESSAGE =
   "Scan the code on the check-in screen with the Frapp app to check in";
+
+
+/** Whether a failed check-in was refused for carrying no location. */
+export function needsLocationRefusal(error: unknown): boolean {
+  const message = serverMessageOf(error);
+  return (
+    statusOf(error) === 400 &&
+    typeof message === "string" &&
+    CHECK_IN_NEEDS_LOCATION_MESSAGES.includes(message)
+  );
+}
 
 /** Whether a failed check-in was refused for carrying no code. */
 export function needsScannedCode(error: unknown): boolean {

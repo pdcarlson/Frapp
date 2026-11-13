@@ -147,7 +147,7 @@ const writes = {
   edit: vi.fn(async () => {}),
   remove: vi.fn(async () => {}),
   closePoll: vi.fn(async () => {}),
-  closeSignup: vi.fn(async () => {}),
+  closeCard: vi.fn(async () => {}),
   reactionError: null as string | null,
   clearReactionError: vi.fn(),
   actionError: null as string | null,
@@ -241,9 +241,7 @@ const catchUp = vi.hoisted(() => ({
   start: vi.fn(),
   resume: vi.fn(),
   drop: vi.fn(),
-  options: undefined as
-    | { onOpenPoint: (point: unknown) => void }
-    | undefined,
+  options: undefined as { onOpenPoint: (point: unknown) => void } | undefined,
 }));
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ({ catchUp: catchUp.surface }),

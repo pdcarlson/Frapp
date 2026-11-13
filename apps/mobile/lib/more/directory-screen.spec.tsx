@@ -96,6 +96,8 @@ const state = vi.hoisted(() => ({
   // `GET /v1/roles`, for the Actives filters (#3971).
   roles: [] as unknown[],
   rolesError: false,
+  // `GET /v1/members` failing with nothing cached (#4135).
+  membersError: false,
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -123,7 +125,18 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           refetch: refetches.roles,
         }
       : read(state.roles, refetches.roles),
-  useMembers: () => read(state.members ?? MEMBERS, refetches.members),
+  useMembers: () =>
+    state.membersError
+      ? {
+          data: undefined,
+          error: new Error("boom"),
+          isPending: false,
+          isError: true,
+          isSuccess: false,
+          isFetching: false,
+          refetch: refetches.members,
+        }
+      : read(state.members ?? MEMBERS, refetches.members),
   usePledgeClasses: () =>
     state.classesPending
       ? {
@@ -209,6 +222,19 @@ function render(): ReactTestRenderer {
     );
   });
   return tree;
+}
+
+/** What the list draws in place of its rows, rendered on its own. */
+function emptyText(tree: ReactTestRenderer): string {
+  let body!: ReactTestRenderer;
+  act(() => {
+    body = create(
+      <FrappThemeProvider>
+        {list(tree).props.ListEmptyComponent as React.ReactElement}
+      </FrappThemeProvider>,
+    );
+  });
+  return screenText(body);
 }
 
 function list(tree: ReactTestRenderer) {
@@ -319,6 +345,7 @@ beforeEach(() => {
   resetListLayoutsForTests();
   state.chapterId = "c-1";
   state.search = [];
+  state.membersError = false;
   state.pending = false;
   state.permissions = [];
   state.members = null;
@@ -462,6 +489,24 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
 
     await pull(tree);
     expect(refetches.search).toHaveBeenCalledWith({ cancelRefetch: true });
+  });
+
+  it("says web's words for a search that matches nobody (#4135)", () => {
+    state.search = [];
+    const tree = render();
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("zz"));
+    expect(emptyText(tree)).toContain("Nobody matches “zz”.");
+  });
+
+  it("says web's title when the roster fails to load (#4135)", () => {
+    state.membersError = true;
+    expect(emptyText(render())).toContain("Couldn't load the directory");
   });
 
   it("searches across both lists", () => {

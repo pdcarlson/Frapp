@@ -295,6 +295,41 @@ describe('ActService', () => {
     });
   });
 
+  describe('saying an action was read (#4701)', () => {
+    it("tells the caller the offered action's name before its details are looked up", async () => {
+      const { service, task } = build({ permissions: OFFICER_HOLDS });
+      const onAction = jest.fn(() => {
+        expect(task.draft).not.toHaveBeenCalled();
+      });
+      await service.act({ ...input('make a task'), onAction }, NOW);
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(onAction).toHaveBeenCalledWith('create_task');
+    });
+
+    it.each([
+      ['was not offered', plan({ action: 'create_event', title: 'x' })],
+      ['does not exist', plan({ action: 'delete_chapter' })],
+    ])('says nothing for an action that %s', async (_name, value) => {
+      const { service } = build({
+        permissions: OFFICER_HOLDS,
+        planned: { status: 'ok', value },
+      });
+      const onAction = jest.fn();
+      await service.act({ ...input('whatever'), onAction }, NOW);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when the planning call was refused', async () => {
+      const { service } = build({
+        permissions: OFFICER_HOLDS,
+        planned: { status: 'refused', category: null },
+      });
+      const onAction = jest.fn();
+      await service.act({ ...input('whatever'), onAction }, NOW);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+  });
+
   describe('the proposal', () => {
     it('is saved for the asker alone, replaces their last one, and pushes nobody', async () => {
       const { service, suggestions, task } = build({
