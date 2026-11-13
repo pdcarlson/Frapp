@@ -24,6 +24,7 @@ import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
+import { tintedControlStyles } from "@/components/tinted-control";
 import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -291,21 +292,28 @@ export function ActivityAsk({
   filled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder, accentPrimary, accentOnPrimary } =
-    useChapterBranding();
+  const branding = useChapterBranding();
   const styles = createActivityRowStyles(tokens);
+  const tinted = askTinted(tokens, branding);
   return (
     <View
       testID={filled ? "activity-ask-filled" : undefined}
       style={[
         styles.ask,
+        tinted.surface,
         filled
-          ? { backgroundColor: accentPrimary, borderColor: accentPrimary }
-          : { backgroundColor: accentSubtle, borderColor: accentBorder },
+          ? {
+              backgroundColor: branding.accentPrimary,
+              borderColor: branding.accentPrimary,
+            }
+          : null,
       ]}
     >
       <Text
-        style={[styles.askText, { color: filled ? accentOnPrimary : accent }]}
+        style={[
+          tinted.label,
+          filled ? { color: branding.accentOnPrimary } : null,
+        ]}
       >
         {label}
       </Text>
@@ -336,7 +344,7 @@ export function ActivityAskButton({
   action: ActivityRowActionControl;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const tinted = askTinted(tokens, useChapterBranding());
   const styles = createActivityRowStyles(tokens);
   const slop = Math.max(0, (tokens.touch.minimum - ASK_HEIGHT) / 2);
   return (
@@ -349,15 +357,11 @@ export function ActivityAskButton({
       onPress={action.run}
       style={({ pressed }) => [
         styles.ask,
-        { backgroundColor: accentSubtle, borderColor: accentBorder },
-        action.disabled
-          ? styles.askDisabled
-          : pressed
-            ? styles.askPressed
-            : null,
+        tinted.surface,
+        action.disabled ? tinted.disabled : pressed ? tinted.pressed : null,
       ]}
     >
-      <Text style={[styles.askText, { color: accent }]}>{action.label}</Text>
+      <Text style={tinted.label}>{action.label}</Text>
     </Pressable>
   );
 }
@@ -396,6 +400,14 @@ const LEAD_SIZE = LEAD_TILE_SIZE.lead;
 
 /** The ask's height: web's `h-7`, a badge's line rather than a button's. */
 const ASK_HEIGHT = 28;
+
+/** The ask's tinted recipe, at caption size to fit its badge-height line. */
+function askTinted(
+  tokens: SignetTokens,
+  branding: Parameters<typeof tintedControlStyles>[1],
+) {
+  return tintedControlStyles(tokens, branding, tokens.typography.role.caption);
+}
 
 function createActivityRowStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -501,21 +513,6 @@ function createActivityRowStyles(tokens: SignetTokens) {
       flexShrink: 0,
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-    },
-    // The disabled control's dim: no token carries a de-emphasis ramp.
-    askDisabled: {
-      opacity: 0.5,
-    },
-    askPressed: {
-      opacity: 0.7,
-    },
-    askText: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
     },
   });
 }
