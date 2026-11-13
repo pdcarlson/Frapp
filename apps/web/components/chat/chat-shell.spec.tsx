@@ -4344,6 +4344,29 @@ describe("ChatShell narrow viewports (#2142)", () => {
       }
     });
 
+    it("never skips a later page's entry that shares the URL (#3836)", async () => {
+      await pickBelowLg();
+      resize(1440);
+      // Pages visited after the pick with chat still mounted beside them:
+      // a tool page, then chat alone again at the same URL, then another tool.
+      window.history.pushState({ page: "events" }, "");
+      window.history.pushState({ page: "chat-alone" }, "");
+      window.history.pushState({ page: "tasks" }, "");
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(window.history.state).toMatchObject({ page: "chat-alone" });
+        });
+        // Give a wrongly chained Back the time to land.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(back).toHaveBeenCalledTimes(1);
+        expect(window.history.state).toMatchObject({ page: "chat-alone" });
+      } finally {
+        back.mockRestore();
+      }
+    });
+
     it("keeps the Back step when the window narrows again first", async () => {
       await pickBelowLg();
       resize(1440);
