@@ -268,6 +268,7 @@ except the audit card's).
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 | A private or role-gated channel's row on chat home, in the `#` sigil's slot, size (18) and colours, and its channel start's tile (32, accent), as web draws both (#4134; the rule is `channelMarkFor` in `@repo/hooks/channel-start`) | `LockGlyph` (body filled, shackle stroke-only; web's `LockGlyph`) | `components/chat/card-glyphs.tsx` |
+| A muted channel's row on chat home, straight after the name, at 14 in `text.muted`, as web's rail draws it (#4738; a crossed-out bell until then, which drew the inbox's silhouette) | `MuteGlyph` (web's speaker, box filled, split and × stroke-only; `active` draws the × in place of the waves) | `components/chat/card-glyphs.tsx` |
 
 The poll card has no glyph: its eyebrow is muted text on both surfaces.
 

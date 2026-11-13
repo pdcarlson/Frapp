@@ -272,9 +272,7 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
           (node.type as unknown) === "Text" && node.props.children === "#",
       );
       const flat = JSON.stringify(sigil.props.style);
-      expect(flat).toContain(
-        `"color":"${signetDarkTokens.color.text.muted}"`,
-      );
+      expect(flat).toContain(`"color":"${signetDarkTokens.color.text.muted}"`);
       expect(flat).not.toContain("#CB9FFF");
     }
   });
@@ -353,7 +351,7 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     ).toHaveLength(1);
   });
 
-  it("draws a muted unread row's title quiet, with the crossed-out bell", () => {
+  it("draws a muted unread row's title quiet, with the crossed-out speaker", () => {
     const tree = renderRow({ unreadCount: 7, isMuted: true });
     const title = titleStyle(tree);
     expect(title.fontFamily).toBe("Figtree_400Regular");
@@ -361,6 +359,15 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "Svg"),
     ).toHaveLength(1);
+    // Web's `MuteGlyph` (#4738): the speaker's × in place of its waves, not
+    // a bell, which is the notification inbox's glyph (#3362).
+    const paths = tree.root
+      .findAll((node) => (node.type as unknown) === "Path")
+      .map((node) => node.props.d as string);
+    expect(paths).toContain("M15.5 9.5l5 5M20.5 9.5l-5 5");
+    expect(
+      tree.root.findAllByProps({ testID: "channel-row-muted" }).length,
+    ).toBeGreaterThan(0);
     expect(
       renderRow({ unreadCount: 7 }).root.findAll(
         (node) => (node.type as unknown) === "Svg",
