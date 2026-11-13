@@ -728,8 +728,7 @@ describe("compact layout (#2873)", () => {
     const tree = renderItem(message({ is_pinned: true }));
     const pinned = tree.root.find(
       (node) =>
-        (node.type as unknown) === "Text" &&
-        node.props.children === " · Pinned",
+        (node.type as unknown) === "Text" && drawnText(node) === "  Pinned",
     );
     const style = JSON.stringify(pinned.props.style);
     expect(style).toContain(
@@ -752,9 +751,10 @@ describe("compact layout (#2873)", () => {
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    // `(edited)` leads its own line, and Pinned follows it with the separator.
+    // `(edited)` leads its own line, and Pinned follows it, its pin glyph
+    // between (#4136).
     expect(texts).toContainEqual([EDITED_MARKER, expect.anything()]);
-    expect(texts).toContain(" · Pinned");
+    expect(texts).toContainEqual([" ", expect.anything(), " Pinned"]);
     // Still no text row above the photo: only the author line is an action host.
     expect(actionHosts(tree)).toHaveLength(1);
   });
@@ -766,8 +766,8 @@ describe("compact layout (#2873)", () => {
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    expect(texts).toContain("Pinned");
-    expect(texts).not.toContain(" · Pinned");
+    // No space before the glyph: Pinned starts the line.
+    expect(texts).toContainEqual(["", expect.anything(), " Pinned"]);
   });
 
   it("offers no reactions on a deleted message, not even the add chip", () => {
@@ -1133,7 +1133,7 @@ describe("markers under a list (#2861)", () => {
         Array.isArray(node.props.style) &&
         drawnText(node).startsWith("a"),
     );
-    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER} · Pinned`);
+    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER}  Pinned`);
   });
 
   it("drop the Pinned separator when Pinned starts the line", () => {
@@ -1144,7 +1144,7 @@ describe("markers under a list (#2861)", () => {
         Array.isArray(node.props.style) &&
         drawnText(node).startsWith("a"),
     );
-    expect(drawnText(body)).toBe("a\nPinned");
+    expect(drawnText(body)).toBe("a\n Pinned");
   });
 });
 

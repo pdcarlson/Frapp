@@ -145,7 +145,7 @@ export function PollCard({
       </p>
       <div className="mt-2 text-base font-bold">{payload.question}</div>
       {choiceHint ? (
-        <p className="mt-1 text-caption text-muted-foreground">{choiceHint}</p>
+        <p className="mt-2 text-caption text-muted-foreground">{choiceHint}</p>
       ) : null}
       <ul className="mt-3 space-y-2">
         {payload.options.map((option) => {

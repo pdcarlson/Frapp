@@ -90,21 +90,39 @@ const TOOL_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   my_points: ['points'],
   points_leaderboard: ['leaderboard', 'standings', 'most', 'ranking', 'top'],
   my_dues: ['dues', 'owe', 'invoice', 'paid', 'pay'],
+  my_tasks: ['task', 'tasks', 'todo', 'to-do'],
 };
+
+/** A question that only makes sense beside the one before it. */
+const LEANS_ON_BEFORE =
+  /^\s*(and|also|what about|how about)\b|\b(it|its|that|those|them|they|one)\b/i;
 
 /** `ask.plan`: the offered tools whose keywords the question uses. */
 export function scriptedAskPlan(request: LanguageModelRequest): ScriptedReply {
   const message = request.messages.at(-1)?.content ?? '';
   const [questionPart, toolsPart = ''] = message.split('\nTools:\n');
-  const askedWords: string[] =
-    questionPart.toLowerCase().match(/[a-z']+/g) ?? [];
-  const asked = new Set(askedWords);
+  // In a conversation the member's earlier questions come first. Tools are
+  // picked for the question, so only the last "Question:" line on is read.
+  const question =
+    /(?:^|\n)Question: ([\s\S]*)$/.exec(questionPart)?.[1] ?? questionPart;
   const offered = [...toolsPart.matchAll(/^- ([a-z_]+):/gm)].map(
     (match) => match[1],
   );
-  const tools = offered.filter((name) =>
-    (TOOL_KEYWORDS[name] ?? []).some((keyword) => asked.has(keyword)),
-  );
+  const pick = (text: string) => {
+    const said: string[] = text.toLowerCase().match(/[a-z'-]+/g) ?? [];
+    const asked = new Set(said);
+    return offered.filter((name) =>
+      (TOOL_KEYWORDS[name] ?? []).some((keyword) => asked.has(keyword)),
+    );
+  };
+  let tools = pick(question);
+  // A follow-up that leans on the question before it ("And where is it?")
+  // needs what that one needed, as `scriptedAskAnswer` reads it. Only the
+  // one before, and only when this question names nothing itself.
+  if (tools.length === 0 && LEANS_ON_BEFORE.test(question)) {
+    const before = [...questionPart.matchAll(/^- (.+)$/gm)].at(-1)?.[1];
+    if (before) tools = pick(before);
+  }
   return { text: JSON.stringify({ tools }), object: { tools } };
 }
 
@@ -124,12 +142,7 @@ export function scriptedAskAnswer(
   // A follow-up that leans on the turn before ("and the one after that?")
   // is read beside the question before it, as the real search does. A
   // question that stands on its own is not.
-  if (
-    asked.size < 3 &&
-    /^\s*(and|also|what about|how about)\b|\b(it|its|that|those|them|they|one)\b/i.test(
-      last,
-    )
-  ) {
+  if (asked.size < 3 && LEANS_ON_BEFORE.test(last)) {
     const before = request.messages
       .slice(0, -1)
       .filter((message) => message.role === 'user')

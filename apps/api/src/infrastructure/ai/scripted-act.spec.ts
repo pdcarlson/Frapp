@@ -22,7 +22,7 @@ function planFor(request: string, offered: string[] = ACTIONS) {
 }
 
 describe('the scripted acting agent', () => {
-  it("reads the panel's three examples", () => {
+  it('reads a points, a task and an event request', () => {
     expect(
       planFor('Give 5 points to everyone who came to chapter tonight'),
     ).toMatchObject({
@@ -47,6 +47,19 @@ describe('the scripted acting agent', () => {
       title: 'study night',
       date: '2026-11-17',
       start_time: '19:00',
+    });
+  });
+
+  it('reads the request Ask opens with: the day after "due", and the other day left in the title', () => {
+    expect(
+      planFor(
+        "Make a task for me to get ready for Sunday's event, due Saturday",
+      ),
+    ).toMatchObject({
+      action: 'create_task',
+      people: ['me'],
+      title: "get ready for Sunday's event",
+      date: '2026-11-14',
     });
   });
 

@@ -52,6 +52,23 @@ describe('AskRequestDto', () => {
     });
   });
 
+  it('takes the mark on a turn the member tapped from the opening suggestions', async () => {
+    await expect(
+      transform({
+        question: 'And who runs it?',
+        history: [turn({ suggested: true }), turn()],
+      }),
+    ).resolves.toMatchObject({
+      history: [turn({ suggested: true }), turn()],
+    });
+    await expect(
+      transform({
+        question: 'And who runs it?',
+        history: [turn({ suggested: 'yes' })],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it.each([
     ['more turns than the limit', turns(ASK_HISTORY_MAX_TURNS + 1)],
     [

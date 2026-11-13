@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { eventAttendanceFor } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TaskStatus } from '#domain/entities/task.entity';
+import { localDateIn } from '#domain/utils/zoned-time';
 import { EventService } from '../event.service';
 import { FinancialInvoiceService } from '../financial-invoice.service';
 import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
+import { TaskService } from '../task.service';
 import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
 
 /**
@@ -14,6 +17,9 @@ import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
  *
  * Attendance is not here yet: there is no read of one member's attendance
  * across events, only per event, and Ask does not add queries of its own.
+ *
+ * Every opening suggestion (#4700, `ask-suggestions.service.ts`) is tied to
+ * one of these, so Frapp never suggests a question it has no way to answer.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -22,9 +28,13 @@ const ROSTER_LIMIT = 400;
 const EVENTS_BACK_DAYS = 30;
 const EVENTS_AHEAD_DAYS = 120;
 const EVENTS_LIMIT = 60;
+const DUES_LIMIT = 20;
 const FREE_TEXT_LIMIT = 300;
 const TRANSACTIONS_LIMIT = 10;
 const LEADERBOARD_LIMIT = 25;
+/** How many of the asker's unconfirmed tasks are read, and how many shown. */
+const MY_TASKS_READ = 100;
+const MY_TASKS_LIMIT = 40;
 
 /** "Sunday, November 15, 2026 at 7:00 PM", in the asker's zone. Never abbreviated. */
 function longDateTime(iso: string, timeZone: string): string {
@@ -39,7 +49,40 @@ function longDateTime(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * "Sunday, November 15, 2026 at 7:00 PM to 8:00 PM": the day is said once
+ * when an event starts and ends on the same day in the asker's zone, as a
+ * person would say it. Across midnight both ends carry their day.
+ */
+function longRange(start: string, end: string, timeZone: string): string {
+  const day = (iso: string) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date(iso));
+  if (day(start) !== day(end)) {
+    return `${longDateTime(start, timeZone)} to ${longDateTime(end, timeZone)}`;
+  }
+  const endTime = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  }).format(new Date(end));
+  return `${longDateTime(start, timeZone)} to ${endTime}`;
+}
+
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * "Saturday, November 14, 2026". A task's day with its weekday, because
+ * "which is due first" and "is it this weekend" are asked by the day.
+ */
+function longDay(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: DATE_ONLY.test(iso) ? 'UTC' : timeZone,
+  }).format(new Date(iso));
+}
 
 /**
  * "December 1, 2026". A calendar date with no time (an invoice's due date)
@@ -164,9 +207,11 @@ export class EventsAskTool implements AskTool {
       }),
       this.members.findByUserAndChapter(userId, chapterId),
     ]);
-    // What is coming matters most, so it is kept first: every event from
-    // today on, nearest first, then the most recent past ones in what is
-    // left. Shown in date order either way.
+    // What is coming matters most, so it is kept first and shown first:
+    // every event from today on, nearest first, then the most recent past
+    // ones in what is left, newest first, each saying it has happened. A
+    // meeting that repeats has last week's line too, and "when is chapter
+    // meeting on Sunday" means the next one (#4700).
     const nowIso = now.toISOString();
     const sorted = [...events].sort((a, b) =>
       a.start_time.localeCompare(b.start_time),
@@ -176,24 +221,30 @@ export class EventsAskTool implements AskTool {
       .slice(0, EVENTS_LIMIT);
     const past = sorted.filter((event) => event.end_time < nowIso);
     const kept = [
-      ...past.slice(
-        Math.max(0, past.length - (EVENTS_LIMIT - upcoming.length)),
-      ),
       ...upcoming,
+      ...past
+        .slice(Math.max(0, past.length - (EVENTS_LIMIT - upcoming.length)))
+        .reverse(),
     ];
     const cut = sorted.length - kept.length;
     const lines = kept.map((event) => {
       const attendance = eventAttendanceFor(event, member.role_ids ?? []);
+      const over = event.end_time < nowIso;
+      // One sentence carries what "when and where is it" asks for: the
+      // name, whether it is over, the time and the place. The place is as
+      // an officer typed it. The check-in zone's coordinates are never
+      // read: no location reaches a model.
       const parts = [
-        `${oneLine(event.name)}: ${longDateTime(event.start_time, timeZone)} to ${longDateTime(event.end_time, timeZone)}`,
-        // The place as an officer typed it. The check-in zone's
-        // coordinates are never read: no location reaches a model.
-        event.location ? `Where: ${oneLine(event.location)}` : null,
+        `${oneLine(event.name)}${over ? ' (already happened)' : ''}: ${longRange(event.start_time, event.end_time, timeZone)}${event.location ? `, at ${oneLine(event.location)}` : ''}`,
         attendance.status === 'required'
-          ? 'You are required to attend'
+          ? over
+            ? 'You were required to attend'
+            : 'You are required to attend'
           : attendance.status === 'optional'
             ? 'Optional for you'
-            : 'You are not invited',
+            : over
+              ? 'You were not invited'
+              : 'You are not invited',
         event.point_value > 0 ? `Worth ${event.point_value} points` : null,
         event.description ? `About: ${oneLine(event.description)}` : null,
       ];
@@ -316,19 +367,128 @@ export class MyDuesAskTool implements AskTool {
     timeZone,
   }: AskToolContext): Promise<AskToolResult | null> {
     const invoices = await this.invoices.findByUser(userId, chapterId);
-    const lines = invoices
-      // A draft is the treasurer's unfinished work, and a void one was
-      // withdrawn; the member's own Dues page shows neither.
-      .filter(
-        (invoice) => invoice.status === 'OPEN' || invoice.status === 'PAID',
-      )
-      .sort((a, b) => b.due_date.localeCompare(a.due_date))
-      .slice(0, 20)
-      .map((invoice) =>
-        invoice.status === 'PAID'
-          ? `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, paid${invoice.paid_at ? ` on ${longDate(invoice.paid_at, timeZone)}` : ''}.`
-          : `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, not paid, due ${longDate(invoice.due_date, timeZone)}.`,
-      );
+    const lines = duesInvoicesForAsk(invoices).map((invoice) =>
+      invoice.status === 'PAID'
+        ? `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, paid${invoice.paid_at ? ` on ${longDate(invoice.paid_at, timeZone)}` : ''}.`
+        : `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, not paid, due ${longDate(invoice.due_date, timeZone)}.`,
+    );
     return result(chapterId, lines);
+  }
+}
+
+/**
+ * The invoices Ask reads for a member: what their own Dues page shows, the
+ * latest twenty. A draft is the treasurer's unfinished work, and a void one
+ * was withdrawn; the page shows neither. The opening suggestion picks from
+ * this same list, so it never names an invoice the answer cannot see.
+ */
+export function duesInvoicesForAsk<
+  T extends { status: string; due_date: string },
+>(invoices: readonly T[]): T[] {
+  return invoices
+    .filter((invoice) => invoice.status === 'OPEN' || invoice.status === 'PAID')
+    .sort((a, b) => b.due_date.localeCompare(a.due_date))
+    .slice(0, DUES_LIMIT);
+}
+
+/** The asker's own tasks that are not finished: what is open and when each is due. */
+@Injectable()
+export class MyTasksAskTool implements AskTool {
+  readonly name = 'my_tasks';
+  readonly description =
+    "The asking member's own tasks: what is assigned to them, when each is due, and whether it is past due, sent back or waiting for an officer to confirm.";
+  readonly kind = 'tasks' as const;
+  readonly title = 'Your tasks';
+  readonly page = 'tasks' as const;
+  readonly permission = SystemPermissions.MEMBERS_VIEW;
+  readonly module = 'tasks';
+  readonly effect = 'read' as const;
+
+  constructor(private readonly tasks: TaskService) {}
+
+  async run({
+    chapterId,
+    userId,
+    now,
+    timeZone,
+  }: AskToolContext): Promise<AskToolResult | null> {
+    // The member's own list, as `GET /v1/tasks` reads it for someone without
+    // `tasks:manage`. An officer asking about "my tasks" gets theirs too, not
+    // the chapter's: `false` keeps the read to the asker whoever they are.
+    const mine = await this.tasks.list(chapterId, userId, false, {
+      confirmed: false,
+      limit: MY_TASKS_READ,
+    });
+    // By the day the asker sees, then by the time on that day, with a task
+    // that has no time after the timed ones (it is due by the end of the
+    // day). `due_at` is an instant and `due_date` a calendar day, so the two
+    // are never compared as strings: 8 PM Saturday in New York is already
+    // Sunday in UTC.
+    type Mine = (typeof mine)[number];
+    const dueDay = (task: Mine) =>
+      task.due_at
+        ? localDateIn(new Date(task.due_at), timeZone)
+        : task.due_date;
+    const dueFirst = (a: Mine, b: Mine) =>
+      dueDay(a).localeCompare(dueDay(b)) ||
+      (a.due_at && b.due_at
+        ? Date.parse(a.due_at) - Date.parse(b.due_at)
+        : a.due_at
+          ? -1
+          : b.due_at
+            ? 1
+            : 0);
+    const open = mine
+      .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
+      .sort(dueFirst);
+    const waiting = mine.filter(
+      (task) => task.stored_status === TaskStatus.COMPLETED,
+    );
+    const kept = [...open, ...waiting].slice(0, MY_TASKS_LIMIT);
+    if (kept.length === 0) return null;
+    const whenDue = (task: (typeof mine)[number]) =>
+      task.due_at
+        ? longDateTime(task.due_at, timeZone)
+        : longDay(task.due_date, timeZone);
+    const lines = kept.map((task) => {
+      const done = task.stored_status === TaskStatus.COMPLETED;
+      const steps = task.subtasks ?? [];
+      const parts = [
+        `${oneLine(task.title)}: due ${whenDue(task)}`,
+        done
+          ? 'You marked it done and it is waiting for an officer to confirm'
+          : task.status === TaskStatus.OVERDUE
+            ? 'It is past due'
+            : task.stored_status === TaskStatus.IN_PROGRESS
+              ? 'You have started it'
+              : 'Not started',
+        !done && task.sent_back_at
+          ? `An officer sent it back${task.sent_back_reason ? `: ${oneLine(task.sent_back_reason)}` : ''}`
+          : null,
+        steps.length > 0
+          ? `${steps.filter((step) => step.done_at).length} of ${steps.length} steps checked off`
+          : null,
+        task.point_reward ? `Worth ${task.point_reward} points` : null,
+        task.description ? `About: ${oneLine(task.description)}` : null,
+      ];
+      return `${parts.filter(Boolean).join('. ')}.`;
+    });
+    if (mine.length > kept.length) {
+      lines.push(
+        `${mine.length - kept.length} more of your tasks are not listed here. The Tasks page has all of them.`,
+      );
+    }
+    return result(chapterId, [
+      `Today is ${longDay(now.toISOString(), timeZone)}. Times are in ${timeZone}.`,
+      `You have ${open.length} open ${open.length === 1 ? 'task' : 'tasks'}.`,
+      // Said outright, so "which is due first" is read and not worked out
+      // from a list of dates.
+      ...(open.length > 1
+        ? [
+            `The one due first is ${oneLine(open[0].title)}, due ${whenDue(open[0])}.`,
+          ]
+        : []),
+      ...lines,
+    ]);
   }
 }

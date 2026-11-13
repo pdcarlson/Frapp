@@ -55,6 +55,7 @@ describe("askSourceOpening", () => {
     ["members", "/directory"],
     ["events", "/events"],
     ["points", "/tasks"],
+    ["tasks", "/tasks"],
   ])("opens live %s data on its screen", (page, pathname) => {
     expect(askSourceOpening(source({ type: "page", page }))).toEqual({
       kind: "route",
