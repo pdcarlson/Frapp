@@ -29040,6 +29040,14 @@
           "actions": {
             "type": "boolean",
             "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
+          },
+          "door": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "chat_private"
+            ],
+            "description": "Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message."
           }
         },
         "required": [

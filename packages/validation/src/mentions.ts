@@ -249,6 +249,9 @@ export function spacedMentionNames(
   const add = (raw: string) => {
     const name = spacedMentionName(raw);
     if (name === null) return;
+    // `@Frapp` is the assistant's (#4713), so no name may read on past it:
+    // "Frapp What" must not take `@Frapp what do I owe` from Ask and post it.
+    if (opensOnAskHandle(name)) return;
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -354,6 +357,8 @@ export const MAX_MENTION_PICKS = 50;
 
 /** A pick's label as a spaced name, or `null` when it has no space or can't be one. */
 function spacedPickLabel(label: string): string | null {
+  // A label that opens on `@Frapp` is read as the handle, never as a pick.
+  if (opensOnAskHandle(label)) return null;
   return spacedMentionName(label) === label ? label : null;
 }
 
@@ -444,6 +449,10 @@ function pickedTargets(
     if (!member) continue;
     const folded = fold(pick.label);
     if (folded.length === 0 || fold(member.display_name) !== folded) continue;
+    // `@Frapp` is the assistant's for every sender (#4713), a pick included:
+    // a label that is the handle, or opens on it, is claimed, so it reaches
+    // nobody, as the name tiers have it.
+    if (opensOnAskHandle(pick.label)) continue;
     ids.push(member.user_id);
   }
   return targets;
@@ -621,6 +630,35 @@ const EVERYONE_FOLDED = "everyone";
 const HERE_FOLDED = "here";
 
 /**
+ * `@Frapp`, as a picker writes it (#4713): the handle a member with Ask puts
+ * in a chat message to ask Frapp from where they are. It names the assistant,
+ * so it is reserved like `@here`: it reaches no member and no role, for every
+ * sender, whether or not their chapter has Ask.
+ */
+export const ASK_MENTION_NAME = "Frapp";
+const ASK_FOLDED = "frapp";
+
+/**
+ * Whether a token is the reserved `@Frapp`: one word that folds to it, so
+ * `@frapp` and `@FRAPP` are the handle and a member named "F Rapp" is not.
+ */
+function isAskHandle(value: string): boolean {
+  const word = value.trim();
+  return !/\s/.test(word) && fold(word) === ASK_FOLDED;
+}
+
+/**
+ * Whether a name is the handle or opens on it ("Frapp", "Frapp Fan"). Such a
+ * name can't be mentioned, typed or picked: `@Frapp` followed by anything is
+ * always the assistant's, or a member could rename themselves "Frapp What"
+ * and have `@Frapp what do I owe` posted to the channel and pushed to them.
+ */
+function opensOnAskHandle(name: string): boolean {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  return isAskHandle(first);
+}
+
+/**
  * The role `token` names, `null` when it names a role but resolves to nobody,
  * or `undefined` when it names no role and member matching should run.
  *
@@ -648,6 +686,10 @@ function matchMentionRole(
   if (folded === HERE_FOLDED) {
     return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;
   }
+  // `@Frapp` is the assistant's (#4713) and reaches nobody: a member whose
+  // name is or opens on "Frapp" must not be paged, past their mute, by a
+  // question someone meant for Ask.
+  if (opensOnAskHandle(token)) return null;
   if (roles.length === 0) return undefined;
   // A role nobody holds is not a target: it would reach nobody, and letting
   // it claim the token would take the name from a member it collides with.
@@ -750,6 +792,8 @@ export function draftWithMention(
   // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
   // wouldn't read as a mention reaches nobody.
   if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
+  // `@Frapp` is the assistant's (#4713): it would reach nobody, or be asked.
+  if (opensOnAskHandle(label)) return null;
   const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
   return `${draft}${gap}@${label} `;
 }
@@ -797,6 +841,8 @@ export function mentionSuggestions<T extends MentionCandidate>(
     if (!/^\p{L}/u.test(label)) continue;
     // The tokenizer drops a longer token, so the pick would reach nobody.
     if (label.length > MAX_TOKEN_LENGTH) continue;
+    // `@Frapp` is the assistant's, so this pick would reach nobody either.
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(member.display_name).includes(needle)) continue;
     offered.push({ member, label });
   }
@@ -863,6 +909,7 @@ export function mentionPickerEntries<
     const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
@@ -877,6 +924,94 @@ export function mentionPickerEntries<
     label,
   }));
   return [...memberRows, ...special, ...roleRows];
+}
+
+/** A picker's row for Frapp itself, beside its members and roles. */
+export interface MentionAskEntry {
+  kind: "ask";
+  /** What picking it inserts after the `@`: {@link ASK_MENTION_NAME}. */
+  label: string;
+}
+
+/** One row of a picker that may also offer Frapp. */
+export type MentionPickerRow<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+> = MentionPickerEntry<M, R> | MentionAskEntry;
+
+/**
+ * {@link mentionPickerEntries}, with a row for Frapp when this member has Ask
+ * and this composer can ask from where it is (#4713).
+ *
+ * Once a letter is typed, Frapp is offered by the start of its name only and
+ * comes first, as Slack lists an app above people once its name is being
+ * typed. On a bare `@` it is the last row, so the first row is still a
+ * person: Enter straight after `@` never turns a message into a question.
+ * The row takes one of the eight, never a ninth.
+ */
+export function mentionPickerRows<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+>(
+  roster: readonly M[],
+  roles: readonly R[],
+  query: string,
+  options: { ask: boolean },
+  limit: number = MAX_MENTION_SUGGESTIONS,
+): MentionPickerRow<M, R>[] {
+  const needle = fold(query);
+  const typed = query.trim().length > 0;
+  const offered =
+    options.ask &&
+    limit > 0 &&
+    (typed
+      ? needle.length > 0 &&
+        !/\s/.test(query.trim()) &&
+        ASK_FOLDED.startsWith(needle)
+      : true);
+  if (!offered) return mentionPickerEntries(roster, roles, query, limit);
+  const rest = mentionPickerEntries(roster, roles, query, limit - 1);
+  const ask: MentionAskEntry = { kind: "ask", label: ASK_MENTION_NAME };
+  return typed ? [ask, ...rest] : [...rest, ask];
+}
+
+/**
+ * The question a message asks Frapp, or `null` when it does not name
+ * `@Frapp` (#4713).
+ *
+ * `@Frapp` anywhere in the text makes the whole message a question: the
+ * words with the handle taken out. Anywhere, not only at the start, because
+ * the two ways to be wrong are not equal: a question that was meant for
+ * Frapp and is posted to a channel can't be taken back, and a message that
+ * was meant for the channel and is asked instead is still in the member's
+ * hands. The composer says which will happen before anything is sent.
+ *
+ * It is read from the text, not from a picked chip, so a draft restored as
+ * plain text, a pasted handle and a typed one all behave the same.
+ * `names` are the chapter's spaced names ({@link spacedMentionNames}), so
+ * `@Jordan Frapp` is the member and not the handle. No name reads on past
+ * the handle itself: with a member named "Frapp Fan", `@Frapp Fan are you
+ * in?` is still a question ("Fan are you in?"), as a send reads it too.
+ * The question is empty when the handle is all there is.
+ */
+export function askMentionQuestion(
+  content: string,
+  names: readonly string[] = [],
+): string | null {
+  const spans = findMentionSpans(content, {
+    names: names.filter((name) => !opensOnAskHandle(name)),
+  }).filter((span) => isAskHandle(span.token));
+  if (spans.length === 0) return null;
+  let rest = "";
+  let from = 0;
+  for (const span of spans) {
+    rest += content.slice(from, span.start);
+    // The comma or colon written after the handle goes with it: "@Frapp,
+    // what's quorum?" asks "what's quorum?".
+    from = /[,:]/.test(content.charAt(span.end)) ? span.end + 1 : span.end;
+  }
+  rest += content.slice(from);
+  return rest.replace(/[ \t]{2,}/g, " ").trim();
 }
 
 /** The `@`-query a caret sits in: where its `@` is, and what follows it. */

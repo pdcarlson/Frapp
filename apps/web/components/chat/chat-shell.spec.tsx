@@ -1022,6 +1022,28 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
 vi.mock("@/components/ask/ask-host", () => ({
   AskSlot: () => <div data-testid="ask-slot" />,
 }));
+// `@Frapp` from a channel (#4713). What a channel asks with and which turns
+// it draws are `ask-in-channel.spec.tsx`'s; the shell only carries them to the
+// composer and the timeline. `ask` is null for a member without Ask.
+const channelAskState = vi.hoisted(() => ({
+  ask: null as null | {
+    busy: boolean;
+    send: (channelId: string, question: string, after: string | null) => void;
+  },
+  /** Set to hold `@Frapp` while Ask is not yet known; else it follows `ask`. */
+  unknown: false,
+  turns: [] as { id: string }[],
+  turnsFor: [] as (string | null | undefined)[],
+}));
+vi.mock("@/components/ask/ask-in-channel", () => ({
+  useChannelAsk: () => channelAskState.ask,
+  useChannelAskAccess: () =>
+    channelAskState.ask ? "yes" : channelAskState.unknown ? "unknown" : "no",
+  useChannelAskTurns: (channelId: string | null | undefined) => {
+    channelAskState.turnsFor.push(channelId);
+    return channelAskState.turns;
+  },
+}));
 // The Important strip (#4186): the hook is the server's answer, so the shell
 // test drives it directly.
 const importantState = vi.hoisted(() => ({
@@ -1068,9 +1090,13 @@ vi.mock("./composer", () => ({
     isAuditLog,
     dropAttachRef,
     onSendGif,
+    ask,
+    askUnknown,
   }: {
     channelId: string;
     onSendGif?: unknown;
+    ask?: { busy: boolean; send: (question: string) => void } | null;
+    askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
@@ -1133,6 +1159,8 @@ vi.mock("./composer", () => ({
         data-testid="composer"
         data-audit-log={String(isAuditLog ?? false)}
         data-gif={onSendGif ? "on" : "off"}
+        data-ask={ask ? (ask.busy ? "busy" : "ready") : "none"}
+        data-ask-unknown={String(askUnknown ?? false)}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
@@ -1143,6 +1171,9 @@ vi.mock("./composer", () => ({
           .join(",")}
       >
         {channelId}
+        <button type="button" onClick={() => ask?.send("when is formal?")}>
+          stub-ask-frapp
+        </button>
         {/* The staged-reply seam (#489). The real Composer cannot be driven
             here (jsdom renders no ProseMirror view), so these expose the two
             things the SHELL owns: what it says is staged, and what it sends. */}
@@ -1388,9 +1419,11 @@ vi.mock("./message-timeline", async () => {
       channelStart?: React.ReactNode;
       onOpenProfile?: (userId: string) => void;
       onOpenThread?: (message: { id: string }) => void;
+      askTurns?: readonly { id: string }[];
     }
   >(function MessageTimeline(
     {
+      askTurns,
       onOpenThread,
       onOpenProfile,
       messages,
@@ -1421,6 +1454,9 @@ vi.mock("./message-timeline", async () => {
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
         <span data-testid="hold-follow">{String(!!holdFollow)}</span>
+        <span data-testid="ask-turns">
+          {(askTurns ?? []).map((turn) => turn.id).join(",")}
+        </span>
         {/* Hidden, so its region doesn't count as a shell column; its
             queries pass `hidden: true`. */}
         <div data-testid="channel-start" hidden>
@@ -1492,11 +1528,17 @@ vi.mock("./thread-panel", () => ({
     onClose,
     onCatchUp,
     beside,
+    askRefusal,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
       aria-label="Thread"
       data-testid="thread-panel"
       data-beside={String(!!beside)}
+      data-refuses-frapp={
+        askRefusal
+          ? `${askRefusal("@Frapp who is driving")},${askRefusal("see you there")}`
+          : "none"
+      }
     >
       {onCatchUp ? (
         <button data-testid="thread-catch-up" onClick={onCatchUp}>
@@ -2666,6 +2708,85 @@ describe("ChatShell GIF button (#4631)", () => {
     gifState.value = { available: true, provider: "KLIPY" };
     render(<ChatShell initialChannelId="chan-general" />);
     expect((await screen.findByTestId("composer")).dataset.gif).toBe("on");
+  });
+});
+
+describe("ChatShell carries @Frapp to the composer and the timeline (#4713)", () => {
+  afterEach(() => {
+    channelAskState.ask = null;
+    channelAskState.unknown = false;
+    channelAskState.turns = [];
+    channelAskState.turnsFor = [];
+  });
+
+  it("gives the composer no way to ask for a member without Ask", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    const composer = await screen.findByTestId("composer");
+    expect(composer.dataset.ask).toBe("none");
+    expect(composer.dataset.askUnknown).toBe("false");
+    expect(screen.getByTestId("ask-turns")).toHaveTextContent("");
+  });
+
+  it("tells the composer and a thread to hold @Frapp while Ask is not yet known", async () => {
+    // Posting it then could put a question meant for Frapp in the channel.
+    channelAskState.unknown = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    const composer = await screen.findByTestId("composer");
+    expect(composer.dataset.ask).toBe("none");
+    expect(composer.dataset.askUnknown).toBe("true");
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.,null",
+    );
+  });
+
+  it("asks from the open channel, under the message that is newest now", async () => {
+    const send = vi.fn();
+    channelAskState.ask = { busy: false, send };
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.ask).toBe("ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "stub-ask-frapp" }));
+
+    const newest = MESSAGES.at(-1)!;
+    expect(send).toHaveBeenCalledWith(
+      "chan-general",
+      "when is formal?",
+      (newest as { client_message_id?: string | null }).client_message_id ??
+        newest.id,
+    );
+  });
+
+  it("tells the composer a question is still being answered", async () => {
+    channelAskState.ask = { busy: true, send: vi.fn() };
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.ask).toBe("busy");
+  });
+
+  it("has a thread refuse a reply that is a question for Frapp, for a member with Ask", async () => {
+    channelAskState.ask = { busy: false, send: vi.fn() };
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "Ask Frapp from the channel, not from a reply.,null",
+    );
+  });
+
+  it("leaves @Frapp as ordinary text in a thread for a member without Ask", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "none",
+    );
+  });
+
+  it("hands the timeline the turns asked in the open channel", async () => {
+    channelAskState.turns = [{ id: "turn-1" }, { id: "turn-2" }];
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(await screen.findByTestId("ask-turns")).toHaveTextContent(
+      "turn-1,turn-2",
+    );
+    expect(channelAskState.turnsFor.at(-1)).toBe("chan-general");
   });
 });
 

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { memberAvatarTint } from "@repo/hooks";
-import { useFrappTheme } from "@/lib/theme";
+import { SkeletonBlock } from "@/components/state-block";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useRaisedSurfaces } from "@/lib/surfaces";
 
 /**
@@ -78,6 +79,47 @@ export const LEAD_TILE_SIZE = { row: 32, lead: 40 } as const;
 
 /** iconography.md §2's size for a list row's leading icon, in either tile. */
 export const LEAD_TILE_GLYPH = 20;
+
+/** The `lead` tile's stand-in while its row loads: same side, same corner. */
+export function LeadTileSkeleton() {
+  const { tokens } = useFrappTheme();
+  return (
+    <SkeletonBlock
+      width={LEAD_TILE_SIZE.lead}
+      height={LEAD_TILE_SIZE.lead}
+      radius={tokens.radius.chipLarge}
+    />
+  );
+}
+
+/**
+ * The frame of a two-line row that leads with the 40pt tile
+ * (`spec/ui/mobile/patterns.md` § Rows): the tile sets the height, so the
+ * padding is the small step, and the name is in the label role. Activity's
+ * rows and the Calendar's event and task rows spread these, so the one event
+ * keeps one shape on both tabs (#4679). The caller adds its own bleed and
+ * divider.
+ */
+export function leadRowStyles(tokens: SignetTokens) {
+  return {
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: tokens.spacing.sm,
+    },
+    text: {
+      flex: 1,
+      minWidth: 0,
+      gap: tokens.spacing.xs,
+    },
+    title: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+  } as const;
+}
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

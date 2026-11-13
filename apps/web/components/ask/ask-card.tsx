@@ -21,6 +21,7 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskTurn } from "@/components/ask/ask-answer";
+import { useSharedAskCardEdits } from "@/components/ask/ask-in-channel";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import {
   AskCardEditsContext,
@@ -152,8 +153,11 @@ export function AskCard({
   const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
   const canAct = actions !== null && actions.length > 0;
   const { suggestions } = useAskSuggestions({ enabled: open });
-  // What was changed on waiting cards, kept while the card is closed.
-  const [cardEdits] = useState<AskCardEditsStore>(() => new Map());
+  // What was changed on waiting cards, kept while the card is closed, and
+  // shared with the same card drawn in a channel it was asked from.
+  const sharedEdits = useSharedAskCardEdits();
+  const [ownEdits] = useState<AskCardEditsStore>(() => new Map());
+  const cardEdits = sharedEdits ?? ownEdits;
   const [draft, setDraft] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -167,10 +171,15 @@ export function AskCard({
   const last = exchanges.at(-1);
 
   // A question still being answered is dropped with the card, however it
-  // was closed; the turns before it are there when it reopens.
+  // was closed; the turns before it are there when it reopens. One asked
+  // from a channel (`@Frapp`) is not the card's to drop: it is answered
+  // there, with the card closed.
+  const askedHere = exchanges.some(
+    (exchange) => exchange.phase === "working" && !exchange.origin,
+  );
   useEffect(() => {
-    if (!open && working) stop();
-  }, [open, working, stop]);
+    if (!open && askedHere) stop();
+  }, [open, askedHere, stop]);
 
   // Whether answers are being saved can change while the page sits open.
   useEffect(() => {

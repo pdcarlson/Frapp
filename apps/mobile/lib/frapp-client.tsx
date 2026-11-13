@@ -3,6 +3,7 @@ import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import { useEffect, useMemo, useRef } from "react";
+import { AskConversationHost } from "./ask/ask-conversation";
 import { readAuthToken } from "./auth-token";
 import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
@@ -11,7 +12,6 @@ import { forgetDuesMemory } from "./dues/visit-memory";
 import { createRejectedSessionHandler } from "./rejected-session";
 import { createFreshAuthTokenReader } from "./fresh-auth-token";
 import { getSupabaseClient } from "./supabase";
-
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
   const { chapterId, userId, signOut } = useAuthSession();
@@ -101,32 +101,37 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
       signOut: () => signOutRef.current(),
     });
     return createFrappClient({
-        // Bare origin — the generated SDK paths already carry `/v1`.
-        baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
-        // The mirrored token, refreshed first when it is about to expire, so a
-        // foreground refetch never goes out with the token the OS let lapse
-        // in the background (#3907). `lib/fresh-auth-token.ts`.
-        getAuthToken: readFreshToken,
-        getChapterId: () => chapterIdRef.current,
-        // Read once: a running process never changes its native build.
-        clientVersion: readClientVersion(),
-        // A 401 means the API no longer accepts this session (an account
-        // deleted on another device, most often): sign out once, for every
-        // screen. `lib/rejected-session.ts`.
-        // The reader's learned clock offset is dropped first: a 401 means a
-        // token it called current wasn't (`lib/fresh-auth-token.ts`).
-        onUnauthorized: () => {
-          readFreshToken.forgetClockOffset();
-          checkRejectedSession();
-        },
-      });
+      // Bare origin — the generated SDK paths already carry `/v1`.
+      baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
+      // The mirrored token, refreshed first when it is about to expire, so a
+      // foreground refetch never goes out with the token the OS let lapse
+      // in the background (#3907). `lib/fresh-auth-token.ts`.
+      getAuthToken: readFreshToken,
+      getChapterId: () => chapterIdRef.current,
+      // Read once: a running process never changes its native build.
+      clientVersion: readClientVersion(),
+      // A 401 means the API no longer accepts this session (an account
+      // deleted on another device, most often): sign out once, for every
+      // screen. `lib/rejected-session.ts`.
+      // The reader's learned clock offset is dropped first: a 401 means a
+      // token it called current wasn't (`lib/fresh-auth-token.ts`).
+      onUnauthorized: () => {
+        readFreshToken.forgetClockOffset();
+        checkRejectedSession();
+      },
+    });
   }, []);
   /* eslint-enable react-hooks/refs */
 
   return (
     <QueryClientProvider client={queryClient}>
-      <FrappClientProvider client={client} chapterId={chapterId} userId={userId}>
-        {children}
+      <FrappClientProvider
+        client={client}
+        chapterId={chapterId}
+        userId={userId}
+      >
+        {/* The one Ask conversation, above every place that shows it. */}
+        <AskConversationHost>{children}</AskConversationHost>
       </FrappClientProvider>
     </QueryClientProvider>
   );

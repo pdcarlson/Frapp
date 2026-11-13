@@ -1,11 +1,12 @@
 import {
   aiAvailableFrom,
+  askAccessFrom,
   useActStatus,
   useAiChapterSettings,
   useAiConsent,
   useMyPermissions,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, type AskAccess } from "@repo/validation";
 
 /**
  * Which AI features this member can reach right now, on the phone
@@ -29,6 +30,13 @@ export interface AiSurfaces {
   /** Ask Frapp: the chapter's switch is on and the member holds `ai:use`. */
   ask: boolean;
   /**
+   * The same answer in three: `unknown` while a read behind it is in flight
+   * or failed. A composer holds a message naming `@Frapp` on `unknown`, so a
+   * question meant for Frapp is not posted while the app finds out (#4713).
+   * Unlike `ready`, a failed read is not an answer here.
+   */
+  askAccess: AskAccess;
+  /**
    * Catch me up (#3946): Ask is on, and the president has turned on channel
    * messages as a source. The same terms as web's `useChatCatchUpAvailable`.
    */
@@ -44,12 +52,18 @@ export function useAiSurfaces(): AiSurfaces {
   const available = aiAvailableFrom(consent);
   const settings = useAiChapterSettings({ enabled: available === true });
   const permissionsQuery = useMyPermissions();
-  const permissions = Array.isArray(permissionsQuery.data?.permissions)
+  const permissionsRead = Array.isArray(permissionsQuery.data?.permissions)
     ? permissionsQuery.data.permissions
-    : [];
+    : undefined;
+  const permissions = permissionsRead ?? [];
   const mayUse = available === true && can("ai:use", permissions);
   return {
     available,
+    askAccess: askAccessFrom({
+      available,
+      ask: settings.data?.ask,
+      permissions: permissionsRead,
+    }),
     ready:
       available === false ||
       consent.isError ||

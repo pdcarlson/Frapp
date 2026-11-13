@@ -22,20 +22,22 @@ import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import type { MemberAvatarTint } from "@repo/hooks";
 import {
+  ASK_COPY,
   activeMentionQuery,
   spacedMentionNames,
-  mentionPickerEntries,
+  mentionPickerRows,
   mentionRoleHint,
   reservedMentionName,
   type MentionCandidate,
   type MentionPick,
-  type MentionPickerEntry,
+  type MentionPickerRow,
   withoutObjectReplacement,
 } from "@repo/validation";
 import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
+import { FrappCrest } from "@/components/frapp-crest";
 import { NavGlyph } from "@/components/nav-glyph";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
@@ -99,6 +101,14 @@ import {
  * a typed handle would be and the server resolves it as one. A space, or moving
  * the caret out of the handle, closes it; with no member matching it says so,
  * as web's does.
+ *
+ * **Frapp is in that list for a member with Ask** (`ask`, #4713), last on a
+ * bare `@` and first once its name is being typed, with the crest and "Only
+ * you see the answer". A message that names `@Frapp` is a question for Frapp
+ * and is never posted (`components/ask/ask-in-channel.tsx`); the screen
+ * decides that on Send, and while the draft names it the send button is
+ * called "Ask Frapp" and the screen says above the composer that only the
+ * member will see it.
  *
  * This is a plain `TextInput`, deliberately. `BottomSheetTextInput` is mandatory
  * only *inside* a gorhom sheet (`spec/ui/mobile/patterns.md` § Bottom sheets);
@@ -173,6 +183,12 @@ export interface ChatComposerProps {
    * member or nobody even if the roster changes before it lands.
    */
   onPickMember?: (pick: MentionPick) => void;
+  /**
+   * A member with Ask, in a composer that can ask from where it is (#4713):
+   * `@` offers Frapp. `naming` is true while the draft names `@Frapp`, so
+   * Send will ask instead of posting. Null or absent for everyone else.
+   */
+  ask?: { naming: boolean } | null;
 }
 
 /** A role as the picker offers it: a subset of `MentionRoleDto`. */
@@ -184,7 +200,7 @@ export interface MentionRoleRow {
   kind?: string;
 }
 
-type PickerEntry = MentionPickerEntry<MentionCandidate, MentionRoleRow>;
+type PickerEntry = MentionPickerRow<MentionCandidate, MentionRoleRow>;
 
 export function ChatComposer({
   value,
@@ -206,6 +222,7 @@ export function ChatComposer({
   avatarTintFor,
   mentionRoles,
   onPickMember,
+  ask = null,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -225,6 +242,7 @@ export function ChatComposer({
     onChangeText,
     mentionCandidates,
     mentionRoles,
+    ask !== null,
   );
   const sendClear = useClearedOnSend(inputRef, value);
 
@@ -426,7 +444,16 @@ export function ChatComposer({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
-            context?.kind === "edit" ? "Save edit" : "Send message"
+            context?.kind === "edit"
+              ? "Save edit"
+              : ask?.naming
+                ? ASK_COPY.name
+                : "Send message"
+          }
+          accessibilityHint={
+            ask?.naming && context?.kind !== "edit"
+              ? ASK_COPY.only_you_hint
+              : undefined
           }
           accessibilityState={{ disabled: !isSendable }}
           disabled={!isSendable}
@@ -573,6 +600,8 @@ function useMentionPicker(
   onChangeText: (next: string) => void,
   candidates: readonly MentionCandidate[] | undefined,
   roles: readonly MentionRoleRow[] | undefined,
+  /** Whether Frapp is offered (#4713). */
+  ask: boolean,
 ) {
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState<number | null>(null);
@@ -617,7 +646,7 @@ function useMentionPicker(
   // A filter over one chapter's roster, cheap enough to run every render.
   const suggestions: PickerEntry[] =
     active && candidates
-      ? mentionPickerEntries(candidates, roles ?? [], active.query)
+      ? mentionPickerRows(candidates, roles ?? [], active.query, { ask })
       : [];
 
   const pick = (label: string) => {
@@ -682,6 +711,7 @@ function MentionPicker({
   onPick: (entry: PickerEntry) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { accent } = useChapterBranding();
   if (suggestions.length === 0) {
     return (
       <View style={styles.mentionList}>
@@ -696,6 +726,30 @@ function MentionPicker({
       style={[styles.mentionList, styles.mentionListScroll]}
     >
       {suggestions.map((entry) => {
+        if (entry.kind === "ask") {
+          return (
+            <Pressable
+              key="ask-frapp"
+              accessibilityRole="button"
+              accessibilityLabel={`${ASK_COPY.name}. ${ASK_COPY.mention_hint}`}
+              onPress={() => onPick(entry)}
+              style={({ pressed }) => [
+                styles.mentionRow,
+                pressed ? styles.mentionRowPressed : null,
+              ]}
+            >
+              {/* The crest in the chapter's colour, as the Ask Frapp bar
+                  draws it (`ask-bar.tsx`). */}
+              <View style={styles.mentionAvatar} testID="mention-ask-glyph">
+                <FrappCrest height={MENTION_ROLE_GLYPH_SIZE} color={accent} />
+              </View>
+              <Text numberOfLines={1} style={styles.mentionName}>
+                {entry.label}
+              </Text>
+              <Text style={styles.mentionKind}>{ASK_COPY.mention_hint}</Text>
+            </Pressable>
+          );
+        }
         const name =
           entry.kind === "member" ? entry.member.display_name : entry.role.name;
         return (

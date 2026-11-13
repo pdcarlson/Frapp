@@ -7,6 +7,7 @@ import { createFrappClient } from "@repo/api-sdk";
 import {
   aiAvailableFrom,
   aiConsentKey,
+  askAccessFrom,
   chapterAiNeverSet,
   isFirstAiReadInFlight,
   shouldMeetFrappAi,
@@ -333,5 +334,51 @@ describe("isFirstAiReadInFlight (#4504)", () => {
     expect(isFirstAiReadInFlight({ ...read(0), isPending: false })).toBe(
       false,
     );
+  });
+});
+
+describe("askAccessFrom: whether a member has Ask, or it is not known yet (#4713)", () => {
+  const known = {
+    available: true as boolean | undefined,
+    ask: true as boolean | undefined,
+    permissions: ["ai:use"] as readonly string[] | undefined,
+  };
+
+  it("is yes only with all three reads in and saying so", () => {
+    expect(askAccessFrom(known)).toBe("yes");
+    expect(askAccessFrom({ ...known, permissions: ["*"] })).toBe("yes");
+  });
+
+  it("is no as soon as any one read rules it out, whatever the others are", () => {
+    expect(askAccessFrom({ ...known, available: false })).toBe("no");
+    expect(askAccessFrom({ ...known, ask: false })).toBe("no");
+    expect(askAccessFrom({ ...known, permissions: ["chat:send"] })).toBe("no");
+    expect(askAccessFrom({ ...known, permissions: [] })).toBe("no");
+    // The usual member: no `ai:use`, and the AI reads still in flight. Their
+    // `@Frapp` is ordinary text and must not be held.
+    expect(
+      askAccessFrom({
+        available: undefined,
+        ask: undefined,
+        permissions: ["chat:send"],
+      }),
+    ).toBe("no");
+    // The server has no AI: the switches are never read.
+    expect(
+      askAccessFrom({ available: false, ask: undefined, permissions: undefined }),
+    ).toBe("no");
+  });
+
+  it("is unknown while a read it rests on has no answer, in flight or failed", () => {
+    expect(askAccessFrom({ ...known, available: undefined })).toBe("unknown");
+    expect(askAccessFrom({ ...known, ask: undefined })).toBe("unknown");
+    expect(askAccessFrom({ ...known, permissions: undefined })).toBe("unknown");
+    expect(
+      askAccessFrom({
+        available: undefined,
+        ask: undefined,
+        permissions: undefined,
+      }),
+    ).toBe("unknown");
   });
 });

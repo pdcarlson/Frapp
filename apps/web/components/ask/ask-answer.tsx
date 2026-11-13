@@ -101,80 +101,115 @@ export function AskTurn({
       <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2 text-sm font-normal text-primary-foreground">
         {exchange.question}
       </h3>
-      <div aria-live="polite" className="space-y-3">
-        {exchange.phase === "working" ? (
-          <>
-            {exchange.preview ? (
-              <p className="whitespace-pre-wrap text-sm text-foreground">
-                {exchange.preview}
-              </p>
-            ) : null}
-            {exchange.step ? (
-              <p className="text-caption text-muted-foreground">
-                {askStepLine(exchange.step, exchange.stepDetail)}
-              </p>
-            ) : null}
-          </>
-        ) : null}
-        {exchange.phase === "failed" && exchange.failure ? (
-          <div className="space-y-2">
-            <p className="text-sm text-foreground">
-              {exchange.failure.message}
-            </p>
-            {exchange.failure.retryable ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={busy}
-                onClick={onRetry}
-              >
-                {ASK_COPY.try_again}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-        {exchange.phase === "done" && exchange.proposal ? (
-          <AskProposal
-            proposal={exchange.proposal}
-            resolution={exchange.resolution}
-            onProposal={onProposal}
-            onResolved={onResolved}
-          />
-        ) : null}
-        {exchange.phase === "done" && exchange.answer ? (
-          <>
-            <AskAnswerBody
-              answer={exchange.answer}
-              readLine={askReadLine(exchange.read)}
-              busy={busy}
-              onAnswerConsent={onAnswerConsent}
-              onFollowMessage={onFollowMessage}
-            />
-            {/* Anything Ask wrote, or chose not to, can be reported. An
-                answer that was never attempted has nothing AI-made in it. */}
-            {exchange.answer.status !== "unavailable" && exchange.askId ? (
-              <div className="-ml-2 flex items-center">
-                {exchange.answer.status === "answered" &&
-                exchange.answer.text ? (
-                  <CopyAnswer text={exchange.answer.text} />
-                ) : null}
-                <ReportAiButton
-                  key={exchange.askId}
-                  iconOnly
-                  className={QUIET_ACTION}
-                  target={{
-                    subject: "ask_answer",
-                    subjectId: exchange.askId,
-                    receipt: exchange.answer.report_receipt ?? null,
-                  }}
-                />
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+      <AskReply
+        exchange={exchange}
+        busy={busy}
+        onFollowMessage={onFollowMessage}
+        onRetry={onRetry}
+        onAnswerConsent={onAnswerConsent}
+        onProposal={onProposal}
+        onResolved={onResolved}
+      />
     </article>
+  );
+}
+
+/**
+ * What Frapp came back with for one turn, without the member's words above
+ * it: the step it is on, then the answer with its sources and its quiet row,
+ * or the card, or the failure. `AskTurn` draws it under the question's
+ * bubble; a channel draws it under Frapp's name for a turn asked there with
+ * `@Frapp` (`ask-in-channel.tsx`, #4713), so an answer reads the same in
+ * both places.
+ */
+export function AskReply({
+  exchange,
+  busy = false,
+  onFollowMessage,
+  onRetry,
+  onAnswerConsent,
+  onProposal,
+  onResolved,
+}: {
+  exchange: AskExchange;
+  busy?: boolean;
+  onFollowMessage?: () => void;
+  onRetry: () => void;
+  onAnswerConsent: () => void;
+  onProposal: (proposal: ActResponse) => void;
+  onResolved: (resolution: AskProposalResolution) => void;
+}) {
+  return (
+    <div aria-live="polite" className="space-y-3">
+      {exchange.phase === "working" ? (
+        <>
+          {exchange.preview ? (
+            <p className="whitespace-pre-wrap text-sm text-foreground">
+              {exchange.preview}
+            </p>
+          ) : null}
+          {exchange.step ? (
+            <p className="text-caption text-muted-foreground">
+              {askStepLine(exchange.step, exchange.stepDetail)}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+      {exchange.phase === "failed" && exchange.failure ? (
+        <div className="space-y-2">
+          <p className="text-sm text-foreground">{exchange.failure.message}</p>
+          {exchange.failure.retryable ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={onRetry}
+            >
+              {ASK_COPY.try_again}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {exchange.phase === "done" && exchange.proposal ? (
+        <AskProposal
+          proposal={exchange.proposal}
+          resolution={exchange.resolution}
+          onProposal={onProposal}
+          onResolved={onResolved}
+        />
+      ) : null}
+      {exchange.phase === "done" && exchange.answer ? (
+        <>
+          <AskAnswerBody
+            answer={exchange.answer}
+            readLine={askReadLine(exchange.read)}
+            busy={busy}
+            onAnswerConsent={onAnswerConsent}
+            onFollowMessage={onFollowMessage}
+          />
+          {/* Anything Ask wrote, or chose not to, can be reported. An
+                answer that was never attempted has nothing AI-made in it. */}
+          {exchange.answer.status !== "unavailable" && exchange.askId ? (
+            <div className="-ml-2 flex items-center">
+              {exchange.answer.status === "answered" && exchange.answer.text ? (
+                <CopyAnswer text={exchange.answer.text} />
+              ) : null}
+              <ReportAiButton
+                key={exchange.askId}
+                iconOnly
+                className={QUIET_ACTION}
+                target={{
+                  subject: "ask_answer",
+                  subjectId: exchange.askId,
+                  receipt: exchange.answer.report_receipt ?? null,
+                }}
+              />
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
   );
 }
 

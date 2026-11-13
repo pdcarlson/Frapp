@@ -59,6 +59,7 @@ import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
+import type { KeptTargets } from "@/lib/ask/kept-targets";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
@@ -113,13 +114,8 @@ const RESULT_LINKS: Record<string, ActLink> = {
   events: { href: "/events", label: ACT_COPY.open_events },
 };
 
-/**
- * The members an officer left on each points card, by proposal. The sheet
- * holds it, not the card: the card unmounts when the sheet closes, and a
- * list that quietly went back to the first one would give points to someone
- * the officer had taken off.
- */
-export type KeptTargets = Readonly<Record<string, readonly string[]>>;
+/** The lists kept on points cards (`lib/ask/kept-targets.tsx`). */
+export type { KeptTargets };
 
 type Reporting = ReturnType<typeof useAiReport>;
 

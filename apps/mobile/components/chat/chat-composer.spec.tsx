@@ -26,6 +26,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 import { FrappThemeProvider } from "@/lib/theme";
+import { FrappCrest } from "@/components/frapp-crest";
 import { ChatComposer, type ChatComposerProps } from "./chat-composer";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 
@@ -599,6 +600,62 @@ describe("ChatComposer @-mention picker", () => {
     const { tree, props } = typed("@sa how are you", 3);
     act(() => byLabel(tree, "Mention Sam (VP)")!.props.onPress());
     expect(props.onChangeText).toHaveBeenCalledWith("@SamVP how are you");
+  });
+
+  describe("Frapp's own row (#4713)", () => {
+    const FRAPP = "Ask Frapp. Only you see the answer";
+    const ask = { naming: false };
+
+    it("is not offered to a member without Ask", () => {
+      expect(byLabel(typed("@").tree, FRAPP)).toBeUndefined();
+      expect(byLabel(typed("@frapp").tree, FRAPP)).toBeUndefined();
+    });
+
+    it("is last on a bare @, after the people the member is more likely to mean", () => {
+      const { tree } = typed("@", 1, { ask });
+      const labels = tree.root
+        .findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            typeof node.props.accessibilityLabel === "string" &&
+            (node.props.accessibilityLabel.startsWith("Mention ") ||
+              node.props.accessibilityLabel === FRAPP),
+        )
+        .map((node) => node.props.accessibilityLabel as string);
+      expect(labels).toEqual([
+        "Mention Paul Carlson",
+        "Mention Pat O'Brien",
+        "Mention Sam (VP)",
+        FRAPP,
+      ]);
+    });
+
+    it("draws the crest in the chapter's colour and writes @Frapp when picked", () => {
+      const { tree, props } = typed("@fr", 3, { ask });
+      const row = byLabel(tree, FRAPP)!;
+      const glyph = row.find(
+        (node) => node.props.testID === "mention-ask-glyph",
+      );
+      expect(glyph.findByType(FrappCrest).props.color).toBe("#CB9FFF");
+      act(() => row.props.onPress());
+      expect(props.onChangeText).toHaveBeenCalledWith("@Frapp ");
+    });
+
+    it("calls Send what it will do while the draft names Frapp", () => {
+      const naming = renderComposer({
+        value: "@Frapp when is formal?",
+        ask: { naming: true },
+      }).tree;
+      const send = byLabel(naming, "Ask Frapp")!;
+      expect(send.props.accessibilityHint).toBe(
+        "Only you will see this question and Frapp's answer.",
+      );
+      expect(byLabel(naming, "Send message")).toBeUndefined();
+
+      const plain = renderComposer({ value: "when is formal?", ask }).tree;
+      expect(byLabel(plain, "Send message")).toBeDefined();
+      expect(byLabel(plain, "Ask Frapp")).toBeUndefined();
+    });
   });
 });
 

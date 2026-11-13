@@ -338,6 +338,14 @@ function build(model: ILanguageModel, captured: Captured) {
     diagnostics,
     // The opening suggestions call no model and store nothing.
     {} as never,
+    // The door count is one more thing sent to PostHog, so it is read for
+    // leaks with the rest.
+    {
+      track: (...args: unknown[]) => {
+        captured.analytics.push(args);
+        return Promise.resolve();
+      },
+    } as never,
   );
 }
 
@@ -407,6 +415,7 @@ async function askThrough(model: ILanguageModel) {
       'America/New_York',
       { question: QUESTION },
       response,
+      { headers: {} },
     );
   } finally {
     jest.useRealTimers();

@@ -7,6 +7,7 @@ import {
   HttpCode,
   Logger,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -36,6 +37,7 @@ import { AskDiagnosticsService } from '../../application/services/ask/ask-diagno
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
 import { AskService } from '../../application/services/ask/ask.service';
+import { AnalyticsService } from '../../application/services/analytics.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   CurrentChapterId,
@@ -56,12 +58,23 @@ import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import type { MemberContext } from '../types/request-context.types';
+import { requestApp, requestAppVersion } from '../http/request-app';
+import type {
+  MemberContext,
+  RequestContext,
+} from '../types/request-context.types';
 
 const AI_OFF = {
   description: 'AI is off on this server (`ai.not_available`).',
 };
 const KEEPALIVE_MS = 15_000;
+
+/**
+ * The PostHog event one question sends (#4713,
+ * `spec/behavior/observability.md` § AI question events): which door it came
+ * through and whether it followed an earlier turn, never a word of it.
+ */
+export const ASK_QUESTION_EVENT = 'ai-question-asked';
 
 /**
  * Ask Frapp (#450, `spec/behavior/ai.md`): a member's question, answered
@@ -89,6 +102,7 @@ export class AskController {
     private readonly conversation: AskConversationService,
     private readonly diagnostics: AskDiagnosticsService,
     private readonly suggestions: AskSuggestionsService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   @Get()
@@ -163,9 +177,25 @@ export class AskController {
     @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
     @Body() dto: AskRequestDto,
     @Res() response: Response,
+    @Req() request: Pick<RequestContext, 'headers'>,
   ): Promise<void> {
     // Before any header is sent, so these arrive as ordinary errors.
     await this.askService.assertMayAsk(chapterId, userId);
+
+    // A question the member was allowed to ask, counted by its door. Not a
+    // feature event: Ask belongs to no module. Never awaited and never in
+    // the answer's way.
+    this.analytics
+      .track(ASK_QUESTION_EVENT, userId, {
+        chapterId,
+        properties: {
+          door: dto.door ?? 'ask',
+          is_follow_up: (dto.history?.length ?? 0) > 0,
+        },
+        app: requestApp(request),
+        appVersion: requestAppVersion(request),
+      })
+      .catch(() => undefined);
 
     const abort = new AbortController();
     // `close` also fires after a normal end; aborting then does nothing.
@@ -196,7 +226,12 @@ export class AskController {
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader
           : FALLBACK_TIME_ZONE,
-        savedNoticeShown: dto.saved_notice_shown === true,
+        // The notice is shown in Ask's own field and nowhere in a channel,
+        // so a question from a channel is never kept in the diagnostics
+        // window, whatever the request says: a channel's turn asked again
+        // from the Ask card would otherwise carry the card's flag (#4713).
+        savedNoticeShown:
+          dto.saved_notice_shown === true && dto.door !== 'chat_private',
         signal: abort.signal,
       })) {
         if (abort.signal.aborted) break;

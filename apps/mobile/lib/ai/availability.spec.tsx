@@ -98,11 +98,57 @@ describe("useAiSurfaces", () => {
     expect(read()).toEqual({
       available: false,
       ask: false,
+      askAccess: "no",
       catchUp: false,
       meetingNotes: false,
       ready: true,
     });
     expect(state.settingsEnabled).toBe(false);
+  });
+
+  it("says when it does not yet know whether the member has Ask (#4713)", () => {
+    // A composer holds a message naming `@Frapp` on `unknown`: posting a
+    // question meant for Frapp can't be taken back.
+    expect(read().askAccess).toBe("yes");
+
+    state.consent = { data: undefined, isError: false };
+    expect(read().askAccess).toBe("unknown");
+
+    // A failed read settles the entry points (`ready`), but it is not an
+    // answer to whether this member has Ask.
+    state.consent = { data: undefined, isError: true };
+    expect(read()).toMatchObject({ ready: true, askAccess: "unknown" });
+
+    state.consent = { data: CONSENT, isError: false };
+    state.settings = { data: undefined, isPending: true };
+    expect(read().askAccess).toBe("unknown");
+
+    state.settings = {
+      data: { ask: true, meeting_notes: true },
+      isPending: false,
+    };
+    state.permissions = { data: undefined, isPending: true };
+    expect(read().askAccess).toBe("unknown");
+  });
+
+  it("knows a member has no Ask as soon as one read rules it out", () => {
+    // The usual member holds no `ai:use`: their `@Frapp` is ordinary text
+    // from the moment their permissions are in, whatever the AI reads say.
+    state.consent = { data: undefined, isError: false };
+    state.settings = { data: undefined, isPending: true };
+    state.permissions = {
+      data: { permissions: ["chat:send"] },
+      isPending: false,
+    };
+    expect(read().askAccess).toBe("no");
+
+    state.consent = { data: CONSENT, isError: false };
+    state.permissions = { data: { permissions: ["ai:use"] }, isPending: false };
+    state.settings = {
+      data: { ask: false, meeting_notes: true },
+      isPending: false,
+    };
+    expect(read().askAccess).toBe("no");
   });
 
   it("offers nothing until the server has answered", () => {

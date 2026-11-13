@@ -24,6 +24,7 @@ import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { ActModule } from '../act/act.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { AiModule } from '../ai/ai.module';
 import { CorpusModule } from '../corpus/corpus.module';
@@ -66,6 +67,7 @@ import { TaskModule } from '../task/task.module';
     TaskModule,
     MeetingModule,
     ActModule,
+    AnalyticsModule,
   ],
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [

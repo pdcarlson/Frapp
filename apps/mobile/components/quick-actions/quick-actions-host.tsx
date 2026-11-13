@@ -11,7 +11,12 @@ import {
 import { AccessibilityInfo, AppState } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useAsk,
+  useDocumentFolders,
+  useEvents,
+} from "@repo/hooks";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import {
   UploadDocumentSheet,
@@ -198,12 +203,12 @@ export function useQuickActionsHost({
   const sheets = (
     <>
       {mounted.has("ask") ? (
-        <SheetBoundary
+        <AskSheetBoundary
           key={`ask-${chapterId ?? "none"}`}
           onError={() => dropSheet("ask")}
         >
           <AskSheet ref={askRef} />
-        </SheetBoundary>
+        </AskSheetBoundary>
       ) : null}
       {mounted.has("newEvent") ? (
         <SheetBoundary
@@ -289,6 +294,32 @@ export class SheetBoundary extends Component<
   render(): ReactNode {
     return this.state.failed ? null : this.props.children;
   }
+}
+
+/**
+ * The Ask sheet's boundary. The conversation is held above the sheet now
+ * (`lib/ask/ask-conversation.tsx`, #4713), so dropping the sheet no longer
+ * drops the turn that threw: without a new conversation the next open would
+ * draw the same turn and fail the same way.
+ */
+function AskSheetBoundary({
+  onError,
+  children,
+}: {
+  onError: () => void;
+  children: ReactNode;
+}) {
+  const { reset } = useAsk();
+  return (
+    <SheetBoundary
+      onError={() => {
+        reset();
+        onError();
+      }}
+    >
+      {children}
+    </SheetBoundary>
+  );
 }
 
 /** Upload needs the chapter's folders, read only once it is asked for. */

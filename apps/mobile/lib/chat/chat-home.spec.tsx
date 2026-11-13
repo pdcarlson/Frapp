@@ -6,7 +6,7 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { Alert } from "react-native";
+import { Alert, StyleSheet } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -364,8 +364,16 @@ import {
   resetChatLaunchForTests,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
-import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
-import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
+import {
+  ChannelListSkeleton,
+  ChannelRow,
+  UnreadBadge,
+} from "@/components/chat/channel-row";
+import {
+  ChannelFilterButton,
+  ChannelFilterMenu,
+  channelFilterMenuAnchor,
+} from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
@@ -556,7 +564,7 @@ function layout(tree: ReactTestRenderer): [string, string[]][] {
     return [
       [
         // Since #2877 the header is a fold control: the label, then a drawn
-        // disclosure glyph at the right edge (no typed chevron text).
+        // disclosure glyph (no typed chevron text).
         String(
           header.findAll((node) => (node.type as unknown) === "Text")[0]!.props
             .children,
@@ -1250,6 +1258,167 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     deleteMutateAsync.mockResolvedValue(undefined);
     await act(async () => button().props.onPress());
     expect(deleteMutateAsync).toHaveBeenCalledWith(general.id);
+  });
+
+  it("ends every heading with its +, the filter before it on the first, and the chevron beside the name (#4679)", () => {
+    const COMM = { id: "cat-comm", name: "Committees", display_order: 0 };
+    categoriesData.value = [COMM];
+    channelsData.value = [
+      general,
+      {
+        id: "c-phil",
+        name: "philanthropy",
+        type: "PUBLIC",
+        category_id: "cat-comm",
+      },
+    ];
+    // What a heading draws, in order: its name, the fold chevron, then each
+    // control by its label.
+    const drawn = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(StickyHeader)
+        .map((sticky) =>
+          sticky
+            .findAll(
+              (node) =>
+                node.type === DisclosureGlyph ||
+                ((node.type as unknown) === "Pressable" &&
+                  node.props.accessibilityRole === "button"),
+            )
+            .map((node) =>
+              node.type === DisclosureGlyph
+                ? "chevron"
+                : String(node.props.accessibilityLabel),
+            ),
+        );
+
+    // A member: the chevron, and the filter at the edge of the first heading.
+    const member = render();
+    expect(drawn(member)).toEqual([
+      ["chevron", "Filter channels"],
+      ["chevron"],
+    ]);
+    expect(member.root.findByType(ChannelFilterButton).props.atEdge).toBe(true);
+
+    // An officer: the + is last on both, so it runs in one column.
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    expect(drawn(officer)).toEqual([
+      ["chevron", "Filter channels", "New channel"],
+      ["chevron", "New channel in Committees"],
+    ]);
+    expect(officer.root.findByType(ChannelFilterButton).props.atEdge).toBe(
+      false,
+    );
+    const plusBoxes = pressablesLabelled(officer, "New channel")
+      .concat(pressablesLabelled(officer, "New channel in Committees"))
+      .map((plus) => {
+        let box = plus.parent!;
+        while ((box.type as unknown) !== "View") box = box.parent!;
+        return StyleSheet.flatten(box.props.style);
+      });
+    // The 18pt glyph's right edge on the gutter, out of its 44pt target.
+    expect(plusBoxes.map((style) => style.marginRight)).toEqual([-13, -13]);
+
+    // The name is only as wide as its text, so the chevron sits beside it.
+    const header = officer.root
+      .findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header")!;
+    const name = header.findAll(
+      (node) => (node.type as unknown) === "Text",
+    )[0]!;
+    expect(StyleSheet.flatten(name.props.style).flex).toBeUndefined();
+  });
+
+  it("keeps the filter at the edge of a first heading that has no + (#4679)", () => {
+    // Pinned comes first and never carries a +, even for an officer.
+    const social = { id: "c-social", name: "social", type: "PUBLIC" };
+    channelsData.value = [general, social];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      pinnedIds: new Set([social.id]),
+    };
+    permissionList.value = ["channels:manage"];
+    const tree = render();
+
+    expect(layout(tree).map(([name]) => name)).toEqual(["Pinned", "Channels"]);
+    const first = tree.root.findAllByType(StickyHeader)[0]!;
+    expect(first.findByType(ChannelFilterButton).props.atEdge).toBe(true);
+    expect(pressablesLabelled(tree, "New channel")).toHaveLength(1);
+  });
+
+  it("holds the filter's target inside the row only when a + follows it (#4679)", () => {
+    channelsData.value = [general];
+    const triggerStyle = (tree: ReactTestRenderer) =>
+      StyleSheet.flatten(
+        pressableLabelled(tree, "Filter channels").props.style({
+          pressed: false,
+        }),
+      );
+    // At the edge the 20pt glyph's right side sits on the gutter.
+    expect(triggerStyle(render()).marginRight).toBe(
+      -(signetDarkTokens.touch.minimum - 20) / 2,
+    );
+    permissionList.value = ["channels:manage"];
+    expect(triggerStyle(render()).marginRight).toBeUndefined();
+  });
+
+  it("opens the filter menu with its right edge under the glyph's (#4679)", () => {
+    // A 44pt trigger whose target ends 12pt past a 16pt gutter on a 402pt
+    // screen: the glyph's right edge is at 386, and so is the menu's (264
+    // wide).
+    expect(
+      channelFilterMenuAnchor(signetDarkTokens, {
+        x: 354,
+        y: 100,
+        width: 44,
+        height: 44,
+      }),
+    ).toEqual({ top: 144 + signetDarkTokens.spacing.xs, left: 386 - 264 });
+    // Never off the screen's left.
+    expect(
+      channelFilterMenuAnchor(signetDarkTokens, {
+        x: 100,
+        y: 0,
+        width: 44,
+        height: 44,
+      }).left,
+    ).toBe(signetDarkTokens.spacing.sm);
+  });
+
+  it("draws a folded heading as name, chevron, then its count at the right (#4679)", () => {
+    channelsData.value = [general];
+    unreadData.value = [
+      { channel_id: general.id, unread_count: 2, mention_count: 1 },
+    ];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      collapsed: new Set(["channels"]),
+    };
+    const header = render()
+      .root.findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header")!;
+    const order = header
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Text" ||
+          node.type === DisclosureGlyph ||
+          node.type === UnreadBadge,
+        { deep: false },
+      )
+      .map((node) =>
+        node.type === DisclosureGlyph
+          ? "chevron"
+          : node.type === UnreadBadge
+            ? "count"
+            : "name",
+      );
+    expect(order).toEqual(["name", "chevron", "count"]);
+    // Pushed to the heading's right, away from the chevron.
+    const badge = header.findByType(UnreadBadge);
+    let box = badge.parent!;
+    while ((box.type as unknown) !== "View") box = box.parent!;
+    expect(StyleSheet.flatten(box.props.style).marginLeft).toBe("auto");
   });
 
   it("puts a New channel + on section headings for officers only (#3838)", async () => {
@@ -2195,7 +2364,7 @@ describe("Chat home section headings draw a disclosure glyph", () => {
     ).toEqual(["right"]);
   });
 
-  it("keeps the filter button outside the fold control, at the end of the first heading's row", () => {
+  it("keeps the filter button outside the fold control, on the first heading's row", () => {
     const tree = render();
     const header = tree.root.find(
       (node) =>
