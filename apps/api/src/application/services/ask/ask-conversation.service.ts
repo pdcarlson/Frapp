@@ -114,6 +114,8 @@ export class AskConversationService {
       let next = answer.next();
       // `start` names the turn, so it goes out first whichever lane is ahead.
       let started = false;
+      // Whether the answer lane has said its first step.
+      let searching = false;
       for (;;) {
         if (!started) {
           const result = await next;
@@ -125,8 +127,8 @@ export class AskConversationService {
         }
         // The order settles a tie. The request lane is first: when it and
         // the answer lane have both settled by now, the card is what the turn
-        // is. "Working out a card" is last, so it is never said before a step
-        // the answer lane had already reached, and then replaced by it.
+        // is. "Working out a card" waits for the answer lane's first step,
+        // so it is never said and then replaced by "searching".
         const first = await Promise.race([
           ...(request === null
             ? []
@@ -136,7 +138,7 @@ export class AskConversationService {
                 ),
               ]),
           next.then((result) => ({ lane: 'answer', result }) as const),
-          ...(acting === null
+          ...(acting === null || !searching
             ? []
             : [acting.then(() => ({ lane: 'acting' }) as const)]),
         ]);
@@ -165,6 +167,7 @@ export class AskConversationService {
           if (outcome !== null) yield { type: 'act', outcome };
           return;
         }
+        searching = true;
         yield first.result.value;
         next = answer.next();
       }

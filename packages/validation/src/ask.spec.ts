@@ -291,6 +291,8 @@ describe("askStepLine", () => {
     expect(askStepLine("proposing")).toBe("Working out what that would change");
     expect(askStepLine("pondering")).toBe("Searching your chapter's sources");
     expect(askStepLine(null)).toBe("Searching your chapter's sources");
+    // An open string from the wire is never read off the object itself.
+    expect(askStepLine("constructor")).toBe("Searching your chapter's sources");
   });
 
   it("names the records being read and how many sources were found", () => {
@@ -327,9 +329,11 @@ describe("askStepLine", () => {
     );
   });
 
-  it("has words for every step", () => {
+  it("has words for every step, and the line under a turn draws them", () => {
     for (const step of ASK_STEPS) {
       expect(ASK_COPY.steps[step].length).toBeGreaterThan(0);
+      // A step added to the list is drawn without a change to `askStepLine`.
+      expect(askStepLine(step)).toBe(ASK_COPY.steps[step]);
     }
   });
 });

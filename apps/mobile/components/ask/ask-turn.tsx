@@ -101,9 +101,11 @@ export function AskTurn({
             {exchange.preview ? (
               <Text style={styles.answer}>{exchange.preview}</Text>
             ) : null}
-            <Text style={styles.note}>
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </Text>
+            {exchange.step ? (
+              <Text style={styles.note}>
+                {askStepLine(exchange.step, exchange.stepDetail)}
+              </Text>
+            ) : null}
           </>
         ) : null}
 

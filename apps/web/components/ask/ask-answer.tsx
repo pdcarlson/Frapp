@@ -87,9 +87,11 @@ export function AskTurn({
                 {exchange.preview}
               </p>
             ) : null}
-            <p className="text-caption text-muted-foreground">
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </p>
+            {exchange.step ? (
+              <p className="text-caption text-muted-foreground">
+                {askStepLine(exchange.step, exchange.stepDetail)}
+              </p>
+            ) : null}
           </>
         ) : null}
         {exchange.phase === "failed" && exchange.failure ? (

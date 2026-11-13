@@ -165,6 +165,12 @@ describe("AskTurn", () => {
     expect(screenText(proposing)).toContain(ASK_COPY.steps.proposing);
   });
 
+  it("says nothing under a turn that has not been sent yet", () => {
+    // The AI question is still open: no search has started.
+    const tree = render(exchange({ phase: "working", step: null }));
+    expect(screenText(tree)).not.toContain(ASK_COPY.steps.searching);
+  });
+
   it("falls back to the searching line for a step this build doesn't know", () => {
     const tree = render(exchange({ phase: "working", step: "pondering" }));
     expect(screenText(tree)).toContain(ASK_COPY.steps.searching);

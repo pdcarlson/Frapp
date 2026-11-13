@@ -211,6 +211,35 @@ describe('AskConversationService', () => {
       expect(shown(await run())).toEqual(['start', 'act']);
     });
 
+    it('say they are searching before they say a card is being worked out, however fast the words were read', async () => {
+      const { run } = build({
+        act: async (given) => {
+          given.onAction?.('create_task');
+          await pause();
+          return PROPOSED;
+        },
+      });
+      expect(shown(await run())).toEqual([
+        'start',
+        'searching',
+        'proposing',
+        'act',
+      ]);
+    });
+
+    it('never say a card is being worked out once the request lane has come back without one', async () => {
+      const { run } = build({
+        // Read as an action and given up on in the same breath.
+        act: async (given) => {
+          given.onAction?.('create_task');
+          return { status: 'no_action', available: ['create_task'] };
+        },
+      });
+      const steps = shown(await run());
+      expect(steps).not.toContain('proposing');
+      expect(steps.at(-1)).toBe('done');
+    });
+
     it('show the choice of event, and the card that asks for what was left unsaid', async () => {
       for (const outcome of [
         {

@@ -270,6 +270,12 @@ describe("AskTurn", () => {
     expect(screen.getByText(ASK_COPY.steps.proposing)).toBeInTheDocument();
   });
 
+  it("says nothing under a turn that has not been sent yet", () => {
+    // The AI question is still open: no search has started.
+    show(exchange({ phase: "working", step: null, answer: null }));
+    expect(screen.queryByText(ASK_COPY.steps.searching)).toBeNull();
+  });
+
   it("falls back to a step it knows for one it does not", () => {
     show(exchange({ phase: "working", step: "pondering", answer: null }));
     expect(screen.getByText(ASK_COPY.steps.searching)).toBeInTheDocument();

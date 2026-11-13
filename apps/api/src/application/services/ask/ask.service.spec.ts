@@ -305,6 +305,23 @@ describe('AskService', () => {
       });
     });
 
+    it('names only the reads it picked, and says so when the search itself found nothing', async () => {
+      const { service } = build({
+        // Two reads are offered, one is picked, and nothing is in the index.
+        tools: [tool(), tool({ name: 'events' })],
+        plan: { status: 'ok', value: { tools: ['events'] }, usage: USAGE },
+        passages: [],
+      });
+      const { events } = await run(service);
+      expect(steps(events)[1]).toEqual({
+        v: ASK_STREAM_VERSION,
+        type: 'status',
+        step: 'reading',
+        reads: ['events'],
+        found: 0,
+      });
+    });
+
     it('never says it is reading when the search found nothing and no read was picked', async () => {
       const { service } = build({ passages: [] });
       const { events } = await run(service);
@@ -371,6 +388,56 @@ describe('AskService', () => {
       expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
       expect(gateway.streamCited).not.toHaveBeenCalled();
       expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('ends with nothing run, written or kept for a member who left while it waited, even with nothing to read', async () => {
+      // No passage and no read picked: no step is sent after the wait, so
+      // the route has nowhere to stop this turn. It has to stop itself.
+      const { service, gateway, diagnostics } = build({ passages: [] });
+      const left = new AbortController();
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({
+          signal: left.signal,
+          savedNoticeShown: true,
+          mayGoOn: async () => {
+            left.abort();
+            return true;
+          },
+        }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(events.some((event) => event.type === 'done')).toBe(false);
+      expect(gateway.streamCited).not.toHaveBeenCalled();
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('asks no model to write for a member who left while it read', async () => {
+      const left = new AbortController();
+      const roster = tool({
+        run: jest.fn(async () => {
+          left.abort();
+          return { chapterId: CHAPTER, text: 'Dana Reyes: Treasurer' };
+        }),
+      });
+      const { service, gateway, diagnostics } = build({
+        tools: [roster],
+        plan: { status: 'ok', value: { tools: ['roster'] }, usage: USAGE },
+        passages: [passage()],
+      });
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({ signal: left.signal, savedNoticeShown: true }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(roster.run).toHaveBeenCalledTimes(1);
+      expect(gateway.streamCited).not.toHaveBeenCalled();
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+      expect(events.some((event) => event.type === 'done')).toBe(false);
     });
 
     it('goes on to the answer when it is told it may', async () => {

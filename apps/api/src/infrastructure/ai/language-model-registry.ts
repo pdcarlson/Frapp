@@ -50,7 +50,11 @@ export function buildLanguageModelRegistry(
   return { resolve: (provider) => adapters.get(provider) ?? null };
 }
 
-/** The longest a paced scripted reply waits, so a typo cannot hang a walk. */
+/**
+ * The longest a paced scripted reply waits before it starts, so a typo
+ * cannot hang a walk. A streamed reply then takes a twentieth of the pace
+ * for each word.
+ */
 const SCRIPTED_PACE_MAX_MS = 10_000;
 
 /**

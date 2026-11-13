@@ -166,7 +166,10 @@ export interface AskExchange {
   askId?: string | null;
   /** `working` until the server's `done`; `failed` when no answer arrived. */
   phase: "working" | "done" | "failed";
-  /** The step the server last named, while working. Open on the wire. */
+  /**
+   * The step the server last named, while working. Open on the wire. Null
+   * while a working turn has not been sent yet (the AI question is open).
+   */
   step: string | null;
   /** What that step said is being read, for the line under the turn. */
   stepDetail?: AskStepDetail | null;
@@ -407,7 +410,9 @@ export function useAsk(): {
           question: trimmed,
           ...(options?.suggested ? { suggested: true } : {}),
           phase: "working",
-          step: "searching",
+          // Nothing is being searched while the AI question is still on
+          // screen, so the turn says nothing until the request is sent.
+          step: options?.gate ? null : "searching",
           preview: "",
           answer: null,
           proposal: null,
@@ -438,6 +443,7 @@ export function useAsk(): {
             return;
           }
           if (abort.signal.aborted) return;
+          update((current) => ({ ...current, step: "searching" }));
         }
         const result = await client.POST("/v1/ai/ask", {
           body: {

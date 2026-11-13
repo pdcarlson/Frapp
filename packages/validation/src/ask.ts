@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatAiAnswerDate } from "./ai-copy";
+import { formatAiAnswerDate, joinNames } from "./ai-copy";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -514,7 +514,8 @@ export const ASK_COPY = {
   } satisfies Record<AskStep, string>,
   /**
    * What each live read is called in the reading line ("Reading the roster"),
-   * by the read's name. The API's tests hold every Ask tool to an entry here.
+   * by the read's name. `ask-tools.spec.ts` in the API holds every class in
+   * `ASK_TOOL_CLASSES`, the list the server offers from, to an entry here.
    */
   reads: {
     roster: "the roster",
@@ -564,10 +565,14 @@ export const ASK_COPY = {
   entry_label: "Ask a question about your chapter",
 } as const;
 
-/** "a", "a and b", "a, b and c". */
-function inWords(parts: readonly string[]): string {
-  if (parts.length <= 1) return parts.join("");
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+/** An own entry only: the key is an open string from the wire. */
+function ownWords(
+  words: Readonly<Record<string, string>>,
+  key: string,
+): string | null {
+  return Object.prototype.hasOwnProperty.call(words, key)
+    ? (words[key] as string)
+    : null;
 }
 
 /**
@@ -586,20 +591,19 @@ export function askStepLine(
 ): string {
   if (step === "reading") {
     const parts = (detail?.reads ?? [])
-      // An own entry only: a name is an open string from the wire.
-      .filter((name) =>
-        Object.prototype.hasOwnProperty.call(ASK_COPY.reads, name),
-      )
-      .map((name) => ASK_COPY.reads[name] as string);
+      .map((name) => ownWords(ASK_COPY.reads, name))
+      .filter((words): words is string => words !== null);
     const found = detail?.found ?? 0;
     if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
     return parts.length === 0
       ? ASK_COPY.steps.reading
-      : `Reading ${inWords(parts)}`;
+      : `Reading ${joinNames(parts)}`;
   }
-  if (step === "writing") return ASK_COPY.steps.writing;
-  if (step === "proposing") return ASK_COPY.steps.proposing;
-  return ASK_COPY.steps.searching;
+  // Every other step is its own words, so a step added to `ASK_COPY.steps`
+  // needs nothing here.
+  return (
+    (step ? ownWords(ASK_COPY.steps, step) : null) ?? ASK_COPY.steps.searching
+  );
 }
 
 /** A source kind's label, or null for a kind this build does not know. */

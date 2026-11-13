@@ -331,6 +331,10 @@ export class AskService {
     // Nothing past the search is run, kept or shown for a turn that became
     // a card.
     if (input.mayGoOn && !(await input.mayGoOn())) return;
+    // A member who closed the panel while that was worked out is not read
+    // for, written for or kept: not every turn sends a step here for the
+    // route to stop at.
+    if (input.signal?.aborted) return;
     if (retrieved.status !== 'ok') {
       yield this.done(
         emptyAnswer('unavailable', { reason: unavailableReason(retrieved) }),
@@ -362,6 +366,8 @@ export class AskService {
         this.consent,
       ),
     ]);
+    // Nor is anything written or kept for one who left while it read.
+    if (input.signal?.aborted) return;
     const leftOut = retrieved.leftOutMessages + allowed.withheldMessages;
     const passages = allowed.passages.map((passage) =>
       passageEntry(passage, input.timeZone),
