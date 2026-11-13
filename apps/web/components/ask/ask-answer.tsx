@@ -15,7 +15,7 @@ import {
   askLeftOutLine,
   askPostedSourceTitle,
   askReadLine,
-  askSourceMetaLine,
+  askSourceChip,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
@@ -479,10 +479,11 @@ function CitationMarker({
 }) {
   if (!source) return null;
   const href = askSourceHref(source);
-  const label = `Source ${number}: ${source.title}`;
+  const { name } = askSourceChip(source);
+  const label = `Source ${number}: ${name}`;
   // The words the server found in the source, on hover, so the member can
   // check the claim before opening anything.
-  const title = quote ? `${source.title}: "${quote}"` : source.title;
+  const title = quote ? `${name}: "${quote}"` : name;
   if (!href) {
     return (
       <span className={MARKER} aria-label={label} title={title}>
@@ -520,10 +521,9 @@ function SourceChip({
   onFollowMessage?: () => void;
 }) {
   const href = askSourceHref(source);
-  const meta = askSourceMetaLine(source);
-  const name = [`Source ${number}: ${source.title}`, meta]
-    .filter(Boolean)
-    .join(", ");
+  // A quoted message says whose it is and when (`askSourceChip`, #4904).
+  const { name: words, when, meta } = askSourceChip(source);
+  const name = [`Source ${number}: ${words}`, meta].filter(Boolean).join(", ");
   const chip =
     "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-1 pl-2.5 pr-3 text-caption pointer-coarse:h-11";
   const body = (
@@ -535,8 +535,11 @@ function SourceChip({
         {number}
       </span>
       <span className="min-w-0 truncate font-medium text-foreground">
-        {source.title}
+        {words}
       </span>
+      {when ? (
+        <span className="shrink-0 text-muted-foreground">{when}</span>
+      ) : null}
     </>
   );
   return (

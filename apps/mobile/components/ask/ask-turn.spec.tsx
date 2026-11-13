@@ -282,6 +282,34 @@ describe("AskTurn", () => {
     expect(props.onOpenSource).toHaveBeenLastCalledWith(BYLAWS);
   });
 
+  it("says whose message a chat source is and when, on its chip (#4904)", () => {
+    const chat: AskSource = {
+      id: "s1",
+      kind: "chat",
+      title: "#general",
+      detail: null,
+      date: "2026-11-09T18:00:00.000Z",
+      target: { type: "message", channel_id: "c1", message_id: "m1" },
+      author: "Sam Ortiz",
+    };
+    const tree = render(
+      exchange({ answer: answer({ sources: [chat, ROSTER] }) }),
+    );
+    const chip = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Source 1: Sam Ortiz in #general. ",
+        ),
+    );
+    expect(chip).toHaveLength(1);
+    const text = screenText(tree);
+    expect(text).toContain("Sam Ortiz in #general");
+    expect(text).toContain("November 9, 2026");
+    // The marker in the sentence says whose too.
+    expect(byLabel(tree, "Source 1: Sam Ortiz in #general").length).toBe(1);
+  });
+
   it("draws a source with no screen as a plain chip, not a dead button", () => {
     const tree = render(exchange({ answer: answer() }));
     const marker = byLabel(tree, "Source 2: Roster")[0];

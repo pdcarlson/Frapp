@@ -272,7 +272,13 @@ export function applyAskEvent(
         step: event.step,
         // Each step replaces the last one's detail, so "3 sources" never
         // outlives the step that counted them.
-        stepDetail: { reads: event.reads, found: event.found },
+        // `label` is the tool loop's own line for the read that just
+        // started ("Searching #general"); `askStepLine` shows it whole.
+        stepDetail: {
+          reads: event.reads,
+          found: event.found,
+          label: event.label,
+        },
         // What was read is also what the finished answer says it read.
         ...(event.step === "reading"
           ? { read: { reads: event.reads, found: event.found } }
