@@ -117,7 +117,12 @@ export class AskFromService {
     const channel = (await this.scope.openChannels(context)).find(
       (open) => open.id === id,
     );
-    const name = oneLine(channel?.name);
+    // A name is its channel's managers' to choose, so it loses the quotes
+    // that would let it end this line's own and start another.
+    const name = oneLine(channel?.name).replace(
+      /["'\u2018\u2019\u201c\u201d]/g,
+      '',
+    );
     if (!channel || !name) return null;
     return {
       source: {

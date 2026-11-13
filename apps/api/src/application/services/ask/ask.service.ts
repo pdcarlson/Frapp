@@ -84,6 +84,7 @@ import {
   askSearchQuery,
   earlierQuestions,
   looksLikeAskerSourceTitle,
+  titleStartsLike,
 } from './ask-prompt';
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
@@ -325,7 +326,7 @@ function agentSourceTitle(source: AgentSource, timeZone: string): string {
           .join(', ');
   // Only the server's own blocks say who is asking or where from.
   return looksLikeAskerSourceTitle(title) ||
-    title.trim().toLowerCase().startsWith(ASK_FROM_SOURCE_TITLE.toLowerCase())
+    titleStartsLike(title, ASK_FROM_SOURCE_TITLE)
     ? `Chapter source: ${title}`
     : title;
 }

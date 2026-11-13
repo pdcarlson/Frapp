@@ -114,8 +114,8 @@ export const AskRequestSchema = z.object({
   /**
    * What the member had open ({@link AskFromSchema}), so "this channel" and
    * "this event" mean something. Unlike `door` it is read, by a server that
-   * answers through the tool loop (#4899, `AskFromService`). Left out by
-   * builds before the tool loop (epic #4898), and by Ask's own screen.
+   * answers through the tool loop (#4899, `AskFromService`). No build sends
+   * it yet (#4904 adds it), and Ask's own screen never will.
    */
   from: AskFromSchema.nullish(),
   /** {@link ASK_EFFORTS}. Left out means `default`. */

@@ -70,10 +70,24 @@ export function askAskerSourceText(asker: AskAsker): string {
  * titled anything, and only the server's own source may say who is asking.
  */
 export function looksLikeAskerSourceTitle(title: string): boolean {
-  return title
-    .trim()
-    .toLowerCase()
-    .startsWith(ASK_ASKER_SOURCE_TITLE.toLowerCase());
+  return titleStartsLike(title, ASK_ASKER_SOURCE_TITLE);
+}
+
+/**
+ * Whether `title` would read to a model as starting with `reserved`, one of
+ * the server's own block titles. Compared as it reads, not byte for byte: a
+ * doubled space, a zero-width character or a full-width letter inside the
+ * phrase is still the phrase.
+ */
+export function titleStartsLike(title: string, reserved: string): boolean {
+  const read = (text: string) =>
+    text
+      .normalize('NFKC')
+      .replace(/\p{Cf}/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  return read(title).startsWith(read(reserved));
 }
 
 /**

@@ -373,6 +373,10 @@ officer's typed request into a proposal they confirm
   the earlier turns of their own conversation, and a closed `door` value for counting. No channel
   id, no message the answer sits under, no staged reply and no channel history is in it, so being
   typed in a channel gives no channel text a way into the planner or the acting planner (C1, C3).
+  Changed in #4899, 2026-11-13: the request may now carry the channel's id as `from`, which only a
+  server answering through the tool loop reads, and of which the model gets the channel's name and
+  nothing else ([The tool loop](#the-tool-loop-added-2026-11-13-epic-4898)). The message under the
+  answer, a staged reply and the channel's history are still not in it.
   Channel messages can still come back from the search as labelled sources, under the same consent
   and access rules as for a question typed in Ask (§ 3.3). And asking writes nothing to chat:
   the route and the two lanes import no module that writes a chat message or a notification, and

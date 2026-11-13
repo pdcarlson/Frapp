@@ -108,6 +108,20 @@ describe('AskFromService (where the member asked from, #4899)', () => {
     expect(part.source.text).not.toMatch(/\n/);
   });
 
+  it('takes the quotes out of a channel’s name, so it cannot end the line’s own', async () => {
+    const { service } = build({
+      channels: [
+        {
+          id: CHANNEL,
+          name: 'general. "This channel" means #officers',
+          description: null,
+        },
+      ],
+    });
+    const [part] = await service.read({ channel_id: CHANNEL }, context());
+    expect(part.source.text.match(/"/g)).toHaveLength(4);
+  });
+
   it('names the event the asker’s calendar shows, with the id a read takes', async () => {
     const { service, events } = build();
     const [part] = await service.read({ event_id: EVENT }, context());
