@@ -30,6 +30,7 @@ type Node = ReactTestRenderer["root"];
 /** Where each anchored control sits in the window, by its testID. */
 const RECTS: Record<string, [number, number, number, number]> = {
   "anchor-channels": [0, 220, 390, 600],
+  "anchor-messages": [300, 60, 36, 36],
   "anchor-quickActions": [314, 748, 62, 62],
   "anchor-you": [230, 754, 70, 50],
 };
@@ -51,6 +52,7 @@ function ChatHome({ withChannels }: { withChannels: boolean }) {
   return (
     <>
       {withChannels ? <Anchor stop="channels" /> : null}
+      <Anchor stop="messages" />
       <Anchor stop="quickActions" />
       <Anchor stop="you" />
     </>
@@ -132,7 +134,7 @@ describe("first-run tour", () => {
     expect(overlay(root)).toHaveLength(0);
   });
 
-  it("walks the three stops, then never shows again", async () => {
+  it("walks the four stops, then never shows again", async () => {
     await AsyncStorage.setItem(TOUR_DUE_STORAGE_KEY, "u-1");
     const { root } = await render();
 
@@ -140,14 +142,19 @@ describe("first-run tour", () => {
     expect(texts(root)).toContain(
       "You're in Phi Gamma Delta. Tap a channel to start talking.",
     );
-    expect(texts(root)).toContain("1 of 3");
+    expect(texts(root)).toContain("1 of 4");
 
+    // The Messages door, where the swipe is taught (#3774).
+    await press(buttonLabelled(root, "Next"));
+    expect(texts(root)).toContain(
+      "Direct messages are here. Swiping left opens them too.",
+    );
     await press(buttonLabelled(root, "Next"));
     expect(texts(root)).toContain(
       "Shortcuts live under the +. Hold it to pick your own.",
     );
     await press(buttonLabelled(root, "Next"));
-    expect(texts(root)).toContain("3 of 3");
+    expect(texts(root)).toContain("4 of 4");
     expect(buttonLabelled(root, "Done")).toBeDefined();
     await press(buttonLabelled(root, "Done"));
 
@@ -155,8 +162,8 @@ describe("first-run tour", () => {
     expect(await AsyncStorage.getItem(TOUR_DUE_STORAGE_KEY)).toBeNull();
     expect(track).toHaveBeenCalledWith("onboarding-tour-finished", {
       outcome: "done",
-      stop: 3,
-      stops: 3,
+      stop: 4,
+      stops: 4,
     });
   });
 
@@ -171,7 +178,7 @@ describe("first-run tour", () => {
     expect(track).toHaveBeenCalledWith("onboarding-tour-finished", {
       outcome: "skipped",
       stop: 1,
-      stops: 3,
+      stops: 4,
     });
   });
 
@@ -179,9 +186,9 @@ describe("first-run tour", () => {
     await AsyncStorage.setItem(TOUR_DUE_STORAGE_KEY, "u-1");
     const { root } = await render(false);
 
-    expect(texts(root)).toContain("1 of 2");
+    expect(texts(root)).toContain("1 of 3");
     expect(texts(root)).toContain(
-      "Shortcuts live under the +. Hold it to pick your own.",
+      "Direct messages are here. Swiping left opens them too.",
     );
   });
 
@@ -202,7 +209,7 @@ describe("first-run tour", () => {
 
     await press(buttonLabelled(root, "Next"));
     expect(back()).toBe(true);
-    expect(texts(root)).toContain("1 of 3");
+    expect(texts(root)).toContain("1 of 4");
     expect(back()).toBe(true);
     expect(overlay(root)).toHaveLength(0);
   });

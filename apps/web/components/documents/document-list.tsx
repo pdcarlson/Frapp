@@ -1,6 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { useDocumentPreviews } from "@repo/hooks";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +20,10 @@ import {
   DocumentTile,
   documentGridClassName,
 } from "@/components/documents/document-tile";
+import {
+  thumbnailKind,
+  type ThumbnailLink,
+} from "@/components/documents/document-thumbnail";
 import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
 import type { ChapterDocument } from "@/components/documents/document-types";
@@ -130,6 +135,25 @@ export function DocumentList({
   // List or Grid (#4175), kept per person on this browser; the toggle sits at
   // the toolbar's end, where Google Drive keeps its own.
   const [layout] = useListLayout("documents");
+  // The grid's preview links, signed in one batch for the files that preview
+  // (#4647), not one read per tile.
+  const previewIds =
+    layout === "grid" && listState === "ready"
+      ? visible
+          .filter(({ doc }) => thumbnailKind(doc) !== "none")
+          .map(({ doc }) => doc.id)
+      : [];
+  const previews = useDocumentPreviews(previewIds);
+  function previewLink(id: string): ThumbnailLink {
+    const url = previews.data?.get(id);
+    if (url) return { status: "ready", url };
+    if (previews.isError) return { status: "error" };
+    // Signed and absent: storage couldn't sign it.
+    if (previews.data && !previews.isPlaceholderData) {
+      return { status: "ready", url: null };
+    }
+    return { status: "loading" };
+  }
   return (
     // Its own container (#4022): the rows break on the list's width, which
     // the folder rail and, beside chat, the chat panel both take from.
@@ -375,36 +399,38 @@ export function DocumentList({
             {visible.map(({ doc, uploader }) => {
               // One set of handlers for both layouts: a tile's Star and Pin
               // keep focus and hold the file under a mark filter as a row's do.
-              const File = layout === "grid" ? DocumentTile : DocumentRow;
-              return (
-                <File
+              const props = {
+                doc,
+                uploader,
+                gate,
+                deleting: deletingIds.has(doc.id),
+                starred: marks.isStarred({ kind: "document", id: doc.id }),
+                pinBusy: marks.pinBusy,
+                onOpen,
+                onDelete,
+                onToggleStar: (row: ChapterDocument) => {
+                  onHoldRow?.(row.id);
+                  remember(`star:${row.id}`);
+                  marks.toggleStar({ kind: "document", id: row.id }, row.title);
+                },
+                onTogglePin: (row: ChapterDocument) => {
+                  onHoldRow?.(row.id);
+                  remember(`pin:${row.id}`);
+                  void marks.setPinned(
+                    { kind: "document", id: row.id },
+                    row.title,
+                    !row.pinned_at,
+                  );
+                },
+              };
+              return layout === "grid" ? (
+                <DocumentTile
                   key={doc.id}
-                  doc={doc}
-                  uploader={uploader}
-                  gate={gate}
-                  deleting={deletingIds.has(doc.id)}
-                  starred={marks.isStarred({ kind: "document", id: doc.id })}
-                  pinBusy={marks.pinBusy}
-                  onOpen={onOpen}
-                  onDelete={onDelete}
-                  onToggleStar={(row) => {
-                    onHoldRow?.(row.id);
-                    remember(`star:${row.id}`);
-                    marks.toggleStar(
-                      { kind: "document", id: row.id },
-                      row.title,
-                    );
-                  }}
-                  onTogglePin={(row) => {
-                    onHoldRow?.(row.id);
-                    remember(`pin:${row.id}`);
-                    void marks.setPinned(
-                      { kind: "document", id: row.id },
-                      row.title,
-                      !row.pinned_at,
-                    );
-                  }}
+                  {...props}
+                  previewLink={previewLink(doc.id)}
                 />
+              ) : (
+                <DocumentRow key={doc.id} {...props} />
               );
             })}
           </ul>

@@ -13,8 +13,11 @@ import { tint } from "@/lib/theme";
  * the web sidebar (`spec/ui/design-system/iconography.md` §6.2). They render at
  * 20px, §2's size for a list row's leading icon.
  *
- * Color is a prop, never baked. Every hub row paints its glyph in
- * `text.muted`: a row's icon is neutral, never the chapter accent
+ * Color is a prop, never baked. On the You tab a row paints its glyph in its
+ * place's fixed hue, inside a tile tinted with the same hue
+ * (`lib/more/destination-hue.ts`; foundations.md §6, "A place's hue",
+ * 2026-11-12), and in `text.disabled` when the row can't be opened. Anywhere
+ * else a row's icon is a neutral text step. Never the chapter accent
  * (foundations.md §6, "Where the accent goes", 2026-11-05).
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
@@ -36,7 +39,7 @@ const EMPHASIS_FILL_ALPHA = 0.16;
 const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
 
 export type MoreGlyphProps = {
-  /** The stroke hue, a neutral text step (`text.muted` or `text.foreground`). */
+  /** The stroke hue: a neutral text step, or a You row's place hue. */
   color: string;
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;

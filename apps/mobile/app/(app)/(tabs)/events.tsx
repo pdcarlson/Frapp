@@ -47,7 +47,7 @@ import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
 import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
 import { CalendarPlusGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import {
   selectAllEventRows,
   selectEventList,
@@ -352,7 +352,7 @@ export default function EventsScreen() {
       refresh={refresh}
       headerAction={
         chapterId ? (
-          <IconButton
+          <HeaderButton
             label="Subscribe to events in your calendar"
             onPress={() => {
               setSubscribeOpen(true);
@@ -360,7 +360,7 @@ export default function EventsScreen() {
             }}
           >
             <CalendarPlusGlyph color={tokens.color.text.foreground} />
-          </IconButton>
+          </HeaderButton>
         ) : null
       }
     >

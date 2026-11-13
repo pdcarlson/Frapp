@@ -829,19 +829,27 @@ Strings in `@repo/chat-core/density`.
 
 ### First-run tour (mobile)
 
-The three stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
+The four stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
 One line each, in a popover card beside the lit spot, with the count and the
 action under it. No title: the lit control is the subject.
 
 | Stop | Line |
 |---|---|
 | Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
+| The Messages door | `Direct messages are here. Swiping left opens them too.` (#4610 step 3) |
 | The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
 | The You tab | `Your profile, the directory and settings are under You.` (the More tab's line until #3839) |
 
-Under each line: the count, `1 of 3`, muted, and `Next` in the chapter accent
+Under each line: the count, `1 of 4`, muted, and `Next` in the chapter accent
 (`Done` on the last stop). `Skip` in the top corner, white on the dim, read
 out as `Skip the tour`.
+
+### Swipe hint (mobile)
+
+The label Chat home shows while it teaches the swipe to Messages
+([`../mobile/navigation.md`](../mobile/navigation.md) § Global entries, Swipe to
+Messages): `Swipe left for Messages`, after a drawn back chevron that points
+the way the finger goes. One line, no title, no button: any touch ends it.
 
 ### Push opt-in (mobile)
 

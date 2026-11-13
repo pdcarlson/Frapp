@@ -110,8 +110,9 @@ export function DocumentRow({
       on the recent list. The row keeps the neutral one even
       for a pinned file: its lit Pin control already says so,
       and a 16px accent glyph beside it would say it twice.
-      The grid's tile has no Pin beside its name, so its
-      preview glyph takes the accent (`document-tile.tsx`).
+      The grid's tile marks it in its controls the same way; its
+      glyph (the compact tile's, or a preview's that failed) takes
+      the accent too (`document-tile.tsx`).
     */}
       {/*
         The glyph and both lines are one button that opens the document

@@ -14,6 +14,12 @@ import {
   listRowHint,
   PressableRow,
 } from "@/components/list-section";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import {
+  LEAD_TILE_GLYPH,
+  LEAD_TILE_SIZE,
+  LeadTile,
+} from "@/components/lead-tile";
 import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
@@ -100,7 +106,7 @@ export function ActivityListRow({
           />
         )
       ) : null}
-      <Text style={styles.chevron}>›</Text>
+      <ForwardGlyph color={tokens.color.text.muted} />
     </>
   );
 
@@ -181,35 +187,24 @@ function ActivityRowLead({ row }: { row: ActivityRow }) {
   }
   if (row.dateBlock) {
     return (
-      <View
-        style={[styles.lead, styles.leadDate]}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        testID="activity-date-block"
-      >
-        <Text style={styles.leadMonth}>{row.dateBlock.month}</Text>
-        <Text style={styles.leadDay}>{row.dateBlock.day}</Text>
-      </View>
+      <LeadTile size="lead" testID="activity-date-block">
+        <View style={styles.leadDate}>
+          <Text style={styles.leadMonth}>{row.dateBlock.month}</Text>
+          <Text style={styles.leadDay}>{row.dateBlock.day}</Text>
+        </View>
+      </LeadTile>
     );
   }
   return (
-    <View
-      style={styles.lead}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      testID={`activity-glyph-${row.glyph}`}
-    >
+    <LeadTile size="lead" testID={`activity-glyph-${row.glyph}`}>
       <NavGlyph
         paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
         color={tokens.color.text.mutedForeground}
-        size={ACTIVITY_GLYPH_SIZE}
+        size={LEAD_TILE_GLYPH}
       />
-    </View>
+    </LeadTile>
   );
 }
-
-/** iconography.md §2's size for a list row's leading icon. */
-const ACTIVITY_GLYPH_SIZE = 20;
 
 /** The kind's glyph on a face's corner: web's 12px in a 20px disc. */
 const FACE_GLYPH_SIZE = 12;
@@ -343,8 +338,8 @@ export function ActivityRowSkeleton({
 
 const SKELETON_WIDTHS = ["58%", "42%", "66%", "48%"] as const;
 
-/** The lead tile: web's 40px (`h-10 w-10`). */
-const LEAD_SIZE = 40;
+/** The lead: web's 40px (`h-10 w-10`), the two-line row's `LeadTile`. */
+const LEAD_SIZE = LEAD_TILE_SIZE.lead;
 
 /** The ask's height: web's `h-7`, a badge's line rather than a button's. */
 const ASK_HEIGHT = 28;
@@ -386,22 +381,6 @@ function createActivityRowStyles(tokens: SignetTokens) {
       }).fontFamily,
       color: tokens.color.semantic.warning,
     },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
-    },
-    lead: {
-      width: LEAD_SIZE,
-      height: LEAD_SIZE,
-      flexShrink: 0,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: tokens.radius.chipLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-    },
     face: {
       width: LEAD_SIZE,
       height: LEAD_SIZE,
@@ -437,6 +416,7 @@ function createActivityRowStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
     },
     leadDate: {
+      alignItems: "center",
       gap: 2,
     },
     leadMonth: {

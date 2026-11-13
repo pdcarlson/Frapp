@@ -92,6 +92,14 @@ const BYLAWS = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
+const mockDocumentPreviews = vi.hoisted(() =>
+  vi.fn((ids: readonly string[]) => ({
+    data: new Map(ids.map((id) => [id, `https://signed/preview/${id}`])),
+    isError: false,
+    isPlaceholderData: false,
+  })),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -113,6 +121,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
   // The viewer's read of the signed links; never settles here, so an open
   // viewer shows its loading page. `document-viewer.spec.tsx` covers the rest.
+  // The grid's preview links (#4647); the tile's own spec covers drawing them.
+  useDocumentPreviews: (ids: readonly string[]) => mockDocumentPreviews(ids),
   useDocument: () => ({
     data: undefined,
     isError: false,
@@ -2388,5 +2398,81 @@ describe("DocumentsPage as a grid (#4175)", () => {
     expect(
       await screen.findByRole("dialog", { name: "Chapter bylaws" }),
     ).toBeInTheDocument();
+  });
+
+  // #4647: a photo or a PDF previews itself; anything else, or a file too
+  // large to fetch for a tile, has no preview panel and its glyph sits beside
+  // the title instead.
+  it("previews photos and PDFs, and gives other files no empty panel", () => {
+    documentsQuery.data = [
+      // No recorded size (filed before sizes were): no preview.
+      BYLAWS,
+      {
+        ...BYLAWS,
+        id: "doc-budget",
+        title: "Budget",
+        storage_path: "chap-1/budget.pdf",
+        content_type: "application/pdf",
+        byte_size: 90_000,
+      },
+      {
+        ...BYLAWS,
+        id: "doc-photo",
+        title: "Formal photo",
+        storage_path: "chap-1/formal.jpg",
+        content_type: "image/jpeg",
+        byte_size: 2_000_000,
+      },
+      {
+        ...BYLAWS,
+        id: "doc-word",
+        title: "Minutes draft",
+        storage_path: "chap-1/minutes.docx",
+        content_type:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        byte_size: 40_000,
+      },
+      {
+        ...BYLAWS,
+        id: "doc-huge",
+        title: "Scanned archive",
+        storage_path: "chap-1/archive.pdf",
+        content_type: "application/pdf",
+        byte_size: 40 * 1024 * 1024,
+      },
+    ];
+    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
+    render(<DocumentsPage />);
+
+    const panel = (title: RegExp) =>
+      screen
+        .getByRole("button", { name: title })
+        .querySelector("[data-thumbnail]")
+        ?.getAttribute("data-thumbnail") ?? null;
+    expect(panel(/^Budget/)).toBe("pdf");
+    expect(panel(/^Formal photo/)).toBe("image");
+    expect(panel(/^Chapter bylaws/)).toBeNull();
+    expect(panel(/^Minutes draft/)).toBeNull();
+    expect(panel(/^Scanned archive/)).toBeNull();
+    // One batch of links, for the files that preview and no others.
+    expect(mockDocumentPreviews).toHaveBeenLastCalledWith([
+      "doc-budget",
+      "doc-photo",
+    ]);
+    // The compact tile still names its type, beside who uploaded it.
+    expect(
+      screen.getByRole("button", { name: /^Minutes draft/ }),
+    ).toHaveTextContent(/Word/);
+  });
+
+  it("lays tiles out at a capped width rather than a fixed column count", () => {
+    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
+    render(<DocumentsPage />);
+    const list = screen
+      .getByRole("region", { name: /all documents/i })
+      .querySelector("ul");
+    expect(list?.className).toContain(
+      "grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))]",
+    );
   });
 });

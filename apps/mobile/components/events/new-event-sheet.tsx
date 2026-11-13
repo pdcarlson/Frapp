@@ -63,7 +63,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
 import { MoreOptionsRow } from "@/components/more-options-row";
-import { DisclosureGlyph } from "@/components/control-glyphs";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { RepeatOptions } from "@/components/events/repeat-options";
 import { roleOptionsFrom } from "@/lib/events/attendance-roles";
@@ -757,11 +757,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     <Text style={styles.optionValue} numberOfLines={1}>
                       {describeAttendance(draft.attendance, roleName)}
                     </Text>
-                    <DisclosureGlyph
-                      color={tokens.color.text.muted}
-                      size={16}
-                      direction="right"
-                    />
+                    <ForwardGlyph color={tokens.color.text.muted} />
                   </Pressable>
                   {setsRequirements ? (
                     <>
