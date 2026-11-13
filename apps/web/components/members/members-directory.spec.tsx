@@ -817,6 +817,53 @@ describe("Actives on a chapter with alumni", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers no role holding * to assign, President or legacy, but filters by it (#4164)", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-pres",
+          name: "President",
+          system_key: "PRESIDENT",
+          is_system: true,
+          permissions: ["*"],
+        },
+        // A pre-validation custom role: the API refuses it on bulk assign too.
+        {
+          id: "r-legacy",
+          name: "Old Admin",
+          is_system: false,
+          permissions: ["*", "events:create"],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "President" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Old Admin" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Assign role" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "Treasurer" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "President" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Old Admin" })).toBeNull();
+  });
+
   it("reads a bulk role as unpicked once that role is deleted, and can un-pick one", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<MembersDirectory />);

@@ -1,8 +1,8 @@
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { describe, expect, it } from "vitest";
 import {
   filterRoleOptions,
   orderRoleOptions,
-  parseRoleOptions,
   removesBaseAccess,
   rolesSaveFailedBody,
   toggleRole,
@@ -42,39 +42,9 @@ const ROLES = [
   { name: "No id" },
 ];
 
-describe("parseRoleOptions", () => {
-  const options = parseRoleOptions(ROLES);
-
-  it("drops rows without an id or name", () => {
-    expect(options.map((o) => o.id)).toEqual([
-      "r-pres",
-      "r-member",
-      "r-brothers",
-      "r-cabinet",
-      "r-rush",
-    ]);
-  });
-
-  it("locks wildcard roles and marks which roles open basic access", () => {
-    const byId = Object.fromEntries(options.map((o) => [o.id, o]));
-    expect(byId["r-pres"].locked).toBe(true);
-    expect(byId["r-member"].locked).toBe(false);
-    expect(byId["r-member"].grantsBase).toBe(true);
-    expect(byId["r-rush"].grantsBase).toBe(true);
-    expect(byId["r-brothers"].grantsBase).toBe(false);
-    expect(byId["r-brothers"].color).toBe("#F2994A");
-    expect(byId["r-cabinet"].color).toBeNull();
-  });
-
-  it("reads anything that isn't a list as no roles", () => {
-    expect(parseRoleOptions(undefined)).toEqual([]);
-    expect(parseRoleOptions({ error: "nope" })).toEqual([]);
-  });
-});
-
 describe("orderRoleOptions", () => {
   it("puts held roles first, then the rest, each by name ignoring case", () => {
-    const ordered = orderRoleOptions(parseRoleOptions(ROLES), [
+    const ordered = orderRoleOptions(parseChapterRoles(ROLES), [
       "r-member",
       "r-brothers",
     ]);
@@ -89,7 +59,7 @@ describe("orderRoleOptions", () => {
 });
 
 describe("filterRoleOptions", () => {
-  const options = parseRoleOptions(ROLES);
+  const options = parseChapterRoles(ROLES);
   it("matches any part of the name, ignoring case and outer spaces", () => {
     expect(filterRoleOptions(options, "  CAB ").map((o) => o.id)).toEqual([
       "r-cabinet",
@@ -117,7 +87,7 @@ describe("toggleRole", () => {
 });
 
 describe("base access", () => {
-  const options = parseRoleOptions(ROLES);
+  const options = parseChapterRoles(ROLES);
 
   it("counts roles carrying members:view, not Discord channel roles or the seeded flag", () => {
     const grants = (id: string) => options.find((o) => o.id === id)?.grantsBase;
@@ -126,7 +96,7 @@ describe("base access", () => {
     expect(grants("r-member")).toBe(true);
     expect(grants("r-rush")).toBe(true);
     // A seeded role whose members:view was edited away grants nothing.
-    const edited = parseRoleOptions([
+    const edited = parseChapterRoles([
       { id: "r-new", name: "New Member", is_system: true, permissions: [] },
     ]);
     expect(edited[0]?.grantsBase).toBe(false);
@@ -176,14 +146,14 @@ describe("the Everyone role (#4191)", () => {
 
   it("offers no row for it", () => {
     expect(
-      orderRoleOptions(parseRoleOptions(roles), ["r-everyone"]).map(
+      orderRoleOptions(parseChapterRoles(roles), ["r-everyone"]).map(
         (o) => o.id,
       ),
     ).toEqual(["r-new", "r-chair"]);
   });
 
   it("doesn't warn about access when the save leaves Everyone to hold it", () => {
-    const options = parseRoleOptions(roles);
+    const options = parseChapterRoles(roles);
     // Taking New Member away makes a pledge a plain member: no warning.
     expect(removesBaseAccess(["r-new"], [], options)).toBe(false);
   });
