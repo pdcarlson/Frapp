@@ -1,10 +1,10 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { TextInput } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
- * The member's Can't make it block on Event details: the chat card's button
+ * The member's Can't make it? link on Event details: the chat card's link
  * arrives with `excuse=1`, which opens the line on arrival (#4660). The rule
  * itself is `myExcuseView`'s, run for real here.
  */
@@ -62,5 +62,28 @@ describe("MyExcuseCard", () => {
 
   it("waits for Can't make it otherwise", () => {
     expect(render().root.findAllByType(TextInput)).toHaveLength(0);
+  });
+
+  it("offers it as a quiet underlined link that keeps a 44pt target (#4933)", () => {
+    const tree = render();
+    const link = tree.root
+      .findAllByType(Pressable)
+      .find(
+        (node) =>
+          node.props.accessibilityHint === "Send an excuse for this event.",
+      );
+    expect(link).toBeDefined();
+    expect(link!.props.accessibilityRole).toBe("button");
+    const box = StyleSheet.flatten(link!.props.style({ pressed: false }));
+    expect(box.minHeight).toBeGreaterThanOrEqual(44);
+    expect(box.minWidth).toBeGreaterThanOrEqual(44);
+    expect(box.borderWidth).toBeUndefined();
+    const label = link!.findByType(Text);
+    expect(label.props.children).toBe("Can't make it?");
+    expect(StyleSheet.flatten(label.props.style).textDecorationLine).toBe(
+      "underline",
+    );
+    act(() => link!.props.onPress());
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
   });
 });
