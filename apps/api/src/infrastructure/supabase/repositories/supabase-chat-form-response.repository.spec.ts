@@ -73,6 +73,15 @@ describe('SupabaseChatFormResponseRepository — member scope', () => {
     await expect(repo.findOwn(FORM, USER_B)).resolves.toBeNull();
   });
 
+  it('findAllForCreator reads every member’s answers to that one form only', async () => {
+    const { repo } = build();
+    const rows = await repo.findAllForCreator(FORM);
+    expect(rows.map((row) => row.user_id).sort()).toEqual(
+      [USER_A, USER_SHARED].sort(),
+    );
+    expect(rows.every((row) => row.message_id === FORM)).toBe(true);
+  });
+
   it('save passes the caller as the member whose answers it replaces', async () => {
     const saved = response(FORM, USER_SHARED, { room: 'double' });
     const { harness, repo } = build({

@@ -16,8 +16,8 @@ export class FormResponseRefusedError extends Error {
 /**
  * Members' answers to form cards in chat (#3926 step 3).
  *
- * Every method takes the member's id and filters on it: that filter is the
- * privacy boundary, since the table has RLS on and no policies and the API
+ * Every method but {@link IChatFormResponseRepository.findAllForCreator}
+ * takes the member's id and filters on it: that filter is the privacy boundary, since the table has RLS on and no policies and the API
  * reads it through the service role.
  */
 export interface IChatFormResponseRepository {
@@ -35,4 +35,11 @@ export interface IChatFormResponseRepository {
     userId: string,
     answers: Record<string, string | string[]>,
   ): Promise<ChatFormResponse>;
+  /**
+   * Every member's answers to one form, oldest first, for the form's creator
+   * (#3926 step 4). The one read that is not filtered on a member: the caller
+   * (`ChatFormService.getResponses`) must have checked that the reader is
+   * the card's sender before calling it.
+   */
+  findAllForCreator(messageId: string): Promise<ChatFormResponse[]>;
 }

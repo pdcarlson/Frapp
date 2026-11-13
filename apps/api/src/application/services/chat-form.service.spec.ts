@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ChatFormService } from './chat-form.service';
 import { FormResponseRefusedError } from '#domain/repositories/chat-form-response.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
@@ -31,13 +35,24 @@ describe('ChatFormService (#3926 step 3)', () => {
     updated_at: '2026-11-13T01:00:00Z',
   };
 
-  let repo: { findOwn: jest.Mock; save: jest.Mock };
-  let access: { assertMessageAccess: jest.Mock };
+  let repo: {
+    findOwn: jest.Mock;
+    findAllForCreator: jest.Mock;
+    save: jest.Mock;
+  };
+  let access: { assertMessageAccess: jest.Mock; listChannelMembers: jest.Mock };
   let service: ChatFormService;
 
   beforeEach(() => {
-    repo = { findOwn: jest.fn(), save: jest.fn().mockResolvedValue(row) };
-    access = { assertMessageAccess: jest.fn().mockResolvedValue(form) };
+    repo = {
+      findOwn: jest.fn(),
+      findAllForCreator: jest.fn().mockResolvedValue([]),
+      save: jest.fn().mockResolvedValue(row),
+    };
+    access = {
+      assertMessageAccess: jest.fn().mockResolvedValue(form),
+      listChannelMembers: jest.fn().mockResolvedValue([]),
+    };
     service = new ChatFormService(repo, access as never);
   });
 
@@ -177,4 +192,85 @@ describe('ChatFormService (#3926 step 3)', () => {
       await expect(result).rejects.toThrow(message);
     },
   );
+
+  describe('the creator’s responses view (#3926 step 4)', () => {
+    const mine = { ...form, sender_id: 'creator' } as ChatMessage;
+    const answer = (userId: string, at: string) => ({
+      message_id: 'msg-1',
+      user_id: userId,
+      answers: { name: userId },
+      created_at: at,
+      updated_at: at,
+    });
+
+    it('gives the creator every answer and who in the channel hasn’t answered', async () => {
+      access.assertMessageAccess.mockResolvedValue(mine);
+      repo.findAllForCreator.mockResolvedValue([
+        answer('ann', '2026-11-13T01:00:00Z'),
+        // Answered, then lost the channel: still a response.
+        answer('gone', '2026-11-13T02:00:00Z'),
+      ]);
+      access.listChannelMembers.mockResolvedValue([
+        { user_id: 'creator' },
+        { user_id: 'ann' },
+        { user_id: 'bo' },
+        { user_id: 'cy' },
+      ]);
+
+      const view = await service.getResponses('msg-1', 'ch-1', 'creator');
+
+      expect(view.responses.map((entry) => entry.user_id)).toEqual([
+        'ann',
+        'gone',
+      ]);
+      expect(view.responses[0]).toEqual({
+        user_id: 'ann',
+        answers: { name: 'ann' },
+        created_at: '2026-11-13T01:00:00Z',
+        updated_at: '2026-11-13T01:00:00Z',
+      });
+      expect(view.not_responded).toEqual(['bo', 'cy']);
+      expect(access.listChannelMembers).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'creator',
+      );
+    });
+
+    it('refuses anyone but the creator, reading no answers', async () => {
+      access.assertMessageAccess.mockResolvedValue(mine);
+      await expect(
+        service.getResponses('msg-1', 'ch-1', 'officer'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.findAllForCreator).not.toHaveBeenCalled();
+    });
+
+    it('refuses a creator who can no longer read the channel', async () => {
+      access.assertMessageAccess.mockRejectedValue(
+        new ForbiddenException('no'),
+      );
+      await expect(
+        service.getResponses('msg-1', 'ch-1', 'creator'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.findAllForCreator).not.toHaveBeenCalled();
+    });
+
+    it('refuses a message that is not a form, and a deleted one', async () => {
+      access.assertMessageAccess.mockResolvedValue({
+        ...mine,
+        kind: 'signup',
+      });
+      await expect(
+        service.getResponses('msg-1', 'ch-1', 'creator'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      access.assertMessageAccess.mockResolvedValue({
+        ...mine,
+        is_deleted: true,
+      });
+      await expect(
+        service.getResponses('msg-1', 'ch-1', 'creator'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.findAllForCreator).not.toHaveBeenCalled();
+    });
+  });
 });

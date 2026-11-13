@@ -38,6 +38,18 @@ export class SupabaseChatFormResponseRepository implements IChatFormResponseRepo
     return data;
   }
 
+  async findAllForCreator(messageId: string): Promise<ChatFormResponse[]> {
+    // Not member-filtered: the creator check in `ChatFormService` is the
+    // boundary for this one read.
+    const { data, error } = await this.supabase
+      .from('chat_form_responses')
+      .select('*')
+      .eq('message_id', messageId)
+      .order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async save(
     messageId: string,
     userId: string,
