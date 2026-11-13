@@ -378,6 +378,27 @@ describe("FormCard (#3926 step 3)", () => {
     expect(within(dialog).getByRole("radio", { name: "Single" })).toBeEnabled();
   });
 
+  it("unlocks the form on the answers it has when the open-time read fails", async () => {
+    const user = userEvent.setup();
+    // The card loads the viewer's saved answers, then the dialog's own
+    // open-time read of them fails (a brief network drop). The form must
+    // still become editable on the copy it has, so the member isn't frozen.
+    api.GET.mockResolvedValueOnce(SAVED);
+    api.GET.mockRejectedValue(new Error("offline"));
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+  });
+
   it("re-reads rather than writes the cache when a save lands after the dialog closed", async () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue({ data: { response: null } });
