@@ -222,4 +222,14 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
     );
     expect(body.startsWith(`"${'x'.repeat(59)}…"`)).toBe(true);
   });
+
+  it('never splits an emoji at the cut', () => {
+    const { body } = taskSubmittedCopy(
+      'Shawn Klein',
+      { ...task, completion_note: `${'x'.repeat(58)}👍 thanks for the help` },
+      { photoCount: 0, resubmitted: false },
+    );
+    expect(body.startsWith(`"${'x'.repeat(58)}👍…"`)).toBe(true);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(body)).toBe(false);
+  });
 });

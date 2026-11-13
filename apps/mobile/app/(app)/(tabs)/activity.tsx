@@ -217,36 +217,37 @@ export default function ActivityScreen() {
     });
 
   // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
-  // Opens that task's sheet once the read has it, whatever chip is picked,
-  // then clears the param so coming back to the tab doesn't open it again. A
-  // task no longer in the feed (confirmed from another device) opens nothing:
-  // the officer lands on the list, which is what is left to do. Opened during
-  // render, as the task board opens `?task=`, rather than from an effect.
+  // The read is taken again first, because the one in hand predates the
+  // submission whenever the app was warm, then that task's sheet opens,
+  // whatever chip is picked, and the param is dropped so coming back to the
+  // tab doesn't open it again. A task the read doesn't hold (confirmed from
+  // another device, or past the read's cap) opens nothing: the officer lands
+  // on the list.
   const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
   const reviewTaskId =
     typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
-  const [openedReview, setOpenedReview] = useState<string | null>(null);
-  if (reviewTaskId !== null && activity.data && openedReview !== reviewTaskId) {
-    setOpenedReview(reviewTaskId);
-    const row = findActivityTaskRow(activity.data, reviewTaskId, now);
-    if (row) {
-      setOpened(row);
-      setOpenedKey(row.key);
-    }
-  } else if (reviewTaskId === null && openedReview !== null) {
-    setOpenedReview(null);
-  }
-  // What `open` does besides showing the sheet, kept out of render: reading
-  // the row, and dropping the param.
+  const refetchActivity = activity.refetch;
   useEffect(() => {
-    if (openedReview === null) return;
-    if (opened?.unread && opened.kind === "task") {
-      if (opened.task.id === openedReview) markRead([opened.readRef]);
-    }
-    router.setParams({ review: undefined });
-    // Once per review opened; `opened` is the row that open set.
+    if (reviewTaskId === null) return;
+    let live = true;
+    void refetchActivity().then((result) => {
+      if (!live) return;
+      const row = result.data
+        ? findActivityTaskRow(result.data, reviewTaskId, new Date())
+        : null;
+      if (row) {
+        if (row.unread) markRead([row.readRef]);
+        setOpened(row);
+        setOpenedKey(row.key);
+      }
+      router.setParams({ review: undefined });
+    });
+    return () => {
+      live = false;
+    };
+    // Once per review linked; `markRead` is read when the read lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openedReview, router]);
+  }, [reviewTaskId, refetchActivity, router]);
 
   function renderBody() {
     if (activity.isPending) {

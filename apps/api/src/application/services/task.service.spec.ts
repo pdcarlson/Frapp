@@ -943,6 +943,34 @@ describe('TaskService', () => {
       );
     });
 
+    it('names the officer who sent it back', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      });
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+      });
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({ id: 'admin-1', display_name: 'Paul Carlson' }),
+      ]);
+
+      await service.rejectCompletion('task-1', 'ch-1', 'Corner is dusty', {
+        actorUserId: 'admin-1',
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Paul Carlson sent back: Test Task',
+          body: '"Corner is dusty"',
+        }),
+      );
+    });
+
     it.each([undefined, null, '', '   '])(
       'refuses a send-back with no reason (%p)',
       async (comment) => {
@@ -1555,13 +1583,17 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(completed);
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({ id: 'admin-1', display_name: 'Paul Carlson' }),
+      ]);
+
       await service.confirmCompletion('task-1', 'ch-1', 'admin-1');
 
       expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
         'user-1',
         'ch-1',
         expect.objectContaining({
-          title: 'An officer confirmed: Test Task',
+          title: 'Paul Carlson confirmed: Test Task',
           body: '+10 points',
           priority: 'NORMAL',
           category: 'tasks',
@@ -2210,6 +2242,44 @@ describe('TaskService', () => {
           'ch-1',
           expect.anything(),
           expect.objectContaining({ completion_note: 'Fixed the corner' }),
+        );
+      });
+
+      it("names the assignee, the proof and a resubmission's reply in the review push", async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({
+            proof_kind: 'photo',
+            sent_back_at: '2026-02-27T00:00:00.000Z',
+          }),
+        );
+        uploaded(PROOF);
+        mockTaskRepo.createPhotos.mockResolvedValue([
+          photo('ph-2', 'proof', PROOF),
+        ]);
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          proof_kind: 'photo',
+          status: TaskStatus.COMPLETED,
+          completion_note: 'Fixed the corner',
+        });
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockUserRepo.findByIds.mockResolvedValue([
+          userFixture({ id: 'user-1', display_name: 'Shawn Klein' }),
+        ]);
+
+        await markDone({
+          completion_note: 'Fixed the corner',
+          proof_photo_paths: [PROOF],
+        });
+
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'admin-1',
+          'ch-1',
+          expect.objectContaining({
+            title: 'Shawn Klein resubmitted: Test Task',
+            body: 'Replied "Fixed the corner" · 1 photo · Confirm to award 10 points',
+            threadId: 'tasks:review',
+          }),
         );
       });
 

@@ -372,6 +372,35 @@ function GroupPart({
 }
 
 /**
+ * Reads `?review=<taskId>` (a "submitted a task" notification, `deepLinkFor`
+ * in the bell) and hands it to the page once per link, then drops it from the
+ * address so a refresh doesn't reopen the panel. Clicking the same link again
+ * later opens it again. Its own component because `useSearchParams` needs a
+ * Suspense boundary of its own (as in `chat-page.tsx`), and the page around
+ * it must not wait on one.
+ */
+function ReviewParam({ open }: { open: (taskId: string) => Promise<void> }) {
+  const searchParams = useSearchParams();
+  const taskId = searchParams.get("review");
+  const handled = useRef<string | null>(null);
+  // The page hands a new `open` each render; the link is acted on once.
+  const latestOpen = useRef(open);
+  useEffect(() => {
+    latestOpen.current = open;
+  });
+  useEffect(() => {
+    if (!taskId) {
+      handled.current = null;
+      return;
+    }
+    if (handled.current === taskId) return;
+    handled.current = taskId;
+    void latestOpen.current(taskId);
+  }, [taskId]);
+  return null;
+}
+
+/**
  * `/activity`: what is waiting on the member and what they made, in one place
  * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
  *
@@ -384,29 +413,6 @@ function GroupPart({
  * stays open as it was, so the member sees the result of what they just did
  * rather than having the panel vanish under them.
  */
-/**
- * Reads `?review=<taskId>` and hands it to the page once, then drops it from
- * the address so a refresh or a return doesn't reopen the panel. Its own
- * component because `useSearchParams` needs a Suspense boundary of its own
- * (as in `chat-page.tsx`), and the page around it must not wait on one.
- * `open` answers false until the feed has loaded, which retries on the next
- * render.
- */
-function ReviewParam({ open }: { open: (taskId: string) => boolean }) {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-  const taskId = searchParams.get("review");
-  const handled = useRef<string | null>(null);
-  useEffect(() => {
-    if (!taskId || handled.current === taskId) return;
-    if (!open(taskId)) return;
-    handled.current = taskId;
-    router.replace(pathname, { scroll: false });
-  });
-  return null;
-}
-
 export function ActivityPage() {
   const activity = useActivity();
   // How the member is doing this semester, on top. Its own read: when it
@@ -450,11 +456,23 @@ export function ActivityPage() {
   // `/activity?review=<taskId>`: a "submitted a task" notification
   // (`deepLinkFor` in the bell). Opens that task's panel once the read has
   // it, whatever chip is picked; a task no longer in the feed opens nothing.
-  const openReview = (taskId: string) => {
-    if (!activity.data) return false;
-    const row = findActivityTaskRow(activity.data, taskId, now);
-    if (row) openFromList(row);
-    return true;
+  // The read is taken again first: the one in hand can predate the
+  // submission (the page was open, or its read cached). A task the fresh
+  // read doesn't hold (confirmed elsewhere, or past the read's cap) goes to
+  // the board, whose waiting column lists every completion.
+  const router = useRouter();
+  const pathname = usePathname();
+  const openReview = async (taskId: string) => {
+    const result = await activity.refetch();
+    const row = result.data
+      ? findActivityTaskRow(result.data, taskId, new Date())
+      : null;
+    if (row) {
+      openFromList(row);
+      router.replace(pathname, { scroll: false });
+    } else {
+      router.replace("/tasks");
+    }
   };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();

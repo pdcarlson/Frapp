@@ -88,9 +88,11 @@ const MINUTES: NotificationTarget = { pathname: "/minutes-details" };
  * Where a task push opens. "Submitted a task" (`view: "review"`) opens the
  * review: Activity, with that task's sheet up (`/activity?review=`), since
  * the board under Tasks lists only the viewer's own tasks and an officer's
- * review was never on it. Every other task push is about the reader's own
- * task (assigned, confirmed, sent back, overdue) and opens it on their board
- * (`/tasks?task=`, the Events calendar's way in).
+ * review was never on it. Every other task push opens the task on the board
+ * (`/tasks?task=`, the Events calendar's way in): the reader's own (assigned,
+ * confirmed, sent back, overdue), or one they assigned (Overdue also reaches
+ * the assigner), as the calendar opens it. A task the reader can't read
+ * opens nothing over the board.
  */
 function taskTarget(taskId: string, view: string | null): NotificationTarget {
   return view === "review"

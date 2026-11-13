@@ -109,7 +109,7 @@ type Notification = {
  * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
  * only ever forwards `channelId` through `chatDeepLink`.
  */
-function deepLinkFor(notification: Notification): string {
+export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {

@@ -29,7 +29,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 - **Mark all read.** One `POST /v1/notifications/read` with no body reads every unread row the member has in the active chapter, rows past the 50 a client lists included (#3929). Until then each client sent the per-row `PATCH` once per row.
 - **Reading its channel.** `POST /v1/channels/{id}/read` stamps the caller's receipt, then sets `read_at` on their unread rows in that chapter whose `data.target` is that chat channel and that were created at or before the receipt's instant. Hiding a 1:1 DM marks it read the same way and clears the same rows. A row created after the read is about a message it did not cover, so it stays unread. The clear is best-effort: if it fails, the receipt still succeeds and the row keeps its dot. Members mostly read chat by opening the channel rather than the row, so without this the inbox kept every chat push unread after the messages were seen.
 
-- **Opening the screen it points at** (#3929). A non-chat row is read once the member opens the screen its `data.target.screen` names, on either client: the client sends `POST /v1/notifications/read` with `screens` (for example `["events"]`), and the API reads the member's unread rows in the chapter that point at one of them. Web maps a dashboard page to its screens (`apps/web/lib/notifications/seen-screens.ts`): Events, Tasks and Meetings (all three read `ai_suggestions`, #4313 and #3930), Points, Billing, Service, Members, Chat Admin for `chat_reports` and Discord import for `discord_import`. Mobile maps its routes the same way (`apps/mobile/lib/notifications/seen-screens.ts`); `chat_reports` and `discord_import` have no mobile screen, so there they are read by a tap. The screen is the grain, not the item: opening Events reads every event notice, not only the one for the event on show. A client sends it only while the page or app is in front and its list shows an unread row for that screen, once per set of such rows, so the write budget is spent only when there is something to clear.
+- **Opening the screen it points at** (#3929). A non-chat row is read once the member opens the screen its `data.target.screen` names, on either client: the client sends `POST /v1/notifications/read` with `screens` (for example `["events"]`), and the API reads the member's unread rows in the chapter that point at one of them. Web maps a dashboard page to its screens (`apps/web/lib/notifications/seen-screens.ts`): Events, Tasks and Meetings (all three read `ai_suggestions`, #4313 and #3930), Activity (task rows: a submitted task's review opens there, 2026-11-13), Points, Billing, Service, Members, Chat Admin for `chat_reports` and Discord import for `discord_import`. Mobile maps its routes the same way (`apps/mobile/lib/notifications/seen-screens.ts`); `chat_reports` and `discord_import` have no mobile screen, so there they are read by a tap. The screen is the grain, not the item: opening Events reads every event notice, not only the one for the event on show. A client sends it only while the page or app is in front and its list shows an unread row for that screen, once per set of such rows, so the write budget is spent only when there is something to clear.
 
 Both writes stamp `read_at` with the instant the request began and leave a row created after it unread. `read_at` lives on the server, so a read on one device is a read on the other: the update fires the `notif:<users.id>` ping below, and both clients refetch on it.
 
@@ -184,6 +184,10 @@ itself rides on the bundle row as `mentioned: true`.
   Notification Center stacks one channel's pushes together. A DM or group DM is
   its own channel, so a DM stacks per person. Android has no equivalent through
   Expo's push service and keeps the system's own per-app bundling.
+- Every "submitted a task" push to the officer who assigned it carries
+  `threadId` `tasks:review` (2026-11-13), so a night of submissions is one
+  stack on the lock screen rather than a banner each. Nothing takes them out
+  of the tray on review yet.
 - Mobile takes a channel's chat pushes out of the tray once the server counts
   the channel as fully read (`GET /v1/channels/unread` reads `unread_count: 0`):
   `useBadgeSyncRuntime` passes those channels to `clearReadChatNotifications`,
@@ -411,10 +415,10 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
 | Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
 | Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
-| Task marked done (to its creator) | `Alex Smith submitted: Book the venue` | `1 photo · Confirm to award 10 points`: the photo count or `Link attached`, then the ask (`Check it and confirm` with no points). Opens the review itself (`target.view: 'review'`), and every one stacks in the iOS group `tasks:review`. |
+| Task marked done (to its creator) | `Alex Smith submitted: Book the venue` | `1 photo · Confirm to award 10 points`: their note quoted when they left one (`"Booked it"`, cut at 60 characters), the photo count or `Link attached`, then the ask (`Check it and confirm` with no points). Opens the review itself (`target.view: 'review'`), and every one stacks in the iOS group `tasks:review`. |
 | Task resubmitted after a send-back | `Alex Smith resubmitted: Book the venue` | `Replied "<their note>" · 2 photos · Confirm to award 10 points` |
 | Task done with nothing to sign off (no points, no proof, #4635) | `Alex Smith finished: Book the venue` | `Done · send it back if something's off` |
-| Task confirmed | `Paul Carlson confirmed: Book the venue` | `+10 points` |
+| Task confirmed | `Paul Carlson confirmed: Book the venue` | `+10 points`, or `Done` for a task with proof and no points |
 | Task sent back | `Paul Carlson sent back: Book the venue` | `"<officer's reason>"` |
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
 | Member joined | `Alex Smith joined` | `New member of the chapter` |

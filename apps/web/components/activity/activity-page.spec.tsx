@@ -586,23 +586,49 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
-  it("opens the task a review notification names, whatever chip is picked, once", () => {
+  it("re-reads before opening a review notification's task, under any chip, and again on a later click", async () => {
+    // The read in hand predates the submission; only the re-read holds it.
+    window.localStorage.setItem("frapp.activity.filter.me", "poll");
+    const stale = loaded({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll],
+      },
+    });
+    const refetch = vi.fn(() => Promise.resolve({ data: data() }));
+    mockActivity.mockReturnValue({ ...stale, refetch });
     mockSearch = new URLSearchParams("review=t1");
-    mockActivity.mockReturnValue(loaded());
-    render(<ActivityPage />);
+    const { rerender } = render(<ActivityPage />);
+    await act(async () => {});
 
+    expect(refetch).toHaveBeenCalledTimes(1);
     expect(screen.getByText("panel:Book the venue")).toBeInTheDocument();
     // Dropped from the address, so a refresh doesn't open it again.
     expect(mockReplace).toHaveBeenCalledWith("/activity", { scroll: false });
+
+    // The address drops it, then the same notification is clicked again.
+    mockSearch = new URLSearchParams();
+    rerender(<ActivityPage />);
+    mockSearch = new URLSearchParams("review=t1");
+    rerender(<ActivityPage />);
+    await act(async () => {});
+    expect(refetch).toHaveBeenCalledTimes(2);
     mockSearch = new URLSearchParams();
   });
 
-  it("opens nothing for a review the feed no longer has", () => {
+  it("sends a review the fresh read doesn't hold to the task board", async () => {
+    mockActivity.mockReturnValue({
+      ...loaded(),
+      refetch: vi.fn(() => Promise.resolve({ data: data() })),
+    });
     mockSearch = new URLSearchParams("review=gone");
-    mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
+    await act(async () => {});
 
     expect(screen.queryByText(/^panel:/)).not.toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith("/tasks");
     mockSearch = new URLSearchParams();
   });
 

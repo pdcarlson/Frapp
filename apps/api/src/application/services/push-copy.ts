@@ -247,10 +247,16 @@ export function taskSubmittedCopy(
       ? 'resubmitted'
       : 'submitted';
   const note = task.completion_note?.trim() || null;
+  // Cut by character, not UTF-16 unit, so the cut never splits an emoji
+  // (as `chat-push-preview.ts` cuts).
+  const chars = note ? Array.from(note) : [];
   const quoted = note
     ? `"${
-        note.length > SUBMITTED_REPLY_MAX
-          ? `${note.slice(0, SUBMITTED_REPLY_MAX - 1).trimEnd()}…`
+        chars.length > SUBMITTED_REPLY_MAX
+          ? `${chars
+              .slice(0, SUBMITTED_REPLY_MAX - 1)
+              .join('')
+              .trimEnd()}…`
           : note
       }"`
     : null;
