@@ -1173,31 +1173,9 @@ describe('ActivityService', () => {
       ]);
       expect(eventService.checkInNeedsCode).toHaveBeenCalledTimes(1);
       expect(eventService.checkInNeedsCode).toHaveBeenCalledWith(
-        'now',
-        CHAPTER,
+        expect.objectContaining({ id: 'now', chapter_id: CHAPTER }),
+        expect.any(Date),
       );
-    });
-
-    it('says the code is not needed when the screens cannot be read', async () => {
-      const { service, eventService } = build();
-      eventService.findByChapter.mockResolvedValue([
-        event({
-          id: 'now',
-          start_time: iso(-HOUR / 2),
-          end_time: iso(HOUR / 2),
-        }),
-      ]);
-      eventService.checkInNeedsCode.mockRejectedValue(new Error('db down'));
-      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
-
-      const view = await service.getActivity(CHAPTER, ME, null);
-
-      expect(view.coming_up[0].check_in_needs_code).toBe(false);
-      expect(reported).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ site: 'activity-check-in-screen-read' }),
-      );
-      reported.mockRestore();
     });
 
     it('still lists an open event, as needing the caller, when its attendance cannot be read', async () => {

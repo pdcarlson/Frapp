@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import {
@@ -26,29 +27,62 @@ describe('EventService', () => {
   });
 
   // #4808: the reads tell web when a check-in without the code is refused.
-  it('says check-in needs the code while an officer’s screen is live, and not before', async () => {
-    await expect(service.checkInNeedsCode('evt-1', 'ch-1')).resolves.toBe(
-      false,
-    );
-    mockScreenRepo.findLive.mockResolvedValue([
-      {
-        event_id: 'evt-1',
-        reported_by: 'officer-1',
-        chapter_id: 'ch-1',
-        lat: null,
-        lng: null,
-        accuracy_m: null,
-        located_at: null,
-        shown_at: '2026-02-26T18:30:00.000Z',
-        expires_at: '2026-02-26T19:15:00.000Z',
-      },
-    ]);
-    await expect(service.checkInNeedsCode('evt-1', 'ch-1')).resolves.toBe(true);
-    expect(mockScreenRepo.findLive).toHaveBeenLastCalledWith(
-      'evt-1',
-      'ch-1',
-      expect.any(String),
-    );
+  describe('checkInNeedsCode', () => {
+    // baseEvent: 18:00–19:00 UTC, check-in opens 10 minutes before.
+    const during = new Date('2026-02-26T18:30:00.000Z');
+    const liveScreen = {
+      event_id: 'evt-1',
+      reported_by: 'officer-1',
+      chapter_id: 'ch-1',
+      lat: null,
+      lng: null,
+      accuracy_m: null,
+      located_at: null,
+      shown_at: during.toISOString(),
+      expires_at: '2026-02-26T19:15:00.000Z',
+    };
+
+    it('says the code is needed while a screen is live, and not before', async () => {
+      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
+        false,
+      );
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
+        true,
+      );
+      expect(mockScreenRepo.findLive).toHaveBeenLastCalledWith(
+        'evt-1',
+        'ch-1',
+        during.toISOString(),
+      );
+    });
+
+    it('reads no screens outside the check-in window', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      for (const at of [
+        '2026-02-26T17:40:00.000Z', // before it opens
+        '2026-02-27T12:00:00.000Z', // the next day
+      ]) {
+        await expect(
+          service.checkInNeedsCode(baseEvent, new Date(at)),
+        ).resolves.toBe(false);
+      }
+      expect(mockScreenRepo.findLive).not.toHaveBeenCalled();
+    });
+
+    it('says no, and reports it, when the screens cannot be read', async () => {
+      mockScreenRepo.findLive.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
+        false,
+      );
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'event-check-in-screen-read' }),
+      );
+      reported.mockRestore();
+    });
   });
 
   it('should find event by id', async () => {

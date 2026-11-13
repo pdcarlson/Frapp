@@ -39,6 +39,7 @@ import {
   canAnchorCheckIn,
   isLocatedScreen,
   isNearCheckInScreen,
+  screensRequireCode,
 } from '#domain/utils/check-in-screen';
 import {
   mintCheckInToken,
@@ -429,7 +430,7 @@ export class AttendanceService {
     );
     const hasCode =
       options.token !== undefined || options.manualCode !== undefined;
-    if (screens.length > 0 && !hasCode) {
+    if (screensRequireCode(screens) && !hasCode) {
       logCheckInRefusal('needs_code', userId, options);
       throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
     }

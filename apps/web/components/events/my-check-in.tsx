@@ -7,7 +7,11 @@ import {
   useNow,
   type OwnAttendanceRow,
 } from "@repo/hooks";
-import { checkInWindowBounds, isValidZoneOutline } from "@repo/validation";
+import {
+  CHECK_IN_NEEDS_CODE_COPY,
+  checkInWindowBounds,
+  isValidZoneOutline,
+} from "@repo/validation";
 import {
   formatRelativeDayTime,
   formatTimeOfDay,
@@ -60,8 +64,9 @@ export const ZONE_CHECK_IN_LINE: Record<Exclude<ZoneState, "none">, string> = {
   zone: "This event checks your location, so check in from the Frapp mobile app.",
   malformed:
     "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it.",
-  // The words the server's `needs_code` refusal shows (`error-copy.ts`).
-  code: "Point your phone's camera at the code on the officer's screen to check in.",
+  // The words the server's `needs_code` refusal shows, from the same map, so
+  // the line and a stale read's refusal can't drift apart.
+  code: CHECK_IN_NEEDS_CODE_COPY,
 };
 
 export type MyCheckInView =
@@ -171,6 +176,7 @@ export function MyCheckIn({
   pointValue,
   zone,
   eventUnavailable = false,
+  eventPending = false,
 }: {
   eventId: string;
   start: unknown;
@@ -180,6 +186,12 @@ export function MyCheckIn({
   zone: ZoneState;
   /** The event's own read failed (deleted, or out of reach). */
   eventUnavailable?: boolean;
+  /**
+   * The event's own read hasn't landed, so whether check-in needs an
+   * officer's code is unknown: held as loading rather than offering a Check
+   * in that may be refused (#4808).
+   */
+  eventPending?: boolean;
 }) {
   const mine = useMyAttendance(eventId);
   const checkIn = useSelfCheckIn();
@@ -194,7 +206,8 @@ export function MyCheckIn({
     eventUnavailable,
     // Not while the read is paused offline: then the window is still worth
     // saying, and the server refuses a repeat anyway.
-    ownLoading: mine.isPending && mine.fetchStatus !== "paused",
+    ownLoading:
+      (mine.isPending && mine.fetchStatus !== "paused") || eventPending,
     start,
     end,
     opensMinutes,

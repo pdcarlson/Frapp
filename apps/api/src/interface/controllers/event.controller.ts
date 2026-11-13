@@ -67,11 +67,9 @@ export class EventController {
   ) {
     const event = await this.eventService.findById(id, chapterId, userId);
     // Additive (#4808): whether check-in now needs the officer's code, so web
-    // says to scan rather than offering a Check in the server refuses.
-    const checkInNeedsCode = await this.eventService.checkInNeedsCode(
-      id,
-      chapterId,
-    );
+    // says to scan rather than offering a Check in the server refuses. Never
+    // fails the read (`checkInNeedsCode`).
+    const checkInNeedsCode = await this.eventService.checkInNeedsCode(event);
     return { ...event, check_in_needs_code: checkInNeedsCode };
   }
 

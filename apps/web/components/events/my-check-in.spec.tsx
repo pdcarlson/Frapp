@@ -205,6 +205,25 @@ describe("<MyCheckIn />", () => {
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
   });
 
+  it("waits, offering no Check in, while the event's own read is pending (#4808)", () => {
+    render(
+      <MyCheckIn
+        eventId="e1"
+        start={start.toISOString()}
+        end={end.toISOString()}
+        opensMinutes={undefined}
+        pointValue={5}
+        zone="none"
+        eventPending
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your check-in",
+    );
+    expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
+  });
+
   it("holds Check in back once the POST succeeds, until the row is re-read", () => {
     lastCheckIn.eventId = "e1";
     renderBlock();

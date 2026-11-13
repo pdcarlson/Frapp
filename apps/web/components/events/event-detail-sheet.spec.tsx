@@ -125,14 +125,17 @@ vi.mock("@/components/events/my-check-in", async (importOriginal) => ({
   MyCheckIn: ({
     zone,
     eventUnavailable,
+    eventPending,
   }: {
     zone: string;
     eventUnavailable?: boolean;
+    eventPending?: boolean;
   }) => (
     <div
       data-testid="my-check-in"
       data-zone={zone}
       data-unavailable={String(Boolean(eventUnavailable))}
+      data-pending={String(Boolean(eventPending))}
     />
   ),
 }));
@@ -783,6 +786,44 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
 
     expect(screen.getByTestId("my-check-in")).toHaveAttribute(
       "data-unavailable",
+      "true",
+    );
+  });
+
+  // #4808: only the event's own read says whether an officer's code is needed.
+  it("says to scan once the event's read says the code is required, and no zone line contradicts it", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.data = {
+      ...baseEvent,
+      check_in_zone: null,
+      check_in_needs_code: true,
+    };
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-zone",
+      "code",
+    );
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-pending",
+      "false",
+    );
+    expect(
+      screen.queryByText("No zone, so members can check in from anywhere"),
+    ).toBeNull();
+    expect(
+      screen.getByText(/An officer's screen is showing the code/),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the check-in block until the event's own read lands", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.isLoading = true;
+    eventQueryState.data = undefined;
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-pending",
       "true",
     );
   });

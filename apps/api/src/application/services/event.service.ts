@@ -9,6 +9,7 @@ import {
   EVENT_CHECK_IN_SCREEN_REPOSITORY,
   type IEventCheckInScreenRepository,
 } from '#domain/repositories/event-check-in-screen.repository.interface';
+import { screensRequireCode } from '#domain/utils/check-in-screen';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -25,6 +26,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  checkInWindowBounds,
   checkSeriesLength,
   isRepeatRule,
   eventLimitsAudience,
@@ -60,22 +62,53 @@ export class EventService {
   ) {}
 
   /**
-   * Whether a check-in without the code would be refused right now: an
-   * officer's screen has shown the code for this event and its window is
-   * still open (the `needs_code` refusal in `AttendanceService.checkIn`,
-   * which reads the same live rows). Reads send it as `check_in_needs_code`
-   * so a client that never sends a code (web) says to scan instead of
-   * offering a check-in that fails (#4808). It can go stale the moment an
-   * officer opens the screen, so the refusal copy stays the fallback. No
-   * screen location leaves the server.
+   * Whether a check-in without the code would be refused right now
+   * (`screensRequireCode`, the rule behind `AttendanceService.checkIn`'s
+   * `needs_code` refusal). Reads send it as `check_in_needs_code` so a client
+   * that never sends a code (web) says to scan instead of offering a
+   * check-in that fails (#4808). It can go stale the moment an officer opens
+   * the screen, so the refusal copy stays the fallback. No screen location
+   * leaves the server.
+   *
+   * Outside the check-in window no screen can be live (each row expires when
+   * check-in closes), so nothing is read. A failed read says no, and the
+   * event still reads: the field is advisory, and the server's refusal
+   * explains itself, as it did before the field existed.
    */
-  async checkInNeedsCode(eventId: string, chapterId: string): Promise<boolean> {
-    const screens = await this.screenRepo.findLive(
-      eventId,
-      chapterId,
-      new Date().toISOString(),
+  async checkInNeedsCode(
+    event: Pick<
+      Event,
+      'id' | 'chapter_id' | 'start_time' | 'end_time' | 'check_in_opens_minutes'
+    >,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
     );
-    return screens.length > 0;
+    if (now < opensAt || now > closesAt) return false;
+    try {
+      const screens = await this.screenRepo.findLive(
+        event.id,
+        event.chapter_id,
+        now.toISOString(),
+      );
+      return screensRequireCode(screens);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'event-check-in-screen-read',
+        message: `Could not read check-in screens for event ${event.id}`,
+        error,
+      });
+      return false;
+    }
   }
 
   /**

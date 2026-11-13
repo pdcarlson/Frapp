@@ -23,7 +23,9 @@ describe('EventController.getOne', () => {
       },
     );
     expect(findById).toHaveBeenCalledWith('evt-1', 'ch-1', 'user-1');
-    expect(checkInNeedsCode).toHaveBeenCalledWith('evt-1', 'ch-1');
+    expect(checkInNeedsCode).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'evt-1', chapter_id: 'ch-1' }),
+    );
   });
 
   it('reads no screens for an event the viewer cannot see', async () => {

@@ -1553,6 +1553,17 @@ export class ActivityService {
         const alumniByDefault = isAlumni && !answer.byRole;
         const checkInOpen =
           window !== null && window.opensAt <= now && !alumniByDefault;
+        // Both only for an event the member can check in to right now, which
+        // is rarely more than one, and read together. `checked_in`: the
+        // answer is what decides whether it still needs them.
+        // `check_in_needs_code`: whether an officer's screen now needs the
+        // code (#4808); never fails the row.
+        const [checkedIn, needsCode] = checkInOpen
+          ? await Promise.all([
+              this.hasCheckedIn(event.id, userId),
+              this.eventService.checkInNeedsCode(event, new Date(now)),
+            ])
+          : [null, false];
         return {
           id: event.id,
           name: event.name,
@@ -1569,15 +1580,8 @@ export class ActivityService {
           check_in_needs_location: event.check_in_zone != null,
           // Read only while check-in is open, like `checked_in`: an
           // officer's screen can only be live inside the window.
-          check_in_needs_code: checkInOpen
-            ? await this.checkInNeedsCode(event.id, event.chapter_id)
-            : false,
-          // Only for an event the member can check in to right now, which
-          // is rarely more than one: the answer is what decides whether it
-          // still needs them.
-          checked_in: checkInOpen
-            ? await this.hasCheckedIn(event.id, userId)
-            : null,
+          check_in_needs_code: needsCode,
+          checked_in: checkedIn,
           created_by: event.created_by,
           created_at: event.created_at,
           // Set for Coming up once the caller's reads are in
@@ -1632,28 +1636,6 @@ export class ActivityService {
         error,
       });
       return null;
-    }
-  }
-
-  /**
-   * Whether check-in for this event now needs an officer's code. A failed
-   * read says no: the row then offers Check in, and the server's refusal
-   * explains itself, as it did before the field existed.
-   */
-  private async checkInNeedsCode(
-    eventId: string,
-    chapterId: string,
-  ): Promise<boolean> {
-    try {
-      return await this.eventService.checkInNeedsCode(eventId, chapterId);
-    } catch (error) {
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'activity-check-in-screen-read',
-        message: `Activity could not read check-in screens for event ${eventId}`,
-        error,
-      });
-      return false;
     }
   }
 
