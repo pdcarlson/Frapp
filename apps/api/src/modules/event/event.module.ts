@@ -10,6 +10,8 @@ import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repositor
 import { SupabaseEventRepository } from '../../infrastructure/supabase/repositories/supabase-event.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import { SupabaseEventCheckInScreenRepository } from '../../infrastructure/supabase/repositories/supabase-event-check-in-screen.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
 import { ChatModule } from '../chat/chat.module';
@@ -30,6 +32,13 @@ import { RbacModule } from '../rbac/rbac.module';
     // choice AttendanceModule makes for the same repository, to avoid pulling
     // in ChapterModule's own import graph just for one lightweight token.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    // Read-only here, for the event read's `check_in_needs_code` (#4808);
+    // AttendanceModule owns the screens' writes. Bound locally for the same
+    // reason as the member repository above.
+    {
+      provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
+      useClass: SupabaseEventCheckInScreenRepository,
+    },
   ],
   exports: [EventService],
 })

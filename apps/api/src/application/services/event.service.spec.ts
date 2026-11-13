@@ -12,6 +12,7 @@ describe('EventService', () => {
   let mockMemberRepo: EventServiceFixture['mockMemberRepo'];
   let mockRbacService: EventServiceFixture['mockRbacService'];
   let mockEventTypeRepo: EventServiceFixture['mockEventTypeRepo'];
+  let mockScreenRepo: EventServiceFixture['mockScreenRepo'];
 
   beforeEach(async () => {
     ({
@@ -20,7 +21,34 @@ describe('EventService', () => {
       mockMemberRepo,
       mockRbacService,
       mockEventTypeRepo,
+      mockScreenRepo,
     } = await createEventServiceFixture());
+  });
+
+  // #4808: the reads tell web when a check-in without the code is refused.
+  it('says check-in needs the code while an officer’s screen is live, and not before', async () => {
+    await expect(service.checkInNeedsCode('evt-1', 'ch-1')).resolves.toBe(
+      false,
+    );
+    mockScreenRepo.findLive.mockResolvedValue([
+      {
+        event_id: 'evt-1',
+        reported_by: 'officer-1',
+        chapter_id: 'ch-1',
+        lat: null,
+        lng: null,
+        accuracy_m: null,
+        located_at: null,
+        shown_at: '2026-02-26T18:30:00.000Z',
+        expires_at: '2026-02-26T19:15:00.000Z',
+      },
+    ]);
+    await expect(service.checkInNeedsCode('evt-1', 'ch-1')).resolves.toBe(true);
+    expect(mockScreenRepo.findLive).toHaveBeenLastCalledWith(
+      'evt-1',
+      'ch-1',
+      expect.any(String),
+    );
   });
 
   it('should find event by id', async () => {

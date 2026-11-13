@@ -47,16 +47,19 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-import { MyCheckIn, myCheckInView, type ZoneState } from "./my-check-in";
+import {
+  checkInZoneState,
+  MyCheckIn,
+  myCheckInView,
+  type ZoneState,
+} from "./my-check-in";
 
 // Local times, so the same-day labels hold in any test runner's zone.
 const start = new Date(2026, 10, 9, 19, 0);
 const end = new Date(2026, 10, 9, 21, 0);
 const during = new Date(2026, 10, 9, 19, 30);
 
-function view(
-  overrides: Partial<Parameters<typeof myCheckInView>[0]> = {},
-) {
+function view(overrides: Partial<Parameters<typeof myCheckInView>[0]> = {}) {
   return myCheckInView({
     own: null,
     ownLoading: false,
@@ -130,6 +133,24 @@ describe("myCheckInView", () => {
   });
 });
 
+describe("checkInZoneState", () => {
+  const zone = [
+    { lat: 1, lng: 1 },
+    { lat: 1, lng: 2 },
+    { lat: 2, lng: 2 },
+  ];
+
+  // #4808: a live officer's screen makes the code required, which web can't scan.
+  it("says the code is needed only when the read says so, and a zone wins", () => {
+    expect(checkInZoneState(null, true)).toBe("code");
+    expect(checkInZoneState(null, false)).toBe("none");
+    // A read from before the field.
+    expect(checkInZoneState(null, undefined)).toBe("none");
+    expect(checkInZoneState(zone, true)).toBe("zone");
+    expect(checkInZoneState([{ lat: 1, lng: 1 }], true)).toBe("malformed");
+  });
+});
+
 describe("<MyCheckIn />", () => {
   beforeEach(() => {
     mine.value = {
@@ -172,6 +193,18 @@ describe("<MyCheckIn />", () => {
     expect(mutateAsync).toHaveBeenCalledWith({ eventId: "e1" });
   });
 
+  it("says to scan the officer's code instead of offering Check in once it is required", () => {
+    renderBlock("code");
+
+    expect(screen.getByText("Check-in is open")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Point your phone's camera at the code on the officer's screen to check in.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
+  });
+
   it("holds Check in back once the POST succeeds, until the row is re-read", () => {
     lastCheckIn.eventId = "e1";
     renderBlock();
@@ -186,14 +219,18 @@ describe("<MyCheckIn />", () => {
     renderBlock();
 
     expect(screen.queryByText("Checked in")).toBeNull();
-    expect(screen.getByRole("button", { name: /check in/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not hold it back for a check-in to another event", () => {
     lastCheckIn.eventId = "e2";
     renderBlock();
 
-    expect(screen.getByRole("button", { name: /check in/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
   });
 
   it("toasts a refused check-in as a failure", async () => {
@@ -237,7 +274,9 @@ describe("<MyCheckIn />", () => {
   it("sends a member with a zoned event to the mobile app, with no button", () => {
     renderBlock("zone");
 
-    expect(screen.getByText(/check in from the Frapp mobile app/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/check in from the Frapp mobile app/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
   });
 
@@ -294,9 +333,7 @@ describe("<MyCheckIn />", () => {
     clock.now = new Date(2026, 10, 9, 12, 0).getTime();
     renderBlock();
 
-    expect(
-      screen.getByText(/^Check-in opens 6:50\sPM$/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/^Check-in opens 6:50\sPM$/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
   });
 });

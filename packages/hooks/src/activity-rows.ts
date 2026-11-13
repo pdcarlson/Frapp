@@ -139,15 +139,19 @@ export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
  * zoned event's row opens its panel, which says to use the phone
  * (`spec/behavior/events.md` § Check-In). An API read from before the field
  * existed doesn't say, so web counts its event as zoned and draws no button.
- * The read doesn't say whether an officer's screen has made the code
- * required, so a web press can still be refused for that, in the words the
- * card uses (#4808).
+ *
+ * Likewise once an officer's screen has made the code required
+ * (`check_in_needs_code`, #4808): it is on the row only for a client that can
+ * scan (`canScan`, the phone, which asks for the code if the press is
+ * refused). On web the row opens its panel, which says to point the phone's
+ * camera at the code. An officer can open the screen after the read, so a web
+ * press can still be refused for that, in the words the card uses.
  */
 export type ActivityRowAction = "confirm" | "approve" | "check-in";
 
 export function activityRowAction(
   row: ActivityRow,
-  options: { canSupplyLocation?: boolean } = {},
+  options: { canSupplyLocation?: boolean; canScan?: boolean } = {},
 ): ActivityRowAction | null {
   if (!activityBadgeIsAsk(row)) return null;
   // A task that asks for proof opens instead: the officer sees the photos or
@@ -158,7 +162,10 @@ export function activityRowAction(
   if (row.kind === "hours") return "approve";
   if (row.kind === "event" && activityEventNeedsCheckIn(row.event)) {
     const needsLocation = row.event.check_in_needs_location !== false;
-    return !needsLocation || options.canSupplyLocation ? "check-in" : null;
+    if (needsLocation && !options.canSupplyLocation) return null;
+    // An API read from before the field says nothing: no code, as before.
+    const needsCode = row.event.check_in_needs_code === true;
+    return needsCode && !options.canScan ? null : "check-in";
   }
   return null;
 }

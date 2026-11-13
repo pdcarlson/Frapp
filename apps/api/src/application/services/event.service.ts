@@ -5,6 +5,10 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import {
+  EVENT_CHECK_IN_SCREEN_REPOSITORY,
+  type IEventCheckInScreenRepository,
+} from '#domain/repositories/event-check-in-screen.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -51,7 +55,28 @@ export class EventService {
     private readonly series: EventSeriesService,
     private readonly announcements: EventAnnouncementService,
     private readonly eventTypes: EventTypeService,
+    @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
+    private readonly screenRepo: IEventCheckInScreenRepository,
   ) {}
+
+  /**
+   * Whether a check-in without the code would be refused right now: an
+   * officer's screen has shown the code for this event and its window is
+   * still open (the `needs_code` refusal in `AttendanceService.checkIn`,
+   * which reads the same live rows). Reads send it as `check_in_needs_code`
+   * so a client that never sends a code (web) says to scan instead of
+   * offering a check-in that fails (#4808). It can go stale the moment an
+   * officer opens the screen, so the refusal copy stays the fallback. No
+   * screen location leaves the server.
+   */
+  async checkInNeedsCode(eventId: string, chapterId: string): Promise<boolean> {
+    const screens = await this.screenRepo.findLive(
+      eventId,
+      chapterId,
+      new Date().toISOString(),
+    );
+    return screens.length > 0;
+  }
 
   /**
    * `spec/behavior/events.md` § Attendance by role: an event is visible only

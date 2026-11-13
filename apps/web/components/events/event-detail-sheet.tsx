@@ -244,7 +244,10 @@ export function EventDetailSheet({
     typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
   // Three states, not two (`checkInZoneState`): a zone with a bad point
   // refuses every check-in, which is not "no zone".
-  const zoneState = checkInZoneState(resolvedEvent?.check_in_zone);
+  const zoneState = checkInZoneState(
+    resolvedEvent?.check_in_zone,
+    resolvedEvent?.check_in_needs_code,
+  );
   const hasCheckInZone = zoneState === "zone";
   const checkInZoneIsMalformed = zoneState === "malformed";
   const checkInZoneName =

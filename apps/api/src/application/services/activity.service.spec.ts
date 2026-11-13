@@ -97,6 +97,8 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const eventService = {
     findByChapter: jest.fn().mockResolvedValue([]),
     findCreatedBy: jest.fn().mockResolvedValue([]),
+    // No officer's screen is live unless a test says so (#4808).
+    checkInNeedsCode: jest.fn().mockResolvedValue(false),
   };
   const chatService = {
     getChannels: jest
@@ -1143,6 +1145,59 @@ describe('ActivityService', () => {
       ]);
       expect(view.coming_up[1]).not.toHaveProperty('check_in_zone');
       expect(view.coming_up[1]).not.toHaveProperty('check_in_zone_name');
+    });
+
+    it('says when check-in needs the officer’s code, reading screens only while check-in is open', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'now',
+          start_time: iso(-HOUR / 2),
+          end_time: iso(HOUR / 2),
+        }),
+        event({
+          id: 'later',
+          start_time: iso(50 * HOUR),
+          end_time: iso(51 * HOUR),
+        }),
+      ]);
+      eventService.checkInNeedsCode.mockResolvedValue(true);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.coming_up.map((row) => [row.id, row.check_in_needs_code]),
+      ).toEqual([
+        ['now', true],
+        ['later', false],
+      ]);
+      expect(eventService.checkInNeedsCode).toHaveBeenCalledTimes(1);
+      expect(eventService.checkInNeedsCode).toHaveBeenCalledWith(
+        'now',
+        CHAPTER,
+      );
+    });
+
+    it('says the code is not needed when the screens cannot be read', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'now',
+          start_time: iso(-HOUR / 2),
+          end_time: iso(HOUR / 2),
+        }),
+      ]);
+      eventService.checkInNeedsCode.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up[0].check_in_needs_code).toBe(false);
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'activity-check-in-screen-read' }),
+      );
+      reported.mockRestore();
     });
 
     it('still lists an open event, as needing the caller, when its attendance cannot be read', async () => {

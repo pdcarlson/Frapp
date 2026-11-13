@@ -67,8 +67,9 @@ interface EventCardProps {
  * While check-in is open the card reads the viewer's own row and the event,
  * as the phone's card does (#4136): Check in reads "Checking in…" while it
  * runs, then a disabled "Checked in" (or the officer's mark), and an event
- * that checks location says to check in from the app, the event sheet's
- * words (`myCheckInView`, shared with the sheet). With Events turned off for
+ * that checks location says to check in from the app, and one whose check-in
+ * needs an officer's code says to scan it, the event sheet's words
+ * (`myCheckInView`, shared with the sheet). With Events turned off for
  * the chapter it offers neither control and says why.
  *
  * Can't make it (#4660): a member the event requires, by the card's own role
@@ -78,6 +79,12 @@ interface EventCardProps {
  * they've sent one, the card says where it stands instead. Nobody else sees
  * either, and only those cards read anything for it.
  */
+/** The two fields of the event read the card's Check in decides from. */
+type EventCheckInFields = {
+  check_in_zone?: unknown;
+  check_in_needs_code?: unknown;
+};
+
 export function EventCard({ message, isConfirmed }: EventCardProps) {
   const payload = readEventPayload(message);
   const checkIn = useSelfCheckIn();
@@ -145,13 +152,15 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         start: payload.start_time,
         end: payload.end_time,
         opensMinutes: payload.check_in_opens_minutes,
-        // Until the event reads, a zone is unknown; offering Check in to a
-        // zoned event is a sure refusal, so the card waits. A failed read
+        // Until the event reads, a zone (or a live officer's screen, which
+        // needs the code) is unknown; offering Check in then is a sure
+        // refusal, so the card waits. A failed read
         // stops waiting, and the server's answer explains itself.
         zone: checkInZoneState(
           // The SDK types this read loosely (the sheet casts it too).
-          (eventQuery.data as { check_in_zone?: unknown } | undefined)
-            ?.check_in_zone,
+          (eventQuery.data as EventCheckInFields | undefined)?.check_in_zone,
+          (eventQuery.data as EventCheckInFields | undefined)
+            ?.check_in_needs_code,
         ),
         now: new Date(now),
       })

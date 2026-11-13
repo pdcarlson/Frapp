@@ -26929,6 +26929,10 @@
             "type": "boolean",
             "description": "Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses."
           },
+          "check_in_needs_code": {
+            "type": "boolean",
+            "description": "Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise."
+          },
           "checked_in": {
             "type": "boolean",
             "nullable": true,
@@ -26960,6 +26964,7 @@
           "check_in_opens_minutes",
           "check_in_open",
           "check_in_needs_location",
+          "check_in_needs_code",
           "checked_in",
           "created_by",
           "created_at",

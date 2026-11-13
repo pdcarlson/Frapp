@@ -229,6 +229,14 @@ export interface ActivityEvent {
    */
   check_in_needs_location: boolean;
   /**
+   * Whether checking in needs the code on an officer's screen: one has shown
+   * it and check-in is still open (`spec/behavior/events.md` § Check-In). A
+   * surface that can't scan says to use the phone's camera instead of
+   * offering a check-in the server refuses (#4808). Read only while check-in
+   * is open; `false` otherwise.
+   */
+  check_in_needs_code: boolean;
+  /**
    * Whether the member has an attendance row for it. Read only while check-in
    * is open; `null` otherwise, and when that read failed.
    */
@@ -1559,6 +1567,11 @@ export class ActivityService {
           check_in_opens_minutes: event.check_in_opens_minutes,
           check_in_open: checkInOpen,
           check_in_needs_location: event.check_in_zone != null,
+          // Read only while check-in is open, like `checked_in`: an
+          // officer's screen can only be live inside the window.
+          check_in_needs_code: checkInOpen
+            ? await this.checkInNeedsCode(event.id, event.chapter_id)
+            : false,
           // Only for an event the member can check in to right now, which
           // is rarely more than one: the answer is what decides whether it
           // still needs them.
@@ -1619,6 +1632,28 @@ export class ActivityService {
         error,
       });
       return null;
+    }
+  }
+
+  /**
+   * Whether check-in for this event now needs an officer's code. A failed
+   * read says no: the row then offers Check in, and the server's refusal
+   * explains itself, as it did before the field existed.
+   */
+  private async checkInNeedsCode(
+    eventId: string,
+    chapterId: string,
+  ): Promise<boolean> {
+    try {
+      return await this.eventService.checkInNeedsCode(eventId, chapterId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-check-in-screen-read',
+        message: `Activity could not read check-in screens for event ${eventId}`,
+        error,
+      });
+      return false;
     }
   }
 
