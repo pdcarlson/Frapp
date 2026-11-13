@@ -694,6 +694,39 @@ describe('ChatService', () => {
       });
     });
 
+    // #3633: a DM or group DM belongs to its members, so a `channels:manage`
+    // holder with its id can't rename it, describe it or file it in a
+    // category, and the refusal returns no row (with its `member_ids`).
+    describe('a DM or group DM (#3633)', () => {
+      const fields = [
+        { name: 'renamed' },
+        { description: 'Ours now' },
+        { category_id: 'cat-1' },
+        { is_default: false },
+        { activity_excluded: false },
+        { default_notification_level: null },
+        { match_category_access: true },
+        { who_can_post: null },
+      ];
+      it.each(
+        (['DM', 'GROUP_DM'] as const).flatMap((type) =>
+          fields.map((input) => [type, input] as const),
+        ),
+      )('refuses a %s change of %o', async (type, input) => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type,
+          member_ids: ['user-1', 'user-2'],
+        });
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', input),
+        ).rejects.toThrow('A DM or group DM has no channel settings to change');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+    });
+
     describe('Leave out of Activity (#3897)', () => {
       it('saves it on a chapter channel', async () => {
         mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -720,7 +753,9 @@ describe('ChatService', () => {
             service.updateChannel('chan-1', 'ch-1', {
               activity_excluded: true,
             }),
-          ).rejects.toThrow("A DM or group DM can't be left out of Activity");
+          ).rejects.toThrow(
+            'A DM or group DM has no channel settings to change',
+          );
           expect(mockChannelRepo.update).not.toHaveBeenCalled();
         },
       );
@@ -1971,6 +2006,24 @@ describe('ChatService', () => {
       );
       expect(mockChannelRepo.delete).not.toHaveBeenCalled();
     });
+
+    // #3633: a DM or group DM belongs to its members, not the officers.
+    it.each(['DM', 'GROUP_DM'] as const)(
+      'refuses deleting a %s and deletes nothing',
+      async (type) => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type,
+          member_ids: ['user-1', 'user-2'],
+        });
+
+        await expect(
+          service.deleteChannel('ch-chan-1', 'ch-1'),
+        ).rejects.toThrow("A DM or group DM can't be deleted");
+        expect(mockChannelRepo.delete).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      },
+    );
 
     it('should throw if channel not found', async () => {
       mockChannelRepo.findById.mockResolvedValue(null);

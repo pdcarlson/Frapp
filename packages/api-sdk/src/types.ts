@@ -1175,11 +1175,17 @@ export interface paths {
         get: operations["ChatController_getChannel_v1"];
         put?: never;
         post?: never;
-        /** Delete a channel */
+        /**
+         * Delete a channel
+         * @description Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.
+         */
         delete: operations["ChatController_deleteChannel_v1"];
         options?: never;
         head?: never;
-        /** Update a channel */
+        /**
+         * Update a channel
+         * @description Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).
+         */
         patch: operations["ChatController_updateChannel_v1"];
         trace?: never;
     };
@@ -6103,13 +6109,13 @@ export interface components {
              */
             is_read_only?: boolean;
             /**
-             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
+             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.
              * @enum {string|null}
              */
             default_notification_level?: "all" | "mentions" | "off" | null;
-            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
+            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. */
             is_default?: boolean;
-            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM. */
+            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. */
             activity_excluded?: boolean;
         };
         SetChannelDisplayLockDto: {
