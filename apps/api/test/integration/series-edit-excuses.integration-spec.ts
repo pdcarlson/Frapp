@@ -25,12 +25,16 @@ describeIntegration(
     const chapterId = randomUUID();
     const otherChapterId = randomUUID();
     const officerId = randomUUID();
-    const [pendingId, approvedId, strandedId] = [
-      randomUUID(),
-      randomUUID(),
-      randomUUID(),
+    const [pendingId, approvedId, declinedId, strandedId, strandedApprovedId] =
+      [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const userIds = [
+      officerId,
+      pendingId,
+      approvedId,
+      declinedId,
+      strandedId,
+      strandedApprovedId,
     ];
-    const userIds = [officerId, pendingId, approvedId, strandedId];
     const [oldKept, oldGone, rebuilt, otherChapterEvent] = [
       randomUUID(),
       randomUUID(),
@@ -103,7 +107,9 @@ describeIntegration(
       for (const [eventId, userId] of [
         [oldKept, pendingId],
         [oldKept, approvedId],
+        [oldKept, declinedId],
         [oldGone, strandedId],
+        [oldGone, strandedApprovedId],
       ]) {
         const created = await excuses.create({
           chapter_id: chapterId,
@@ -112,11 +118,20 @@ describeIntegration(
           reason: 'Away game',
         });
         if (!created) throw new Error('seed excuse: create returned null');
-        if (userId === approvedId) {
+        if (userId === approvedId || userId === strandedApprovedId) {
           await excuses.decideAtomic(
             created.id,
             chapterId,
             'APPROVED',
+            officerId,
+            false,
+          );
+        }
+        if (userId === declinedId) {
+          await excuses.decideAtomic(
+            created.id,
+            chapterId,
+            'DECLINED',
             officerId,
             false,
           );
@@ -148,8 +163,8 @@ describeIntegration(
         ]),
       ).rejects.toThrow();
 
-      expect(await excusesOn(oldKept)).toHaveLength(2);
-      expect(await excusesOn(oldGone)).toHaveLength(1);
+      expect(await excusesOn(oldKept)).toHaveLength(3);
+      expect(await excusesOn(oldGone)).toHaveLength(2);
       const { data } = await supabase
         .from('events')
         .select('id')
@@ -164,17 +179,23 @@ describeIntegration(
         [{ from: oldKept, to: rebuilt }],
       );
 
-      expect(dropped.map((row) => [row.user_id, row.status])).toEqual([
-        [strandedId, 'PENDING'],
-      ]);
+      expect(
+        dropped.map((row) => `${row.user_id}:${row.status}`).sort(),
+      ).toEqual(
+        [`${strandedId}:PENDING`, `${strandedApprovedId}:APPROVED`].sort(),
+      );
       expect(await excusesOn(rebuilt)).toEqual(
-        [`${pendingId}:PENDING`, `${approvedId}:APPROVED`].sort(),
+        [
+          `${pendingId}:PENDING`,
+          `${approvedId}:APPROVED`,
+          `${declinedId}:DECLINED`,
+        ].sort(),
       );
 
       const { data: attendance } = await supabase
         .from('event_attendance')
         .select('event_id, user_id, status, marked_by')
-        .in('event_id', [oldKept, rebuilt]);
+        .in('event_id', [oldKept, oldGone, rebuilt]);
       expect(attendance).toEqual([
         {
           event_id: rebuilt,

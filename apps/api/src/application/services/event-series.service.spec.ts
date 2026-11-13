@@ -1862,6 +1862,10 @@ describe('EventSeriesService', () => {
         mockEventRepo.findById.mockResolvedValue(head);
         mockEventRepo.findChildren.mockResolvedValue([next1, next2, next3]);
         mergeUpdate([head, next1, next2, next3]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'user-pending' },
+          { user_id: 'user-approved' },
+        ]);
       });
 
       it('carries every excuse an hour later when the series moves an hour', async () => {
@@ -1937,8 +1941,8 @@ describe('EventSeriesService', () => {
           'ch-1',
           [{ from: 'next-2', to: rebuiltAt('2026-04-03T18:00:00.000Z') }],
         );
-        // Whoever's excuse had nowhere to go is told, once each, after the
-        // edit landed.
+        // Whoever's excuse had nowhere to go is told, once each, as soon as
+        // the swap commits: before the parent write, which can still fail.
         expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
           'ch-1',
           ['user-pending', 'user-approved'],
@@ -1949,12 +1953,111 @@ describe('EventSeriesService', () => {
           }),
         );
         const tellAt =
-          mockNotificationService.notifyMembers.mock.invocationCallOrder.at(
-            -1,
-          )!;
-        expect(mockEventRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
-          tellAt,
+          mockNotificationService.notifyMembers.mock.invocationCallOrder[0];
+        expect(
+          mockEventRepo.deleteReplacedOccurrences.mock.invocationCallOrder[0],
+        ).toBeLessThan(tellAt);
+        expect(tellAt).toBeLessThan(
+          mockEventRepo.update.mock.invocationCallOrder[0],
         );
+      });
+
+      it('carries every excuse a day later when the series moves a day', async () => {
+        // Past the 3-hour tolerance, so only the edit's own shift pairs them.
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-21T18:00:00.000Z',
+            end_time: '2026-03-21T19:00:00.000Z',
+          },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['next-1', 'next-2', 'next-3'],
+          'ch-1',
+          [
+            { from: 'next-1', to: rebuiltAt('2026-03-28T18:00:00.000Z') },
+            { from: 'next-2', to: rebuiltAt('2026-04-04T18:00:00.000Z') },
+            { from: 'next-3', to: rebuiltAt('2026-04-11T18:00:00.000Z') },
+          ],
+        );
+      });
+
+      it('still carries every excuse when a day move is retried after the parent write failed', async () => {
+        // The first try swapped the rows to the new days, then the parent
+        // write failed. The parent still says 03-20, so the retry counts the
+        // shift again; the rows already sit where the rebuilt ones land.
+        const moved = [
+          week('moved-1', '03-28'),
+          week('moved-2', '04-04'),
+          week('moved-3', '04-11'),
+        ];
+        mockEventRepo.findChildren.mockResolvedValue(moved);
+        mergeUpdate([head, ...moved]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-21T18:00:00.000Z',
+            end_time: '2026-03-21T19:00:00.000Z',
+          },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['moved-1', 'moved-2', 'moved-3'],
+          'ch-1',
+          [
+            { from: 'moved-1', to: rebuiltAt('2026-03-28T18:00:00.000Z') },
+            { from: 'moved-2', to: rebuiltAt('2026-04-04T18:00:00.000Z') },
+            { from: 'moved-3', to: rebuiltAt('2026-04-11T18:00:00.000Z') },
+          ],
+        );
+      });
+
+      it('tells only current members, and says there is nothing to do when the series ended', async () => {
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'user-pending' },
+        ]);
+        mockEventRepo.deleteReplacedOccurrences.mockResolvedValueOnce([
+          excuse('user-pending', 'next-1', 'PENDING'),
+          excuse('user-left', 'next-2', 'APPROVED'),
+        ]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: null },
+          'series',
+        );
+
+        expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+          'ch-1',
+          ['user-pending'],
+          expect.objectContaining({ title: 'Your excuse was removed' }),
+        );
+      });
+
+      it('keeps the edit when the push fails', async () => {
+        mockEventRepo.deleteReplacedOccurrences.mockResolvedValueOnce([
+          excuse('user-pending', 'next-1', 'PENDING'),
+        ]);
+        mockNotificationService.notifyMembers.mockRejectedValueOnce(
+          new Error('push down'),
+        );
+
+        await expect(
+          service.update(
+            'parent-1',
+            'ch-1',
+            { recurrence_rule: 'BIWEEKLY' },
+            'series',
+          ),
+        ).resolves.toMatchObject({ recurrence_rule: 'BIWEEKLY' });
+        reportedAt('event-series-dropped-excuses-notify', 'warning');
       });
 
       it('carries excuses over on a started head too', async () => {
@@ -1968,6 +2071,9 @@ describe('EventSeriesService', () => {
           next3,
         ]);
         mergeUpdate([parent, pastChild, next1, next2, next3]);
+        mockEventRepo.deleteReplacedOccurrences.mockResolvedValueOnce([
+          excuse('user-pending', 'next-3', 'PENDING'),
+        ]);
 
         await service.update(
           'parent-1',
@@ -1986,6 +2092,15 @@ describe('EventSeriesService', () => {
             { from: 'next-2', to: rebuiltAt('2026-04-03T19:00:00.000Z') },
             { from: 'next-3', to: rebuiltAt('2026-04-10T19:00:00.000Z') },
           ],
+        );
+        // An excuse the split path dropped is told about too, on the new head.
+        expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+          'ch-1',
+          ['user-pending'],
+          expect.objectContaining({
+            title: 'Send your excuse again',
+            data: { target: { screen: 'events', eventId: 'next-1' } },
+          }),
         );
       });
 
