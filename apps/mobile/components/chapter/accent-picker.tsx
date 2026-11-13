@@ -288,7 +288,8 @@ function createStyles(tokens: SignetTokens, focusColor: string) {
     group: { gap: tokens.spacing.sm },
     groupLabel: {
       ...eyebrowStyle(tokens),
-      color: tokens.color.text.muted,
+      // Web's accent swatches draw these groups in `text-muted-foreground`.
+      color: tokens.color.text.mutedForeground,
     },
     row: {
       flexDirection: "row",
