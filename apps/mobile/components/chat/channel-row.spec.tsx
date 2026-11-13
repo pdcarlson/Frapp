@@ -23,6 +23,7 @@ vi.mock("@/lib/chapter-branding", () => ({
     textMark: null,
   }),
 }));
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectRoundedRipple } from "@/test/pressable-row";
@@ -359,15 +360,26 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "Svg"),
     ).toHaveLength(1);
-    // Web's `MuteGlyph` (#4738): the speaker's × in place of its waves, not
-    // a bell, which is the notification inbox's glyph (#3362).
-    const paths = tree.root
-      .findAll((node) => (node.type as unknown) === "Path")
-      .map((node) => node.props.d as string);
-    expect(paths).toContain("M15.5 9.5l5 5M20.5 9.5l-5 5");
-    expect(
-      tree.root.findAllByProps({ testID: "channel-row-muted" }).length,
-    ).toBeGreaterThan(0);
+    // Web's `MuteGlyph` (#4738), from the one copy of its path data: the
+    // speaker with its × in place of the waves, not a bell, which is the
+    // notification inbox's glyph (#3362). At 14 in the muted text hue, never
+    // the chapter accent, and hidden from screen readers.
+    const paths = tree.root.findAll(
+      (node) => (node.type as unknown) === "Path",
+    );
+    expect(paths.map((node) => node.props.d)).toEqual([
+      MARK_GLYPH_PATHS.mute.body,
+      MARK_GLYPH_PATHS.mute.split,
+      MARK_GLYPH_PATHS.mute.muted,
+    ]);
+    for (const path of paths) {
+      expect(path.props.stroke).toBe(signetDarkTokens.color.text.muted);
+    }
+    const svg = tree.root.find((node) => (node.type as unknown) === "Svg");
+    expect(svg.props.width).toBe(14);
+    const [mark] = tree.root.findAllByProps({ testID: "channel-row-muted" });
+    expect(mark.props.accessibilityElementsHidden).toBe(true);
+    expect(mark.props.importantForAccessibility).toBe("no-hide-descendants");
     expect(
       renderRow({ unreadCount: 7 }).root.findAll(
         (node) => (node.type as unknown) === "Svg",

@@ -1,4 +1,5 @@
 import { Path, Rect } from "react-native-svg";
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import {
   GlyphFrame,
   glyphPaint,
@@ -138,7 +139,7 @@ export function LockGlyph(props: TabGlyphProps) {
 /**
  * Notification level: a speaker (a box and its cone, split by a detail
  * stroke) with two sound waves, an × for the waves when `active` (muted).
- * Web's `MuteGlyph`, transcribed. A speaker, not a bell, since #3362: the bell
+ * Web's `MuteGlyph`, from the same path data (`MARK_GLYPH_PATHS.mute`). A speaker, not a bell, since #3362: the bell
  * is the notification inbox's glyph (iconography.md §6.2.2). The row draws it
  * `focused` in the muted text hue, as web's row draws it `active` in
  * `text-muted`.
@@ -148,8 +149,8 @@ export function MuteGlyph({
   ...props
 }: TabGlyphProps & { active: boolean }) {
   const { stroke, fill } = glyphPaint(props);
-  const detail = {
-    fill: "none",
+  const paths = MARK_GLYPH_PATHS.mute;
+  const line = {
     stroke,
     strokeWidth: STROKE_WIDTH,
     strokeLinecap: "round",
@@ -157,22 +158,9 @@ export function MuteGlyph({
   } as const;
   return (
     <GlyphFrame size={props.size}>
-      <Path
-        d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinejoin="round"
-      />
-      <Path d="M7.5 9.5v5" {...detail} />
-      {active ? (
-        <Path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
-      ) : (
-        <Path
-          d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4"
-          {...detail}
-        />
-      )}
+      <Path d={paths.body} fill={fill} {...line} />
+      <Path d={paths.split} fill="none" {...line} />
+      <Path d={active ? paths.muted : paths.waves} fill="none" {...line} />
     </GlyphFrame>
   );
 }
