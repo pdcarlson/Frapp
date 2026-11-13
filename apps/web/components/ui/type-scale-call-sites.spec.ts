@@ -105,9 +105,18 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
   {
     file: "components/events/events-calendar.tsx",
     literal: "text-[11px]",
-    count: 2,
+    count: 1,
     reason:
-      "Grandfathered: the month grid's event chips and overflow link. At " +
+      "Grandfathered: the month grid's overflow link, beside the event " +
+      "chips (now `EventChip` in events-time-grid.tsx). #3075 decides.",
+  },
+  {
+    file: "components/events/events-time-grid.tsx",
+    literal: "text-[11px]",
+    count: 1,
+    reason:
+      "Grandfathered: `EventChip`, the month grid's event chip (moved here " +
+      "in #4818 so the Week's All day strip draws the same chip). At " +
       "caption size four of seven demo titles truncate in a 160px day cell " +
       "that fits them at the board's 11px. #3075 decides.",
   },

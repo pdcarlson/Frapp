@@ -3,6 +3,7 @@ export * from "./activity-faces";
 export * from "./activity-rows";
 export * from "./activity-standing";
 export * from "./calendar-tasks";
+export * from "./calendar-time-grid";
 export * from "./channel-members";
 export * from "./channel-row-actions";
 export * from "./channel-sections";
