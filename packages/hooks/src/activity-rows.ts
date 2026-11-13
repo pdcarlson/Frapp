@@ -16,6 +16,8 @@ export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
+/** A sign-up sheet, headcount or form waiting on the member's answer (#3926). */
+export type ActivityCard = components["schemas"]["ActivityCardDto"];
 export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
@@ -103,7 +105,7 @@ export type ActivityBadgeVariant =
  * their own tasks; an event row draws its date instead of a glyph.
  */
 export type ActivityGlyph =
-  "task" | "confirm" | "hours" | "poll" | "event" | "link";
+  "task" | "confirm" | "hours" | "poll" | "event" | "link" | "signup" | "form";
 
 /**
  * The shared nav glyph each kind draws (`@repo/theme/nav-glyphs`), so a row
@@ -118,6 +120,8 @@ export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
   poll: "polls",
   event: "events",
   link: "link",
+  signup: "signup",
+  form: "form",
 };
 
 /**
@@ -211,6 +215,7 @@ export type ActivityRow = RowBase &
     | { kind: "event"; event: ActivityEvent }
     | { kind: "hours"; entry: ActivityHours }
     | { kind: "link"; link: ActivityLink }
+    | { kind: "card"; card: ActivityCard }
   );
 
 /**
@@ -255,6 +260,7 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   tasks: "tasks",
   hours_approvals: "hours waiting for approval",
   polls: "polls",
+  cards: "sign-ups and forms",
   coming_up: "events",
   made_events: "events you made",
   links: "links",
@@ -367,6 +373,82 @@ function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
     dateBlock: null,
     unread: group !== "made" && poll.unread,
     readRef: { kind: "poll", item_id: poll.message_id },
+  };
+}
+
+/**
+ * Whether a sign-up or form card still takes answers at `now`: the read
+ * serves only open ones, so this is its end time not passed since.
+ */
+export function activityCardIsOpen(
+  card: Pick<ActivityCard, "closes_at">,
+  now: Date,
+): boolean {
+  const closes = card.closes_at ? parseInstant(card.closes_at) : null;
+  return closes === null || closes.getTime() > now.getTime();
+}
+
+/**
+ * The read's cards. A read cached before the API served them (a phone's
+ * persisted cache, an open tab across a deploy) has none, which is no cards.
+ */
+function activityCards(activity: Activity): ActivityCard[] {
+  return activity.needs_you.cards ?? [];
+}
+
+/** What a card row says it is, leading its detail. */
+function cardKindLabel(card: ActivityCard): string {
+  const n = card.item_count;
+  switch (card.kind) {
+    case "headcount":
+      return "Headcount";
+    case "form":
+      return `Form · ${n} ${n === 1 ? "question" : "questions"}`;
+    default:
+      return `Sign-up · ${n} ${n === 1 ? "slot" : "slots"}`;
+  }
+}
+
+/** The ask on a card row: what answering it is called on the card. */
+const CARD_ASK: Record<ActivityCard["kind"], string> = {
+  signup: "Sign up",
+  headcount: "Answer",
+  form: "Fill out",
+};
+
+/**
+ * A sign-up sheet, headcount or form the member hasn't answered (#3926 step
+ * 4). It is answered on the card in chat, so the row opens the message there
+ * rather than a panel.
+ */
+function cardRow(card: ActivityCard, now: Date): ActivityRow {
+  const left = timeLeftWithinDay(card.closes_at, now);
+  const soon = left ? `closes in ${left}` : null;
+  const closes = card.closes_at
+    ? formatRelativeDayTime(card.closes_at, now)
+    : null;
+  return {
+    kind: "card",
+    key: `needs:card:${card.message_id}`,
+    card,
+    title: card.title,
+    detail: [
+      cardKindLabel(card),
+      channelLabel(card),
+      soon ?? (closes ? `closes ${closes}` : null),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    soon,
+    faceId: card.sender_id,
+    badge: { label: CARD_ASK[card.kind], variant: "warning" },
+    glyph: card.kind === "form" ? "form" : "signup",
+    dateBlock: null,
+    unread: card.unread,
+    readRef: {
+      kind: card.kind === "form" ? "form" : "signup",
+      item_id: card.message_id,
+    },
   };
 }
 
@@ -593,6 +675,12 @@ export function activityRowIsNow(row: ActivityRow, now: Date): boolean {
         : null;
       return closes !== null && closes.getTime() - now.getTime() <= DAY_MS;
     }
+    case "card": {
+      const closes = row.card.closes_at
+        ? parseInstant(row.card.closes_at)
+        : null;
+      return closes !== null && closes.getTime() - now.getTime() <= DAY_MS;
+    }
     default:
       return false;
   }
@@ -612,7 +700,8 @@ function part(
  * one kind when a chip is set.
  *
  * "Needs you" lists an event the member can check in to right now, then
- * tasks, confirmations, approvals and polls, each in the order the read
+ * tasks, confirmations, approvals, polls, then sign-ups and forms (#3926),
+ * each in the order the read
  * serves it; its parts split that into Now and Later (`activityRowIsNow`),
  * so a client that draws the parts leads with what is pressing, and one that
  * draws `rows` keeps the read's order. An event that needs a check-in is listed under
@@ -664,6 +753,10 @@ export function activityGroups(
     ...activity.needs_you.polls
       .filter((poll) => activityPollIsOpen(poll, now))
       .map((poll) => pollRow(poll, "needs", now)),
+    // Sign-ups, headcounts and forms: open only, as polls are.
+    ...activityCards(activity)
+      .filter((card) => activityCardIsOpen(card, now))
+      .map((card) => cardRow(card, now)),
   ]);
   const needsNow = needs.filter((row) => activityRowIsNow(row, now));
   const needsLater = needs.filter((row) => !activityRowIsNow(row, now));
@@ -723,10 +816,16 @@ export function activityGroups(
               [...needsNow, ...needsLater],
               cap(ACTIVITY_NEEDS_YOU_LIMIT),
             ),
-      unavailable: downFor(
-        ["tasks", "hours_approvals", "polls", "coming_up"],
-        ["task", "hours", "poll", "event"],
-      ),
+      unavailable: [
+        ...downFor(
+          ["tasks", "hours_approvals", "polls", "coming_up"],
+          ["task", "hours", "poll", "event"],
+        ),
+        // Cards have no chip of their own: named under All and Needs you.
+        ...(down.has("cards") && (!filtered || waiting)
+          ? (["cards"] as const)
+          : []),
+      ],
       archive: null,
     },
     {
@@ -875,6 +974,9 @@ export function activitySummary(
   const openPolls = activity.needs_you.polls.filter((poll) =>
     activityPollIsOpen(poll, now),
   );
+  const closedCards = activityCards(activity).filter(
+    (card) => !activityCardIsOpen(card, now),
+  ).length;
   const checkIn = activity.coming_up.filter(activityEventNeedsCheckIn);
   const tiles: ActivityTile[] = [];
   if (checkIn.length > 0) {
@@ -926,14 +1028,16 @@ export function activitySummary(
       return start !== null && start.getTime() > now.getTime();
     }) ?? null;
   const incomplete = (
-    ["tasks", "hours_approvals", "polls", "coming_up"] as const
+    ["tasks", "hours_approvals", "polls", "cards", "coming_up"] as const
   ).some((section) => down.has(section));
   return {
-    // The read's count, less the polls that closed since it was taken.
+    // The read's count, less the polls and cards that closed since it was
+    // taken.
     needsYou: Math.max(
       0,
       activity.needs_you_count -
-        (activity.needs_you.polls.length - openPolls.length),
+        (activity.needs_you.polls.length - openPolls.length) -
+        closedCards,
     ),
     incomplete,
     tiles,

@@ -2841,6 +2841,24 @@ describe("Catch me up in a channel (#3946)", () => {
     act(() => tree.unmount());
   });
 
+  it("opens a channel on the message it was handed, once (#3926)", () => {
+    params = { channelId: CHANNEL, focusMessageId: "m1" } as typeof params;
+    const scrollToIndex = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) =>
+          element.type === "FlatList"
+            ? { scrollToOffset: vi.fn(), scrollToIndex }
+            : null,
+      });
+    });
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    rerender(tree);
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
   it("leads back to a summary left for one of its lines", () => {
     catchUp.surface = true;
     catchUp.waiting = true;

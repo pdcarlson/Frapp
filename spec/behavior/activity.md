@@ -37,6 +37,9 @@ officer queues need their own permission, as below.
   every pending entry.
 - **Polls:** open poll cards from other members that the caller hasn't voted on, soonest closing
   first. See [Polls and channel access](#polls-and-channel-access).
+- **Sign-ups and forms** (`cards`): open sign-up sheets, headcounts and forms from other members
+  that the caller hasn't answered, soonest closing first, then newest; one with no end time last.
+  See [Sign-ups and forms](#sign-ups-and-forms).
 
 **Coming up:** events that invite the caller and start within 14 days, or whose check-in is
 still open, soonest first, at most 10. Events are read as the caller, so an event that leaves the
@@ -92,8 +95,8 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 - **A module that is off contributes nothing.** Each section checks its own module
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
-  chapter has it off ([`../product/modules.md`](../product/modules.md)). Links come from chat, which has no
-  switch, so they are always read.
+  chapter has it off ([`../product/modules.md`](../product/modules.md)). Links, sign-ups and forms
+  come from chat, which has no switch, so they are always read.
 - **Each list carries at most 25 rows**, except Made by you's polls: 25 open and 25 closed.
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
@@ -142,7 +145,8 @@ gets `unread_since: null` begins the member's dots (below).
 - **Until opened.** A row stays unread until the member opens that item from Activity, or acts on
   it from its row (Confirm, Approve): the client
   records it with `POST /v1/activity/reads`, naming the item's kind and id (`task`, `hours_entry`,
-  `poll` by its message id, `event`, `link`), up to 100 at a time. Scrolling past a row doesn't
+  `poll` by its message id, `event`, `link`, `signup` for a sign-up sheet or headcount and `form`
+  for a form, each by its message id), up to 100 at a time. Scrolling past a row doesn't
   clear it, and neither does opening the same item elsewhere in Frapp (voting on the poll in its
   channel); acting on an item usually takes it off the list anyway.
 - **Since it appeared.** A row is unread when it appeared after the member last opened it. It
@@ -190,6 +194,33 @@ the same rule search and the poll list follow
   that is rare; if one exists it is not listed here and is still in its channel.
 - Only poll cards (`kind = 'poll'`) are read. The older poll format ([`polls.md`](polls.md)) is
   one no client creates or can draw as a card, so it is not listed.
+
+## Sign-ups and forms
+
+A sign-up sheet, a headcount and a form are chat cards ([`polls.md`](polls.md) has the poll card
+they're built on; #3926), so they wait on a member the way an unvoted poll does, under the same
+channel rules (#3926 step 4):
+
+- A card is listed only from a channel in the caller's own chat channel list, never the caller's
+  own, and never one whose author the caller has blocked. They share the block list with polls
+  and links, so when it can't be read this section fails too (`cards` in `unavailable`).
+- Only open cards: not closed early and not past their end time, by the rule the claim and
+  answer routes apply.
+- **Answered** means a sign-up claim that holds at least one slot (a claim that gave every slot
+  back is not an answer, as a cleared vote is not a vote), either answer to a headcount
+  (Going or Can't make it), or any saved form response. Answers to a form are private
+  ([`chat/README.md`](chat/README.md)), so the read asks only which forms have a response of
+  the caller's, never what it says.
+- **A full sheet no longer waits.** When every slot of a sheet has a limit and has reached it,
+  nobody else can sign up, so it leaves Needs you for everyone who holds no slot (a headcount has
+  no limits, so it is never full). Telling needs every member's claims on the open sheets, which
+  the channel already reads on the card, so this reads nothing private.
+- A row carries the card's kind (`signup`, `headcount`, `form`), title, channel, end time, and
+  how many slots or questions it has; never anyone's claims or answers. It is answered on the
+  card, so a client opens the message in chat rather than drawing the card on Activity.
+- "Hasn't answered" is checked over the chapter's 100 newest cards of each kind, as polls are.
+- They count toward `needs_you_count` and are Now within a day of their end time, as polls are.
+  They have no filter chip or count tile of their own: they show under All and Needs you.
 
 ## Links
 
