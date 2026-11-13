@@ -3691,6 +3691,20 @@ describe('ChatService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
+    // #3926: a card's `content` is the line a push and the channel preview
+    // read for it; editing it would leave the card saying something else.
+    it.each(['form', 'signup', 'poll', 'announcement'] as const)(
+      'refuses to edit a %s card, even its sender',
+      async (kind) => {
+        mockMessageRepo.findById.mockResolvedValue({ ...baseMessage, kind });
+
+        await expect(
+          service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+        ).rejects.toThrow('A card cannot be edited');
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      },
+    );
+
     it('lets the linked sender delete their imported message, keeping it purgeable with its import', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...baseMessage,

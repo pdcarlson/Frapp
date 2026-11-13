@@ -32,7 +32,7 @@ import { normalizeClosesAt } from './card-closing';
  *
  * Either kind may carry an end time (`closes_at`), and its creator or a
  * `channels:manage` holder may close it early (`closed_at` / `closed_by`,
- * written only by `ChatService.closeSignup`). Once closed, the claim RPC
+ * written only by `ChatService.closeCard`). Once closed, the claim RPC
  * refuses every claim.
  */
 
@@ -65,7 +65,7 @@ export interface SignupCard {
   slots: SignupSlot[];
   /** When sign-ups end on their own (ISO), or absent. */
   closes_at?: string;
-  /** Set only by `ChatService.closeSignup`; never taken from a client. */
+  /** Set only by `ChatService.closeCard`; never taken from a client. */
   closed_at?: string;
   closed_by?: string;
 }

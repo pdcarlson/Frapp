@@ -35,6 +35,14 @@ import { normalizeClosesAt } from './card-closing';
 
 /** The longest question or option id a card may carry. Clients make 8. */
 const ID_MAX_LENGTH = 32;
+/**
+ * A question's id keys its answer in an object, so it can't be a name an
+ * object inherits or one the request parser drops (class-transformer skips
+ * `__proto__` and `constructor`): an answer to it could never be read back.
+ */
+function isUsableQuestionId(id: string): boolean {
+  return !(id in Object.prototype) && id !== 'prototype';
+}
 
 /** The two answers a yes/no question takes, as stored. */
 export const FORM_YES = 'yes';
@@ -123,7 +131,7 @@ function normalizeQuestion(
   const id = typeof entry.id === 'string' ? entry.id.trim() : '';
   const title = typeof entry.title === 'string' ? entry.title.trim() : '';
   const type = entry.type as FormQuestionType;
-  if (!id || id.length > ID_MAX_LENGTH || !title) {
+  if (!id || id.length > ID_MAX_LENGTH || !isUsableQuestionId(id) || !title) {
     return { error: 'Each question needs an id, a type and a question' };
   }
   if (!FORM_QUESTION_TYPES.includes(type)) {
@@ -312,7 +320,12 @@ export function normalizeFormAnswers(
   }
   const answers: FormAnswers = {};
   for (const question of questions) {
-    const checked = answerFor(question, raw[question.id]);
+    // Own keys only: an id the card refused can't be here, but an inherited
+    // name must never read as an answer.
+    const checked = answerFor(
+      question,
+      Object.hasOwn(raw, question.id) ? raw[question.id] : undefined,
+    );
     if ('error' in checked) return checked;
     if (checked.answer === null) {
       if (question.required) {

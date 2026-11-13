@@ -1503,6 +1503,15 @@ export class ChatService {
       throw new BadRequestException('Cannot edit a deleted message');
     }
 
+    // A card's body is its payload, and its `content` is the line a push,
+    // the channel preview and search read for it (a form's or sign-up's
+    // title, a poll's question): not the member's words to edit. The clients
+    // hide Edit on every card (`CARD_KINDS` in `@repo/chat-core`); this is the
+    // rule, so an edit can't make that line disagree with the card.
+    if ((message.kind ?? 'text') !== 'text') {
+      throw new BadRequestException('A card cannot be edited');
+    }
+
     // A GIF message is the GIF, with no text to change (#4631); the clients
     // hide Edit on it (`canEditMessage`), and this is the rule.
     if (message.metadata && 'gif' in message.metadata) {
