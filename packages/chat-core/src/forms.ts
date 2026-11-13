@@ -292,8 +292,12 @@ export function formDeadlineLine(
   now: number,
 ): string | null {
   if (isFormClosed(payload, now)) return "Closed";
-  const deadline = parseInstant(payload.closes_at);
-  return deadline ? `Closes ${formatDueLabel(deadline, new Date(now))}` : null;
+  if (!parseInstant(payload.closes_at)) return null;
+  // A task's countdown words, as the sign-up's end line takes them
+  // (`signupDeadlineLine`). `formatDueLabel` reads the ISO string, not a
+  // `Date`, which it answers with `null`.
+  const due = formatDueLabel(payload.closes_at, new Date(now));
+  return due ? due.replace(/^Due /, "Closes ") : null;
 }
 
 /**
