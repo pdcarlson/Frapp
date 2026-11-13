@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { NewAccountActions } from "@/components/auth/new-account-actions";
 import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
+import { isNewEmailAccount } from "@/lib/auth/new-account-detection";
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,17 @@ export default async function NewAccountPage({
   if (!user) {
     redirect(`/sign-in?${new URLSearchParams({ redirectTo: next })}`);
   }
-  if (!isFirstOAuthSignIn(user)) {
+  // A new OAuth account is read from timestamps; a new magic-link account from
+  // its identity and an empty chapters read (#3801), which needs the access
+  // token. `getUser` does not carry it, so read the session for that check.
+  let isNew = isFirstOAuthSignIn(user);
+  if (!isNew) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    isNew = await isNewEmailAccount(user, session?.access_token);
+  }
+  if (!isNew) {
     redirect(next);
   }
 

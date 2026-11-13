@@ -2,19 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { getUser, redirect, signOutCurrentSession } = vi.hoisted(() => ({
-  getUser: vi.fn(),
-  redirect: vi.fn((to: string) => {
-    throw new Error(`NEXT_REDIRECT ${to}`);
-  }),
-  signOutCurrentSession: vi.fn(async () => {}),
-}));
+const { getUser, getSession, redirect, signOutCurrentSession, isNewEmailAccount } =
+  vi.hoisted(() => ({
+    getUser: vi.fn(),
+    getSession: vi.fn(async () => ({ data: { session: { access_token: "tok" } } })),
+    redirect: vi.fn((to: string) => {
+      throw new Error(`NEXT_REDIRECT ${to}`);
+    }),
+    signOutCurrentSession: vi.fn(async () => {}),
+    isNewEmailAccount: vi.fn(async () => false),
+  }));
 
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/supabase/server", () => ({
-  createSupabaseServerClient: vi.fn(async () => ({ auth: { getUser } })),
+  createSupabaseServerClient: vi.fn(async () => ({ auth: { getUser, getSession } })),
 }));
 vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession }));
+vi.mock("@/lib/auth/new-account-detection", () => ({ isNewEmailAccount }));
 
 import NewAccountPage from "./page";
 import { NEW_ACCOUNT_SIGN_OUT_FAILED } from "@/components/auth/new-account-actions";
@@ -40,10 +44,49 @@ describe("/new-account (#3786)", () => {
 
   beforeEach(() => {
     getUser.mockReset();
+    getSession.mockClear();
+    getSession.mockResolvedValue({ data: { session: { access_token: "tok" } } });
+    isNewEmailAccount.mockReset();
+    isNewEmailAccount.mockResolvedValue(false);
     redirect.mockClear();
     signOutCurrentSession.mockClear();
     assign.mockReset();
     vi.stubGlobal("location", { ...window.location, assign });
+  });
+
+  function emailUser(email: string) {
+    return {
+      email,
+      // A magic-link account is created when the link is requested, so its
+      // timestamps are far apart; the OAuth check never flags it.
+      created_at: "2026-11-09T04:00:00.000Z",
+      last_sign_in_at: "2026-11-09T05:30:00.000Z",
+      app_metadata: { provider: "email" },
+      identities: [{ provider: "email" }],
+    };
+  }
+
+  it("shows a brand-new magic-link account the notice (#3801)", async () => {
+    getUser.mockResolvedValue({ data: { user: emailUser("new@school.edu") } });
+    isNewEmailAccount.mockResolvedValue(true);
+    await renderPage("/chat");
+    expect(redirect).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "This is a new Frapp account for new@school.edu. Already a member? Sign out and use the method you joined with.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("sends an existing email member who belongs to a chapter straight on (#3801)", async () => {
+    getUser.mockResolvedValue({ data: { user: emailUser("member@school.edu") } });
+    isNewEmailAccount.mockResolvedValue(false);
+    await expect(renderPage("/events")).rejects.toThrow("NEXT_REDIRECT");
+    expect(isNewEmailAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "member@school.edu" }),
+      "tok",
+    );
+    expect(redirect).toHaveBeenCalledWith("/events");
   });
 
   it("names the new account and tells a member how to get back to theirs", async () => {

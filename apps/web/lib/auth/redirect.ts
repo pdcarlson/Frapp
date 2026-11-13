@@ -146,24 +146,60 @@ export function buildAuthCallbackUrl(
 }
 
 /**
+ * Where the sign-in screen's magic link lands: `/auth/callback` tagged
+ * `sign-in-link`, so the callback can tell a member who typed an email they
+ * never joined with that it created a new account (#3801), while still treating
+ * a failed Confirm-signup code as good news ({@link isEmailLinkIntent}).
+ */
+export function magicLinkRedirectUrl(origin: string, redirectTo: string): string {
+  return buildAuthCallbackUrl(origin, redirectTo, { intent: "sign-in-link" });
+}
+
+/**
  * Which screen started the round trip. The value only decides which notice is
  * shown, so a tampered one can't do more than show or skip it.
  *
  * - `sign-in`, on an OAuth start from the sign-in screen: a brand-new account
  *   on return was not what the member asked for (#3786). The sign-up screen's
  *   OAuth buttons send none, because creating an account there is the point.
- * - `confirm`, on every email link web asks for: sign-up, Resend, and the
- *   sign-in magic link (which GoTrue answers with the Confirm signup email for
- *   an address not yet confirmed). If such a link's PKCE code can't be
- *   exchanged, GoTrue has already verified it, because it only hands out a
- *   code after verifying (a dead link comes back as `error_code` instead), and
- *   verifying an email link confirms the address. So the member is told their
- *   email is confirmed and to sign in, not that the link failed
- *   ({@link EMAIL_CONFIRMED_AUTH_ERROR}). A magic link on the hosted
- *   `token_hash` template never takes the code path at all.
+ * - `confirm`, on the sign-up confirmation and its Resend. If such a link's
+ *   PKCE code can't be exchanged, GoTrue has already verified it, because it
+ *   only hands out a code after verifying (a dead link comes back as
+ *   `error_code` instead), and verifying an email link confirms the address.
+ *   So the member is told their email is confirmed and to sign in, not that the
+ *   link failed ({@link EMAIL_CONFIRMED_AUTH_ERROR}).
+ * - `sign-in-link`, on the sign-in screen's magic link. It is an email link, so
+ *   it keeps `confirm`'s good-news handling: GoTrue answers an unconfirmed
+ *   address with the Confirm signup email, whose `?code=` can't be exchanged in
+ *   another browser, and that still means the address is confirmed. It is also
+ *   a sign-in attempt, so on success the callback checks whether the link just
+ *   created a brand-new, chapterless account and, if so, sends the member to
+ *   `/new-account` the way the OAuth `sign-in` path does (#3801). A plain magic
+ *   link on the hosted `token_hash` template never takes the code path at all;
+ *   the new-account check runs on both paths.
  */
-export type AuthCallbackIntent = "sign-in" | "confirm";
+export type AuthCallbackIntent = "sign-in" | "confirm" | "sign-in-link";
 export const AUTH_CALLBACK_INTENT_PARAM = "intent";
+
+/**
+ * The intents that mark an email link rather than an OAuth return: a `?code=`
+ * that fails to exchange means the address was confirmed, so the member hears
+ * {@link EMAIL_CONFIRMED_AUTH_ERROR} instead of a generic failure. OAuth's
+ * `sign-in` is not here — a provider code that won't exchange is a real
+ * failure, and the email-confirmed copy would be wrong for it.
+ */
+export function isEmailLinkIntent(intent: string | null): boolean {
+  return intent === "confirm" || intent === "sign-in-link";
+}
+
+/**
+ * The intents the sign-in screen sends so the callback runs the new-account
+ * check (#3786 for OAuth, #3801 for the magic link). The sign-up screen sends
+ * neither: creating an account there is the point.
+ */
+export function isSignInIntent(intent: string | null): boolean {
+  return intent === "sign-in" || intent === "sign-in-link";
+}
 
 /**
  * The `authError` `/auth/callback` sends when a sign-up confirmation link

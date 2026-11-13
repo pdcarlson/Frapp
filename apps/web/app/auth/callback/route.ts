@@ -1,14 +1,50 @@
 import { NextResponse } from "next/server";
+import type { Session, User } from "@supabase/supabase-js";
 import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
+import { isNewEmailAccount } from "@/lib/auth/new-account-detection";
 import {
   AUTH_CALLBACK_INTENT_PARAM,
   EMAIL_CONFIRMED_AUTH_ERROR,
   NEW_ACCOUNT_PATH,
+  isEmailLinkIntent,
   isEmailOtpType,
+  isSignInIntent,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reportServerAuthFailure } from "@/lib/sentry/auth-failures";
+
+/**
+ * A session that a sign-in just created where none should have been: an OAuth
+ * provider made a fresh account (#3786, timestamp-based) or a magic link made a
+ * chapterless email account (#3801, identity + chapters read). Either way the
+ * member asked to sign in, so they go to `/new-account` first. Returns the
+ * destination for a new account, or `null` to carry on to `next`.
+ *
+ * The two checks are mutually exclusive by identity — `isFirstOAuthSignIn`
+ * needs a Google or Apple provider, `isNewEmailAccount` an email-only one — so
+ * running both on either path is safe: the OAuth code path catches a new
+ * provider account, the magic link's `token_hash` and Confirm-signup `code`
+ * paths catch a new email account. The email read falls open to "not new" on an
+ * API outage, so it never blocks a sign-in.
+ */
+async function newAccountDestination(
+  url: URL,
+  next: string,
+  data: { user: User | null; session: Session | null } | null,
+): Promise<URL | null> {
+  if (!isSignInIntent(url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM))) {
+    return null;
+  }
+  const user = data?.user ?? null;
+  const isNew =
+    isFirstOAuthSignIn(user) ||
+    (await isNewEmailAccount(user, data?.session?.access_token));
+  if (!isNew) return null;
+  const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
+  notice.searchParams.set("next", next);
+  return notice;
+}
 
 /**
  * Report a link or provider return that didn't become a session (#3832), with
@@ -79,12 +115,13 @@ export async function GET(request: Request): Promise<NextResponse> {
       return NextResponse.redirect(signIn);
     }
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType,
     });
     if (!error) {
-      return NextResponse.redirect(new URL(next, url.origin));
+      const newAccount = await newAccountDestination(url, next, data);
+      return NextResponse.redirect(newAccount ?? new URL(next, url.origin));
     }
     reportCallbackFailure({ error });
     const signIn = new URL("/sign-in", url.origin);
@@ -97,22 +134,16 @@ export async function GET(request: Request): Promise<NextResponse> {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      if (
-        url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "sign-in" &&
-        isFirstOAuthSignIn(data?.user)
-      ) {
-        const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
-        notice.searchParams.set("next", next);
-        return NextResponse.redirect(notice);
-      }
-      return NextResponse.redirect(new URL(next, url.origin));
+      const newAccount = await newAccountDestination(url, next, data);
+      return NextResponse.redirect(newAccount ?? new URL(next, url.origin));
     }
     reportCallbackFailure({ error });
     // An email link that reached here with a code already confirmed the
     // address (GoTrue verifies before it hands out a code), so the only thing
     // that failed is signing *this* browser in. Say so, and let a sign-in do
-    // it, rather than call a working link broken.
-    if (url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "confirm") {
+    // it, rather than call a working link broken. OAuth's `sign-in` is excluded:
+    // a provider code that won't exchange is a real failure, not a confirmation.
+    if (isEmailLinkIntent(url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM))) {
       const signIn = new URL("/sign-in", url.origin);
       signIn.searchParams.set("redirectTo", next);
       signIn.searchParams.set("authError", EMAIL_CONFIRMED_AUTH_ERROR);

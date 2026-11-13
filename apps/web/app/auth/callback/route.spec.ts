@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
 const verifyOtp = vi.fn();
-const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+const { captureException, isNewEmailAccount } = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  isNewEmailAccount: vi.fn(async () => false),
+}));
 
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
@@ -11,6 +14,10 @@ vi.mock("@/lib/supabase/server", () => ({
     auth: { exchangeCodeForSession, verifyOtp },
   })),
 }));
+
+// The API read is unit-tested in `new-account-detection.spec.ts`; here it is
+// mocked so the route's routing can be driven directly.
+vi.mock("@/lib/auth/new-account-detection", () => ({ isNewEmailAccount }));
 
 import { GET } from "./route";
 
@@ -28,6 +35,8 @@ describe("GET /auth/callback", () => {
     exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
     captureException.mockReset();
+    isNewEmailAccount.mockReset();
+    isNewEmailAccount.mockResolvedValue(false);
   });
 
   it("exchanges the PKCE code and sends the member on to `next`, signed in", async () => {
@@ -218,6 +227,70 @@ describe("GET /auth/callback", () => {
       expect(url.origin).toBe(ORIGIN);
       expect(url.pathname).toBe("/new-account");
       expect(url.searchParams.get("next")).toBe("/chat");
+    });
+  });
+
+  describe("a magic link that created a new account (intent=sign-in-link, #3801)", () => {
+    const emailSession = {
+      user: { email: "new@school.edu", identities: [{ provider: "email" }] },
+      session: { access_token: "member-token" },
+    };
+
+    it("sends a brand-new, chapterless account from a token_hash link to the notice", async () => {
+      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
+      isNewEmailAccount.mockResolvedValue(true);
+      const { url } = await callback(
+        "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fevents",
+      );
+      expect(isNewEmailAccount).toHaveBeenCalledWith(emailSession.user, "member-token");
+      expect(url.pathname).toBe("/new-account");
+      expect(url.searchParams.get("next")).toBe("/events");
+    });
+
+    it("signs an existing email member in and sends them on to `next`", async () => {
+      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
+      isNewEmailAccount.mockResolvedValue(false);
+      const { url } = await callback(
+        "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fevents",
+      );
+      expect(url.pathname).toBe("/events");
+    });
+
+    it("falls open to sign-in when the chapters read can't be made", async () => {
+      // `isNewEmailAccount` returns false on an API outage, so a member is
+      // signed in rather than stranded — the fail-open Paul asked for.
+      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
+      isNewEmailAccount.mockResolvedValue(false);
+      const { url } = await callback(
+        "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fchat",
+      );
+      expect(url.pathname).toBe("/chat");
+    });
+
+    it("catches a new account on the Confirm-signup code path too", async () => {
+      exchangeCodeForSession.mockResolvedValue({ data: emailSession, error: null });
+      isNewEmailAccount.mockResolvedValue(true);
+      const { url } = await callback("code=abc123&intent=sign-in-link&next=%2Fchat");
+      expect(url.pathname).toBe("/new-account");
+    });
+
+    it("still reads a Confirm-signup code that won't exchange as a confirmed address", async () => {
+      // The sign-in magic link keeps #3831's good-news handling: an email link
+      // whose code GoTrue handed out was verified, so the address is confirmed.
+      exchangeCodeForSession.mockResolvedValue({
+        error: { name: "AuthPKCECodeVerifierMissingError", message: "verifier missing" },
+      });
+      const { url } = await callback("code=abc123&intent=sign-in-link&next=%2Fchat");
+      expect(url.pathname).toBe("/sign-in");
+      expect(url.searchParams.get("authError")).toBe("email_confirmed");
+    });
+
+    it("does not flag an OAuth account that only has an email identity by mistake", async () => {
+      // OAuth uses intent=sign-in, not sign-in-link; a provider code that won't
+      // exchange stays a real failure, never email_confirmed.
+      exchangeCodeForSession.mockResolvedValue({ error: { message: "invalid code" } });
+      const { url } = await callback("code=stale&intent=sign-in&next=%2Fchat");
+      expect(url.searchParams.get("authError")).toBe("exchange_failed");
     });
   });
 
