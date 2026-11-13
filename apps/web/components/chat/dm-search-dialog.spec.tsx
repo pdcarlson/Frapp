@@ -1,9 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useState } from "react";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
-const { push, toast, mutateAsync, blockList } = vi.hoisted(() => ({
-  push: vi.fn(),
+const { openChannel, toast, mutateAsync, blockList, roster } = vi.hoisted(() => ({
+  openChannel: vi.fn(),
+  roster: {
+    current: {
+      data: undefined as unknown,
+      isPending: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    },
+  },
   toast: vi.fn(),
   mutateAsync: vi.fn(),
   blockList: {
@@ -43,9 +59,17 @@ const CHANNELS = [
     type: "DM",
     member_ids: [VIEWER, "winston"],
   },
+  // Hidden by the viewer: listed nowhere as a conversation, so Pauline is
+  // offered as a member, and picking her reopens it through the POST.
+  {
+    id: "dm-pauline",
+    name: "",
+    type: "DM",
+    member_ids: [VIEWER, "pauline"],
+    hidden: true,
+  },
 ];
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@repo/hooks", async () => ({
   // The matcher and the DM title run for real; only the reads are faked.
@@ -58,7 +82,7 @@ vi.mock("@repo/hooks", async () => ({
       { channel_id: "dm-paul", created_at: "2026-11-11T10:00:00Z" },
     ],
   }),
-  useChapterRoster: () => ({ data: ROSTER, isPending: false }),
+  useChapterRoster: () => roster.current,
   useMemberDisplayNames: () => ({
     byId: NAMES,
     avatarFor: () => null,
@@ -72,7 +96,16 @@ import { DmSearch } from "./dm-search-dialog";
 
 function Harness({ startOpen = false }: { startOpen?: boolean }) {
   const [open, setOpen] = useState(startOpen);
-  return <DmSearch open={open} onOpenChange={setOpen} />;
+  return (
+    <>
+      <button type="button">Elsewhere</button>
+      <DmSearch
+        open={open}
+        onOpenChange={setOpen}
+        onOpenChannel={openChannel}
+      />
+    </>
+  );
 }
 
 const input = () =>
@@ -88,7 +121,14 @@ function type(text: string) {
 }
 
 beforeEach(() => {
-  push.mockReset();
+  openChannel.mockReset();
+  roster.current = {
+    data: ROSTER,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  };
   toast.mockReset();
   mutateAsync.mockReset();
   blockList.current = {
@@ -136,7 +176,8 @@ describe("DmSearch", () => {
     render(<Harness startOpen />);
     type("paul");
     fireEvent.keyDown(input(), { key: "Enter" });
-    expect(push).toHaveBeenCalledWith("/chat?channel=dm-paul");
+    // Through the shell, as a click on the list's row, never the URL.
+    expect(openChannel).toHaveBeenCalledWith("dm-paul");
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 
@@ -148,7 +189,7 @@ describe("DmSearch", () => {
       fireEvent.click(screen.getByRole("option", { name: /Pauline Park/ }));
     });
     expect(mutateAsync).toHaveBeenCalledWith({ member_id: "pauline" });
-    expect(push).toHaveBeenCalledWith("/chat?channel=dm-new");
+    expect(openChannel).toHaveBeenCalledWith("dm-new");
   });
 
   it("says so when the DM could not be started, and stays open", async () => {
@@ -158,7 +199,7 @@ describe("DmSearch", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: /Pauline Park/ }));
     });
-    expect(push).not.toHaveBeenCalled();
+    expect(openChannel).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Could not start conversation" }),
     );
@@ -196,5 +237,112 @@ describe("DmSearch", () => {
     expect(
       screen.getAllByText("No one in your chapter matches “zzz”.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("leaves a hidden DM out of conversations and offers its member instead", () => {
+    render(<Harness startOpen />);
+    expect(optionNames()).not.toContain("Pauline Park");
+    type("pauline");
+    expect(optionNames()).toEqual(["Pauline Park"]);
+    expect(
+      screen.getByRole("group", { name: "Start a conversation" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves with the arrow keys, wrapping, and opens the highlighted row", () => {
+    render(<Harness startOpen />);
+    // Winston (newest), then Paul.
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    expect(options()[1]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    expect(options()[0]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(input(), { key: "ArrowUp" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(openChannel).toHaveBeenCalledWith("dm-paul");
+  });
+
+  it("starts a search from a key typed on the field", () => {
+    render(<Harness />);
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Find or start a conversation" }),
+      { key: "w" },
+    );
+    expect(input()).toHaveValue("w");
+    expect(optionNames()).toEqual(["Winston Lee"]);
+  });
+
+  it("starts one DM however often the member is picked while it starts", async () => {
+    let resolve!: (value: unknown) => void;
+    mutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<Harness startOpen />);
+    type("pauline");
+    const row = screen.getByRole("option", { name: /Pauline Park/ });
+    fireEvent.click(row);
+    fireEvent.click(row);
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    await act(async () => resolve({ id: "dm-pauline" }));
+    expect(openChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't open a DM that finishes starting after the search closed", async () => {
+    let resolve!: (value: unknown) => void;
+    mutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<Harness startOpen />);
+    type("pauline");
+    fireEvent.click(screen.getByRole("option", { name: /Pauline Park/ }));
+    fireEvent.keyDown(input(), { key: "Escape" });
+    await act(async () => resolve({ id: "dm-pauline" }));
+    expect(openChannel).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("says the members couldn't load, never that nobody matches, and retries", () => {
+    const refetch = vi.fn();
+    roster.current = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch,
+    };
+    render(<Harness startOpen />);
+    type("pauline");
+    expect(
+      screen.queryByText("No one in your chapter matches “pauline”."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("listbox")).getByText(
+        "Couldn't load your chapter's members, so only your conversations are listed.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("puts focus back on what opened it", async () => {
+    function Opener() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            New message
+          </button>
+          <DmSearch
+            open={open}
+            onOpenChange={setOpen}
+            onOpenChannel={openChannel}
+          />
+        </>
+      );
+    }
+    render(<Opener />);
+    const pencil = screen.getByRole("button", { name: "New message" });
+    pencil.focus();
+    fireEvent.click(pencil);
+    expect(input()).toHaveFocus();
+    fireEvent.keyDown(input(), { key: "Escape" });
+    // Radix runs the close's focus step on a timeout.
+    await waitFor(() => expect(pencil).toHaveFocus());
   });
 });

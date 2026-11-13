@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Loader2, Search } from "lucide-react";
 import {
   compareLatestFirst,
   directChannelDisplayName,
+  dmChannelIdOf,
   otherMemberId,
   searchDirectMessages,
   useBlockedUserIds,
@@ -21,12 +21,16 @@ import {
   DM_SEARCH_CONVERSATIONS_HEADING,
   DM_SEARCH_MEMBERS_HEADING,
   DM_SEARCH_PLACEHOLDER,
+  DM_SEARCH_ROSTER_FAILED,
   dmSearchNoMatches,
   type DmSearchMember,
 } from "@repo/hooks";
 import { isDirectChannel } from "@repo/validation";
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
-import { chatDeepLink } from "@/lib/chat/chat-links";
+import {
+  START_DM_FAILED_FALLBACK,
+  START_DM_FAILED_TITLE,
+} from "@/lib/chat/start-dm";
 import { useToast } from "@/lib/hooks/use-toast";
 import { FOCUS_RING, FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { DialogOverlay } from "@/components/ui/dialog";
@@ -49,8 +53,22 @@ import type { ChatChannel } from "./channel-list";
  * and Instagram's new-message button opens a "To:" search.
  *
  * What it finds and who it offers are the shared rules in
- * `@repo/hooks/dm-search` (the phone's Messages search runs the same code).
+ * `@repo/hooks/dm-search`, written to be the phone's too.
+ *
+ * A pick opens through the shell (`onOpenChannel`), the way a click on a row
+ * of the list does, never through the URL: the shell applies a `?channel=`
+ * only when it changes, so pushing one could land on the link already there
+ * and do nothing, and it would also take chat off a tool page it sits beside.
  */
+
+/** On the page and not under a `display: none` (a pane hidden below `lg`). */
+function isShown(el: HTMLElement | null | undefined): el is HTMLElement {
+  if (!el?.isConnected) return false;
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    if (getComputedStyle(node).display === "none") return false;
+  }
+  return true;
+}
 
 /** Conversations shown before anything is typed: the newest, as a switcher. */
 const RECENT_LIMIT = 6;
@@ -62,14 +80,20 @@ type Option =
 export function DmSearch({
   open,
   onOpenChange,
+  onOpenChannel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Opens a conversation as a click on its row in the list does. */
+  onOpenChannel: (channelId: string) => void;
 }) {
   // Kept here, so closing and reopening keeps what was typed, as Find does.
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  // What opened the dialog (this field, the pencil, the empty list's prompt),
+  // so closing it puts focus back there.
+  const openerRef = useRef<HTMLElement | null>(null);
 
   return (
     <>
@@ -109,15 +133,25 @@ export function DmSearch({
             aria-modal="true"
             onOpenAutoFocus={(event) => {
               event.preventDefault();
+              const opener = document.activeElement;
+              openerRef.current =
+                opener instanceof HTMLElement && opener !== document.body
+                  ? opener
+                  : null;
               const input = inputRef.current;
               input?.focus();
               input?.setSelectionRange(input.value.length, input.value.length);
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              // The pencil may have opened it, but the field is where the
-              // search lives, so focus lands there either way.
-              triggerRef.current?.focus();
+              // Back to whatever opened it. Below `lg` the field's pane can be
+              // hidden (the empty list's prompt sits in the thread column), so
+              // a hidden or departed opener falls back to the field, and
+              // failing that to nothing rather than a display:none button.
+              const opener = openerRef.current;
+              openerRef.current = null;
+              const target = [opener, triggerRef.current].find(isShown);
+              target?.focus();
             }}
             className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
           >
@@ -132,9 +166,10 @@ export function DmSearch({
               query={query}
               onQueryChange={setQuery}
               inputRef={inputRef}
-              onDone={() => {
+              onOpen={(channelId) => {
                 onOpenChange(false);
                 setQuery("");
+                onOpenChannel(channelId);
               }}
             />
           </DialogPrimitive.Content>
@@ -148,14 +183,14 @@ function DmSearchPanel({
   query,
   onQueryChange,
   inputRef,
-  onDone,
+  onOpen,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  onDone: () => void;
+  /** Close the search and open this conversation. */
+  onOpen: (channelId: string) => void;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
   const viewerId = useViewerUserId();
   const channelsQuery = useChannels();
@@ -164,7 +199,8 @@ function DmSearchPanel({
   const { byId: names, avatarFor, avatarTintFor } = useMemberDisplayNames();
   const blockList = useBlockedUserIds();
   // The shell already watches `["channels"]`, so the open needn't wait for
-  // the refetch: the URL target holds until the new DM is in the list.
+  // the refetch: a selection the list doesn't hold yet waits for it
+  // (`selectionPending` in the shell).
   const startDm = useGetOrCreateDm({ awaitRefetch: false });
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -193,8 +229,8 @@ function DmSearchPanel({
     [viewerId, names],
   );
 
-  // The Direct messages list's own rows and order (#3774): hidden ones left
-  // out, newest first.
+  // The Direct messages list's rows (#3774), hidden ones left out, newest
+  // first. Unlike the list, pins don't lead: Recent is the newest six.
   const conversations = useMemo(() => {
     const latest = new Map(
       asArray<{ channel_id: string; created_at?: string }>(
@@ -266,10 +302,9 @@ function DmSearchPanel({
   const openConversation = useCallback(
     (channelId: string) => {
       pickSeq.current += 1;
-      onDone();
-      router.push(chatDeepLink({ channelId }));
+      onOpen(channelId);
     },
-    [onDone, router],
+    [onOpen],
   );
 
   const startConversation = useCallback(
@@ -280,23 +315,15 @@ function DmSearchPanel({
       try {
         const dm = await startDm.mutateAsync({ member_id: member.user_id });
         if (seq !== pickSeq.current) return;
-        const channelId =
-          dm &&
-          typeof dm === "object" &&
-          typeof (dm as { id?: unknown }).id === "string"
-            ? (dm as { id: string }).id
-            : null;
+        const channelId = dmChannelIdOf(dm);
         if (!channelId) throw new Error("No channel id returned");
         openConversation(channelId);
       } catch (error) {
         if (seq !== pickSeq.current) return;
-        // The member sheet's Message failure, word for word.
+        // The member sheet's Message failure (`lib/chat/start-dm.ts`).
         toast({
-          title: "Could not start conversation",
-          description: getErrorMessage(
-            error,
-            "Something went wrong. Please retry.",
-          ),
+          title: START_DM_FAILED_TITLE,
+          description: getErrorMessage(error, START_DM_FAILED_FALLBACK),
           variant: "destructive",
         });
       } finally {
@@ -329,16 +356,23 @@ function DmSearchPanel({
 
   const loading =
     channelsQuery.isPending || (searching && rosterQuery.isPending);
-  // Why no members are listed yet, as the member sheet's Message row says it.
+  // Why no members are listed, so a list with none never reads as "nobody
+  // matches": the block list isn't read yet (as the member sheet's Message
+  // row says it), or the roster couldn't be read (a role without
+  // `members:view`, or the network).
+  const rosterFailed = rosterQuery.isError && rosterQuery.data === undefined;
   let heldNote: string | null = null;
+  let onRetryHeld: (() => void) | null = null;
   if (searching && result.membersHeld) {
-    heldNote =
-      blockList.status === "unavailable" && !blockList.isRetrying
-        ? DM_SEARCH_BLOCK_LIST_FAILED
-        : DM_SEARCH_CHECKING_BLOCK_LIST;
+    const failed = blockList.status === "unavailable" && !blockList.isRetrying;
+    heldNote = failed
+      ? DM_SEARCH_BLOCK_LIST_FAILED
+      : DM_SEARCH_CHECKING_BLOCK_LIST;
+    if (failed && !blockList.isPaused) onRetryHeld = blockList.retry;
+  } else if (searching && rosterFailed) {
+    heldNote = DM_SEARCH_ROSTER_FAILED;
+    if (!rosterQuery.isFetching) onRetryHeld = () => void rosterQuery.refetch();
   }
-  const canRetryBlockList =
-    heldNote === DM_SEARCH_BLOCK_LIST_FAILED && !blockList.isPaused;
   const noMatches = searching && !loading && options.length === 0;
   const activeId = options[safeIndex]?.id;
 
@@ -369,7 +403,7 @@ function DmSearchPanel({
       <p role="status" aria-live="polite" className="sr-only">
         {searching && !loading
           ? noMatches
-            ? dmSearchNoMatches(query)
+            ? (heldNote ?? dmSearchNoMatches(query))
             : `${options.length} result${options.length === 1 ? "" : "s"}.`
           : ""}
       </p>
@@ -475,12 +509,12 @@ function DmSearchPanel({
         {heldNote ? (
           <p className="px-2.5 pb-1 pt-3 text-caption text-muted-foreground">
             {heldNote}
-            {canRetryBlockList ? (
+            {onRetryHeld ? (
               <>
                 {" "}
                 <button
                   type="button"
-                  onClick={blockList.retry}
+                  onClick={onRetryHeld}
                   className={cn(
                     "font-medium text-foreground underline underline-offset-2",
                     FOCUS_RING,

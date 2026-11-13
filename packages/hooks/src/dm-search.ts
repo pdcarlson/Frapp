@@ -1,6 +1,7 @@
 /**
  * People search in Direct messages (#4668, asked by Shawn 2026-11-12): what a
- * name typed into the Direct messages search finds, on web and the phone.
+ * name typed into web's Direct messages search finds, shared so the phone's
+ * Messages search can run the same rules.
  *
  * Two kinds of result, in this order, the way iMessage's and Instagram's
  * new-message search, Slack's DM switcher and Discord's "Find or start a
@@ -21,12 +22,15 @@
  * (`spec/behavior/alumni.md`), so there is no alumni rule to apply here.
  *
  * Matching is the Find dialog's (`find-results.ts`): case-insensitive
- * substring, so "aul" finds Paul. It also ignores accents, and ranks a name
+ * substring, so "aul" finds Paul. It also ignores accents, folding and
+ * splitting names as the channel member list's search does
+ * (`channel-members.ts`), and ranks a name
  * that starts with the text above one with a word that does, above one that
- * only contains it; within a rank a 1:1 DM leads a group DM, then the list's
- * own order (newest first) holds.
+ * only contains it; within a rank a 1:1 DM leads a group DM, then the order
+ * the conversations came in holds.
  */
 import { SYSTEM_SENDER_ID } from "@repo/validation";
+import { foldForSearch, NAME_SEPARATORS } from "./channel-members";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
 export interface DmSearchConversation {
@@ -43,9 +47,9 @@ export interface DmSearchMember {
 export interface DmSearchInput<C extends DmSearchConversation> {
   query: string;
   /**
-   * The conversations the list shows, in its order, hidden ones left out: a
-   * hidden DM's member is offered as a member instead, and picking them
-   * reopens it.
+   * The conversations to search, in the order to keep within a rank, hidden
+   * ones left out: a hidden DM's member is offered as a member instead, and
+   * picking them reopens it.
    */
   conversations: readonly C[];
   /** The row's title, as the list draws it (`directChannelDisplayName`). */
@@ -73,15 +77,8 @@ export interface DmSearchResult<C> {
 
 /** Lowercased with accents and extra spaces taken off: "José " → "jose". */
 export function normalizeDmSearchText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+  return foldForSearch(text).replace(/\s+/g, " ").trim();
 }
-
-const WORD_START = /[\s\-'’.(]/;
 
 /** 0 starts with it, 1 a word starts with it, 2 contains it, `null` no match. */
 function rank(haystack: string, needle: string): number | null {
@@ -91,7 +88,7 @@ function rank(haystack: string, needle: string): number | null {
   if (at === 0) return 0;
   let index = at;
   while (index !== -1) {
-    if (WORD_START.test(text[index - 1] ?? "")) return 1;
+    if (NAME_SEPARATORS.test(text[index - 1] ?? "")) return 1;
     index = text.indexOf(needle, index + 1);
   }
   return 2;
@@ -123,9 +120,12 @@ export function searchDirectMessages<C extends DmSearchConversation>({
 
   const ranked: Array<{ conversation: C; rank: number; index: number }> = [];
   conversations.forEach((conversation, index) => {
-    const others = (conversation.member_ids ?? []).filter(
-      (id) => id !== viewerId,
-    );
+    // Members' names only once the viewer is known: until then the viewer's
+    // own name can't be told apart, and would match every conversation.
+    const others =
+      viewerId === null
+        ? []
+        : (conversation.member_ids ?? []).filter((id) => id !== viewerId);
     const haystacks = [
       titleOf(conversation),
       ...others
@@ -203,3 +203,17 @@ export const DM_SEARCH_CHECKING_BLOCK_LIST =
   "Checking your block list before listing other members.";
 export const DM_SEARCH_BLOCK_LIST_FAILED =
   "Couldn't check your block list, so other members aren't listed.";
+/** Under the conversations when the roster couldn't be read, with Try again. */
+export const DM_SEARCH_ROSTER_FAILED =
+  "Couldn't load your chapter's members, so only your conversations are listed.";
+
+/**
+ * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
+ * body has none, so a caller reports a failure instead of opening a thread
+ * with no id. Web's member sheet and its people search both read it here.
+ */
+export function dmChannelIdOf(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const id = (data as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}

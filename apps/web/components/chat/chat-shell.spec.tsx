@@ -827,8 +827,20 @@ vi.mock("./channel-list-skeleton", () => ({
 // The people search has its own spec; here it only reports whether the shell
 // opened it (#4668).
 vi.mock("./dm-search-dialog", () => ({
-  DmSearch: ({ open }: { open: boolean }) => (
-    <div data-testid="dm-search" data-open={String(open)} />
+  DmSearch: ({
+    open,
+    onOpenChannel,
+  }: {
+    open: boolean;
+    onOpenChannel: (channelId: string) => void;
+  }) => (
+    <div data-testid="dm-search" data-open={String(open)}>
+      <button
+        type="button"
+        data-testid="dm-search-pick"
+        onClick={() => onOpenChannel("chan-dm")}
+      />
+    </div>
   ),
 }));
 vi.mock("./channel-list", () => ({
@@ -6259,6 +6271,25 @@ describe("ChatShell's two lists (#3774)", () => {
     // than sending the member to the Directory.
     fireEvent.click(screen.getByRole("button", { name: "New message" }));
     expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+  });
+
+  it("opens a conversation picked in the people search as a row click would (#4668)", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    render(<ChatShell view="direct" />);
+    fireEvent.click(screen.getByTestId("dm-search-pick"));
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-dm");
+  });
+
+  it("doesn't reopen the people search by itself after leaving Direct messages with it open", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const { rerender } = render(<ChatShell view="direct" />);
+    fireEvent.click(screen.getByRole("button", { name: "New message" }));
+    rerender(<ChatShell view="channels" />);
+    rerender(<ChatShell view="direct" />);
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "false",
+    );
   });
 
   describe("the Direct messages lines (#3774)", () => {

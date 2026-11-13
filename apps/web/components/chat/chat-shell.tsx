@@ -2867,6 +2867,12 @@ export function ChatShell({
 
   // The rail's title is the nav row's label for the list it shows (#3774).
   const railTitle = directView ? "Direct messages" : "Channels";
+  // The people search (#4668) is there only on a loaded Direct messages list.
+  // Unmounting its dialog doesn't call `onOpenChange`, so an open flag left
+  // behind (Back to a channel while it was open) is cleared here; otherwise
+  // the search would pop open the next time Direct messages shows.
+  const dmSearchShown = directView && channelsPaneState === "ready";
+  if (dmSearchOpen && !dmSearchShown) setDmSearchOpen(false);
   // Direct messages with none to open: the member has never had one, or has
   // hidden every one. The thread column says how to start one instead of
   // drawing a timeline for no conversation.
@@ -2951,10 +2957,21 @@ export function ChatShell({
           />
         </div>
       </header>
-      {directView && channelsPaneState === "ready" ? (
+      {dmSearchShown ? (
         // Where Discord keeps "Find or start a conversation" (#4668).
         <div className="shrink-0 px-2 pt-2">
-          <DmSearch open={dmSearchOpen} onOpenChange={setDmSearchOpen} />
+          <DmSearch
+            open={dmSearchOpen}
+            onOpenChange={setDmSearchOpen}
+            // What a click on the conversation's row does, minus the hidden
+            // reopen: the search lists no hidden DM, and a member pick has
+            // already reopened one through `POST /v1/channels/dm`.
+            onOpenChannel={(channelId) => {
+              setSelectedChannelId(channelId);
+              openThreadPane();
+              setUnreachableTarget(null);
+            }}
+          />
         </div>
       ) : null}
       {/*

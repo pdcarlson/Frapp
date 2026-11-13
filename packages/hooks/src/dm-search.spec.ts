@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
+  dmChannelIdOf,
   normalizeDmSearchText,
   searchDirectMessages,
   type DmSearchConversation,
@@ -97,6 +98,23 @@ describe("searchDirectMessages", () => {
     expect(run("Paul", { viewerId: null }).membersHeld).toBe(true);
   });
 
+  it("matches no conversation on the viewer's own name while the viewer is unknown", () => {
+    // Every conversation holds the viewer; with no id to leave them out, their
+    // name would match them all.
+    expect(run("Shawn", { viewerId: null }).conversations).toEqual([]);
+  });
+
+  it("ranks a word that starts with the text above a name that only contains it", () => {
+    const result = run("lee", {
+      conversations: [],
+      roster: [
+        { user_id: "ashlee", display_name: "Ashlee Ford" },
+        { user_id: "winston", display_name: "Winston Lee" },
+      ],
+    });
+    expect(userIds(result.members)).toEqual(["winston", "ashlee"]);
+  });
+
   it("offers the member of a hidden DM, since picking them reopens it", () => {
     // `hidden` has no listed conversation (hidden ones are left out).
     expect(userIds(run("Paulo").members)).toEqual(["hidden"]);
@@ -104,9 +122,7 @@ describe("searchDirectMessages", () => {
 
   it("ignores case and accents and ranks name starts first", () => {
     expect(userIds(run("JOSE").members)).toEqual(["jose"]);
-    // "lee" starts a word of Winston Lee's name; nothing starts with it.
-    expect(ids(run("lee").conversations)).toEqual(["dm-winston"]);
-    // Pauline Park starts with "pa"; Evan Ruiz doesn't contain it.
+    // "park" is in the group only, through Pauline Park.
     expect(ids(run("park").conversations)).toEqual(["group"]);
   });
 
@@ -124,5 +140,14 @@ describe("searchDirectMessages", () => {
 describe("normalizeDmSearchText", () => {
   it("lowercases, strips accents and collapses spaces", () => {
     expect(normalizeDmSearchText("  José   ÁLVAREZ ")).toBe("jose alvarez");
+  });
+});
+
+describe("dmChannelIdOf", () => {
+  it("reads the id, or null for a body without one", () => {
+    expect(dmChannelIdOf({ id: "c1" })).toBe("c1");
+    expect(dmChannelIdOf({ id: "" })).toBeNull();
+    expect(dmChannelIdOf(null)).toBeNull();
+    expect(dmChannelIdOf("c1")).toBeNull();
   });
 });
