@@ -48,6 +48,11 @@ export function useBackToClose(open: boolean, close: () => void): void {
  * before the commit's views are mounted, and a focus event for a view that
  * isn't there yet is dropped (#2641 tracks confirming it on a device). An
  * overlay that closes before that task runs sends nothing.
+ *
+ * Nothing is sent where `sendAccessibilityEvent` doesn't exist:
+ * react-native-web leaves it out, so on the Expo web build calling it threw
+ * and covered every overlay with the error screen (#3916). A feature check
+ * rather than `Platform.OS`, so any other platform without it is safe too.
  */
 export function useFocusOnOpen(
   ref: RefObject<FocusTarget | null>,
@@ -56,7 +61,10 @@ export function useFocusOnOpen(
   useEffect(() => {
     if (!open) return;
     const timer = setTimeout(() => {
-      if (ref.current) {
+      if (
+        ref.current &&
+        typeof AccessibilityInfo.sendAccessibilityEvent === "function"
+      ) {
         AccessibilityInfo.sendAccessibilityEvent(ref.current, "focus");
       }
     }, 0);
