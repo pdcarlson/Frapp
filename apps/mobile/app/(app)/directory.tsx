@@ -24,12 +24,13 @@ import {
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
-import { StatusDot } from "@/components/account/status-dot";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
+import { presenceLabel } from "@repo/hooks/presence-status";
 import {
-  presenceLabel,
-  type PresenceStatus,
-} from "@repo/hooks/presence-status";
-import { useChapterPresence } from "@/lib/presence/presence-store";
+  NO_PRESENCE,
+  usePresenceOf,
+  type MemberPresence,
+} from "@/lib/presence/presence-store";
 import {
   ErrorState,
   NoChapterState,
@@ -159,14 +160,6 @@ export default function DirectoryScreen() {
   // The roster's role-color resolution, so a row's initials match the color
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
-  // Each member's dot and custom status line (#4137), as web's Directory and
-  // the phone's member sheet draw them, off chapter presence: until it has
-  // synced there is neither, never a stand-in Offline.
-  const presence = useChapterPresence();
-  const presenceFor = (userId: string): MemberPresence =>
-    presence.isReady
-      ? { status: presence.statusOf(userId), line: presence.lineOf(userId) }
-      : NO_PRESENCE;
   const canInvite = can("members:invite", usePermissionList());
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
@@ -564,7 +557,6 @@ export default function DirectoryScreen() {
                   <GridLineView
                     line={item}
                     avatarTintFor={avatarTintFor}
-                    presenceFor={presenceFor}
                     onOpen={open}
                   />
                 );
@@ -573,7 +565,6 @@ export default function DirectoryScreen() {
                 <MemberRow
                   row={item}
                   avatarTint={avatarTintFor(item.userId)}
-                  presence={presenceFor(item.userId)}
                   onPress={() => open(item)}
                 />
               );
@@ -621,14 +612,6 @@ export default function DirectoryScreen() {
   );
 }
 
-/** A member's presence as a row draws it: `null` status draws no dot. */
-export interface MemberPresence {
-  status: PresenceStatus | null;
-  line: string | null;
-}
-
-const NO_PRESENCE: MemberPresence = { status: null, line: null };
-
 /**
  * A row's and a tile's accessible name, one wording for both layouts: who,
  * their presence and custom status when known, then the meta line.
@@ -645,32 +628,6 @@ export function memberPressLabel(
   ]
     .filter(Boolean)
     .join(", ");
-}
-
-// On the avatar's bottom-right corner, as web pins it and the member sheet
-// draws it. No token in it, so it is built once rather than with every row's
-// stylesheet.
-const presenceDotStyles = StyleSheet.create({
-  dot: {
-    position: "absolute",
-    bottom: -3,
-    right: -3,
-  },
-});
-
-/** The presence dot on an avatar's bottom-right corner, as web pins it. */
-function AvatarPresence({ status }: { status: PresenceStatus | null }) {
-  const { tokens } = useFrappTheme();
-  if (!status) return null;
-  return (
-    <View pointerEvents="none" style={presenceDotStyles.dot}>
-      <StatusDot
-        testID={`member-presence-${status}`}
-        status={status}
-        ring={tokens.color.surface.background}
-      />
-    </View>
-  );
 }
 
 /** One line of the Grid layout (#4175): up to `GRID_COLUMNS` members. */
@@ -694,12 +651,10 @@ export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
 export function GridLineView({
   line,
   avatarTintFor,
-  presenceFor,
   onOpen,
 }: {
   line: GridLine;
   avatarTintFor: (userId: string) => MemberAvatarTint | null;
-  presenceFor?: (userId: string) => MemberPresence;
   onOpen: (row: DirectoryRow) => void;
 }) {
   return (
@@ -709,7 +664,6 @@ export function GridLineView({
           key={row.userId}
           row={row}
           avatarTint={avatarTintFor(row.userId)}
-          presence={presenceFor?.(row.userId)}
           onPress={() => onOpen(row)}
         />
       ))}
@@ -724,16 +678,16 @@ export function GridLineView({
 export function MemberRow({
   row,
   avatarTint,
-  presence = NO_PRESENCE,
   onPress,
 }: {
   row: DirectoryRow;
   /** The member's initials paint (#3860); omit for the neutral circle. */
   avatarTint?: MemberAvatarTint | null;
-  /** Their dot and custom status line (#4137); omit for neither. */
-  presence?: MemberPresence;
   onPress?: () => void;
 }) {
+  // Their dot and custom status line (#4137), read for this row alone
+  // (#4633): nothing until presence has synced, never a stand-in Offline.
+  const presence = usePresenceOf(row.userId);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const feedback = usePressFeedback();
@@ -754,7 +708,11 @@ export function MemberRow({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <View>
+      <AvatarWithPresence
+        status={presence.status}
+        avatarSize={AVATAR_SIZE}
+        ring={tokens.color.surface.background}
+      >
         <MemberAvatar
           uri={row.avatarUrl}
           initials={row.initials}
@@ -763,8 +721,7 @@ export function MemberRow({
           style={styles.avatar}
           textStyle={styles.avatarText}
         />
-        <AvatarPresence status={presence.status} />
-      </View>
+      </AvatarWithPresence>
       <View style={styles.rowText}>
         <Text style={styles.rowName}>{row.displayName}</Text>
         {/* The custom status line under the name, one line, as web's
@@ -789,14 +746,13 @@ export function MemberRow({
 export function MemberTile({
   row,
   avatarTint,
-  presence = NO_PRESENCE,
   onPress,
 }: {
   row: DirectoryRow;
   avatarTint?: MemberAvatarTint | null;
-  presence?: MemberPresence;
   onPress?: () => void;
 }) {
+  const presence = usePresenceOf(row.userId);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const feedback = usePressFeedback();
@@ -812,7 +768,12 @@ export function MemberTile({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <View style={styles.tileAvatarWrap}>
+      <AvatarWithPresence
+        status={presence.status}
+        avatarSize={TILE_AVATAR_SIZE}
+        ring={tokens.color.surface.background}
+        style={styles.tileAvatarWrap}
+      >
         <MemberAvatar
           uri={row.avatarUrl}
           initials={row.initials}
@@ -821,8 +782,7 @@ export function MemberTile({
           style={styles.tileAvatar}
           textStyle={styles.tileAvatarText}
         />
-        <AvatarPresence status={presence.status} />
-      </View>
+      </AvatarWithPresence>
       <Text style={styles.tileName} numberOfLines={1}>
         {row.displayName}
       </Text>

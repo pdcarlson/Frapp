@@ -26,12 +26,9 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { NavGlyph } from "@/components/nav-glyph";
-import { StatusDot } from "@/components/account/status-dot";
-import {
-  presenceLabel,
-  type PresenceStatus,
-} from "@repo/hooks/presence-status";
-import { useChapterPresence } from "@/lib/presence/presence-store";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
+import { presenceLabel } from "@repo/hooks/presence-status";
+import { usePresenceOf } from "@/lib/presence/presence-store";
 import {
   SectionHeader,
   SectionHeaderSkeleton,
@@ -148,10 +145,6 @@ export interface ChannelMemberSheetRow {
   roleRank: number | null;
   roleId: string | null;
   roleName: string | null;
-  /** `null` until presence has resolved: no dot, and no claim of Offline. */
-  status: PresenceStatus | null;
-  /** Their custom status line (#3845), or `null`. */
-  line: string | null;
 }
 
 export function MemberRows({
@@ -166,7 +159,6 @@ export function MemberRows({
   const membersQuery = useChannelMembers(channelId);
   const roster = useMemberDisplayNames();
   const { byId, avatarFor, roleColorFor } = roster;
-  const presence = useChapterPresence();
 
   const [query, setQuery] = useState("");
 
@@ -182,10 +174,8 @@ export function MemberRows({
         roleRank: member.role_rank,
         roleId: member.role_id ?? null,
         roleName: member.role_name ?? null,
-        status: presence.isReady ? presence.statusOf(member.user_id) : null,
-        line: presence.isReady ? presence.lineOf(member.user_id) : null,
       })),
-    [membersQuery.data, byId, avatarFor, roleColorFor, presence],
+    [membersQuery.data, byId, avatarFor, roleColorFor],
   );
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
@@ -246,79 +236,87 @@ export function MemberRows({
         groups.map((group) => (
           <View key={group.key}>
             <SectionHeader>{`${group.label} ${group.rows.length}`}</SectionHeader>
-            {group.rows.map((row) => {
-              const offline =
-                row.status === "offline" || row.status === "invisible";
-              return (
-                <Pressable
-                  key={row.userId}
-                  testID={`member-row-${row.userId}`}
-                  style={({ pressed }) => [
-                    styles.row,
-                    pressed && onOpenProfile ? styles.rowPressed : null,
-                  ]}
-                  accessibilityRole={onOpenProfile ? "button" : undefined}
-                  accessibilityLabel={
-                    row.status
-                      ? `${row.name}, ${presenceLabel(row.status)}`
-                      : row.name
-                  }
-                  accessibilityHint={
-                    onOpenProfile ? "Opens their profile" : undefined
-                  }
-                  disabled={!onOpenProfile}
-                  onPress={() => onOpenProfile?.(row.userId)}
-                >
-                  <View>
-                    <View style={offline ? styles.dimmed : null}>
-                      <MemberAvatar
-                        uri={row.avatarUrl}
-                        initials={initialsFor(row.name)}
-                        size={AVATAR_SIZE}
-                        tint={memberAvatarTint(
-                          memberAvatarHue(row.userId, row.roleColor),
-                        )}
-                        style={styles.avatar}
-                        textStyle={styles.avatarText}
-                      />
-                    </View>
-                    {row.status ? (
-                      <View pointerEvents="none" style={styles.presenceDot}>
-                        <StatusDot
-                          testID={`member-presence-${row.status}`}
-                          status={row.status}
-                          ring={tokens.color.surface.popover}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                  <View style={styles.nameBlock}>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.name,
-                        row.roleColor
-                          ? { color: row.roleColor }
-                          : offline
-                            ? styles.nameOffline
-                            : null,
-                      ]}
-                    >
-                      {row.name}
-                    </Text>
-                    {row.line ? (
-                      <Text numberOfLines={1} style={styles.statusLine}>
-                        {row.line}
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
+            {group.rows.map((row) => (
+              <ChannelMemberRow
+                key={row.userId}
+                row={row}
+                onOpenProfile={onOpenProfile}
+              />
+            ))}
           </View>
         ))
       )}
     </View>
+  );
+}
+
+/**
+ * One reader in the list (#4633): reads their own presence, so a change to
+ * one member's dot re-renders that row, not the sheet.
+ */
+function ChannelMemberRow({
+  row,
+  onOpenProfile,
+}: {
+  row: ChannelMemberSheetRow;
+  onOpenProfile?: (userId: string) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { status, line } = usePresenceOf(row.userId);
+  const offline = status === "offline" || status === "invisible";
+  return (
+    <Pressable
+      testID={`member-row-${row.userId}`}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && onOpenProfile ? styles.rowPressed : null,
+      ]}
+      accessibilityRole={onOpenProfile ? "button" : undefined}
+      accessibilityLabel={
+        status ? `${row.name}, ${presenceLabel(status)}` : row.name
+      }
+      accessibilityHint={onOpenProfile ? "Opens their profile" : undefined}
+      disabled={!onOpenProfile}
+      onPress={() => onOpenProfile?.(row.userId)}
+    >
+      <AvatarWithPresence
+        status={status}
+        avatarSize={AVATAR_SIZE}
+        ring={tokens.color.surface.popover}
+      >
+        <View style={offline ? styles.dimmed : null}>
+          <MemberAvatar
+            uri={row.avatarUrl}
+            initials={initialsFor(row.name)}
+            size={AVATAR_SIZE}
+            tint={memberAvatarTint(memberAvatarHue(row.userId, row.roleColor))}
+            style={styles.avatar}
+            textStyle={styles.avatarText}
+          />
+        </View>
+      </AvatarWithPresence>
+      <View style={styles.nameBlock}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.name,
+            row.roleColor
+              ? { color: row.roleColor }
+              : offline
+                ? styles.nameOffline
+                : null,
+          ]}
+        >
+          {row.name}
+        </Text>
+        {line ? (
+          <Text numberOfLines={1} style={styles.statusLine}>
+            {line}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -424,13 +422,6 @@ function createStyles(tokens: SignetTokens) {
     },
     // Web's `opacity-50` on an offline member's avatar.
     dimmed: { opacity: 0.5 },
-    // On the avatar's bottom-right corner, as web pins it and as the ME
-    // button carries the member's own; the ring is the sheet's fill.
-    presenceDot: {
-      position: "absolute",
-      bottom: -3,
-      right: -3,
-    },
     nameBlock: {
       flexShrink: 1,
       minWidth: 0,

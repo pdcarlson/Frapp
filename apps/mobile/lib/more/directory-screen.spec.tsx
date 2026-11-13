@@ -1242,10 +1242,24 @@ describe("s13 as a grid (#4175)", () => {
   describe("Directory row presence and status line (#4137)", () => {
     const AWAY = { status: "idle" as const, line: "At practice till 6" };
 
-    it("draws the status line under the name and the dot on the avatar", () => {
-      const tree = renderNode(
-        <MemberRow row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+    /** Chapter presence synced, with every member Idle on AWAY's line. */
+    function syncAway() {
+      act(() =>
+        setChapterPresence({
+          statusOf: () => AWAY.status,
+          lineOf: () => AWAY.line,
+          isReady: true,
+        }),
       );
+    }
+
+    afterEach(() => {
+      act(() => setChapterPresence(PRESENCE_NOT_READY));
+    });
+
+    it("draws the status line under the name and the dot on the avatar", () => {
+      syncAway();
+      const tree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
       const text = screenText(tree);
       expect(text).toContain("At practice till 6");
       expect(text.indexOf("Member 1")).toBeLessThan(
@@ -1345,10 +1359,47 @@ describe("s13 as a grid (#4175)", () => {
       });
     });
 
-    it("gives a tile the same line and dot", () => {
-      const tile = renderNode(
-        <MemberTile row={row(1)} presence={AWAY} onPress={vi.fn()} />,
+    /**
+     * #4633: a row reads its own member's presence, so a heartbeat, or
+     * another member's change, re-renders no row but that member's.
+     */
+    it("re-renders a row only when its own member's presence changes", () => {
+      const status: Record<string, "online" | "idle"> = {
+        "u-1": "online",
+        "u-2": "online",
+      };
+      const publish = () =>
+        act(() =>
+          setChapterPresence({
+            statusOf: (id) => status[id] ?? "offline",
+            lineOf: () => null,
+            isReady: true,
+          }),
+        );
+      publish();
+      const commits = vi.fn();
+      renderNode(
+        <React.Profiler id="row" onRender={commits}>
+          <MemberRow row={row(1)} onPress={vi.fn()} />
+        </React.Profiler>,
       );
+      const mounted = commits.mock.calls.length;
+
+      // A heartbeat re-publish with nothing changed, then another member's.
+      publish();
+      status["u-2"] = "idle";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted);
+
+      // This member's own change does reach the row.
+      status["u-1"] = "idle";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted + 1);
+    });
+
+    it("gives a tile the same line and dot", () => {
+      syncAway();
+      const tile = renderNode(<MemberTile row={row(1)} onPress={vi.fn()} />);
       expect(screenText(tile)).toContain("At practice till 6");
       expect(
         tile.root.findAll(
