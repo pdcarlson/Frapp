@@ -637,7 +637,8 @@ holding its kind's glyph at 20px in `--muted-foreground`
 or, for an event, its month and day in place of a glyph. The phone's Activity
 rows draw the same lead at the same sizes in `text.mutedForeground`
 ([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
-#4173 step 2), and both read which shape a kind takes from one map,
+#4173 step 2), except that since #4766 an event listed under a day's heading
+leads with the events glyph, the heading having said the day. Both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.

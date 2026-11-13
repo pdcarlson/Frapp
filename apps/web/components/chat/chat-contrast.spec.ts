@@ -5,6 +5,7 @@ import {
   AA_NON_TEXT,
   AA_TEXT,
   BODY_TEXT,
+  CARD_HOVER,
   accentFour,
   accentRolesFor,
   DESTRUCTIVE_TEXT,
@@ -113,6 +114,20 @@ describe("chat message rows", () => {
         `--muted-foreground over ${name}`,
       ).toBeGreaterThanOrEqual(BODY_TEXT);
     }
+  });
+
+  it("holds text on --card-hover, the fill above the ladder (#3999)", () => {
+    // No ladder step, so the loop above skips it, but text sits on it: a
+    // hovered or selected row, the segmented control's pick, a menu's open
+    // item. Body text keeps 7:1. Secondary text is held to AA only: on the
+    // 2026-11-12 ladder `--card-hover` rose to #3B3B3B and
+    // `--muted-foreground` measures 6.42:1 there (8.01:1 at the old #2C2C2C).
+    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(
+      BODY_TEXT,
+    );
+    expect(ratio(TEXT.mutedForeground, CARD_HOVER)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
   it("keeps every caption tone over AA on the whole ladder", () => {
@@ -429,13 +444,24 @@ describe("semantic text on its own 13% tint", () => {
 });
 
 describe("the channel rail", () => {
-  it("keeps a read row's title legible against the rail fill", () => {
-    // The read/unread distinction is carried by weight and tone, so the quieter
-    // of the two tones still has to clear AA — otherwise "read" reads as
-    // "disabled".
-    expect(
-      ratio(TEXT.mutedForeground, SURFACE.surface1),
-    ).toBeGreaterThanOrEqual(AA_TEXT);
+  it("keeps the quietest row title legible against the rail fill", () => {
+    // A read row's title is `--muted-foreground` (#4147); the quietest is a
+    // muted row's, in `--muted` (#3999). Both have to clear AA on the row's
+    // rest and hover fills, or "read" and "muted" read as "disabled".
+    for (const [name, bg] of Object.entries({
+      background: SURFACE.background,
+      "surface-1": SURFACE.surface1,
+      card: SURFACE.card,
+    })) {
+      expect(
+        ratio(TEXT.mutedForeground, bg),
+        `read title over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        ratio(TEXT.muted, bg),
+        `muted title over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
   });
 
   it("keeps the selected row's accent text AA on its tint, per seed", () => {

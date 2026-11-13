@@ -38,7 +38,7 @@ describe('ChatFormService (#3926 step 3)', () => {
   let repo: {
     findOwn: jest.Mock;
     findAllForCreator: jest.Mock;
-    findAnsweredMessageIds: jest.Mock;
+    findAnswered: jest.Mock;
     save: jest.Mock;
   };
   let access: { assertMessageAccess: jest.Mock; listChannelMembers: jest.Mock };
@@ -48,7 +48,7 @@ describe('ChatFormService (#3926 step 3)', () => {
     repo = {
       findOwn: jest.fn(),
       findAllForCreator: jest.fn().mockResolvedValue([]),
-      findAnsweredMessageIds: jest.fn(),
+      findAnswered: jest.fn(),
       save: jest.fn().mockResolvedValue(row),
     };
     access = {

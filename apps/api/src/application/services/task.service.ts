@@ -130,6 +130,8 @@ export interface TaskListOptions {
   createdBy?: string;
   /** Leave out tasks assigned to this member. */
   notAssigneeId?: string;
+  /** Only tasks marked done at or after this instant. */
+  completedSince?: string;
   /** `newest` (default) or `longest_waiting`, as the repository orders them. */
   order?: 'newest' | 'longest_waiting';
   /** Resume after this row (the last of the page before). */
@@ -616,7 +618,7 @@ export class TaskService {
     isAdmin: boolean,
     options: Pick<
       TaskListOptions,
-      'confirmed' | 'status' | 'createdBy' | 'notAssigneeId'
+      'confirmed' | 'status' | 'createdBy' | 'notAssigneeId' | 'completedSince'
     > = {},
   ): Promise<number> {
     return this.taskRepo.countByChapter(chapterId, {

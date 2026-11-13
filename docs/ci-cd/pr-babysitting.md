@@ -241,7 +241,15 @@ regenerated whole, and neither side of that conflict is right: the answer is a f
 merged source. The script:
 
 1. refuses on uncommitted changes to tracked files, fetches `origin/main` (`--base <ref>` for
-   another), and merges it without committing;
+   another), and merges it without committing. A branch built on another PR's branch (part 3
+   merged part 2) holds part 2's own commits while `main` holds only its squash, so a plain merge
+   finds no shared history for that work and conflicts on every line both touched, whole files
+   when both added them (#3926 step 4, 2026-11-13: eight files on one PR). For each squash commit
+   on `main` whose PR the branch already holds, the script fetches `refs/pull/<n>/head` and, for
+   the `git merge` call only, grafts it on as the squash's second parent, so the merge runs
+   against the branch's own copy of that PR. The grafts are deleted when the merge returns
+   (the next run also deletes any an interrupted one left), and while any is in place the merge
+   never fast-forwards, so the commit has its real parents and the push stays a fast-forward;
 2. takes `main`'s side of a conflict in those two files;
 3. stops if any other file conflicts and lists it. Resolve each, `git add` it, then run
    `npm run merge:main -- --continue`, not `git commit`, or the contract stays `main`'s;

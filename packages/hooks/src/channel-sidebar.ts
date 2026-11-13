@@ -306,6 +306,25 @@ export function countsAddressMember(
   return counts.mentionCount > 0 || (isDirect && counts.unreadCount > 0);
 }
 
+/**
+ * Whether a row draws as unread (bold name, unread dot). A muted channel
+ * stays quiet unless it addresses the member: a mention, or a direct
+ * message, gets past a mute as it does for push. Shawn, 2026-11-13 (#3999):
+ * the same rule decides what a folded header counts and what Unread only
+ * keeps, so the header never lights for a channel whose row reads as read.
+ */
+export function countsLookUnread(
+  isDirect: boolean,
+  counts: SidebarUnreadCounts,
+  muted: boolean,
+): boolean {
+  const addressed = countsAddressMember(isDirect, counts);
+  // A mention implies an unread row even if the two counts ever disagree: a
+  // red badge on a read-styled row is a contradiction on screen.
+  const unread = counts.unreadCount > 0 || addressed;
+  return unread && (!muted || addressed);
+}
+
 export function arrangeChannelSidebar<C extends SidebarChannelLike>(
   input: ArrangeSidebarInput<C>,
 ): ArrangedSidebar<C> {
@@ -320,8 +339,21 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     mutedChannelIds,
   } = input;
 
-  const countsOf = (channel: C) =>
-    unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
+  // The counts the filters and the folded headers read (rows read the
+  // server's counts directly). A muted channel's plain unread is quiet here
+  // (#3999, Shawn 2026-11-13): it adds nothing to a folded header and Unread
+  // only drops it, as its row (`countsLookUnread`) reads as read. Nothing here
+  // changes what the server holds.
+  const countsOf = (channel: C): SidebarUnreadCounts => {
+    const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
+    if (
+      mutedChannelIds?.has(channel.id) &&
+      !countsLookUnread(isDirectChannel(channel), counts, true)
+    ) {
+      return NO_UNREAD;
+    }
+    return counts;
+  };
 
   // A filter applies only while its data is known. Hiding rows on missing
   // counts would tell the member "nothing unread" when the truth is "we don't

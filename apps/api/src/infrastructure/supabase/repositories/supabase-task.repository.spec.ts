@@ -164,6 +164,8 @@ describe('SupabaseTaskRepository — tenant scope', () => {
       ['status', { status: TaskStatus.TODO }, [1]],
       ['unconfirmed', { confirmed: false }, [3, 2, 1]],
       ['confirmed', { confirmed: true }, [4]],
+      // Marked done at or after the instant; a task never done has no time.
+      ['completed-since', { completedSince: '2026-01-02T00:00:00Z' }, [3, 2]],
     ] as const)(
       'the %s filter leaves out what it should',
       async (_name, query, expected) => {

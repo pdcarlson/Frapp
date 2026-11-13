@@ -85,18 +85,20 @@ describe('SupabaseChatFormResponseRepository — member scope', () => {
     expect(rows.every((row) => row.message_id === FORM)).toBe(true);
   });
 
-  it('findAnsweredMessageIds names only the forms the caller answered', async () => {
+  it('findAnswered names only the forms the caller answered, and when', async () => {
     const { repo } = build();
+    const answeredAt = '2026-11-13T00:00:00.000Z';
+    // Their own answer's time, not the earlier one `USER_A` gave the form.
     await expect(
-      repo.findAnsweredMessageIds([FORM, OTHER_FORM], USER_SHARED),
-    ).resolves.toEqual([FORM]);
+      repo.findAnswered([FORM, OTHER_FORM], USER_SHARED),
+    ).resolves.toEqual([
+      { message_id: FORM, created_at: '2026-11-13T00:05:00.000Z' },
+    ]);
     // USER_B answered the other form only; USER_A's row on FORM is not theirs.
     await expect(
-      repo.findAnsweredMessageIds([FORM, OTHER_FORM], USER_B),
-    ).resolves.toEqual([OTHER_FORM]);
-    await expect(repo.findAnsweredMessageIds([], USER_SHARED)).resolves.toEqual(
-      [],
-    );
+      repo.findAnswered([FORM, OTHER_FORM], USER_B),
+    ).resolves.toEqual([{ message_id: OTHER_FORM, created_at: answeredAt }]);
+    await expect(repo.findAnswered([], USER_SHARED)).resolves.toEqual([]);
   });
 
   it('save passes the caller as the member whose answers it replaces', async () => {

@@ -20,7 +20,10 @@ import type { ActivityLink } from '../../application/services/activity-link.serv
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { ChannelType } from '#domain/entities/chat.entity';
-import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
+import {
+  ACTIVITY_SECTIONS,
+  ACTIVITY_WEEK_PARTS,
+} from '../../application/services/activity.service';
 import { STANDING_SECTIONS } from '../../application/services/activity-standing.service';
 import type {
   ActivityStanding,
@@ -38,6 +41,9 @@ import type {
   ActivitySection,
   ActivityTask,
   ActivityView,
+  ActivityWeek,
+  ActivityWeekCount,
+  ActivityWeekPart,
 } from '../../application/services/activity.service';
 
 /**
@@ -566,6 +572,71 @@ export class ActivityMadeByYouDto {
   events: ActivityEventDto[];
 }
 
+export class ActivityWeekCountDto implements ActivityWeekCount {
+  @ApiProperty({ description: 'How many the caller has done this week.' })
+  done: number;
+
+  @ApiProperty({
+    description: '`done` plus what is still open; never less than `done`.',
+  })
+  total: number;
+}
+
+export class ActivityWeekDto implements ActivityWeek {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range.',
+  })
+  start: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Seven days after `start`.',
+  })
+  end: string;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Events that start this week and invite the caller. Done: marked present or late. Still open: a required event not attended (ahead or missed), and an optional one whose check-in has not closed. An excused event, and an optional one the caller skipped, is left out. Null when Events is off or couldn’t be read.',
+  })
+  events: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'The caller’s own tasks. Done: marked done since the week began, confirmed or not. Still open: not done and due before the week ends, overdue ones included. Null when Tasks is off or couldn’t be read.',
+  })
+  tasks: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Other members’ polls the caller can read. Done: first voted on since the week began. Still open: every `needs_you.polls` row, counted before its cap. Null when Polls is off or couldn’t be read.',
+  })
+  polls: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Other members’ sign-up sheets, headcounts and forms. Done: first answered since the week began. Still open: every `needs_you.cards` row, counted before its cap. Null when the read failed.',
+  })
+  cards: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    enum: ACTIVITY_WEEK_PARTS,
+    isArray: true,
+    description:
+      'Parts that could not be read this time. Each is served null, as a part whose module is off is; this list tells the two apart.',
+  })
+  unavailable: ActivityWeekPart[];
+}
+
 export class ActivityDto implements ActivityView {
   @ApiProperty({ type: ActivityNeedsYouDto })
   needs_you: ActivityNeedsYouDto;
@@ -602,6 +673,13 @@ export class ActivityDto implements ActivityView {
   unavailable: ActivitySection[];
 
   @ApiProperty({
+    type: ActivityWeekDto,
+    description:
+      'How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted.',
+  })
+  week: ActivityWeekDto;
+
+  @ApiProperty({
     type: String,
     format: 'date-time',
     nullable: true,
@@ -611,12 +689,13 @@ export class ActivityDto implements ActivityView {
   unread_since: string | null;
 }
 
-export class ActivityStandingQueryDto {
+/** The query of both Activity reads: where the caller's week begins. */
+export class ActivityWeekQueryDto {
   @ApiProperty({
     required: false,
     format: 'date-time',
     description:
-      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.',
+      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.',
   })
   @IsOptional()
   @IsISO8601({ strict: true })

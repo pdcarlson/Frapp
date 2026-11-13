@@ -91,6 +91,24 @@ Every list, row and label is checked at the size of a real imported chapter. The
 | P5.5 | A count isn't formatted for its size: a raw 21718, or an unread badge that keeps growing instead of stopping at 99+. |
 | P5.6 | A picker for a big set (roles, members, channels) is a flat unsorted list. |
 
+### Three people
+
+Owner rule, 2026-11-13 ("something we should take into consideration every time we build a UI screen, is how it looks for each demographic of user"): a screen is designed, drawn and checked for the three people who open it, not for one imagined user. A screen sized for the president is empty for most of the chapter, and one sized for a member buries an officer. The owner's sizing, to be recounted when real use says otherwise:
+
+| Person | A week holds about |
+| --- | --- |
+| An average member | 3 events (chapter, one they signed up for, whatever else the chapter requires) and 1 or 2 tasks |
+| A committee chair | the same, plus their committee's meetings and tasks, and a few things to review |
+| An exec (the president) | "a bunch more": every committee's meeting, 8 or more tasks, and a queue of other people's work to sign off |
+
+A proposal page and a UI PR show the screen for all three and for the member with nothing at all, and the PR names them. The phone's Activity tab was the first screen built this way ([#4766](https://github.com/pdcarlson/Frapp/issues/4766)).
+
+| Check | Fails when |
+| --- | --- |
+| P5.7 | The screen was drawn for one person: for an average member it is mostly zeros or empty boxes, or for the president its first screenful is a wall with no order. |
+| P5.8 | A number, tile or section that only an officer has is shown to a member as a zero, or what an officer reviews is mixed into what they themselves owe. |
+| P5.9 | An obvious state was never drawn: nothing due, everything done, something happening right now, a part that failed to load (it must not read as empty or zero), a module the chapter has off. |
+
 ## P6. One product across web and mobile
 
 Web and mobile are two views of one app. A member who uses both should never relearn a name, a color or an order.
