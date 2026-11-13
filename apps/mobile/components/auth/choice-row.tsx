@@ -59,7 +59,9 @@ export function ChoiceRow({
         <Text style={styles.title}>{title}</Text>
         {body ? <Text style={styles.body}>{body}</Text> : null}
       </View>
-      {trailing ?? <ForwardGlyph color={tokens.color.text.muted} size={20} />}
+      {trailing ?? (
+        <ForwardGlyph color={tokens.color.text.mutedForeground} size={20} />
+      )}
     </Pressable>
   );
 }

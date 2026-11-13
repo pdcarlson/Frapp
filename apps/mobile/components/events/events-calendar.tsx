@@ -12,7 +12,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { InlineNote } from "@/components/inline-note";
-import { SectionHeader } from "@/components/list-section";
+import { DayHeading } from "@/components/list-section";
 import { EventRowFlat } from "@/components/events/event-rows";
 import { CalendarTaskRow } from "@/components/events/calendar-tasks";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
@@ -265,9 +265,9 @@ export function EventsCalendar({
       </GestureDetector>
 
       <View>
-        <SectionHeader>
+        <DayHeading>
           {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
-        </SectionHeader>
+        </DayHeading>
         {dayEvents.length === 0 && dayTasks.length === 0 ? (
           <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>
         ) : (
