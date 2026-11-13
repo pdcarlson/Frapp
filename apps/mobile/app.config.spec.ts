@@ -7,6 +7,7 @@ import {
   PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
 } from "@repo/validation";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**
@@ -1452,5 +1453,28 @@ describe("the e2e profile behind the Maestro flows (#808)", () => {
       (match) => match[1],
     );
     expect(profiles).toEqual(["e2e", "e2e"]);
+  });
+});
+
+/**
+ * #4392. The splash sits on the app's own `--background` so the cold-start
+ * handoff to the root view (`app/_layout.tsx` paints
+ * `surface.background`) has no seam (`spec/ui/assets.md`). The ladder moved
+ * that token to #050505 (#3826) and left the splash on #0A0A0A; this pins
+ * the two together. A change here reaches users with the next store build:
+ * the splash is native, so an OTA update doesn't carry it.
+ */
+describe("the splash background (#4392)", () => {
+  it("is the app's own background token", () => {
+    const appJson = JSON.parse(
+      readFileSync(new URL("./app.json", import.meta.url), "utf8"),
+    ) as { expo: { plugins: unknown[] } };
+    const splash = appJson.expo.plugins.find(
+      (plugin): plugin is [string, { backgroundColor?: string }] =>
+        Array.isArray(plugin) && plugin[0] === "expo-splash-screen",
+    );
+    expect(splash?.[1].backgroundColor?.toUpperCase()).toBe(
+      signetDarkTokens.color.surface.background.toUpperCase(),
+    );
   });
 });
