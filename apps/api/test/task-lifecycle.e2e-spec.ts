@@ -88,8 +88,12 @@ describe('Task lifecycle (e2e)', () => {
       'user-1',
       true,
       'COMPLETED',
-      // No proof photo sent (#4565).
-      undefined,
+      // No proof or reply sent (#4635).
+      {
+        proof_photo_paths: undefined,
+        proof_link: undefined,
+        completion_note: undefined,
+      },
     );
   });
 
@@ -122,6 +126,8 @@ describe('Task lifecycle (e2e)', () => {
       'task-1',
       'chapter-1',
       'Missing details',
+      // No "Ask for a photo next time" (#4635).
+      { requirePhoto: undefined },
     );
   });
 });

@@ -31,6 +31,8 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     sent_back_at: null,
     sent_back_reason: null,
     completion_note: null,
+    completed_at: null,
+    confirmed_at: null,
     photos: [],
     ...overrides,
   };
@@ -192,7 +194,7 @@ describe("canReopenOwnTask (#4635)", () => {
         stored: "COMPLETED",
         pointsAwarded: true,
         isAssignee: true,
-        needsSignOff: false,
+        signedOffAutomatically: true,
       }),
     ).toBe(true);
     expect(
@@ -232,20 +234,38 @@ describe("canReadCardTask", () => {
 
 describe("taskCardControls (#4635)", () => {
   it("offers only Send back on a completion that needed no sign-off", () => {
-    for (const points_awarded of [false, true]) {
-      expect(
-        taskCardControls({
-          live: live({
-            status: "COMPLETED",
-            stored_status: "COMPLETED",
-            point_reward: null,
-            points_awarded,
-          }),
-          isAssignee: false,
-          canManage: true,
+    const at = "2026-11-13T10:00:00.000Z";
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: at,
+          confirmed_at: at,
         }),
-      ).toEqual(["reject"]);
-    }
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["reject"]);
+  });
+
+  it("keeps Confirmed on a no-points task an officer confirmed", () => {
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: "2026-11-01T10:00:00.000Z",
+          confirmed_at: "2026-11-02T10:00:00.000Z",
+        }),
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["confirmed"]);
   });
 });
 
@@ -468,7 +488,7 @@ describe("readEditableCardTask", () => {
       status: "TODO",
       stored_status: "TODO",
       subtasks: [],
-      reference_photos: [],
+      photos: [],
       proof_kind: "none",
     });
   });
@@ -489,12 +509,15 @@ describe("readEditableCardTask", () => {
         ],
       }),
     ).toMatchObject({
-      reference_photos: [
+      // The edit form keeps the reference ones; the board's rows carry the
+      // same `photos`, so both open the form the same way.
+      photos: [
         {
           id: "p1",
           kind: "reference",
           storage_path: "chapters/c/tasks/1/a.jpg",
         },
+        { id: "p2", kind: "proof", storage_path: "chapters/c/tasks/2/b.jpg" },
       ],
       proof_kind: "link",
     });

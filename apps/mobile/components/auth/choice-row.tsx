@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { SkeletonText } from "@/components/state-block";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -57,7 +58,7 @@ export function ChoiceRow({
         <Text style={styles.title}>{title}</Text>
         {body ? <Text style={styles.body}>{body}</Text> : null}
       </View>
-      {trailing ?? <Text style={styles.chevron}>›</Text>}
+      {trailing ?? <ForwardGlyph color={tokens.color.text.muted} size={20} />}
     </Pressable>
   );
 }
@@ -121,11 +122,6 @@ function createStyles(tokens: SignetTokens) {
     body: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    chevron: {
-      fontSize: 26,
-      lineHeight: 28,
-      color: tokens.color.text.muted,
     },
   });
 }

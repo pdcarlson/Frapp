@@ -26,7 +26,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import {
   NewEventSheet,
   useEventEditGrants,
@@ -213,14 +213,14 @@ export default function EventDetailsScreen() {
         backAction={
           grants.edit ? (
             // A pencil, as Profile's edit: the same back-row slot.
-            <IconButton
+            <HeaderButton
               label="Edit event"
               hint="Opens a sheet to change this event."
               disabled={!parentSettled}
               onPress={() => editSheetRef.current?.present()}
             >
               <PencilGlyph color={accent} />
-            </IconButton>
+            </HeaderButton>
           ) : undefined
         }
         title={event.name}

@@ -20,6 +20,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose } from "@/lib/overlay";
+import { useOverlayPresence } from "@/lib/overlay-presence";
 import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
@@ -117,8 +118,13 @@ export function SheetBackToClose({ onClose }: { onClose: () => void }) {
  * without it, and the screen behind them read through at full brightness.
  * s17 (`components/ask/ask-sheet.tsx`) drew this first, at the drawn
  * `rgba(0,0,0,.55)`, and now passes this one too.
+ *
+ * Because every sheet draws it, and only while presented, it is also where a
+ * sheet reports itself open (`lib/overlay-presence.ts`): the screen under a
+ * sheet stays focused, so what plays by itself on a resting screen asks there.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
+  useOverlayPresence();
   return (
     <BottomSheetBackdrop
       {...props}

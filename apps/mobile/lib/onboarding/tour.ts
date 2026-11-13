@@ -1,5 +1,5 @@
 /**
- * The first-run tour (`spec/behavior/onboarding.md` § First-run tour): three
+ * The first-run tour (`spec/behavior/onboarding.md` § First-run tour): four
  * stops over the real tab screens, right after s03, in place of the static
  * "You're in." card that used to open s03 (owner brief 2026-11-07, item 4).
  *
@@ -16,7 +16,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type TourStopKey = "channels" | "quickActions" | "you";
+export type TourStopKey = "channels" | "messages" | "quickActions" | "you";
 
 export interface TourStop {
   key: TourStopKey;
@@ -34,6 +34,12 @@ export const TOUR_STOPS: readonly TourStop[] = [
     key: "channels",
     text: "You're in {chapter}. Tap a channel to start talking.",
     maxHeight: 220,
+  },
+  // The door, and the swipe nothing on screen shows (#3774, #4610): the tour
+  // is the one moment a new member is reading every line.
+  {
+    key: "messages",
+    text: "Direct messages are here. Swiping left opens them too.",
   },
   {
     key: "quickActions",

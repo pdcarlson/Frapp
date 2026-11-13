@@ -36,6 +36,7 @@ import {
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   taskNeedsSignOff,
+  taskSignedOffAutomatically,
   type TaskProofKind,
 } from '@repo/validation';
 import {
@@ -280,9 +281,11 @@ export class TaskService {
         `${field} takes at most ${TASK_PHOTOS_MAX} photos`,
       );
     }
-    for (const path of unique) {
-      if (!held.has(path)) await this.assertPhotoPath(chapterId, path, field);
-    }
+    await Promise.all(
+      unique
+        .filter((path) => !held.has(path))
+        .map((path) => this.assertPhotoPath(chapterId, path, field)),
+    );
     return unique;
   }
 
@@ -838,7 +841,12 @@ export class TaskService {
 
     // Photos live in their own rows (#4635): read them once for the
     // reference set below and the proof a hand-over drops.
-    const held = await this.taskRepo.findPhotos(chapterId, [id]);
+    const reassigned =
+      input.assignee_id !== undefined && input.assignee_id !== task.assignee_id;
+    const held =
+      input.reference_photo_paths !== undefined || reassigned
+        ? await this.taskRepo.findPhotos(chapterId, [id])
+        : [];
     const heldReference = held.filter((photo) => photo.kind === 'reference');
     let addReference: string[] = [];
     let dropReference: TaskPhoto[] = [];
@@ -857,8 +865,6 @@ export class TaskService {
     }
     const photosChange = addReference.length > 0 || dropReference.length > 0;
 
-    const reassigned =
-      input.assignee_id !== undefined && input.assignee_id !== task.assignee_id;
     if (reassigned) {
       if (!input.assignee_id) {
         throw new BadRequestException('A task needs an assignee');
@@ -881,6 +887,22 @@ export class TaskService {
       patch.sent_back_reason = null;
       patch.proof_link = null;
       patch.completion_note = null;
+    }
+
+    // A completion still waiting on an officer that this edit leaves with no
+    // points and no proof needs no sign-off any more (#4635, decision C):
+    // signed off now, as Mark done would have, stamped with its own
+    // completion time so it reads as automatic and can still be reopened.
+    // Otherwise Confirm would refuse it and it would wait for good.
+    if (
+      !reassigned &&
+      task.status === TaskStatus.COMPLETED &&
+      ('point_reward' in patch || 'proof_kind' in patch) &&
+      !taskNeedsSignOff({ ...task, ...patch })
+    ) {
+      patch.confirmed_at = task.completed_at ?? new Date().toISOString();
+      patch.completed_at = patch.confirmed_at;
+      patch.points_awarded = true;
     }
 
     if (Object.keys(patch).length === 0 && !photosChange) {
@@ -1167,20 +1189,42 @@ export class TaskService {
 
     const now = new Date().toISOString();
     const signedOff = !taskNeedsSignOff(task);
-    let updated: Task;
+    let updated: Task | null;
     try {
-      updated = await this.taskRepo.update(task.id, chapterId, {
-        status: TaskStatus.COMPLETED,
-        completed_at: now,
-        proof_link: proofLink,
-        completion_note: note,
-        // Decision C (#4635): nothing to award and nothing to check, so it
-        // is Done now. An officer can still send it back.
-        ...(signedOff ? { confirmed_at: now, points_awarded: true } : {}),
-      });
+      // Compare-and-set on what this completion was judged on: still in
+      // progress, with the points and proof kind read above. An officer's
+      // edit or a second Mark done landing in between matches nothing, so a
+      // task is never signed off on points it has since gained, and proof
+      // never piles up past the cap.
+      updated = await this.taskRepo.updateIfMatches(
+        task.id,
+        chapterId,
+        {
+          status: task.status,
+          point_reward: task.point_reward,
+          proof_kind: task.proof_kind,
+        },
+        {
+          status: TaskStatus.COMPLETED,
+          completed_at: now,
+          proof_link: proofLink,
+          completion_note: note,
+          // Decision C (#4635): nothing to award and nothing to check, so it
+          // is Done now, stamped with the completion's own time
+          // (`taskSignedOffAutomatically`). An officer can still send it
+          // back.
+          ...(signedOff ? { confirmed_at: now, points_awarded: true } : {}),
+        },
+      );
     } catch (error) {
       await this.dropPhotos(chapterId, task.id, photos);
       throw error;
+    }
+    if (!updated) {
+      await this.dropPhotos(chapterId, task.id, photos);
+      throw new BadRequestException(
+        'This task changed while you were marking it done. Look again and retry.',
+      );
     }
 
     await this.notifyTaskCompleted(updated, userId, chapterId);
@@ -1192,7 +1236,7 @@ export class TaskService {
    * only because it needed no sign-off (#4635), so no points were paid.
    */
   private isReopenable(task: Task): boolean {
-    return !task.points_awarded || !taskNeedsSignOff(task);
+    return !task.points_awarded || taskSignedOffAutomatically(task);
   }
 
   private async reopenOwnCompletion(

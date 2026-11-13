@@ -492,7 +492,7 @@ export class TaskPhotoUploadUrlResponseDto {
 
   @ApiProperty({
     description:
-      'Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done).',
+      'Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done).',
   })
   storage_path: string;
 }

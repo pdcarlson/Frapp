@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
@@ -78,7 +79,9 @@ export function StartCard({
             ? `Study zone: ${zone.name}${proximity ? `, ${proximityCopy(proximity)}` : ""}`
             : "No study zone selected"
         }
-        accessibilityHint={canChooseZone ? "Choose a different zone." : undefined}
+        accessibilityHint={
+          canChooseZone ? "Choose a different zone." : undefined
+        }
         disabled={!canChooseZone}
         onPress={onChooseZone}
         style={({ pressed }) => [
@@ -109,7 +112,9 @@ export function StartCard({
             </Text>
           ) : null}
         </View>
-        {canChooseZone ? <Text style={styles.chevron}>›</Text> : null}
+        {canChooseZone ? (
+          <ForwardGlyph color={tokens.color.text.muted} size={20} />
+        ) : null}
       </Pressable>
 
       <Pressable
@@ -225,10 +230,6 @@ function createStyles(tokens: SignetTokens) {
     },
     proximityAway: {
       color: tokens.color.text.foreground,
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.muted,
     },
     startButton: {
       height: tokens.touch.buttonLarge,

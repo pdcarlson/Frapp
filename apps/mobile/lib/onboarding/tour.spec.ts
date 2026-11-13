@@ -26,9 +26,10 @@ function memoryStorage() {
 }
 
 describe("first-run tour stops", () => {
-  it("has three stops, one line each, in the plan's order", () => {
+  it("has four stops, one line each, in the plan's order", () => {
     expect(TOUR_STOPS.map((stop) => stop.key)).toEqual([
       "channels",
+      "messages",
       "quickActions",
       "you",
     ]);
@@ -36,6 +37,14 @@ describe("first-run tour stops", () => {
       expect(stop.text).not.toMatch(/\n/);
       expect(stop.text.length).toBeLessThanOrEqual(60);
     }
+  });
+
+  // #3774, #4610: nothing on Chat home shows the swipe, so the tour says it
+  // at the door the swipe stands in for.
+  it("teaches the swipe to Messages at the Messages door", () => {
+    expect(TOUR_STOPS[1]!.text).toBe(
+      "Direct messages are here. Swiping left opens them too.",
+    );
   });
 
   it("names the chapter on the first stop", () => {

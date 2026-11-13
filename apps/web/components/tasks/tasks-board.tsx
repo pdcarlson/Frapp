@@ -29,7 +29,12 @@ import {
 import type { LiveTaskPhoto, TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
-import { can, taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import {
+  can,
+  taskNeedsSignOff,
+  taskSignedOffAutomatically,
+  type TaskProofKind,
+} from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -298,7 +303,7 @@ export function TasksBoard() {
     task: Task,
     next: TaskStatus,
     proof?: CompletionProof,
-  ) {
+  ): Promise<boolean> {
     const reopening = actionStatus(task) === "COMPLETED";
     try {
       await updateStatus.mutateAsync({
@@ -344,7 +349,9 @@ export function TasksBoard() {
         ),
         variant: "destructive",
       });
+      return false;
     }
+    return true;
   }
 
   async function confirmCompletion(task: Task) {
@@ -572,7 +579,7 @@ export function TasksBoard() {
                           gate={gate}
                           lifecycleWritePending={lifecycleWritePending}
                           onChangeStatus={(next, proof) =>
-                            void changeStatus(task, next, proof)
+                            changeStatus(task, next, proof)
                           }
                           onConfirm={() => void confirmCompletion(task)}
                           onReject={() => void rejectCompletion(task)}
@@ -623,7 +630,7 @@ export function TasksBoard() {
                 canManage={canManage}
                 gate={gate}
                 lifecycleWritePending={lifecycleWritePending}
-                onChangeStatus={(next) => void changeStatus(task, next)}
+                onChangeStatus={(next) => changeStatus(task, next)}
                 onConfirm={() => void confirmCompletion(task)}
                 onReject={() => void rejectCompletion(task)}
                 onDelete={() => void removeTask(task)}
@@ -691,7 +698,11 @@ function TaskCard({
   canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
-  onChangeStatus: (next: TaskStatus, proof?: CompletionProof) => void;
+  /** Resolves `false` when the write was refused (and already reported). */
+  onChangeStatus: (
+    next: TaskStatus,
+    proof?: CompletionProof,
+  ) => Promise<boolean>;
   onConfirm: () => void;
   onReject: () => void;
   onDelete: () => void;
@@ -721,6 +732,7 @@ function TaskCard({
   const editable = canManage && !task.points_awarded;
   // No points and no proof: Done as marked, nothing to confirm (#4635).
   const needsSignOff = taskNeedsSignOff(task);
+  const autoSignedOff = taskSignedOffAutomatically(task);
   const sentBack = isSentBack(task);
   const isRow = layout === "list";
 
@@ -851,7 +863,7 @@ function TaskCard({
           size="toolbar"
           variant="secondary"
           {...gate.controlProps(lifecycleWritePending)}
-          onClick={() => onChangeStatus("IN_PROGRESS")}
+          onClick={() => void onChangeStatus("IN_PROGRESS")}
         >
           {TASK_ACTION_LABELS.start}
         </Button>
@@ -881,19 +893,19 @@ function TaskCard({
         stored: status,
         pointsAwarded: task.points_awarded,
         isAssignee: isMine,
-        needsSignOff,
+        signedOffAutomatically: autoSignedOff,
       }) ? (
         <Button
           size="toolbar"
           variant="ghost"
           {...gate.controlProps(lifecycleWritePending)}
-          onClick={() => onChangeStatus("IN_PROGRESS")}
+          onClick={() => void onChangeStatus("IN_PROGRESS")}
         >
           {TASK_ACTION_LABELS.reopen}
         </Button>
       ) : null}
       <Can permission="tasks:manage">
-        {status === "COMPLETED" && (!task.points_awarded || !needsSignOff) ? (
+        {status === "COMPLETED" && (!task.points_awarded || autoSignedOff) ? (
           <>
             {/*
              * Hidden on your own task: the API refuses a self-confirmation

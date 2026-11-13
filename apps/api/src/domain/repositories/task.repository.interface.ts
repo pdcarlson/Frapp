@@ -74,6 +74,19 @@ export interface ITaskRepository {
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;
   /**
+   * Write `data` only while the row still holds every value in `match`
+   * (compare-and-set; a `null` in `match` means the column is null). Returns
+   * the updated task, or `null` when another write changed one of them
+   * first. Mark done uses it so a completion is judged on the task as it
+   * stands (#4635).
+   */
+  updateIfMatches(
+    id: string,
+    chapterId: string,
+    match: Partial<Task>,
+    data: Partial<Task>,
+  ): Promise<Task | null>;
+  /**
    * Atomically confirm a COMPLETED task and award its point reward in a single
    * database transaction (compare-and-set on `points_awarded`). Returns the
    * updated task, or `null` when nothing was updated — task missing, not

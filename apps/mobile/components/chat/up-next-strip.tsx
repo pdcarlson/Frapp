@@ -10,11 +10,18 @@ import {
   isDueOverdue,
 } from "@repo/formatting";
 import { useNowDate } from "@repo/hooks";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
-import { gutterBleed, PressableRow } from "@/components/list-section";
-import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
+import {
+  ListSection,
+  listRowHint,
+  PressableRow,
+} from "@/components/list-section";
+import { NavGlyph } from "@/components/nav-glyph";
 
 /**
  * The UP NEXT strip at the top of Chat home (s04).
@@ -25,15 +32,22 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * 'what's next' surface rides above the channel list rather than living in a
  * Home tab."
  *
- * Drawn at `canvas-screens.dc.html:117-131`: an `UP NEXT` eyebrow, then two
- * rows separated by a hairline, each a glyph + title + `· context` with a
- * trailing time. The glyphs are the Calendar tab's and the task board's at the drawn
- * 20pt (since 2026-11-05 the shared nav set's shapes, not the board's
- * geometry), both at rest in the inactive tab's muted paint: the shape says
- * at a glance whether a row is an event or a task (a dot said neither). The
- * event's trailing time is the foreground text; an overdue task due date is
- * `semantic.destructive`, which is the drawn danger red — **not** the mention red
- * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
+ * One card holding two rows (#4610, step 3), each the Activity row's frame:
+ * the kind's glyph in a lead tile, the title on its own line, when and where
+ * on the line under it, and the chevron of a row that opens something. Until
+ * then the board's drawing held (`canvas-screens.dc.html:117-131`): two bare
+ * rows on the screen background, a 20pt glyph, the title and its context on
+ * one line and the time trailing. On a phone that line cut most titles mid
+ * word ("Circulate the chapter meeting agen"), and nothing about the rows said
+ * they could be pressed. Google Calendar's schedule and Slack's Later list
+ * give a title its own line for the same reason.
+ *
+ * The glyphs are the shared nav set's Events and Tasks shapes, neutral: the
+ * shape says at a glance whether a row is an event or a task. The event's
+ * time is the foreground text and its place is muted; an overdue task's due
+ * line is `semantic.destructive`, which is the drawn danger red, **not** the
+ * mention red `#E5484D`, which `foundations.md:67` reserves for direct
+ * address alone.
  *
  * The two rows render independently: a chapter with events but no open tasks
  * still gets its event row. With neither, the strip renders nothing at all
@@ -43,9 +57,6 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * Nothing here takes the chapter accent: row icons, labels and times are
  * neutral (foundations.md §6, "Where the accent goes", 2026-11-05).
  */
-
-/** The board draws the strip's glyphs at 20 (the tab bar's are 24). */
-const UP_NEXT_GLYPH_SIZE = 20;
 
 /** Minimal shapes — the generated SDK types for these routes infer as `never`. */
 interface UpNextEvent {
@@ -254,76 +265,90 @@ export function UpNextStrip({
 
   if (!event && !task) return null;
 
+  const eventTime = event ? formatEventTime(event.start_time, at) : "";
+  const taskDue = task ? formatDueDate(task.due_date, at) : "";
+
   return (
     <View style={styles.strip}>
       <Text style={styles.eyebrow}>UP NEXT</Text>
 
-      {event ? (
-        <PressableRow
-          accessibilityRole="button"
-          accessibilityLabel={`${event.name}, ${formatEventTime(event.start_time, at)}`}
-          accessibilityHint="Open event details."
-          // Carries the id since C2 (#994). C1 pushed the bare literal because
-          // s07 was a hardcoded screen that could not consume one — an honest
-          // seam at the time, and this is the slice that closes it. The
-          // `pathname:` object form is covered by `lib/routes.spec.ts`.
-          onPress={() =>
-            router.push({
-              pathname: "/event-details",
-              params: { id: event.id },
-            })
-          }
-          style={styles.row}
-        >
-          <EventsGlyph
-            focused={false}
-            accent={tokens.color.text.muted}
-            muted={tokens.color.text.muted}
-            size={UP_NEXT_GLYPH_SIZE}
-          />
-          <Text numberOfLines={1} style={styles.rowText}>
-            <Text style={styles.rowTitle}>{event.name}</Text>
-            {event.location ? (
-              <Text style={styles.rowContext}>{` · ${event.location}`}</Text>
-            ) : null}
-          </Text>
-          <Text style={styles.eventTime}>
-            {formatEventTime(event.start_time, at)}
-          </Text>
-        </PressableRow>
-      ) : null}
-
-      {event && task ? <View style={styles.divider} /> : null}
-
-      {task ? (
-        <PressableRow
-          accessibilityRole="button"
-          accessibilityLabel={`${task.title}, ${formatDueDate(task.due_date, at)}`}
-          accessibilityHint="Open the task board."
-          onPress={() => router.navigate("/tasks")}
-          style={styles.row}
-        >
-          <TasksGlyph
-            focused={false}
-            accent={tokens.color.text.muted}
-            muted={tokens.color.text.muted}
-            size={UP_NEXT_GLYPH_SIZE}
-          />
-          <Text numberOfLines={1} style={styles.rowText}>
-            <Text style={styles.rowTitle}>{task.title}</Text>
-            <Text style={styles.rowContext}>{" · task"}</Text>
-          </Text>
-          <Text
-            style={
-              task.status === "OVERDUE" || isDueUrgent(task.due_date, at)
-                ? styles.dueUrgent
-                : styles.dueCalm
+      <ListSection>
+        {event ? (
+          <PressableRow
+            onCard
+            accessibilityRole="button"
+            accessibilityLabel={`${event.name}, ${eventTime}`}
+            accessibilityHint={listRowHint(
+              event.location,
+              "Open event details.",
+            )}
+            // Carries the id since C2 (#994). C1 pushed the bare literal
+            // because s07 was a hardcoded screen that could not consume one.
+            // The `pathname:` object form is covered by `lib/routes.spec.ts`.
+            onPress={() =>
+              router.push({
+                pathname: "/event-details",
+                params: { id: event.id },
+              })
             }
+            style={styles.row}
           >
-            {formatDueDate(task.due_date, at)}
-          </Text>
-        </PressableRow>
-      ) : null}
+            <LeadTile size="lead" on="card" testID="up-next-event-tile">
+              <NavGlyph
+                paths={NAV_GLYPHS.events}
+                color={tokens.color.text.mutedForeground}
+                size={LEAD_TILE_GLYPH}
+              />
+            </LeadTile>
+            <View style={styles.rowText}>
+              <Text numberOfLines={1} style={styles.rowTitle}>
+                {event.name}
+              </Text>
+              <Text numberOfLines={1} style={styles.rowMeta}>
+                <Text style={styles.eventTime}>{eventTime}</Text>
+                {event.location ? ` · ${event.location}` : null}
+              </Text>
+            </View>
+            <ForwardGlyph color={tokens.color.text.muted} />
+          </PressableRow>
+        ) : null}
+
+        {task ? (
+          <PressableRow
+            onCard
+            accessibilityRole="button"
+            accessibilityLabel={`${task.title}, ${taskDue}`}
+            accessibilityHint="Open the task board."
+            onPress={() => router.navigate("/tasks")}
+            style={styles.row}
+          >
+            <LeadTile size="lead" on="card" testID="up-next-task-tile">
+              <NavGlyph
+                paths={NAV_GLYPHS.tasks}
+                color={tokens.color.text.mutedForeground}
+                size={LEAD_TILE_GLYPH}
+              />
+            </LeadTile>
+            <View style={styles.rowText}>
+              <Text numberOfLines={1} style={styles.rowTitle}>
+                {task.title}
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.rowMeta,
+                  task.status === "OVERDUE" || isDueUrgent(task.due_date, at)
+                    ? styles.dueUrgent
+                    : null,
+                ]}
+              >
+                {taskDue}
+              </Text>
+            </View>
+            <ForwardGlyph color={tokens.color.text.muted} />
+          </PressableRow>
+        ) : null}
+      </ListSection>
     </View>
   );
 }
@@ -331,48 +356,41 @@ export function UpNextStrip({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     strip: {
-      gap: tokens.spacing.xs,
+      gap: tokens.spacing.sm,
     },
     // The shared eyebrow, as Chat home's section headings draw it.
     eyebrow: {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
     },
+    // The Activity row's frame inside a card: lead tile, two lines, chevron.
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-      // The strip's rows are drawn tighter than a standalone control, so the
-      // 44pt floor is met by minHeight rather than by padding.
       minHeight: tokens.touch.minimum,
-      ...gutterBleed(tokens),
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
     },
     rowText: {
       flex: 1,
+      minWidth: 0,
+      gap: tokens.spacing.xs,
     },
     rowTitle: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    rowContext: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-    },
-    eventTime: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
-    },
-    dueUrgent: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    dueCalm: {
+    rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    divider: {
-      height: 1,
-      backgroundColor: tokens.color.border.hairline,
+    // When is the fact the strip exists for, so it reads a step above where.
+    eventTime: {
+      color: tokens.color.text.foreground,
+    },
+    dueUrgent: {
+      color: tokens.color.semantic.destructive,
     },
   });
 }

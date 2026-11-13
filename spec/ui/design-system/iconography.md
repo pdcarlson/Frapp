@@ -196,11 +196,14 @@ Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub, which became the You tab (#3839).
 
 Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
-draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
-size), both unfocused in `text.muted`, since a row's label icon is neutral
-([foundations.md](foundations.md) §6, 2026-11-05). Until then the event row's
-was focused and in the chapter accent. The s05 chat cards reuse
-them too (§6.1.3).
+draw the nav set's `events` and `tasks` glyphs at 20px (§2's list-row size)
+in `text.mutedForeground`, each in a neutral 40pt lead tile
+([`../mobile/patterns.md`](../mobile/patterns.md#rows) § Rows), since a row
+that shows a state stays neutral ([foundations.md](foundations.md) §6). Until
+#4610 step 3 (2026-11-12) they drew this file's `EventsGlyph` and `TasksGlyph`
+bare in `text.muted`, and before 2026-11-05 the event row's was focused and
+in the chapter accent. The s05 chat cards draw `EventsGlyph` and `TasksGlyph`
+(§6.1.3).
 
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
 
@@ -221,9 +224,10 @@ glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
 The You tab's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
-surfaces. Every row, Member and Admin alike, is painted in `text.muted`
-([foundations.md](foundations.md) §6; the Member rows took the chapter accent
-until 2026-11-05).
+surfaces. Each sits in a 32pt lead tile and is painted in its place's fixed
+hue, the tile's fill the tint an initials avatar takes
+([foundations.md](foundations.md) §6, A place's hue, 2026-11-12). Every row was `text.muted` from 2026-11-05 until
+then, and the Member rows took the chapter accent before that.
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
@@ -300,6 +304,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
+| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.muted` | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
 | Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
@@ -320,7 +325,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
 |---|---|---|
 | Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
-| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages door keeps its own speech bubble for now. |
+| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages door draws the same plane since #4610 step 3 (2026-11-12); it was a speech bubble, which read as a second Chat tab. |
 | Activity (what needs you, what you made) | `ActivityGlyph` | `activity`, `tray` |
 | Events | `EventsGlyph` | `events`, `calendar-dots` |
 | Tasks | `TasksGlyph` | `tasks`, `seal-check` |

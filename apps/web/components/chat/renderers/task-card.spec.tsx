@@ -729,10 +729,13 @@ describe("TaskCard proof and send back (#4635)", () => {
       liveTask({
         status: "COMPLETED",
         stored_status: "COMPLETED",
-        // Confirmed by the server as it was marked done (decision C).
+        // Confirmed by the server as it was marked done (decision C),
+        // stamped with the completion's own time.
         points_awarded: true,
         point_reward: null,
         proof_kind: "none",
+        completed_at: "2026-11-13T10:00:00.000Z",
+        confirmed_at: "2026-11-13T10:00:00.000Z",
       }),
     );
     render(

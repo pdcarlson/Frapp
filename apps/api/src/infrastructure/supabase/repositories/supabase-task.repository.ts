@@ -170,6 +170,31 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return updated;
   }
 
+  async updateIfMatches(
+    id: string,
+    chapterId: string,
+    match: Partial<Task>,
+    data: TablesUpdate<'tasks'>,
+  ): Promise<Task | null> {
+    let query = this.supabase
+      .from('tasks')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId);
+    for (const [column, value] of Object.entries(match) as [
+      keyof Task,
+      Task[keyof Task],
+    ][]) {
+      query =
+        value === null || value === undefined
+          ? query.is(column, null)
+          : query.eq(column, value);
+    }
+    const { data: updated, error } = await query.select().maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
   async confirmCompletionAtomic(
     id: string,
     chapterId: string,

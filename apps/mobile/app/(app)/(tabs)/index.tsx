@@ -1035,6 +1035,14 @@ export default function ChatHomeScreen() {
   return (
     <MessagesSwipeArea
       enabled={!filterMenu.visible && !menuTarget}
+      // The hint that teaches the swipe plays only on a Chat home at rest
+      // (`lib/chat/messages-hint.ts`): in front, its list drawn, and the
+      // launch jump to the last channel settled.
+      hint={{
+        viewerId,
+        ready: isFocused && listAnswered && !holdingForLaunch,
+        unreadConversations,
+      }}
     >
       {screen}
     </MessagesSwipeArea>

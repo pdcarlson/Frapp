@@ -6,6 +6,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { HeaderButton } from "@/components/header-button";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   EVENTS_VIEW_STORAGE_KEY,
@@ -172,6 +173,15 @@ afterEach(() => {
 // #3322: the header's Subscribe door. The sheet asks for a link only while
 // `open`, so a member who never taps it never has one made.
 describe("Events header Subscribe", () => {
+  // #4610 step 3: a bare glyph beside the title was what "buttons are
+  // unclear" meant. Every header action sits in the round Chat home drew.
+  it("draws the door as a round header button", () => {
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toEqual(["Subscribe to events in your calendar"]);
+  });
+
   it("opens the sheet from the header and closes it on dismiss", () => {
     const tree = render();
     expect(subscribeSheet.props?.open).toBe(false);

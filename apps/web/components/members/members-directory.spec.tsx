@@ -660,6 +660,18 @@ describe("Directory as a grid (#4175)", () => {
     expect(cardFilledContainers(container)).toHaveLength(0);
   });
 
+  // #4647: as many tiles as fit at a capped width, not a fixed column count
+  // stretched across a wide page; two at the 375px floor.
+  it("caps a tile's width rather than stretching a fixed count of columns", () => {
+    const { container } = render(<MembersDirectory />);
+    const list = container.querySelector("ul");
+    expect(list?.className).toContain(
+      "@md:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]",
+    );
+    expect(list?.className).toContain("grid-cols-2");
+    expect(list?.className).not.toMatch(/@\dxl:grid-cols-\d/);
+  });
+
   it("names a tile for everything the row shows, and opens the member", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);

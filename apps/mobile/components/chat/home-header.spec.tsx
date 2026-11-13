@@ -19,7 +19,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useNotifications: () => ({ data: state.notifications }),
 }));
 
-import { NotificationsButton } from "./home-header";
+const anchors = vi.hoisted(
+  () => ({}) as Record<string, ReturnType<typeof vi.fn>>,
+);
+vi.mock("@/components/onboarding/tour", () => ({
+  useTourAnchor: (key: string) => (anchors[key] ??= vi.fn()),
+}));
+
+import { MessagesButton, NotificationsButton } from "./home-header";
 
 const mounted: ReactTestRenderer[] = [];
 
@@ -70,6 +77,27 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const tree of mounted.splice(0)) act(() => tree.unmount());
+});
+
+describe("MessagesButton", () => {
+  // The tour leaves out a stop whose control never registered, without a
+  // word, so a refactor that drops this ref would silently lose the stop
+  // that tells a new member about the swipe (#4610 step 3).
+  it("is the control the first-run tour's Messages stop points at", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessagesButton unreadConversations={0} />
+        </FrappThemeProvider>,
+        { createNodeMock: () => ({ measure: vi.fn() }) },
+      );
+    });
+    mounted.push(tree);
+    expect(anchors.messages).toHaveBeenCalledWith(
+      expect.objectContaining({ measure: expect.any(Function) }),
+    );
+  });
 });
 
 describe("NotificationsButton", () => {

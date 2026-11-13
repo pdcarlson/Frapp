@@ -158,11 +158,14 @@ export const denseListClassName =
 
 /**
  * The Grid layout of a list (#4175): the List/Grid toggle's other answer,
- * shared by the Directory's two tabs so one pick lays both out alike. Columns
- * follow the page's container, two at the 375px floor.
+ * shared by the Directory's two tabs so one pick lays both out alike. Two
+ * columns at the 375px floor; from a 448px page, as many tiles as fit at
+ * 176px or more (#4647), so a tile stays about 176 to 230px wide on a desktop,
+ * as Google Drive's grid does, rather than a fixed count stretched across a
+ * wide page.
  */
 export const denseGridClassName =
-  "grid grid-cols-2 gap-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5";
+  "grid grid-cols-2 gap-2 @md:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]";
 
 /** A grid tile's frame: hairline-bordered on the page surface, not a card. */
 export const gridTileFrameClassName = "rounded-md border border-border";
