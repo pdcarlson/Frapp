@@ -142,6 +142,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can check in to an event right from its row in Activity, on the web for events that don't need your location and on your phone for any event.",
       "Frapp AI now introduces itself once with what it can do, and one switch in Settings turns it on or off.",
       "Deleting a role no longer locks out the people who held it, since anyone left without a role keeps the chapter's everyday access.",
+      "A form opened while you're offline, or when it can't reach the server, now says its answers may not be the newest.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -174,6 +175,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp has its own bar above the tabs on every tab, and it opens full screen.",
       "Signing in with an email or a Google or Apple account that has no Frapp account yet now says it made a new one, with Sign out a tap away so you can use the way you joined.",
       "The Calendar has 3 days and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
+      "Opening a form while you're offline no longer leaves its questions locked.",
     ],
   },
   {
