@@ -744,7 +744,7 @@ export function ImportWizard({
                * permission that can also delete threads. An admin deciding
                * whether the migration is complete has to know that.
                */
-              <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3">
+              <div className="mb-4 rounded-lg border border-border bg-card p-3">
                 <p className="text-sm font-medium">
                   Some things could not be read
                 </p>

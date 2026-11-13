@@ -22,6 +22,7 @@ import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
   useEvent,
+  useEvents,
   useMyPermissions,
   useRoles,
   useUpdateEvent,
@@ -48,6 +49,7 @@ import {
   repeatEditAnchor,
   repeatEditDraft,
   repeatEditSeriesOf,
+  seriesStartsIn,
   repeatRuleForEdit,
   repeatRuleOf,
   repeatSummary,
@@ -454,26 +456,43 @@ export function EventEditorDialog({
       ? event.parent_event_id
       : "";
   const parentQuery = useEvent(usingPreviewData ? "" : parentId);
-  const editTarget = useMemo(
-    () =>
-      mode === "edit"
-        ? editTargetOf(
-            event,
-            parentQuery.data && typeof parentQuery.data === "object"
-              ? (parentQuery.data as EventRecord)
-              : null,
-          )
+  // The chapter's events, for the series' real next meeting: a Repeat change
+  // on a started series steps from it (`repeatEditAnchor`, #4746). Read only
+  // when editing a series; the Events page has the list cached already.
+  const seriesListQuery = useEvents({
+    enabled:
+      mode === "edit" &&
+      !usingPreviewData &&
+      (parentId !== "" || !!textOf(event?.recurrence_rule)),
+  });
+  const editTarget = useMemo(() => {
+    if (mode !== "edit") return null;
+    const target = editTargetOf(
+      event,
+      parentQuery.data && typeof parentQuery.data === "object"
+        ? (parentQuery.data as EventRecord)
         : null,
-    [mode, event, parentQuery.data],
-  );
+    );
+    return target
+      ? {
+          ...target,
+          seriesStarts: seriesStartsIn(target, seriesListQuery.data),
+        }
+      : null;
+  }, [mode, event, parentQuery.data, seriesListQuery.data]);
   // A generated meeting waits for its parent before it saves, as the phone's
   // Edit does (`event-details.tsx`): until then "All upcoming events" can't be
-  // offered, and a save would go to this meeting alone without asking.
+  // offered, and a save would go to this meeting alone without asking. A
+  // series also waits for the chapter's events while they load, so a Repeat
+  // change steps from the real next meeting, not a guess (#4746). A list
+  // read that fails leaves the guess from the rule.
   const parentLoading =
-    !usingPreviewData && parentId !== "" && parentQuery.isPending;
+    !usingPreviewData &&
+    ((parentId !== "" && parentQuery.isPending) || seriesListQuery.isLoading);
   // Repeat waits for the parent: without it the series' rule is unknown.
   const repeatLocked =
-    !!editTarget?.event.parent_event_id && editTarget.parent === null;
+    (!!editTarget?.event.parent_event_id && editTarget.parent === null) ||
+    parentLoading;
   const repeatSeriesAt = (
     start: Date,
     now: Date,

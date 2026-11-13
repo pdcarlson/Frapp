@@ -134,11 +134,13 @@ export function graftSquashedPrs(git, { remote, base, log }) {
   for (const { sha, pr } of squashes) {
     const head = git(["rev-parse", "-q", "--verify", `refs/merge-main/pull/${pr}^{commit}`], { allowFail: true });
     if (!head.ok) continue;
-    // The branch holds this PR's work if it shares a commit with the PR's head
-    // that the base doesn't have (the base has only the squash).
-    const shared = git(["merge-base", "HEAD", head.out], { allowFail: true });
-    if (!shared.ok) continue;
-    if (git(["merge-base", "--is-ancestor", shared.out, base], { allowFail: true }).ok) continue;
+    // The branch holds this PR's work if it has any of the PR's commits that
+    // the base doesn't (the base has only the squash). Counted rather than
+    // read off `git merge-base`, which names one base of several, often a
+    // main commit, once both branches have merged main since they split.
+    const commits = (...args) => Number(git(["rev-list", "--count", head.out, "--not", base, ...args]).out);
+    const own = commits();
+    if (own === 0 || commits("HEAD") === own) continue;
     // A head pushed after the squash landed (the PR branch merged main later)
     // descends from it, and grafting it on would make a cycle.
     if (git(["merge-base", "--is-ancestor", sha, head.out], { allowFail: true }).ok) continue;

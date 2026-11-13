@@ -137,6 +137,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Weekly and monthly repeating events set up or changed from now on keep the same time of day when the clocks change for daylight saving.",
       "While Ask Frapp works, it now says what it is really doing, like which records it is reading and how many sources it found.",
       "A pinned message's pin now fills in, so it's easy to spot.",
+      "A muted channel stays quiet in the channel list: its new messages no longer light a folded section's heading or keep it under Unread only, unless one mentions you. Direct messages still show.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -161,6 +162,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can now post a form in chat from the + menu and answer it on its own page, where your answers stay private and can be changed until the form closes.",
       "The + beside the tab bar now lays its shortcuts out three to a row, and you can keep up to nine of them.",
       "Check in by pointing your phone's camera at the code on the officer's screen, and Frapp asks for your location right there if it needs it.",
+      "Activity now opens with one ring that shows how much of your week is done, your next thing to do under it, and the rest listed by day.",
+      "When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them as a spreadsheet; a sign-up sheet's creator can export who signed up for what.",
     ],
   },
   {

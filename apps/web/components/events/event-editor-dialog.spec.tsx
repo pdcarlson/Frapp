@@ -18,6 +18,7 @@ const {
   mockToast,
   mockPermissions,
   useEventMock,
+  useEventsMock,
 } = vi.hoisted(() => ({
   createMutate: vi.fn(),
   updateMutate: vi.fn(),
@@ -30,12 +31,21 @@ const {
   useEventMock: vi.fn<
     (id: unknown) => { data: unknown; isPending: boolean; isError: boolean }
   >(() => ({ data: undefined, isPending: false, isError: false })),
+  // The chapter's events, for a started series' next meeting (#4746); none
+  // unless a case sets them.
+  useEventsMock: vi.fn<
+    (options?: { enabled?: boolean }) => {
+      data: unknown;
+      isLoading: boolean;
+    }
+  >(() => ({ data: undefined, isLoading: false })),
 }));
 
 vi.mock("@repo/hooks", () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
   useEvent: (id: unknown) => useEventMock(id),
+  useEvents: (options?: { enabled?: boolean }) => useEventsMock(options),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
   useEventTypes: () => ({
     data: [
@@ -536,6 +546,93 @@ describe("EventEditorDialog form shape and attendance by role", () => {
         const body = await saved();
         expect(body).toEqual({ name: "Chapter meeting", scope: "instance" });
       });
+    });
+  });
+
+  // #4746: a Repeat change on a started series steps from its real next
+  // meeting, read from the chapter's events, not from the rule's pattern.
+  describe("Repeat on a started series", () => {
+    // Monthly on the 5th from Mon 2027-07-05; the August meeting was moved
+    // by hand to the 7th. The clock is past the head, before August.
+    const RULE = "FREQ=MONTHLY;INTERVAL=1;COUNT=10;TZID=America/New_York";
+    const head = {
+      id: "h1",
+      name: "Chapter",
+      start_time: "2027-07-05T16:00:00.000Z",
+      end_time: "2027-07-05T17:00:00.000Z",
+      point_value: 10,
+      recurrence_rule: RULE,
+    };
+    const child = (id: string, start: string) => ({
+      ...head,
+      id,
+      start_time: start,
+      end_time: start,
+      recurrence_rule: null,
+      parent_event_id: "h1",
+    });
+    const rows = [
+      head,
+      child("c-aug", "2027-08-07T16:00:00.000Z"),
+      child("c-sep", "2027-09-05T16:00:00.000Z"),
+    ];
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2027-07-20T12:00:00.000Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      useEventsMock.mockImplementation(() => ({
+        data: undefined,
+        isLoading: false,
+      }));
+    });
+    const renderEdit = () =>
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={head}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+    const shorten = () =>
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "3" },
+      });
+
+    it("counts from the moved meeting the series really holds next", () => {
+      useEventsMock.mockImplementation(() => ({
+        data: rows,
+        isLoading: false,
+      }));
+      renderEdit();
+      expect(useEventsMock).toHaveBeenCalledWith({ enabled: true });
+      shorten();
+      expect(screen.getByText(/^3 meetings, the last on Oct 7/)).toBeTruthy();
+    });
+
+    it("counts from the rule's pattern when the events can't be read", () => {
+      renderEdit();
+      shorten();
+      expect(screen.getByText(/^3 meetings, the last on Oct 5/)).toBeTruthy();
+    });
+
+    it("holds Repeat and Save while the events load", () => {
+      useEventsMock.mockImplementation(() => ({
+        data: undefined,
+        isLoading: true,
+      }));
+      renderEdit();
+      expect(screen.getByText("Loading the series…")).toBeTruthy();
+      expect(
+        screen.queryByRole("radio", { name: "Doesn't repeat" }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Save changes" }),
+      ).toBeDisabled();
     });
   });
 

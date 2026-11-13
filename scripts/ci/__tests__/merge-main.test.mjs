@@ -443,3 +443,33 @@ test("without the PR's head on the remote, a stacked branch merges as plain git 
   assert.match(output, /docs\/notes\.md/);
   assert.equal(git(work, "replace", "-l"), "");
 });
+
+test("a stacked branch is still found after both it and the PR merged main", (t) => {
+  const { seed, work } = setup(t);
+  const NOTES = "docs/notes.md";
+  const part2 = "one\ntwo\nthree\nfour\nfive\n";
+  git(work, "checkout", "-q", "-b", "part2");
+  write(work, NOTES, part2);
+  commitAll(work, "part 2 adds notes");
+  git(work, "checkout", "-q", "feature");
+  git(work, "merge", "-q", "--no-edit", "part2");
+  write(work, NOTES, part2.replace("two", "two, from part 3"));
+  commitAll(work, "part 3 edits notes");
+  // Both branches merge the same main commit, so `git merge-base` has two
+  // answers, and the one it prints can be that main commit.
+  landOnMain(seed, (cwd) => write(cwd, "README.md", "one\nmain\nthree\n"), "Main edits README (#6)");
+  git(work, "fetch", "-q", "origin");
+  for (const branch of ["part2", "feature"]) {
+    git(work, "checkout", "-q", branch);
+    git(work, "merge", "-q", "--no-edit", "origin/main");
+  }
+  git(work, "push", "-q", "origin", "part2:refs/pull/7/head");
+  landOnMain(seed, (cwd) => write(cwd, NOTES, part2), "Notes (#7)");
+  landOnMain(seed, (cwd) => write(cwd, NOTES, part2.replace("five", "five, from main")), "Main edits notes (#8)");
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "merged", output);
+  assert.match(output, /#7 is already in this branch/);
+  assert.equal(readFileSync(join(work, NOTES), "utf8"), "one\ntwo, from part 3\nthree\nfour\nfive, from main\n");
+});
