@@ -765,7 +765,7 @@ describe("EventsPage empty states", () => {
 
     await user.click(screen.getByRole("radio", { name: "List" }));
 
-    expect(screen.getByText("No events yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
   });
 
@@ -828,7 +828,7 @@ describe("EventsPage view memory", () => {
     render(<EventsPage />);
 
     expect(screen.getByRole("radio", { name: "List" })).toBeChecked();
-    expect(screen.getByText("No events yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
   });
 });
 

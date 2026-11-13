@@ -70,7 +70,7 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
-import { isEveryoneRole } from "@repo/validation";
+import { directoryNoSearchMatches, isEveryoneRole } from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -958,7 +958,7 @@ export function MembersDirectory() {
          */
         usingSearch ? (
           <InlineNote>
-            Nobody matches “{deferredQuery}”.{" "}
+            {directoryNoSearchMatches(deferredQuery)}{" "}
             <InlineNoteAction onClick={() => setQuery("")}>
               Clear search
             </InlineNoteAction>
