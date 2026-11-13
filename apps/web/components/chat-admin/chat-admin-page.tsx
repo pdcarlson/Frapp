@@ -162,6 +162,23 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
+/** The live row's fields the editor seeds from, in the editor's own terms. */
+interface LiveChannelFields {
+  id: string;
+  name: string;
+  category: string;
+  level: string;
+}
+
+function liveChannelFields(channel: AdminChannel): LiveChannelFields {
+  return {
+    id: channel.id,
+    name: channel.name,
+    category: channel.category_id ?? NO_CATEGORY,
+    level: channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
+  };
+}
+
 /** A category's two answers in one line, for its row in the list. */
 function categoryAccessSummary(
   category: AdminCategory,
@@ -471,6 +488,17 @@ function ChatAdminBody({
   // another officer's change (or the category's) isn't written back over.
   const [seeSeed, setSeeSeed] = useState<string[] | null>(null);
   const [postSeed, setPostSeed] = useState<string[] | null>(null);
+  // Name, category and default level are seeded the same way (#4542): a rail
+  // drag, a rename in the chat header or another officer's change moves the
+  // live row under an untouched draft, and a save of the description must not
+  // send the old value back. `seenLive` is the live row's values as the editor
+  // last took them in, so a refetch can be told apart from this page's save.
+  const [nameSeed, setNameSeed] = useState("");
+  const [categorySeed, setCategorySeed] = useState(NO_CATEGORY);
+  const [defaultLevelSeed, setDefaultLevelSeed] = useState<string>(
+    BUILT_IN_DEFAULT_LEVEL,
+  );
+  const [seenLive, setSeenLive] = useState<LiveChannelFields | null>(null);
 
   // `?channel=` from the channel start. Applied once, during render rather
   // than in an effect, so the editor's first paint already shows the channel.
@@ -494,22 +522,58 @@ function ChatAdminBody({
   function selectChannel(channel: AdminChannel) {
     setFocusDescription(false);
     setSelectedChannelId(channel.id);
-    setNameDraft(channel.name);
+    const live = liveChannelFields(channel);
+    setSeenLive(live);
+    setNameDraft(live.name);
+    setNameSeed(live.name);
+    setCategorySeed(live.category);
+    setDefaultLevelSeed(live.level);
     setDescriptionDraft(channel.description ?? "");
     setDescriptionSeed((channel.description ?? "").trim());
-    setCategoryDraft(channel.category_id ?? NO_CATEGORY);
+    setCategoryDraft(live.category);
     setIsDefaultDraft(channel.is_default === true);
     setIsDefaultSeed(channel.is_default === true);
     setActivityExcludedDraft(channel.activity_excluded === true);
     setActivityExcludedSeed(channel.activity_excluded === true);
-    setDefaultLevelDraft(
-      channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
-    );
+    setDefaultLevelDraft(live.level);
     setSeeDraft(channel.who_can_see ?? null);
     setPostDraft(channel.who_can_post ?? null);
     setSeeSeed(channel.who_can_see ?? null);
     setPostSeed(channel.who_can_post ?? null);
     setMatchDraft(false);
+  }
+
+  // The live row moved under the editor (a refetch after a rail drag, a header
+  // rename, another officer): a draft the officer hasn't touched takes the new
+  // value, and one they edited keeps their edit. Adjusted during render, as
+  // the `?channel=` pick above is, so the editor never paints the stale value.
+  if (selectedChannel && seenLive?.id === selectedChannel.id) {
+    const live = liveChannelFields(selectedChannel);
+    if (
+      live.name !== seenLive.name ||
+      live.category !== seenLive.category ||
+      live.level !== seenLive.level
+    ) {
+      setSeenLive(live);
+      if (live.name !== seenLive.name && nameDraft === nameSeed) {
+        setNameDraft(live.name);
+        setNameSeed(live.name);
+      }
+      if (
+        live.category !== seenLive.category &&
+        categoryDraft === categorySeed
+      ) {
+        setCategoryDraft(live.category);
+        setCategorySeed(live.category);
+      }
+      if (
+        live.level !== seenLive.level &&
+        defaultLevelDraft === defaultLevelSeed
+      ) {
+        setDefaultLevelDraft(live.level);
+        setDefaultLevelSeed(live.level);
+      }
+    }
   }
 
   /** The channel takes lists: not private, not a DM, not the audit log. */
@@ -559,15 +623,25 @@ function ChatAdminBody({
     // this draft sits untouched must not send the stale draft over it.
     const description = descriptionDraft.trim();
     const descriptionChanged = description !== descriptionSeed;
+    // Name, category and default level likewise go out only when the officer
+    // changed them from what they were seeded with (#4542).
+    const nameChanged = name !== nameSeed;
+    const categoryChanged = categoryDraft !== categorySeed;
+    const defaultLevelChanged = defaultLevelDraft !== defaultLevelSeed;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
-          name,
+          ...(nameChanged ? { name } : {}),
           ...(descriptionChanged ? { description } : {}),
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
-          category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
+          ...(categoryChanged
+            ? {
+                category_id:
+                  categoryDraft === NO_CATEGORY ? null : categoryDraft,
+              }
+            : {}),
           // The lists go out only when they changed (a save of the name must
           // not write back lists another officer, or the category, just
           // moved), or as "match the category" when the officer asked for it.
@@ -591,16 +665,24 @@ function ChatAdminBody({
             ? { is_default: isDefaultDraft }
             : {}),
           // `null` clears an officer's choice; the built-in default applies.
-          default_notification_level:
-            defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
-              ? null
-              : (defaultLevelDraft as ChatNotificationLevel),
+          ...(defaultLevelChanged
+            ? {
+                default_notification_level:
+                  defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
+                    ? null
+                    : (defaultLevelDraft as ChatNotificationLevel),
+              }
+            : {}),
         },
       });
       setMatchDraft(false);
       setSeeSeed(seeDraft);
       setPostSeed(postDraft);
       if (descriptionChanged) setDescriptionSeed(description);
+      setNameDraft(name);
+      setNameSeed(name);
+      setCategorySeed(categoryDraft);
+      setDefaultLevelSeed(defaultLevelDraft);
       setIsDefaultSeed(isDefaultDraft);
       setActivityExcludedSeed(activityExcludedDraft);
       toast({ description: `#${name} saved.` });
