@@ -1,7 +1,11 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  onlineManager,
+} from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FormCard } from "./form-card";
@@ -59,8 +63,10 @@ function form(extra: Record<string, unknown> = {}): ChatMessage {
 }
 
 function wrap(node: ReactNode) {
+  // The app's staleTime (`makeQueryClient`), so the dialog's open-time read is
+  // its own and not useQuery's refetch of a stale copy.
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
   });
   const tree = (inner: ReactNode) => (
     <QueryClientProvider client={client}>
@@ -80,6 +86,10 @@ const SAVED = {
     response: { answers: { room: "single" }, updated_at: "2026-11-13" },
   },
 };
+
+afterEach(() => {
+  onlineManager.setOnline(true);
+});
 
 beforeEach(() => {
   api.GET.mockReset();
@@ -376,6 +386,115 @@ describe("FormCard (#3926 step 3)", () => {
     expect(
       within(dialog).getByRole("button", { name: "Update answers" }),
     ).toBeEnabled();
+  });
+
+  it("reads once on open, joining a read already in flight", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    const { client } = wrap(
+      <FormCard message={form()} viewerId="u1" isConfirmed />,
+    );
+    const edit = await screen.findByRole("button", {
+      name: "Edit your answers",
+    });
+    // The card's copy is a minute old: stale for the dialog's useQuery, which
+    // starts a read of its own as it mounts.
+    client.setQueryData(["chat", "form-response", "m1"], SAVED.data.response, {
+      updatedAt: Date.now() - 60_000,
+    });
+    await user.click(edit);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    // The card's read, then the dialog's one.
+    expect(api.GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets the cached answers be edited when the open-time read fails", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValueOnce(SAVED).mockResolvedValue({
+      error: { message: "Server error" },
+    });
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+  });
+
+  it("lets the cached answers be edited when the open-time read waits for the network", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    const edit = await screen.findByRole("button", {
+      name: "Edit your answers",
+    });
+    onlineManager.setOnline(false);
+    await user.click(edit);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+  });
+
+  it("holds a reopened form until a save sent before it closed lands and is read again", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    let land: (value: unknown) => void = () => {};
+    api.PUT.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    let dialog = await screen.findByRole("dialog");
+    const double = within(dialog).getByRole("radio", { name: "Double" });
+    await waitFor(() => expect(double).toBeEnabled());
+    await user.click(double);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    // Reopened while the save is in flight: its read still says Single.
+    await user.click(screen.getByRole("button", { name: "Edit your answers" }));
+    dialog = await screen.findByRole("dialog");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
+    expect(
+      within(dialog).getByRole("radio", { name: "Double" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    ).toBeDisabled();
+
+    api.GET.mockResolvedValue({
+      data: {
+        response: { answers: { room: "double" }, updated_at: "2026-11-14" },
+      },
+    });
+    land({ data: { answers: { room: "double" }, updated_at: "2026-11-14" } });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Update answers" }),
+      ).toBeEnabled(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeChecked();
   });
 
   it("re-reads rather than writes the cache when a save lands after the page closed", async () => {

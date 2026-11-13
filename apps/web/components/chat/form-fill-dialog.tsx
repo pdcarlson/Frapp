@@ -11,7 +11,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
   FORM_NO,
@@ -174,22 +179,29 @@ function FormFillBody({
     queryFn: () => fetchOwnFormResponse(apiClient, messageId),
   });
   // Read again on open: the card's copy can be a minute old, and answers
-  // sent from the phone since must not be overwritten by a stale prefill.
-  // Until that read settles the questions are drawn but not editable, so the
-  // first edit is made on the newest answers; if it fails, they become
-  // editable on the copy there is (a send then reaches the server, which has
-  // the say).
+  // sent from the phone since must not be overwritten by a stale prefill
+  // (#4727). Until that read settles the questions are drawn but not
+  // editable, so the first edit is made on the newest answers. It joins a
+  // read already in flight rather than sending a second.
   const { refetch } = response;
-  const [synced, setSynced] = useState(false);
+  const [settled, setSettled] = useState(false);
   useEffect(() => {
     let live = true;
-    void refetch().finally(() => {
-      if (live) setSynced(true);
+    void refetch({ cancelRefetch: false }).finally(() => {
+      if (live) setSettled(true);
     });
     return () => {
       live = false;
     };
   }, [refetch]);
+  // A read that fails its first attempt (and goes on to retry), or waits for
+  // the browser to come back online, doesn't hold the questions: they become
+  // editable on the copy there is, and a send reaches the server, which has
+  // the say.
+  const synced =
+    settled ||
+    response.fetchStatus === "paused" ||
+    (response.isFetching && response.failureCount > 0);
   // The member's edits, or `null` before their first: until then the form
   // shows the answers they last sent.
   const [edited, setEdited] = useState<FormAnswers | null>(null);
@@ -237,8 +249,39 @@ function FormFillBody({
     };
   }, []);
 
+  // The save outlives the dialog: one still in flight when the member closes
+  // and reopens this form holds the new dialog's edits until it lands and the
+  // answers are read again, so the reopened dialog can't edit, and send back,
+  // the answers from before it.
+  const saveKey = useMemo(
+    () => [...formResponseKey(messageId), "save"],
+    [messageId],
+  );
+  const saving = useIsMutating({ mutationKey: saveKey }) > 0;
+  const save = useMutation({
+    mutationKey: saveKey,
+    retry: false,
+    mutationFn: async (answers: FormAnswers) => {
+      const next = await saveFormResponse(apiClient, messageId, answers);
+      if (mounted.current) {
+        queryClient.setQueryData(formResponseKey(messageId), next);
+      } else {
+        // The dialog closed while the save was in flight: the answers are
+        // read again rather than taken from the save, as the phone does
+        // since #4728, because the key holds no user id. A sign-out in this
+        // tab reloads the page and one in another tab drops the cache, but
+        // nothing here relies on that.
+        await queryClient.invalidateQueries({
+          queryKey: formResponseKey(messageId),
+        });
+      }
+      return next;
+    },
+  });
+  const ready = synced && !saving;
+
   const send = async () => {
-    if (closed || sending || !loaded || !synced) return;
+    if (closed || sending || !loaded || !ready) return;
     if (problemCount > 0) {
       setShowProblems(true);
       return;
@@ -246,24 +289,9 @@ function FormFillBody({
     setSending(true);
     setFailure(null);
     try {
-      const next = await saveFormResponse(
-        apiClient,
-        messageId,
-        formAnswersForSave(payload.questions, current),
-      );
+      await save.mutateAsync(formAnswersForSave(payload.questions, current));
       toast({ title: answered ? "Answers updated" : "Answers sent" });
-      if (!mounted.current) {
-        // The dialog closed while the save was in flight: the card reads its
-        // own answers again rather than taking these, as the phone does. The
-        // key holds no user id; every web sign-out reloads the page, which
-        // drops the cache, but nothing here should rely on that.
-        void queryClient.invalidateQueries({
-          queryKey: formResponseKey(messageId),
-        });
-        return;
-      }
-      queryClient.setQueryData(formResponseKey(messageId), next);
-      onDone();
+      if (mounted.current) onDone();
     } catch (cause) {
       if (!mounted.current) return;
       setFailure(
@@ -339,7 +367,7 @@ function FormFillBody({
                 question={question}
                 value={current[question.id]}
                 onChange={(value) => setAnswer(question.id, value)}
-                readOnly={closed || sending || !synced}
+                readOnly={closed || sending || !ready}
                 problem={showProblems ? problems[question.id] : undefined}
               />
             ))}
@@ -363,7 +391,7 @@ function FormFillBody({
           {closed ? "Done" : "Cancel"}
         </Button>
         {closed ? null : (
-          <Button type="submit" disabled={sending || !loaded || !synced}>
+          <Button type="submit" disabled={sending || !loaded || !ready}>
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {sending ? "Sending…" : answered ? "Update answers" : "Send"}
           </Button>
