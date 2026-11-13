@@ -33,8 +33,10 @@ const {
   refetches,
   startMutateAsync,
   blockListState,
+  rosterState,
 } = vi.hoisted(() => ({
   startMutateAsync: vi.fn(),
+  rosterState: { failed: false, refetch: vi.fn() },
   blockListState: {
     value: {
       ids: new Set<string>() as ReadonlySet<string>,
@@ -109,12 +111,17 @@ vi.mock("@repo/hooks", async () => {
     useViewerUserId: () => VIEWER,
     useOwnAvatarTint: () => null,
     useChapterRoster: () =>
-      query([
-        { user_id: VIEWER, display_name: "Viewer Person" },
-        { user_id: ALICE, display_name: "Alice Chen" },
-        { user_id: BOB, display_name: "Bob Diaz" },
-        { user_id: CAROL, display_name: "Carol Alvarez" },
-      ]),
+      rosterState.failed
+        ? {
+            ...query(undefined, rosterState.refetch),
+            isError: true,
+          }
+        : query([
+            { user_id: VIEWER, display_name: "Viewer Person" },
+            { user_id: ALICE, display_name: "Alice Chen" },
+            { user_id: BOB, display_name: "Bob Diaz" },
+            { user_id: CAROL, display_name: "Carol Alvarez" },
+          ]),
     useBlockedUserIds: () => blockListState.value,
     useMemberDisplayNames: () => ({
       avatarTintFor: () => null,
@@ -259,6 +266,7 @@ function hiddenToggle(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rosterState.failed = false;
   blockListState.value = {
     ids: new Set(),
     status: "ready",
@@ -660,5 +668,17 @@ describe("Messages search (#4668)", () => {
     expect(note.props.action.label).toBe("Try again");
     act(() => note.props.action.onPress());
     expect(retry).toHaveBeenCalled();
+  });
+
+  it("says the members couldn't load, never that nobody matches, and retries", () => {
+    rosterState.failed = true;
+    const tree = render();
+    search(tree, "carol");
+    const note = tree.root.findByType(InlineNote);
+    expect(note.props.children).toBe(
+      "Couldn't load your chapter's members, so only your conversations are listed.",
+    );
+    act(() => note.props.action.onPress());
+    expect(rosterState.refetch).toHaveBeenCalled();
   });
 });

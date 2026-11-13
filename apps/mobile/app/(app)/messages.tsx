@@ -1,6 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
+// Only the ref's type: the field is `SearchField`, at the top of the screen as
+// on the Directory, so it needs no keyboard avoidance (#3354 guards fields a
+// route draws itself).
+import type { TextInput } from "react-native";
 import {
   canHideConversation,
   compareLatestFirst,
@@ -25,6 +29,8 @@ import {
   DM_SEARCH_CHECKING_BLOCK_LIST,
   DM_SEARCH_MEMBERS_HEADING,
   DM_SEARCH_PLACEHOLDER,
+  DM_SEARCH_ROSTER_FAILED,
+  dmChannelIdOf,
   dmSearchNoMatches,
   type DmSearchMember,
 } from "@repo/hooks";
@@ -44,7 +50,6 @@ import { IconButton } from "@/components/icon-button";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { SearchField } from "@/components/filter-chips";
 import {
-  dmChannelIdOf,
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
@@ -195,13 +200,22 @@ export default function MessagesScreen() {
       blockList.status,
     ],
   );
-  // Why no members are listed yet, as the member sheet's Message row says it.
-  const heldNote =
-    searching && found.membersHeld
-      ? blockList.status === "unavailable" && !blockList.isRetrying
-        ? DM_SEARCH_BLOCK_LIST_FAILED
-        : DM_SEARCH_CHECKING_BLOCK_LIST
-      : null;
+  // Why no members are listed, so a search with none never reads as "nobody
+  // matches": the block list isn't read yet (as the member sheet's Message
+  // row says it), or the roster couldn't be read. Web's search says the same.
+  const rosterFailed = rosterQuery.isError && rosterQuery.data === undefined;
+  let heldNote: string | null = null;
+  let retryHeld: (() => void) | undefined;
+  if (searching && found.membersHeld) {
+    const failed = blockList.status === "unavailable" && !blockList.isRetrying;
+    heldNote = failed
+      ? DM_SEARCH_BLOCK_LIST_FAILED
+      : DM_SEARCH_CHECKING_BLOCK_LIST;
+    if (failed && !blockList.isPaused) retryHeld = blockList.retry;
+  } else if (searching && rosterFailed) {
+    heldNote = DM_SEARCH_ROSTER_FAILED;
+    if (!rosterQuery.isFetching) retryHeld = () => void rosterQuery.refetch();
+  }
 
   async function startConversation(member: DmSearchMember) {
     if (startingRef.current.has(member.user_id)) return;
@@ -338,9 +352,8 @@ export default function MessagesScreen() {
               {heldNote ? (
                 <InlineNote
                   action={
-                    heldNote === DM_SEARCH_BLOCK_LIST_FAILED &&
-                    !blockList.isPaused
-                      ? { label: "Try again", onPress: blockList.retry }
+                    retryHeld
+                      ? { label: "Try again", onPress: retryHeld }
                       : undefined
                   }
                 >
