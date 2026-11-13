@@ -232,6 +232,18 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
   ],
   // ChatReportService for `ScheduledJobsModule`'s hourly sweep of report
   // evidence whose release did not finish (#2481).
-  exports: [ChatService, ChatReportService],
+  // The chat services `BootstrapModule` reads the first screen from
+  // (#4709).
+  exports: [
+    ChatService,
+    ChatReportService,
+    ChatCategoryService,
+    ChatNotificationPreferenceService,
+    ChatSidebarService,
+    ChatMentionService,
+    GifService,
+    ChatBackgroundService,
+    ChatBookmarkService,
+  ],
 })
 export class ChatModule {}

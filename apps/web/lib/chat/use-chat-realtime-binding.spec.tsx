@@ -41,31 +41,42 @@ describe("useChatRealtimeBinding", () => {
     vi.mocked(chatRealtime.resume).mockClear();
   });
 
-  it("binds the inbox before the viewer resolves, so the nav lights on any page", () => {
+  it("binds the inbox once the viewer resolves, so the nav lights on any page", () => {
     // The whole of #3745: the manager is configured, which joins the inbox,
-    // wherever the shell mounts, not only on `/chat`.
-    liveViewerId.current = null;
-    renderHook(() => useChatRealtimeBinding());
-
-    expect(chatRealtime.configure).toHaveBeenCalledTimes(1);
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewerId: null, queryClient }),
-    );
-  });
-
-  it("re-configures for the viewer once it resolves, and never destroys to do it (#3002)", () => {
-    // `destroy()` here dropped the thread's channel subscription, which the
-    // thread never re-took: its subscribe effect is keyed on the channel.
+    // wherever the shell mounts, not only on `/chat`. Not before the viewer
+    // is known (#4709): a bind for no one was rejoined for the viewer a
+    // moment later, which re-stamped and re-read on every open.
     liveViewerId.current = null;
     const { rerender } = renderHook(() => useChatRealtimeBinding());
+    expect(chatRealtime.configure).not.toHaveBeenCalled();
 
     liveViewerId.current = "user-live";
     rerender();
 
+    expect(chatRealtime.configure).toHaveBeenCalledTimes(1);
     expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewerId: "user-live" }),
+      expect.objectContaining({ viewerId: "user-live", queryClient }),
     );
+    // `destroy()` here dropped the thread's channel subscription, which the
+    // thread never re-took: its subscribe effect is keyed on the channel
+    // (#3002).
     expect(chatRealtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("rebinds at once when a bound viewer goes to null, as an account swap does", () => {
+    // Only the first, unbound `null` waits. A swap passes through `null`, and
+    // the previous member's channels must not stay joined until the new
+    // member's `/v1/users/me` answers.
+    liveViewerId.current = "user-a";
+    const { rerender } = renderHook(() => useChatRealtimeBinding());
+
+    liveViewerId.current = null;
+    rerender();
+
+    expect(chatRealtime.configure).toHaveBeenCalledTimes(2);
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ viewerId: null }),
+    );
   });
 
   it("re-configures for a different viewer without destroying, too", () => {

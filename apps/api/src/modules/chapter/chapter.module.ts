@@ -69,6 +69,9 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     },
   ],
   exports: [
+    // `BootstrapModule` reads the accessible chapters and the member view
+    // from it (#4709).
+    ChapterService,
     CHAPTER_REPOSITORY,
     ROLE_REPOSITORY,
     ROLE_TIER_REPOSITORY,

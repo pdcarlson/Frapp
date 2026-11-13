@@ -1,6 +1,7 @@
-import createClient, { Middleware } from 'openapi-fetch';
-import { randomClientId } from './random-id';
-import type { paths } from './types';
+import createClient, { Middleware } from "openapi-fetch";
+import { createFirstScreenBatchMiddleware } from "./first-screen-batch";
+import { randomClientId } from "./random-id";
+import type { paths } from "./types";
 
 export interface FrappClientConfig {
   baseUrl: string;
@@ -33,6 +34,13 @@ export interface FrappClientConfig {
    * browser and the phone; a test can pin it.
    */
   getTimeZone?: () => string | null;
+  /**
+   * Answer the reads a screen fires together from one `GET /v1/bootstrap`
+   * (#4709): see `createFirstScreenBatchMiddleware`. The web dashboard and
+   * the phone app turn it on; off by default, so a client that doesn't ask
+   * sends every read on its own route as before.
+   */
+  batchFirstScreenReads?: boolean;
 }
 
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -106,8 +114,8 @@ export const withRequestIdInit = (init: RequestInit = {}): RequestInit => {
  * path segment puts it back.
  */
 export const normalizeApiBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  return trimmed.endsWith('/v1') ? trimmed.slice(0, -'/v1'.length) : trimmed;
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/v1") ? trimmed.slice(0, -"/v1".length) : trimmed;
 };
 
 export const createFrappClient = (config: FrappClientConfig) => {
@@ -120,14 +128,14 @@ export const createFrappClient = (config: FrappClientConfig) => {
       if (config.getAuthToken) {
         const token = await config.getAuthToken();
         if (token) {
-          request.headers.set('Authorization', `Bearer ${token}`);
+          request.headers.set("Authorization", `Bearer ${token}`);
         }
       }
 
       if (config.getChapterId) {
         const chapterId = config.getChapterId();
         if (chapterId) {
-          request.headers.set('x-chapter-id', chapterId);
+          request.headers.set("x-chapter-id", chapterId);
         }
       }
 
@@ -148,7 +156,7 @@ export const createFrappClient = (config: FrappClientConfig) => {
       if (
         response.status === 401 &&
         config.onUnauthorized &&
-        request.headers.has('Authorization')
+        request.headers.has("Authorization")
       ) {
         config.onUnauthorized();
       }
@@ -157,6 +165,10 @@ export const createFrappClient = (config: FrappClientConfig) => {
   };
 
   client.use(authMiddleware);
+  // After the auth middleware: a batch is keyed on the headers it sets.
+  if (config.batchFirstScreenReads) {
+    client.use(createFirstScreenBatchMiddleware());
+  }
 
   return client;
 };
