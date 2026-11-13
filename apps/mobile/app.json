@@ -2,7 +2,7 @@
   "expo": {
     "name": "Frapp",
     "slug": "frapp",
-    "version": "0.12.0",
+    "version": "0.13.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frapp",
@@ -58,6 +58,7 @@
         "backgroundColor": "#1A1A1A"
       },
       "predictiveBackGestureEnabled": false,
+      "blockedPermissions": ["android.permission.CAMERA"],
       "package": "live.frapp.mobile",
       "intentFilters": [
         {
@@ -68,6 +69,11 @@
               "scheme": "https",
               "host": "app.frapp.live",
               "path": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "app.frapp.live",
+              "path": "/check-in"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
@@ -89,17 +95,10 @@
         }
       ],
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events.",
-          "recordAudioAndroid": false,
-          "microphonePermission": "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record."
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents, and attach photo proof to service hours.",
+          "cameraPermission": "Frapp never uses the camera. iOS requires this note because a photo library Frapp uses can open it.",
           "microphonePermission": "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record."
         }
       ],

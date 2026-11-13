@@ -12,12 +12,12 @@ before you pick up a phone.
 
 ## Before you start
 
-- **The builds.** Run it on the **0.12.0** store builds (TestFlight and the Play internal track),
-  which don't exist yet: on 2026-11-12 EAS's newest store builds were iOS 0.11.0 (20) and Android
-  0.11.0 (12). They come from the next **Deploy production** run with a mobile build. `app.json`
-  moved to 0.12.0 when #4472 merged (2026-11-12 16:21Z), so the 0.11.0 builds stopped receiving
-  over-the-air updates then and miss everything merged after it, including rows 13 (#4516), 16
-  (#4519) and 19 (#4526).
+- **The builds.** Run it on the **0.13.0** store builds (TestFlight and the Play internal track),
+  which come from the first **Deploy production** run with a mobile build after #4763 merged.
+  `app.json` moved to 0.13.0 with #4763 (2026-11-13), so the 0.12.0 builds (iOS 21, Android 13)
+  stop receiving over-the-air updates then and miss everything merged after it. Before that,
+  `app.json` moved to 0.12.0 when #4472 merged (2026-11-12 16:21Z), which is why 0.11.0 builds
+  miss rows 13 (#4516), 16 (#4519) and 19 (#4526).
 - **Two phones and a laptop.** The iPhone and the Android phone, both signed in as you on
   production, and `app.frapp.live` open on the laptop as the "other member" for the photo row.
 - **One brother on standby** for the push row: he @mentions you when you ask.
@@ -26,7 +26,7 @@ before you pick up a phone.
 
 Rows marked **iPhone** or **Android** run on that phone only. The rest run on both. A row runs on
 one phone when what it checks is shared JavaScript with nothing native under it; that is what
-keeps the pass short: the section times add to about seventeen minutes, with both phones side by
+keeps the pass short: the section times add to about eighteen minutes, with both phones side by
 side.
 
 The [automated flows](#what-the-automated-flows-cover) haven't had their first run yet (they need
@@ -37,7 +37,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
 | 1 | Both | Open the app after the update | What's new opens by itself once. Close it, force-quit, reopen: it doesn't open again | #3809, #4131 |
-| 2 | Both | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.12.0. Note its build number in your #808 comment. The app itself has no About row | #808 |
+| 2 | Both | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.13.0. Note its build number in your #808 comment. The app itself has no About row | #808 |
 
 ## 2. Chat home (2 minutes)
 
@@ -93,6 +93,12 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 25 | Android | Settings, Sign out, Continue with email, tap the password field | The field and Sign in sit above the keyboard. Android back returns to the first view without leaving the app | #4208, #808 row 2 |
 | 26 | Android | Sign back in | Straight to the chat, with no chapter picker | smoke checklist § 1 |
 
+## 8. Check-in link (1 minute)
+
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. Point the Android phone's own camera app at it and tap the link it offers | Frapp opens on the check-in and checks you in, not a browser page with Open in Frapp | #4763 |
+
 ## What the pass leaves out, and why
 
 These were owed device checks too. Each is settled elsewhere, so it's not on the pass:
@@ -103,7 +109,8 @@ These were owed device checks too. Each is settled elsewhere, so it's not on the
   Apple sign-in on 2026-11-07, three deleted accounts, 130 check-ins from 24 members in two weeks,
   and 40 reactions (all counted in `frapp-prod`'s auth, check-in and reaction tables on
   2026-11-12), and Sentry `ui.load.initial_display` spans from both iOS and Android (#4350). If
-  0.12.0 changes one of these flows natively, it rejoins the pass.
+  0.12.0 or a later version changes one of these flows natively, it rejoins the pass. 0.13.0
+  does: Android's camera opens a check-in code's link in the app (#4763), so check-in rejoins it.
 - **The Xcode version** (#808 row 1, #2477). It's in the EAS build log's "Spin up build
   environment" section, not on a phone.
 - **An expired attachment link** (#808 row 7). It needs an attachment older than its signed

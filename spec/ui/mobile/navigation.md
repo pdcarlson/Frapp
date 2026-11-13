@@ -198,7 +198,7 @@ Launch opens the last channel the member was in, then back goes to chat home (s0
 
 - Scheme: `frapp://` (`scheme` in `apps/mobile/app.json`). It is permanent, because every installed binary carries it (ADR-25). [`mobile-permanent-identifiers.test.mjs`](../../../scripts/ci/__tests__/mobile-permanent-identifiers.test.mjs) pins it, with the binary's other permanent identifiers.
 - **`frapp://join?token=…` fills s02.** The same query keys web `/join` uses (`token`, then `invite`, then `code`) are accepted on the app scheme and as a pasted URL in the field.
-- **`https://app.frapp.live/join?token=…` opens the app too, from 0.11.0** (#4002): `associatedDomains` (`applinks:app.frapp.live`) and an `autoVerify` intent filter on the path `/join`, in `apps/mobile/app.json`, pinned by `app.config.spec.ts`. The staging variant (Frapp Staging, `staging` profile) drops both claims, since `app.frapp.live` vouches only for the production app; it opens `frapp-staging://join` only. It needs the web's two `.well-known` files for the same path, and a build installed from the store or TestFlight (Apple and Google check the files at install). Expo Router routes the link to `/join` with its params, so it lands where `frapp://join` does. An account with a chapter can't use s02, so when the chapter list says it has one and the gate says tabs, Terms or s03, the app opens that invite on web `/join` (marked `web=1`) in an in-app browser and leaves the member where the gate put them (`useMemberInviteHandoff`, mounted in `AppRuntime`). It takes the invite from the opening link, marking it handled so s02 never replays it, or from the invite s02 remembered across sign-in. The in-app browser has no app session, so the member signs in there again (always on iOS); joining a second chapter in the app is not built. Every EAS profile carries the claim, so an internal `preview` build installed on iOS opens production invite links too, against the staging API, where they are dead. `/check-in` (the check-in code, 2026-11-13) is claimed on iOS by the web's file alone, since its paths live there; Android claims it with the next native version (#4763), and until then its web page hands off with Open in Frapp. No other https path opens the app.
+- **`https://app.frapp.live/join?token=…` opens the app too, from 0.11.0** (#4002): `associatedDomains` (`applinks:app.frapp.live`) and an `autoVerify` intent filter on the path `/join`, in `apps/mobile/app.json`, pinned by `app.config.spec.ts`. The staging variant (Frapp Staging, `staging` profile) drops both claims, since `app.frapp.live` vouches only for the production app; it opens `frapp-staging://join` only. It needs the web's two `.well-known` files for the same path, and a build installed from the store or TestFlight (Apple and Google check the files at install). Expo Router routes the link to `/join` with its params, so it lands where `frapp://join` does. An account with a chapter can't use s02, so when the chapter list says it has one and the gate says tabs, Terms or s03, the app opens that invite on web `/join` (marked `web=1`) in an in-app browser and leaves the member where the gate put them (`useMemberInviteHandoff`, mounted in `AppRuntime`). It takes the invite from the opening link, marking it handled so s02 never replays it, or from the invite s02 remembered across sign-in. The in-app browser has no app session, so the member signs in there again (always on iOS); joining a second chapter in the app is not built. Every EAS profile carries the claim, so an internal `preview` build installed on iOS opens production invite links too, against the staging API, where they are dead. `/check-in` (the check-in code, 2026-11-13) is claimed on iOS by the web's file alone, since its paths live there; Android claims it in its intent filter from 0.13.0 (#4763); on an older Android build its web page hands off with Open in Frapp. No other https path opens the app.
 - **`frapp://chat?channel=…&message=…` opens the channel on the message** (#3723), through `apps/mobile/app/(app)/chat.tsx`; a link with only `channel` opens the channel. The same `/chat` link on `https://app.frapp.live` (Copy message link's, `packages/validation/src/message-link.ts`) opens in-app when tapped inside a message (`apps/mobile/lib/chat/open-link.ts`), but the app doesn't claim the https path yet, so opened from another app it goes to the web: iOS reads claimed paths from the web, and installed builds have no `/chat` route (#4869).
 - **`frapp://event-details` is a contract.** `.ics` files exported before the calendar export was withdrawn (2026-11-08, #3708) carry it as their deep-link URL, `frapp://event-details?id=<event id>` (`apps/mobile/app/(app)/event-details.tsx`), and those files live on in members' device calendars indefinitely. Nothing writes the URL any more, but the route filename, the URL and its `id` param MUST never change. The same lock pins the `id` param, and `apps/mobile/lib/routes.spec.ts` pins the route.
 - **First-officer creation is `(auth)/create-chapter`.** The route is exempt from the authenticated bounce into the tabs so a successful onboard does not yank the officer off the invite step (`spec/behavior/onboarding.md`).
@@ -377,7 +377,8 @@ photo proof to service hours"). #3401 keeps the picker and #2620.
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
-key at all**. Each of those three is load-bearing:
+key at all**. Each of those three is load-bearing _(as of 2026-09-30; the microphone
+changed 2026-11-12 and the camera 2026-11-13, both below)_:
 
 - `cameraPermission` is omitted rather than declined because declining is what
   compiled to `withBlockedPermissions(['android.permission.CAMERA'])` and broke QR
@@ -386,7 +387,8 @@ key at all**. Each of those three is load-bearing:
   `permissions[key] || infoPlist[key] || default`, so an undefined option falls
   through to whatever a plugin already wrote before it ever reaches the vendor
   default, and `expo-camera` writes NSCameraUsageDescription explicitly in either
-  plugin order.
+  plugin order. _(Superseded 2026-11-13 by 0.13.0, which removed `expo-camera`; see
+  below.)_
 - `microphonePermission` **is** declined, and must stay declined. Omitting it is not
   inert: `withAndroidImagePickerPermissions` adds `android.permission.RECORD_AUDIO`
   whenever the option is anything other than `false`, and the iOS half would write a
@@ -421,6 +423,28 @@ scan doesn't flag every linked API: the same upload named only the motion key, t
 declined at the time. So a linked-only entry is added when Apple names its key, and a
 decline stands until it does. _(Changed 2026-11-12: the microphone key is no longer
 declined, because the meeting recorder requests it; Face ID's decline stands.)_
+
+_Changed 2026-11-13 (0.13.0, [#4763](https://github.com/pdcarlson/Frapp/issues/4763)):_
+the in-app QR scanner went with [#4762](https://github.com/pdcarlson/Frapp/issues/4762),
+when the check-in code became a link the phone's own camera app opens, so 0.13.0 removes
+`expo-camera` and its plugin entry. Two of its jobs move:
+
+- **The camera key on iOS.** With `expo-camera` gone, `expo-image-picker` would write its
+  default camera purpose string. Its `cameraPermission` now carries a linked-only note
+  instead ("Frapp never uses the camera..."), pinned with `linkedBy` on the picker's
+  `AVCaptureDevice` use and its three camera requests (`requestCameraPermissionsAsync`,
+  `useCameraPermissions`, `launchCameraAsync`). This is the one linked-only key added
+  before Apple named it, as a precaution, not an observed requirement: every build until
+  0.13.0 carried a camera key, so the upload scan never had the chance, and dropping it
+  risked an ITMS-90683 rejection of the first build without it.
+- **`android.permission.CAMERA`.** `expo-image-picker`'s own library manifest declares it,
+  so it would still reach the merged manifest. `android.blockedPermissions` in `app.json`
+  removes it, and `ANDROID_REMOVED_PERMISSIONS` pins the removal. The #2296 lesson still
+  holds: the block is safe only because nothing in the app requests the camera, and the
+  gate fails if anything starts to.
+
+`microphonePermission` is now carried by `expo-image-picker` and `expo-audio`, the two
+plugins that write the key.
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the

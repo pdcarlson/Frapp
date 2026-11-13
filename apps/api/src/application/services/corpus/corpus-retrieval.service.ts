@@ -3,6 +3,8 @@ import { stripLoneSurrogates } from '#domain/utils/corpus-chunker';
 import type { CorpusCandidate } from '#domain/entities/corpus.entity';
 import {
   CORPUS_REPOSITORY,
+  type CorpusMatchFilter,
+  type CorpusSourceChunks,
   type ICorpusRepository,
 } from '#domain/repositories/corpus.repository.interface';
 import {
@@ -51,6 +53,29 @@ export interface CorpusRetrievalRequest {
   /** The AI run this retrieval belongs to, when it is background work. */
   runId?: string;
   signal?: AbortSignal;
+  /**
+   * Narrows the search (#4900): to some source types, to chat in some
+   * channels, to passages holding one member's words, to a stretch of
+   * dates. It only removes passages, and every step below still runs on
+   * what is left, so it can never show a member something an unnarrowed
+   * search would not.
+   */
+  filter?: CorpusMatchFilter;
+}
+
+/** What {@link CorpusRetrievalService.readSource} is asked for. */
+export interface CorpusSourceReadRequest {
+  /** As for a retrieval: from the request's guard, never from a model. */
+  chapterId: string;
+  actingUserId: string;
+  /** A document or minutes. Chat is never read this way. */
+  sourceType: string;
+  /** The source's id in its own table. Checked here like an id in a URL. */
+  sourceId: string;
+  /** The first passage wanted, counted from 0. */
+  offset: number;
+  /** Passages wanted, at most 20. */
+  limit: number;
 }
 
 /** A retrieved passage with what a citation needs to name and link it. */
@@ -153,6 +178,38 @@ export class CorpusRetrievalService {
     );
   }
 
+  /**
+   * One indexed source's passages in the order they sit in it: a document
+   * read page by page (#4900). No model call. The member must be able to
+   * open the source, by the rule a retrieval applies
+   * (`CorpusSourceAdapter.readableBy`). Null when they cannot, when the
+   * index holds no current revision of it, when `offset` is past its end,
+   * and for chat, whose passages are checked one by one and are read through
+   * `ChatCatchUpService.readStretch` instead. One answer for all of those,
+   * so this is never a way to learn that a source exists.
+   */
+  async readSource(
+    request: CorpusSourceReadRequest,
+  ): Promise<CorpusSourceChunks | null> {
+    if (request.sourceType === CHAT_SOURCE_TYPE) return null;
+    const adapter = corpusAdapterFor(this.adapters, request.sourceType);
+    if (!adapter) return null;
+    const readable = await adapter.readableBy(
+      request.chapterId,
+      request.actingUserId,
+      [request.sourceId],
+    );
+    if (!readable.has(request.sourceId)) return null;
+    return this.corpus.readSourceChunks({
+      chapterId: request.chapterId,
+      userId: request.actingUserId,
+      sourceType: request.sourceType,
+      sourceId: request.sourceId,
+      offset: request.offset,
+      limit: Math.min(Math.max(Math.trunc(request.limit), 1), MAX_LIMIT),
+    });
+  }
+
   async retrieve(
     request: CorpusRetrievalRequest,
     now = new Date(),
@@ -191,6 +248,7 @@ export class CorpusRetrievalService {
       embedding: embedded.vectors[0],
       embeddingModel: embedded.model,
       limit: CANDIDATES_PER_HALF,
+      ...(request.filter === undefined ? {} : { filter: request.filter }),
     });
     const readable = await this.readable(
       request.chapterId,

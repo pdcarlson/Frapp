@@ -96,11 +96,12 @@ const FREEZE_CSS = `
 /**
  * Metro's dev-only error toast, hidden for the shot.
  *
- * `expo-camera`'s web build fetches a wasm barcode decoder that the sandbox has
- * no network for, and the rejection lands in the LogBox toast as a red
- * "Aborted(...)" pill across the tab bar. It is a dev-server artifact of the
- * web target — the native build neither loads that wasm nor renders a toast —
- * so it is chrome to suppress, not a defect the screenshot should record.
+ * It was first hidden for `expo-camera`'s web build (the app dropped it in
+ * 0.13.0, #4763), whose wasm barcode decoder the sandbox had no network for:
+ * the rejection landed in the LogBox toast as a red "Aborted(...)" pill across
+ * the tab bar. The toast is a dev-server artifact of the web target, which the
+ * native build never renders, so it is chrome to suppress, not a defect the
+ * screenshot should record.
  *
  * `#error-toast` is the same toast in the current Expo web runtime: a direct
  * child of `<body>` that draws inside its own shadow root, which no selector

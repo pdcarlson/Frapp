@@ -1,10 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import {
-  BookmarksPanel,
-  type BookmarkEntry,
-} from "./bookmarks-popover";
+import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import type { BookmarkedMessage } from "./bookmarks-popover";
 
 /**
@@ -49,10 +46,10 @@ const entry = (overrides: Partial<BookmarkEntry> = {}): BookmarkEntry => ({
 
 const nameFor = (id: string) => (id === OTHER ? "Alice Chen" : null);
 
-function renderPanel(props: Partial<Parameters<typeof BookmarksPanel>[0]> = {}) {
-  return render(
-    <BookmarksPanel bookmarks={[]} nameFor={nameFor} {...props} />,
-  );
+function renderPanel(
+  props: Partial<Parameters<typeof BookmarksPanel>[0]> = {},
+) {
+  return render(<BookmarksPanel bookmarks={[]} nameFor={nameFor} {...props} />);
 }
 
 describe("BookmarksPanel", () => {
@@ -69,7 +66,9 @@ describe("BookmarksPanel", () => {
   it("distinguishes a failed load from an empty list", () => {
     renderPanel({ isError: true });
 
-    expect(screen.getByText(/Couldn’t load your bookmarks/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Couldn’t load your bookmarks/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Nothing saved yet/)).not.toBeInTheDocument();
   });
 
@@ -102,6 +101,34 @@ describe("BookmarksPanel", () => {
     });
 
     expect(screen.getByText("Message")).toBeInTheDocument();
+  });
+
+  it("previews a forward with no comment as its copy (#4875)", () => {
+    renderPanel({
+      bookmarks: [
+        entry({
+          message: message({
+            content: "",
+            forwarded_from: {
+              message_id: "orig-1",
+              channel_id: "ch-2",
+              sender_id: "u-3",
+              author_name: "Sam",
+              content: "the van leaves at 6",
+              gif: null,
+              attachment_count: 0,
+              created_at: "2026-11-01T00:00:00Z",
+              deleted: false,
+              sender_blocked: false,
+            },
+          }),
+        }),
+      ],
+    });
+
+    expect(
+      screen.getByText("Forwarded: the van leaves at 6"),
+    ).toBeInTheDocument();
   });
 
   it("keeps a bookmark whose message was deleted, showing the placeholder", () => {

@@ -817,6 +817,91 @@ describe('SearchService', () => {
     });
   });
 
+  describe('searchMessagesIn (#4900)', () => {
+    const PUB = '11111111-1111-4111-8111-111111111111';
+    const PUB2 = '22222222-2222-4222-8222-222222222222';
+    const PRIV_OUT = '33333333-3333-4333-8333-333333333333';
+    const DM_MINE = '55555555-5555-4555-8555-555555555555';
+
+    beforeEach(() => {
+      repo.findChannelsForAccess.mockResolvedValue([
+        channel(PUB, 'PUBLIC'),
+        channel(PUB2, 'PUBLIC'),
+        channel(PRIV_OUT, 'PRIVATE', { member_ids: ['user-2'] }),
+        channel(DM_MINE, 'DM', { member_ids: ['user-1', 'user-2'] }),
+      ]);
+      repo.searchMessages.mockResolvedValue([{ id: 'm-1', channel_id: PUB }]);
+    });
+
+    it('searches messages only, in the handed channels the caller can read', async () => {
+      const found = await service.searchMessagesIn(
+        'ch-1',
+        'user-1',
+        'hello',
+        // One they can read, one they cannot: the second only narrows.
+        [PUB, PRIV_OUT],
+        {},
+        25,
+      );
+      // The narrowing reaches SQL, so the limit is spent on these channels
+      // and never on a direct message the caller could also read.
+      expect(repo.searchMessages).toHaveBeenCalledWith([PUB], 'hello', 25);
+      expect(found).toEqual([expect.objectContaining({ id: 'm-1' })]);
+      expect(repo.searchBackwork).not.toHaveBeenCalled();
+      expect(repo.searchEvents).not.toHaveBeenCalled();
+      expect(repo.searchMembers).not.toHaveBeenCalled();
+    });
+
+    it('passes the message filters down and holds the limit', async () => {
+      const filters = { fromUserId: '00000000-0000-4000-8000-0000000000aa' };
+      await service.searchMessagesIn(
+        'ch-1',
+        'user-1',
+        '',
+        [PUB2],
+        filters,
+        900,
+      );
+      expect(repo.searchMessages).toHaveBeenCalledWith(
+        [PUB2],
+        '',
+        40,
+        expect.objectContaining(filters),
+      );
+    });
+
+    it('answers nothing for no channels, channels the caller cannot read, or a query too short', async () => {
+      await expect(
+        service.searchMessagesIn('ch-1', 'user-1', 'hello', []),
+      ).resolves.toEqual([]);
+      await expect(
+        service.searchMessagesIn('ch-1', 'user-1', 'hello', [PRIV_OUT]),
+      ).resolves.toEqual([]);
+      await expect(
+        service.searchMessagesIn('ch-1', 'user-1', 'he', [PUB]),
+      ).resolves.toEqual([]);
+      // No words is allowed only beside a message filter.
+      await expect(
+        service.searchMessagesIn('ch-1', 'user-1', '', [PUB]),
+      ).resolves.toEqual([]);
+      expect(repo.searchMessages).not.toHaveBeenCalled();
+    });
+
+    it('masks a blocked sender as the search does', async () => {
+      repo.searchMessages.mockResolvedValue([
+        { id: 'm-1', channel_id: PUB, sender_id: 'user-9', content: 'hi' },
+      ]);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-9']);
+      const [found] = await service.searchMessagesIn(
+        'ch-1',
+        'user-1',
+        'hello',
+        [PUB],
+      );
+      expect(found.sender_blocked).toBe(true);
+    });
+  });
+
   describe('searchWithinBudget', () => {
     const emptyResult = {
       backwork: [],

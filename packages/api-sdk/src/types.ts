@@ -5012,6 +5012,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/{ask_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rate an answer: thumbs up or down
+         * @description Sets the caller’s thumbs on an answer they were given, replacing an earlier one. A `down` may carry one of four reasons. Nothing of the question or the answer is sent or kept: to send those, the member reports the answer (`POST /v1/ai/reports`). Kept with the answer’s trace, for at most 90 days.
+         */
+        put: operations["AskFeedbackController_rate_v1"];
+        post?: never;
+        /**
+         * Take a thumbs back
+         * @description Succeeds whether or not there was one.
+         */
+        delete: operations["AskFeedbackController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/{ask_id}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say what the member did with an answer
+         * @description One tap under an answer the caller was given: Try again, Think harder, a source opened, a proposed card confirmed or dismissed. Counted as an analytics event; nothing is stored.
+         */
+        post: operations["AskFeedbackController_signal_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/catch-up": {
         parameters: {
             query?: never;
@@ -6552,6 +6596,72 @@ export interface components {
             client_message_id?: string;
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
+        ForwardResultDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself.
+             */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`. */
+            content: string;
+            /** @enum {string} */
+            type: "TEXT" | "POLL";
+            /**
+             * @description Null on rows written before the column existed; read as 'text'.
+             * @enum {string|null}
+             */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | null;
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
+            payload?: Record<string, never> | null;
+            client_message_id?: string | null;
+            /** Format: uuid */
+            reply_to_id: string | null;
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            metadata: Record<string, never>;
+            is_pinned: boolean;
+            pinned_at: string | null;
+            /**
+             * @description The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.
+             * @enum {string|null}
+             */
+            flag?: "important" | "funny" | "interesting" | "question" | "hype" | "fyi" | null;
+            /**
+             * Format: uuid
+             * @description Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.
+             */
+            flagged_by?: string | null;
+            flagged_at?: string | null;
+            edited_at: string | null;
+            is_deleted: boolean;
+            /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            mentions?: string[] | null;
+            /**
+             * Format: uuid
+             * @description The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.
+             */
+            thread_root_id?: string | null;
+            /** @description On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row. */
+            thread_reply_count?: number;
+            thread_last_reply_at?: string | null;
+            /** @description On a thread parent: up to three recent repliers, newest first. */
+            thread_recent_sender_ids?: string[];
+            /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
+            thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
+            created_at: string;
+            /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
+            sender_blocked: boolean;
+            /** @description True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one. */
+            deduplicated: boolean;
+        };
         SetMessageFlagDto: {
             /**
              * @description One flag per message (#3921). Anyone who can read the channel may flag an unflagged message; replacing a flag takes its sender, whoever added it, or `channels:manage`.
@@ -6657,6 +6767,8 @@ export interface components {
              * @description The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row.
              */
             thread_root_id: string | null;
+            /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };
@@ -9522,6 +9634,32 @@ export interface components {
             posted: boolean;
             /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
             restricted: components["schemas"]["AskPostRestrictedDto"][];
+        };
+        SetAskFeedbackDto: {
+            /** @enum {string} */
+            rating: "up" | "down";
+            /**
+             * @description With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before.
+             * @enum {string|null}
+             */
+            reason?: "wrong" | "missed" | "too_long" | "other" | null;
+        };
+        AskFeedbackDto: {
+            /** Format: uuid */
+            ask_id: string;
+            /** @enum {string} */
+            rating: "up" | "down";
+            /** @enum {string|null} */
+            reason: "wrong" | "missed" | "too_long" | "other" | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AskSignalDto: {
+            /**
+             * @description What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`.
+             * @enum {string}
+             */
+            signal: "retried" | "think_harder" | "source_opened" | "card_confirmed" | "card_dismissed";
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -13087,7 +13225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatMessageDto"];
+                    "application/json": components["schemas"]["ForwardResultDto"];
                 };
             };
             /** @description Error */
@@ -21239,6 +21377,128 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_rate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAskFeedbackDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskFeedbackDto"];
+                };
+            };
+            /** @description A reason sent with a thumbs up (`ai.ask.feedback.reason_needs_down`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_signal_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskSignalDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
             404: {
                 headers: {
                     [name: string]: unknown;

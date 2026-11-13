@@ -1,38 +1,11 @@
 import { BlockList, isIP } from 'node:net';
+import { signUpLinkKind } from '@repo/validation';
 
 /**
  * The SSRF guards on the link title fetch (#4187). Pure functions, so each
  * guard is tested on its own; `HttpsLinkTitleFetcher` applies them to every
  * hop, the first request and each redirect alike.
  */
-
-/** The `docs.google.com` paths Activity gathers, with a Workspace `/a/<domain>` prefix or not. */
-const GOOGLE_DOCS_PATH = /^(\/a\/[^/]+)?\/(forms|spreadsheets|document)\//i;
-
-/**
- * Whether a host and path is a sign-up page Activity gathers. The same list
- * as `activity_action_links` in the database
- * (`20261111030000_activity_links.sql`), which decides what is indexed; this
- * copy decides what may be opened, so a redirect is held to it too. A host
- * the database list later widens to is gathered, but its read is refused
- * until it is added here, which fails closed. A refusal is a definite
- * answer, so a link posted before then never gets a name: widen both lists
- * in the same change.
- */
-export function isSignUpHost(host: string, path: string): boolean {
-  if (host === 'docs.google.com') return GOOGLE_DOCS_PATH.test(path);
-  return (
-    host === 'forms.gle' ||
-    host === 'forms.office.com' ||
-    host === 'forms.microsoft.com' ||
-    host === 'forms.cloud.microsoft' ||
-    host === 'typeform.com' ||
-    host.endsWith('.typeform.com') ||
-    host === 'signupgenius.com' ||
-    host.endsWith('.signupgenius.com') ||
-    host === 'calendly.com'
-  );
-}
 
 /**
  * The URL to request for a posted link or a redirect's `Location`, or null
@@ -41,6 +14,13 @@ export function isSignUpHost(host: string, path: string): boolean {
  * port other than the scheme's own; an IP literal; and any host and path off
  * the sign-up list. An `http` link is upgraded to `https` on the same host,
  * so nothing is ever sent in the clear.
+ *
+ * The sign-up list is `signUpLinkKind` in `@repo/validation`, the TypeScript
+ * copy of the database's `activity_action_links`, held to it by
+ * `sign-up-link-fixtures.json` (#4215). The database list decides what is
+ * gathered; this decides what may be opened, so a redirect is held to it too.
+ * The matcher does its own host normalising (lowercase, one leading `www.`
+ * dropped, as the database does), so it gets the hostname as it is.
  */
 export function fetchableUrl(raw: string, base?: URL): URL | null {
   let url: URL;
@@ -60,8 +40,7 @@ export function fetchableUrl(raw: string, base?: URL): URL | null {
   const hostname = url.hostname.toLowerCase();
   // An IPv6 literal keeps its brackets in `hostname`.
   if (isIP(hostname) !== 0 || hostname.startsWith('[')) return null;
-  const host = hostname.replace(/^www\./, '');
-  if (!isSignUpHost(host, url.pathname)) return null;
+  if (signUpLinkKind(hostname, url.pathname) === null) return null;
   url.hash = '';
   return url;
 }

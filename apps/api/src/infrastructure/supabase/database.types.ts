@@ -7,6 +7,9 @@ import type {
   AiSuggestion,
   AskDiagnosticsExchange,
   AskDiagnosticsWindow,
+  AskFeedbackRow,
+  AskTraceRow,
+  AskTraceStepRow,
   BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
@@ -148,6 +151,9 @@ export interface Database {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
+      ai_ask_feedback: TableDefinition<AskFeedbackRow>;
+      ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;
+      ai_ask_traces: TableDefinition<AskTraceRow>;
       ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
       ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
       ai_reports: TableDefinition<AiReport>;
@@ -812,6 +818,12 @@ export interface Database {
           p_embedding: string;
           p_embedding_model: string;
           p_limit: number;
+          /** `20261113204057` (#4900): each narrows, null narrows nothing. */
+          p_source_types?: string[];
+          p_channel_ids?: string[];
+          p_author_id?: string;
+          p_since?: string;
+          p_until?: string;
         };
         Returns: CorpusCandidate[];
       };
@@ -833,6 +845,31 @@ export interface Database {
           created_at: string | null;
           thread_root_id: string | null;
           conversation_at: string | null;
+        }[];
+      };
+      /**
+       * `20261113204057` (#4900) — one indexed source's passages in order,
+       * for a member of the chapter; never a chat window.
+       */
+      read_corpus_source_chunks: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_source_type: string;
+          p_source_id: string;
+          p_offset: number;
+          p_limit: number;
+        };
+        Returns: {
+          chunk_id: string;
+          chunk_index: number;
+          heading: string | null;
+          content: string;
+          page_start: number | null;
+          page_end: number | null;
+          title: string;
+          source_at: string | null;
+          chunk_count: number;
         }[];
       };
       /**

@@ -10,7 +10,7 @@
 // `option || infoPlist[key] || <the plugin's default string>`. So a guard that
 // reads app.json can't see three things that each ship a real defect:
 //
-//   - An omitted option. Delete expo-camera's `microphonePermission` and the
+//   - An omitted option. Delete expo-image-picker's `microphonePermission` and the
 //     binary ships the plugin's default, "Allow $(PRODUCT_NAME) to access your
 //     microphone", in place of the text that says what the recorder is for
 //     (Guideline 5.1.1(i)). The default is never written into app.json.
@@ -109,21 +109,6 @@ const MOBILE_DIR = "apps/mobile";
 const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
 
 /**
- * A permission whose feature is gone but whose declaration is native, so it
- * leaves with the next native version rather than in the change that removed
- * the feature: removing it sooner would change the native inputs of a version
- * already in the stores, which stops that version getting updates over the air
- * (`check-mobile-native-version.mjs`). While `expo.version` is still `version`,
- * its missing requester is no problem; once the version moves, it is, so the
- * bump that can remove it has to.
- *
- * The camera: the in-app QR scanner went on 2026-11-13, when the check-in code
- * became a link the phone's own camera opens. expo-camera, its plugin and the
- * two declarations go with #4763.
- */
-const CAMERA_RETIRING = { version: "0.12.0", issue: "#4763" };
-
-/**
  * Every iOS purpose string the binary ships, keyed by its Info.plist key.
  * `requestedBy` is the call that shows the permission dialog: a purpose string
  * with no such call is a Guideline 5.1.1(i) rejection, and a call with no
@@ -133,36 +118,48 @@ const CAMERA_RETIRING = { version: "0.12.0", issue: "#4763" };
  * anyway. Its upload scan flags some APIs a linked library references and
  * rejects the binary without their key (ITMS-90683), whether or not anything
  * calls them. Such an entry has `requestedBy: null` and a `linkedBy`: the
- * linked pod and native symbol that make Apple ask, and the JS call that
+ * linked pod and native symbol that make Apple ask, and the JS calls that
  * would make the app ask too (which the app must not make, because the text
  * says it never does). Declining one with `false` is what got iOS 0.9.1 (8)
  * rejected on 2026-11-05. Not every linked API is flagged: the same upload
- * named only the motion key, though expo-camera links microphone access and
- * expo-secure-store links Face ID, both declined then (Face ID still is; the
- * microphone key is now requested by the meeting recorder). So an entry is added
- * when Apple names the key, not for every symbol a library links.
+ * named only the motion key, though expo-camera (gone since 0.13.0) linked
+ * microphone access and expo-secure-store links Face ID, both declined then
+ * (Face ID still is; the microphone key is now requested by the meeting
+ * recorder). So an entry is added when Apple names the key, not for every
+ * symbol a library links. The camera key is the one exception: it shipped in
+ * every build until 0.13.0, so Apple has never had the chance to name it, and
+ * expo-image-picker's AVCaptureDevice use is the kind of reference its scan
+ * flags.
  *
  * Plugin options that are load-bearing, which the checks below catch changing:
- *   - Three plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
- *     recorder, the only microphone surface), expo-camera and
- *     expo-image-picker. All three carry the same text in app.json. Omitting
- *     one ships that plugin's default string, and `false` on expo-camera's
- *     deletes the key the recorder needs, either of which check 1 fails;
- *     `false` on image-picker's compiles to a blocked RECORD_AUDIO, which
- *     would strip the recorder's permission on Android (check 2).
- *   - expo-image-picker has no `cameraPermission` key at all. `false` compiles
- *     to `withBlockedPermissions(['android.permission.CAMERA'])`, which broke QR
- *     check-in on every Android build (#2296); check 2 fails on it. Omitting it
- *     is safe because expo-camera writes NSCameraUsageDescription explicitly and
- *     `applyPermissions` keeps a value already written.
+ *   - Two plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
+ *     recorder, the only microphone surface) and expo-image-picker. Both carry
+ *     the same text in app.json. Omitting one ships that plugin's default
+ *     string, and `false` on either deletes the key the recorder needs, both of
+ *     which check 1 fails; `false` on image-picker's also compiles to a blocked
+ *     RECORD_AUDIO, which would strip the recorder's permission on Android
+ *     (check 2).
+ *   - expo-image-picker's `cameraPermission` carries the camera note. Omitting
+ *     it ships the plugin's default string (check 1). `false` deletes the iOS
+ *     key and compiles to the same Android block `android.blockedPermissions`
+ *     already makes.
  */
 export const IOS_PURPOSE_STRINGS = new Map([
   [
+    // Never requested: the check-in code is a link the phone's own camera app
+    // opens (#4762), and photos come from the library, never the camera.
+    // expo-image-picker links AVCaptureDevice for its camera requester. Kept
+    // rather than declined so the upload scan can't reject the build for it
+    // (ITMS-90683), the way it rejected build 8 for the motion key.
     "NSCameraUsageDescription",
     {
-      text: "Frapp uses the camera to scan the check-in code at chapter events.",
-      requestedBy: { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" },
-      retiring: CAMERA_RETIRING,
+      text: "Frapp never uses the camera. iOS requires this note because a photo library Frapp uses can open it.",
+      requestedBy: null,
+      linkedBy: {
+        packageName: "expo-image-picker",
+        symbol: "AVCaptureDevice",
+        requestCall: ["requestCameraPermissionsAsync(", "useCameraPermissions(", "launchCameraAsync("],
+      },
     },
   ],
   [
@@ -237,7 +234,6 @@ export const ANDROID_RUNTIME_PERMISSIONS = new Map([
   ["android.permission.POST_NOTIFICATIONS", { file: RECORDER_DEVICE, call: "requestNotificationPermissionsAsync(" }],
   ["android.permission.FOREGROUND_SERVICE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
   ["android.permission.FOREGROUND_SERVICE_MICROPHONE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
-  ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(", retiring: CAMERA_RETIRING }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
 ]);
@@ -263,7 +259,16 @@ export const ANDROID_TEMPLATE_PERMISSIONS = new Map([
  * Permissions the app manifest strips with `tools:node="remove"`, each with the
  * reason nothing in the app needs it.
  */
-export const ANDROID_REMOVED_PERMISSIONS = new Map();
+export const ANDROID_REMOVED_PERMISSIONS = new Map([
+  [
+    // expo-image-picker's library manifest declares it for taking a photo,
+    // which the app never does (`android.blockedPermissions` in app.json). The
+    // in-app QR scanner that used it went in #4762; the check-in code is a link
+    // the phone's own camera app opens.
+    "android.permission.CAMERA",
+    "nothing takes a photo or scans with the camera inside the app",
+  ],
+]);
 
 /**
  * Required-reason API symbols per privacy-manifest category, from Apple's
@@ -404,42 +409,24 @@ export function withoutComments(source) {
   return out;
 }
 
-/** app.json's `expo.version`, or null when it can't be read. */
-export function appVersionOf(readSource) {
-  try {
-    return JSON.parse(readSource(`${MOBILE_DIR}/app.json`) ?? "null")?.expo?.version ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Problems with the roster's `requestedBy` calls, given a reader from a
  * repo-relative path to its text (null when the file is missing). A call that
- * survives only in a comment doesn't count. `appVersion` is app.json's
- * `expo.version`, which excuses a `retiring` entry (CAMERA_RETIRING) while it
- * still matches; unknown (null), nothing is excused.
+ * survives only in a comment doesn't count.
  */
-export function requesterProblems(
-  readSource,
-  rosters = [IOS_PURPOSE_STRINGS, ANDROID_RUNTIME_PERMISSIONS],
-  appVersion = null,
-) {
+export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, ANDROID_RUNTIME_PERMISSIONS]) {
   const problems = [];
   for (const roster of rosters) {
     for (const [key, entry] of roster) {
       // A linked-only purpose string has no requester; linkedApiProblems checks it.
       if (entry.linkedBy) continue;
-      if (entry.retiring && appVersion !== null && appVersion === entry.retiring.version) continue;
       const { file, call } = entry.requestedBy ?? entry;
       const source = readSource(file);
       if (source === null) {
         problems.push(`${key}: its requester ${file} no longer exists`);
       } else if (!withoutComments(source).includes(call)) {
         problems.push(
-          entry.retiring && appVersion !== null
-            ? `${key}: retiring with ${entry.retiring.issue}, and expo.version moved past ${entry.retiring.version}, so this native change is the one that drops the permission and its roster entry`
-            : `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+          `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
         );
       }
     }
@@ -508,10 +495,13 @@ export function linkedApiProblems({ pods, sources }, roster = IOS_PURPOSE_STRING
       );
     }
     for (const { file, text } of sources) {
-      if (withoutComments(text).includes(requestCall)) {
-        problems.push(
-          `${key}: ${file} calls ${requestCall.replace(/\($/, "")}, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy`,
-        );
+      const code = withoutComments(text);
+      for (const call of [requestCall].flat()) {
+        if (code.includes(call)) {
+          problems.push(
+            `${key}: ${file} calls ${call.replace(/\($/, "")}, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy`,
+          );
+        }
       }
     }
   }
@@ -858,7 +848,7 @@ export function main(root = process.cwd(), run = expoCli(root)) {
       ...setupProblems,
       ...purposeStringProblems(modResults.ios.infoPlist),
       ...backgroundModeProblems(modResults.ios.infoPlist),
-      ...requesterProblems(readSource, undefined, appVersionOf(readSource)),
+      ...requesterProblems(readSource),
       ...linkedApiProblems({ pods, sources: appSources(root) }),
       ...androidPermissionProblems(modResults.android.manifest),
       ...requiredReasonProblems(scanned, declared, { reactNativeCore }),

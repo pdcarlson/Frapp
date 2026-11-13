@@ -13,5 +13,8 @@ import { RbacModule } from '../rbac/rbac.module';
   imports: [ChapterModule, ChapterConfigModule, RbacModule],
   controllers: [ChapterGroupController],
   providers: [ChapterGroupService],
+  // For Frapp AI's people tools (#4901), which read groups as `GET
+  // /v1/groups` does.
+  exports: [ChapterGroupService],
 })
 export class ChapterGroupModule {}
