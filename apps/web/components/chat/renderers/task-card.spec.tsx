@@ -93,7 +93,13 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 let canManage = false;
 const gateMounts: string[] = [];
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children, permission }: { children: ReactNode; permission: string }) => {
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: ReactNode;
+    permission: string;
+  }) => {
     gateMounts.push(permission);
     return canManage ? <>{children}</> : null;
   },
@@ -337,7 +343,9 @@ describe("TaskCard", () => {
       "task-1",
       expect.objectContaining({ onError: expect.any(Function) }),
     );
-    expect(screen.getByRole("button", { name: /send back/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send back/i }),
+    ).toBeInTheDocument();
   });
 
   it("hides Confirm from a tasks:manage assignee on their own card (#1056)", () => {
@@ -360,7 +368,9 @@ describe("TaskCard", () => {
     expect(
       screen.queryByRole("button", { name: /confirm/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /send back/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send back/i }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the disabled Confirmed indicator for an assignee-admin", () => {
@@ -549,32 +559,43 @@ describe("TaskCard status colour and due line", () => {
     ["COMPLETED", false, "Waiting on an officer", "bg-warning-tint"],
     ["COMPLETED", true, "Confirmed", "bg-success-tint"],
     ["OVERDUE", false, "Overdue", "bg-destructive-tint"],
-  ])("draws %s (awarded %s) as %s in %s, never the accent", (status, awarded, label, cls) => {
-    mockUseTask.mockReturnValue(
-      liveTask({ status, stored_status: status, points_awarded: awarded }),
-    );
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
-    const badge = screen.getByText(label);
-    expect(badge).toHaveClass(cls);
-    expect(badge).not.toHaveClass("bg-accent-subtle");
-  });
+  ])(
+    "draws %s (awarded %s) as %s in %s, never the accent",
+    (status, awarded, label, cls) => {
+      mockUseTask.mockReturnValue(
+        liveTask({ status, stored_status: status, points_awarded: awarded }),
+      );
+      render(
+        <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+      );
+      const badge = screen.getByText(label);
+      expect(badge).toHaveClass(cls);
+      expect(badge).not.toHaveClass("bg-accent-subtle");
+    },
+  );
 
   it("counts down to the due date while the task is open", () => {
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
     expect(screen.getByText("Due Monday")).toBeInTheDocument();
   });
 
   it("reads the live due date over the snapshot's, so a moved task isn't called late", () => {
     vi.setSystemTime(new Date(2026, 5, 17, 12));
     mockUseTask.mockReturnValue(liveTask({ due_date: "2026-06-25" }));
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
     expect(screen.getByText("Due Jun 25")).toBeInTheDocument();
     expect(screen.queryByText(/Overdue by/)).not.toBeInTheDocument();
   });
 
   it("draws an overdue due line in the lifted danger tone", () => {
     vi.setSystemTime(new Date(2026, 5, 17, 12));
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
     expect(screen.getByText("Overdue by 2 days")).toHaveClass(
       "text-destructive-text",
     );
@@ -658,14 +679,21 @@ describe("TaskCard Edit (#4512)", () => {
 
   it("holds Edit until the card's message is acknowledged", () => {
     render(
-      <TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed={false} />,
+      <TaskCard
+        message={makeMessage()}
+        viewerId="admin-1"
+        isConfirmed={false}
+      />,
     );
     expect(edit()).toBeDisabled();
   });
 
   it("isn't offered while the chapter has Tasks turned off", () => {
     mockCurrentChapter.mockReturnValue({
-      data: { subscription_status: "active", enabled_modules: { tasks: false } },
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
       isPending: false,
       isError: false,
     });

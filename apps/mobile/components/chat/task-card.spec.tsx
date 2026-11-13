@@ -384,7 +384,9 @@ describe("TaskCard — actions", () => {
     expect(button(tree, "Start").props.disabled).toBe(true);
     act(() => refocus());
     expect(button(tree, "Start").props.disabled).toBe(false);
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
 
     await press(tree, "Start");
     expect(button(tree, "Start").props.disabled).toBe(true);

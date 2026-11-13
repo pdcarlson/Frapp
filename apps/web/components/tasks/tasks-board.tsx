@@ -799,7 +799,9 @@ function TaskCard({
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
-        {task.proof_kind && task.proof_kind !== "none" && status !== "COMPLETED" ? (
+        {task.proof_kind &&
+        task.proof_kind !== "none" &&
+        status !== "COMPLETED" ? (
           <Badge variant="outline" className="ml-1 gap-1">
             {task.proof_kind === "photo" ? (
               <Camera className="h-3 w-3" aria-hidden="true" />

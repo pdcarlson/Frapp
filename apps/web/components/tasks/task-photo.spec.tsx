@@ -118,8 +118,7 @@ describe("TaskProof (#4635)", () => {
 });
 
 describe("taskPhotosProblem", () => {
-  const jpeg = (name: string) =>
-    new File(["x"], name, { type: "image/jpeg" });
+  const jpeg = (name: string) => new File(["x"], name, { type: "image/jpeg" });
 
   it("takes up to six photos and refuses a seventh", () => {
     const six = Array.from({ length: 6 }, (_, i) => jpeg(`${i}.jpg`));

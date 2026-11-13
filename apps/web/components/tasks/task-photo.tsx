@@ -135,7 +135,7 @@ function StoredPhoto({
 }) {
   const url = useTaskPhotoUrl(taskId, photoId);
   if (!url.data) {
-    return <span className={cn("block bg-muted", className)} aria-hidden />;
+    return <span className={cn("block bg-muted/40", className)} aria-hidden />;
   }
   // A signed URL on the storage origin, not a Next image asset.
   // eslint-disable-next-line @next/next/no-img-element
@@ -292,7 +292,7 @@ export function ProofLinkChip({ link }: { link: string }) {
       href={link}
       target="_blank"
       rel="noopener noreferrer nofollow"
-      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-caption text-foreground hover:bg-muted"
+      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-caption text-foreground hover:bg-card-hover"
       aria-label={`Proof link: ${proofLinkDomain(link)}, opens in a new tab`}
     >
       <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -336,9 +336,14 @@ export function TaskProof({
   const note = showProof ? task.completion_note : null;
   // The reason shows while the task waits on the change, and beside the reply
   // once it is marked done again.
-  const reason =
-    showProof && (sentBack || note) ? task.sent_back_reason : null;
-  if (reference.length === 0 && proof.length === 0 && !link && !reason && !note) {
+  const reason = showProof && (sentBack || note) ? task.sent_back_reason : null;
+  if (
+    reference.length === 0 &&
+    proof.length === 0 &&
+    !link &&
+    !reason &&
+    !note
+  ) {
     return null;
   }
   return (
@@ -703,7 +708,9 @@ function MarkDoneDialog({
     }
     const reply = note.trim();
     if (sentBack && files.length === 0 && !proofLink && !reply) {
-      return setProblem("Add proof or reply to the officer before marking it done.");
+      return setProblem(
+        "Add proof or reply to the officer before marking it done.",
+      );
     }
     setProblem(null);
     setBusy(true);
@@ -739,7 +746,9 @@ function MarkDoneDialog({
           {kind !== "link" ? (
             <div className="grid gap-1">
               <Label htmlFor="mark-done-photos">
-                {kind === "photo" ? "Photos of the finished job" : "Photos (optional)"}
+                {kind === "photo"
+                  ? "Photos of the finished job"
+                  : "Photos (optional)"}
               </Label>
               <TaskPhotoPicker
                 id="mark-done-photos"
@@ -782,8 +791,14 @@ function MarkDoneDialog({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={busy} className="gap-1.5">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+          <Button
+            onClick={() => void submit()}
+            disabled={busy}
+            className="gap-1.5"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
             Mark done
           </Button>
         </DialogFooter>
@@ -821,13 +836,14 @@ export function SendBackDialog({
   const [askPhoto, setAskPhoto] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!open) {
-      setReason("");
-      setAskPhoto(false);
-      setProblem(null);
-    }
-  }, [open]);
+  // Each send-back starts blank, so a reason typed for one task never
+  // carries to the next.
+  function close() {
+    setReason("");
+    setAskPhoto(false);
+    setProblem(null);
+    onClose();
+  }
 
   async function submit() {
     const comment = reason.trim();
@@ -835,7 +851,7 @@ export function SendBackDialog({
     setBusy(true);
     try {
       await onSubmit({ comment, ...(askPhoto ? { require_photo: true } : {}) });
-      onClose();
+      close();
     } catch (error) {
       setProblem(getErrorMessage(error, "Couldn't send it back. Try again."));
     } finally {
@@ -844,7 +860,7 @@ export function SendBackDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? null : onClose())}>
+    <Dialog open={open} onOpenChange={(next) => (next ? null : close())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Send back</DialogTitle>
@@ -888,7 +904,12 @@ export function SendBackDialog({
           ) : null}
           {problem ? <FieldError>{problem}</FieldError> : null}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={close}
+              disabled={busy}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
