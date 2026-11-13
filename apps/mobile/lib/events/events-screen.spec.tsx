@@ -2,7 +2,11 @@
 import React from "react";
 import { act } from "react";
 import { StyleSheet, type TextStyle } from "react-native";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -10,10 +14,13 @@ import { HeaderButton } from "@/components/header-button";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  CALENDAR_RANGE_STORAGE_KEY,
   EVENTS_VIEW_STORAGE_KEY,
   resetCalendarLayersForTests,
+  resetCalendarRangeForTests,
   resetEventsViewForTests,
 } from "@/lib/events/events-view";
+import type { NewEventDraft } from "@/lib/events/create-event";
 import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
 import { localIsoDate } from "@repo/formatting";
 import { expectRoundedRipple } from "@/test/pressable-row";
@@ -100,6 +107,32 @@ vi.mock("@/components/events/calendar-subscribe-sheet", () => ({
     return null;
   },
 }));
+// New event has its own spec; here only what an hour press hands it, and
+// that the screen presents it.
+const newEventSheet = vi.hoisted(() => ({
+  props: null as null | { template?: NewEventDraft },
+  presented: 0,
+}));
+vi.mock("@/components/events/new-event-sheet", async (importOriginal) => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    ...(await importOriginal<
+      typeof import("@/components/events/new-event-sheet")
+    >()),
+    NewEventSheet: forwardRef(function NewEventSheet(
+      props: { template?: NewEventDraft },
+      ref,
+    ) {
+      newEventSheet.props = props;
+      useImperativeHandle(ref, () => ({
+        present: () => {
+          newEventSheet.presented += 1;
+        },
+      }));
+      return null;
+    }),
+  };
+});
 vi.mock("@/components/events/suggested-events-entry", () => ({
   SuggestedEventsEntry: () => null,
 }));
@@ -150,6 +183,9 @@ const skeletons = (tree: ReactTestRenderer) =>
 beforeEach(() => {
   resetEventsViewForTests();
   resetCalendarLayersForTests();
+  resetCalendarRangeForTests();
+  newEventSheet.props = null;
+  newEventSheet.presented = 0;
   tasks = [];
   vi.useFakeTimers();
   vi.setSystemTime(MOUNTED_AT);
@@ -788,5 +824,340 @@ describe("Tasks on the Calendar", () => {
     const tree = render();
     act(() => viewSwitch(tree, "Calendar").props.onPress());
     expect(screenText(tree)).not.toContain("My tasks");
+  });
+});
+
+/** #4818: 3 days and Day beside Month, the hour grids. */
+describe("Calendar 3 days and Day", () => {
+  const radio = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+  const pressable = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+  const dayColumns = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          String(node.props.testID).startsWith("time-grid-day-"),
+      )
+      .map((node) => String(node.props.testID).slice("time-grid-day-".length));
+  const nowLines = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "time-grid-now",
+    );
+  const today = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  };
+  const plusDays = (day: Date, n: number) =>
+    new Date(day.getFullYear(), day.getMonth(), day.getDate() + n);
+
+  function openRange(label: "3 days" | "Day"): ReactTestRenderer {
+    const tree = render();
+    act(() => radio(tree, "Calendar").props.onPress());
+    act(() => radio(tree, label).props.onPress());
+    return tree;
+  }
+
+  it("draws three days from today and remembers the pick", () => {
+    const tree = openRange("3 days");
+    const first = today();
+    expect(dayColumns(tree)).toEqual(
+      [0, 1, 2].map((n) => localIsoDate(plusDays(first, n))),
+    );
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      CALENDAR_RANGE_STORAGE_KEY,
+      "3day",
+    );
+  });
+
+  it("opens on the stored range after a restart", async () => {
+    vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
+      key === CALENDAR_RANGE_STORAGE_KEY
+        ? "day"
+        : key === EVENTS_VIEW_STORAGE_KEY
+          ? "calendar"
+          : null,
+    );
+    const tree = render();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(null);
+    expect(radio(tree, "Day").props.accessibilityState.checked).toBe(true);
+    expect(dayColumns(tree)).toEqual([localIsoDate(today())]);
+  });
+
+  it("draws the event as a block on its day, which opens it", () => {
+    const tree = openRange("3 days");
+    const start = new Date(EVENT.start_time);
+    const key = localIsoDate(start);
+    const block = tree.root.find(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.props.testID === `time-grid-block-${EVENT.id}-${key}`,
+    );
+    expect(block.props.accessibilityLabel).toMatch(/^Open Chapter meeting, /);
+  });
+
+  it("steps by the range with the chevrons", () => {
+    const tree = openRange("3 days");
+    act(() => pressable(tree, "Next 3 days").props.onPress());
+    expect(dayColumns(tree)[0]).toBe(localIsoDate(plusDays(today(), 3)));
+    act(() => radio(tree, "Day").props.onPress());
+    act(() => pressable(tree, "Previous day").props.onPress());
+    expect(dayColumns(tree)).toEqual([localIsoDate(plusDays(today(), 2))]);
+  });
+
+  it("opens a day from its 3 days heading in the Day view", () => {
+    const tree = openRange("3 days");
+    const second = plusDays(today(), 1);
+    const label = `Open ${second.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })}`;
+    act(() => pressable(tree, label).props.onPress());
+    expect(radio(tree, "Day").props.accessibilityState.checked).toBe(true);
+    expect(dayColumns(tree)).toEqual([localIsoDate(second)]);
+  });
+
+  it("marks now in today's column only, and moves to the new day at midnight", () => {
+    const tree = openRange("3 days");
+    const [line] = nowLines(tree);
+    expect(nowLines(tree)).toHaveLength(1);
+    // The line sits inside today's column.
+    let parent = line!.parent;
+    while (parent && !String(parent.props.testID).startsWith("time-grid-day-"))
+      parent = parent.parent;
+    expect(parent?.props.testID).toBe(`time-grid-day-${localIsoDate(today())}`);
+
+    // A day and a half on, the tab still mounted: the grid follows the clock
+    // to the new today, and the line is drawn there.
+    act(() => {
+      vi.advanceTimersByTime(36 * 3_600_000);
+    });
+    expect(dayColumns(tree)[0]).toBe(localIsoDate(today()));
+    expect(nowLines(tree)).toHaveLength(1);
+  });
+
+  it("puts an event of a day or more in the All day strip on each day it covers", () => {
+    const first = today();
+    events = [
+      {
+        ...EVENT,
+        id: "retreat",
+        name: "Retreat",
+        start_time: new Date(
+          first.getFullYear(),
+          first.getMonth(),
+          first.getDate(),
+          9,
+        ).toISOString(),
+        end_time: new Date(
+          first.getFullYear(),
+          first.getMonth(),
+          first.getDate() + 2,
+          12,
+        ).toISOString(),
+      },
+    ];
+    const tree = openRange("3 days");
+    expect(screenText(tree)).toContain("All day");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Open Retreat, all day" &&
+          typeof node.props.onPress === "function",
+      ),
+    ).toHaveLength(3);
+  });
+
+  const hourText = (hour: number) =>
+    new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, {
+      hour: "numeric",
+    });
+  const longDay = (day: Date) =>
+    day.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+
+  it("opens New event at a pressed hour for a member who can create", () => {
+    permissions = ["*"];
+    const tree = openRange("Day");
+    act(() => pressable(tree, "Next day").props.onPress());
+    const day = plusDays(today(), 1);
+    expect(newEventSheet.props).toBeNull();
+    act(() =>
+      pressable(
+        tree,
+        `Create event on ${longDay(day)} at ${hourText(20)}`,
+      ).props.onPress(),
+    );
+    expect(newEventSheet.props?.template?.start).toEqual(
+      new Date(day.getFullYear(), day.getMonth(), day.getDate(), 20),
+    );
+    expect(newEventSheet.presented).toBe(1);
+    permissions = [];
+  });
+
+  it("offers no hour that is already over", () => {
+    permissions = ["*"];
+    const tree = openRange("Day");
+    const now = new Date();
+    const hasSlot = (hour: number) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel ===
+            `Create event on ${longDay(today())} at ${hourText(hour)}` &&
+          typeof node.props.onPress === "function",
+      ).length > 0;
+    for (let hour = 0; hour < now.getHours(); hour += 1) {
+      expect(hasSlot(hour)).toBe(false);
+    }
+    expect(hasSlot(now.getHours())).toBe(true);
+    // Yesterday has none at all.
+    act(() => pressable(tree, "Previous day").props.onPress());
+    expect(
+      tree.root.findAll((node) =>
+        String(node.props.accessibilityLabel).startsWith("Create event on"),
+      ),
+    ).toHaveLength(0);
+    permissions = [];
+  });
+
+  it("offers no hour to press for a member who can't create", () => {
+    permissions = [];
+    const tree = openRange("Day");
+    expect(
+      tree.root.findAll((node) =>
+        String(node.props.accessibilityLabel).startsWith("Create event on"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  const styleOfNode = (node: ReactTestInstance) =>
+    StyleSheet.flatten(
+      typeof node.props.style === "function"
+        ? node.props.style({ pressed: false })
+        : node.props.style,
+    ) as Record<string, unknown>;
+  const blocks = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        String(node.props.testID).startsWith("time-grid-block-"),
+    );
+
+  it("sizes a block by its length and sets overlapping ones side by side", () => {
+    const day = plusDays(today(), 1);
+    const at = (hour: number, minute = 0) =>
+      new Date(
+        day.getFullYear(),
+        day.getMonth(),
+        day.getDate(),
+        hour,
+        minute,
+      ).toISOString();
+    events = [
+      {
+        ...EVENT,
+        id: "long",
+        name: "Long",
+        start_time: at(18),
+        end_time: at(21),
+      },
+      {
+        ...EVENT,
+        id: "overlap",
+        name: "Overlap",
+        start_time: at(19, 30),
+        end_time: at(20, 30),
+      },
+    ];
+    const tree = openRange("3 days");
+    const [long, overlap] = ["long", "overlap"].map((id) =>
+      blocks(tree).find((node) => node.props.testID.includes(id))!,
+    );
+    const longStyle = styleOfNode(long!);
+    const overlapStyle = styleOfNode(overlap!);
+    expect(longStyle.top).toBe(18 * 48);
+    expect(longStyle.height).toBe(3 * 48 - 1);
+    expect(overlapStyle.top).toBe(19.5 * 48);
+    expect(longStyle.left).toBe("0%");
+    expect(overlapStyle.left).toBe("50%");
+    expect(longStyle.width).toBe("50%");
+  });
+
+  it("draws the now line at the time now", () => {
+    const tree = openRange("Day");
+    const now = new Date();
+    const [line] = nowLines(tree);
+    expect(StyleSheet.flatten(line!.props.style).top).toBe(
+      ((now.getHours() * 60 + now.getMinutes()) / 60) * 48 - 1,
+    );
+  });
+
+  it("lists the day's tasks in the All day strip", () => {
+    const due = localIsoDate(today());
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: due,
+        status: "TODO",
+      },
+    ];
+    const tree = openRange("Day");
+    expect(screenText(tree)).toContain("All day");
+    expect(screenText(tree)).toContain("Clean the kitchen");
+  });
+
+  it("says when a block's event is mandatory", () => {
+    events = [{ ...EVENT, is_mandatory: true }];
+    const tree = openRange("3 days");
+    const [block] = blocks(tree);
+    expect(block!.props.accessibilityLabel).toMatch(/, mandatory$/);
+  });
+
+  it("says nothing is scheduled over the grid, pointing a creator at an hour", () => {
+    permissions = ["*"];
+    events = [];
+    const tree = openRange("3 days");
+    expect(screenText(tree)).toContain(
+      "Nothing scheduled yet. Tap an hour to add the first event.",
+    );
+    permissions = [];
+  });
+
+  it("names both years when three days cross New Year", () => {
+    // Day by day to Dec 30 in any zone, then three days from there.
+    const tree = openRange("Day");
+    const now = today();
+    const first = new Date(now.getFullYear(), 11, 30);
+    while (dayColumns(tree)[0] !== localIsoDate(first)) {
+      act(() => pressable(tree, "Next day").props.onPress());
+    }
+    act(() => radio(tree, "3 days").props.onPress());
+    const short = (day: Date) =>
+      day.toLocaleDateString(undefined, { month: "short" });
+    expect(screenText(tree)).toContain(
+      `${short(first)} ${now.getFullYear()} – ${short(plusDays(first, 2))} ${now.getFullYear() + 1}`,
+    );
   });
 });

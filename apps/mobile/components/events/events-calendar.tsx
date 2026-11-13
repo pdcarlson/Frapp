@@ -15,8 +15,15 @@ import { InlineNote } from "@/components/inline-note";
 import { DayHeading } from "@/components/list-section";
 import { EventRowFlat } from "@/components/events/event-rows";
 import { CalendarTaskRow } from "@/components/events/calendar-tasks";
+import { EventsTimeGrid } from "@/components/events/events-time-grid";
+import { Segmented } from "@/components/segmented";
+import { consecutiveDays } from "@repo/hooks/calendar-time-grid";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  CALENDAR_RANGE_DAYS,
+  type CalendarRange,
+} from "@/lib/events/events-view";
 import { selectSeriesCadence, type EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -33,7 +40,19 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * The month and the selected day are the screen's state, not this
  * component's, so switching to List and back keeps the member's place.
+ *
+ * Beside Month sit 3 days and Day (#4818), the hour grids
+ * (`events-time-grid.tsx`): seven columns don't fit a phone, so where web
+ * offers Week the phone offers 3 days, as Google Calendar's phone app does.
+ * Both start at the selected day, the one anchor every range shares, and
+ * the chevrons or a swipe step it by the range's length.
  */
+
+const RANGE_OPTIONS = [
+  { value: "month", label: "Month" },
+  { value: "3day", label: "3 days" },
+  { value: "day", label: "Day" },
+] as const satisfies readonly { value: CalendarRange; label: string }[];
 
 const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 
@@ -56,6 +75,10 @@ export function EventsCalendar({
   nameOf = fallbackName,
   onOpenTask,
   layerChips = null,
+  range = "month",
+  onRangeChange,
+  canCreate = false,
+  onCreateAt,
 }: {
   /** Every occurrence, past ones included (`selectAllEventRows`). */
   events: EventRow[];
@@ -85,6 +108,13 @@ export function EventsCalendar({
   onOpenTask?: (taskId: string) => void;
   /** The Events / My tasks / Assigned by me chips, under the month. */
   layerChips?: ReactNode;
+  /** Month, 3 days or Day; the switch shows only with `onRangeChange`. */
+  range?: CalendarRange;
+  onRangeChange?: (range: CalendarRange) => void;
+  /** Whether an hour of the 3 days or Day grid opens New event. */
+  canCreate?: boolean;
+  /** An hour pressed in the grid: New event, starting then. */
+  onCreateAt?: (day: Date, hour: number) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -114,21 +144,44 @@ export function EventsCalendar({
     onMonthChange(new Date(month.getFullYear(), month.getMonth() + delta, 1));
   };
 
+  const span = range === "month" ? 0 : CALENDAR_RANGE_DAYS[range];
+  const shiftDays = (delta: number) => {
+    onSelectDay(
+      new Date(
+        selectedDay.getFullYear(),
+        selectedDay.getMonth(),
+        selectedDay.getDate() + delta * span,
+      ),
+    );
+  };
+  const shift = (delta: number) =>
+    range === "month" ? shiftMonth(delta) : shiftDays(delta);
+
   // JS-thread callbacks: turning the month is React state. The offsets let a
-  // vertical drag fall through to the screen's scroll view.
+  // vertical drag fall through to the screen's scroll view, or the grid's.
   const swipe = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetX([-16, 16])
     .failOffsetY([-12, 12])
     .onEnd((event: { translationX: number }) => {
-      if (event.translationX <= -SWIPE_DISTANCE) shiftMonth(1);
-      else if (event.translationX >= SWIPE_DISTANCE) shiftMonth(-1);
+      if (event.translationX <= -SWIPE_DISTANCE) shift(1);
+      else if (event.translationX >= SWIPE_DISTANCE) shift(-1);
     });
 
-  const monthLabel = month.toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+  // Keyed on the day, not the Date: the screen makes a fresh one each
+  // render while it follows the clock, which would rebuild the grid's
+  // layout on every tick.
+  const gridDays = useMemo(
+    () => (span === 0 ? [] : consecutiveDays(selectedDay, span)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    [selectedKey, span],
+  );
+  const headerLabel =
+    range === "month"
+      ? month.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+      : rangeLabel(gridDays, now);
+  const stepNoun =
+    range === "month" ? "month" : range === "day" ? "day" : "3 days";
 
   const weeks = Array.from({ length: 6 }, (_, row) =>
     days.slice(row * 7, row * 7 + 7),
@@ -136,14 +189,23 @@ export function EventsCalendar({
 
   return (
     <View style={styles.root}>
+      {onRangeChange ? (
+        <Segmented
+          options={RANGE_OPTIONS}
+          value={range}
+          onChange={onRangeChange}
+          accessibilityLabel="Calendar range"
+          dense
+        />
+      ) : null}
       <View style={styles.monthRow}>
-        <IconButton label="Previous month" onPress={() => shiftMonth(-1)}>
+        <IconButton label={`Previous ${stepNoun}`} onPress={() => shift(-1)}>
           <ChevronGlyph direction="left" color={tokens.color.text.foreground} />
         </IconButton>
         <Text accessibilityRole="header" style={styles.monthLabel}>
-          {monthLabel}
+          {headerLabel}
         </Text>
-        <IconButton label="Next month" onPress={() => shiftMonth(1)}>
+        <IconButton label={`Next ${stepNoun}`} onPress={() => shift(1)}>
           <ChevronGlyph
             direction="right"
             color={tokens.color.text.foreground}
@@ -153,149 +215,213 @@ export function EventsCalendar({
 
       {layerChips}
 
-      <GestureDetector gesture={swipe}>
-        <View style={styles.grid}>
-          <View
-            style={styles.week}
-            importantForAccessibility="no-hide-descendants"
-          >
-            {WEEKDAY_INITIALS.map((initial, index) => (
-              <Text key={index} style={styles.weekday}>
-                {initial}
-              </Text>
-            ))}
+      {range !== "month" ? (
+        <GestureDetector gesture={swipe}>
+          <View style={styles.root}>
+            {emptyNote ? <InlineNote>{emptyNote}</InlineNote> : null}
+            <EventsTimeGrid
+              days={gridDays}
+              events={events}
+              now={now}
+              tasksByDay={tasksByDay}
+              onOpen={onOpen}
+              onOpenTask={(taskId) => onOpenTask?.(taskId)}
+              onOpenDay={
+                onRangeChange
+                  ? (day) => {
+                      onSelectDay(day);
+                      onRangeChange("day");
+                    }
+                  : undefined
+              }
+              canCreate={canCreate && onCreateAt !== undefined}
+              onCreateAt={(day, hour) => onCreateAt?.(day, hour)}
+            />
           </View>
-          {weeks.map((week) => (
-            <View key={localIsoDate(week[0]!)} style={styles.week}>
-              {week.map((day) => {
-                const key = localIsoDate(day);
-                const count = byDay.get(key)?.length ?? 0;
-                const cellTasks = tasksByDay.get(key) ?? [];
-                const taskCount = cellTasks.length;
-                const hasOverdue = cellTasks.some(
-                  (item) => item.state === "overdue",
-                );
-                const counts = [
-                  count === 0
-                    ? null
-                    : `${count} ${count === 1 ? "event" : "events"}`,
-                  taskCount === 0
-                    ? null
-                    : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`,
-                ].filter(Boolean);
-                const inMonth = day.getMonth() === month.getMonth();
-                const isToday = key === todayKey;
-                const isSelected = key === selectedKey;
-                const label = day.toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                });
-                return (
-                  <Pressable
-                    key={key}
-                    accessibilityRole="button"
-                    accessibilityLabel={[label, ...counts].join(", ")}
-                    accessibilityState={{ selected: isSelected }}
-                    onPress={() => onSelectDay(day)}
-                    style={styles.cell}
-                  >
-                    <View
-                      style={[
-                        styles.dayChip,
-                        isSelected
-                          ? {
-                              backgroundColor: tint(accent, 0.18),
-                              borderColor: accent,
-                            }
-                          : isToday
-                            ? styles.todayChip
-                            : null,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.dayNumber,
-                          inMonth ? null : styles.outsideMonth,
-                          isToday ? styles.todayNumber : null,
-                        ]}
+        </GestureDetector>
+      ) : (
+        <>
+          <GestureDetector gesture={swipe}>
+            <View style={styles.grid}>
+              <View
+                style={styles.week}
+                importantForAccessibility="no-hide-descendants"
+              >
+                {WEEKDAY_INITIALS.map((initial, index) => (
+                  <Text key={index} style={styles.weekday}>
+                    {initial}
+                  </Text>
+                ))}
+              </View>
+              {weeks.map((week) => (
+                <View key={localIsoDate(week[0]!)} style={styles.week}>
+                  {week.map((day) => {
+                    const key = localIsoDate(day);
+                    const count = byDay.get(key)?.length ?? 0;
+                    const cellTasks = tasksByDay.get(key) ?? [];
+                    const taskCount = cellTasks.length;
+                    const hasOverdue = cellTasks.some(
+                      (item) => item.state === "overdue",
+                    );
+                    const counts = [
+                      count === 0
+                        ? null
+                        : `${count} ${count === 1 ? "event" : "events"}`,
+                      taskCount === 0
+                        ? null
+                        : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`,
+                    ].filter(Boolean);
+                    const inMonth = day.getMonth() === month.getMonth();
+                    const isToday = key === todayKey;
+                    const isSelected = key === selectedKey;
+                    const label = day.toLocaleDateString(undefined, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                    });
+                    return (
+                      <Pressable
+                        key={key}
+                        accessibilityRole="button"
+                        accessibilityLabel={[label, ...counts].join(", ")}
+                        accessibilityState={{ selected: isSelected }}
+                        onPress={() => onSelectDay(day)}
+                        style={styles.cell}
                       >
-                        {day.getDate()}
-                      </Text>
-                    </View>
-                    {/*
+                        <View
+                          style={[
+                            styles.dayChip,
+                            isSelected
+                              ? {
+                                  backgroundColor: tint(accent, 0.18),
+                                  borderColor: accent,
+                                }
+                              : isToday
+                                ? styles.todayChip
+                                : null,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayNumber,
+                              inMonth ? null : styles.outsideMonth,
+                              isToday ? styles.todayNumber : null,
+                            ]}
+                          >
+                            {day.getDate()}
+                          </Text>
+                        </View>
+                        {/*
                       A dot is an event, a ring is something due: red while
                       any of the day's tasks is overdue.
                     */}
-                    <View style={styles.marks}>
-                      {count > 0 ? (
-                        <View
-                          testID={`event-dot-${key}`}
-                          style={[
-                            styles.dot,
-                            {
-                              backgroundColor:
-                                tokens.color.text.mutedForeground,
-                            },
-                          ]}
-                        />
-                      ) : null}
-                      {taskCount > 0 ? (
-                        <View
-                          testID={`task-ring-${key}`}
-                          style={[
-                            styles.dot,
-                            styles.ring,
-                            hasOverdue
-                              ? {
-                                  borderColor:
-                                    tokens.color.semantic.destructiveText,
-                                }
-                              : null,
-                          ]}
-                        />
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
+                        <View style={styles.marks}>
+                          {count > 0 ? (
+                            <View
+                              testID={`event-dot-${key}`}
+                              style={[
+                                styles.dot,
+                                {
+                                  backgroundColor:
+                                    tokens.color.text.mutedForeground,
+                                },
+                              ]}
+                            />
+                          ) : null}
+                          {taskCount > 0 ? (
+                            <View
+                              testID={`task-ring-${key}`}
+                              style={[
+                                styles.dot,
+                                styles.ring,
+                                hasOverdue
+                                  ? {
+                                      borderColor:
+                                        tokens.color.semantic.destructiveText,
+                                    }
+                                  : null,
+                              ]}
+                            />
+                          ) : null}
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      </GestureDetector>
+          </GestureDetector>
 
-      <View>
-        <DayHeading>
-          {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
-        </DayHeading>
-        {dayEvents.length === 0 && dayTasks.length === 0 ? (
-          <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>
-        ) : (
-          <>
-            {dayEvents.map((event, index) => (
-              <EventRowFlat
-                key={event.id}
-                event={event}
-                cadence={selectSeriesCadence(events, event)}
-                now={now}
-                isFirst={index === 0}
-                onPress={() => onOpen(event.id)}
-              />
-            ))}
-            {dayTasks.map((item, index) => (
-              <CalendarTaskRow
-                key={item.key}
-                item={item}
-                isFirst={dayEvents.length === 0 && index === 0}
-                nameOf={nameOf}
-                onOpenTask={(taskId) => onOpenTask?.(taskId)}
-              />
-            ))}
-          </>
-        )}
-      </View>
+          <View>
+            <DayHeading>
+              {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
+            </DayHeading>
+            {dayEvents.length === 0 && dayTasks.length === 0 ? (
+              <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>
+            ) : (
+              <>
+                {dayEvents.map((event, index) => (
+                  <EventRowFlat
+                    key={event.id}
+                    event={event}
+                    cadence={selectSeriesCadence(events, event)}
+                    now={now}
+                    isFirst={index === 0}
+                    onPress={() => onOpen(event.id)}
+                  />
+                ))}
+                {dayTasks.map((item, index) => (
+                  <CalendarTaskRow
+                    key={item.key}
+                    item={item}
+                    isFirst={dayEvents.length === 0 && index === 0}
+                    nameOf={nameOf}
+                    onOpenTask={(taskId) => onOpenTask?.(taskId)}
+                  />
+                ))}
+              </>
+            )}
+          </View>
+        </>
+      )}
     </View>
   );
+}
+
+/**
+ * The 3 days or Day header: the day written out for Day, else the month
+ * the days fall in ("November 2026", "Nov – Dec 2026", "Dec 2026 – Jan
+ * 2027"), as Google Calendar's phone app heads its 3-day view. Day names
+ * the year when it isn't this one, as the month heading always does.
+ */
+function rangeLabel(days: Date[], now: Date): string {
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (!first || !last) return "";
+  if (days.length === 1) {
+    return first.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      ...(first.getFullYear() === now.getFullYear()
+        ? {}
+        : { year: "numeric" as const }),
+    });
+  }
+  if (
+    first.getMonth() === last.getMonth() &&
+    first.getFullYear() === last.getFullYear()
+  ) {
+    return first.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+  }
+  const short = (day: Date) =>
+    day.toLocaleDateString(undefined, { month: "short" });
+  return first.getFullYear() === last.getFullYear()
+    ? `${short(first)} – ${short(last)} ${last.getFullYear()}`
+    : `${short(first)} ${first.getFullYear()} – ${short(last)} ${last.getFullYear()}`;
 }
 
 function createStyles(tokens: SignetTokens) {
