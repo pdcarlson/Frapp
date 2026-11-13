@@ -222,7 +222,7 @@ export function EventsTimeGrid({
           className="grid gap-px border-b border-border bg-border"
           style={gridColumns}
         >
-          <div className="flex items-start justify-end bg-background px-1.5 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
+          <div className="flex items-start justify-end bg-background px-1.5 py-1.5 text-caption font-semibold uppercase text-muted-foreground">
             All day
           </div>
           {columns.map(({ key, allDay, tasks }) => (
@@ -259,7 +259,7 @@ export function EventsTimeGrid({
             {HOURS.slice(1).map((hour) => (
               <span
                 key={hour}
-                className="absolute right-1.5 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
+                className="absolute right-1.5 -translate-y-1/2 text-caption tabular-nums text-muted-foreground"
                 style={{ top: hour * HOUR_PX }}
               >
                 {hourLabels[hour]}
@@ -338,7 +338,7 @@ export function EventsTimeGrid({
                       title={facts.eventName}
                       aria-label={facts.viewLabel}
                       className={cn(
-                        "absolute z-10 flex flex-col overflow-hidden rounded-xs border-l-2 bg-surface-1 px-1.5 py-0.5 text-left text-[11px] leading-tight text-foreground ring-1 ring-background transition-colors",
+                        "absolute z-10 flex flex-col overflow-hidden rounded-xs border-l-2 bg-surface-1 px-1.5 py-0.5 text-left text-caption leading-tight text-foreground ring-1 ring-background transition-colors",
                         FOCUS_RING,
                         "hover:bg-card-hover",
                         facts.isMandatory
