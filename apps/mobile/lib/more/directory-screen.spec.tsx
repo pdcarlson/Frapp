@@ -1368,17 +1368,18 @@ describe("s13 as a grid (#4175)", () => {
         "u-1": "online",
         "u-2": "online",
       };
+      const lines: Record<string, string> = {};
       const publish = () =>
         act(() =>
           setChapterPresence({
             statusOf: (id) => status[id] ?? "offline",
-            lineOf: () => null,
+            lineOf: (id) => lines[id] ?? null,
             isReady: true,
           }),
         );
       publish();
       const commits = vi.fn();
-      renderNode(
+      const profiled = renderNode(
         <React.Profiler id="row" onRender={commits}>
           <MemberRow row={row(1)} onPress={vi.fn()} />
         </React.Profiler>,
@@ -1391,10 +1392,38 @@ describe("s13 as a grid (#4175)", () => {
       publish();
       expect(commits).toHaveBeenCalledTimes(mounted);
 
-      // This member's own change does reach the row.
+      // This member's own change does reach the row: its status, then its
+      // line alone.
       status["u-1"] = "idle";
       publish();
       expect(commits).toHaveBeenCalledTimes(mounted + 1);
+      expect(screenText(profiled)).not.toContain("At practice");
+      lines["u-1"] = "At practice till 6";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted + 2);
+      expect(screenText(profiled)).toContain("At practice till 6");
+    });
+
+    it("re-renders nothing above the rows on a presence change", () => {
+      const commits = vi.fn();
+      renderNode(
+        <React.Profiler id="screen" onRender={commits}>
+          <DirectoryScreen />
+        </React.Profiler>,
+      );
+      const mounted = commits.mock.calls.length;
+      // A heartbeat and a member's change: the screen root reads no presence,
+      // so neither commits it (each row reads its own, #4633).
+      for (const status of ["online", "idle"] as const) {
+        act(() =>
+          setChapterPresence({
+            statusOf: () => status,
+            lineOf: () => null,
+            isReady: true,
+          }),
+        );
+      }
+      expect(commits).toHaveBeenCalledTimes(mounted);
     });
 
     it("gives a tile the same line and dot", () => {

@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from "react-native";
 import { onlineManager } from "@tanstack/react-query";
 import { useCurrentUser, useOwnAvatarTint } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { StatusDot } from "@/components/account/status-dot";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
 import { useOwnStatus } from "@/lib/account/own-status";
 import { selectViewerProfile } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
@@ -78,37 +78,35 @@ export function YouTabAvatar({
           style={[styles.ring, { borderColor: accent }]}
         />
       ) : null}
-      <View
-        style={[
-          styles.avatar,
-          !showPhoto && tint ? { backgroundColor: tint.fill } : null,
-        ]}
+      <AvatarWithPresence
+        status={shownStatus}
+        avatarSize={YOU_AVATAR_SIZE}
+        ring={tokens.color.surface.background}
+        dotSize={8}
+        dotTestID={shownStatus ? `you-tab-status-${shownStatus}` : undefined}
       >
-        {showPhoto ? (
-          <Image
-            source={{ uri: photoUrl }}
-            style={styles.photo}
-            onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
-          />
-        ) : (
-          <Text
-            style={[styles.initials, tint ? { color: tint.text } : null]}
-            numberOfLines={1}
-          >
-            {profile?.initials ?? ""}
-          </Text>
-        )}
-      </View>
-      {shownStatus ? (
-        <View pointerEvents="none" style={styles.status}>
-          <StatusDot
-            testID={`you-tab-status-${shownStatus}`}
-            status={shownStatus}
-            size={8}
-            ring={tokens.color.surface.background}
-          />
+        <View
+          style={[
+            styles.avatar,
+            !showPhoto && tint ? { backgroundColor: tint.fill } : null,
+          ]}
+        >
+          {showPhoto ? (
+            <Image
+              source={{ uri: photoUrl }}
+              style={styles.photo}
+              onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
+            />
+          ) : (
+            <Text
+              style={[styles.initials, tint ? { color: tint.text } : null]}
+              numberOfLines={1}
+            >
+              {profile?.initials ?? ""}
+            </Text>
+          )}
         </View>
-      ) : null}
+      </AvatarWithPresence>
     </View>
   );
 }
@@ -141,11 +139,6 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
-    },
-    status: {
-      position: "absolute",
-      bottom: -3,
-      right: -3,
     },
     photo: {
       width: YOU_AVATAR_SIZE,

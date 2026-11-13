@@ -12,7 +12,7 @@ export function presenceDotSize(avatarSize: number): number {
  * A member's avatar with their presence dot on its bottom-right corner
  * (#4633): the phone's one copy of web's `AvatarPresenceDot`
  * (`apps/web/components/members/presence-dot.tsx`), used by the Directory's
- * row and tile, the member sheet and the channel member sheet.
+ * row and tile, the member sheet, the channel member sheet and the You tab.
  *
  * `status: null` draws no dot: the honest answer before chapter presence has
  * synced, never a stand-in Offline. Read it with `usePresenceOf(userId)`
@@ -30,6 +30,8 @@ export function AvatarWithPresence({
   status,
   avatarSize,
   ring,
+  dotSize,
+  dotTestID,
   style,
   children,
 }: {
@@ -37,6 +39,13 @@ export function AvatarWithPresence({
   avatarSize: number;
   /** The surface behind the avatar, painted as the dot's ring. */
   ring: string;
+  /**
+   * Overrides `presenceDotSize`. Only the You tab sets it: its avatar is a
+   * tab glyph, and a 10pt dot would crowd the glyph slot.
+   */
+  dotSize?: number;
+  /** Defaults to `member-presence-<status>`. */
+  dotTestID?: string;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }) {
@@ -46,9 +55,9 @@ export function AvatarWithPresence({
       {status ? (
         <View pointerEvents="none" style={styles.dot}>
           <StatusDot
-            testID={`member-presence-${status}`}
+            testID={dotTestID ?? `member-presence-${status}`}
             status={status}
-            size={presenceDotSize(avatarSize)}
+            size={dotSize ?? presenceDotSize(avatarSize)}
             ring={ring}
           />
         </View>

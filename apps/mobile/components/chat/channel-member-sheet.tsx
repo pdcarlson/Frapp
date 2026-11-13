@@ -240,6 +240,8 @@ export function MemberRows({
               <ChannelMemberRow
                 key={row.userId}
                 row={row}
+                styles={styles}
+                ringColor={tokens.color.surface.popover}
                 onOpenProfile={onOpenProfile}
               />
             ))}
@@ -256,13 +258,16 @@ export function MemberRows({
  */
 function ChannelMemberRow({
   row,
+  styles,
+  ringColor,
   onOpenProfile,
 }: {
   row: ChannelMemberSheetRow;
+  /** The sheet's stylesheet, built once for every row. */
+  styles: ReturnType<typeof createStyles>;
+  ringColor: string;
   onOpenProfile?: (userId: string) => void;
 }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   const { status, line } = usePresenceOf(row.userId);
   const offline = status === "offline" || status === "invisible";
   return (
@@ -283,7 +288,7 @@ function ChannelMemberRow({
       <AvatarWithPresence
         status={status}
         avatarSize={AVATAR_SIZE}
-        ring={tokens.color.surface.popover}
+        ring={ringColor}
       >
         <View style={offline ? styles.dimmed : null}>
           <MemberAvatar
