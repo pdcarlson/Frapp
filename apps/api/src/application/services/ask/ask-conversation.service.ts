@@ -1,13 +1,11 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import {
-  ASK_STREAM_VERSION,
-  type AskStep,
-  type AskStreamEvent,
-} from '@repo/validation';
+import { ASK_STREAM_VERSION, type AskStep } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
-import { ActService, type ActOutcome } from '../act/act.service';
-import { AskService, type AskInput } from './ask.service';
+import { ActService } from '../act/act.service';
+import type { ActOutcome } from '../act/act-tool';
+import { askAgentEnabled } from '../../../config/ai-config';
+import { AskService, type AskInput, type AskTurnEvent } from './ask.service';
 
 export interface AskConversationInput extends AskInput {
   /**
@@ -15,6 +13,11 @@ export interface AskConversationInput extends AskInput {
    * end in one. False for every build that only knows answers.
    */
   actions: boolean;
+  /**
+   * The client also draws the cards an answer comes with
+   * (`AskAnswer.proposals`). Read with `actions`, by the tool loop only.
+   */
+  answerCards?: boolean;
 }
 
 /** An outcome of the request lane that is shown as a card. */
@@ -27,8 +30,7 @@ export type AskProposal = Extract<
  * What one turn of the conversation yields: Ask's own stream events, or, in
  * place of an answer, the proposal the member's words asked for.
  */
-export type AskConversationEvent =
-  AskStreamEvent | { type: 'act'; outcome: AskProposal };
+export type AskConversationEvent = AskTurnEvent;
 
 /**
  * One conversation (`spec/behavior/ai.md` § One conversation): the member
@@ -67,6 +69,15 @@ export type AskConversationEvent =
  * `proposing` step. It is said from the request lane's own progress, never
  * guessed from the words, and a request lane that then comes back with
  * nothing is followed by the answer's own steps.
+ *
+ * **With the tool loop on (`ASK_AGENT=on`, #4899) there is one lane.** The
+ * request lane is not run. The loop's model is offered, beside its reads,
+ * the cards this member may have Frapp propose, so a request can rest on
+ * what it read ("a task for each action item in the minutes"). That is the
+ * change to C5 Paul approved on 2026-11-13: the model that reads may also
+ * propose. What holds in its place is in `AgentProposeTool`: a card changes
+ * nothing, only the asker can open it, and Confirm checks their permission
+ * again. A client that did not send `actions` is offered no card at all.
  */
 @Injectable()
 export class AskConversationService {
@@ -83,6 +94,13 @@ export class AskConversationService {
   ): AsyncGenerator<AskConversationEvent, void, void> {
     if (!input.actions) {
       yield* this.askService.ask(input, now);
+      return;
+    }
+    if (askAgentEnabled()) {
+      yield* this.askService.ask(
+        { ...input, cards: input.answerCards === true ? 'many' : 'one' },
+        now,
+      );
       return;
     }
     // The answer lane gets a signal of its own, so a card can stop the calls

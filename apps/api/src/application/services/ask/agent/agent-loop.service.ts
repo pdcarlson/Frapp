@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import type { AskEffort } from '@repo/validation';
+import { ASK_PROPOSALS_MAX, type AskEffort } from '@repo/validation';
 import type { AiCallContext } from '#domain/adapters/ai-call-context';
 import {
   LanguageModelError,
@@ -21,9 +21,11 @@ import {
   AGENT_RESULT_MAX_CHARS,
   AGENT_RESULT_MAX_SOURCES,
   AgentToolUnavailableError,
+  type AgentCard,
   type AgentEntity,
-  type AgentReadTool,
+  type AgentProposeTool,
   type AgentSource,
+  type AgentTool,
   type AgentToolContext,
 } from './agent-tool';
 
@@ -79,8 +81,18 @@ export interface AgentLoopInput {
   messages: LanguageModelMessage[];
   /** Read beside the question, never quoted: who is asking, where from. */
   context: LanguageModelSource[];
-  /** The tools this member may use, already checked for them. */
-  tools: readonly AgentReadTool[];
+  /**
+   * The tools this member may use, already checked for them: reads, and for
+   * a member who may have Frapp act, from a client that draws cards, the
+   * cards it may propose.
+   */
+  tools: readonly AgentTool[];
+  /**
+   * The most cards this turn may come with. Left out:
+   * `ASK_PROPOSALS_MAX`. One for a client that draws a card only in place
+   * of an answer.
+   */
+  maxCards?: number;
   toolContext: AgentToolContext;
   call: AiCallContext;
   /** What the model reads as a source's name. */
@@ -110,6 +122,8 @@ export interface AgentCallTrace {
   chars: number;
   cut: boolean;
   ms: number;
+  /** A propose call that left a card waiting for the asker's Confirm. */
+  proposed?: boolean;
 }
 
 /** One model call and what it asked for. */
@@ -141,6 +155,11 @@ export interface AgentLoopOutcome {
   sources: AgentSource[];
   entities: AgentEntity[];
   leftOutMessages: number;
+  /**
+   * What the turn's propose calls came to, in the order they were made: a
+   * card waiting for Confirm, a choice of event, or what was left unsaid.
+   */
+  cards: AgentCard[];
   stop: AgentStop;
   rounds: AgentRoundTrace[];
 }
@@ -151,8 +170,13 @@ export type AgentLoopEvent =
   | { type: 'text'; delta: string }
   /** The round's words came before a call: they were not the answer. */
   | { type: 'discard' }
-  /** A tool is about to run. */
-  | { type: 'tool'; name: string; reading: string }
+  /** A tool is about to run. `propose`: a card is being worked out. */
+  | {
+      type: 'tool';
+      name: string;
+      reading: string;
+      effect: 'read' | 'propose';
+    }
   | { type: 'end'; outcome: AgentLoopOutcome };
 
 interface RanCall {
@@ -161,6 +185,8 @@ interface RanCall {
   entities: AgentEntity[];
   leftOutMessages: number;
   trace: AgentCallTrace;
+  /** A propose call's card, when it came to one. */
+  card?: AgentCard | null;
 }
 
 /**
@@ -180,10 +206,13 @@ interface RanCall {
  *   change (C2, C4).
  * - **A result from another chapter is dropped** and reported: a bug in the
  *   tool, never the model's doing (C4).
- * - **Reads only.** A tool whose `effect` is not `read` is refused where it
- *   runs, not only where it was offered. What a turn read may lead it to
- *   read more, as the asker, and nothing else (C3 and C8 as changed
- *   2026-11-13).
+ * - **Reads, and cards to confirm. Nothing else.** A tool's `effect` is
+ *   checked where it runs, not only where it was offered: a `read` reads as
+ *   the asker, a `propose` saves a card only the asker can open and changes
+ *   nothing (`AgentProposeTool`), and anything else is refused. So what a
+ *   turn read may lead it to read more, or to put a card in front of the
+ *   asker, who decides (C3, C5 and C8 as changed 2026-11-13). A turn comes
+ *   with at most `maxCards`, made one at a time.
  * - **Bounded.** {@link AGENT_MAX_ROUNDS} model calls, {@link AGENT_MAX_CALLS}
  *   tool calls, a size cap on every result, and a read budget that no read
  *   is waited for past. When one is spent the tools are taken away and the
@@ -218,6 +247,13 @@ export class AgentLoopService {
     // Per tool, the most it reported in one call: two calls of one tool can
     // reach the same conversation, and a count cannot be de-duplicated.
     const leftOut = new Map<string, number>();
+    const cards: AgentCard[] = [];
+    const maxCards = input.maxCards ?? ASK_PROPOSALS_MAX;
+    // Cards left waiting so far, counted as each is made.
+    let cardsMade = 0;
+    // Propose calls run one after another, across rounds, in the order the
+    // model made them: each saves a row, and the limit is on how many.
+    let proposing: Promise<unknown> = Promise.resolve();
     let callsRun = 0;
     let limit: AgentStop | null = null;
 
@@ -229,6 +265,7 @@ export class AgentLoopService {
       sources: [...sources.values()],
       entities: [...entities.values()],
       leftOutMessages: [...leftOut.values()].reduce((sum, n) => sum + n, 0),
+      cards,
       stop,
       rounds: traces,
     });
@@ -322,7 +359,28 @@ export class AgentLoopService {
         }
         callsRun += 1;
         if (tool) {
-          yield { type: 'tool', name: tool.name, reading: tool.reading };
+          yield {
+            type: 'tool',
+            name: tool.name,
+            reading: tool.reading,
+            effect: tool.effect,
+          };
+        }
+        if (tool?.effect === 'propose') {
+          const made = proposing.then(async () => {
+            const done = await this.runProposal(
+              call,
+              tool,
+              input,
+              clock,
+              cardsMade >= maxCards,
+            );
+            if (done.card?.status === 'proposed') cardsMade += 1;
+            return done;
+          });
+          proposing = made.catch(() => undefined);
+          pending.push(made);
+          continue;
         }
         pending.push(
           this.runCall(
@@ -355,6 +413,7 @@ export class AgentLoopService {
 
       for (const call of ran) {
         trace.calls.push(call.trace);
+        if (call.card) cards.push(call.card);
         leftOut.set(
           call.trace.tool,
           Math.max(leftOut.get(call.trace.tool) ?? 0, call.leftOutMessages),
@@ -391,7 +450,7 @@ export class AgentLoopService {
 
   private async runCall(
     call: LanguageModelToolCall,
-    tool: AgentReadTool | undefined,
+    tool: AgentTool | undefined,
     input: AgentLoopInput,
     clock: () => number,
     /** How long this read may take before it is given up on. */
@@ -402,20 +461,7 @@ export class AgentLoopService {
       return notRun(call, 'unknown_tool', 'That tool is not available.');
     }
     const parsed = tool.input.safeParse(call.input ?? {});
-    if (!parsed.success) {
-      // Which fields, and what kind of fault: the schema's own words, and
-      // none of what the model sent.
-      const faults = parsed.error.issues
-        .slice(0, 5)
-        .map((issue) => `${issue.path.join('.') || 'arguments'}: ${issue.code}`)
-        .join('; ');
-      return notRun(
-        call,
-        'bad_arguments',
-        `The arguments were not accepted (${faults}).`,
-        tool.name,
-      );
-    }
+    if (!parsed.success) return badArguments(call, tool.name, parsed.error);
 
     const startedAt = clock();
     try {
@@ -518,6 +564,110 @@ export class AgentLoopService {
       };
     }
   }
+
+  /**
+   * One propose call. It is not raced against the read budget: a card given
+   * up on would still be saved, waiting where the member never sees it. What
+   * bounds it is its own work, a roster lookup and at most one small
+   * metered call.
+   */
+  private async runProposal(
+    call: LanguageModelToolCall,
+    tool: AgentProposeTool,
+    input: AgentLoopInput,
+    clock: () => number,
+    /** The turn already has as many cards as it may come with. */
+    full: boolean,
+  ): Promise<RanCall> {
+    const parsed = tool.input.safeParse(call.input ?? {});
+    if (!parsed.success) return badArguments(call, tool.name, parsed.error);
+    if (full) {
+      return notRun(
+        call,
+        'over_limit',
+        'No more cards can be made for this answer.',
+        tool.name,
+      );
+    }
+    // Nothing is saved for a member who has left.
+    if (input.signal?.aborted) {
+      return notRun(call, 'failed', 'The card was not made.', tool.name);
+    }
+    const startedAt = clock();
+    const trace = (
+      outcome: AgentCallTrace['outcome'],
+      proposed: boolean,
+    ): AgentCallTrace => ({
+      tool: tool.name,
+      outcome,
+      argBytes: argBytes(call),
+      sources: 0,
+      chars: 0,
+      cut: false,
+      ms: clock() - startedAt,
+      proposed,
+    });
+    try {
+      const made = await tool.propose(parsed.data, input.toolContext);
+      if (made.chapterId !== input.toolContext.chapterId) {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'ask-agent-tool-foreign-chapter',
+          message: `Ask: tool ${tool.name} proposed in another chapter; dropped`,
+          tags: { tool: tool.name },
+        });
+        return notRun(
+          call,
+          'foreign_chapter',
+          'The card was not made.',
+          tool.name,
+        );
+      }
+      return {
+        result: { callId: call.id, sources: [], note: made.note },
+        sources: [],
+        entities: [],
+        leftOutMessages: 0,
+        card: made.card,
+        trace: trace('ok', made.card?.status === 'proposed'),
+      };
+    } catch (error) {
+      if (error instanceof LanguageModelError && error.kind === 'aborted') {
+        throw error;
+      }
+      if (error instanceof AgentToolUnavailableError) throw error;
+      this.logger.warn(
+        `Ask: tool ${tool.name} failed (${
+          error instanceof Error ? error.name : 'unknown'
+        }); the turn goes on without it`,
+      );
+      return {
+        ...notRun(call, 'failed', 'The card was not made.', tool.name),
+        trace: trace('failed', false),
+      };
+    }
+  }
+}
+
+/**
+ * Which fields, and what kind of fault: the schema's own words, and none of
+ * what the model sent.
+ */
+function badArguments(
+  call: LanguageModelToolCall,
+  tool: string,
+  error: z.ZodError,
+): RanCall {
+  const faults = error.issues
+    .slice(0, 5)
+    .map((issue) => `${issue.path.join('.') || 'arguments'}: ${issue.code}`)
+    .join('; ');
+  return notRun(
+    call,
+    'bad_arguments',
+    `The arguments were not accepted (${faults}).`,
+    tool,
+  );
 }
 
 function notRun(
@@ -580,7 +730,7 @@ function leadingLines(text: string, max: number): string {
 }
 
 /** A tool as the model is shown it. Throws for a schema that is not an object. */
-function toModelTool(tool: AgentReadTool): LanguageModelTool {
+function toModelTool(tool: AgentTool): LanguageModelTool {
   const schema = z.toJSONSchema(tool.input) as Record<string, unknown>;
   if (schema.type !== 'object') {
     throw new Error(`Agent tool ${tool.name} must take an object`);

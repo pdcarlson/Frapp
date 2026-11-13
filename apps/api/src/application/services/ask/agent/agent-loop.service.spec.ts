@@ -19,6 +19,9 @@ import {
   AGENT_RESULT_MAX_CHARS,
   AGENT_RESULT_MAX_SOURCES,
   AgentToolUnavailableError,
+  type AgentCard,
+  type AgentProposeResult,
+  type AgentProposeTool,
   type AgentReadTool,
   type AgentSource,
   type AgentToolResult,
@@ -198,6 +201,7 @@ describe('AgentLoopService', () => {
       type: 'tool',
       name: 'search_messages',
       reading: 'Reading search_messages',
+      effect: 'read',
     });
     expect(outcome).toMatchObject({
       stop: 'answered',
@@ -270,18 +274,6 @@ describe('AgentLoopService', () => {
           outcome: 'unknown_tool',
         }),
       ]);
-    });
-
-    it('a tool that is not a read, even when it was offered', async () => {
-      const writer = { ...tool('post_message'), effect: 'propose' as const };
-      const { loop } = build([
-        round({ toolCalls: [call('post_message')] }),
-        round({ text: 'done' }),
-      ]);
-
-      await run(loop, input({ tools: [writer as never] }));
-
-      expect(writer.run).not.toHaveBeenCalled();
     });
 
     it('arguments that fail the tool’s schema, without repeating them', async () => {
@@ -708,5 +700,229 @@ describe('AgentLoopService', () => {
 
     expect(prompts).toHaveLength(1);
     expect(outcome).toBeUndefined();
+  });
+});
+
+const card = (id: string): AgentCard =>
+  ({
+    status: 'proposed',
+    action: 'create_task',
+    suggestion: { id },
+    notes: [],
+  }) as unknown as AgentCard;
+
+function proposer(
+  propose: AgentProposeTool<{ title: string }>['propose'],
+): AgentProposeTool<{ title: string }> & { propose: jest.Mock } {
+  return {
+    name: 'create_task',
+    description: 'Prepares a task card.',
+    permission: 'tasks:manage',
+    module: 'tasks',
+    effect: 'propose',
+    input: z.object({ title: z.string() }),
+    reading: 'Working out the task',
+    propose: jest.fn(propose),
+  };
+}
+
+const made = (id: string): AgentProposeResult => ({
+  chapterId: CHAPTER,
+  card: card(id),
+  note: 'A card is ready.',
+});
+
+describe('AgentLoopService: cards', () => {
+  it('runs a propose call, tells the model what came of it, and returns the card', async () => {
+    const task = proposer(() => Promise.resolve(made('s1')));
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('create_task', { title: 'Book the bus' })] }),
+      round({ text: 'The card is ready.' }),
+    ]);
+
+    const { events, outcome } = await run(
+      loop,
+      input({ tools: [tool('search_messages'), task] }),
+    );
+
+    expect(task.propose).toHaveBeenCalledWith(
+      { title: 'Book the bus' },
+      expect.objectContaining({ chapterId: CHAPTER, userId: USER }),
+    );
+    expect(events[0]).toEqual({
+      type: 'tool',
+      name: 'create_task',
+      reading: 'Working out the task',
+      effect: 'propose',
+    });
+    // The model reads the tool's line and no source: a card is not a fact.
+    expect(prompts[1].rounds[0].results).toEqual([
+      { callId: 'call-create_task', sources: [], note: 'A card is ready.' },
+    ]);
+    expect(outcome?.cards).toEqual([card('s1')]);
+    expect(outcome?.sources).toEqual([]);
+    expect(outcome?.rounds[0].calls[0]).toMatchObject({
+      tool: 'create_task',
+      outcome: 'ok',
+      proposed: true,
+    });
+  });
+
+  it('makes cards one at a time, in the order asked, and no more than the turn may come with', async () => {
+    const order: string[] = [];
+    let running = 0;
+    let most = 0;
+    const task = proposer(async (args) => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      running -= 1;
+      order.push(args.title);
+      return made(args.title);
+    });
+    const { loop, prompts } = build([
+      round({
+        toolCalls: [
+          call('create_task', { title: 'a' }, 'c1'),
+          call('create_task', { title: 'b' }, 'c2'),
+          call('create_task', { title: 'c' }, 'c3'),
+        ],
+      }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [task], maxCards: 2 }));
+
+    expect(most).toBe(1);
+    expect(order).toEqual(['a', 'b']);
+    expect(outcome?.cards).toEqual([card('a'), card('b')]);
+    expect(prompts[1].rounds[0].results[2]).toEqual({
+      callId: 'c3',
+      sources: [],
+      note: 'No more cards can be made for this answer.',
+      failed: true,
+    });
+    expect(outcome?.rounds[0].calls[2]).toMatchObject({
+      tool: 'create_task',
+      outcome: 'over_limit',
+    });
+  });
+
+  it('does not count a propose call that made no card against the limit', async () => {
+    const task = proposer((args) =>
+      Promise.resolve(
+        args.title === 'vague'
+          ? {
+              chapterId: CHAPTER,
+              card: {
+                status: 'unclear' as const,
+                action: 'create_task',
+                missing: 'title' as const,
+              },
+              note: 'No card was made.',
+            }
+          : made(args.title),
+      ),
+    );
+    const { loop } = build([
+      round({
+        toolCalls: [
+          call('create_task', { title: 'vague' }, 'c1'),
+          call('create_task', { title: 'b' }, 'c2'),
+        ],
+      }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [task], maxCards: 1 }));
+
+    expect(outcome?.cards.map((made) => made.status)).toEqual([
+      'unclear',
+      'proposed',
+    ]);
+    expect(outcome?.rounds[0].calls[0]).toMatchObject({ proposed: false });
+  });
+
+  it('never runs a propose tool on arguments its schema refused', async () => {
+    const task = proposer(() => Promise.resolve(made('s1')));
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('create_task', { title: 7 })] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [task] }));
+
+    expect(task.propose).not.toHaveBeenCalled();
+    expect(prompts[1].rounds[0].results[0]).toMatchObject({ failed: true });
+    expect(outcome?.cards).toEqual([]);
+  });
+
+  it('refuses a tool that neither reads nor proposes, even when it was offered', async () => {
+    const writer = {
+      ...tool('delete_everything'),
+      effect: 'write',
+    } as unknown as AgentReadTool;
+    const { loop } = build([
+      round({ toolCalls: [call('delete_everything')] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [writer] }));
+
+    expect(
+      (writer as unknown as { run: jest.Mock }).run,
+    ).not.toHaveBeenCalled();
+    expect(outcome?.rounds[0].calls[0]).toMatchObject({
+      outcome: 'unknown_tool',
+    });
+  });
+
+  it('drops a card made in another chapter', async () => {
+    const task = proposer(() =>
+      Promise.resolve({ ...made('s1'), chapterId: 'chapter-2' }),
+    );
+    const { loop } = build([
+      round({ toolCalls: [call('create_task', { title: 'a' })] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [task] }));
+
+    expect(outcome?.cards).toEqual([]);
+    expect(outcome?.rounds[0].calls[0]).toMatchObject({
+      outcome: 'foreign_chapter',
+    });
+  });
+
+  it('goes on without a card whose tool threw', async () => {
+    const task = proposer(() => Promise.reject(new Error('database down')));
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('create_task', { title: 'a' })] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [task] }));
+
+    expect(prompts[1].rounds[0].results[0]).toEqual({
+      callId: 'call-create_task',
+      sources: [],
+      note: 'The card was not made.',
+      failed: true,
+    });
+    expect(outcome?.cards).toEqual([]);
+    expect(outcome?.stop).toBe('answered');
+  });
+
+  it('saves no card for a member who has left', async () => {
+    const task = proposer(() => Promise.resolve(made('s1')));
+    const gone = new AbortController();
+    gone.abort();
+    const { loop } = build([
+      round({ toolCalls: [call('create_task', { title: 'a' })] }),
+    ]);
+
+    await run(loop, input({ tools: [task], signal: gone.signal }));
+
+    expect(task.propose).not.toHaveBeenCalled();
   });
 });

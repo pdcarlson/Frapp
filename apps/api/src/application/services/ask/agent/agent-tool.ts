@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { AskSourceKind, AskSourceTarget } from '@repo/validation';
 import type { AiUnavailable } from '../../ai/ai-gateway.service';
+import type { ActOutcome } from '../../act/act-tool';
 import type { AgentToolSpec } from '../ask-tool';
 
 /**
@@ -146,6 +147,54 @@ export interface AgentReadTool<Args = unknown> extends AgentToolSpec {
 }
 
 /**
+ * What a turn can show for a propose call: a card to confirm, a choice of
+ * event, or what was left unsaid. The same three a typed request ends in.
+ */
+export type AgentCard = Extract<
+  ActOutcome,
+  { status: 'proposed' | 'needs_event' | 'unclear' }
+>;
+
+export interface AgentProposeResult {
+  /** The chapter the card was made in. The loop drops any other. */
+  chapterId: string;
+  /** What the turn shows for it, or null when nothing can be shown. */
+  card: AgentCard | null;
+  /**
+   * What the model is told came of it. Written by the tool from the
+   * outcome's kind alone: never a name, a title or any other member text,
+   * and never the card's contents, which the member reads on the card.
+   */
+  note: string;
+}
+
+/**
+ * A change the model can put in front of the asker as a card (#4899;
+ * `docs/security/ai-prompt-injection.md` C5 as changed 2026-11-13: the model
+ * that reads may also propose). **It changes nothing.** `propose` saves a
+ * proposal only the asker can open; the change is made when they press
+ * Confirm, through the ordinary service, after the action's permission is
+ * checked again. So what a turn read, including text someone planted, can at
+ * most put a card in front of the asker, who reads exactly what it would do
+ * before anything happens.
+ *
+ * Offered only to a member who holds `ai:act`, from a client that draws
+ * cards, and like a read only when the mirrored route's permission is held
+ * and its module is on. The arguments follow a read's rules: names and days
+ * the model wrote, never an id, a chapter or a user.
+ */
+export interface AgentProposeTool<Args = unknown> extends AgentToolSpec {
+  readonly effect: 'propose';
+  readonly input: z.ZodType<Args>;
+  /** The line under a working turn while the card is worked out. */
+  readonly reading: string;
+  propose(args: Args, context: AgentToolContext): Promise<AgentProposeResult>;
+}
+
+/** Anything the loop can be handed. */
+export type AgentTool = AgentReadTool | AgentProposeTool;
+
+/**
  * Thrown by a tool whose read went through the AI gateway and was not made:
  * the chapter or the member is past a cap, AI is off, or no provider is set
  * up. The loop ends the turn with that reason, as a refused model call
@@ -172,3 +221,6 @@ export const AGENT_RESULT_MAX_SOURCES = 60;
 
 /** Injection token for the read tools the agent loop may offer. */
 export const AGENT_READ_TOOLS = 'AGENT_READ_TOOLS';
+
+/** Injection token for the cards the agent loop may propose. */
+export const AGENT_PROPOSE_TOOLS = 'AGENT_PROPOSE_TOOLS';

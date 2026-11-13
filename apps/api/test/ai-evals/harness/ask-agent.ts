@@ -249,6 +249,8 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         { record: () => Promise.resolve(false) } as never,
         // A case is asked from nowhere.
         { read: () => Promise.resolve([]) } as never,
+        // And answers only: no card is offered.
+        [],
       );
 
       let answer: AskAnswer | null = null;
