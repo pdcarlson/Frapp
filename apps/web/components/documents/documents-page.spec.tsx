@@ -188,6 +188,9 @@ vi.mock("@/components/shared/can", () => ({
   }) => (canGate.granted ? <>{children}</> : <>{deniedFallback ?? null}</>),
 }));
 
+// The folder import (#2242) reads the auth account it began under.
+vi.mock("@/lib/auth/use-auth-user-id", () => ({ useAuthUserId: () => "auth-1" }));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
