@@ -34,7 +34,7 @@ import {
 } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { QUIET_LINK } from "@/components/ui/quiet-link";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -256,10 +256,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
             // quieter than checking in (#4933).
             <Link
               href={eventDeepLink(payload.event_id, { excuse: true })}
-              className={cn(
-                "self-center rounded-sm text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground",
-                FOCUS_RING_OFFSET,
-              )}
+              className={cn(QUIET_LINK, "self-center")}
             >
               Can&apos;t make it?
             </Link>

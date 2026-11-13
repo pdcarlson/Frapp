@@ -151,9 +151,13 @@ describe("EventCard", () => {
   it("offers Can't make it, linking to the sheet with the line open", () => {
     mockEventCardExcuse.mockReturnValue({ kind: "offer" });
     render(<EventCard message={makeMessage()} isConfirmed />);
-    expect(
-      screen.getByRole("link", { name: "Can't make it?" }),
-    ).toHaveAttribute("href", "/events?event=evt-1&excuse=1");
+    const link = screen.getByRole("link", { name: "Can't make it?" });
+    expect(link).toHaveAttribute("href", "/events?event=evt-1&excuse=1");
+    // A quiet link, not a second button beside Check in (#4933).
+    expect(link.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["underline", "pointer-coarse:min-h-11"]),
+    );
+    expect(link.className).not.toMatch(/\bborder\b|\bbg-/);
   });
 
   it("says where a sent excuse stands instead", () => {

@@ -21,8 +21,8 @@ import {
 import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { Badge, type BadgeKind } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
+import { QUIET_LINK } from "@/components/ui/quiet-link";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -163,10 +163,9 @@ export function MyExcuse({
       return (
         <button
           type="button"
-          className={cn(
-            "self-start rounded-sm text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground",
-            FOCUS_RING_OFFSET,
-          )}
+          // Centered under the check-in block, as on the phone; a grid
+          // child stretches without it, which made the whole row the target.
+          className={cn(QUIET_LINK, "justify-self-center")}
           onClick={() => setWriting(true)}
         >
           Can&apos;t make it?

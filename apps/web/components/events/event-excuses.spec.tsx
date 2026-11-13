@@ -107,6 +107,20 @@ describe("MyExcuse", () => {
     });
   });
 
+  it("offers it as a quiet underlined link, 44px to a finger (#4933)", () => {
+    renderMine();
+    const link = screen.getByRole("button", { name: "Can't make it?" });
+    expect(link.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        "underline",
+        "text-muted-foreground",
+        "pointer-coarse:min-h-11",
+        "justify-self-center",
+      ]),
+    );
+    expect(link.closest("section")).toBeNull();
+  });
+
   it("opens the line on arrival when the chat card asked (#4660)", () => {
     renderMine(true, 1);
     expect(screen.getByRole("textbox")).toHaveFocus();
