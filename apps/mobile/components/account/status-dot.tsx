@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import type { PresenceStatus } from "@repo/hooks/presence-status";
 import { SignetTokens } from "@repo/theme/signet";
+import { useRaisedSurfaces } from "@/lib/surfaces";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
@@ -30,6 +31,7 @@ export function StatusDot({
   testID?: string;
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens, size);
   const ringed = status === "idle" || status === "invisible";
   return (
@@ -47,7 +49,10 @@ export function StatusDot({
           styles.dot,
           status === "online" ? styles.online : null,
           status === "dnd" ? styles.dnd : null,
-          ringed ? styles.ring : null,
+          // The fill of the row a ring most often sits on: a card's step for
+          // where it is drawn (`lib/surfaces.ts`), so the You tab's Status
+          // row shows a ring, not a lighter disc.
+          ringed ? [styles.ring, { backgroundColor: surfaces.card }] : null,
           status === "idle" ? styles.idle : null,
           status === "invisible" ? styles.invisible : null,
           status === "offline" ? styles.offline : null,
@@ -73,10 +78,9 @@ function createStyles(tokens: SignetTokens, size: number) {
     online: { backgroundColor: tokens.color.semantic.success },
     dnd: { backgroundColor: tokens.color.semantic.destructive },
     // The interior is filled, not clear, so a photo behind the ring can't
-    // make it read as a solid dot.
+    // make it read as a solid dot. The fill is set where it is drawn.
     ring: {
       borderWidth: ringWidth,
-      backgroundColor: tokens.color.surface.card,
     },
     idle: { borderColor: tokens.color.semantic.warning },
     invisible: { borderColor: tokens.color.text.mutedForeground },

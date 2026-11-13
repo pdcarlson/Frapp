@@ -634,8 +634,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 5,
     entries: [MEMBER_TEXT],
   },
+  // Two hand a written row to the announcement emitters; the third (#4620)
+  // asks members whose excuse a series edit dropped to send it again, naming
+  // the event.
   'application/services/event-series.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [MEMBER_TEXT],
   },
   'application/services/event.service.ts': {

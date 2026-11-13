@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { AddTaskRow } from "./add-task-row";
 
@@ -15,6 +15,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTaskPhotoUrl: () => ({ data: undefined }),
   putSignedUpload: photo.put,
 }));
+
+// jsdom has no object URLs; a picked photo's preview only needs a string.
+URL.createObjectURL = () => "blob:preview";
+URL.revokeObjectURL = () => undefined;
 
 /** An open gate: the row's controls are live. */
 const gate = { controlProps: () => ({}) } as unknown as SubscriptionGate;
@@ -59,7 +63,9 @@ describe("AddTaskRow's due time (#4512)", () => {
   });
 });
 
-describe("AddTaskRow's photo (#4565)", () => {
+describe("AddTaskRow's photos (#4565, #4635)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
   it("uploads nothing while the task still lacks an assignee and a due date", async () => {
     photo.requestUrl.mockResolvedValue({
       upload_url: "https://upload",
@@ -70,12 +76,15 @@ describe("AddTaskRow's photo (#4565)", () => {
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Clean the kitchen" },
     });
-    fireEvent.change(screen.getByTestId("task-photo-input"), {
+    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
       target: {
-        files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })],
+        files: [
+          new File(["x"], "mess.jpg", { type: "image/jpeg" }),
+          new File(["y"], "sink.jpg", { type: "image/jpeg" }),
+        ],
       },
     });
-    fireEvent.click(screen.getByRole("switch", { name: "Photo required" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Photo" }));
     // Assignee and due date are required; without them nothing is created,
     // and nothing is uploaded.
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
@@ -86,7 +95,7 @@ describe("AddTaskRow's photo (#4565)", () => {
 
   it("refuses a file that isn't a photo before any upload", () => {
     open();
-    fireEvent.change(screen.getByTestId("task-photo-input"), {
+    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
       target: {
         files: [new File(["x"], "slip.pdf", { type: "application/pdf" })],
       },
@@ -95,5 +104,50 @@ describe("AddTaskRow's photo (#4565)", () => {
       screen.getByText("Use a JPEG, PNG, GIF or WebP photo."),
     ).toBeInTheDocument();
     expect(photo.requestUrl).not.toHaveBeenCalled();
+  });
+
+  it("uploads each photo and creates with their paths and the proof kind", async () => {
+    photo.requestUrl
+      .mockResolvedValueOnce({
+        upload_url: "https://upload/1",
+        storage_path: "chapters/c/tasks/p/mess.jpg",
+      })
+      .mockResolvedValueOnce({
+        upload_url: "https://upload/2",
+        storage_path: "chapters/c/tasks/p/sink.jpg",
+      });
+    photo.put.mockResolvedValue(undefined);
+    const onCreate = open();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Clean the kitchen" },
+    });
+    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
+      target: {
+        files: [
+          new File(["x"], "mess.jpg", { type: "image/jpeg" }),
+          new File(["y"], "sink.jpg", { type: "image/jpeg" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Photo" }));
+    // Pick the assignee and a due date, so the create goes through.
+    fireEvent.click(screen.getByLabelText("Assignee"));
+    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(photo.requestUrl).toHaveBeenCalledTimes(2);
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Clean the kitchen",
+        reference_photo_paths: [
+          "chapters/c/tasks/p/mess.jpg",
+          "chapters/c/tasks/p/sink.jpg",
+        ],
+        proof_kind: "photo",
+      }),
+    );
   });
 });

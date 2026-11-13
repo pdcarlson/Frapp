@@ -1,7 +1,7 @@
 /**
  * People search in Direct messages (#4668, asked by Shawn 2026-11-12): what a
- * name typed into web's Direct messages search finds, shared so the phone's
- * Messages search can run the same rules.
+ * name typed into web's Direct messages search or the phone's Messages search
+ * finds. Both run these rules.
  *
  * Two kinds of result, in this order, the way iMessage's and Instagram's
  * new-message search, Slack's DM switcher and Discord's "Find or start a
@@ -210,7 +210,8 @@ export const DM_SEARCH_ROSTER_FAILED =
 /**
  * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
  * body has none, so a caller reports a failure instead of opening a thread
- * with no id. Web's member sheet and its people search both read it here.
+ * with no id. Every door that opens a DM by member reads it here, on web and
+ * the phone.
  */
 export function dmChannelIdOf(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;

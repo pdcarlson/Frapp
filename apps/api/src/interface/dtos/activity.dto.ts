@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TASK_PROOF_KINDS, type TaskProofKind } from '@repo/validation';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -129,6 +130,13 @@ export class ActivityTaskDto implements ActivityTask {
       'When an officer last sent the completion back to the assignee; null if never.',
   })
   sent_back_at: string | null;
+
+  @ApiProperty({
+    enum: TASK_PROOF_KINDS,
+    description:
+      'What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.',
+  })
+  proof_kind: TaskProofKind;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;

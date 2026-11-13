@@ -298,6 +298,96 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     );
   });
 
+  describe('updateIfMatches (#4635)', () => {
+    beforeEach(() => {
+      harness = createTenantHarness({
+        tables: {
+          tasks: seed().tasks.map((row) => ({
+            ...row,
+            status: 'IN_PROGRESS',
+            point_reward: null,
+            proof_kind: 'link',
+          })),
+        },
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+    });
+
+    it('writes only while every matched value holds: eq for a value, is null for null', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.updateIfMatches(
+          TASK_B,
+          CHAPTER_B,
+          {
+            status: TaskStatus.IN_PROGRESS,
+            point_reward: null,
+            proof_kind: 'link',
+          },
+          { status: TaskStatus.COMPLETED },
+        ),
+      );
+
+      expect(updated).toMatchObject({ id: TASK_B, status: 'COMPLETED' });
+      const write = harness.ops.at(-1)!;
+      expect(write.filters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ op: 'eq', column: 'id', value: TASK_B }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'chapter_id',
+            value: CHAPTER_B,
+          }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'status',
+            value: 'IN_PROGRESS',
+          }),
+          expect.objectContaining({
+            op: 'is',
+            column: 'point_reward',
+            value: null,
+          }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'proof_kind',
+            value: 'link',
+          }),
+        ]),
+      );
+      expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+
+    it('returns null and writes nothing when a matched value changed first', async () => {
+      await expect(
+        repo.updateIfMatches(
+          TASK_B,
+          CHAPTER_B,
+          { status: TaskStatus.IN_PROGRESS, point_reward: 5 },
+          { status: TaskStatus.COMPLETED },
+        ),
+      ).resolves.toBeNull();
+      expect(harness.rows('tasks').find((r) => r.id === TASK_B)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+
+    it('returns null for an id in another chapter', async () => {
+      await expect(
+        repo.updateIfMatches(
+          TASK_A,
+          CHAPTER_B,
+          { status: TaskStatus.IN_PROGRESS },
+          { status: TaskStatus.COMPLETED },
+        ),
+      ).resolves.toBeNull();
+      expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+  });
+
   it('confirmCompletionAtomic passes the chapter to the RPC', async () => {
     harness = createTenantHarness({
       tables: seed(),
@@ -341,68 +431,116 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     );
   });
 
-  it('reopenCompletion clears the completion’s proof photo, and only the proof it was given (#4565)', async () => {
-    const PROOF = 'chapters/b/tasks/p1/done.jpg';
+  it('reopenCompletion clears the completion’s link and reply, and matches only the completion it read (#4635)', async () => {
+    const DONE_AT = '2026-08-30T00:00:00Z';
     harness = createTenantHarness({
       tables: {
         tasks: seed().tasks.map((row) => ({
           ...row,
           status: 'COMPLETED',
-          completed_at: '2026-08-30T00:00:00Z',
+          completed_at: DONE_AT,
           points_awarded: false,
-          proof_photo_path: PROOF,
+          proof_link: 'https://example.com/x',
+          completion_note: 'Done',
         })),
       },
     });
     repo = new SupabaseTaskRepository(harness.client);
 
-    // A newer completion holds another proof: the reopen matches nothing.
+    // A newer completion: the reopen matches nothing and clears nothing.
     await expect(
-      repo.reopenCompletion(
-        TASK_B,
-        CHAPTER_B,
-        undefined,
-        'chapters/b/tasks/p0/old.jpg',
-      ),
+      repo.reopenCompletion(TASK_B, CHAPTER_B, {
+        expectedCompletedAt: '2026-08-29T00:00:00Z',
+      }),
     ).resolves.toBeNull();
-    expect(
-      harness.rows('tasks').find((r) => r.id === TASK_B)?.proof_photo_path,
-    ).toBe(PROOF);
+    expect(harness.rows('tasks').find((r) => r.id === TASK_B)?.proof_link).toBe(
+      'https://example.com/x',
+    );
 
-    const reopened = await repo.reopenCompletion(
-      TASK_B,
-      CHAPTER_B,
-      undefined,
-      PROOF,
+    // A caller that read no completion time matches only a null one.
+    await expect(
+      repo.reopenCompletion(TASK_B, CHAPTER_B, { expectedCompletedAt: null }),
+    ).resolves.toBeNull();
+    const guard = harness.ops.at(-1)!;
+    expect(guard.filters).toContainEqual(
+      expect.objectContaining({
+        op: 'is',
+        column: 'completed_at',
+        value: null,
+      }),
+    );
+
+    const reopened = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.reopenCompletion(TASK_B, CHAPTER_B, {
+        expectedCompletedAt: DONE_AT,
+      }),
     );
     expect(reopened).toMatchObject({
       status: 'IN_PROGRESS',
-      proof_photo_path: null,
+      completed_at: null,
+      proof_link: null,
+      completion_note: null,
     });
+    const write = harness.ops.at(-1)!;
+    expect(write.filters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          op: 'eq',
+          column: 'status',
+          value: 'COMPLETED',
+        }),
+        expect.objectContaining({
+          op: 'eq',
+          column: 'points_awarded',
+          value: false,
+        }),
+        expect.objectContaining({
+          op: 'eq',
+          column: 'completed_at',
+          value: DONE_AT,
+        }),
+      ]),
+    );
+    // A plain reopen leaves the confirmation columns out of the write.
+    expect(write.payload[0]).not.toHaveProperty('confirmed_at');
   });
 
-  it('isPhotoPathInUse finds a stored photo path, quoted safely, in the chapter only (#4565)', async () => {
-    const PATH = 'chapters/a/tasks/p1/mess.jpg';
+  it('reopenCompletion reopens a task confirmed without sign-off only when told so (#4635)', async () => {
     harness = createTenantHarness({
       tables: {
-        // Both twins hold it: the harness proves the read stays in its
-        // chapter (`expectTenantScoped`), not a differing value.
-        tasks: seed().tasks.map((row) => ({ ...row, proof_photo_path: PATH })),
+        tasks: seed().tasks.map((row) => ({
+          ...row,
+          point_reward: null,
+          status: 'COMPLETED',
+          completed_at: '2026-08-30T00:00:00Z',
+          confirmed_at: '2026-08-30T00:00:00Z',
+          points_awarded: true,
+        })),
       },
     });
     repo = new SupabaseTaskRepository(harness.client);
 
-    await expect(
-      harness.expectTenantScoped(CHAPTER_A, () =>
-        repo.isPhotoPathInUse(CHAPTER_A, PATH),
-      ),
-    ).resolves.toBe(true);
-    await expect(
-      repo.isPhotoPathInUse(CHAPTER_A, 'chapters/a/tasks/p2/other.jpg'),
-    ).resolves.toBe(false);
+    // Without `pointsAwarded` the compare-and-set wants an unconfirmed row.
+    await expect(repo.reopenCompletion(TASK_B, CHAPTER_B)).resolves.toBeNull();
+
+    const reopened = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.reopenCompletion(TASK_B, CHAPTER_B, { pointsAwarded: true }),
+    );
+    expect(reopened).toMatchObject({
+      status: 'IN_PROGRESS',
+      confirmed_at: null,
+      points_awarded: false,
+    });
+    expect(harness.ops.at(-1)!.filters).toContainEqual(
+      expect.objectContaining({
+        op: 'eq',
+        column: 'points_awarded',
+        value: true,
+      }),
+    );
   });
 
-  it('reopenCompletion stamps an officer’s send-back', async () => {
+  it('reopenCompletion stamps an officer’s send-back, its reason and a raised proof kind', async () => {
     harness = createTenantHarness({
       tables: {
         tasks: seed().tasks.map((row) => ({
@@ -416,13 +554,19 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     repo = new SupabaseTaskRepository(harness.client);
 
     const reopened = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.reopenCompletion(TASK_B, CHAPTER_B, '2026-08-31T00:00:00.000Z'),
+      repo.reopenCompletion(TASK_B, CHAPTER_B, {
+        sentBackAt: '2026-08-31T00:00:00.000Z',
+        sentBackReason: 'Blurry',
+        proofKind: 'photo',
+      }),
     );
 
     expect(reopened).toMatchObject({
       id: TASK_B,
       status: 'IN_PROGRESS',
       sent_back_at: '2026-08-31T00:00:00.000Z',
+      sent_back_reason: 'Blurry',
+      proof_kind: 'photo',
     });
     expect(
       harness.rows('tasks').find((r) => r.id === TASK_A)?.sent_back_at,
@@ -448,5 +592,128 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     expect(harness.rows('tasks').find((r) => r.id === TASK_B)?.status).toBe(
       'COMPLETED',
     );
+  });
+});
+
+describe('SupabaseTaskRepository — task photos (#4635)', () => {
+  const PHOTO_A = '0a000000-0000-4000-8000-000000000070';
+  const PHOTO_B = '0b000000-0000-4000-8000-000000000070';
+  const PATH_A = 'chapters/a/tasks/p1/mess.jpg';
+  const PATH_B = 'chapters/b/tasks/p1/mess.jpg';
+  let harness: TenantHarness;
+  let repo: SupabaseTaskRepository;
+
+  const photoRow = (id: string, task_id: string, storage_path: string) => ({
+    id,
+    task_id,
+    kind: 'reference',
+    storage_path,
+    position: 0,
+    created_by: USER_SHARED,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        ...seed(),
+        task_photos: [
+          inA(photoRow(PHOTO_A, TASK_A, PATH_A)),
+          inB(photoRow(PHOTO_B, TASK_B, PATH_B)),
+        ],
+      },
+      collisionExempt: { task_photos: ['task_id', 'storage_path'] },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+  });
+
+  it('isPhotoPathInUse reads task_photos by storage path, in the chapter only', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.isPhotoPathInUse(CHAPTER_A, PATH_A),
+      ),
+    ).resolves.toBe(true);
+    // Another chapter's photo is not this chapter's.
+    await expect(repo.isPhotoPathInUse(CHAPTER_A, PATH_B)).resolves.toBe(false);
+    const read = harness.ops.at(-1)!;
+    expect(read.table).toBe('task_photos');
+    expect(read.filters).toContainEqual(
+      expect.objectContaining({
+        op: 'eq',
+        column: 'storage_path',
+        value: PATH_B,
+      }),
+    );
+    expect(read.orGroups).toEqual([]);
+  });
+
+  it('findPhotos reads the given tasks in the chapter, ordered', async () => {
+    const photos = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findPhotos(CHAPTER_B, [TASK_B, TASK_A]),
+    );
+    expect(photos.map((photo) => photo.id)).toEqual([PHOTO_B]);
+    const read = harness.ops.at(-1)!;
+    expect(read.filters).toContainEqual(
+      expect.objectContaining({
+        op: 'in',
+        column: 'task_id',
+        value: [TASK_B, TASK_A],
+      }),
+    );
+  });
+
+  it('createPhotos inserts the rows and returns them by position', async () => {
+    const created = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.createPhotos([
+        {
+          task_id: TASK_B,
+          chapter_id: CHAPTER_B,
+          kind: 'proof',
+          storage_path: 'chapters/b/tasks/p3/two.jpg',
+          position: 1,
+          created_by: USER_SHARED,
+        },
+        {
+          task_id: TASK_B,
+          chapter_id: CHAPTER_B,
+          kind: 'proof',
+          storage_path: 'chapters/b/tasks/p2/one.jpg',
+          position: 0,
+          created_by: USER_SHARED,
+        },
+      ]),
+    );
+    expect(created.map((photo) => photo.position)).toEqual([0, 1]);
+    expect(harness.rows('task_photos')).toHaveLength(4);
+  });
+
+  it('createPhotos with no rows writes nothing', async () => {
+    await expect(repo.createPhotos([])).resolves.toEqual([]);
+    expect(harness.ops).toHaveLength(0);
+  });
+
+  it('deletePhotos removes only the named rows of one task, in the chapter, and returns them', async () => {
+    const removed = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deletePhotos(CHAPTER_B, TASK_B, [PHOTO_B, PHOTO_A]),
+    );
+    expect(removed.map((photo) => photo.id)).toEqual([PHOTO_B]);
+    expect(harness.rows('task_photos').map((row) => row.id)).toEqual([PHOTO_A]);
+    const write = harness.ops.at(-1)!;
+    expect(write.mode).toBe('delete');
+    expect(write.filters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ op: 'eq', column: 'task_id', value: TASK_B }),
+        expect.objectContaining({
+          op: 'in',
+          column: 'id',
+          value: [PHOTO_B, PHOTO_A],
+        }),
+      ]),
+    );
+  });
+
+  it('deletePhotos with no ids writes nothing', async () => {
+    await expect(repo.deletePhotos(CHAPTER_B, TASK_B, [])).resolves.toEqual([]);
+    expect(harness.ops).toHaveLength(0);
   });
 });

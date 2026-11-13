@@ -1896,7 +1896,7 @@ describe("Chat home press feedback", () => {
       // The suite's react-native stub runs as iOS.
       const held = control.props.style({ pressed: true });
       expect(held).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.card,
+        backgroundColor: signetDarkTokens.color.surface.surface1,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
     }

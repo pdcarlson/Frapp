@@ -38,6 +38,10 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// jsdom has no object URLs; a picked photo's preview only needs a string.
+URL.createObjectURL = () => "blob:preview";
+URL.revokeObjectURL = () => undefined;
+
 const { TaskForm, taskDraftFrom } = await import("./task-form");
 
 const chapter = chapterSubscription(mockCurrentChapter);
@@ -126,39 +130,105 @@ describe("TaskForm (#3865, #3983)", () => {
       assignee_id: "u-1",
       due_date: "2026-11-12",
       point_reward: undefined,
-      photo_required: false,
+      reference_photo_paths: [],
+      proof_kind: "none",
     });
   });
 
-  it("uploads the photo first and posts its path with Photo required (#4565)", async () => {
-    photo.requestUrl.mockResolvedValue({
-      upload_url: "https://upload",
-      storage_path: "chapters/c/tasks/p/mess.jpg",
-    });
+  it("uploads every photo first, in order, and posts their paths with Photo proof (#4635)", async () => {
+    photo.requestUrl
+      .mockResolvedValueOnce({
+        upload_url: "https://upload/1",
+        storage_path: "chapters/c/tasks/p/mess.jpg",
+      })
+      .mockResolvedValueOnce({
+        upload_url: "https://upload/2",
+        storage_path: "chapters/c/tasks/p/sink.png",
+      });
     photo.put.mockResolvedValue(undefined);
     const { onPost } = renderDialog({
       prefill: { title: "Sweep", dueDate: "2026-11-12" },
       initialAssigneeId: "u-1",
     });
     fireEvent.click(screen.getByRole("button", { name: /More options/ }));
-    fireEvent.change(screen.getByTestId("task-photo-input"), {
-      target: { files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })] },
+    fireEvent.change(screen.getByTestId(/-photos-input$/), {
+      target: {
+        files: [
+          new File(["x"], "mess.jpg", { type: "image/jpeg" }),
+          new File(["y"], "sink.png", { type: "image/png" }),
+        ],
+      },
     });
-    fireEvent.click(screen.getByRole("switch", { name: "Photo required" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Photo" }));
+    expect(screen.getByRole("radio", { name: "Photo" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     fireEvent.click(create());
     await waitFor(() => expect(onPost).toHaveBeenCalled());
-    expect(photo.requestUrl).toHaveBeenCalledWith(
+    expect(photo.requestUrl).toHaveBeenCalledTimes(2);
+    expect(photo.requestUrl).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         filename: "mess.jpg",
         content_type: "image/jpeg",
       }),
     );
-    expect(onPost).toHaveBeenCalledWith(
+    expect(photo.requestUrl).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
-        reference_photo_path: "chapters/c/tasks/p/mess.jpg",
-        photo_required: true,
+        filename: "sink.png",
+        content_type: "image/png",
       }),
     );
+    expect(onPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reference_photo_paths: [
+          "chapters/c/tasks/p/mess.jpg",
+          "chapters/c/tasks/p/sink.png",
+        ],
+        proof_kind: "photo",
+      }),
+    );
+  });
+
+  it("posts Link proof without any photo (#4635)", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Post the recap", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.click(create());
+    await waitFor(() => expect(onPost).toHaveBeenCalled());
+    expect(photo.requestUrl).not.toHaveBeenCalled();
+    expect(onPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reference_photo_paths: [],
+        proof_kind: "link",
+      }),
+    );
+  });
+
+  it("refuses a seventh photo before any upload (#4635)", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    fireEvent.change(screen.getByTestId(/-photos-input$/), {
+      target: {
+        files: Array.from(
+          { length: 7 },
+          (_, i) => new File(["x"], `p${i}.jpg`, { type: "image/jpeg" }),
+        ),
+      },
+    });
+    expect(screen.getByText("Up to 6 photos.")).toBeInTheDocument();
+    fireEvent.click(create());
+    await Promise.resolve();
+    expect(photo.requestUrl).not.toHaveBeenCalled();
+    expect(onPost).not.toHaveBeenCalled();
   });
 
   it("shows the API's reason when the upload is refused, and posts nothing (#4565)", async () => {
@@ -171,7 +241,7 @@ describe("TaskForm (#3865, #3983)", () => {
       initialAssigneeId: "u-1",
     });
     fireEvent.click(screen.getByRole("button", { name: /More options/ }));
-    fireEvent.change(screen.getByTestId("task-photo-input"), {
+    fireEvent.change(screen.getByTestId(/-photos-input$/), {
       target: { files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })] },
     });
     fireEvent.click(create());

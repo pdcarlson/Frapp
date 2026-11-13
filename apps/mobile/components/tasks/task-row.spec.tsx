@@ -150,7 +150,7 @@ describe("TaskRow — press feedback", () => {
     const resting = flatten(pressable.props.style({ pressed: false }));
 
     expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
     expect(held).not.toHaveProperty("opacity");
     expect(resting).not.toHaveProperty("backgroundColor");
     expect(resting).not.toHaveProperty("borderRadius");
@@ -317,7 +317,7 @@ describe("TaskRow — the checkbox stays off the accent", () => {
       />,
     );
     const style = box(tree);
-    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(style.borderColor).toBe(signetDarkTokens.color.border.input);
     const flat = JSON.stringify(tree.toJSON());
     expect(flat).toContain(signetDarkTokens.color.text.mutedForeground);

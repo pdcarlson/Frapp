@@ -410,7 +410,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
 | Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
 | Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
-| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` |
+| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` (A task with no points and no proof is Done when marked, so its push ends at `marked it done.`, #4635.) |
 | Task confirmed | `Book the venue` | `Confirmed · +10 points` |
 | Task sent back | `Book the venue` | `Sent back: <officer's comment>` |
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
@@ -431,6 +431,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Events        | New event created                                                  | SILENT                      |
 | Events        | Event updated (time/location change)                               | NORMAL                      |
 | Events        | Excuse sent for an event (to its creator, or the `events:update` holders when it has none; never the sender), its decision (to the member), and one reminder when excuses are still pending as check-in closes (to the receivers). Category `events`; target `events` with `eventId` ([`events.md` § Excuses](events.md#excuses), #3735) | NORMAL |
+| Events        | A series edit dropped an excuse: the meeting it was for has no rebuilt meeting to carry to (to the excuse's sender, while still a member). "Send your excuse again" when the series was rescheduled, "Your excuse was removed" when it no longer repeats. Category `events`; target `events` with the series head's `eventId` ([`events.md` § Excuses](events.md#excuses), #4620) | NORMAL |
 | Points        | Points awarded                                                     | NORMAL                      |
 | Points        | Points deducted (fine)                                             | NORMAL                      |
 | Points        | Leaderboard position change                                        | SILENT (weekly digest)      |

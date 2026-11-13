@@ -1,4 +1,11 @@
 import { Event } from '../entities/event.entity';
+import type { EventExcuse } from '../entities/event-excuse.entity';
+
+/** One rebuilt occurrence's old id and the new one replacing it (#4620). */
+export interface OccurrenceCarry {
+  from: string;
+  to: string;
+}
 
 export const EVENT_REPOSITORY = 'EVENT_REPOSITORY';
 
@@ -53,4 +60,16 @@ export interface IEventRepository {
   ): Promise<Event[]>;
   delete(id: string, chapterId: string): Promise<void>;
   deleteMany(ids: string[], chapterId: string): Promise<void>;
+  /**
+   * Delete the upcoming occurrences a series edit rebuilt (#4620), carrying
+   * each `carry` pair's excuses, and an approved one's EXCUSED attendance
+   * row, from the old meeting to the new one in the same transaction (RPC
+   * `delete_replaced_occurrences`). Returns the pending and approved excuses
+   * left on old rows no pair carried, deleted with them.
+   */
+  deleteReplacedOccurrences(
+    ids: string[],
+    chapterId: string,
+    carry: readonly OccurrenceCarry[],
+  ): Promise<EventExcuse[]>;
 }

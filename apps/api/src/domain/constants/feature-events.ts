@@ -87,16 +87,24 @@ export const FEATURE_EVENTS = {
       'has_point_reward',
       'has_reference_photo',
       'has_subtasks',
-      'photo_required',
       'posted_to_chat',
+      'proof_kind',
     ],
   },
   'task-status-changed': {
     feature: 'tasks',
-    properties: ['status', 'has_proof_photo'],
+    properties: [
+      'status',
+      'has_proof_photo',
+      'has_proof_link',
+      'has_completion_note',
+    ],
   },
   'task-completion-confirmed': { feature: 'tasks', properties: [] },
-  'task-completion-rejected': { feature: 'tasks', properties: [] },
+  'task-completion-rejected': {
+    feature: 'tasks',
+    properties: ['asked_for_photo'],
+  },
 
   // Polls (a poll is a chat message of kind `poll`)
   'poll-created': {

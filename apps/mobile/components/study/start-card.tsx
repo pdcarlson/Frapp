@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -185,6 +186,7 @@ export function StartCardSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   // Shared by the card's lines and its skeleton's, so the two can't drift.
   const margin = {
     zoneMeta: 2,
@@ -196,7 +198,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     eyebrow: {
