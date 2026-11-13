@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import { ChapterDocumentService } from '../../src/application/services/chapter-document.service';
+import { ChapterDocumentTypeService } from '../../src/application/services/chapter-document-type.service';
 import { SupabaseChapterDocumentRepository } from '../../src/infrastructure/supabase/repositories/supabase-chapter-document.repository';
 import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
 import { createServiceRoleClient, describeIntegration } from './stack';
@@ -57,11 +58,17 @@ describeIntegration(
 
     beforeAll(async () => {
       supabase = createServiceRoleClient();
-      // With no folder, `confirmUpload` reads neither the folder repository nor
-      // storage.
+      // With no folder and no type, `confirmUpload` reads neither the folder
+      // nor the type repository, nor storage.
       const unused = {} as never;
       repo = new SupabaseChapterDocumentRepository(supabase);
-      documents = new ChapterDocumentService(repo, unused, unused, unused);
+      documents = new ChapterDocumentService(
+        repo,
+        unused,
+        unused,
+        unused,
+        new ChapterDocumentTypeService(unused, unused),
+      );
 
       assertOk(
         'chapters',

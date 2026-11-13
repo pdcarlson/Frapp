@@ -23,6 +23,7 @@ import type {
   ChapterDocument,
   ChapterDocumentFolder,
   ChapterDocumentStar,
+  ChapterDocumentType,
   ChapterDuesConfig,
   ChapterGoalRow,
   ChapterGroup,
@@ -162,6 +163,7 @@ export interface Database {
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
+      chapter_document_types: TableDefinition<ChapterDocumentType>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;

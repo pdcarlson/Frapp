@@ -5,7 +5,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 ## Permissions
 
 - `chapter_docs:upload` — Upload new documents.
-- `chapter_docs:manage` — Delete documents, create/rename/delete folders.
+- `chapter_docs:manage` — Delete documents, create/rename/delete folders, and add, rename and delete document types.
 - Reads are gated on `members:view`, which every seeded role holds (the President holds it from its starting tier, beside the `*` wildcard) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 
 ## Structure
@@ -24,6 +24,16 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - **Reorder** — folders are listed by sort order, then by name as a tiebreak.
 - **Delete** — see Edge Cases below.
 - **Uploading into an unknown folder still works.** Naming a folder that does not exist on upload registers it, which is how folders came into being before they were manageable. It is not an error.
+
+## Document types
+
+*(Added 2026-11-13, #3642 piece 4; Shawn's go on the folder-import plan, 2026-11-12.)* Each chapter has its own ordered list of document types (`chapter_document_types`), so the library stops filling with near-duplicates ("Bylaws", "bylaws", "By-laws") and filters and suggestions have a fixed list to aim at. Comparable apps: Linear's labels and Notion's select options, edited from the menu that applies them.
+
+- **Starting list.** Every chapter starts with Bylaws, Minutes, Agenda, Budget, Policy and Form, from a trigger on new chapters. A chapter that had documents before the list existed also keeps every type they used, once per spelling family, in the spelling most of them used. There is no "Other" type: a document with no type has none.
+- **Names** are trimmed, inner whitespace collapsed, 1 to 100 characters, and unique within the chapter ignoring case. A chapter has at most 50 (`DOCUMENT_TYPES_MAX`).
+- **A document stores its type's name**, as it stores its folder's. Uploading with a type matches it to the list ignoring case and stores the list's spelling, so "bylaws" files as "Bylaws". A name the chapter doesn't have yet is added to the list, as uploading into an unknown folder registers the folder; it is refused only when the list is full.
+- **Managing.** Officers with `chapter_docs:manage` add, rename, reorder and delete types; every member can list them (`GET /v1/documents/types`). Renaming a type renames it on every document of that type, matched ignoring case. Deleting one leaves its documents with no type and nothing else changed.
+- **Web.** The upload panel's Type chips are the chapter's list, in its order, with "New type" for a name not on it (uploading adds it). Officers who can manage see "Edit types" at the end of the row: rename, add and delete inline. Until the list loads, or when it can't be read, the chips fall back to the starting six plus the types the documents in hand use.
 
 ## Pinned and starred
 
@@ -77,7 +87,7 @@ The server's `search` parameter has no client caller since #3938; it stays for A
 
 Each document has: a system-generated `id` (UUID, primary key — **not** the `{document_id}` in the storage path below: that is a separate UUID minted by the upload-URL step and returned as `documentId`, so no storage path can be derived from a document's `id`), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
 
-Four additional fields, all optional and populated at confirm-upload time: `content_type` (MIME type, client-declared), `byte_size`, `document_type` (free text — no fixed taxonomy, unlike Backwork's checked `assignment_type`), and `effective_date` (the date the document took effect, distinct from `created_at` which is upload time — never inferred, only user-supplied). These exist for the AI corpus retrieval design ([`spec/architecture/README.md`](../architecture/README.md) § 13 AI Corpus Architecture — **not** [ADR-13](../architecture/adr/adr-13.md), which is Repository visibility), which needs a currency signal distinct from upload time and provenance metadata beyond a title.
+Four additional fields, all optional and populated at confirm-upload time: `content_type` (MIME type, client-declared), `byte_size`, `document_type` (the name of one of the chapter's document types, [§ Document types](#document-types); free text before 2026-11-13), and `effective_date` (the date the document took effect, distinct from `created_at` which is upload time — never inferred, only user-supplied). These exist for the AI corpus retrieval design ([`spec/architecture/README.md`](../architecture/README.md) § 13 AI Corpus Architecture — **not** [ADR-13](../architecture/adr/adr-13.md), which is Repository visibility), which needs a currency signal distinct from upload time and provenance metadata beyond a title.
 
 ## Storage
 

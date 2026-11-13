@@ -11,7 +11,11 @@ export interface ChapterDocument {
   content_type: string | null;
   /** File size in bytes, client-declared at upload. */
   byte_size: number | null;
-  /** Free text (bylaws, budget, minutes, ...) — no fixed taxonomy. */
+  /**
+   * The name of one of the chapter's document types
+   * (`ChapterDocumentType`), in the list's spelling, or null. Older rows may
+   * hold a spelling that differs from the list's only in case.
+   */
   document_type: string | null;
   /**
    * The date this document took effect, distinct from `created_at` (upload
@@ -41,6 +45,21 @@ export interface ChapterDocumentFolder {
   created_at: string;
   /** When an officer pinned this folder for the whole chapter, or null (#3934). */
   pinned_at: string | null;
+}
+
+/**
+ * One of a chapter's document types (#3642, piece 4). Like folders,
+ * `ChapterDocument.document_type` stores the type's `name`, so renaming a type
+ * renames it on its documents and deleting one clears it from them
+ * (`ChapterDocumentService.updateType` / `deleteType`). Names are unique per
+ * chapter ignoring case and outer whitespace.
+ */
+export interface ChapterDocumentType {
+  id: string;
+  chapter_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
 }
 
 /**

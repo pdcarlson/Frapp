@@ -179,4 +179,28 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .eq('folder', fromFolder);
     if (error) throw new SupabaseQueryError(error);
   }
+
+  async renameType(
+    fromType: string,
+    toType: string,
+    chapterId: string,
+  ): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { document_type: toType };
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update(patch)
+      .eq('chapter_id', chapterId)
+      .ilike('document_type', escapeLikePattern(fromType));
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async clearType(type: string, chapterId: string): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { document_type: null };
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update(patch)
+      .eq('chapter_id', chapterId)
+      .ilike('document_type', escapeLikePattern(type));
+    if (error) throw new SupabaseQueryError(error);
+  }
 }

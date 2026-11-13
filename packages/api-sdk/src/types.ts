@@ -3672,6 +3672,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's document types in display order */
+        get: operations["ChapterDocumentController_listTypes_v1"];
+        put?: never;
+        /** Add a document type */
+        post: operations["ChapterDocumentController_createType_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a document type (its documents keep everything else) */
+        delete: operations["ChapterDocumentController_deleteType_v1"];
+        options?: never;
+        head?: never;
+        /** Rename or reorder a document type (a rename renames it on its documents) */
+        patch: operations["ChapterDocumentController_updateType_v1"];
+        trace?: never;
+    };
     "/v1/documents/previews": {
         parameters: {
             query?: never;
@@ -7944,7 +7980,7 @@ export interface components {
             content_type?: string;
             /** @description File size in bytes */
             byte_size?: number;
-            /** @description Free-text document category (bylaws, budget, minutes, ...) */
+            /** @description One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list. */
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
@@ -7964,6 +8000,25 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+        };
+        DocumentTypeDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+        };
+        CreateDocumentTypeDto: {
+            /** @description Type name (unique within the chapter, ignoring case) */
+            name: string;
+            /** @description Display position. Defaults to the end of the list. */
+            sort_order?: number;
+        };
+        UpdateDocumentTypeDto: {
+            /** @description New type name. Renaming renames the type on every document of that type. */
+            name?: string;
+            /** @description New display position */
+            sort_order?: number;
         };
         DocumentPreviewUrlDto: {
             id: string;
@@ -17647,6 +17702,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_listTypes_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_createType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_deleteType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_updateType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
             };
             /** @description Error */
             default: {

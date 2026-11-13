@@ -124,6 +124,15 @@ export const DISPLAY_NAME_MAX_LENGTH = 100;
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
+ * Document types (#3642, piece 4). The name bound mirrors the CHECK
+ * constraint in `20261113040011_chapter_document_types.sql` (and the old
+ * free-text `document_type` limit, so every stored value fits); the count is
+ * an API-side cap on one chapter's list, which the upload form shows whole.
+ */
+export const DOCUMENT_TYPE_NAME_MAX_LENGTH = 100;
+export const DOCUMENT_TYPES_MAX = 50;
+
+/**
  * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
  * one-liner and the chat composer's Task form (#3865). The API refuses a
  * longer one; the form and the one-liner say so first.

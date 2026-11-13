@@ -8,9 +8,11 @@
  */
 
 /**
- * The types offered before a chapter has used any of its own. `document_type`
- * is still free text on the wire (#3642 makes it a real list), so a chapter's
- * own earlier values are offered beside these by {@link documentTypeOptions}.
+ * The types every chapter starts with, the seed in
+ * `20261113040011_chapter_document_types.sql`. The upload panel offers the
+ * chapter's own list (`GET /v1/documents/types`, #3642); these, with the types
+ * the library already uses ({@link documentTypeOptions}), stand in only until
+ * that list has loaded or when it can't be read.
  */
 export const DEFAULT_DOCUMENT_TYPES = [
   "Bylaws",

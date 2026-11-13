@@ -12539,6 +12539,184 @@
         ]
       }
     },
+    "/v1/documents/types": {
+      "get": {
+        "operationId": "ChapterDocumentController_listTypes_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentTypeDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's document types in display order",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterDocumentController_createType_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocumentTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a document type",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/types/{id}": {
+      "patch": {
+        "operationId": "ChapterDocumentController_updateType_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename or reorder a document type (a rename renames it on its documents)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_deleteType_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a document type (its documents keep everything else)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/previews": {
       "get": {
         "operationId": "ChapterDocumentController_previewUrls_v1",
@@ -25268,7 +25446,7 @@
           },
           "document_type": {
             "type": "string",
-            "description": "Free-text document category (bylaws, budget, minutes, ...)"
+            "description": "One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list."
           },
           "effective_date": {
             "type": "string",
@@ -25346,6 +25524,66 @@
           "effective_date",
           "pinned_at"
         ]
+      },
+      "DocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "sort_order",
+          "created_at"
+        ]
+      },
+      "CreateDocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Type name (unique within the chapter, ignoring case)",
+            "maxLength": 100
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "Display position. Defaults to the end of the list.",
+            "maximum": 1000000000
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateDocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New type name. Renaming renames the type on every document of that type.",
+            "maxLength": 100
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "New display position",
+            "maximum": 1000000000
+          }
+        }
       },
       "DocumentPreviewUrlDto": {
         "type": "object",

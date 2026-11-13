@@ -44,4 +44,16 @@ export interface IChapterDocumentRepository {
     toFolder: string,
     chapterId: string,
   ): Promise<void>;
+  /**
+   * Renames a document type on every document of that type, matching the old
+   * name ignoring case, so a spelling filed before types were a list follows
+   * the rename too.
+   */
+  renameType(
+    fromType: string,
+    toType: string,
+    chapterId: string,
+  ): Promise<void>;
+  /** Clears a deleted type (matched ignoring case) from its documents. */
+  clearType(type: string, chapterId: string): Promise<void>;
 }

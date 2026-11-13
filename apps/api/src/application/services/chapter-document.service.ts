@@ -43,6 +43,8 @@ import {
   storedFilename,
 } from '#domain/constants/storage';
 
+import { ChapterDocumentTypeService } from './chapter-document-type.service';
+
 const DOCUMENTS_BUCKET = 'documents';
 
 /** Ids one `GET /documents/previews` may sign (#4647). */
@@ -81,6 +83,7 @@ export class ChapterDocumentService {
     private readonly starRepo: IChapterDocumentStarRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    private readonly typeService: ChapterDocumentTypeService,
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
@@ -192,6 +195,14 @@ export class ChapterDocumentService {
       await this.ensureFolder(folder, input.chapter_id);
     }
 
+    // The type is stored in the chapter's own spelling, and a type the
+    // chapter doesn't have yet joins its list, as a new folder does
+    // (`spec/behavior/chapter-docs.md` § Document types).
+    const documentType = await this.typeService.resolveForUpload(
+      input.chapter_id,
+      input.document_type,
+    );
+
     const document = await this.documentRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
@@ -201,7 +212,7 @@ export class ChapterDocumentService {
       uploaded_by: input.uploaded_by,
       content_type: input.content_type ?? null,
       byte_size: input.byte_size ?? null,
-      document_type: input.document_type ?? null,
+      document_type: documentType,
       effective_date: input.effective_date ?? null,
     });
     return this.filedFor(document, input.uploaded_by);
