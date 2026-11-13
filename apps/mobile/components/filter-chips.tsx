@@ -1,4 +1,4 @@
-import { ReactNode, useRef, type RefObject } from "react";
+import { ReactNode, useRef, type Ref, type RefObject } from "react";
 import {
   type AccessibilityRole,
   type AccessibilityState,
@@ -316,6 +316,7 @@ export function SearchField({
   autoCapitalize = "none",
   keyboardType = "default",
   searchGlyph = false,
+  inputRef,
 }: {
   value: string;
   onChangeText: (next: string) => void;
@@ -329,12 +330,16 @@ export function SearchField({
   /** Leads the field with a magnifier, for a search rather than a filter
    * value (#4137): web's search fields and iOS's search bar draw one. */
   searchGlyph?: boolean;
+  /** For a screen that focuses the field from elsewhere, as Messages' pencil
+   * does (#4668). */
+  inputRef?: Ref<TextInput>;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   const input = (
     <TextInput
+      ref={inputRef}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
