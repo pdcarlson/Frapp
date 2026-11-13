@@ -22850,6 +22850,66 @@
           "next_page"
         ]
       },
+      "EventAgendaItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "done": {
+            "type": "boolean",
+            "description": "Checked off during the meeting."
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "done"
+        ]
+      },
+      "EventAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the attachment. Unique within the event."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "link",
+              "document"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "A `link` attachment's address: http or https only."
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "What the list shows. For a document, its name when it was attached."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ]
+      },
       "GeofenceCoordinateDto": {
         "type": "object",
         "properties": {
@@ -22925,6 +22985,20 @@
           },
           "notes": {
             "type": "string"
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
           },
           "check_in_zone": {
             "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
@@ -23039,6 +23113,20 @@
             "type": "string",
             "nullable": true
           },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
           "check_in_zone": {
             "nullable": true,
             "description": "Optional check-in geofence. `null` means the event has no zone.",
@@ -23095,6 +23183,8 @@
           "excluded_role_ids",
           "others_invited",
           "notes",
+          "agenda",
+          "attachments",
           "check_in_zone",
           "check_in_zone_name",
           "check_in_opens_minutes",
@@ -23159,6 +23249,20 @@
           },
           "notes": {
             "type": "string"
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
           },
           "check_in_zone": {
             "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",

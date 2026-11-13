@@ -30,7 +30,7 @@ import type { EventChange } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
 import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
-import type { UpdateEventInput } from './event-input';
+import type { SeriesUpdateInput as UpdateEventInput } from './event-input';
 
 /**
  * Fields whose change forces future instances to be regenerated rather than
@@ -53,7 +53,8 @@ const RECURRENCE_DEFINING_FIELDS = [
  * when a series is patched in place.
  *
  * `start_time` / `end_time` are excluded because each occurrence owns its own
- * times; `recurrence_rule` because only the parent carries one (children are
+ * times (a meeting's `agenda` and `attachments` never reach this file:
+ * `SeriesUpdateInput` leaves them out, #4934); `recurrence_rule` because only the parent carries one (children are
  * generated with `null`); `parent_event_id` because propagating it would
  * re-point the series at itself.
  */

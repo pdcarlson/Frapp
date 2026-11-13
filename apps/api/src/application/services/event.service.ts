@@ -37,13 +37,21 @@ import {
   eventLimitsAudience,
   eventOthersInvited,
 } from '@repo/validation';
-import { normalizeCheckInZone } from './event-input';
+import {
+  normalizeAgenda,
+  normalizeAttachments,
+  normalizeCheckInZone,
+} from './event-input';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import type { EventAttachment } from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
   CreateEventResult,
   EventMutationScope,
   UpdateEventInput,
+  SeriesUpdateInput,
 } from './event-input';
 
 /**
@@ -64,7 +72,41 @@ export class EventService {
     private readonly eventTypes: EventTypeService,
     @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
     private readonly screenRepo: IEventCheckInScreenRepository,
+    @Inject(CHAPTER_DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IChapterDocumentRepository,
   ) {}
+
+  /**
+   * A request's attachments, normalized, with every document one of this
+   * chapter's Chapter Files (#4934). A document id from another chapter, or
+   * one since deleted, is a 400, so an event never points at a file its
+   * members can't open.
+   */
+  private async attachmentsFor(
+    input: CreateEventInput['attachments'],
+    chapterId: string,
+  ): Promise<EventAttachment[] | undefined> {
+    const attachments = normalizeAttachments(input);
+    if (!attachments) return attachments;
+    const documentIds = [
+      ...new Set(
+        attachments.flatMap((a) =>
+          a.kind === 'document' ? [a.document_id] : [],
+        ),
+      ),
+    ];
+    if (documentIds.length > 0) {
+      const found = await this.documentRepo.findByIds(documentIds, chapterId);
+      const known = new Set(found.map((doc) => doc.id));
+      const missing = documentIds.find((id) => !known.has(id));
+      if (missing) {
+        throw new BadRequestException(
+          `Document ${missing} isn't one of this chapter's files.`,
+        );
+      }
+    }
+    return attachments;
+  }
 
   /**
    * Whether a check-in without the code would be refused right now
@@ -344,6 +386,9 @@ export class EventService {
     // Before the write, so a stray id is a 400 rather than the composite
     // foreign key's 500.
     await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
+    const agenda = normalizeAgenda(input.agenda) ?? [];
+    const attachments =
+      (await this.attachmentsFor(input.attachments, input.chapter_id)) ?? [];
 
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
@@ -362,6 +407,10 @@ export class EventService {
       excluded_role_ids: input.excluded_role_ids ?? null,
       others_invited,
       notes: input.notes ?? null,
+      // This first meeting's own; the series' other meetings start with
+      // none (#4934).
+      agenda,
+      attachments,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
       check_in_opens_minutes:
@@ -479,13 +528,29 @@ export class EventService {
 
     await this.eventTypes.assertBelongs(input.event_type_id, chapterId);
 
-    const patch: UpdateEventInput = input;
+    // A meeting's agenda and attachments are its own (#4934), validated here
+    // and kept apart from the rest of the patch so no series path ever
+    // copies them.
+    const { agenda: rawAgenda, attachments: rawAttachments, ...rest } = input;
+    const meetingOwn: Partial<Event> = {};
+    const agenda = normalizeAgenda(rawAgenda);
+    if (agenda !== undefined) meetingOwn.agenda = agenda;
+    const attachments = await this.attachmentsFor(rawAttachments, chapterId);
+    if (attachments !== undefined) meetingOwn.attachments = attachments;
+    const patch: SeriesUpdateInput = rest;
 
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
+      // Written to the occurrence addressed, never across the series, and
+      // before the series edit so a rebuild carries it to the new meeting.
+      const withOwn =
+        Object.keys(meetingOwn).length > 0
+          ? await this.eventRepo.update(target.id, chapterId, meetingOwn)
+          : target;
+      if (Object.keys(patch).length === 0) return withOwn;
       return this.series.updateSeries(
-        target,
+        withOwn,
         chapterId,
         patch,
         actorId,
@@ -536,6 +601,7 @@ export class EventService {
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...patch,
+      ...meetingOwn,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
       // for an absent key, which the repository's partial update ignores, so an
       // update that never mentions the zone leaves it untouched.

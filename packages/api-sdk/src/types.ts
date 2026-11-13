@@ -7081,6 +7081,28 @@ export interface components {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
         };
+        EventAgendaItemDto: {
+            /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
+            id: string;
+            text: string;
+            /** @description Checked off during the meeting. */
+            done: boolean;
+        };
+        EventAttachmentDto: {
+            /** @description The client's id for the attachment. Unique within the event. */
+            id: string;
+            /** @enum {string} */
+            kind: "link" | "document";
+            /** @description A `link` attachment's address: http or https only. */
+            url?: string;
+            /**
+             * Format: uuid
+             * @description A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.
+             */
+            document_id?: string;
+            /** @description What the list shows. For a document, its name when it was attached. */
+            title: string;
+        };
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
@@ -7112,6 +7134,10 @@ export interface components {
             /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
             others_invited?: boolean;
             notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
@@ -7151,6 +7177,10 @@ export interface components {
             /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
             others_invited: boolean | null;
             notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
             check_in_zone_name: string | null;
@@ -7190,6 +7220,10 @@ export interface components {
             /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
             others_invited?: boolean;
             notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
