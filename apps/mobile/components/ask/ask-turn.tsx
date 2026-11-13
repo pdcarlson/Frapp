@@ -12,13 +12,16 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_POST_COPY,
   askAnswerSegments,
   askLeftOutLine,
+  askPostedSourceTitle,
   askReadLine,
   askSourceMetaLine,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
+  type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
 import { CheckGlyph, CopyGlyph, FlagGlyph } from "@/components/control-glyphs";
@@ -398,6 +401,104 @@ function AnswerBody({
         </View>
       ) : null}
     </>
+  );
+}
+
+/**
+ * An answer posted to a channel (`ask_answer`, #4713), drawn as its asker
+ * saw it: the same words, markers and chips, from the posted row. Web's twin
+ * is `AskPostedBody` in `apps/web/components/ask/ask-answer.tsx`.
+ *
+ * A marker carries no quoted passage here: the quote stayed with the asker,
+ * so a reader who can't open a source sees its name and nothing of its text.
+ * The asker's own records are named as theirs ("Sam Abernathy's tasks") and
+ * open nothing, since a reader's Tasks page is the reader's own.
+ */
+export function AskPostedBody({
+  text,
+  posted,
+  askerName,
+  canOpen,
+  openingSourceId,
+  onOpenSource,
+}: {
+  /** The row's `content`: the answer's words, which the markers count into. */
+  text: string;
+  posted: AskPostedAnswer;
+  /** The asker's roster name, or null when the roster can't name them. */
+  askerName: string | null;
+  canOpen: (source: AskSource) => boolean;
+  openingSourceId: string | null;
+  onOpenSource: (source: AskSource) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const sources: AskSource[] = posted.sources.map((source, index) => ({
+    id: String(index),
+    kind: source.kind,
+    title: askPostedSourceTitle(source, askerName),
+    detail: source.detail,
+    date: source.date,
+    target: source.target,
+  }));
+  const segments = askAnswerSegments({
+    text,
+    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
+  });
+  const notes: string[] = [
+    ...(posted.truncated ? [ASK_COPY.truncated] : []),
+    ...(posted.sources.some((source) => source.limited)
+      ? [ASK_POST_COPY.limited]
+      : []),
+  ];
+  return (
+    <View style={styles.reply}>
+      <Text style={styles.answer}>
+        {segments.map((segment, position) => {
+          if (segment.type === "text") {
+            return <Text key={position}>{segment.text}</Text>;
+          }
+          const source = sources[segment.citation.source];
+          if (!source) return null;
+          const number = segment.citation.source + 1;
+          const opens = canOpen(source);
+          return (
+            <Text
+              key={position}
+              accessibilityRole={opens ? "link" : undefined}
+              accessibilityLabel={`Source ${number}: ${source.title}`}
+              onPress={opens ? () => onOpenSource(source) : undefined}
+              style={styles.marker}
+            >
+              {`\u00A0${number}\u00A0`}
+            </Text>
+          );
+        })}
+      </Text>
+      {sources.length > 0 ? (
+        <View style={styles.sources}>
+          {sources.map((source, index) => (
+            <SourceChip
+              key={source.id}
+              number={index + 1}
+              source={source}
+              opens={canOpen(source)}
+              opening={openingSourceId === source.id}
+              onPress={() => onOpenSource(source)}
+            />
+          ))}
+        </View>
+      ) : null}
+      {notes.length > 0 ? (
+        <View style={styles.notes}>
+          {notes.map((note) => (
+            <Text key={note} style={styles.note}>
+              {note}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

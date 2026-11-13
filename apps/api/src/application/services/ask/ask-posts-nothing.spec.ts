@@ -6,6 +6,11 @@ import { join } from 'node:path';
  * (#4713, `spec/behavior/ai.md` § Asking from a channel): nothing is written
  * to the channel and nobody is notified, from any door.
  *
+ * The one place an answer does reach a channel is outside everything this
+ * spec reads: `../ask-post/ask-post.service.ts`, a separate request the asker
+ * makes on an answer they already have, which calls no model (§ Posting an
+ * answer to the channel).
+ *
  * What asking runs is the route (`ask.controller.ts`), the answer lane (this
  * folder) and the request lane (`../act`), which only ever proposes a card.
  * Confirming a card is a different request, through the ordinary services.

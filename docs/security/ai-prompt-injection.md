@@ -321,9 +321,47 @@ officer's typed request into a proposal they confirm
   reads their sources for both). The lanes do hold services that can post or notify from other
   methods, so this is a tripwire on new calls and not a proof: a hostile source still has no tool
   that posts, because the planner's tools are the fixed read tools and the acting planner only
-  proposes a card for the asker. Posting an answer to the channel is a separate step that is not
-  built; the rule decided for it is in
-  [`ai.md` § Asking from a channel](../../spec/behavior/ai.md#asking-from-a-channel).
+  proposes a card for the asker. Posting an answer to the channel is a separate request the asker
+  makes afterwards (next item).
+- **Posting an answer is the asker's act, on text the server wrote** (added in #4713 by pdcarlson,
+  2026-11-13; [`ai.md` § Posting an answer to the channel](../../spec/behavior/ai.md#posting-an-answer-to-the-channel)).
+  `POST /v1/ai/ask/posts` (`AskPostService`, outside `services/ask/`) calls no model and has no
+  tool, so nothing retrieved can cause a post (C3, C5): it runs only when the asker presses Post.
+  What it writes:
+  - **Only a sealed answer.** The request carries the answer's report receipt, which the server
+    sealed for this member in this chapter, and no answer text. A member cannot post text the
+    model did not write, replay another member's receipt, or post one from another chapter (C4).
+    The receipt is refused after 24 hours. The seal proves authorship by the model, not that the
+    asker did not steer it: the question is theirs, so it is posted above the answer for readers
+    to judge.
+  - **Never a follow-up's answer.** `history` is client text the model reads as its own earlier
+    turns. It could carry an earlier answer's restricted content past the audience check, or
+    words the asker wrote for the model to repeat with no trace in the posted question. The
+    receipt records that history was sent (`followed_up`) and the post is refused
+    (`ai.ask.post.follow_up`); found in this change's review.
+  - **Asking's conditions again.** The chapter's Ask switch and the asker's own consent are
+    checked on the post, so an answer written before either was withdrawn is not published after.
+  - **Under the asker's own permission to post** (C2): `assertChannelAccess(..., 'post')`, the gate
+    a message passes, so the audit log, an archived channel and a read-only one refuse.
+  - **This is a deliberate widening of who sees an answer's text.** Until now what a run produced
+    was shown only to people who could open its sources. Paul's decision (2026-11-13) lets the
+    asker publish their own answer to a wider audience after a warning. The server checks every
+    source the model was handed against every other reader of the channel, by each source kind's
+    own read rule, and returns what not all of them can open; it posts only when the request
+    acknowledges every entry, and checks again at post time. A source kind with no rule is never
+    called open. The residual risk is the one Paul accepted: an asker can post an answer that
+    paraphrases a source some readers cannot open. A reader still cannot open the source: the
+    posted row carries each source's name and target, never its quoted passages, and a target
+    opens through that source's ordinary route and its ordinary checks.
+  - **No chat text leaves its channel this way** (C8). An answer whose model input included a chat
+    message is refused outright, cited or not, so an author's message is never republished to a
+    channel they did not post in, and consent is not widened.
+  - **The posted row instructs nobody.** It is written with no mentions and the push worker
+    returns on its kind. The question is stored and drawn as plain text. `@Frapp` inside it asks
+    nothing, since asking happens only in the asker's own composer. The kind is not indexed into
+    the corpus, so a posted answer cannot come back as a source for a later one.
+  - **Clients cannot forge the kind.** `ask_answer` is in `SERVER_ONLY_KINDS`; `payload.asked_by`
+    is written by the server from the session, and is what lets the asker delete the row.
 - **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
   it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
   questions and requests the member typed earlier in the sitting (the last three), so "make it 10"

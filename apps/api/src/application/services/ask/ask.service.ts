@@ -19,7 +19,10 @@ import {
   USER_REPOSITORY,
   type IUserRepository,
 } from '#domain/repositories/user.repository.interface';
-import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
+import {
+  sealAskReportReceipt,
+  type AskGivenRef,
+} from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
@@ -66,6 +69,13 @@ import { nameInLine } from './ask-lines';
 
 /** The id of the source that says who is asking. */
 const ASKER_SOURCE_ID = 'asker';
+
+/** Where the asker source came from, for a posted answer's audience check. */
+const ASKER_REF: AskGivenRef = {
+  type: 'tool',
+  name: ASKER_SOURCE_ID,
+  reach: 'chapter',
+};
 
 /** The role a chapter's alumni hold (`RbacService.getAlumniRoleId`). */
 const ALUMNI_SYSTEM_KEY = 'ALUMNI';
@@ -132,6 +142,8 @@ interface AskSourceEntry {
   chat: boolean;
   /** Chat: whose words are in it. Empty for every other source. */
   authorIds: readonly string[];
+  /** Where it came from, for the report receipt (`AskGivenRef`). */
+  ref: AskGivenRef;
 }
 
 type AskEventFields = AskStreamEvent extends infer E
@@ -232,6 +244,13 @@ function passageEntry(
   return {
     chat,
     authorIds: chat ? passage.authorIds : [],
+    ref: chat
+      ? { type: 'chat' }
+      : passage.sourceType === 'chapter_document'
+        ? { type: 'document', id: passage.sourceId }
+        : passage.sourceType === 'meeting_minutes'
+          ? { type: 'meeting', id: passage.sourceId }
+          : { type: 'other' },
     model: {
       id: passage.id,
       // What the model reads as the source's name. Chat is labelled as chat,
@@ -693,6 +712,14 @@ export class AskService {
           return {
             chat: false,
             authorIds: [],
+            ref: {
+              type: 'tool',
+              name: tool.name,
+              reach: tool.reach,
+              ...(result.limitedEventIds?.length
+                ? { events: result.limitedEventIds }
+                : {}),
+            },
             model: {
               id: `tool:${tool.name}`,
               title: `${tool.title} (live data, read just now)`,
@@ -799,16 +826,34 @@ export class AskService {
               title: source.title,
               detail: source.detail,
               date: source.date,
+              target: source.target,
             })),
             left_out_messages: answer.left_out_messages,
             unverified_citations: answer.unverified_citations,
             truncated: answer.truncated,
           },
-          given: given.map(({ title, text }) => ({ title, text })),
+          // Who is asking is first when it was read, then `entries` in
+          // order (`sourcesForModel`). It is what the roster shows of the
+          // asker, so it is open to whoever may open the roster (#4713).
+          given: given.map(({ title, text }, index) => {
+            const source = entries[index - (given.length - entries.length)];
+            return source
+              ? {
+                  title,
+                  text,
+                  ref: source.ref,
+                  label: source.view.title,
+                  kind: source.view.kind,
+                }
+              : { title, text, ref: ASKER_REF, label: 'Your name and roles' };
+          }),
           tools: planned.map((tool) => tool.name),
           model: entry.model,
           prompt_version: ASK_ANSWER_PROMPT_VERSION,
           quoted_user_ids: [...quoted],
+          ...((input.history?.length ?? 0) > 0
+            ? { followed_up: true as const }
+            : {}),
         },
         { chapterId: input.chapterId, userId: input.userId },
       );

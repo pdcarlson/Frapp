@@ -11,6 +11,7 @@ import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
   isAnnouncementChannel,
+  isAskAnswerPostedBy,
   isDirectChannel,
   isModuleEnabled,
   mentionPicksIn,
@@ -224,6 +225,11 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   // policy, and it short-circuits the push worker. A client that could post one
   // would have a message that never notifies and never appears live.
   'imported',
+  // An Ask Frapp answer posted to the channel (#4713). Written only by
+  // `AskPostService`, from an answer the server itself sealed, under the
+  // Frapp sender. A client that could post one would be writing in Frapp's
+  // name with sources it made up.
+  'ask_answer',
 ]);
 
 /**
@@ -1768,7 +1774,11 @@ export class ChatService {
       requesterId,
     );
 
-    if (message.sender_id !== requesterId && !hasManagePermission) {
+    if (
+      message.sender_id !== requesterId &&
+      !hasManagePermission &&
+      !isAskAnswerPostedBy(message, requesterId)
+    ) {
       throw new ForbiddenException(
         'You can only delete your own messages unless you have channels:manage permission',
       );

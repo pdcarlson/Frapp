@@ -381,6 +381,32 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
     ).toBe('all');
   });
 
+  describe('an Ask Frapp answer posted to the channel (#4713)', () => {
+    // The member who asked chose to put it there; nobody else asked for it.
+    it.each([
+      ['a channel set to all', ch('general'), false],
+      ['a mention', ch('random'), true],
+      ['a DM', ch('dm', { type: 'DM' }), false],
+    ])('never sends, whatever %s would do', (_what, channel, hasMention) => {
+      expect(
+        decidePush({
+          channel,
+          messageKind: 'ask_answer',
+          recipientIsPresent: false,
+          hasMention,
+          preferences: [],
+        }),
+      ).toBe('skip-level');
+    });
+
+    it('reads as off for anything that asks the level directly', () => {
+      expect(defaultLevelFor(ch('general'), 'ask_answer')).toBe('off');
+      expect(defaultLevelFor(ch('dm', { type: 'DM' }), 'ask_answer')).toBe(
+        'off',
+      );
+    });
+  });
+
   it('a stored default never lifts audit or imported rows', () => {
     const loud = ch('chapter-audit', { default_notification_level: 'all' });
     expect(defaultLevelFor(loud, 'system_audit')).toBe('off');

@@ -8,13 +8,21 @@ import {
 } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  askChannelPostOffer,
   askTurnsInChannel,
   useAsk,
+  useAskPostFlow,
   type AskExchange,
   type AskOptions,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { ASK_COPY, ASK_MENTION_NAME } from "@repo/validation";
+import {
+  ASK_COPY,
+  ASK_MENTION_NAME,
+  ASK_POST_COPY,
+  askPostRestrictedList,
+  type AskAnswer,
+} from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskReply } from "@/components/ask/ask-turn";
 import {
@@ -252,21 +260,199 @@ function AskChannelTurn({
           </Text>
         ) : null}
         {exchange.phase !== "working" ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={ASK_COPY.dismiss}
-            accessibilityHint="Takes this answer out of the channel. It stays in Ask Frapp."
-            // A caption's line against the 44pt minimum.
-            hitSlop={14}
-            onPress={onDismiss}
-            style={({ pressed }) => [
-              styles.dismiss,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.caption}>{ASK_COPY.dismiss}</Text>
-          </Pressable>
+          <AskChannelTurnActions exchange={exchange} onDismiss={onDismiss} />
         ) : null}
+      </View>
+    </View>
+  );
+}
+
+/** A quiet text action under a turn: a caption's line, 44pt to a finger. */
+function TurnAction({
+  label,
+  hint,
+  onPress,
+}: {
+  label: string;
+  hint?: string;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      hitSlop={14}
+      onPress={onPress}
+      style={({ pressed }) => (pressed ? styles.pressed : null)}
+    >
+      <Text style={styles.caption}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * What the asker can do with a finished turn: take it out of the channel,
+ * and, for an answer, post it for everyone here (#4713). A card, a refusal
+ * and a turn with nothing found have nothing to post; nor does an answer
+ * from a server that sealed no receipt, since the receipt is what is posted.
+ */
+function AskChannelTurnActions({
+  exchange,
+  onDismiss,
+}: {
+  exchange: AskExchange;
+  onDismiss: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const dismiss = (
+    <TurnAction
+      label={ASK_COPY.dismiss}
+      hint="Takes this answer out of the channel. It stays in Ask Frapp."
+      onPress={onDismiss}
+    />
+  );
+  const offer = askChannelPostOffer(exchange);
+  if (offer.kind === "none") {
+    return <View style={styles.actions}>{dismiss}</View>;
+  }
+  if (offer.kind === "stays") {
+    return (
+      <View style={styles.actions}>
+        {dismiss}
+        <Text style={styles.caption}>{offer.reason}</Text>
+      </View>
+    );
+  }
+  return (
+    <AskPostActions
+      channelId={offer.channelId}
+      answer={offer.answer}
+      // Once it is in the channel for everyone, the asker's own copy of it
+      // there would be the same answer twice. It stays in Ask.
+      onPosted={onDismiss}
+    >
+      {dismiss}
+    </AskPostActions>
+  );
+}
+
+/**
+ * "Post for everyone here", in three steps and one place; web's twin of the
+ * same name says what it is modelled on. Pressing the action only asks the
+ * server who else in the channel could open what the answer drew on. Then,
+ * where the action was, what posting does and what not everyone can open,
+ * with Post and Cancel.
+ */
+function AskPostActions({
+  channelId,
+  answer,
+  onPosted,
+  children,
+}: {
+  channelId: string;
+  answer: AskAnswer;
+  onPosted: () => void;
+  /** Dismiss, drawn beside the action while nothing is being confirmed. */
+  children: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const flow = useAskPostFlow({ channelId, answer, onPosted });
+  const error = flow.error ? (
+    <Text accessibilityRole="alert" style={styles.error}>
+      {flow.error}
+    </Text>
+  ) : null;
+  if (flow.stage === "idle" || flow.stage === "checking") {
+    return (
+      <View style={styles.actionsColumn}>
+        <View style={styles.actions}>
+          {children}
+          {flow.stage === "checking" ? (
+            // In the action's place and its size, so nothing moves.
+            <Text accessibilityLiveRegion="polite" style={styles.caption}>
+              {ASK_POST_COPY.checking}
+            </Text>
+          ) : (
+            <TurnAction label={ASK_POST_COPY.action} onPress={flow.start} />
+          )}
+        </View>
+        {error}
+      </View>
+    );
+  }
+  const posting = flow.stage === "posting";
+  const warned = flow.restricted.length > 0;
+  const postLabel = posting
+    ? ASK_POST_COPY.posting
+    : warned
+      ? ASK_POST_COPY.post_anyway
+      : ASK_POST_COPY.post;
+  return (
+    <View
+      accessibilityLabel={ASK_POST_COPY.action}
+      style={styles.confirm}
+      testID="ask-post-confirm"
+    >
+      {flow.changed ? (
+        <Text accessibilityLiveRegion="polite" style={styles.caption}>
+          {ASK_POST_COPY.changed}
+        </Text>
+      ) : null}
+      <Text style={styles.confirmText}>{ASK_POST_COPY.confirm}</Text>
+      {warned ? (
+        <View style={styles.warning}>
+          <View style={styles.warningGlyph}>
+            <EyeOffGlyph color={tokens.color.text.mutedForeground} size={14} />
+          </View>
+          <Text style={[styles.confirmText, styles.warningText]}>
+            {ASK_POST_COPY.warning}:{" "}
+            <Text style={styles.strong}>
+              {askPostRestrictedList(flow.restricted)}
+            </Text>
+            .
+          </Text>
+        </View>
+      ) : null}
+      {error}
+      <View style={styles.buttons}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={postLabel}
+          accessibilityState={{ disabled: posting, busy: posting }}
+          disabled={posting}
+          // 36pt drawn against the 44pt minimum.
+          hitSlop={4}
+          onPress={flow.confirm}
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: accentPrimary, borderColor: accentPrimary },
+            pressed || posting ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[styles.buttonText, { color: accentOnPrimary }]}>
+            {postLabel}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={ASK_POST_COPY.cancel}
+          accessibilityState={{ disabled: posting }}
+          disabled={posting}
+          hitSlop={4}
+          onPress={flow.cancel}
+          style={({ pressed }) => [
+            styles.button,
+            pressed || posting ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.buttonText}>{ASK_POST_COPY.cancel}</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -326,8 +512,65 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
-    dismiss: {
-      alignSelf: "flex-start",
+    actionsColumn: {
+      gap: tokens.spacing.xs,
+    },
+    actions: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      columnGap: tokens.spacing.xl,
+    },
+    error: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    confirm: {
+      gap: tokens.spacing.sm,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      borderRadius: tokens.radius.card,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: 10,
+    },
+    confirmText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    warning: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 6,
+    },
+    warningGlyph: {
+      paddingTop: 3,
+    },
+    warningText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    strong: {
+      fontFamily: fontFamilyFor(600),
+    },
+    buttons: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    button: {
+      height: 36,
+      minWidth: 64,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.chipLarge,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+    },
+    buttonText: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
     },
     pressed: {
       opacity: 0.7,

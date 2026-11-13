@@ -370,6 +370,30 @@ describe('ChatReportService', () => {
       );
     });
 
+    it('names the member who posted an Ask Frapp answer, not the Frapp sender (#4713)', async () => {
+      channelAccess.assertMessageAccess.mockResolvedValue({
+        ...baseMessage,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        kind: 'ask_answer',
+        content: 'Dues are due on the 1st.',
+        payload: { v: 1, asked_by: 'user-asker', question: 'When are dues?' },
+      } satisfies ChatMessage);
+
+      await service.fileReport(CHAPTER, REPORTER, {
+        message_id: MESSAGE_ID,
+        reason: 'other',
+      });
+
+      expect(reportRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reported_content:
+            'Asked Frapp: When are dues?\nDues are due on the 1st.',
+          reported_sender_id: 'user-asker',
+          reported_author_name: null,
+        }),
+      );
+    });
+
     it('snapshots author_name for an imported message with no sender_id', async () => {
       // The case that makes carrying BOTH author columns necessary rather than
       // belt-and-braces. A Discord-imported row has `sender_id: null` and names
@@ -1941,6 +1965,23 @@ describe('reportedContentSnapshot', () => {
     payload: null,
     metadata: {},
   };
+
+  it('keeps the question a posted Ask Frapp answer was given (#4713)', () => {
+    const posted = {
+      content: 'Dues are due on the 1st.',
+      type: 'TEXT' as const,
+      kind: 'ask_answer' as const,
+      payload: { v: 1, question: ' When are dues due? ' },
+      metadata: {},
+    };
+    expect(reportedContentSnapshot(posted)).toBe(
+      'Asked Frapp: When are dues due?\nDues are due on the 1st.',
+    );
+    // A payload this build cannot read still files the answer.
+    expect(reportedContentSnapshot({ ...posted, payload: null })).toBe(
+      'Dues are due on the 1st.',
+    );
+  });
 
   it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
     const gif = {
