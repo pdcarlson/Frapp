@@ -152,7 +152,7 @@ export class AttendanceSummaryAgentTool implements AgentReadTool<Args> {
     const cut = rows.length - shown.length;
     const cutLine =
       cut > 0
-        ? `${count(cut, 'more member')} not listed here, each with fewer absences than those above.`
+        ? `${count(cut, 'more member')} not listed here, none with more absences than the last one listed.`
         : null;
     if (cutLine)
       notes.push(`Showing ${shown.length} of ${rows.length} members.`);

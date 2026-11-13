@@ -1,4 +1,9 @@
-import { askerContext, linesOf } from '#test/helpers/agent-tool.fixture';
+import {
+  bigRoster,
+  expectNothingLeaked,
+  askerContext,
+  linesOf,
+} from '#test/helpers/agent-tool.fixture';
 import { ChapterTasksAgentTool } from './chapter-tasks.tool';
 import { MyTasksAgentTool } from './my-tasks.tool';
 
@@ -131,7 +136,7 @@ describe('my_tasks', () => {
       limit: 20,
     });
     expect(linesOf(result).slice(1)).toEqual([
-      'Your 1 most recently finished task, newest first.',
+      "1 finished task of this member's, the latest finish first.",
       '"Book the hall": finished on Sunday, November 8, 2026. Assigned by Avery Lin. Worth 3 points.',
     ]);
   });
@@ -250,7 +255,8 @@ describe('chapter_tasks', () => {
       manager,
     );
     expect(linesOf(result).slice(1)).toEqual([
-      'Unfinished tasks: 1.',
+      // Not the chapter's count: the read was narrowed, and says so.
+      'Unfinished tasks that fit what was asked: 1.',
       'Past due: 1.',
       'Marked done and waiting for an officer to confirm: 0.',
       'Of those, the member asking can confirm 0.',
@@ -273,7 +279,9 @@ describe('chapter_tasks', () => {
     expect(result.note).toBe(
       '2 members match that name, so the tasks of all of them are listed.',
     );
-    expect(linesOf(result)[1]).toBe('Unfinished tasks: 3.');
+    expect(linesOf(result)[1]).toBe(
+      'Unfinished tasks that fit what was asked: 3.',
+    );
   });
 
   it('reads nothing of a member the roster does not have', async () => {
@@ -346,5 +354,57 @@ describe('chapter_tasks', () => {
       note: 'No task fits that.',
       leftOutMessages: 0,
     });
+  });
+});
+
+describe('task tools at the size of a real chapter', () => {
+  it('my_tasks puts the latest finish first, whatever order the read came in', async () => {
+    const list = jest.fn(async () => [
+      task({
+        id: 'a',
+        title: 'Made last',
+        confirmed_at: '2026-10-01T15:00:00.000Z',
+      }),
+      task({
+        id: 'b',
+        title: 'Made first',
+        confirmed_at: '2026-11-10T15:00:00.000Z',
+      }),
+    ]);
+    const result = await new MyTasksAgentTool(
+      { list } as never,
+      members as never,
+    ).run({ status: 'done' }, context);
+    expect(
+      linesOf(result)
+        .slice(2)
+        .map((line) => line.split(':')[0]),
+    ).toEqual(['"Made first"', '"Made last"']);
+  });
+
+  it('chapter_tasks names owners and nothing else about them', async () => {
+    const everyone = {
+      findRosterByChapter: jest.fn(async () => bigRoster(120)),
+    };
+    const list = jest.fn(async () =>
+      Array.from({ length: 240 }, (_, index) =>
+        task({
+          id: `t-${index}`,
+          title: `Task ${index}`,
+          assignee_id: `user-${(index % 120) + 1}`,
+          due_date: index % 2 ? '2026-11-01' : '2026-11-20',
+          status: index % 2 ? 'OVERDUE' : 'TODO',
+        }),
+      ),
+    );
+    const result = await new ChapterTasksAgentTool(
+      { list } as never,
+      everyone as never,
+    ).run({ assignee: '', status: 'unfinished', due_before: '' }, manager);
+    const lines = linesOf(result);
+    expect(result.sources[0].text.length).toBeLessThanOrEqual(12_000);
+    expect(lines[1]).toBe('Unfinished tasks: 240.');
+    expect(result.note).toMatch(/^Showing \d+ of 240 tasks\.$/);
+    expectNothingLeaked(result);
   });
 });

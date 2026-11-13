@@ -105,7 +105,6 @@ const CALLS = new Set([
   'attendance.getMyAttendanceForEvents',
   'excuses.getMine',
   'groups.list',
-  'members.searchByChapterAndName',
   'rbac.getAlumniRoleId',
   'service.findByChapterFiltered',
   'service.leaderboard',

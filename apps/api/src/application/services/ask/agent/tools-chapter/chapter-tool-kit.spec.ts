@@ -3,7 +3,9 @@ import {
   duration,
   fitRows,
   listSourceId,
+  localWeekStart,
   matchByName,
+  matchPerson,
   People,
   percent,
   quoted,
@@ -46,7 +48,41 @@ describe('readWindow', () => {
       context,
       defaults,
     );
-    expect(window.start < window.end).toBe(true);
+    // Both named days are read, as they are the right way round.
+    expect(iso(window)).toEqual(
+      iso(
+        readWindow({ from: '2026-11-01', to: '2026-11-30' }, context, defaults),
+      ),
+    );
+  });
+
+  it('reads the whole of a day the clocks go back, as one day', () => {
+    // November 1, 2026 is 25 hours long in New York.
+    const window = readWindow(
+      { from: '2026-11-01', to: '2026-11-01' },
+      context,
+      { backDays: 0, aheadDays: 0, maxDays: 1 },
+    );
+    expect(iso(window)).toEqual([
+      '2026-11-01T04:00:00.000Z',
+      '2026-11-02T05:00:00.000Z',
+    ]);
+    expect(window.shortened).toBe(false);
+  });
+
+  it('starts the week on Sunday where the asker is', () => {
+    expect(localWeekStart(context).toISOString()).toBe(
+      '2026-11-08T05:00:00.000Z',
+    );
+    // 5 PM Saturday in Los Angeles is already Sunday in UTC.
+    expect(
+      localWeekStart(
+        askerContext({
+          now: new Date('2026-11-15T01:00:00.000Z'),
+          timeZone: 'America/Los_Angeles',
+        }),
+      ).toISOString(),
+    ).toBe('2026-11-08T08:00:00.000Z');
   });
 
   it('never reads longer than the tool allows', () => {
@@ -82,6 +118,20 @@ describe('matchByName', () => {
   });
 });
 
+describe('matchPerson', () => {
+  const names = ['Lee Park', 'Ashlee Stone', 'Kaylee Wu', 'Jordan Lee'];
+  const match = (query: string) => matchPerson(names, (name) => name, query);
+
+  it('takes a whole word over the same letters inside a longer one', () => {
+    expect(match('lee')).toEqual(['Lee Park', 'Jordan Lee']);
+    expect(match('lee jordan')).toEqual(['Jordan Lee']);
+    expect(match('ash')).toEqual(['Ashlee Stone']);
+    expect(match('ayle')).toEqual(['Kaylee Wu']);
+    expect(match('zz')).toEqual([]);
+    expect(match(' . ')).toEqual([]);
+  });
+});
+
 describe('fitRows', () => {
   it('stops at the limit and at the size one result may be, never mid-row', () => {
     const rows = Array.from({ length: 500 }, (_, index) =>
@@ -112,6 +162,30 @@ describe('the words a result is written in', () => {
     expect(listSourceId('events', '2026-11-01', '', 'Formal!')).toBe(
       'tool:events:2026-11-01::formal',
     );
+  });
+
+  it('keeps two long arguments that differ late apart, and the id short', () => {
+    const long = 'the formal at the lake house with the alumni board and ';
+    const one = listSourceId('events', `${long}dinner`);
+    const two = listSourceId('events', `${long}dancing`);
+    expect(one).not.toBe(two);
+    expect(one.length).toBeLessThan(70);
+    expect(listSourceId('events', `${long}dinner`)).toBe(one);
+  });
+
+  it('does not take a longer name for the shorter one inside it', () => {
+    const people = new People([
+      { user_id: 'a', display_name: 'Sam' },
+      { user_id: 'b', display_name: 'Sam Lee' },
+      { user_id: 'c', display_name: 'Sam Lee' },
+    ]);
+    people.name('a');
+    const text = `${people.name('b')}: here. ${people.name('c')}: here too.`;
+    expect(people.entities(text).map((entity) => entity.id)).toEqual([
+      'b',
+      'c',
+    ]);
+    expect(people.entities(`${text} Sam: also`)).toHaveLength(3);
   });
 
   it('names as entities only the members whose names are in the text', () => {

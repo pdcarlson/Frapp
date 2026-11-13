@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { ChapterGroupService } from '../../../chapter-group.service';
-import { MemberService, type MemberProfile } from '../../../member.service';
+import { MemberService } from '../../../member.service';
 import { RbacService } from '../../../rbac.service';
 import type {
   AgentReadTool,
@@ -15,6 +15,7 @@ import {
   found,
   listSourceId,
   liveSource,
+  matchPerson,
   nothing,
   People,
   plainName,
@@ -23,9 +24,6 @@ import {
 import { groupsByMember, roleNames, rolesHeld } from './people';
 
 const MATCH_LIMIT = 8;
-/** A word of the name shorter than this is not searched on its own. */
-const WORD_MIN = 3;
-const WORDS_SEARCHED = 3;
 
 const input = z.object({
   name: wordsArg(
@@ -35,9 +33,9 @@ const input = z.object({
 type Args = z.infer<typeof input>;
 
 /**
- * One person, by name: `GET /v1/members/search`, the directory's own search,
- * with the email left out of the match. Several people come back when the
- * name fits several, and the tool never picks between them.
+ * One person, by name: the directory (`GET /v1/members`), matched on the
+ * name the way a person would look someone up. Several people come back when
+ * the name fits several, and the tool never picks between them.
  */
 @Injectable()
 export class FindMemberAgentTool implements AgentReadTool<Args> {
@@ -61,7 +59,17 @@ export class FindMemberAgentTool implements AgentReadTool<Args> {
       return nothing(context, 'Give a name to look up.');
     }
 
-    const matches = await this.search(args.name, context);
+    // The whole directory, matched here on the name alone: the directory's
+    // own search also matches emails and profile fields, and a lookup that
+    // did would tell the model whose address or employer holds a word.
+    const profiles = await this.members.findProfilesByChapter(
+      context.chapterId,
+    );
+    const matches = matchPerson(
+      profiles,
+      (profile) => profile.display_name,
+      args.name,
+    ).sort((a, b) => a.display_name.localeCompare(b.display_name));
     if (matches.length === 0) {
       return nothing(
         context,
@@ -115,47 +123,5 @@ export class FindMemberAgentTool implements AgentReadTool<Args> {
       people,
       note,
     );
-  }
-
-  /**
-   * The directory search on the whole name, and when that finds nobody, on
-   * each word of it ("Lee Jordan" for Jordan Lee, a first name with a
-   * mistyped last). A member matching more of the words comes first.
-   */
-  private async search(
-    typed: string,
-    context: AgentToolContext,
-  ): Promise<MemberProfile[]> {
-    const read = (query: string) =>
-      this.members.searchByChapterAndName(
-        context.chapterId,
-        query,
-        context.userId,
-        { matchEmail: false },
-      );
-    const byName = (a: MemberProfile, b: MemberProfile) =>
-      a.display_name.localeCompare(b.display_name);
-    // As typed, because the directory matches the name as it is written
-    // ("O'Brien"); the words are taken with the punctuation off.
-    const whole = await read(typed);
-    if (whole.length > 0) return [...whole].sort(byName);
-
-    const words = plainName(typed)
-      .split(' ')
-      .filter((word) => word.length >= WORD_MIN)
-      .slice(0, WORDS_SEARCHED);
-    if (words.length < 2) return [];
-    const perWord = await Promise.all(words.map(read));
-    const hits = new Map<string, { profile: MemberProfile; words: number }>();
-    for (const profiles of perWord) {
-      for (const profile of profiles) {
-        const hit = hits.get(profile.user_id) ?? { profile, words: 0 };
-        hit.words += 1;
-        hits.set(profile.user_id, hit);
-      }
-    }
-    return [...hits.values()]
-      .sort((a, b) => b.words - a.words || byName(a.profile, b.profile))
-      .map((hit) => hit.profile);
   }
 }

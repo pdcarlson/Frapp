@@ -12,6 +12,7 @@ import {
   found,
   listSourceId,
   liveSource,
+  localWeekStart,
   nothing,
   percent,
 } from './chapter-tool-kit';
@@ -44,7 +45,7 @@ export class MyStandingAgentTool implements AgentReadTool<Args> {
       chapterId,
       userId,
       context.enabledModules,
-      { now },
+      { now, weekStart: localWeekStart(context) },
     );
     const lines: string[] = [];
     const { points, required_events: events, service, study } = standing;

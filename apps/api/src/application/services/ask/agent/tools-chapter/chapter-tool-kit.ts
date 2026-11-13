@@ -1,7 +1,12 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AskSourceKind, AskSourcePage } from '@repo/validation';
 import { WILDCARD } from '#domain/constants/permissions';
-import { parseLocalDate, zonedTimeToUtc } from '#domain/utils/zoned-time';
+import {
+  localDateIn,
+  parseLocalDate,
+  zonedTimeToUtc,
+} from '#domain/utils/zoned-time';
 import { nameInLine, oneLine } from '../../ask-lines';
 import {
   AGENT_RESULT_MAX_CHARS,
@@ -150,6 +155,36 @@ function dayStart(date: string, timeZone: string): Date | null {
   return parseLocalDate(date) ? zonedTimeToUtc(date, '00:00', timeZone) : null;
 }
 
+/** The most a clock change adds to a local day. */
+const CLOCK_CHANGE_MS = 60 * 60 * 1000;
+
+/** Midnight after the local day that starts at `day`, clock changes included. */
+function nextDayStart(day: Date, timeZone: string): Date {
+  // Noon the next day by the clock is always inside the next local day.
+  const inNextDay = new Date(day.getTime() + DAY_MS + 12 * 60 * 60 * 1000);
+  return (
+    dayStart(localDateIn(inNextDay, timeZone), timeZone) ??
+    new Date(day.getTime() + DAY_MS)
+  );
+}
+
+/**
+ * Sunday at midnight where the asker is: the week the Activity page counts
+ * (`localWeekStart` in `packages/hooks/src/activity-standing.ts`). Without
+ * it the standing read counts the UTC week, which starts hours early or late
+ * for the member.
+ */
+export function localWeekStart(context: AgentToolContext): Date {
+  const today = localDateIn(context.now, context.timeZone);
+  const [year, month, day] = today.split('-').map(Number);
+  // The weekday of a calendar day is the same wherever it is read.
+  const sunday = new Date(Date.UTC(year, month - 1, day));
+  sunday.setUTCDate(sunday.getUTCDate() - sunday.getUTCDay());
+  return (
+    dayStart(sunday.toISOString().slice(0, 10), context.timeZone) ?? context.now
+  );
+}
+
 export interface ReadWindow {
   start: Date;
   end: Date;
@@ -168,10 +203,12 @@ export function readWindow(
   context: AgentToolContext,
   defaults: { backDays: number; aheadDays: number; maxDays: number },
 ): ReadWindow {
-  const from = dayStart(args.from, context.timeZone);
-  const toStart = dayStart(args.to, context.timeZone);
+  let from = dayStart(args.from, context.timeZone);
+  let lastDay = dayStart(args.to, context.timeZone);
+  // The two days the wrong way round still name the same stretch.
+  if (from && lastDay && lastDay < from) [from, lastDay] = [lastDay, from];
   // `to` names a whole day, so the window runs to the start of the next one.
-  const to = toStart ? new Date(toStart.getTime() + DAY_MS) : null;
+  const to = lastDay ? nextDayStart(lastDay, context.timeZone) : null;
   const now = context.now.getTime();
   let start = from ?? new Date(now - defaults.backDays * DAY_MS);
   let end = to ?? new Date(now + defaults.aheadDays * DAY_MS);
@@ -183,9 +220,9 @@ export function readWindow(
   if (to && !from && start >= end) {
     start = new Date(end.getTime() - defaults.maxDays * DAY_MS);
   }
-  if (end < start) [start, end] = [end, start];
   const longest = defaults.maxDays * DAY_MS;
-  const shortened = end.getTime() - start.getTime() > longest;
+  // A day the clocks go back is 25 hours long, and it is still one day.
+  const shortened = end.getTime() - start.getTime() > longest + CLOCK_CHANGE_MS;
   if (shortened) {
     // Keep the end the model named when it named only that one.
     if (to && !from) start = new Date(end.getTime() - longest);
@@ -260,6 +297,45 @@ export function matchByName<T>(
 }
 
 /**
+ * The members a typed name could be, strongest reading first, the way Act
+ * reads a name an officer typed (`membersNamed` in `../../act/act-people.ts`):
+ * the whole name; then every typed word being one of the member's words (a
+ * first name, a last name, both in either order); then every typed word
+ * starting one ("Jor" for Jordan); then, as the directory's search box does,
+ * the typed letters anywhere in the name. Only the name is matched, never an
+ * email or a profile field, so a lookup cannot confirm a contact detail.
+ */
+export function matchPerson<T>(
+  items: readonly T[],
+  nameOf: (item: T) => string,
+  query: string,
+): T[] {
+  const wanted = plainName(query);
+  if (!wanted) return [];
+  const want = wanted.split(' ');
+  const named = items.map((item) => {
+    const name = plainName(nameOf(item));
+    return { item, name, words: name.split(' ') };
+  });
+  const pick = (test: (entry: (typeof named)[number]) => boolean) =>
+    named.filter(test).map(({ item }) => item);
+  const exact = pick(({ name }) => name === wanted);
+  if (exact.length > 0) return exact;
+  const whole = pick(({ words }) => want.every((word) => words.includes(word)));
+  if (whole.length > 0) return whole;
+  if (want.every((word) => word.length >= 3)) {
+    const starts = pick(({ words }) =>
+      want.every((word) => words.some((have) => have.startsWith(word))),
+    );
+    if (starts.length > 0) return starts;
+  }
+  // Spaces off both, so "obrien" finds O'Brien and "maryann" Mary Ann.
+  const run = wanted.replace(/ /g, '');
+  if (run.length < 3) return [];
+  return pick(({ name }) => name.replace(/ /g, '').includes(run));
+}
+
+/**
  * Whether `name` is in `text` as a whole name and not as the start of a
  * longer one: "Sam" is not named by a line about "Samuel".
  */
@@ -301,13 +377,31 @@ export class People {
     return name;
   }
 
-  /** The members named in `text`, which may have been cut since they were written. */
+  /**
+   * The members named in `text`, which may have been cut since they were
+   * written. Longer names are looked for first and taken out as they are
+   * found, so "Sam Lee" in a line does not also name a member called "Sam".
+   */
   entities(text: string): AgentEntity[] {
+    let left = text;
+    const found = new Set<string>();
+    const longestFirst = [...new Set(this.#used.values())].sort(
+      (a, b) => b.length - a.length,
+    );
+    for (const name of longestFirst) {
+      if (!namesWhole(left, name)) continue;
+      found.add(name);
+      left = left.split(name).join('\n');
+    }
+    // In the order they were written; two members with one name are both
+    // named by it.
     return [...this.#used]
-      .filter(([, name]) => namesWhole(text, name))
+      .filter(([, name]) => found.has(name))
       .map(([id, name]) => ({ type: 'member' as const, id, name }));
   }
 }
+
+const ARG_IN_ID_MAX = 40;
 
 /**
  * A source id for a list with no single record behind it. The arguments are
@@ -319,11 +413,14 @@ export function listSourceId(
   ...args: (string | number | null | undefined)[]
 ): string {
   const key = args
-    .map((arg) =>
-      plainName(String(arg ?? ''))
-        .replace(/ /g, '-')
-        .slice(0, 40),
-    )
+    .map((arg) => {
+      const plain = plainName(String(arg ?? '')).replace(/ /g, '-');
+      // A long argument keeps its start for reading and gains a digest of
+      // the whole, so two that differ only late are still two sources.
+      return plain.length <= ARG_IN_ID_MAX
+        ? plain
+        : `${plain.slice(0, ARG_IN_ID_MAX)}~${createHash('sha256').update(plain).digest('hex').slice(0, 8)}`;
+    })
     .join(':')
     .replace(/:+$/, '');
   return key ? `tool:${tool}:${key}` : `tool:${tool}`;

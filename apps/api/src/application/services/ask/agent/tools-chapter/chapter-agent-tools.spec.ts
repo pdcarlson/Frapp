@@ -147,8 +147,8 @@ describe('Chapter agent tools', () => {
 
 /**
  * A tool changes nothing. Checked on the sources, like
- * `../../ask-posts-nothing.spec.ts` checks Ask's own lanes (which does not
- * read this folder): every call a tool makes on a service it holds is on the
+ * `../../ask-posts-nothing.spec.ts` checks Ask's own lanes (it reads this
+ * folder too, against its own list): every call a tool makes on a service it holds is on the
  * list below, and each one on the list is a read. A new call fails here
  * until someone reads what it does.
  *
@@ -167,7 +167,6 @@ const READS = new Set([
   'members.findByUserAndChapter',
   'members.findProfilesByChapter',
   'members.findRosterByChapter',
-  'members.searchByChapterAndName',
   'points.getLeaderboard',
   'points.getUserSummary',
   'rbac.findByChapter',

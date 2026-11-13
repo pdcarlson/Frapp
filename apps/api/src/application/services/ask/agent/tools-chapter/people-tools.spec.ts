@@ -51,13 +51,13 @@ beforeEach(() => jest.clearAllMocks());
 describe('find_member', () => {
   const tool = (search: jest.Mock) =>
     new FindMemberAgentTool(
-      { searchByChapterAndName: search } as never,
+      { findProfilesByChapter: search } as never,
       rbac as never,
       groups as never,
     );
 
   it("gives one person's roles, groups and year, and no contact detail", async () => {
-    const search = jest.fn(async () => [dana]);
+    const search = jest.fn(async () => [dana, avery, old]);
     const result = await tool(search).run({ name: 'Dana' }, context);
 
     expect(linesOf(result)).toEqual([
@@ -80,12 +80,36 @@ describe('find_member', () => {
     }
   });
 
-  it('searches the directory as the asker, in their chapter, and never by email', async () => {
-    const search = jest.fn(async () => [dana]);
-    await tool(search).run({ name: "O'Brien" }, context);
-    expect(search).toHaveBeenCalledWith('chapter-a', "O'Brien", 'user-1', {
-      matchEmail: false,
+  it("reads the directory of the asker's chapter and matches the name alone", async () => {
+    const search = jest.fn(async () => [dana, avery, old]);
+    // Avery's email holds "example", Dana's major is Physics: neither is a name.
+    for (const name of ['example', 'avery@example.com', 'Physics', 'Troy']) {
+      const result = await tool(search).run({ name }, context);
+      expect(result.sources).toEqual([]);
+    }
+    expect(search).toHaveBeenCalledWith('chapter-a');
+  });
+
+  it('reads a name the way a person types one', async () => {
+    const obrien = profile({
+      user_id: 'user-5',
+      display_name: "Seán O'Brien",
+      role_ids: [],
     });
+    const search = jest.fn(async () => [dana, avery, old, obrien]);
+    const named = async (name: string) =>
+      (await tool(search).run({ name }, context)).entities.map(
+        (entity) => entity.name,
+      );
+    // Either order, part of a name, without the accent or the apostrophe.
+    await expect(named('reyes dana')).resolves.toEqual(['Dana Reyes']);
+    await expect(named('mor')).resolves.toEqual(['Morgan Diaz']);
+    await expect(named('sean obrien')).resolves.toEqual(["Seán O'Brien"]);
+    await expect(named('O Brien')).resolves.toEqual(["Seán O'Brien"]);
+    await expect(named('ey')).resolves.toEqual([]);
+    // A whole word wins over the same letters inside a longer one.
+    await expect(named('lin')).resolves.toEqual(['Avery Lin']);
+    await expect(named('very')).resolves.toEqual(['Avery Lin']);
   });
 
   it('returns every member an ambiguous name fits, each as an entity', async () => {
@@ -93,6 +117,7 @@ describe('find_member', () => {
       profile({ user_id: id, display_name: name, role_ids: [] });
     const search = jest.fn(async () => [
       jordan('user-8', 'Jordan Park'),
+      dana,
       jordan('user-7', 'Jordan Lee'),
     ]);
     const result = await tool(search).run({ name: 'jordan' }, context);
@@ -107,23 +132,6 @@ describe('find_member', () => {
       'user-8',
     ]);
     expect(result.note).toMatch(/More than one member matches/);
-  });
-
-  it('falls back to the words of the name when the whole of it finds nobody', async () => {
-    const search = jest.fn(async (_chapter: string, query: string) =>
-      query === 'reyes' || query === 'dana'
-        ? [dana]
-        : query === 'lin'
-          ? [avery]
-          : [],
-    );
-    const result = await tool(search).run({ name: 'Reyes Dana Lin' }, context);
-    // Dana fits two of the words, so she comes first.
-    expect(
-      linesOf(result)
-        .slice(1)
-        .map((line) => line.split(':')[0]),
-    ).toEqual(['Dana Reyes', 'Avery Lin']);
   });
 
   it('keeps a name that tries to pass for a role on one line, as a name', async () => {
@@ -159,7 +167,7 @@ describe('find_member', () => {
   });
 
   it('reads nothing for an empty name, and says when nobody matches', async () => {
-    const search = jest.fn(async () => []);
+    const search = jest.fn(async () => [dana, avery]);
     const empty = await tool(search).run({ name: ' . ' }, context);
     expect(empty).toMatchObject({ sources: [], entities: [] });
     expect(search).not.toHaveBeenCalled();

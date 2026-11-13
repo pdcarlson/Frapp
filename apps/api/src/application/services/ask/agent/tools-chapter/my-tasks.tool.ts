@@ -21,7 +21,13 @@ import {
   quoted,
   todayLine,
 } from './chapter-tool-kit';
-import { awaitsConfirm, dueFirst, isPastDue, whenDue } from './task-lines';
+import {
+  awaitsConfirm,
+  dueFirst,
+  isPastDue,
+  latestFinishFirst,
+  whenDue,
+} from './task-lines';
 
 /** How many of the asker's tasks are read, and how many shown. */
 const READ_LIMIT = 100;
@@ -85,7 +91,8 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
         : null;
 
     if (done) {
-      const rows = mine.map((task) => {
+      // The read is newest created first; the list is latest finish first.
+      const rows = [...mine].sort(latestFinishFirst).map((task) => {
         const parts = [
           `${quoted(task.title)}: finished${task.confirmed_at ? ` on ${longDay(task.confirmed_at, timeZone)}` : ''}`,
           assignedBy(task),
@@ -95,7 +102,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
       });
       const summary = [
         todayLine(context),
-        `Your ${count(rows.length, 'most recently finished task')}, newest first.`,
+        `${count(rows.length, 'finished task')} of this member's, the latest finish first.`,
       ];
       const shown = fitRows(summary, rows, DONE_LIMIT);
       return found(
@@ -110,7 +117,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
         }),
         people,
         mine.length >= DONE_LIMIT
-          ? `Only the newest ${DONE_LIMIT} finished tasks are read.`
+          ? `Only the ${DONE_LIMIT} most recently created finished tasks are read, so an older task finished lately may be missing.`
           : null,
       );
     }

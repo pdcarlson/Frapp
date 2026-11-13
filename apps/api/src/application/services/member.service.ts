@@ -969,12 +969,7 @@ export class MemberService {
     chapterId: string,
     query: string,
     viewerUserId: string,
-    // `matchEmail: false` is for a caller that must not learn anything about
-    // an address, not even that it contains the query: Frapp AI's member
-    // lookup (#4901), whose results never carry contact details.
-    options: { matchEmail?: boolean } = {},
   ): Promise<MemberProfile[]> {
-    const matchEmail = options.matchEmail ?? true;
     const members = await this.memberRepo.findByChapter(chapterId);
     if (!members.length) return [];
 
@@ -991,7 +986,7 @@ export class MemberService {
         .filter(
           (u) =>
             u.display_name.toLowerCase().includes(q) ||
-            (matchEmail && u.email.toLowerCase().includes(q)),
+            u.email.toLowerCase().includes(q),
         )
         .map((u) => u.id),
     );

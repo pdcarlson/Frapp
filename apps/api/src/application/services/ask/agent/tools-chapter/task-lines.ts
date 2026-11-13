@@ -44,3 +44,11 @@ export function awaitsConfirm(task: TaskView): boolean {
 export function isPastDue(task: TaskView): boolean {
   return task.status === TaskStatus.OVERDUE;
 }
+
+/** Latest finish first; a task with no finish time recorded goes last. */
+export function latestFinishFirst(
+  a: Pick<TaskView, 'confirmed_at'>,
+  b: Pick<TaskView, 'confirmed_at'>,
+): number {
+  return (b.confirmed_at ?? '').localeCompare(a.confirmed_at ?? '');
+}

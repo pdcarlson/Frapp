@@ -17,6 +17,7 @@ import {
   found,
   listSourceId,
   liveSource,
+  localWeekStart,
   longDay,
   nothing,
   quoted,
@@ -76,9 +77,14 @@ export class MyHoursAgentTool implements AgentReadTool<Args> {
         startDate: days.from,
         endDate: days.to,
       }),
-      this.standing.getStanding(chapterId, userId, context.enabledModules, {
-        now,
-      }),
+      // Only the hours part is used, so the points and events parts are
+      // switched off instead of being worked out and thrown away.
+      this.standing.getStanding(
+        chapterId,
+        userId,
+        { ...context.enabledModules, points: false, events: false },
+        { now, weekStart: localWeekStart(context) },
+      ),
     ]);
     const minutesOf = (status: ServiceEntryStatus) =>
       entries

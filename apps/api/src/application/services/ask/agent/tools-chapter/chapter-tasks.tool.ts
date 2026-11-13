@@ -18,7 +18,7 @@ import {
   listSourceId,
   liveSource,
   longDay,
-  matchByName,
+  matchPerson,
   nothing,
   People,
   quoted,
@@ -30,6 +30,7 @@ import {
   dueDay,
   dueFirst,
   isPastDue,
+  latestFinishFirst,
   whenDue,
 } from './task-lines';
 
@@ -97,7 +98,7 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
     let kept = all;
     const notes: string[] = [];
     if (args.assignee) {
-      const owners = matchByName(
+      const owners = matchPerson(
         roster,
         (entry) => entry.display_name,
         args.assignee,
@@ -139,7 +140,8 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
       args.due_before,
     );
     if (done) {
-      const rows = kept.map((task) => {
+      // The read is newest created first; the list is latest finish first.
+      const rows = [...kept].sort(latestFinishFirst).map((task) => {
         const parts = [
           `${quoted(task.title)}: done by ${people.name(task.assignee_id)}${task.confirmed_at ? `, finished on ${longDay(task.confirmed_at, timeZone)}` : ''}`,
           task.point_reward ? `Worth ${task.point_reward} points` : null,
@@ -148,7 +150,7 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
       });
       const summary = [
         todayLine(context),
-        `The ${count(rows.length, 'most recently finished task')}, newest first.`,
+        `${count(rows.length, 'finished task')}, the latest finish first.`,
       ];
       const shown = fitRows(summary, rows, DONE_LIMIT);
       return found(
@@ -163,11 +165,14 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
         }),
         people,
         all.length >= DONE_LIMIT
-          ? `Only the newest ${DONE_LIMIT} finished tasks are read.`
+          ? `Only the ${DONE_LIMIT} most recently created finished tasks are read, so an older task finished lately may be missing.`
           : null,
       );
     }
 
+    const narrowed = Boolean(
+      args.assignee || args.due_before || args.status !== 'unfinished',
+    );
     const pastDue = kept.filter(isPastDue);
     const waiting = kept.filter(awaitsConfirm);
     // Nobody confirms their own task (`TaskService.confirmCompletion`), so
@@ -175,11 +180,14 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
     const forAsker = waiting.filter((task) => task.assignee_id !== userId);
     const summary = [
       todayLine(context),
-      `Unfinished tasks: ${kept.length}.`,
+      // A narrowed read says so: its count is not the chapter's.
+      narrowed
+        ? `Unfinished tasks that fit what was asked: ${kept.length}.`
+        : `Unfinished tasks: ${kept.length}.`,
       `Past due: ${pastDue.length}.`,
       `Marked done and waiting for an officer to confirm: ${waiting.length}.`,
       `Of those, the member asking can confirm ${forAsker.length}.`,
-      ...this.ownerLines(kept, people),
+      ...this.ownerLines(kept, people, narrowed),
     ];
     // Past due first, longest overdue at the top; then what is waiting on a
     // confirm; then the rest by due day.
@@ -225,7 +233,11 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
   }
 
   /** One line per owner, the most past due first: "who is behind" without adding up. */
-  private ownerLines(tasks: readonly TaskView[], people: People): string[] {
+  private ownerLines(
+    tasks: readonly TaskView[],
+    people: People,
+    narrowed: boolean,
+  ): string[] {
     const owners = new Map<string, { open: number; pastDue: number }>();
     for (const task of tasks) {
       const owner = owners.get(task.assignee_id) ?? { open: 0, pastDue: 0 };
@@ -241,11 +253,11 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
       .slice(0, OWNERS_LIMIT)
       .map(
         ([id, owner]) =>
-          `${people.name(id)} has ${owner.open} unfinished, ${owner.pastDue} past due.`,
+          `${people.name(id)} has ${owner.open} ${narrowed ? 'of these' : 'unfinished'}, ${owner.pastDue} past due.`,
       );
     if (ranked.length > OWNERS_LIMIT) {
       lines.push(
-        `${count(ranked.length - OWNERS_LIMIT, 'more member')} with unfinished tasks not counted one by one here.`,
+        `${count(ranked.length - OWNERS_LIMIT, 'more member')} with ${narrowed ? 'tasks that fit' : 'unfinished tasks'} not counted one by one here.`,
       );
     }
     return [`Members with unfinished tasks: ${owners.size}.`, ...lines];

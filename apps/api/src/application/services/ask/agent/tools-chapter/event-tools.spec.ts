@@ -1,5 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
-import { askerContext, linesOf } from '#test/helpers/agent-tool.fixture';
+import {
+  askerContext,
+  linesOf,
+  bigRoster,
+  expectNothingLeaked,
+} from '#test/helpers/agent-tool.fixture';
 import { AttendanceSummaryAgentTool } from './attendance-summary.tool';
 import { EventAttendanceAgentTool } from './event-attendance.tool';
 import { EventsAgentTool } from './events.tool';
@@ -570,5 +575,53 @@ describe('attendance_summary', () => {
       entities: [],
       note: 'No event in that range has attendance marked.',
     });
+  });
+});
+
+describe('attendance tools at the size of a real chapter', () => {
+  const size = 400;
+  const everyone = {
+    findRosterByChapter: jest.fn(async () => bigRoster(size)),
+  };
+  const marks = Array.from({ length: size }, (_, index) =>
+    row(`user-${index + 1}`, index % 3 === 0 ? 'ABSENT' : 'PRESENT'),
+  );
+  const events = { findByChapter: jest.fn(async () => [lastWeek]) };
+  const attendance = { getAttendance: jest.fn(async () => marks) };
+
+  it('event_attendance lists what fits, says what it cut, and leaks nothing', async () => {
+    const tool = new EventAttendanceAgentTool(
+      events as never,
+      attendance as never,
+      everyone as never,
+    );
+    const result = await tool.run({ event: 'meeting', on: '' }, host);
+    const lines = linesOf(result);
+    expect(result.sources[0].text.length).toBeLessThanOrEqual(12_000);
+    expect(lines).toContain('Present: 266. Late: 0. Absent: 134. Excused: 0.');
+    const listed = lines.filter((line) => /: (absent|present)\.$/.test(line));
+    expect(listed.length).toBeLessThanOrEqual(200);
+    expect(result.note).toBe(`Showing ${listed.length} of ${size} members.`);
+    expect(result.entities).toHaveLength(listed.length);
+    expectNothingLeaked(result);
+  });
+
+  it('attendance_summary lists what fits, says what it cut, and leaks nothing', async () => {
+    const tool = new AttendanceSummaryAgentTool(
+      events as never,
+      attendance as never,
+      everyone as never,
+    );
+    const result = await tool.run({ from: '', to: '' }, host);
+    const lines = linesOf(result);
+    expect(result.sources[0].text.length).toBeLessThanOrEqual(12_000);
+    expect(lines).toContain('Members with one or more absences: 134.');
+    const listed = lines.filter((line) => /: attended \d/.test(line));
+    expect(listed.length).toBeLessThanOrEqual(150);
+    expect(lines.at(-1)).toBe(
+      `${size - listed.length} more members not listed here, none with more absences than the last one listed.`,
+    );
+    expect(result.note).toBe(`Showing ${listed.length} of ${size} members.`);
+    expectNothingLeaked(result);
   });
 });
