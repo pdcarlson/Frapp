@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { moduleDisabledMessage } from "@repo/validation";
+import {
+  TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
+  moduleDisabledMessage,
+} from "@repo/validation";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import {
-  taskProofRequiredRefusal,
+  TASK_PROOF_REFUSAL,
+  taskProofRefusal,
   taskStatusGateRefusal,
 } from "./status-refusal";
 
@@ -31,26 +35,43 @@ describe("taskStatusGateRefusal", () => {
       taskStatusGateRefusal({ statusCode: 403, message: "Forbidden resource" }),
     ).toBeNull();
     expect(
-      taskStatusGateRefusal({ statusCode: 400, message: "Invalid status transition" }),
+      taskStatusGateRefusal({
+        statusCode: 400,
+        message: "Invalid status transition",
+      }),
     ).toBeNull();
     expect(taskStatusGateRefusal(undefined)).toBeNull();
   });
 });
 
-describe("taskProofRequiredRefusal (#4565)", () => {
-  it("says where to add the photo when the task needs one, by code", () => {
+describe("taskProofRefusal (#4565, #4635)", () => {
+  it("asks for proof when the task needs it, by code, not sentence", () => {
     expect(
-      taskProofRequiredRefusal({
+      taskProofRefusal({
         statusCode: 400,
         code: "task.proof_required",
         message: "reworded someday",
       }),
-    ).toMatch(/on the web/);
+    ).toBe(TASK_PROOF_REFUSAL);
+    expect(TASK_PROOF_REFUSAL).not.toMatch(/web/);
   });
 
-  it("reads nothing into any other 400", () => {
+  it("asks for something new on a sent-back task", () => {
     expect(
-      taskProofRequiredRefusal({ statusCode: 400, message: "Bad Request" }),
+      taskProofRefusal({
+        statusCode: 400,
+        code: "task.resubmit_needs_change",
+        message: "anything",
+      }),
+    ).toBe(TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE);
+  });
+
+  it("reads nothing into any other refusal", () => {
+    expect(taskProofRefusal({ statusCode: 400, message: "Bad Request" })).toBe(
+      null,
+    );
+    expect(
+      taskProofRefusal({ statusCode: 403, code: "task.proof_required" }),
     ).toBeNull();
   });
 });

@@ -14,7 +14,11 @@
  */
 
 import { codeOf, statusOf } from "@repo/api-sdk";
-import { TASK_PROOF_REQUIRED_CODE } from "@repo/validation";
+import {
+  TASK_PROOF_REQUIRED_CODE,
+  TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+  TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
+} from "@repo/validation";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -27,17 +31,30 @@ export function taskStatusGateRefusal(error: unknown): string | null {
   return null;
 }
 
+/** The line for a Mark done refused for want of proof. */
+export const TASK_PROOF_REFUSAL =
+  "This task needs proof to show it's done. Add it, then mark it done.";
+
 /**
- * The board's line when Mark done is refused because the task needs a proof
- * photo (`TASK_PROOF_REQUIRED_CODE`, #4565), or `null` for anything else.
- * The phone can't attach one until the second half of #4565 ships, so the
- * line says where it can be done rather than reverting the box in silence.
- * Matched by the code, never the message.
+ * Was this Mark done refused for want of proof (`TASK_PROOF_REQUIRED_CODE`,
+ * #4565) or, on a task an officer sent back, of something new
+ * (`TASK_RESUBMIT_NEEDS_CHANGE_CODE`, #4635)? The line to show, or `null` for
+ * any other failure. Matched by the code, never the message, as an installed
+ * build must be.
+ *
+ * The phone asks for proof before it sends (`markDoneCheck`), so this is the
+ * case where the task changed after it was read (an officer switched it to
+ * Photo, or sent it back). The board and the task card then open the Mark
+ * done sheet with this line in it, so the member adds what's missing there.
  */
-export function taskProofRequiredRefusal(error: unknown): string | null {
-  return statusOf(error) === 400 && codeOf(error) === TASK_PROOF_REQUIRED_CODE
-    ? "This task needs proof of the finished job. Add it and mark it done from Frapp on the web."
-    : null;
+export function taskProofRefusal(error: unknown): string | null {
+  if (statusOf(error) !== 400) return null;
+  const code = codeOf(error);
+  if (code === TASK_PROOF_REQUIRED_CODE) return TASK_PROOF_REFUSAL;
+  if (code === TASK_RESUBMIT_NEEDS_CHANGE_CODE) {
+    return TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE;
+  }
+  return null;
 }
 
 /**
