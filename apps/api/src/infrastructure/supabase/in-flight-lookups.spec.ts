@@ -1,4 +1,4 @@
-import { IN_FLIGHT_JOIN_WINDOW_MS, InFlightLookups } from './guard-lookup';
+import { IN_FLIGHT_JOIN_WINDOW_MS, InFlightLookups } from './in-flight-lookups';
 
 describe('InFlightLookups (#3728)', () => {
   const deferred = <T>() => {

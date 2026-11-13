@@ -228,6 +228,45 @@ export const HEADCOUNT_SLOTS: readonly {
 export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
 
 /**
+ * A form card in chat (`kind: 'form'`, #3926 step 3): a questionnaire posted
+ * as a card that opens a full-page form, like Google Forms. The chat send
+ * route checks the card against these (`normalizeFormCard` in the API), the
+ * answer route checks every answer, and the builders on both clients stop at
+ * the same numbers. A form ends at a set time on the sign-up's limit,
+ * {@link SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS}.
+ */
+export const FORM_TITLE_MAX_LENGTH = 200;
+export const FORM_DESCRIPTION_MAX_LENGTH = 2_000;
+export const FORM_QUESTIONS_MAX = 40;
+export const FORM_QUESTION_TITLE_MAX_LENGTH = 300;
+export const FORM_OPTIONS_MAX = 30;
+export const FORM_OPTION_LABEL_MAX_LENGTH = 200;
+/** The longest answer to a short-answer question. */
+export const FORM_SHORT_ANSWER_MAX_LENGTH = 300;
+/** The longest answer to a paragraph question. */
+export const FORM_PARAGRAPH_ANSWER_MAX_LENGTH = 4_000;
+/**
+ * The kinds of question a form asks. `multiple_choice` and `dropdown` take one
+ * option, `checkboxes` any number, `yes_no` a yes or a no, and the two text
+ * kinds a line or a paragraph.
+ */
+export const FORM_QUESTION_TYPES = [
+  "short_answer",
+  "paragraph",
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+  "yes_no",
+] as const;
+export type FormQuestionType = (typeof FORM_QUESTION_TYPES)[number];
+/** The question types that list options a member picks from. */
+export const FORM_CHOICE_QUESTION_TYPES: readonly FormQuestionType[] = [
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+];
+
+/**
  * Pledge classes and a member's order number (#3939). The name and number
  * bounds mirror the CHECK constraints in
  * `20261110170000_chapter_pledge_classes.sql`; the two counts are API-side

@@ -951,7 +951,7 @@ describe('ChapterGuard', () => {
     const tablesQueried = () =>
       mockFrom.mock.calls.map(([table]: [string]) => table).sort();
 
-    it('shares the user and chapter lookups between concurrent requests, but reads membership per request', async () => {
+    it('shares the user and chapter lookups between concurrent requests, and reads membership per request outside a request store', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
         member: { id: 'member-1', role_ids: ['role-1'] },
@@ -967,8 +967,9 @@ describe('ChapterGuard', () => {
         ),
       ).resolves.toEqual([true, true, true]);
 
-      // Membership stays per request: a revoked member must be refused by
-      // the very next request (spec/behavior/multi-tenancy.md).
+      // No request store here, so each membership read is the request's own.
+      // Inside a GET's store a burst may join one (`readSharedInBurst`,
+      // #3752; covered in supabase-member.repository.spec.ts).
       expect(tablesQueried()).toEqual([
         'chapters',
         'members',

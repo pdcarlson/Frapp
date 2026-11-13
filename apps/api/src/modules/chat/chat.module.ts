@@ -17,6 +17,10 @@ import { ChatThreadController } from '../../interface/controllers/chat-thread.co
 import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatController } from '../../interface/controllers/chat.controller';
+import { ChatFormController } from '../../interface/controllers/chat-form.controller';
+import { ChatFormService } from '../../application/services/chat-form.service';
+import { SupabaseChatFormResponseRepository } from '../../infrastructure/supabase/repositories/supabase-chat-form-response.repository';
+import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import { GifController } from '../../interface/controllers/gif.controller';
 import { GifService } from '../../application/services/gif.service';
 import { KlipyGifSearch } from '../../infrastructure/gifs/klipy-gif-search';
@@ -93,6 +97,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
   ],
   controllers: [
     ChatController,
+    // A member's own answers to a form card (#3926 step 3).
+    ChatFormController,
     ChatBookmarkController,
     // Report and block (#2257) live beside chat rather than in a module of
     // their own: both need `ChannelAccessService` and `MEMBER_REPOSITORY`,
@@ -140,6 +146,12 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // The chapter's channel and category order (owner, 2026-11-11).
     ChatChannelOrderService,
     ChatReactionService,
+    // Form cards' private answers (#3926 step 3).
+    ChatFormService,
+    {
+      provide: CHAT_FORM_RESPONSE_REPOSITORY,
+      useClass: SupabaseChatFormResponseRepository,
+    },
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.
     ChatBookmarkService,

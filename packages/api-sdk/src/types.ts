@@ -1417,8 +1417,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Close a sign-up card early (its creator, or channels:manage); claims already made stay */
-        post: operations["ChatController_closeSignup_v1"];
+        /** Close a sign-up or form card early (its creator, or channels:manage); answers already made stay */
+        post: operations["ChatController_closeCard_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1557,6 +1557,24 @@ export interface paths {
         get?: never;
         /** Set the caller's notification level for a channel */
         put: operations["ChatController_setChannelNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/form-response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own answers to a form card, or null before they answer */
+        get: operations["ChatFormController_getOwnResponse_v1"];
+        /** Save the caller's answers to a form card, replacing their last ones (until the form closes) */
+        put: operations["ChatFormController_saveResponse_v1"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4740,7 +4758,7 @@ export interface paths {
         put?: never;
         /**
          * Ask a question; the answer is streamed
-         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.
          */
         post: operations["AskController_ask_v1"];
         delete?: never;
@@ -4782,7 +4800,7 @@ export interface paths {
         };
         /**
          * The actions the caller can ask for
-         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.
          */
         get: operations["ActController_status_v1"];
         put?: never;
@@ -5924,7 +5942,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup" | "form";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -5943,7 +5961,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -6100,7 +6118,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -6170,7 +6188,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
             gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
@@ -6231,6 +6249,22 @@ export interface components {
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
+        };
+        FormResponseDto: {
+            answers: {
+                [key: string]: string | string[];
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OwnFormResponseDto: {
+            response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        SaveFormResponseDto: {
+            /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
+            answers: {
+                [key: string]: string | string[];
+            };
         };
         BookmarkedMessageDto: {
             /** Format: uuid */
@@ -8882,6 +8916,12 @@ export interface components {
             saved_until: string | null;
             diagnostics: components["schemas"]["AskDiagnosticsDto"];
         };
+        AskHistoryTurnDto: {
+            /** @description What the member typed in that turn. */
+            question: string;
+            /** @description What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages). */
+            answer: string;
+        };
         AskRequestDto: {
             /**
              * @description The question, in the member’s own words.
@@ -8890,6 +8930,10 @@ export interface components {
             question: string;
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
+            /** @description The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it. */
+            history?: components["schemas"]["AskHistoryTurnDto"][];
+            /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
+            actions?: boolean;
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -8951,6 +8995,8 @@ export interface components {
             amount: number;
             /** @description As the `needs_event` answer carried it. Empty names the event instead. */
             reason?: string;
+            /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
+            keep_earlier?: boolean;
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -12392,7 +12438,7 @@ export interface operations {
             };
         };
     };
-    ChatController_closeSignup_v1: {
+    ChatController_closeCard_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -12747,6 +12793,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getOwnResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnFormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_saveResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFormResponseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponseDto"];
                 };
             };
             /** @description Error */

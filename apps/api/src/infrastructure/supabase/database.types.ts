@@ -34,6 +34,7 @@ import type {
   ChapterWorkflow,
   ChatChannel,
   ChatChannelCategory,
+  ChatFormResponse,
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
@@ -176,6 +177,7 @@ export interface Database {
       chapters: TableDefinition<Chapter>;
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
+      chat_form_responses: TableDefinition<ChatFormResponse>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
@@ -941,6 +943,15 @@ export interface Database {
           p_member_role_id: string;
         };
         Returns: SemesterArchive;
+      };
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
+      save_chat_form_response: {
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_answers: Json;
+        };
+        Returns: ChatFormResponse;
       };
       /**
        * `20261106190000` (#585). Backwork search over title, course,

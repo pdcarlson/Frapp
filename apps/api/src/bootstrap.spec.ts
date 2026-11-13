@@ -4,6 +4,7 @@ import {
   Get,
   INestApplication,
   Post,
+  Put,
   Req,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -71,6 +72,25 @@ class DiscordImportsEchoController {
   }
 }
 
+/** Stands in for chat's send and form-answer routes (#3926). */
+@Controller('channels')
+class ChannelsEchoController {
+  @Post(':id/messages')
+  send(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+
+  @Put('messages/:messageId/form-response')
+  answer(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+
+  @Post(':id/members')
+  other(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
 /** No `environment` configures for this process, which under Jest is `local`. */
 async function createConfiguredEchoApp(
   environment?: DeploymentEnvironment,
@@ -81,6 +101,7 @@ async function createConfiguredEchoApp(
       MeetingsEchoController,
       AiReportsEchoController,
       DiscordImportsEchoController,
+      ChannelsEchoController,
     ],
   }).compile();
   const app = moduleRef.createNestApplication();
@@ -109,7 +130,7 @@ describe('configureApp', () => {
 
     // A two-hour transcript as notes, a sealed Ask receipt, a batch of 500
     // Discord upload paths: each passes Express's 100 KB default.
-    it.each(LARGE_JSON_BODY_PATHS)(
+    it.each(LARGE_JSON_BODY_PATHS.filter((path) => !path.includes(':')))(
       'takes a body over 100 KB on %s',
       async (path) => {
         const res = await request(app.getHttpServer())
@@ -125,7 +146,27 @@ describe('configureApp', () => {
         '/v1/meetings',
         '/v1/ai/reports',
         '/v1/discord-imports',
+        '/v1/channels/:id/messages',
+        '/v1/channels/messages/:messageId/form-response',
       ]);
+    });
+
+    // A full form card, or a member's answers to a long one (#3926), passes
+    // 100 KB; the channel's other routes keep the ceiling.
+    it('takes a large form on chat send and on form answers only', async () => {
+      const big = { text: 'x'.repeat(160_000) };
+      await request(app.getHttpServer())
+        .post('/v1/channels/c1/messages')
+        .send(big)
+        .expect(201);
+      await request(app.getHttpServer())
+        .put('/v1/channels/messages/m1/form-response')
+        .send(big)
+        .expect(200);
+      const other = await request(app.getHttpServer())
+        .post('/v1/channels/c1/members')
+        .send(big);
+      expect(other.status).toBeGreaterThanOrEqual(400);
     });
 
     // The larger ceiling is only for those prefixes: every other route, the ones a

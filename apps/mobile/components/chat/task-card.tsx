@@ -4,6 +4,7 @@ import type { TaskPayload } from "@repo/chat-core/cards";
 import {
   canEditCardTask,
   canReadCardTask,
+  isSentBack,
   readEditableCardTask,
   readLiveTask,
   taskDueLine,
@@ -25,13 +26,21 @@ import { can, isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import type { TaskEditTarget } from "@/lib/tasks/create-task";
+import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
+import { SendBackSheet } from "@/components/tasks/send-back-sheet";
+import { TaskProof } from "@/components/tasks/task-photos";
+import {
+  editTargetOfCardTask,
+  type TaskEditTarget,
+} from "@/lib/tasks/create-task";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
 import {
   TASK_CONFIRM_FAILURE,
+  taskProofRefusal,
   taskStatusGateRefusal,
 } from "@/lib/tasks/status-refusal";
+import { markDoneAsks, markDoneLabel } from "@/lib/tasks/task-photos";
 import { useFrappTheme } from "@/lib/theme";
 import {
   CardActions,
@@ -61,10 +70,17 @@ import { useCardWrite } from "./use-card-write";
  * (`spec/behavior/tasks.md` § Chat Integration). In short: no control until
  * the live task is read (#2065), the assignee walks Start then Mark done
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
- * rejects a completion, never their own (#1056); a `tasks:manage` holder also
+ * sends back a completion, never confirming their own (#1056); a
+ * `tasks:manage` holder also
  * gets Edit on an unconfirmed task (`canEditCardTask`, #4512), which opens the
  * board's Edit task sheet. The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
+ *
+ * Photos and proof (#4635): the card shows the task's reference photos and,
+ * above Confirm and Send back, its proof (`TaskProof`), the sent-back reason
+ * while it Needs changes, and the assignee's reply. Mark done on a task that
+ * asks for a photo or a link, or was sent back, opens the Mark done sheet;
+ * Send back opens a sheet that takes the required reason.
  *
  * Mobile has no toast, so a refusal is a line on the card (`useCardWrite`,
  * which the rush card shares). A gate refusal is in the board's own words (`taskStatusGateRefusal`) and withdraws the
@@ -130,12 +146,41 @@ export function TaskCard({
   const rejectTask = useRejectTask();
   // The refusal's lifecycle is the rush card's too (`useCardWrite`): a gate's
   // withdraws the controls until the member comes back to the thread or app.
-  const { refusal, act, disabled, hint } = useCardWrite({
+  const { refusal, act, latchGate, disabled, hint } = useCardWrite({
     gateRefusal: taskStatusGateRefusal,
     isConfirmed: frame.isConfirmed,
     pending:
       updateStatus.isPending || confirmTask.isPending || rejectTask.isPending,
   });
+
+  // Mark done's sheet (#4635), open while set: on a task that asks for proof
+  // or was sent back, or once a direct Mark done was refused for want of it
+  // (`problem`, the line it opens with). Send back's sheet takes the reason.
+  const [marking, setMarking] = useState<{ problem: string | null } | null>(
+    null,
+  );
+  const [sendingBack, setSendingBack] = useState(false);
+  const sentBack = live ? isSentBack(live) : false;
+  const proofKind = live?.proof_kind ?? "none";
+  const complete = () => {
+    if (markDoneAsks({ proofKind, sentBack })) {
+      setMarking({ problem: null });
+      return;
+    }
+    void act(async () => {
+      try {
+        await updateStatus.mutateAsync({
+          id: payload.task_id,
+          body: { status: "COMPLETED" },
+        });
+      } catch (error) {
+        // The task changed since it was read: ask for what it needs.
+        const problem = taskProofRefusal(error);
+        if (!problem) throw error;
+        setMarking({ problem });
+      }
+    }, "Couldn't mark the task complete.");
+  };
 
   return (
     <ChatCardShell
@@ -179,6 +224,21 @@ export function TaskCard({
         </>
       }
     >
+      {live ? (
+        // Before the actions, so an officer sees the proof before Confirm
+        // and Send back (#4635). Only a reader of the task gets `live`.
+        <TaskProof
+          task={{
+            id: live.id,
+            photos: live.photos,
+            proofLink: live.proof_link,
+            sentBackReason: live.sent_back_reason,
+            completionNote: live.completion_note,
+          }}
+          showProof
+          sentBack={sentBack}
+        />
+      ) : null}
       {controls.length > 0 || editable ? (
         <CardActions>
           {controls.includes("start") ? (
@@ -200,19 +260,10 @@ export function TaskCard({
           ) : null}
           {controls.includes("complete") ? (
             <CardButton
-              label={TASK_ACTION_LABELS.complete}
+              label={markDoneLabel(TASK_ACTION_LABELS.complete, proofKind)}
               disabled={disabled}
               accessibilityHint={hint}
-              onPress={() =>
-                void act(
-                  () =>
-                    updateStatus.mutateAsync({
-                      id: payload.task_id,
-                      body: { status: "COMPLETED" },
-                    }),
-                  "Couldn't mark the task complete.",
-                )
-              }
+              onPress={complete}
             />
           ) : null}
           {controls.includes("confirm") ? (
@@ -244,12 +295,7 @@ export function TaskCard({
               label={TASK_ACTION_LABELS.reject}
               disabled={disabled}
               accessibilityHint={hint}
-              onPress={() =>
-                void act(
-                  () => rejectTask.mutateAsync({ id: payload.task_id }),
-                  "Couldn't reject the task.",
-                )
-              }
+              onPress={() => setSendingBack(true)}
             />
           ) : null}
           {editable ? (
@@ -263,20 +309,54 @@ export function TaskCard({
                 hint ??
                 "Changes the task's title, assignee, due date or points."
               }
-              onPress={() =>
-                setEditing({
-                  id: editable.id,
-                  title: editable.title,
-                  assigneeId: editable.assignee_id,
-                  dueDay: editable.due_date,
-                  dueAt: editable.due_at,
-                  pointReward: editable.point_reward,
-                  storedStatus: editable.stored_status ?? null,
-                })
-              }
+              onPress={() => setEditing(editTargetOfCardTask(editable))}
             />
           ) : null}
         </CardActions>
+      ) : null}
+      {marking ? (
+        <MarkDoneSheet
+          key={payload.task_id}
+          task={{
+            id: payload.task_id,
+            title: payload.title,
+            proofKind,
+            sentBack,
+            sentBackReason: live?.sent_back_reason ?? null,
+            done: live?.stored_status === "COMPLETED",
+          }}
+          initialProblem={marking.problem}
+          onComplete={async (proof) => {
+            try {
+              await updateStatus.mutateAsync({
+                id: payload.task_id,
+                body: { status: "COMPLETED", ...proof },
+              });
+            } catch (error) {
+              // The sheet says why; a gate's also withdraws the card's
+              // controls, as one through `act` does.
+              latchGate(error);
+              throw error;
+            }
+          }}
+          onClosed={() => setMarking(null)}
+        />
+      ) : null}
+      {sendingBack ? (
+        <SendBackSheet
+          key={payload.task_id}
+          title={payload.title}
+          proofKind={proofKind}
+          onSubmit={async (body) => {
+            try {
+              await rejectTask.mutateAsync({ id: payload.task_id, body });
+            } catch (error) {
+              latchGate(error);
+              throw error;
+            }
+          }}
+          onClosed={() => setSendingBack(false)}
+        />
       ) : null}
       {editing ? (
         <NewTaskSheet
@@ -299,6 +379,8 @@ export function TaskCard({
  * the warning a member has to act on, so it is the one in red.
  */
 function statusHue(live: LiveTask, tokens: SignetTokens): string {
+  // Needs changes (#4635): back with its assignee, with something to fix.
+  if (isSentBack(live)) return tokens.color.semantic.warning;
   switch (live.status) {
     case "OVERDUE":
       return tokens.color.semantic.destructive;

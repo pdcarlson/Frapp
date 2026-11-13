@@ -1,5 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { TASK_ACTION_LABELS, taskStatusLabel } from "@repo/hooks";
+import {
+  TASK_ACTION_LABELS,
+  TASK_NEEDS_CHANGES_LABEL,
+  taskStatusLabel,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -12,7 +16,8 @@ import {
   formatPointsChip,
   isDueUrgent,
 } from "@/lib/tasks/format";
-import type { TaskRowModel } from "@/lib/tasks/board";
+import { rowIsSentBack, type TaskRowModel } from "@/lib/tasks/board";
+import { markDoneLabel } from "@/lib/tasks/task-photos";
 
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
@@ -85,10 +90,16 @@ function taskFacts(row: TaskRowModel, now: Date) {
   const started = row.storedStatus === "IN_PROGRESS";
   const confirmed = row.isDone && row.pointsAwarded;
 
+  // The shared words with every field they read (#4635): "Done" for a
+  // completion that needed no sign-off, "Needs changes" ahead of the due
+  // line while an officer's send-back waits on the member.
+  const sentBack = rowIsSentBack(row);
   const statusLine = row.isDone
     ? taskStatusLabel({
         status: "COMPLETED",
         points_awarded: row.pointsAwarded,
+        point_reward: row.pointReward,
+        proof_kind: row.proofKind,
       })
     : formatDueSubtitle(row.dueDate, now);
   // How far through its checklist it is, beside the due: "Due today · 2 of
@@ -97,7 +108,18 @@ function taskFacts(row: TaskRowModel, now: Date) {
     !row.isDone && row.subtasks.length > 0
       ? `${row.subtasks.filter((subtask) => subtask.done).length} of ${row.subtasks.length}`
       : null;
-  const subtitle = [statusLine, progress].filter(Boolean).join(" · ") || null;
+  // Its reference photos, counted (#4635); they open from the task's sheet.
+  const references = row.photos.filter(
+    (photo) => photo.kind === "reference",
+  ).length;
+  const photos =
+    !row.isDone && references > 0
+      ? `${references} ${references === 1 ? "photo" : "photos"}`
+      : null;
+  const subtitle =
+    [sentBack ? TASK_NEEDS_CHANGES_LABEL : null, statusLine, progress, photos]
+      .filter(Boolean)
+      .join(" · ") || null;
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not
@@ -110,7 +132,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
 
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen
-    : TASK_ACTION_LABELS.complete;
+    : markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind);
   const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
 
   return { chip, started, confirmed, subtitle, urgent, toggleLabel, label };

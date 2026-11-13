@@ -355,13 +355,18 @@ describe('TaskController', () => {
         status: TaskStatus.IN_PROGRESS,
       } as any);
 
-      const result = await controller.rejectCompletion(chapterId, taskId, dto);
+      const result = await controller.rejectCompletion(
+        chapterId,
+        'admin-1',
+        taskId,
+        dto,
+      );
 
       expect(taskService.rejectCompletion).toHaveBeenCalledWith(
         taskId,
         chapterId,
         dto.comment,
-        { requirePhoto: undefined },
+        { requirePhoto: undefined, actorUserId: 'admin-1' },
       );
       expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });
@@ -378,13 +383,13 @@ describe('TaskController', () => {
         status: TaskStatus.IN_PROGRESS,
       } as any);
 
-      await controller.rejectCompletion(chapterId, taskId, dto);
+      await controller.rejectCompletion(chapterId, 'admin-1', taskId, dto);
 
       expect(taskService.rejectCompletion).toHaveBeenCalledWith(
         taskId,
         chapterId,
         'Blurry',
-        { requirePhoto: true },
+        { requirePhoto: true, actorUserId: 'admin-1' },
       );
     });
   });

@@ -803,7 +803,8 @@ test("resolveExpoConfig clears ambient build variables and restores process.env"
 });
 
 for (const [label, find, replace, expected] of [
-  ["renaming the screen's param", "useLocalSearchParams<{ id?:", "useLocalSearchParams<{ eventId?:", "id param"],
+  // The member line itself, since the generic wraps once it holds two params.
+  ["renaming the screen's param", "  id?: string | string[];", "  eventId?: string | string[];", "id param"],
 ]) {
   test(`${label} fails`, () => {
     const source = readRepo(EVENT_DETAILS);

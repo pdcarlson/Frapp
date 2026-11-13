@@ -59,5 +59,7 @@ import { RbacModule } from '../rbac/rbac.module';
       inject: [GivePointsActTool, CreateTaskActTool, CreateEventActTool],
     },
   ],
+  // For the conversation (`AskModule`), which asks the same service.
+  exports: [ActService],
 })
 export class ActModule {}

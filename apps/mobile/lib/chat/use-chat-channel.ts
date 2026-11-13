@@ -67,7 +67,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
   closePoll as closePollAction,
-  closeSignup as closeSignupAction,
+  closeCard as closeCardAction,
   setMessageFlag as setMessageFlagAction,
   deleteMessage,
   discardOutboxRow,
@@ -1142,7 +1142,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       }
       await withFailureMessage(
         (onError) =>
-          closeSignupAction({ ...ctx, onError }, { channelId, messageId }),
+          closeCardAction({ ...ctx, onError }, { channelId, messageId }),
         "Couldn't close sign-ups. Try again.",
       );
     },

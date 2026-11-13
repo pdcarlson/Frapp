@@ -762,14 +762,14 @@ export function useRejectTask() {
       /**
        * `comment` is the reason, which the server requires (#4635): it stays
        * on the task for the assignee. `require_photo` raises the task's proof
-       * to Photo. Optional here only for the phone's card until its reason
-       * sheet lands; without a reason the server refuses with a sentence.
+       * to Photo. Both apps' Send back sheets ask for the reason before they
+       * send.
        */
-      body?: { comment: string; require_photo?: boolean };
+      body: { comment: string; require_photo?: boolean };
     }) => {
       const { data, error } = await client.POST("/v1/tasks/{id}/reject", {
         params: { path: { id } },
-        body: body ?? {},
+        body,
       });
       if (error) throw error;
       return data;
@@ -779,8 +779,8 @@ export function useRejectTask() {
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
         sent_back_at: new Date().toISOString(),
-        sent_back_reason: body?.comment.trim() ?? null,
-        ...(body?.require_photo ? { proof_kind: "photo" } : {}),
+        sent_back_reason: body.comment.trim(),
+        ...(body.require_photo ? { proof_kind: "photo" } : {}),
         // A Done that needed no sign-off goes back unconfirmed (#4635).
         ...(row?.points_awarded
           ? { points_awarded: false, confirmed_at: null }

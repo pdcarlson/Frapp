@@ -50,6 +50,7 @@ vi.mock("@repo/hooks", async () => {
     // The event and task cards' reads and writes (#3185); their own specs
     // cover what each one does. Here they only have to draw.
     usePermissionList: () => [],
+    useEventCardExcuse: () => ({ kind: "none" }),
     // The hours and rush cards read the query itself (#3383).
     useMyPermissions: () => ({
       data: { permissions: rowPermissions.current },

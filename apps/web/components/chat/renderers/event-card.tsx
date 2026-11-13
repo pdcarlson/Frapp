@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
 import {
   countCheckedIn,
   useAttendance,
+  useEventCardExcuse,
   useMyPermissions,
   useNow,
 } from "@repo/hooks";
@@ -26,13 +28,13 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
+import { eventDeepLink } from "@/lib/events/event-links";
 
 interface EventCardProps {
   message: ChatMessage;
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
 }
-
 
 /**
  * Event card. The chat message is an immutable creation-time snapshot (name,
@@ -45,6 +47,13 @@ interface EventCardProps {
  * fires the existing check-in endpoint (the server enforces the window, role
  * gate, and one-per-member uniqueness; the gating here is UX-only). The
  * request and its toasts are `useSelfCheckIn`'s, shared with the event sheet.
+ *
+ * Can't make it (#4660): a member the event requires, by the card's own role
+ * fields (`useEventCardExcuse`), gets a secondary Can't make it that opens the
+ * event's sheet with the excuse line open (`/events?event=<id>&excuse=1`), as
+ * a calendar invite in Gmail or Slack carries its RSVP on the message. Once
+ * they've sent one, the card says where it stands instead. Nobody else sees
+ * either, and only those cards read anything for it.
  */
 export function EventCard({ message, isConfirmed }: EventCardProps) {
   const payload = readEventPayload(message);
@@ -70,6 +79,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const eventId = payload?.event_id ?? "";
   const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
+  const excuse = useEventCardExcuse(payload, new Date(now));
 
   if (!payload) {
     return (
@@ -140,27 +150,45 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           {checkedIn} checked in
         </p>
       ) : null}
-      {windowOpen ? (
+      {windowOpen || excuse.kind === "offer" ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            {...gate.controlProps(actionsDisabled)}
-            onClick={() => void checkIn.run(payload.event_id, payload.point_value)}
-          >
-            <Check className="h-4 w-4" />
-            Check in
-          </Button>
+          {windowOpen ? (
+            <Button
+              size="sm"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                void checkIn.run(payload.event_id, payload.point_value)
+              }
+            >
+              <Check className="h-4 w-4" />
+              Check in
+            </Button>
+          ) : null}
+          {excuse.kind === "offer" ? (
+            <Button asChild size="sm" variant="secondary">
+              <Link href={eventDeepLink(payload.event_id, { excuse: true })}>
+                Can&apos;t make it
+              </Link>
+            </Button>
+          ) : null}
           {/*
             Scoped to the open check-in window, like the button it explains — a
             timeline of past events would otherwise repeat one chapter-wide
             sentence under every event card.
           */}
-          <SubscriptionNotice
-            gate={gate}
-            feature="event check-in"
-            className="mb-0 w-full"
-          />
+          {windowOpen ? (
+            <SubscriptionNotice
+              gate={gate}
+              feature="event check-in"
+              className="mb-0 w-full"
+            />
+          ) : null}
         </div>
+      ) : null}
+      {excuse.kind === "sent" ? (
+        <p className="mt-2 text-caption text-muted-foreground">
+          {excuse.title}
+        </p>
       ) : null}
     </Card>
   );

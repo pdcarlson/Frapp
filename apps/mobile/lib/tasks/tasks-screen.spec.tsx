@@ -166,6 +166,15 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
+// Mark done's sheet has its own spec (#4635); here only that the board
+// opens it, on what, and what its Mark done sends.
+vi.mock("@/components/tasks/mark-done-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    MarkDoneSheet: (props: object) => createElement("MarkDoneSheet", props),
+  };
+});
+
 const successHaptic = vi.fn();
 vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
@@ -370,6 +379,25 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
       SUBSCRIPTION_REFUSAL_COPY.taskStatus,
     );
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.taskStatus);
+    expect(row(tree).props.onToggle).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  // #4635: Mark done is a compare-and-set, refused with a 400 and a sentence
+  // when the task changed after the board read it. That reason is said.
+  it("says why when the server refuses Mark done with a 400", async () => {
+    failure = {
+      statusCode: 400,
+      error: "Bad Request",
+      message:
+        "This task changed while you were marking it done. Look again and retry.",
+      requestId: "req_changed",
+    };
+    const tree = render();
+    await tapRow(tree);
+    expect(screenText(tree)).toContain(
+      "This task changed while you were marking it done. Look again and retry.",
+    );
     expect(row(tree).props.onToggle).toBeDefined();
     act(() => tree.unmount());
   });
@@ -704,6 +732,103 @@ describe("Undo after the checkbox completes a task (P6.1)", () => {
     const tree = render();
     await tapRow(tree);
     expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Mark done with proof on the board (#4635)", () => {
+  type SheetProps = {
+    task: { id: string; proofKind: string; sentBack: boolean };
+    initialProblem: string | null;
+    onComplete: (proof: Record<string, unknown>) => Promise<void>;
+    onClosed: () => void;
+  };
+  const sheet = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "MarkDoneSheet")[0]
+      ?.props as SheetProps | undefined;
+
+  afterEach(() => {
+    tasks = TASKS;
+    mutateAsync.mockReset();
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+  });
+
+  it("opens Mark done's sheet for a Photo task, and sends the proof with the done rung", async () => {
+    tasks = [{ ...TASKS[0], proof_kind: "photo" }];
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    await tapRow(tree);
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(sheet(tree)?.task).toMatchObject({
+      id: "task-1",
+      proofKind: "photo",
+    });
+    await act(() =>
+      sheet(tree)!.onComplete({ proof_photo_paths: ["p/1.jpg"] }),
+    );
+    expect(
+      mutateAsync.mock.calls.map((call) => (call as unknown[])[0]),
+    ).toEqual([
+      { id: "task-1", body: { status: "IN_PROGRESS" } },
+      {
+        id: "task-1",
+        body: { status: "COMPLETED", proof_photo_paths: ["p/1.jpg"] },
+      },
+    ]);
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("opens it for a sent-back task too", async () => {
+    tasks = [
+      {
+        ...TASKS[0],
+        stored_status: "IN_PROGRESS",
+        status: "IN_PROGRESS",
+        sent_back_at: "2026-10-01T12:00:00Z",
+        sent_back_reason: "Floor is still sticky",
+      },
+    ];
+    const tree = render();
+    await tapRow(tree);
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(sheet(tree)?.task.sentBack).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("opens it with the reason when the server asks for proof the board didn't know of", async () => {
+    tasks = [
+      { ...TASKS[0], stored_status: "IN_PROGRESS", status: "IN_PROGRESS" },
+    ];
+    mutateAsync.mockImplementation(async () => {
+      throw { statusCode: 400, code: "task.proof_required", message: "x" };
+    });
+    const tree = render();
+    await tapRow(tree);
+    expect(sheet(tree)?.initialProblem).toMatch(/needs proof/);
+    expect(screenText(tree)).not.toContain("on the web");
+    act(() => tree.unmount());
+  });
+
+  it("hands the sheet a refusal to say", async () => {
+    tasks = [
+      {
+        ...TASKS[0],
+        stored_status: "IN_PROGRESS",
+        status: "IN_PROGRESS",
+        proof_kind: "link",
+      },
+    ];
+    mutateAsync.mockImplementation(async () => {
+      throw FAILED;
+    });
+    const tree = render();
+    await tapRow(tree);
+    await expect(
+      sheet(tree)!.onComplete({ proof_link: "https://x.example" }),
+    ).rejects.toBe(FAILED);
     act(() => tree.unmount());
   });
 });

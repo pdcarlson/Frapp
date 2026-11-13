@@ -70,26 +70,18 @@ export type ActNoteType = (typeof ACT_NOTE_TYPES)[number];
 /** A proposal the member asked for waits this long, then is gone. */
 export const ACT_PROPOSAL_EXPIRY_DAYS = 1;
 
-/** The words the Do side of Ask shows, shared so web and mobile cannot drift. */
+/**
+ * The words a proposal in the Ask conversation shows, shared so web and
+ * mobile cannot drift. What surrounds the card (the field, the empty state)
+ * is `ASK_COPY`'s.
+ */
 export const ACT_COPY = {
-  /** The two sides of the panel. */
-  mode_ask: "Ask",
-  mode_do: "Do",
-  mode_label: "Ask a question or get something done",
-  placeholder: "Say what to do",
-  send: "Send",
-  empty_title: "Get something done",
-  empty_body:
-    "Say it in your own words. You'll see exactly what will happen, and nothing changes until you confirm.",
+  /** One request to try, per action, on Ask's empty state. */
   examples: {
     give_points: "Give 5 points to everyone who came to chapter tonight",
     create_task: "Make a task for Jordan to book the bus by Friday",
     create_event: "Put a study night on the calendar for Tuesday at 7",
   } satisfies Record<ActAction, string>,
-  working: "Working out what that would do",
-  /** Under the field: what the model is shown, and that nothing is remembered. */
-  footnote:
-    "One thing at a time. Only what you type here is read, and nothing changes until you confirm.",
   confirm: "Confirm",
   cancel: "Cancel",
   confirming: "Confirming",
@@ -111,8 +103,6 @@ export const ACT_COPY = {
     "ai.suggestion.incomplete":
       "Something on this card is missing. Fill it in, then confirm.",
   },
-  try_again: "Try again",
-  refused: "Ask can't help with that request.",
   no_action: "That isn't something Ask can do for you here.",
   no_action_can: "It can:",
   action_labels: {
@@ -135,15 +125,6 @@ export const ACT_COPY = {
     request:
       "I couldn't work out what to do from that. Try saying it another way.",
   } satisfies Record<ActMissing, string>,
-  unavailable: {
-    consent_required: "Answer the AI question in Settings to use Ask.",
-    chapter_off: "Your chapter's president has turned Ask off.",
-    chapter_limit:
-      "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
-    member_limit: "You've reached today's limit. Ask comes back tomorrow.",
-    not_available: "Ask isn't available right now. Try again later.",
-  },
-  consent_action: "Answer the AI question",
   /** The card. */
   card_points_title_give: "Give points",
   card_points_title_take: "Take away points",
@@ -305,14 +286,6 @@ export function actMissingLine(missing: string | null): string {
   return (
     (ACT_COPY.missing as Record<string, string>)[missing ?? ""] ??
     ACT_COPY.missing.request
-  );
-}
-
-/** What an unavailable request says, with a fallback for an unknown reason. */
-export function actUnavailableLine(reason: string | null): string {
-  return (
-    (ACT_COPY.unavailable as Record<string, string>)[reason ?? ""] ??
-    ACT_COPY.unavailable.not_available
   );
 }
 
