@@ -1,3 +1,4 @@
+import { useTrackCurrentPathname } from "@/lib/current-pathname";
 import { Redirect, Stack, type ErrorBoundaryProps } from "expo-router";
 import { AppErrorScreen, stackScreenLayout } from "@/components/route-error";
 import { SCREEN_TITLES } from "@/lib/back-target";
@@ -36,6 +37,8 @@ export const unstable_settings = {
  * sign-in like one who opens the app.
  */
 export default function AppLayout() {
+  // What `openHref` compares a link against outside a component (#3723).
+  useTrackCurrentPathname();
   const { status, chapterId, isChapterResolving } = useAuthSession();
   const { tokens } = useFrappTheme();
 
@@ -125,6 +128,9 @@ export default function AppLayout() {
       {/* Presents the Ask sheet for a `frapp://ask` link, or pops to Chat
           home for a member without Ask. */}
       <Stack.Screen name="ask" options={{ title: "Ask" }} />
+      {/* A message's link, `app.frapp.live/chat?channel=…&message=…`
+          (#3723): hands off to the thread and draws nothing itself. */}
+      <Stack.Screen name="chat" options={{ title: "Chat" }} />
       <Stack.Screen name="minutes" options={{ title: SCREEN_TITLES.minutes }} />
       <Stack.Screen
         name="minutes-details"

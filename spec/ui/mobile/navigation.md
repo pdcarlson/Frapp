@@ -6,12 +6,12 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 ## Tab bar — 4 tabs, locked
 
-| Position | Tab | Route | Notes |
-| -------- | --- | ----- | ----- |
-| 1 | **Chat** | `(app)/(tabs)/index.tsx` | Home. The app opens here — chat is home. |
-| 2 | **Activity** | `(app)/(tabs)/activity.tsx` | What is waiting on the member, what they made, and This semester. The tab carries the count of things waiting on them (`needs_you_count`) as a house-gold badge, drawn only when there is one. Its title row's **Task board** control pushes the board. |
-| 3 | **Calendar** | `(app)/(tabs)/events.tsx` | Events and the member's tasks on one calendar (#4144). The route stays `events`, so links, notification targets and exported calendar files keep resolving. |
-| 4 | **You** | `(app)/(tabs)/you.tsx` | The member's own profile and everything else that is theirs ([§ You](#you-s09-and-s15)). Its glyph is the member's avatar. |
+| Position | Tab          | Route                       | Notes                                                                                                                                                                                                                                                   |
+| -------- | ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | **Chat**     | `(app)/(tabs)/index.tsx`    | Home. The app opens here — chat is home.                                                                                                                                                                                                                |
+| 2        | **Activity** | `(app)/(tabs)/activity.tsx` | What is waiting on the member, what they made, and This semester. The tab carries the count of things waiting on them (`needs_you_count`) as a house-gold badge, drawn only when there is one. Its title row's **Task board** control pushes the board. |
+| 3        | **Calendar** | `(app)/(tabs)/events.tsx`   | Events and the member's tasks on one calendar (#4144). The route stays `events`, so links, notification targets and exported calendar files keep resolving.                                                                                             |
+| 4        | **You**      | `(app)/(tabs)/you.tsx`      | The member's own profile and everything else that is theirs ([§ You](#you-s09-and-s15)). Its glyph is the member's avatar.                                                                                                                              |
 
 Owner pick 2026-11-12 (#4610, option A of the [proposal page](https://claude.ai/artifact/XfGctNGTLSbg2XdKk2jaip)), from the team's Discussion: Activity one tap away instead of a row in More (Evan), Paul's "chat, activity, calendar and the action menu", and Shawn's "chat, activity, events". Comparable apps: Slack and Microsoft Teams keep an Activity tab beside chat, Teams a Calendar tab, and TeamSnap opens on what needs you. Until then the bar was Chat, Events, Tasks and More, and Activity was More's first row (#3897).
 
@@ -46,11 +46,12 @@ Owner pick 2026-11-06, after the Bevel app's bar (its glass only, none of its lo
 Paul, 2026-11-06: "I couldn't find a way to invite new members or get my invite link from mobile." Setup's last step was the phone's only invite surface, and Chat home's checklist line sent the officer to the web.
 
 - **One screen, `invite.tsx`, titled Invite members**, web's Members → Invite panel on the phone (Paul, 2026-11-09: "that's the way it should be for mobile as well", #3828). Top to bottom:
-  - **Invite by email** (`components/more/invite-by-email.tsx`): one field takes one or more addresses, split on spaces, commas and semicolons as web's chip field splits a paste (`splitAddresses`), and Send (Send *n* invites for several) emails each a single-use join link through `POST /v1/invites/email`, the route web sends through, so the recipient gets web's email. An address that isn't one holds the whole send, as web's red chip does. Addresses the server couldn't email stay in the field to send again. The button and the field's focus border take the chapter accent.
+  - **Invite by email** (`components/more/invite-by-email.tsx`): one field takes one or more addresses, split on spaces, commas and semicolons as web's chip field splits a paste (`splitAddresses`), and Send (Send _n_ invites for several) emails each a single-use join link through `POST /v1/invites/email`, the route web sends through, so the recipient gets web's email. An address that isn't one holds the whole send, as web's red chip does. Addresses the server couldn't email stay in the field to send again. The button and the field's focus border take the chapter accent.
   - **Or share a link**: setup's share-first step ([`onboarding.md`](../../behavior/onboarding.md), `useInviteShares`) as the secondary button. Share invite, with the platform share mark, mints a fresh link (`POST /v1/invites`) and opens the share sheet with "Join <chapter> on Frapp" (Share waits until the chapter's name has loaded) and the link, with the same line as an iOS mail target's subject, so Mail and Gmail are the mail handoff. A link kept from a backed-out iOS sheet is dropped when the member leaves the screen or switches chapter, so one chapter's link never goes out under another's name (the screen's body is keyed on the chapter and the visit). The link tile takes the chapter accent, where setup's takes house gold ([`branding.md`](../../behavior/branding.md)).
   - **Invited** (`components/more/invited-list.tsx`): the chapter's invites from `GET /v1/invites`, listed and offering the same actions as web's panel ([`members.md`](../../behavior/members.md), which owns which rows show and what each offers), re-read every 15 seconds while the screen is in front. A row names the address, or Invite link for a shared one, says when it was sent, and shows its status. Tapping it opens the platform's menu (the action sheet on iOS; on Android a dialog, which draws at most three buttons, so it has no Cancel and closes on back): Share link where web copies one, Send again, and Revoke invite. Share link waits for the chapter's name, as Share invite does. One send or revoke runs at a time (Share link stays outside that lock, since iOS doesn't always report its sheet closing). A link Share invite kept from a backed-out sheet is dropped once its row shares it, or once the list shows it revoked (from either app) or expired, so the next press mints a fresh one. A row with nothing to offer isn't a button, and a failed read says so with Try again.
 
   No token is drawn. Neither path names a role, so the server grants the chapter's default invite role (#422), as web's dialog does without a pick. Unlike web, the phone has no role picker or subscription notice: a grace-blocked chapter's send comes back refused, and the screen shows the app's subscription-lapsed copy (`errorCopy`).
+
 - **Four doors, each drawn only for a role that holds `members:invite`** (by default the President alone): the You tab's **Invite members** row, first in Admin; the Directory's floating + ([`patterns.md` § Create actions](patterns.md#create-actions)), labelled "Invite members", because the roster is where Discord and web put Invite; the tab bar's **Invite** quick action; and Chat home's setup checklist line. The back capsule names the screen it pops to, as every pushed screen's does ([§ Back rows](#back-rows)): `‹ You` from the row, `‹ Directory` from the +, `‹ Chat` from the checklist, and from the quick action whichever tab the + was opened over. The `from` param the doors pass only picks where the capsule leads when nothing is under the screen, as on a cold link.
 - **A role without the permission** that reaches the screen by a link sees "Your role can't send invites. Ask an officer to send each person their own link." and no button. The screen waits for the role to load before deciding, and a failed read offers a retry rather than that sentence.
 
@@ -71,20 +72,20 @@ The app groups the rows differently from the board, by owner decision on 2026-11
 
 The board's Notifications row is not here: the inbox opens from the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), #3362).
 
-| Group | Row | Destination | Trailing status |
-| ----- | --- | ----------- | --------------- |
-| — | Status | the status sheet | the picked status's name, with its end time or custom line under the label |
-| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs", or "4.0 / 6.0 hrs" against the member's weekly goal when the chapter sets one (#1062) |
-| | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
-| | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
-| | Documents | `documents.tsx` (s12) | — |
-| | Directory | `directory.tsx` (s13) | — |
-| You | Settings | `preferences.tsx` (s16) | — |
-| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
-| **Admin** (role-gated, captioned "Admin") | Invite members | `invite.tsx` ([§ Inviting members](#inviting-members)) | — |
-| | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
-| | Chapter settings | `chapter-settings.tsx` ([§ Chapter settings](#chapter-settings)) | — |
-| | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
+| Group                                     | Row              | Destination                                                      | Trailing status                                                                                                                                    |
+| ----------------------------------------- | ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —                                         | Status           | the status sheet                                                 | the picked status's name, with its end time or custom line under the label                                                                         |
+| Chapter tools                             | Study hours      | `study.tsx` (s10)                                                | this week's total, e.g. "4.0 hrs", or "4.0 / 6.0 hrs" against the member's weekly goal when the chapter sets one (#1062)                           |
+|                                           | Service hours    | `service-hours.tsx` (host of the s20 sheet)                      | —                                                                                                                                                  |
+|                                           | Dues             | `dues.tsx` (s11)                                                 | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15"                                                            |
+|                                           | Documents        | `documents.tsx` (s12)                                            | —                                                                                                                                                  |
+|                                           | Directory        | `directory.tsx` (s13)                                            | —                                                                                                                                                  |
+| You                                       | Settings         | `preferences.tsx` (s16)                                          | —                                                                                                                                                  |
+|                                           | Switch chapter   | `(auth)/chapter-picker.tsx`                                      | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
+| **Admin** (role-gated, captioned "Admin") | Invite members   | `invite.tsx` ([§ Inviting members](#inviting-members))           | —                                                                                                                                                  |
+|                                           | Host check-in    | `host-check-in.tsx` (s22)                                        | the next hostable event                                                                                                                            |
+|                                           | Chapter settings | `chapter-settings.tsx` ([§ Chapter settings](#chapter-settings)) | —                                                                                                                                                  |
+|                                           | Adjust points    | s23 sheet — **not rendered** until the sheet ships (#2300)       | —                                                                                                                                                  |
 
 Activity led the chapter tools from 2026-11-11 ([#3897](https://github.com/pdcarlson/Frapp/issues/3897)) until it became tab 2 on 2026-11-12 ([#4610](https://github.com/pdcarlson/Frapp/issues/4610)), and its count moved to the tab with it.
 
@@ -95,7 +96,7 @@ The admin section renders only for members whose role grants the underlying perm
 Two rows above are not drawn in Canvas and exist for reachability:
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
-- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
+- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately _not_ forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
 **Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Each row carries its own gate, Invite members `members:invite` and Host check-in `events:update`, and the section renders when either does (since 2026-11-06; before then the gate was `events:update` alone) — see Host check-in below.
 
@@ -122,11 +123,12 @@ Paul, 2026-11-10 (#4074): mobile had personal settings but almost no chapter sid
 ## Global entries outside the tab bar
 
 - **UP NEXT strip** (s04): the top of Chat home carries an UP NEXT section — the next event and the nearest due task as rows in one raised card, each tapping through to its detail (event detail s07, task board s08). A row leads with a neutral tile (the calendar or the checklist glyph), gives the title a line of its own, puts when and where under it, and ends in a chevron: the Activity row's shape ([`patterns.md`](patterns.md#rows) § Rows). Until #4610 step 3 (2026-11-12) the two were bare one-line rows that cut a title mid word and showed nothing that said they open; Google Calendar's schedule and Slack's Activity give a title its own line for the same reason. It is a pulse affordance: chat is home, so the one glanceable "what's next" surface rides above the channel list rather than living in a Home tab. Its days are words, never abbreviations (owner, 2026-11-07): `Today 6:45 PM`, `Tomorrow 6:45 PM`, the weekday inside the coming week (`Sunday 6:45 PM`), else the date (`November 14`, with the year outside this one: `January 5, 2027`), the same words the Events tab heads its days with (`formatDayHeading`, #3823); a task reads `Due today`, `Due tomorrow`, `Due Sunday`, `Due November 14` or `Overdue` (`formatEventTime`, `formatDueDate` in `components/chat/up-next-strip.tsx`). It used to say `tmrw` and `Sun`.
-- **Swipe to Messages** ([#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn's account of what he and Paul agreed, recorded 2026-11-12). On Chat home, a slide from right to left opens Messages, as Instagram's feed opens its messages; a quick shorter flick counts too, and a mostly vertical move stays the list's scroll (`lib/chat/messages-swipe.ts`, `components/chat/messages-swipe-area.tsx`). It opens on release. While the finger is down the screen gives a little with it (60% of the travel past the point the slide takes over, at most 72pt) and shows the edge of Messages behind it, a strip with the door's paper plane, then settles back; only a transform moves, so nothing in the layout shifts and the tab bar stays put (`messagesFollowOffset`, `lib/chat/messages-hint.ts`). Only a leftward slide starts it, so a rightward one from the left edge stays free for #4047's side menu idea. It holds while a menu or a row's actions are open over Chat home, as an open overlay holds screen gestures elsewhere, and a slide the system cancels opens nothing. A slide that takes the touch over is never also a tap on the row or button it started on (Paul, 2026-11-12: the channel opened on top of Messages): a full-width row never sees the finger leave it, so the swipe hands everything inside it a claim on its touch, held until the next touch begins, and a row or button drops the press that came from it (`lib/swipe-claim.ts`, read by `PressableRow`, `IconButton`, the header's Messages door and avatar, and the push reminder). One Android limit: with gesture navigation a slide that *starts at the right edge* is the system's back gesture (§ Going back: back works from either edge), so on Android the swipe works from inside the screen, not from the edge. Messages pushes in from the right on both platforms (`animation: "ios_from_right"` on its route, which draws iOS's push on Android and is the default on iOS in `app/(app)/_layout.tsx`, an integrator change, [#4447](https://github.com/pdcarlson/Frapp/issues/4447)), where the stack's default draws Android's own short fade-and-shift (a fade with a scale below Android 13). The top-right Messages door below stays, so a member who never finds the gesture, or uses VoiceOver or TalkBack, still has one tap to it, and Messages goes back the way every pushed screen does (`‹ Chat`, or the swipe from the left edge). It works from Chat home only, not the other tabs. This reverses the direction #3738 and #3739 drew (Messages to the left of Chat, reached by swiping right; Paul's note on #3738, 2026-11-08), per Shawn's 2026-11-10 note on #4047 that the left side belongs to the menu.
+- **Swipe to Messages** ([#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn's account of what he and Paul agreed, recorded 2026-11-12). On Chat home, a slide from right to left opens Messages, as Instagram's feed opens its messages; a quick shorter flick counts too, and a mostly vertical move stays the list's scroll (`lib/chat/messages-swipe.ts`, `components/chat/messages-swipe-area.tsx`). It opens on release. While the finger is down the screen gives a little with it (60% of the travel past the point the slide takes over, at most 72pt) and shows the edge of Messages behind it, a strip with the door's paper plane, then settles back; only a transform moves, so nothing in the layout shifts and the tab bar stays put (`messagesFollowOffset`, `lib/chat/messages-hint.ts`). Only a leftward slide starts it, so a rightward one from the left edge stays free for #4047's side menu idea. It holds while a menu or a row's actions are open over Chat home, as an open overlay holds screen gestures elsewhere, and a slide the system cancels opens nothing. A slide that takes the touch over is never also a tap on the row or button it started on (Paul, 2026-11-12: the channel opened on top of Messages): a full-width row never sees the finger leave it, so the swipe hands everything inside it a claim on its touch, held until the next touch begins, and a row or button drops the press that came from it (`lib/swipe-claim.ts`, read by `PressableRow`, `IconButton`, the header's Messages door and avatar, and the push reminder). One Android limit: with gesture navigation a slide that _starts at the right edge_ is the system's back gesture (§ Going back: back works from either edge), so on Android the swipe works from inside the screen, not from the edge. Messages pushes in from the right on both platforms (`animation: "ios_from_right"` on its route, which draws iOS's push on Android and is the default on iOS in `app/(app)/_layout.tsx`, an integrator change, [#4447](https://github.com/pdcarlson/Frapp/issues/4447)), where the stack's default draws Android's own short fade-and-shift (a fade with a scale below Android 13). The top-right Messages door below stays, so a member who never finds the gesture, or uses VoiceOver or TalkBack, still has one tap to it, and Messages goes back the way every pushed screen does (`‹ Chat`, or the swipe from the left edge). It works from Chat home only, not the other tabs. This reverses the direction #3738 and #3739 drew (Messages to the left of Chat, reached by swiping right; Paul's note on #3738, 2026-11-08), per Shawn's 2026-11-10 note on #4047 that the left side belongs to the menu.
 
   > **Changed in #4610 step 3 by pdcarlson, 2026-11-12.** This said "It opens on release, not following the finger." Messages still opens on release, but the screen now gives under the finger as above: a slide that moved nothing until release taught nothing to a member who started it by accident.
 
   **The hint.** Nothing on Chat home said the swipe was there (the team's 2026-11-12 read: nobody finds it), and Apple's guidance on a custom gesture is that the app owes a moment that teaches it, feedback while it happens, and another way to do the same thing. So once Chat home has rested for a moment (focused, its list loaded, no finger on it for about a second, no menu, sheet or + panel open over it, the first-run tour not due), the screen slides 56pt to the left by itself, a small label reads `Swipe left for Messages` beside the uncovered edge, and it settles back about two seconds later. Any touch ends it at once. With Reduce Motion on the label shows and nothing slides; while a screen reader is on it doesn't play, since the door is the labelled way in. It plays **once**, then **once more** at least three days later and only while a direct message is unread, and **never** after the member has opened Messages with the swipe. A showing counts only if it could be read: one that a sheet covers or the member leaves within about a second of the slide is given back and plays at the next rest (What's new opens over Chat home on the very launch the hint first could, and a sheet leaves the screen under it focused, so every sheet reports itself through `lib/overlay-presence.ts`). A showing that can't be recorded doesn't play, so a phone that can't write never repeats it. The record is per member on the phone, like the tour's (`lib/chat/messages-hint.ts` decides when; `components/chat/messages-swipe-area.tsx` draws it). Instagram teaches its own swipe to messages the same way, by letting the feed give under the finger.
+
 - **Messages door and bell** (s04; the Messages door is owner decision 2026-11-07, option B of the round-two Chat home redesign; the bell came back with #3839). Chat home's title row ends in two glass controls. First a paper-plane button, **Messages** (the glyph web's rail uses for direct messages, `NAV_GLYPHS.direct`; a speech bubble until #4610 step 3, 2026-11-12, when it read as a second Chat tab above the real one), which opens the member's direct and group messages on their own screen (`messages.tsx`, `‹ Chat`), newest conversation first, each row with its last line; it badges the number of conversations with anything unread in mention red, since a direct message addresses the member. Chat home itself then lists channels only. Second, the **bell**, which opens the inbox (s14, `‹ Chat`) and badges its unread count in fixed house gold, never the chapter accent ([`../design-system/components.md`](../design-system/components.md) § App bar chips). The count leaves out rows whose target is chat, which the channel and Messages badges already show (`selectUnreadNonChatCount`, the app-icon badge's split). Instagram keeps its activity heart beside its messages, and Slack its Activity beside the conversations, the same pair. `components/chat/home-header.tsx`; `lib/chat/chat-home.spec.tsx` pins it.
 - <a id="status"></a>**Status** (#3845) is the first row under the profile on the You tab. It shows the member's picked status with its end time or custom line, and opens a sheet (`components/account/status-sheet.tsx`), as Discord's and Slack's phone apps do: Online, Idle, Do Not Disturb (its durations open under it, "Until I turn it off" first) and Invisible, then the custom line, a one-line form with "Clear after" (Today by default). The rules and wording are web's, shared in `@repo/hooks/member-status` ([`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Online/offline presence). The You tab's avatar carries the picked status's dot bottom-right, none while Online (the shapes in [`../design-system/components.md`](../design-system/components.md) § Chat member list).
 
@@ -135,11 +137,12 @@ Paul, 2026-11-10 (#4074): mobile had personal settings but almost no chapter sid
   > Changed for #3845 by shawnatomklein-eng, 2026-11-09: the menu gained Status as its first row, and the avatar a status dot bottom-right.
 
   > **Replaced 2026-11-07** (and reversed by #3839, above). From 2026-11-04 ([#3362](https://github.com/pdcarlson/Frapp/issues/3362)) the inbox was a bell on this row, which had replaced the board's Notifications row in More (s09). The bell folded into the avatar menu when the Messages door arrived, so the header holds two controls beside a long chapter name rather than three. The reason it left More still holds: the count belongs where the member lands. A channel's alert level stays behind the thread header's `⋯` (`notification-level-control.tsx`).
+
 - **Ask Frapp** (s17) is a glass bar above the tab bar, on all four tabs (changed in #4702 by pdcarlson, 2026-11-13; Paul: it should "show up with the logo", have "a little bit more character" than the words, and sit "in a bar above the normal liquid glass bottom, not only when you open the plus menu"). It is a capsule 48pt tall across the width of the tab bar and its + together, 8pt above them, drawn by `GlassSurface` like the tab bar (`components/ask/ask-bar.tsx`, placed by `GlassTabBar`). It is drawn as the field it opens: the crest in the chapter accent, the conversation's own placeholder "Ask Frapp anything", and the field's send arrow in the accent at its end, with the capsule's edge in the accent at 30%. ChatGPT's and Perplexity's home screens and the Google app open their assistant from a bar shaped like its field. One tap opens the conversation at full height. The tab screens make room for it: a screen's last row, the floating create button, the undo bar and the tab bar's confirmation all sit above it (`useAskBarLift`, `useTabBarClearance` in `lib/floating-chrome.tsx`), and a screen pushed over the tabs has no bar and leaves no room. The open + panel covers it. Until #4702 it was a bar across the top of the + panel ([§ Quick actions](#quick-actions)), above the actions: "Ask Frapp" and the field's own hint, in Ask's fixed house gold ([`components.md` §11](../design-system/components.md)), which a member only saw after tapping +. Ask is a global entry, not a tab — it MUST NOT become a fifth tab. Answer behavior and corpus rules: [`../../behavior/ai.md`](../../behavior/ai.md). **The bar exists only for a member who has Ask**, and that is the server's answer, not the build's (`useAiSurfaces` in `apps/mobile/lib/ai/availability.ts`): the server has AI on (`AI_ENABLED`), the president has Ask on for the chapter, and the member's role holds `ai:use`. When any of those is no, the tab bar is exactly as it was, the tab screens leave no room, no sheet is mounted, and the `ask` route goes to Chat home, so a member without Ask sees no Ask surface anywhere. The bar is not one of the six actions and can't be removed or moved.
 
   > **Changed in #4415, 2026-11-12 (the AI build's mobile slice, built without Paul in the loop; his review of the build's final PR is the check).** Until then Ask was a ✦ sparkle pill in the top bar of Chat home (s04) and Events (s06), drawn only in a build with `EXPO_PUBLIC_ASK_ENABLED` set, over a hand-written keyword table. Three things changed. The build flag and the table are gone: Ask answers from the chapter's own sources through the API (ADR-28), and one switch, the server's, decides whether it exists, so web and mobile can't disagree. The entry moved into the + panel, the direction Paul set for the mobile chrome on 2026-11-06 ("the direction I want to take our entire mobile UI"): Chat home's title row already holds Messages and the account avatar (the bell since #3839) beside a long chapter name, and the panel reaches Ask from all four tabs where the pill reached it from two. And the ✦ glyph is gone with the pill, since the entry is now words. ChatGPT, Perplexity and Notion put their ask field one tap from anywhere in the same way. The notes below are the pill's history and still give the reason Ask is hidden, not disabled, for a member without it.
 
-  > **Reversed 2026-09-22, owner decision ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).** This bullet used to require the opposite: the pill "presses through even when Ask is switched off … the sheet states the reason, because a control that silently does nothing is the dead end §5 bans". The sheet then read "Ask isn't switched on for this build yet". That argument holds for a member who knows Ask is coming, but App Review is the other reader: a prominent control on the first screen after sign-in whose only function is to announce that its feature is off is the placeholder Guideline 2.1 rejects. Nor is it the dead end the old rule was guarding against. That rule bans a control that is *present* and does nothing; a control that is not drawn has nothing to discover. The line between the two is [`../design-system/README.md`](../design-system/README.md) §5 rule 4, *disable, don't hide, for recoverable states*, which names this pill as one of the things to hide: no member can switch Ask on, and the pill has no function but Ask, so it is hidden, like a module the chapter has switched off. That is the Ask pill's case, not a rule for every build-time switch. The push primer, also gated at build time, was left open here and has since followed it: onboarding skips its notifications step when the build cannot push ([#2299](https://github.com/pdcarlson/Frapp/issues/2299), 2026-09-24; [`patterns.md`](patterns.md#push-notifications) § Push notifications). (The old text also cited `components.md` §5, which is Badges and chips; the rule was always in the design-system README.)
+  > **Reversed 2026-09-22, owner decision ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).** This bullet used to require the opposite: the pill "presses through even when Ask is switched off … the sheet states the reason, because a control that silently does nothing is the dead end §5 bans". The sheet then read "Ask isn't switched on for this build yet". That argument holds for a member who knows Ask is coming, but App Review is the other reader: a prominent control on the first screen after sign-in whose only function is to announce that its feature is off is the placeholder Guideline 2.1 rejects. Nor is it the dead end the old rule was guarding against. That rule bans a control that is _present_ and does nothing; a control that is not drawn has nothing to discover. The line between the two is [`../design-system/README.md`](../design-system/README.md) §5 rule 4, _disable, don't hide, for recoverable states_, which names this pill as one of the things to hide: no member can switch Ask on, and the pill has no function but Ask, so it is hidden, like a module the chapter has switched off. That is the Ask pill's case, not a rule for every build-time switch. The push primer, also gated at build time, was left open here and has since followed it: onboarding skips its notifications step when the build cannot push ([#2299](https://github.com/pdcarlson/Frapp/issues/2299), 2026-09-24; [`patterns.md`](patterns.md#push-notifications) § Push notifications). (The old text also cited `components.md` §5, which is Badges and chips; the rule was always in the design-system README.)
   >
   > **Why dues' Pay control does not follow.** `lib/payments/stripe.ts` gates on a build-time value too, and it still renders Pay disabled with its reason. The difference is what the control is for. Pay sits on an invoice the member really owes, so the disabled control is one route through a real task, and its caption names the other ("Ask your treasurer how to pay this invoice"). The ✦ pill has no function except Ask. Keep the two distinct, rather than "fixing" either to match the other.
   >
@@ -169,13 +172,13 @@ A screen reached from another one draws a back row above its title, as the board
 
 The row names the screen it pops to, so these are the rows a member sees arriving the usual way. Arriving another way, the row says where that way leads: `‹ Chat` over an event opened from Chat home's Up next, `‹ Notifications` over Dues opened from the inbox.
 
-| Screen | Usual way in | Row |
-| ------ | ------------ | --- |
-| s07 Event detail | Calendar | `‹ Calendar` (`‹ Events` until #4610) |
-| s08 Task board | Activity's Task board control | `‹ Activity` (#4610) |
-| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s16 Settings, Service hours | You | `‹ You` (`‹ More` until #3839) |
-| s14 Notifications | The bell on Chat home | `‹ Chat` |
-| Messages | The Messages door on Chat home | `‹ Chat` |
+| Screen                                                                               | Usual way in                   | Row                                   |
+| ------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------- |
+| s07 Event detail                                                                     | Calendar                       | `‹ Calendar` (`‹ Events` until #4610) |
+| s08 Task board                                                                       | Activity's Task board control  | `‹ Activity` (#4610)                  |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s16 Settings, Service hours | You                            | `‹ You` (`‹ More` until #3839)        |
+| s14 Notifications                                                                    | The bell on Chat home          | `‹ Chat`                              |
+| Messages                                                                             | The Messages door on Chat home | `‹ Chat`                              |
 
 - **It pops the stack, as the swipe does, and names what it pops to** (2026-11-06, [§ Going back](#going-back)). The label is the title of the screen under it (`useScreenBelow` in `apps/mobile/lib/back-target.ts`, from `SCREEN_TITLES`), or the tab the tabs are showing. Each screen still passes a fixed label and destination (`BACK_TO_YOU`, `BACK_TO_EVENTS`, `BACK_TO_ACTIVITY`, `BACK_TO_CHAT`), which the row uses only with nothing under it. Until 2026-11-06 the row always went to that fixed destination, because the screens were hidden tabs and `router.back()` could land somewhere the label didn't say; on the stack, going back always lands on what the label names.
 - **s15 has no back row any more**: it is the You tab ([§ You](#you-s09-and-s15)). The board's `‹ More` … `Edit` row went first to tap-to-edit (#3711) and then to the tab.
@@ -196,6 +199,7 @@ Launch opens the last channel the member was in, then back goes to chat home (s0
 - Scheme: `frapp://` (`scheme` in `apps/mobile/app.json`). It is permanent, because every installed binary carries it (ADR-25). [`mobile-permanent-identifiers.test.mjs`](../../../scripts/ci/__tests__/mobile-permanent-identifiers.test.mjs) pins it, with the binary's other permanent identifiers.
 - **`frapp://join?token=…` fills s02.** The same query keys web `/join` uses (`token`, then `invite`, then `code`) are accepted on the app scheme and as a pasted URL in the field.
 - **`https://app.frapp.live/join?token=…` opens the app too, from 0.11.0** (#4002): `associatedDomains` (`applinks:app.frapp.live`) and an `autoVerify` intent filter on the path `/join`, in `apps/mobile/app.json`, pinned by `app.config.spec.ts`. It needs the web's two `.well-known` files for the same path, and a build installed from the store or TestFlight (Apple and Google check the files at install). Expo Router routes the link to `/join` with its params, so it lands where `frapp://join` does. An account with a chapter can't use s02, so when the chapter list says it has one and the gate says tabs, Terms or s03, the app opens that invite on web `/join` (marked `web=1`) in an in-app browser and leaves the member where the gate put them (`useMemberInviteHandoff`, mounted in `AppRuntime`). It takes the invite from the opening link, marking it handled so s02 never replays it, or from the invite s02 remembered across sign-in. The in-app browser has no app session, so the member signs in there again (always on iOS); joining a second chapter in the app is not built. Every EAS profile carries the claim, so an internal `preview` build installed on iOS opens production invite links too, against the staging API, where they are dead. `/check-in` (the check-in code, 2026-11-13) is claimed on iOS by the web's file alone, since its paths live there; Android claims it with the next native version (#4763), and until then its web page hands off with Open in Frapp. No other https path opens the app.
+- **`frapp://chat?channel=…&message=…` opens the channel on the message** (#3723), through `apps/mobile/app/(app)/chat.tsx`; a link with only `channel` opens the channel. The same `/chat` link on `https://app.frapp.live` (Copy message link's, `packages/validation/src/message-link.ts`) opens in-app when tapped inside a message (`apps/mobile/lib/chat/open-link.ts`), but the app doesn't claim the https path yet, so opened from another app it goes to the web: iOS reads claimed paths from the web, and installed builds have no `/chat` route (#4869).
 - **`frapp://event-details` is a contract.** `.ics` files exported before the calendar export was withdrawn (2026-11-08, #3708) carry it as their deep-link URL, `frapp://event-details?id=<event id>` (`apps/mobile/app/(app)/event-details.tsx`), and those files live on in members' device calendars indefinitely. Nothing writes the URL any more, but the route filename, the URL and its `id` param MUST never change. The same lock pins the `id` param, and `apps/mobile/lib/routes.spec.ts` pins the route.
 - **First-officer creation is `(auth)/create-chapter`.** The route is exempt from the authenticated bounce into the tabs so a successful onboard does not yank the officer off the invite step (`spec/behavior/onboarding.md`).
 - **Magic-link auth callback:** sign-in email links redirect to `Linking.createURL("/")` with a trailing `?` (`emailRedirectTo` in `apps/mobile/lib/auth-session.tsx`), which expo-linking resolves **at runtime to whichever scheme owns the running app** — `frapp:///?` in a build that owns the scheme, but `exp://<host>:8081/--/?` under Expo Go. The trailing `?` lets the hosted Magic Link template append `&token_hash={{ .TokenHash }}&type=magiclink` onto `{{ .RedirectTo }}` the same way web's `/auth/callback?next=…` does, so the emailed href never uses `*.supabase.co/auth/v1/verify`. Both forms must be allowlisted in Supabase Auth's redirect URLs for magic-link sign-in to complete. `frapp://**` **is** allowlisted on both hosted projects since 2026-09-06 (`docs/ops/deployment/supabase.md` § Auth settings), so a real build completes; the Expo Go form embeds a per-machine host, so it cannot be allowlisted once and reused across developers. Tracked as issue #765 — allowlisting `frapp://` does not unblock Expo Go. `AuthSessionProvider` accepts implicit tokens, PKCE `code`, and `token_hash` (`verifyOtp`) on that scheme. The sign-in screen's magic link adds `intent=sign-in-link` after the `?` (`signInLinkRedirectTo`, #4769), as web's does (#3801), so its return knows to ask whether it just made a new account ([`screens.md`](screens.md) s02); the Confirm-signup resend (#3833) keeps the bare `?`.
@@ -207,26 +211,26 @@ Launch opens the last channel the member was in, then back goes to chat home (s0
 
 The first matching row wins.
 
-| Authenticated state | Destination |
-| --- | --- |
-| No chapter yet, and the `active_chapter_id` claim is still being read | `hold` |
-| Chapters list still loading (first read, its retry included, even paused offline) | `hold` |
-| **Chapters read succeeded:** zero memberships | `join` (s02) |
-| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading (its retry included) | `hold` |
-| A member (likewise) who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
-| **Chapters read succeeded:** active membership has `has_completed_onboarding === false` | `welcome` (s03) |
-| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed (retries spent) with no answer keeps reading as failed while it refetches, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs` |
+| Authenticated state                                                                                                                                                                                                                                                                     | Destination                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| No chapter yet, and the `active_chapter_id` claim is still being read                                                                                                                                                                                                                   | `hold`                       |
+| Chapters list still loading (first read, its retry included, even paused offline)                                                                                                                                                                                                       | `hold`                       |
+| **Chapters read succeeded:** zero memberships                                                                                                                                                                                                                                           | `join` (s02)                 |
+| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading (its retry included)                                                                                                                                                           | `hold`                       |
+| A member (likewise) who hasn't accepted the current Terms (#2302)                                                                                                                                                                                                                       | `terms` (`(auth)/terms.tsx`) |
+| **Chapters read succeeded:** active membership has `has_completed_onboarding === false`                                                                                                                                                                                                 | `welcome` (s03)              |
+| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed (retries spent) with no answer keeps reading as failed while it refetches, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs`                       |
 
 `terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
 
-A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(app)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member *out* of the tabs onto s02/s03 or the Terms prompt is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
+A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(app)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member _out_ of the tabs onto s02/s03 or the Terms prompt is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
 
 ## Typed routes
 
 - `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`), so route strings are compile-checked against the file tree **during local development**.
 - **They are not checked in CI.** The generated types live in `.expo/types` and `expo-env.d.ts`, both gitignored (`apps/mobile/.gitignore`) and written only by `expo start`. CI runs a bare `tsc`, and with those files absent `Href` widens back to `string` — a nonexistent path assigned to `Href` type-checks clean. Do not rely on the compiler to catch a bad route on a branch.
 - **`apps/mobile/lib/routes.spec.ts` is the guard that actually runs.** It walks the real route tree and resolves route literals against it, and asserts the tab bar registers exactly the four locked tabs with a backing file behind every registration. A rename that misses a call site fails there.
-- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the You tab's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
+- **Know what that guard does not cover.** It matches _double-quoted string literals_ at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the You tab's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
 - All renames and removals in [`screens.md`](screens.md) MUST still land in **one PR** — a partial rename leaves half the app's links broken whether or not a compiler notices.
 - `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects. Note it takes a plain `string`, so it defeats the dev-time check entirely — `routes.spec.ts` is what keeps its call sites honest.
 
@@ -249,7 +253,7 @@ The point is contention: these files are the ones every parallel slice would oth
 props-less `<NetworkBanner />` beside a new one-line `<AppRuntime />`. The first two
 are the integrator carve-out above working as intended (a dependency and its config
 plugin cannot be added any other way). The third is a real edit to a frozen file, and
-the smallest one available: the banner's props *were* the second, independent reading
+the smallest one available: the banner's props _were_ the second, independent reading
 of `expo-network` that [`../resilience/connection-state.md`](../resilience/connection-state.md) now forbids, so they
 had to go, and every future app-wide runtime hangs off `components/app-runtime.tsx`
 instead of adding another hook call here — which is the whole reason that component
@@ -270,7 +274,7 @@ camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
 entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
 `plugins` entry. Same integrator carve-out as the rest of this section — the three
 surfaces themselves were still unbuilt then and landed as their own slices.
-*Corrected 2026-11-05 (this sentence used to call them still unbuilt):* all three have
+_Corrected 2026-11-05 (this sentence used to call them still unbuilt):_ all three have
 since shipped as photo-library picks, s15's avatar photo (#2897), s21's upload (#3399)
 and, last, s20's proof attachment (2026-11-05), each dated below. What is still unbuilt
 is the file half of the last two: a PDF or Office file on s21 needs
@@ -296,7 +300,7 @@ included, which only the root can do. `components/app-runtime.tsx` gained
 later, and the declarations were not merely premature but actively harmful. The
 `photosPermission` string shipped in the binary as a purpose string for a feature that
 does not exist (Guideline 5.1.1(i)), and the `cameraPermission: false` above compiled
-to `withBlockedPermissions(['android.permission.CAMERA'])`, which *removed* the
+to `withBlockedPermissions(['android.permission.CAMERA'])`, which _removed_ the
 permission `expo-camera` contributes and wrote `tools:node="remove"` into the manifest —
 silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
 declining-a-permission half is the reusable lesson: a plugin option that declines a
@@ -305,9 +309,9 @@ permission nothing in the app requests. `scripts/check-mobile-native-declaration
 pins both halves in `mobile-validate`. It reads the Info.plist and AndroidManifest that
 `expo config --type introspect` resolves, rather than `app.json`: the exact iOS purpose
 strings, and no `tools:node="remove"` on a permission a screen requests. So re-adding
-this picker the same way fails CI rather than shipping. *Updated 2026-09-30 (#2343):*
+this picker the same way fails CI rather than shipping. _Updated 2026-09-30 (#2343):_
 the `app.json`-level assertions in `app.config.spec.ts` that this replaced weren't an
-airtight fence. An option left *omitted* inherits its plugin's default purpose string,
+airtight fence. An option left _omitted_ inherits its plugin's default purpose string,
 and a vendor option spelled something other than `*Permission`/`*UsageDescription`
 wasn't scanned. The introspected gate sees both, because it reads what the mods write.
 Re-add the dependency and its plugin entry in the slice that actually builds a picker
@@ -317,7 +321,7 @@ surface — which is what #1045 should have been.
 upload, `apps/mobile/lib/chat/attachment-upload.ts`, which is the importer #1045 never
 had. `expo-image-manipulator` came with it, and earns its place rather than riding
 along: iOS hands HEIC back from the photo library, `image/heic` is on neither the
-`document` allowlist nor the chat bucket, and the bucket gates the *declared*
+`document` allowlist nor the chat bucket, and the bucket gates the _declared_
 `Content-Type` and never the bytes — so declaring `image/jpeg` over HEIC would be
 accepted, stored, and then render broken. The transcode is what makes the declared
 type true. It is deliberately **conditional**: an already-allowlisted pick uploads
@@ -325,7 +329,7 @@ untouched, because re-encoding everything would flatten a transparent PNG and re
 an animated GIF to one frame, and a GIF sent as a file is a feature that already works
 through the `document` kind.
 
-*2026-11-07:* one re-encode is not about the type. A camera photo (a JPEG, or the HEIC
+_2026-11-07:_ one re-encode is not about the type. A camera photo (a JPEG, or the HEIC
 transcode) longer than 2560 px on its long edge, or a JPEG over 1.5 MB, is shrunk to
 2560 px at JPEG quality 0.8 (`PHOTO_MAX_EDGE`, `PHOTO_JPEG_QUALITY`). A full-size phone
 photo was 4 MB and up, and a 4.1 MB document photo took about 30 seconds to file. The
@@ -335,38 +339,38 @@ not to be quick. The trade is that a PUT stops if the app is suspended mid-uploa
 the caller reports as a failure to retry; a shrunk photo takes a second or two. PNG, GIF
 and WebP still upload untouched.
 
-*2026-09-30:* the profile photo on s15 (#2897, `lib/more/profile-photo.ts`) is the
+_2026-09-30:_ the profile photo on s15 (#2897, `lib/more/profile-photo.ts`) is the
 picker's second caller, through the same `pickAndUploadImage`. #2895 edited `app.json`
 as an integrator change so `photosPermission` names both uses ("set your profile photo
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
-*2026-11-04:* chapter setup's live step (#3351,
+_2026-11-04:_ chapter setup's live step (#3351,
 `lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
 logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records
 and the privacy policy's permissions clause. The owner ruled that policy edit non-material
 ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), so it moved only the page's pin
 (`legal.md` § Acceptance record).
 
-*2026-11-04:* s21's document upload (#3399, `lib/more/document-upload.ts`) is the fourth
+_2026-11-04:_ s21's document upload (#3399, `lib/more/document-upload.ts`) is the fourth
 caller, through `pickImage`, the pick half of the same pipeline. It needs no native
 change, so it ships over the air, but the compiled `photosPermission` text can only
 widen in a store build: #3401 does that with `expo-document-picker`, and the store
-records with it *(superseded 2026-11-05: widened on its own, see below)*. The privacy policy is a web page, so it names the new use in the
+records with it _(superseded 2026-11-05: widened on its own, see below)_. The privacy policy is a web page, so it names the new use in the
 same PR (ruled non-material by the owner, 2026-11-04).
 
-*2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
+_2026-11-05:_ s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
 through `pickImage` and the PUT half of the same pipeline, attaching a photo to a
 service entry. Like the fourth it needs no native change and ships over the air, and
 `photosPermission` can only widen in a store build, so
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name service-hour
-proof alongside document uploads, with the store records *(superseded 2026-11-05: widened
-on its own, see below)*. The privacy policy's
+proof alongside document uploads, with the store records _(superseded 2026-11-05: widened
+on its own, see below)_. The privacy policy's
 permissions clause names it in the same change, moving only the page's pin on the
 #3395 precedent; whether that edit is material, and what each ruling does, is
 [`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
 
-*2026-11-05, later:* the purpose string was widened on its own, ahead of #3401's Files
+_2026-11-05, later:_ the purpose string was widened on its own, ahead of #3401's Files
 picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
 callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
 photo proof to service hours"). #3401 keeps the picker and #2620.
@@ -377,7 +381,7 @@ key at all**. Each of those three is load-bearing:
 
 - `cameraPermission` is omitted rather than declined because declining is what
   compiled to `withBlockedPermissions(['android.permission.CAMERA'])` and broke QR
-  check-in. Omitting is safe — and *not* an instance of the omitted-option hazard
+  check-in. Omitting is safe — and _not_ an instance of the omitted-option hazard
   above — because `IOSConfig.Permissions.applyPermissions` resolves each key as
   `permissions[key] || infoPlist[key] || default`, so an undefined option falls
   through to whatever a plugin already wrote before it ever reaches the vendor
@@ -390,7 +394,7 @@ key at all**. Each of those three is load-bearing:
   Guideline 5.1.1(i) shape `photosPermission` used to be. Declining strips nothing
   another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
   and so never adds RECORD_AUDIO either.
-  *Changed 2026-11-12 (the meeting recorder, [`meetings.md` § Recording in the app](../../behavior/meetings.md#recording-in-the-app)):*
+  _Changed 2026-11-12 (the meeting recorder, [`meetings.md` § Recording in the app](../../behavior/meetings.md#recording-in-the-app)):_
   the app now has a microphone surface, so this decline is gone. A `false` here
   blocks RECORD_AUDIO for every plugin, the recorder's included, and a `false` on
   `expo-camera`'s option deletes the purpose string the recorder needs. So
@@ -401,9 +405,9 @@ key at all**. Each of those three is load-bearing:
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
   unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
-  *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
+  _(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)_
 
-*Corrected 2026-11-05:* "decline what nothing requests" is not the whole rule on iOS.
+_Corrected 2026-11-05:_ "decline what nothing requests" is not the whole rule on iOS.
 App Store Connect's upload scan flags some APIs a linked library references and rejects
 the binary when their key is missing (ITMS-90683), whether or not the app ever asks.
 `expo-location` links `CMMotionActivityManager` for its motion permission requester, so
@@ -415,8 +419,8 @@ linking the symbol, and fails if the app ever makes the request the text disowns
 scan doesn't flag every linked API: the same upload named only the motion key, though
 `expo-camera` links microphone access and `expo-secure-store` links Face ID, both
 declined at the time. So a linked-only entry is added when Apple names its key, and a
-decline stands until it does. *(Changed 2026-11-12: the microphone key is no longer
-declined, because the meeting recorder requests it; Face ID's decline stands.)*
+decline stands until it does. _(Changed 2026-11-12: the microphone key is no longer
+declined, because the meeting recorder requests it; Face ID's decline stands.)_
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
@@ -425,8 +429,8 @@ surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 `signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
 prompt floor from two to three with this slice, which is exactly what that file's block on
 the floor going three to two (#2296) and back to three (#2464) said the raise was for.
-*2026-09-30 (#2343):* the floor is gone. The introspected gate pins which prompts exist,
-and the copy lock asserts only that they name Frapp. *2026-10-07 (#3225):* that copy lock is
+_2026-09-30 (#2343):_ the floor is gone. The introspected gate pins which prompts exist,
+and the copy lock asserts only that they name Frapp. _2026-10-07 (#3225):_ that copy lock is
 now a row in `scripts/ci/__tests__/frapp-naming.test.mjs`, which replaced the thirteen per-surface
 rename locks.
 
@@ -449,7 +453,7 @@ keeps spreading `config` and overriding only `extra` and `android` — `app.conf
 asserts the resolved config to pin exactly that. Recorded here rather than glossed,
 per this section's practice; the nutrition-label half stays owner work on #2196 §4.
 
-*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and two
+_Corrected 2026-09-24 (#2526):_ "two required-reason categories" is now four, and two
 bases above no longer hold. `CA92.1` rests on `expo-updates` as well as Stripe, so it is
 not Stripe's alone. `C617.1` also covers the timestamp reads of pods whose own manifests
 never ship: pod manifests reach the shipped file only through react-native's `pod install`

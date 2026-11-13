@@ -179,6 +179,8 @@ vi.mock("expo-router", () => {
   };
   return {
     useRouter: () => router,
+    // The imperative router (`lib/chat/open-link.ts`), the same object.
+    router,
     useIsFocused: () =>
       React.useSyncExternalStore(subscribeFocus, () => focused),
     // Runs the effect on mount and on every callback-identity change, which

@@ -1,3 +1,4 @@
+import { firstParam } from "@/lib/route-params";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -123,6 +124,8 @@ import {
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
+import { messageLinkUrl } from "@repo/validation";
+import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
 import {
   MessageListSheet,
   PINNED_TITLE,
@@ -268,12 +271,6 @@ export default function ChatThreadRoute() {
     );
   }
   return <ChannelThreadScreen />;
-}
-
-/** A route param's one value: a repeated query key arrives as an array. */
-function firstParam(raw: string | string[] | undefined): string | null {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function ChannelThreadScreen() {
@@ -1340,6 +1337,11 @@ function ChannelThreadScreen() {
       setActionTarget({
         messageId: message.id,
         copyText: copyableText(message),
+        // Copy message link (#3723). A channel message only: this sheet never
+        // holds a thread reply, whose link would open on a timeline it's not in.
+        link: channelId
+          ? messageLinkUrl(webAppOrigin(), { channelId, messageId: message.id })
+          : null,
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
@@ -1373,6 +1375,7 @@ function ChannelThreadScreen() {
     },
     [
       canManageChannel,
+      channelId,
       canReplyHere,
       canThreadHere,
       channelCanPost,
