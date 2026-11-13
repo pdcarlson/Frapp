@@ -88,9 +88,15 @@ export default function AppLayout() {
       {/* The task board left the tab bar for Activity and Calendar
           (#4610); it opens from Activity, a task on Calendar and Up next. */}
       <Stack.Screen name="tasks" options={{ title: SCREEN_TITLES.tasks }} />
+      {/* Messages lives to the right of Chat (the swipe left on Chat home,
+          #3774), so it slides in from the right on both platforms. The
+          stack's "default" is that slide on iOS but a fade on Android (#4447). */}
       <Stack.Screen
         name="messages"
-        options={{ title: SCREEN_TITLES.messages }}
+        options={{
+          title: SCREEN_TITLES.messages,
+          animation: "slide_from_right",
+        }}
       />
       {/* s16's drawn title is "Settings"; the route filename stays
           `preferences.tsx` per spec/ui/mobile/screens.md § Notes. */}
