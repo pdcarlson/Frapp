@@ -6,10 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import { Platform } from "react-native";
 import { useBottomSheetInternal } from "@gorhom/bottom-sheet";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider } from "@/lib/theme";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { expectRoundedRipple } from "@/test/pressable-row";
 import {
+  DayHeading,
   ListRow,
   listRowHint,
   type ListRowProps,
@@ -99,11 +100,17 @@ describe("ListRow — chevron", () => {
         </FrappThemeProvider>,
       );
     });
-    return tree.root.findAllByType(ForwardGlyph).length;
+    return tree.root.findAllByType(ForwardGlyph);
   }
 
   it("draws one on a row that opens somewhere", () => {
-    expect(chevrons({ label: "Documents", onPress: vi.fn() })).toBe(1);
+    expect(chevrons({ label: "Documents", onPress: vi.fn() })).toHaveLength(1);
+  });
+
+  // Web's row chevrons are `--muted-foreground`; the phone's follow (#4138).
+  it("draws it in the muted-foreground tone, as web's row chevrons", () => {
+    const [glyph] = chevrons({ label: "Documents", onPress: vi.fn() });
+    expect(glyph.props.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 
   it("draws none on a row that acts in place (components.md § Chrome weight)", () => {
@@ -114,7 +121,37 @@ describe("ListRow — chevron", () => {
         action: true,
         onPress: vi.fn(),
       }),
-    ).toBe(0);
+    ).toHaveLength(0);
+  });
+});
+
+describe("DayHeading", () => {
+  // Web's Events day heading (#4138): sentence case, caption / 600, foreground,
+  // never the uppercase section eyebrow.
+  it("draws the day in sentence case, caption / 600, in the foreground tone", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <DayHeading>Tomorrow</DayHeading>
+        </FrappThemeProvider>,
+      );
+    });
+    const text = tree.root.find(
+      (node) => (node.type as unknown) === "Text" && node.props.style != null,
+    );
+    const style = Object.assign({}, ...[text.props.style].flat(Infinity));
+    const { caption } = signetDarkTokens.typography.role;
+    expect(text.props.accessibilityRole).toBe("header");
+    expect(style.textTransform).toBeUndefined();
+    expect(style.color).toBe(signetDarkTokens.color.text.foreground);
+    expect(style.fontSize).toBe(caption.size);
+    expect(style.fontFamily).toBe(
+      typeRole({
+        ...caption,
+        weight: signetDarkTokens.typography.weight.semibold,
+      }).fontFamily,
+    );
   });
 });
 
