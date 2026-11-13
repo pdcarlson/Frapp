@@ -92,7 +92,7 @@ member's own answer, not the event's default:
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
 **`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
-phone's page. See [Week](#week).
+page on both clients. See [Week](#week).
 
 ## Rules
 
@@ -111,10 +111,11 @@ phone's page. See [Week](#week).
 
 `week` on `GET /v1/activity` is the member's week as done of total, by kind
 ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13: the count tiles "tell
-me no information", "maybe there's like a percentage or like a dial"). The count tiles say how
-much is waiting; this says how far along the member is, which needs what they already finished,
-and nothing else in the read carries that. The phone draws it as one ring
-([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+me no information", "maybe there's like a percentage or like a dial"). The count tiles said how
+much was waiting; this says how far along the member is, which needs what they already finished,
+and nothing else in the read carries that. Both clients draw it as one ring
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md),
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).
 
 - **The week is the Study screen's:** Sunday at the member's local midnight to the next. The
   client names it (`week_start`) as it does for [Standing](#standing): a start from eight days
@@ -148,7 +149,14 @@ and nothing else in the read carries that. The phone draws it as one ring
   `needs_you.cards` row, before its cap.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in
   `week.unavailable` (`events`, `tasks`, `polls`, `cards`). A client draws a failed part as
-  unknown and says "at least", never as zero and never as a finished week.
+  unknown and says "at least", never as zero and never as a finished week. Polls and cards share
+  a line on both clients, and when one of the two failed and the other has nothing this week the
+  line is unknown too: a dash, never "0 of 0".
+- **A client keeps the count current between reads.** A poll or a card the read listed as open
+  whose closing time has passed since leaves the client's To do list within a tick of its clock
+  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258)), and leaves the week's `total` on the
+  same tick (`activityWeekSummary` takes the clock), as the next read would leave it out. The ring
+  never says "1 left this week" over a list that says nothing is.
 - **It adds little to the read.** The week's events come from the one events read Coming up
   already makes, widened to reach back to the week's start. The rest is a count of finished
   tasks, the member's attendance on those events, one more read of the member's claims on
@@ -163,7 +171,7 @@ count against them.
 
 ## Standing
 
-`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (at the top on web, under the week card on the phone; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
+`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (under the week card on both clients since #4766; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
 
 - **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
 - **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).
@@ -171,7 +179,7 @@ count against them.
 - **Service:** approved and pending minutes on the caller's entries dated from the day after the archived semester's last day (that day is the archive's).
 - **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The read settles nothing: a paused session whose grace ran out counts once Study settles it. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
-- **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a meter, full once the goal is met; a part without one draws no meter. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
+- **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a ring toward it, closed once the goal is met; a part without one draws no ring. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
 
 ## Goals
 
@@ -181,7 +189,7 @@ What a chapter holds its members to, so a bar has an end ([#1062](https://github
 - **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A role set apart with no number is held to no goal, which is how alumni or an officer role is exempted while everyone else owes hours. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
 - **Units.** Points are points. Hours are stored as minutes and typed in whole hours: up to 500 a semester for service and 80 a week for study, and up to 100,000 points (`GOAL_TARGET_MAX` in `@repo/validation`). A save naming a role the chapter doesn't have, or one role twice, is refused.
 - **A deleted role** drops out of the goals when they are next read, and the next save leaves it out.
-- **Where a member sees it.** Activity's "This semester" block draws the bar ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+- **Where a member sees it.** Activity's "This semester" block draws the ring ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
 - **Audit.** Each save writes a `chapter_goals_updated` row to `chapter_audit_log`, with the measure's goals before and after as its diff.
 
 ## Unread
@@ -276,8 +284,10 @@ channel rules (#3926 step 4):
   how many slots or questions it has; never anyone's claims or answers. It is answered on the
   card, so a client opens the message in chat rather than drawing the card on Activity.
 - "Hasn't answered" is checked over the chapter's 100 newest cards of each kind, as polls are.
-- They count toward `needs_you_count` and are Now within a day of their end time, as polls are.
-  They have no filter chip or count tile of their own: they show under All and Needs you.
+- They count toward `needs_you_count`. On both clients they are on the To do list by their end
+  time, as polls are, and share the week card's "Polls and sign-ups" line with them
+  (Changed in #4766 by `pdcarlson`, 2026-11-13: until then they were Now within a day of their
+  end time, and showed under the All and Needs you chips with no chip or tile of their own).
 
 ## Links
 

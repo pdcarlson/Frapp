@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * A module page's Goals block (#1062): what the chapter holds each member to,
- * so Activity's "This semester" block can draw a bar toward it. Points sets a
+ * so Activity's "This semester" block can draw a ring toward it. Points sets a
  * points goal for the semester; Service hours sets a service goal for the
  * semester and a study goal for the week.
  *
@@ -106,7 +106,7 @@ export function ModuleGoals({
     <ProfileSection
       id={`settings-module-${metrics[0]}-goals`}
       title="Goals"
-      hint="Each member sees a bar toward their goal at the top of Activity. Set a different goal for a role, and a member holding several answers to their highest-ranked one."
+      hint="Each member sees a ring toward their goal on Activity, under their week. Set a different goal for a role, and a member holding several answers to their highest-ranked one."
     >
       {goals.isPending || roles.isPending ? (
         <p className="text-caption text-muted-foreground">Loading goals</p>

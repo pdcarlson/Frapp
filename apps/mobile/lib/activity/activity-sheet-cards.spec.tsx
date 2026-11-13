@@ -7,7 +7,7 @@ import {
   NavigationContext,
   NavigationRouteContext,
 } from "expo-router/react-navigation";
-import { activityGroups, type Activity } from "@repo/hooks";
+import { activityToDos, type Activity } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -94,7 +94,7 @@ const READ = {
   unavailable: [],
 } as unknown as Activity;
 
-const taskRow = activityGroups(READ, "all")[0]!.rows[0]!;
+const taskRow = activityToDos(READ)[0]!.dated;
 const SCREEN_NAVIGATION = { name: "the Activity screen's navigation" };
 
 describe("Activity sheet with chat's real task card (#3897)", () => {

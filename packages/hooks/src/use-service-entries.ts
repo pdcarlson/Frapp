@@ -98,7 +98,7 @@ export function selectServiceLeaderboard(
 /**
  * The first day of "this semester" as a bare `YYYY-MM-DD`: the day after the
  * latest archive's `end_date` ({@link semesterSince}), which is the day the
- * Activity page's Service hours tile counts from
+ * Activity page's Service hours gauge counts from
  * (`ActivityStandingService`, `spec/behavior/semester-rollover.md`). `null`
  * when the chapter has never rolled over, so this semester is all time.
  */

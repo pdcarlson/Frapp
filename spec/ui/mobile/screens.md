@@ -81,8 +81,8 @@ Its copy is `writing.md` § 7, Terms prompt.
 
 **`(app)/(tabs)/activity.tsx`, Activity** ([#3897](https://github.com/pdcarlson/Frapp/issues/3897)), has no drawn Canvas screen.
 Live since 2026-11-11, and tab 2 since 2026-11-12 ([#4610](https://github.com/pdcarlson/Frapp/issues/4610)).
-It is on the read web's `/activity` uses ([`../../behavior/activity.md`](../../behavior/activity.md)) and opens the same records, but since 2026-11-13 it is laid out around the member's week rather than as web's page ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
-Web's page keeps the earlier shape until it follows in its own change ([`../web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity)), which [`principles.md`](../design-system/principles.md) P6 counts as drift until then.
+It is on the read web's `/activity` uses ([`../../behavior/activity.md`](../../behavior/activity.md)) and opens the same records, and since 2026-11-13 it is laid out around the member's week ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
+Web's page took the same shape, from the same model in `@repo/hooks`, later that day ([`../web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity)), so the two are one page again ([`principles.md`](../design-system/principles.md) P6).
 The screen is drawn and checked for four people ([`principles.md` § Three people](../design-system/principles.md#three-people)): a member with nothing due, an average member, a committee chair and the president.
 Top to bottom:
 
@@ -102,7 +102,7 @@ Top to bottom:
 - **A line of the week card narrows the To do list** to that kind, and reads as selected (accent text; `selected` to a screen reader).
   Pressing it again, or the list's "Show everything", clears it.
   The narrowing is never stored: it lasts while the app stays open and a fresh launch shows everything.
-  It ends for good when its line leaves the card (its last item done, a new week), so the list never narrows itself again when the line comes back.
+  It ends for good when its line leaves the card (its module turned off, or nothing of its kind left in the week's count, as on a new week), so the list never narrows itself again when the line comes back. Finishing the last item keeps the line, at "3 of 3", and the list says nothing of that kind is left; a list that is empty because its read failed never says that.
   This replaces the filter chips and the remembered chip (#4402): Changed in #4766 by `pdcarlson`, 2026-11-13.
 - **"This semester"** (`components/activity/semester-strip.tsx`; `activityStandingGauges`): the member's points, required events, service hours and study time as up to four gauges in one card, two across (four across cut "3h 57m of 4h" short at a phone's width), from [`../../behavior/activity.md` § Standing](../../behavior/activity.md#standing).
   It began as a card of four rows with meters (2026-11-12, Evan's dashboard idea); the gauges are that card in a third of the height.
@@ -114,6 +114,7 @@ Top to bottom:
   It is drawn only when something waits, so a member, and an officer with an empty queue, sees no card and no zero.
   The week ring never counts it.
   A queue of three or fewer is drawn open; a longer one opens on a press, five rows then "Show all N".
+  Open or closed is decided once, when the card first has rows, and after that only a press changes it, so a queue that grows past three mid-way does not close under the officer.
   Its rows carry `Confirm` and `Approve` as below.
 - **To do**: the member's own events, open tasks, and unanswered polls, sign-ups and forms, **by day**, as Things' Today and Todoist's Upcoming list them and as this app's Events lists do: Overdue (in the warning hue, never cut), then Today, Tomorrow, each weekday of the coming week, Later, and No deadline.
   A day draws three rows, then "Show N more", so the president's Saturday does not bury Sunday.
@@ -123,9 +124,9 @@ Top to bottom:
   The row on the week card is not repeated here, and when it was the only one the section is not drawn.
   With nothing at all it says "Nothing to do right now."
 - **Waiting on others**, then **Links**: what the member made (the polls they posted, the events they made, the tasks they assigned, by kind, three of each then "Show all N", with Archived polls behind its button) and the sign-up links posted for them, from the shared `activityGroups`.
-  "Waiting on others" is web's "Made by you" renamed for what the member wants from it.
+  "Waiting on others" is the old "Made by you" renamed for what the member wants from it, on web too.
   Each is left out when it holds nothing, rather than drawn as an empty line, and both step back while the list is narrowed.
-- **Gone from the phone** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles (#4173), the filter chips and the Needs you chip (#4402), the Now and Later split, and the Coming up group, whose events are now on their days in To do.
+- **Gone from the phone, and from web** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles (#4173), the filter chips and the Needs you chip (#4402), the Now and Later split, and the Coming up group, whose events are now on their days in To do.
   "Needs you" as a name went with them (Paul: not a fan of it).
 
 What else differs from web:
