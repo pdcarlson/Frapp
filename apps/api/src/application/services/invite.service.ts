@@ -251,72 +251,49 @@ export class InviteService {
    * The stored value stays the role NAME, not the id: `invites.role` is
    * matched by name at redeem (`unique (chapter_id, name)` on `roles`), and
    * this issue is about choosing the default, not re-keying that contract.
+   *
+   * A chapter default the sender couldn't invite into themselves gives way to
+   * the Everyone role (#4546), as web's picker falls back to it: a chair on
+   * the phone, which names no role, still sends a working invite rather than
+   * a 403. A role the sender names is never swapped.
    */
   private async resolveInviteRole(
     chapterId: string,
     requested: string | undefined,
     inviterUserId: string,
-  ): Promise<string> {
-    const role = await this.resolveInviteRoleName(chapterId, requested);
-    await this.assertInviteRoleWithinReach(chapterId, inviterUserId, role);
-    return role;
-  }
-
-  /**
-   * The rank rule for invites (#4071): an invite may grant a role ranked at
-   * or below the inviter, so a member brings in a peer or someone junior and
-   * never a superior. A chair holding `members:invite` cannot mint a
-   * Vice President's invite and redeem it on a second account. The rule
-   * applies to the default role too, which a `chapter-config:manage` holder
-   * may have set above the inviter.
-   *
-   * A role carrying `*` is never granted by an invite, the President's
-   * included: the President role moves only through Transfer presidency, and
-   * the redeem refuses it as well ({@link resolveRedeemRoles}).
-   *
-   * The inviter must also hold every permission the role carries, so an
-   * invite into a peer's role cannot bring in what the inviter lacks (a Vice
-   * President inviting a second account as Treasurer for `billing:manage`).
-   * What the chapter's Member role carries is exempt: every member gets it.
-   *
-   * The role checked is the one the redeem grants: a name no role carries is
-   * checked as the Member role it falls back to.
-   */
-  private async assertInviteRoleWithinReach(
-    chapterId: string,
-    inviterUserId: string,
-    roleName: string,
-  ): Promise<void> {
-    const context = await this.rbac.getRankContext(chapterId, inviterUserId);
-    const refusal = inviteRefusal(context, redeemedRole(context, roleName));
-    if (refusal) throw new ForbiddenException(refusal);
+  ): Promise<{ role: string; context: RankContext }> {
+    const [resolved, context] = await Promise.all([
+      this.resolveInviteRoleName(chapterId, requested),
+      this.rbac.getRankContext(chapterId, inviterUserId),
+    ]);
+    let role = resolved;
+    const member = memberRoleOf(context);
+    if (
+      !requested?.trim() &&
+      member &&
+      inviteRefusal(context, namedRole(context, role)) !== null &&
+      inviteRefusal(context, member) === null
+    ) {
+      role = member.name;
+    }
+    assertInviteRoleWithinReach(context, role);
+    return { role, context };
   }
 
   /**
    * Which of the chapter's invites `userId` may see, copy and revoke (#4546):
-   * those whose role they could invite someone into now
-   * ({@link assertInviteRoleWithinReach}). The rest still work, and whoever
-   * ranks high enough still sees them, but a lower officer neither gets their
-   * link nor stops them. Paul, 2026-11-13: officers cannot hand out an invite
-   * ranked above their own, minted or reused. A `*` holder sees every invite,
-   * a stray President one included, so they can revoke it.
+   * those granting a role they could invite someone into now
+   * (`assertInviteRoleWithinReach`), judged by what the redeem grants
+   * ({@link redeemedRole}). The rest still work, and whoever ranks high
+   * enough still sees them, but a lower officer neither gets their link nor
+   * stops them. Paul, 2026-11-13: officers cannot hand out an invite ranked
+   * above their own, minted or reused. A `*` holder sees every invite.
    */
   private async inviteVisibility(
     chapterId: string,
     userId: string,
   ): Promise<(invite: Invite) => boolean> {
-    const context = await this.rbac.getRankContext(chapterId, userId);
-    if (context.reach.wildcard) return () => true;
-    const visibleByRole = new Map<string, boolean>();
-    return (invite) => {
-      let visible = visibleByRole.get(invite.role);
-      if (visible === undefined) {
-        visible =
-          inviteRefusal(context, redeemedRole(context, invite.role)) === null;
-        visibleByRole.set(invite.role, visible);
-      }
-      return visible;
-    };
+    return visibilityIn(await this.rbac.getRankContext(chapterId, userId));
   }
 
   /**
@@ -396,7 +373,7 @@ export class InviteService {
     // `incomplete` chapter may mint, per the Chunk 03 wedge) but this route is
     // also @GraceBlocked(), which blocks minting on `past_due` even inside the
     // 3-day grace window. `canceled` blocks it too.
-    const role = await this.resolveInviteRole(
+    const { role } = await this.resolveInviteRole(
       chapterId,
       requestedRole,
       createdBy,
@@ -417,7 +394,7 @@ export class InviteService {
     requestedRole: string | undefined,
     count: number,
   ): Promise<Invite[]> {
-    const role = await this.resolveInviteRole(
+    const { role } = await this.resolveInviteRole(
       chapterId,
       requestedRole,
       createdBy,
@@ -452,7 +429,7 @@ export class InviteService {
     requestedRole: string | undefined,
     emails: string[],
   ): Promise<BulkEmailInviteResult> {
-    const role = await this.resolveInviteRole(
+    const { role, context } = await this.resolveInviteRole(
       chapterId,
       requestedRole,
       createdBy,
@@ -513,7 +490,7 @@ export class InviteService {
     const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
     await this.replaceOlderInvites(
       chapterId,
-      createdBy,
+      visibilityIn(context),
       deliveries.filter((d) => d.sent).map((d) => d.to),
       new Set(invites.map((invite) => invite.id)),
     );
@@ -541,18 +518,14 @@ export class InviteService {
    */
   private async replaceOlderInvites(
     chapterId: string,
-    senderUserId: string,
+    visible: (invite: Invite) => boolean,
     delivered: string[],
     newIds: Set<string>,
   ): Promise<void> {
     if (delivered.length === 0) return;
     const addresses = new Set(delivered.map((email) => email.toLowerCase()));
     try {
-      const [invites, visible] = await Promise.all([
-        this.inviteRepo.findByChapter(chapterId),
-        this.inviteVisibility(chapterId, senderUserId),
-      ]);
-      const older = invites.filter(
+      const older = (await this.inviteRepo.findByChapter(chapterId)).filter(
         (invite) =>
           visible(invite) &&
           !newIds.has(invite.id) &&
@@ -983,25 +956,89 @@ export class InviteService {
   }
 }
 
+/** The chapter's Member (Everyone) role, by its rename-proof key. */
+function memberRoleOf(context: RankContext): Role | undefined {
+  return context.roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+}
+
 /**
- * The role an invite naming `roleName` grants at redeem: the role of that
- * name, or the chapter's Member (Everyone) role it falls back to when none
- * carries it.
+ * The rank rule for invites (#4071): an invite may grant a role ranked at
+ * or below the inviter, so a member brings in a peer or someone junior and
+ * never a superior. A chair holding `members:invite` cannot mint a
+ * Vice President's invite and redeem it on a second account. A chapter
+ * default the inviter can't reach gives way to the Everyone role before this
+ * check (`InviteService.resolveInviteRole`).
+ *
+ * A role carrying `*` is never granted by an invite, the President's
+ * included: the President role moves only through Transfer presidency, and
+ * the redeem refuses it as well (`InviteService.resolveRedeemRoles`).
+ *
+ * The inviter must also hold every permission the role carries, so an
+ * invite into a peer's role cannot bring in what the inviter lacks (a Vice
+ * President inviting a second account as Treasurer for `billing:manage`).
+ * What the chapter's Member role carries is exempt: every member gets it.
+ *
+ * A name no role carries is checked as the Member role the redeem falls
+ * back to.
+ */
+function assertInviteRoleWithinReach(
+  context: RankContext,
+  roleName: string,
+): void {
+  const refusal = inviteRefusal(context, namedRole(context, roleName));
+  if (refusal) throw new ForbiddenException(refusal);
+}
+
+/**
+ * The role an invite naming `roleName` is checked as when it is minted: the
+ * role of that name, or the Member (Everyone) role when none carries it.
+ */
+function namedRole(context: RankContext, roleName: string): Role | undefined {
+  return (
+    context.roles.find((candidate) => candidate.name === roleName) ??
+    memberRoleOf(context)
+  );
+}
+
+/**
+ * The role an invite naming `roleName` grants at redeem, as
+ * `InviteService.resolveRedeemRoles` decides it: the role of that name, or
+ * the Member (Everyone) role when none carries it or the one that does
+ * carries `*` (an invite minted before #4071).
  */
 function redeemedRole(
   context: RankContext,
   roleName: string,
 ): Role | undefined {
-  return (
-    context.roles.find((candidate) => candidate.name === roleName) ??
-    context.roles.find((r) => r.system_key === SystemRoleKeys.MEMBER)
-  );
+  const named = context.roles.find((candidate) => candidate.name === roleName);
+  return named && !named.permissions.includes(WILDCARD)
+    ? named
+    : memberRoleOf(context);
+}
+
+/**
+ * Whether the caller in `context` may see, copy and revoke an invite
+ * (`InviteService.inviteVisibility`): a `*` holder any, anyone else one whose
+ * redeem grants a role they could invite someone into.
+ */
+function visibilityIn(context: RankContext): (invite: Invite) => boolean {
+  if (context.reach.wildcard) return () => true;
+  const visibleByRole = new Map<string, boolean>();
+  return (invite) => {
+    let visible = visibleByRole.get(invite.role);
+    if (visible === undefined) {
+      visible =
+        inviteRefusal(context, redeemedRole(context, invite.role)) === null;
+      visibleByRole.set(invite.role, visible);
+    }
+    return visible;
+  };
 }
 
 /**
  * Why the caller in `context` may not invite someone into `role`, in plain
  * words, or null when they may. The rule is
- * `InviteService.assertInviteRoleWithinReach`'s; an absent role (a chapter
+ * `assertInviteRoleWithinReach`'s; an absent role (a chapter
  * with no Member role) refuses nothing, as before.
  */
 function inviteRefusal(
@@ -1019,9 +1056,7 @@ function inviteRefusal(
   ) {
     return 'You can only invite people into a role ranked at or below your own.';
   }
-  const member = context.roles.find(
-    (r) => r.system_key === SystemRoleKeys.MEMBER,
-  );
+  const member = memberRoleOf(context);
   const base = new Set(member?.permissions ?? []);
   const missing = permissionsNotHeld(reach, role.permissions).filter(
     (permission) => !base.has(permission),

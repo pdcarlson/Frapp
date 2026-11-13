@@ -2398,6 +2398,9 @@ describe('InviteService', () => {
       pending('inv-assistant', 'Treasury assistant'),
       // A role since deleted: the redeem grants Member, so it lists.
       pending('inv-gone', 'Deleted role'),
+      // Minted before #4071: the redeem grants the Everyone role instead, so
+      // it lists as that and the chair can revoke it.
+      pending('inv-old-president', 'President'),
     ];
 
     beforeEach(() => {
@@ -2417,6 +2420,7 @@ describe('InviteService', () => {
         'inv-social',
         'inv-brother',
         'inv-gone',
+        'inv-old-president',
       ]);
       expect(rows.map((row) => row.token)).not.toContain('tok-inv-treasurer');
     });
@@ -2435,6 +2439,7 @@ describe('InviteService', () => {
         'inv-social',
         'inv-brother',
         'inv-gone',
+        'inv-old-president',
       ]);
     });
 
@@ -2487,6 +2492,35 @@ describe('InviteService', () => {
       ]);
 
       expect(mockInviteRepo.revokePending).toHaveBeenCalledWith([]);
+    });
+
+    it('swaps a chapter default above the sender for Everyone, but never a named role', async () => {
+      const everyone = roleFixture({
+        id: 'role-everyone',
+        chapter_id: CHAPTER_ID,
+        name: 'Everyone',
+        system_key: SystemRoleKeys.MEMBER,
+        is_system: true,
+        permissions: ['members:view'],
+      });
+      const roles = [...tieredChapterRoles(), everyone];
+      mockRoleRepo.findByChapter.mockResolvedValue(roles);
+      mockRbac.getRankContext.mockResolvedValue({
+        ...tieredRankContext(USER.riskChair),
+        roles,
+      });
+      mockInviteRepo.create.mockImplementation((data) =>
+        Promise.resolve(data as Invite),
+      );
+      chapterDefaultRoleId = 'role-vp';
+
+      // The phone names no role: the chair still sends a working invite.
+      const invite = await service.create(CHAPTER_ID, USER.riskChair);
+      expect(invite.role).toBe('Everyone');
+
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Vice President'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('offers each officer only the roles they may invite into', async () => {

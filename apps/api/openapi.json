@@ -2425,7 +2425,7 @@
         ]
       },
       "get": {
-        "description": "Only invites whose role the caller could invite someone into now (#4546): an invite ranked above the caller is left out, and still works.",
+        "description": "Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.",
         "operationId": "InviteController_list_v1",
         "parameters": [],
         "responses": {
@@ -2718,7 +2718,7 @@
     },
     "/v1/invites/{id}": {
       "delete": {
-        "description": "Not found (404) for an invite ranked above the caller, which the list leaves out (#4546).",
+        "description": "Not found (404) for an invite the list leaves out for the caller (#4546).",
         "operationId": "InviteController_revoke_v1",
         "parameters": [
           {

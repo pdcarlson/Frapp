@@ -221,7 +221,7 @@ export class InviteController {
   @ApiOperation({
     summary: 'List chapter invites, newest first',
     description:
-      'Only invites whose role the caller could invite someone into now (#4546): an invite ranked above the caller is left out, and still works.',
+      'Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.',
   })
   @ApiOkResponse({ type: InviteListItemDto, isArray: true })
   async list(
@@ -237,7 +237,7 @@ export class InviteController {
   @ApiOperation({
     summary: 'Revoke an invite',
     description:
-      'Not found (404) for an invite ranked above the caller, which the list leaves out (#4546).',
+      'Not found (404) for an invite the list leaves out for the caller (#4546).',
   })
   async revoke(
     @CurrentChapterId() chapterId: string,

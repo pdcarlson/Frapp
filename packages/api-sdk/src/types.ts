@@ -776,7 +776,7 @@ export interface paths {
         };
         /**
          * List chapter invites, newest first
-         * @description Only invites whose role the caller could invite someone into now (#4546): an invite ranked above the caller is left out, and still works.
+         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.
          */
         get: operations["InviteController_list_v1"];
         put?: never;
@@ -905,7 +905,7 @@ export interface paths {
         post?: never;
         /**
          * Revoke an invite
-         * @description Not found (404) for an invite ranked above the caller, which the list leaves out (#4546).
+         * @description Not found (404) for an invite the list leaves out for the caller (#4546).
          */
         delete: operations["InviteController_revoke_v1"];
         options?: never;

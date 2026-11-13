@@ -105,7 +105,9 @@ export function useInvitableRoleIds(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["invites", chapterId, "roles"],
+    // Outside the `["invites", chapterId]` prefix every invite write
+    // invalidates: the answer depends on roles, not on invites.
+    queryKey: ["invite-roles", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/invites/roles");
       if (error) throw error;
