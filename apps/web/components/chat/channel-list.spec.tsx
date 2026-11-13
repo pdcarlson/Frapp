@@ -425,6 +425,43 @@ describe("ChannelList unread badges", () => {
     expect(row.querySelector('[data-testid="channel-unread-pip"]')).toBeNull();
   });
 
+  it("tones a row's # mark with the row, and lifts it with the name (#3999)", () => {
+    renderList(
+      [
+        general,
+        { id: "c-quiet", name: "quiet", type: "PUBLIC" },
+        {
+          id: "c-hush",
+          name: "hush",
+          type: "PUBLIC",
+          muted: true,
+        } as ChatChannel,
+      ],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
+    const markOf = (name: RegExp) =>
+      within(screen.getByRole("button", { name })).getByText("#");
+    // Unread: no tone of its own, so it takes the row's white.
+    expect(markOf(/general/).className).not.toMatch(
+      /\btext-(muted|disabled)\b/,
+    );
+    // Read: `--muted`; muted: `--disabled`. Both lift on hover and while the
+    // row's menu is open, as the name does.
+    for (const [name, tone] of [
+      [/quiet/, "text-muted"],
+      [/hush/, "text-disabled"],
+    ] as const) {
+      const mark = markOf(name);
+      expect(mark).toHaveClass(tone);
+      expect(mark).toHaveClass("group-hover/row:text-foreground");
+      expect(mark).toHaveClass("group-data-[state=open]/row:text-foreground");
+    }
+    expect(
+      within(screen.getByRole("button", { name: /hush/ })).getByText("Muted")
+        .previousElementSibling,
+    ).toHaveClass("text-muted", "group-hover/row:text-foreground");
+  });
+
   it("puts a muted channel's bell straight after its name (#4136)", () => {
     renderList(
       [{ ...general, muted: true } as ChatChannel],

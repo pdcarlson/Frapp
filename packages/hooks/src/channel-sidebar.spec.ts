@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   arrangeChannelSidebar,
   compareLatestFirst,
+  countsLookUnread,
   foldedSectionAnnouncement,
   sidebarMutedChannelIds,
   sidebarSections,
@@ -328,6 +329,60 @@ describe("arrangeChannelSidebar", () => {
       expect(layout(result)[0]).toBe("channels (folded): social");
     });
 
+    // Shawn, 2026-11-13 (#3999): a muted channel's plain unread stays quiet,
+    // as its row reads as read. A mention, or a DM, still gets past the mute.
+    it("drops a muted channel's plain unread, keeping one that addresses the member", () => {
+      const result = arrange({
+        filters: { unreadOnly: true, hideMuted: false },
+        mutedChannelIds: new Set(["general", "social", "dm-m"]),
+        unreadByChannelId: counts({
+          general: [5, 0],
+          social: [3, 1],
+          zeta: [2, 0],
+          "dm-m": [1, 0],
+        }),
+      });
+      expect(layout(result)).toEqual([
+        "channels: social, zeta",
+        "direct: dm-m",
+      ]);
+    });
+
+    it("adds nothing to a folded header for a muted channel's plain unread", () => {
+      const result = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: new Set(["general", "social"]),
+        unreadByChannelId: counts({ general: [7, 0], social: [3, 1] }),
+      });
+      expect(result.sections[0]).toMatchObject({
+        key: "channels",
+        unreadCount: 3,
+        mentionCount: 1,
+        addressedCount: 1,
+        addressed: true,
+      });
+      const quiet = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: new Set(["general"]),
+        unreadByChannelId: counts({ general: [7, 0] }),
+      });
+      expect(quiet.sections[0]).toMatchObject({
+        unreadCount: 0,
+        mentionCount: 0,
+        addressed: false,
+      });
+    });
+
+    it("counts a muted channel's unread while the mute levels are unknown", () => {
+      // Missing data never quiets a row, the rule the filters already follow.
+      const result = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: undefined,
+        unreadByChannelId: counts({ general: [7, 0] }),
+      });
+      expect(result.sections[0]).toMatchObject({ unreadCount: 7 });
+    });
+
     it("totals only rows that passed the filters", () => {
       const result = arrange({
         collapsed: new Set(["channels"]),
@@ -487,7 +542,12 @@ describe("compareLatestFirst (#3774)", () => {
       a: "2026-11-12T01:00:00.000Z",
       b: "2026-11-12T02:00:00.000Z",
     };
-    const title: Record<string, string> = { a: "Zed", b: "Amy", c: "Cal", d: "Bo" };
+    const title: Record<string, string> = {
+      a: "Zed",
+      b: "Amy",
+      c: "Cal",
+      d: "Bo",
+    };
     const rows = ["c", "a", "d", "b"].map((id) => ({ id }));
     rows.sort(
       compareLatestFirst(
@@ -496,5 +556,27 @@ describe("compareLatestFirst (#3774)", () => {
       ),
     );
     expect(rows.map((row) => row.id)).toEqual(["b", "a", "d", "c"]);
+  });
+});
+
+describe("countsLookUnread (#3999)", () => {
+  const plain = { unreadCount: 3, mentionCount: 0 };
+  it("draws plain unread as unread unless the channel is muted", () => {
+    expect(countsLookUnread(false, plain, false)).toBe(true);
+    expect(countsLookUnread(false, plain, true)).toBe(false);
+  });
+  it("lets a mention or a DM past the mute", () => {
+    expect(
+      countsLookUnread(false, { unreadCount: 3, mentionCount: 1 }, true),
+    ).toBe(true);
+    expect(countsLookUnread(true, plain, true)).toBe(true);
+  });
+  it("treats a mention as unread even when the counts disagree", () => {
+    expect(
+      countsLookUnread(false, { unreadCount: 0, mentionCount: 1 }, false),
+    ).toBe(true);
+    expect(
+      countsLookUnread(false, { unreadCount: 0, mentionCount: 0 }, false),
+    ).toBe(false);
   });
 });

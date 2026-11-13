@@ -24,6 +24,7 @@ import {
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
+  countsLookUnread,
   NO_MATCHING_CHANNELS,
   otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
@@ -210,12 +211,32 @@ function isDm(channel: ChatChannel): boolean {
  * screen reader read for free; swapping it for a mark without this would have
  * silently dropped it.
  */
-function ChannelRowName({ title, muted }: { title: string; muted: boolean }) {
+/**
+ * A row's marks carry their own quiet tone, so they don't inherit the row's
+ * hover lift; this lifts them with the name, on hover and while the row's
+ * right-click menu is open (`group/row` is the row's `<li>`).
+ */
+const ROW_LIFT =
+  "group-hover/row:text-foreground group-data-[state=open]/row:text-foreground";
+
+function ChannelRowName({
+  title,
+  muted,
+  lift,
+}: {
+  title: string;
+  muted: boolean;
+  /** Lift the mark with the row on hover; off on the active row. */
+  lift: boolean;
+}) {
   if (!muted) return <span className="truncate">{title}</span>;
   return (
     <span className="flex min-w-0 items-center gap-1">
       <span className="truncate">{title}</span>
-      <MuteGlyph className="h-3.5 w-3.5 shrink-0 text-muted" active />
+      <MuteGlyph
+        className={cn("h-3.5 w-3.5 shrink-0 text-muted", lift && ROW_LIFT)}
+        active
+      />
       <span className="sr-only">Muted</span>
     </span>
   );
@@ -769,12 +790,16 @@ export function ChannelList({
     // A mention implies an unread row even if the two counts ever
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
+    // A mention implies an unread row even if the two counts ever disagree.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
-    // Mobile's rule (`channel-row.tsx`), so the two clients agree: a muted
-    // channel reads as unread only when it addresses the member, and
-    // otherwise sits quietly in `--muted`.
+    // `countsLookUnread` is the rule the phone's row and the arrangement's
+    // header totals and Unread only read too (#3999): a muted channel reads as
+    // unread only when it addresses the member, and otherwise sits quietly in
+    // `--muted`.
     const isMuted = !!channel.muted;
-    const looksUnread = isUnread && (!isMuted || hasMention);
+    const looksUnread =
+      countsKnown &&
+      countsLookUnread(isDirectChannel(channel), counts, isMuted);
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
@@ -802,6 +827,7 @@ export function ChannelList({
           // The row stays lit while its menu is open, so the member can see
           // which channel the menu is for.
           className={cn(
+            "group/row",
             !isActive &&
               "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground",
           )}
@@ -854,12 +880,12 @@ export function ChannelList({
               // The `#`, lock and audit marks follow mobile's sigil: the
               // row's own tone when unread or active, `--muted` when read,
               // and `--disabled` with a muted row.
+              // Like the name, it lifts to `--foreground` on hover and while
+              // the row's menu is open (#3999).
               tone={
                 isActive || looksUnread
                   ? undefined
-                  : isMuted
-                    ? "text-disabled"
-                    : "text-muted"
+                  : cn(isMuted ? "text-disabled" : "text-muted", ROW_LIFT)
               }
             />
             {twoLine ? (
@@ -867,6 +893,7 @@ export function ChannelList({
                 <ChannelRowName
                   title={titleFor(channel)}
                   muted={!!channel.muted}
+                  lift={!isActive}
                 />
                 {/*
                   Caption, muted, never bold: the name carries the unread
@@ -884,6 +911,7 @@ export function ChannelList({
               <ChannelRowName
                 title={titleFor(channel)}
                 muted={!!channel.muted}
+                lift={!isActive}
               />
             )}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
