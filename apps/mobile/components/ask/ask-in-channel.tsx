@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  askChannelPostOffer,
   askTurnsInChannel,
   useAsk,
   useAskPostFlow,
@@ -19,7 +20,6 @@ import {
   ASK_COPY,
   ASK_MENTION_NAME,
   ASK_POST_COPY,
-  ASK_POST_REFUSALS,
   askPostRestrictedList,
   type AskAnswer,
 } from "@repo/validation";
@@ -308,7 +308,6 @@ function AskChannelTurnActions({
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const { answer, origin } = exchange;
   const dismiss = (
     <TurnAction
       label={ASK_COPY.dismiss}
@@ -316,31 +315,22 @@ function AskChannelTurnActions({
       onPress={onDismiss}
     />
   );
-  if (
-    exchange.phase !== "done" ||
-    exchange.proposal ||
-    !origin ||
-    answer?.status !== "answered" ||
-    !answer.report_receipt
-  ) {
+  const offer = askChannelPostOffer(exchange);
+  if (offer.kind === "none") {
     return <View style={styles.actions}>{dismiss}</View>;
   }
-  if (answer.read_chat) {
-    // Known without asking, so no action is offered that could only refuse:
-    // the line stands where the action would.
+  if (offer.kind === "stays") {
     return (
       <View style={styles.actions}>
         {dismiss}
-        <Text style={styles.caption}>
-          {ASK_POST_REFUSALS["ai.ask.post.read_chat"]}
-        </Text>
+        <Text style={styles.caption}>{offer.reason}</Text>
       </View>
     );
   }
   return (
     <AskPostActions
-      channelId={origin.channelId}
-      answer={answer}
+      channelId={offer.channelId}
+      answer={offer.answer}
       // Once it is in the channel for everyone, the asker's own copy of it
       // there would be the same answer twice. It stays in Ask.
       onPosted={onDismiss}

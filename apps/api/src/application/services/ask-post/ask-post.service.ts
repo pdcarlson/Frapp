@@ -21,6 +21,10 @@ import {
   type AskReportReceipt,
 } from '#domain/utils/ai-report-receipt';
 import { AiTextCipherError } from '#domain/utils/ai-text-cipher';
+import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import { aiConsentRefusal } from '../ai/ai-consent-refusal';
+import { AiConsentService } from '../ai/ai-consent.service';
+import { ASK_ANSWER_PROMPT_VERSION } from '../ask/ask-prompt';
 import { ChannelAccessService } from '../channel-access.service';
 import { MeetingService } from '../meeting.service';
 import { EventService } from '../event.service';
@@ -47,9 +51,11 @@ import type { ChapterMemberAccess } from '../rbac.service';
  * name every entry, and the check runs again on the post itself, so a list
  * that grew in between is shown again instead of posted past.
  *
- * Two things never go to a channel: an answer that read chat messages
- * (their authors chose their own channel's audience, not this one), and a
- * request or its card, which has no receipt.
+ * Three things never go to a channel: an answer that read chat messages
+ * (their authors chose their own channel's audience, not this one), an
+ * answer to a follow-up (the model also read the earlier turns, which the
+ * client sent and no check can trace), and a request or its card, which has
+ * no receipt.
  *
  * The row is the Frapp sender's, of kind `ask_answer`. It is written with no
  * mentions and the push worker returns on the kind, so it notifies nobody.
@@ -57,6 +63,7 @@ import type { ChapterMemberAccess } from '../rbac.service';
 @Injectable()
 export class AskPostService {
   constructor(
+    private readonly consent: AiConsentService,
     private readonly channelAccess: ChannelAccessService,
     private readonly meetings: MeetingService,
     private readonly events: EventService,
@@ -73,6 +80,22 @@ export class AskPostService {
     acknowledged: readonly string[];
     now: Date;
   }): Promise<AskPostOutcome> {
+    // What asking checks, checked again (`AskService.assertMayAsk`): the
+    // president may have turned Ask off, or the member said No to Frapp AI,
+    // since the answer was written, and neither should still put an AI
+    // answer in a channel.
+    const entry = aiCatalogEntry('ask.answer');
+    const decision = await this.consent.check({
+      chapterId: input.chapterId,
+      actingUserId: input.userId,
+      task: 'ask.answer',
+      family: entry.family,
+      provider: entry.provider,
+      model: entry.model,
+      promptVersion: ASK_ANSWER_PROMPT_VERSION,
+    });
+    if (!decision.allowed) throw aiConsentRefusal(decision.reason);
+
     const receipt = this.open(input);
     const { shown, given } = receipt;
     if (shown.status !== 'answered' || shown.text.trim() === '') {
@@ -90,6 +113,9 @@ export class AskPostService {
     if (given.some((source) => source.ref?.type === 'chat')) {
       throw refusal('ai.ask.post.read_chat');
     }
+    // Earlier turns were the client's text and the model read them too, so
+    // the audience check below could not cover what the answer rests on.
+    if (receipt.followed_up) throw refusal('ai.ask.post.follow_up');
 
     // The asker must be able to post here themselves: a read-only channel,
     // an archived one and the audit log refuse as they do a message.
@@ -154,10 +180,10 @@ export class AskPostService {
       }),
       ...(shown.truncated ? { truncated: true } : {}),
     };
-    // One row, keyed on the ask, so a second tap or a retried request posts
-    // nothing more. `content` is the answer alone: a citation's offset
+    // One row a channel, keyed on the ask, so a second tap or a retried
+    // request posts nothing more there. `content` is the answer alone: a citation's offset
     // counts into it, and a build from before this kind shows it as text.
-    await this.messageRepo.insertIdempotent({
+    const written = await this.messageRepo.insertIdempotent({
       channel_id: channel.id,
       sender_id: SYSTEM_SENDER_ID,
       type: 'TEXT',
@@ -166,6 +192,10 @@ export class AskPostService {
       payload,
       client_message_id: `ask:${receipt.ask_id}`,
     });
+    // The row was already there, live or deleted (a deleted message keeps
+    // its key). Saying "posted" would take the asker's copy away and show
+    // them nothing new.
+    if (written === 'duplicate') throw refusal('ai.ask.post.already_posted');
     return { posted: true, restricted };
   }
 
@@ -251,7 +281,9 @@ export class AskPostService {
         case 'document':
           return allViewMembers;
         case 'meeting':
-          return readableMinutes.has(ref.id);
+          // The minutes routes ask for `members:view` before the meeting's
+          // own rule (`MeetingController`).
+          return allViewMembers && readableMinutes.has(ref.id);
         case 'tool':
           if (ref.reach === 'asker') return false;
           if (!allViewMembers) return false;

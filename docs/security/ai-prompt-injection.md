@@ -319,9 +319,18 @@ officer's typed request into a proposal they confirm
   tool, so nothing retrieved can cause a post (C3, C5): it runs only when the asker presses Post.
   What it writes:
   - **Only a sealed answer.** The request carries the answer's report receipt, which the server
-    sealed for this member in this chapter, and no answer text. A member cannot post their own
-    words as Frapp's, replay another member's receipt, or post one from another chapter (C4). The
-    receipt is refused after 24 hours.
+    sealed for this member in this chapter, and no answer text. A member cannot post text the
+    model did not write, replay another member's receipt, or post one from another chapter (C4).
+    The receipt is refused after 24 hours. The seal proves authorship by the model, not that the
+    asker did not steer it: the question is theirs, so it is posted above the answer for readers
+    to judge.
+  - **Never a follow-up's answer.** `history` is client text the model reads as its own earlier
+    turns. It could carry an earlier answer's restricted content past the audience check, or
+    words the asker wrote for the model to repeat with no trace in the posted question. The
+    receipt records that history was sent (`followed_up`) and the post is refused
+    (`ai.ask.post.follow_up`); found in this change's review.
+  - **Asking's conditions again.** The chapter's Ask switch and the asker's own consent are
+    checked on the post, so an answer written before either was withdrawn is not published after.
   - **Under the asker's own permission to post** (C2): `assertChannelAccess(..., 'post')`, the gate
     a message passes, so the audit log, an archived channel and a read-only one refuse.
   - **This is a deliberate widening of who sees an answer's text.** Until now what a run produced

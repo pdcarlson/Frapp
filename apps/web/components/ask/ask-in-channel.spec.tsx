@@ -500,6 +500,18 @@ describe("posting an answer for everyone here (#4713)", () => {
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 
+  it("offers no action for a follow-up, whose answer leaned on earlier turns", () => {
+    state.exchanges = [{ ...SEALED, followedUp: true }];
+    mount();
+    expect(post()).toBeNull();
+    expect(
+      screen.getByText(
+        "This answer followed earlier questions, so it stays with you.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
   it("takes the asker's own copy out of the channel once it is posted", () => {
     state.exchanges = [SEALED];
     mount();

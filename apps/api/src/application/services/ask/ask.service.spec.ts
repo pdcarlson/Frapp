@@ -1105,6 +1105,24 @@ describe('AskService', () => {
       ).toThrow('invalid');
     });
 
+    it('marks an answer to a follow-up, whose earlier turns no receipt can trace (#4713)', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const open = (answer: AskAnswer) =>
+        openAskReportReceipt(
+          ring,
+          answer.report_receipt!,
+          { chapterId: CHAPTER, userId: USER },
+          NOW,
+        );
+      const alone = await run(build({ passages: [passage()] }).service);
+      expect(open(alone.answer).followed_up).toBeUndefined();
+
+      const after = await run(build({ passages: [passage()] }).service, {
+        history: [{ question: 'Who is on exec?', answer: 'Dana and Sam.' }],
+      });
+      expect(open(after.answer).followed_up).toBe(true);
+    });
+
     it('says where each thing the model was handed came from, by id and never by text (#4713)', async () => {
       process.env.AI_STORED_TEXT_KEY = KEY;
       const { service } = build({

@@ -103,6 +103,13 @@ export interface AskReportReceipt {
    * No on the AI sheet. Never sent anywhere readable: the receipt is sealed.
    */
   quoted_user_ids: string[];
+  /**
+   * The question came with earlier turns of the conversation (#4713). Those
+   * turns are the client's text and were read by the model beside `given`,
+   * so nothing here says where they came from: such an answer can be
+   * reported, never posted to a channel. Absent when there were none.
+   */
+  followed_up?: true;
 }
 
 export class AskReportReceiptError extends Error {

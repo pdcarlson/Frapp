@@ -584,6 +584,40 @@ describe('MeetingService', () => {
       ).resolves.toEqual(new Set(['mtg-1', 'mtg-exec']));
     });
 
+    it('an editor of minutes reads every one, whatever its event, in the whole-audience check too', async () => {
+      // `meetings:edit` without `*`: the branch no fixture member walks.
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const editor = {
+        user_id: 'user-editor',
+        permissions: new Set(['members:view', 'meetings:edit']),
+        role_ids: [],
+      };
+      const ids = ['mtg-exec', 'mtg-orphan'];
+      await expect(
+        service.readableByAll(CHAPTER, ids, [editor]),
+      ).resolves.toEqual(new Set(ids));
+      // One reader who is not an editor and not invited closes both.
+      await expect(
+        service.readableByAll(CHAPTER, ids, [editor, audience(JAKE)]),
+      ).resolves.toEqual(new Set());
+    });
+
     it('follows the event when its audience changes', async () => {
       rows.set(
         'mtg-1',

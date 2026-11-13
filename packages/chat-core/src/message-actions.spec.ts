@@ -6,6 +6,7 @@ import {
   canActOnMessage,
   canDeleteMessage,
   canEditMessage,
+  canReportMessage,
   channelAllowsReplies,
   copyableText,
   isOwnMessage,
@@ -126,6 +127,16 @@ describe("an Ask Frapp answer posted to the channel (#4713)", () => {
     expect(
       isOwnPostedAnswer({ kind: "ask_answer", payload: null }, VIEWER),
     ).toBe(false);
+  });
+
+  it("is not the asker's to report, and is anyone else's", () => {
+    const row = (askedBy: string) => ({
+      ...posted(askedBy),
+      _status: "confirmed" as const,
+      is_deleted: false,
+    });
+    expect(canReportMessage(row(VIEWER), VIEWER)).toBe(false);
+    expect(canReportMessage(row("user-2"), VIEWER)).toBe(true);
   });
 
   it("is a card, so it is never edited", () => {

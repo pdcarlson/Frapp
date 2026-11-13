@@ -11,7 +11,55 @@ import {
   type AskPostRestricted,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
+import type { AskExchange } from "./use-ask";
 import { useFrappClient } from "./use-frapp-client";
+
+/**
+ * What a turn drawn in a channel offers its asker about posting, decided
+ * once for web and mobile:
+ *
+ * - `none`: nothing to post. A turn still working, a request (its card is
+ *   only ever the asker's), a refusal, "couldn't find that", or an answer
+ *   with no receipt, since the receipt is what is posted.
+ * - `stays`: an answer the server would refuse, known without asking, so no
+ *   action is offered that could only fail and `reason` stands in its place.
+ * - `post`: "Post for everyone here".
+ */
+export type AskChannelPostOffer =
+  | { kind: "none" }
+  | { kind: "stays"; reason: string }
+  | { kind: "post"; channelId: string; answer: AskAnswer };
+
+export function askChannelPostOffer(
+  exchange: Pick<
+    AskExchange,
+    "phase" | "proposal" | "origin" | "answer" | "followedUp"
+  >,
+): AskChannelPostOffer {
+  const { answer, origin } = exchange;
+  if (
+    exchange.phase !== "done" ||
+    exchange.proposal ||
+    !origin ||
+    answer?.status !== "answered" ||
+    !answer.report_receipt
+  ) {
+    return { kind: "none" };
+  }
+  if (answer.read_chat) {
+    return {
+      kind: "stays",
+      reason: ASK_POST_REFUSALS["ai.ask.post.read_chat"],
+    };
+  }
+  if (exchange.followedUp) {
+    return {
+      kind: "stays",
+      reason: ASK_POST_REFUSALS["ai.ask.post.follow_up"],
+    };
+  }
+  return { kind: "post", channelId: origin.channelId, answer };
+}
 
 /**
  * Posting an Ask Frapp answer to a channel (#4713, `spec/behavior/ai.md`

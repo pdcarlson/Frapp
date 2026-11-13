@@ -736,6 +736,9 @@ export class AskService {
           model: entry.model,
           prompt_version: ASK_ANSWER_PROMPT_VERSION,
           quoted_user_ids: [...quoted],
+          ...((input.history?.length ?? 0) > 0
+            ? { followed_up: true as const }
+            : {}),
         },
         { chapterId: input.chapterId, userId: input.userId },
       );

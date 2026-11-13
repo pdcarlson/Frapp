@@ -63,6 +63,9 @@ export const ASK_POST_REFUSALS = {
   "ai.ask.post.not_an_answer": "Only an answer can be posted.",
   "ai.ask.post.read_chat":
     "This answer read chat messages, so it stays with you.",
+  "ai.ask.post.follow_up":
+    "This answer followed earlier questions, so it stays with you.",
+  "ai.ask.post.already_posted": "This answer was already posted here.",
 } as const;
 export type AskPostRefusalCode = keyof typeof ASK_POST_REFUSALS;
 
@@ -108,6 +111,26 @@ export const AskPostedAnswerSchema = z.object({
   truncated: z.boolean().optional(),
 });
 export type AskPostedAnswer = z.infer<typeof AskPostedAnswerSchema>;
+
+/**
+ * Whether `userId` is the member who posted this Ask Frapp answer. The row
+ * is the Frapp sender's, so a sender check is false for everyone; the server
+ * writes who posted it in `payload.asked_by` and no client can send the
+ * kind, so it is as trustworthy as `sender_id`. The API and both clients
+ * read it here, so who may delete one (and may not report one) is one rule.
+ */
+export function isAskAnswerPostedBy(
+  message: { kind?: string | null; payload?: unknown },
+  userId: string | null | undefined,
+): boolean {
+  if (!userId || message.kind !== ASK_ANSWER_KIND) return false;
+  const payload = message.payload;
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { asked_by?: unknown }).asked_by === userId
+  );
+}
 
 /** A posted answer's payload, or null for one this build can't read. */
 export function readAskPostedAnswer(payload: unknown): AskPostedAnswer | null {

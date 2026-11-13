@@ -1,3 +1,4 @@
+import { isAskAnswerPostedBy } from "@repo/validation";
 import { isBlockableSender } from "./blocks";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./reply-preview";
 import type { ChatMessage } from "./types";
@@ -118,11 +119,7 @@ export function isOwnPostedAnswer(
   message: Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
 ): boolean {
-  return (
-    !!viewerId &&
-    message.kind === "ask_answer" &&
-    message.payload?.asked_by === viewerId
-  );
+  return isAskAnswerPostedBy(message, viewerId);
 }
 
 /**
@@ -372,16 +369,20 @@ export function messageActionsFor(
 }
 
 /**
- * Report, on its own: anyone else's confirmed, undeleted message. The web
+ * Report, on its own: anyone else's confirmed, undeleted message. An Ask
+ * Frapp answer the viewer posted is theirs, though the row is Frapp's. The web
  * action bar asks this directly, since it gates Reply, Edit and Delete on its
  * own callbacks rather than on a {@link MessageActionsContext}.
  */
 export function canReportMessage(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted"> &
+    Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
 ): boolean {
   return (
-    canOpenMessageActions(message, viewerId) && !isOwnMessage(message, viewerId)
+    canOpenMessageActions(message, viewerId) &&
+    !isOwnMessage(message, viewerId) &&
+    !isOwnPostedAnswer(message, viewerId)
   );
 }
 

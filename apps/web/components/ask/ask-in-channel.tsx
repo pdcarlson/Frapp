@@ -13,6 +13,7 @@ import {
 } from "react";
 import { EyeOff } from "lucide-react";
 import {
+  askChannelPostOffer,
   askTurnsInChannel,
   useAsk,
   useAskPostFlow,
@@ -26,7 +27,6 @@ import {
   ASK_COPY,
   ASK_MENTION_NAME,
   ASK_POST_COPY,
-  ASK_POST_REFUSALS,
   askPostRestrictedList,
   can,
   type AskAccess,
@@ -372,7 +372,6 @@ function AskChannelTurnActions({
   exchange: AskExchange;
   onDismiss: () => void;
 }) {
-  const { answer, origin } = exchange;
   const dismiss = (
     <button
       type="button"
@@ -382,31 +381,22 @@ function AskChannelTurnActions({
       {ASK_COPY.dismiss}
     </button>
   );
-  if (
-    exchange.phase !== "done" ||
-    exchange.proposal ||
-    !origin ||
-    answer?.status !== "answered" ||
-    !answer.report_receipt
-  ) {
-    return dismiss;
-  }
-  if (answer.read_chat) {
-    // Known without asking, so no action is offered that could only refuse:
-    // the line stands where the action would.
+  const offer = askChannelPostOffer(exchange);
+  if (offer.kind === "none") return dismiss;
+  if (offer.kind === "stays") {
     return (
       <p className="flex min-h-5 flex-wrap items-center gap-x-4">
         {dismiss}
         <span className="text-caption text-muted-foreground">
-          {ASK_POST_REFUSALS["ai.ask.post.read_chat"]}
+          {offer.reason}
         </span>
       </p>
     );
   }
   return (
     <AskPostActions
-      channelId={origin.channelId}
-      answer={answer}
+      channelId={offer.channelId}
+      answer={offer.answer}
       // Once it is in the channel for everyone, the asker's own copy of it
       // there would be the same answer twice. It stays in Ask.
       onPosted={onDismiss}

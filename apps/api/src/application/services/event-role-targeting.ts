@@ -92,7 +92,8 @@ export function isEventVisibleWith(
  * (`AttendanceService.getMyAttendance`) both answer through it. The list
  * (`EventService.findByChapter`) and search (`SearchService.filterVisibleEvents`)
  * apply the same rule in batch form, reading the permission and member row
- * once for many events, so a change to the rule lands in all three.
+ * once for many events, and {@link isEventVisibleWith} states it for a member
+ * already resolved, so a change to the rule lands in all four.
  */
 export async function isEventVisibleTo(
   event: EventAttendanceFields,

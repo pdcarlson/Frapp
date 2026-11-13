@@ -5,7 +5,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import { ASK_POST_COPY, ASK_POST_REFUSALS } from "@repo/validation";
-import { useAskPostFlow } from "./use-ask-post";
+import type { AskExchange } from "./use-ask";
+import { askChannelPostOffer, useAskPostFlow } from "./use-ask-post";
 import { FrappClientProvider } from "./use-frapp-client";
 
 const answered = (data: unknown) => ({
@@ -191,5 +192,63 @@ describe("useAskPostFlow", () => {
     act(() => result.current.start());
     expect(result.current.stage).toBe("idle");
     expect(POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("askChannelPostOffer", () => {
+  const answer = {
+    status: "answered",
+    report_receipt: "sealed",
+    read_chat: false,
+  } as NonNullable<AskExchange["answer"]>;
+  const turn = (over: Partial<AskExchange> = {}) =>
+    ({
+      phase: "done",
+      proposal: null,
+      origin: { channelId: "channel-1", at: "2026-11-13T18:00:00.000Z" },
+      answer,
+      ...over,
+    }) as AskExchange;
+
+  it("offers a finished, sealed answer drawn in a channel", () => {
+    expect(askChannelPostOffer(turn())).toEqual({
+      kind: "post",
+      channelId: "channel-1",
+      answer,
+    });
+  });
+
+  it("never offers a request's turn, even one that carries a sealed answer", () => {
+    const proposal = {} as NonNullable<AskExchange["proposal"]>;
+    expect(askChannelPostOffer(turn({ proposal }))).toEqual({ kind: "none" });
+  });
+
+  it("offers nothing for a turn still working, outside a channel, not an answer, or unsealed", () => {
+    const none = { kind: "none" };
+    expect(askChannelPostOffer(turn({ phase: "working" }))).toEqual(none);
+    expect(askChannelPostOffer(turn({ origin: undefined }))).toEqual(none);
+    expect(
+      askChannelPostOffer(
+        turn({ answer: { ...answer, status: "not_found" } as typeof answer }),
+      ),
+    ).toEqual(none);
+    expect(
+      askChannelPostOffer(
+        turn({ answer: { ...answer, report_receipt: null } }),
+      ),
+    ).toEqual(none);
+  });
+
+  it("says why an answer stays with its asker when the server would refuse it", () => {
+    expect(
+      askChannelPostOffer(turn({ answer: { ...answer, read_chat: true } })),
+    ).toEqual({
+      kind: "stays",
+      reason: ASK_POST_REFUSALS["ai.ask.post.read_chat"],
+    });
+    expect(askChannelPostOffer(turn({ followedUp: true }))).toEqual({
+      kind: "stays",
+      reason: ASK_POST_REFUSALS["ai.ask.post.follow_up"],
+    });
   });
 });

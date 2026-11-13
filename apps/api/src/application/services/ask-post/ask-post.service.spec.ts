@@ -121,7 +121,11 @@ function build(
   const messageRepo = {
     insertIdempotent: jest.fn().mockResolvedValue('inserted'),
   };
+  const consent = {
+    check: jest.fn().mockResolvedValue({ allowed: true }),
+  };
   const service = new AskPostService(
+    consent as never,
     channelAccess as never,
     meetings as never,
     events as never,
@@ -140,7 +144,15 @@ function build(
       acknowledged: more.acknowledged ?? [],
       now: NOW,
     });
-  return { service, post, channelAccess, meetings, events, messageRepo };
+  return {
+    service,
+    post,
+    consent,
+    channelAccess,
+    meetings,
+    events,
+    messageRepo,
+  };
 }
 
 const refusedWith = async (attempt: Promise<unknown>, code: string) => {
@@ -257,6 +269,43 @@ describe('AskPostService', () => {
       expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
     });
 
+    it('refuses a follow-up: the earlier turns it read cannot be checked', async () => {
+      const { post, channelAccess, messageRepo } = build();
+      await refusedWith(
+        post(receipt({ followed_up: true })),
+        'ai.ask.post.follow_up',
+      );
+      expect(channelAccess.assertChannelAccess).not.toHaveBeenCalled();
+      expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['chapter_off', 'ai.chapter_off'],
+      ['member_declined', 'ai.consent.required'],
+    ])(
+      'refuses once Ask is off or the member said No (%s), as asking does',
+      async (reason, code) => {
+        const { post, consent, messageRepo } = build();
+        consent.check.mockResolvedValue({ allowed: false, reason });
+        const error = await post(receipt()).then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect((error as ForbiddenException).getResponse()).toMatchObject({
+          code,
+        });
+        expect(consent.check).toHaveBeenCalledWith(
+          expect.objectContaining({
+            chapterId: CHAPTER,
+            actingUserId: ASKER,
+            task: 'ask.answer',
+          }),
+        );
+        expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
+      },
+    );
+
     it('refuses where the asker cannot post, before anything is checked or written', async () => {
       const { post, channelAccess, messageRepo } = build();
       channelAccess.assertChannelAccess.mockRejectedValue(
@@ -337,6 +386,40 @@ describe('AskPostService', () => {
       await expect(
         open.post(receipt({ given: [minutes] }), { confirm: false }),
       ).resolves.toEqual({ posted: false, restricted: [] });
+    });
+
+    it('minutes are not open to a reader without members:view, whatever the meeting says', async () => {
+      // The minutes routes ask for the permission before the meeting's rule.
+      const { post } = build({
+        readers: [reader(ASKER), reader('user-b', [])],
+        readableMinutes: [MINUTES],
+      });
+      const { restricted } = await post(receipt({ given: [minutes] }), {
+        confirm: false,
+      });
+      expect(restricted.map(({ key }) => key)).toEqual([`meeting:${MINUTES}`]);
+    });
+
+    it('the roster and the calendar are not open to a reader without members:view', async () => {
+      const roster: Given = {
+        title: 'Members (live data, read just now)',
+        text: 'The treasurer is Dana.',
+        ref: { type: 'tool', name: 'roster', reach: 'chapter' },
+        label: 'Members',
+        kind: 'members',
+      };
+      const { post } = build({
+        readers: [reader(ASKER), reader('user-b', [])],
+        openEvents: [EVENT],
+      });
+      const { restricted } = await post(
+        receipt({ given: [roster, calendar([EVENT])] }),
+        { confirm: false },
+      );
+      expect(restricted.map(({ key }) => key)).toEqual([
+        'tool:roster',
+        'tool:events',
+      ]);
     });
 
     it("the asker's own records always warn", async () => {
@@ -523,13 +606,10 @@ describe('AskPostService', () => {
       expect(row.payload.truncated).toBe(true);
     });
 
-    it('a second post of the same answer is the same row', async () => {
+    it('says so when the answer is already in the channel, live or deleted, and does not call it posted', async () => {
       const { post, messageRepo } = build();
       messageRepo.insertIdempotent.mockResolvedValueOnce('duplicate');
-      await expect(post(receipt())).resolves.toEqual({
-        posted: true,
-        restricted: [],
-      });
+      await refusedWith(post(receipt()), 'ai.ask.post.already_posted');
     });
   });
 });

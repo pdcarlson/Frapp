@@ -451,6 +451,16 @@ describe("posting an answer for everyone here (#4713)", () => {
     expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
   });
 
+  it("offers no action for a follow-up, whose answer leaned on earlier turns", () => {
+    hooks.exchanges = [{ ...sealed(), followedUp: true }];
+    const rendered = render();
+    expect(byLabel(rendered, "Post for everyone here")).toHaveLength(0);
+    expect(screenText(rendered)).toContain(
+      "This answer followed earlier questions, so it stays with you.",
+    );
+    expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
+  });
+
   it("takes the asker's own copy out of the channel once it is posted", () => {
     hooks.exchanges = [sealed()];
     render();

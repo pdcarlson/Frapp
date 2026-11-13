@@ -6,6 +6,7 @@ import {
   askPostedSourceTitle,
   askPostRefusalCopy,
   askPostRestrictedList,
+  isAskAnswerPostedBy,
   readAskPostedAnswer,
 } from "./ask-post";
 import { copyForErrorCode } from "./error-copy";
@@ -132,5 +133,27 @@ describe("refusals and copy", () => {
       "Sam Abernathy asked Frapp",
     );
     expect(ASK_POST_COPY.asked(null)).toBe("A member asked Frapp");
+  });
+});
+
+describe("isAskAnswerPostedBy", () => {
+  const posted = { kind: "ask_answer", payload: { asked_by: "user-1" } };
+
+  it("is true for the member the server wrote as the asker, and nobody else", () => {
+    expect(isAskAnswerPostedBy(posted, "user-1")).toBe(true);
+    expect(isAskAnswerPostedBy(posted, "user-2")).toBe(false);
+    expect(isAskAnswerPostedBy(posted, null)).toBe(false);
+  });
+
+  it("reads the asker from this kind alone, and from a payload it can read", () => {
+    expect(isAskAnswerPostedBy({ ...posted, kind: "poll" }, "user-1")).toBe(
+      false,
+    );
+    expect(
+      isAskAnswerPostedBy({ kind: "ask_answer", payload: null }, "user-1"),
+    ).toBe(false);
+    expect(
+      isAskAnswerPostedBy({ kind: "ask_answer", payload: "user-1" }, "user-1"),
+    ).toBe(false);
   });
 });

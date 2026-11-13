@@ -11,6 +11,7 @@ import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
   isAnnouncementChannel,
+  isAskAnswerPostedBy,
   isDirectChannel,
   isModuleEnabled,
   mentionPicksIn,
@@ -197,17 +198,6 @@ export interface SendMessageInput {
  * `SendMessageInput.system_originated`. `loading` stays client-postable: it is
  * the optimistic placeholder for the heavy-command pattern.
  */
-/**
- * Whether `message` is an Ask Frapp answer that `userId` posted to the
- * channel (#4713). The row is the Frapp sender's, so the sender check alone
- * would leave the member who posted it unable to take it back; `asked_by` is
- * written by the server when it posts (`AskPostService`) and no client can
- * set the kind, so it is as trustworthy as `sender_id`.
- */
-function isOwnPostedAnswer(message: ChatMessage, userId: string): boolean {
-  return message.kind === 'ask_answer' && message.payload?.asked_by === userId;
-}
-
 const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   'event',
   'points',
@@ -1647,7 +1637,7 @@ export class ChatService {
     if (
       message.sender_id !== requesterId &&
       !hasManagePermission &&
-      !isOwnPostedAnswer(message, requesterId)
+      !isAskAnswerPostedBy(message, requesterId)
     ) {
       throw new ForbiddenException(
         'You can only delete your own messages unless you have channels:manage permission',
