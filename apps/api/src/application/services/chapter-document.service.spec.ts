@@ -268,8 +268,8 @@ describe('ChapterDocumentService', () => {
         },
       ]);
       expect(tickets).toHaveLength(2);
-      expect(tickets[0]!.storagePath).toMatch(/\/a\.pdf$/);
-      expect(tickets[1]!.storagePath).toMatch(/\/b\.docx$/);
+      expect(tickets[0].storagePath).toMatch(/\/a\.pdf$/);
+      expect(tickets[1].storagePath).toMatch(/\/b\.docx$/);
     });
 
     it('refuses the call when one file is not allowed, naming it', async () => {
@@ -304,8 +304,8 @@ describe('ChapterDocumentService', () => {
         storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
         document: baseDocument,
       });
-      expect(results[1]!.document).toBeUndefined();
-      expect(results[1]!.error).toEqual(expect.any(String));
+      expect(results[1].document).toBeUndefined();
+      expect(results[1].error).toEqual(expect.any(String));
       expect(mockDocumentRepo.create).toHaveBeenCalledTimes(1);
     });
 
