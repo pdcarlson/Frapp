@@ -33,6 +33,7 @@ describe('EventService — agenda and attachments', () => {
       ...row,
       id: 'evt-new',
     }));
+    mockEventRepo.findById.mockResolvedValue(baseEvent);
     mockEventRepo.update.mockImplementation(async (id, _chapterId, data) => ({
       ...baseEvent,
       ...data,
@@ -176,7 +177,7 @@ describe('EventService — agenda and attachments', () => {
       expect(mockEventRepo.create).not.toHaveBeenCalled();
     });
 
-    it("refuses a document that isn't one of the chapter's files", async () => {
+    it("refuses a document that isn't one of the chapter's files, by its title", async () => {
       mockDocumentRepo.findByIds.mockResolvedValue([]);
       await expect(
         service.create({
@@ -192,7 +193,7 @@ describe('EventService — agenda and attachments', () => {
         }),
       ).rejects.toThrow(
         new BadRequestException(
-          `Document ${DOC_ID} isn't one of this chapter's files.`,
+          '"Bylaws" isn\'t one of this chapter\'s files any more. Remove it, or attach it again from Chapter Files.',
         ),
       );
       expect(mockEventRepo.create).not.toHaveBeenCalled();
@@ -219,6 +220,52 @@ describe('EventService — agenda and attachments', () => {
       });
     });
 
+    it("refuses a newly added document that isn't the chapter's", async () => {
+      mockDocumentRepo.findByIds.mockResolvedValue([]);
+      await expect(
+        service.update('evt-1', 'ch-1', {
+          attachments: [
+            {
+              id: 'x1',
+              kind: 'document',
+              document_id: DOC_ID,
+              title: 'Bylaws',
+            },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDocumentRepo.findByIds).toHaveBeenCalledWith([DOC_ID], 'ch-1');
+      expect(mockEventRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps a document the meeting already held, even once it is deleted', async () => {
+      const held = {
+        id: 'x1',
+        kind: 'document' as const,
+        document_id: DOC_ID,
+        title: 'Bylaws',
+      };
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        attachments: [held],
+      });
+      // The file is gone from Chapter Files.
+      mockDocumentRepo.findByIds.mockResolvedValue([]);
+      await service.update('evt-1', 'ch-1', {
+        attachments: [
+          held,
+          { id: 'x2', kind: 'link', url: 'https://a.example', title: 'A' },
+        ],
+      });
+      expect(mockDocumentRepo.findByIds).not.toHaveBeenCalled();
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-1', 'ch-1', {
+        attachments: [
+          held,
+          { id: 'x2', kind: 'link', url: 'https://a.example', title: 'A' },
+        ],
+      });
+    });
+
     describe("with scope 'series'", () => {
       const head: Event = {
         ...baseEvent,
@@ -241,6 +288,14 @@ describe('EventService — agenda and attachments', () => {
           async (id) => [head, child].find((row) => row.id === id) ?? null,
         );
         mockEventRepo.findChildren.mockResolvedValue([child]);
+        // The write returns the whole row, as the real update does.
+        mockEventRepo.update.mockImplementation(
+          async (id, _chapterId, data) => ({
+            ...([head, child].find((row) => row.id === id) ?? baseEvent),
+            ...data,
+            id,
+          }),
+        );
       });
 
       it('writes an agenda-only edit to the addressed meeting alone', async () => {
@@ -258,6 +313,43 @@ describe('EventService — agenda and attachments', () => {
         expect(result.agenda).toEqual([
           { id: 'a1', text: 'Elections', done: false },
         ]);
+      });
+
+      it('puts the agenda back when the series edit is refused', async () => {
+        const stored = [{ id: 'old', text: 'Old item', done: false }];
+        mockEventRepo.findById.mockImplementation(
+          async (id) =>
+            [head, { ...child, agenda: stored }].find((row) => row.id === id) ??
+            null,
+        );
+        await expect(
+          service.update(
+            'child-1',
+            'ch-1',
+            {
+              agenda: [{ id: 'a1', text: 'New item', done: false }],
+              // Times from a generated occurrence can't move the series.
+              start_time: '2099-01-08T19:00:00.000Z',
+              end_time: '2099-01-08T20:00:00.000Z',
+            },
+            'series',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockEventRepo.update.mock.calls).toEqual([
+          [
+            'child-1',
+            'ch-1',
+            { agenda: [{ id: 'a1', text: 'New item', done: false }] },
+          ],
+          ['child-1', 'ch-1', { agenda: stored }],
+        ]);
+      });
+
+      it('still refuses a series edit from an occurrence that carries nothing', async () => {
+        await expect(
+          service.update('child-1', 'ch-1', {}, 'series'),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
       });
 
       it('sends the rest of the edit across the series without them', async () => {

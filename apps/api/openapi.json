@@ -22987,14 +22987,14 @@
             "type": "string"
           },
           "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAgendaItemDto"
             }
           },
           "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAttachmentDto"
@@ -23114,14 +23114,14 @@
             "nullable": true
           },
           "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAgendaItemDto"
             }
           },
           "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAttachmentDto"
@@ -23251,14 +23251,14 @@
             "type": "string"
           },
           "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only, and a new occurrence starts with none.",
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAgendaItemDto"
             }
           },
           "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like `agenda`.",
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAttachmentDto"

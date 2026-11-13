@@ -77,35 +77,76 @@ export class EventService {
   ) {}
 
   /**
-   * A request's attachments, normalized, with every document one of this
-   * chapter's Chapter Files (#4934). A document id from another chapter, or
-   * one since deleted, is a 400, so an event never points at a file its
-   * members can't open.
+   * A request's attachments, normalized, with every newly attached document
+   * one of this chapter's Chapter Files (#4934). A new document id from
+   * another chapter, or one already deleted, is a 400, so an event never
+   * starts pointing at a file its members can't open. A document the meeting
+   * already held (`stored`) passes unchecked: the list is sent whole, and a
+   * file deleted since it was attached must not block every later save
+   * (`spec/behavior/events.md` § Agenda and attachments).
    */
   private async attachmentsFor(
     input: CreateEventInput['attachments'],
     chapterId: string,
+    stored: readonly EventAttachment[] = [],
   ): Promise<EventAttachment[] | undefined> {
     const attachments = normalizeAttachments(input);
     if (!attachments) return attachments;
+    const held = new Set(
+      stored.flatMap((a) => (a.kind === 'document' ? [a.document_id] : [])),
+    );
     const documentIds = [
       ...new Set(
         attachments.flatMap((a) =>
-          a.kind === 'document' ? [a.document_id] : [],
+          a.kind === 'document' && !held.has(a.document_id)
+            ? [a.document_id]
+            : [],
         ),
       ),
     ];
     if (documentIds.length > 0) {
       const found = await this.documentRepo.findByIds(documentIds, chapterId);
       const known = new Set(found.map((doc) => doc.id));
-      const missing = documentIds.find((id) => !known.has(id));
+      const missing = attachments.find(
+        (a) =>
+          a.kind === 'document' &&
+          documentIds.includes(a.document_id) &&
+          !known.has(a.document_id),
+      );
       if (missing) {
         throw new BadRequestException(
-          `Document ${missing} isn't one of this chapter's files.`,
+          `"${missing.title}" isn't one of this chapter's files any more. Remove it, or attach it again from Chapter Files.`,
         );
       }
     }
     return attachments;
+  }
+
+  /**
+   * Undo `update`'s early write of a meeting's agenda and attachments when
+   * the series edit after it refuses. A failed undo is reported rather than
+   * thrown, so the caller still hears the series edit's own error.
+   */
+  private async restoreMeetingOwn(
+    before: Event,
+    chapterId: string,
+    written: Partial<Event>,
+  ): Promise<void> {
+    const back: Partial<Event> = {};
+    if (written.agenda !== undefined) back.agenda = before.agenda;
+    if (written.attachments !== undefined) {
+      back.attachments = before.attachments;
+    }
+    try {
+      await this.eventRepo.update(before.id, chapterId, back);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'event-series-agenda-restore',
+        message: `A series edit of event ${before.id} was refused after its agenda or attachments were saved, and putting them back failed. Check that meeting's agenda and attachments.`,
+        error,
+      });
+    }
   }
 
   /**
@@ -535,27 +576,54 @@ export class EventService {
     const meetingOwn: Partial<Event> = {};
     const agenda = normalizeAgenda(rawAgenda);
     if (agenda !== undefined) meetingOwn.agenda = agenda;
-    const attachments = await this.attachmentsFor(rawAttachments, chapterId);
-    if (attachments !== undefined) meetingOwn.attachments = attachments;
+    if (rawAttachments !== undefined) {
+      // The stored list says which documents were attached already.
+      existing ??= await this.findById(id, chapterId);
+      meetingOwn.attachments = await this.attachmentsFor(
+        rawAttachments,
+        chapterId,
+        existing.attachments,
+      );
+    }
+    const ownsSomething = Object.keys(meetingOwn).length > 0;
     const patch: SeriesUpdateInput = rest;
 
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
+      if (!ownsSomething) {
+        return this.series.updateSeries(
+          target,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      }
       // Written to the occurrence addressed, never across the series, and
-      // before the series edit so a rebuild carries it to the new meeting.
-      const withOwn =
-        Object.keys(meetingOwn).length > 0
-          ? await this.eventRepo.update(target.id, chapterId, meetingOwn)
-          : target;
-      if (Object.keys(patch).length === 0) return withOwn;
-      return this.series.updateSeries(
-        withOwn,
+      // before the series edit so a rebuild carries it to the new meeting
+      // (`delete_replaced_occurrences`).
+      const withOwn = await this.eventRepo.update(
+        target.id,
         chapterId,
-        patch,
-        actorId,
-        requestZone,
+        meetingOwn,
       );
+      if (Object.keys(patch).length === 0) return withOwn;
+      try {
+        // The series head comes back, as for any series save.
+        return await this.series.updateSeries(
+          withOwn,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      } catch (error) {
+        // The series edit refused (or failed) and wrote nothing, so neither
+        // does this request: put the meeting's own lists back.
+        await this.restoreMeetingOwn(target, chapterId, meetingOwn);
+        throw error;
+      }
     }
 
     // The row as it was, to tell a real move from a round-tripped save

@@ -127,8 +127,8 @@ export class EventAttachmentDto {
   title: string;
 }
 
-const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGENDA_MAX} short items. Sent whole; it replaces the stored list. Belongs to this one meeting: with \`scope: 'series'\` it is still written to the addressed occurrence only, and a new occurrence starts with none.`;
-const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list. Per meeting, like \`agenda\`.`;
+const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGENDA_MAX} short items. Sent whole; it replaces the stored list, and \`[]\` clears it (null is refused). Belongs to this one meeting: with \`scope: 'series'\` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.`;
+const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list, and \`[]\` clears it. Per meeting, like \`agenda\`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.`;
 
 export class CreateEventDto {
   @ApiProperty()
@@ -236,7 +236,9 @@ export class CreateEventDto {
     type: [EventAgendaItemDto],
     description: AGENDA_DESCRIPTION,
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(EVENT_AGENDA_MAX)
   @ValidateNested({ each: true })
@@ -247,7 +249,9 @@ export class CreateEventDto {
     type: [EventAttachmentDto],
     description: ATTACHMENTS_DESCRIPTION,
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
   @ValidateNested({ each: true })
@@ -555,7 +559,9 @@ export class UpdateEventDto {
     type: [EventAgendaItemDto],
     description: AGENDA_DESCRIPTION,
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(EVENT_AGENDA_MAX)
   @ValidateNested({ each: true })
@@ -566,7 +572,9 @@ export class UpdateEventDto {
     type: [EventAttachmentDto],
     description: ATTACHMENTS_DESCRIPTION,
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
   @ValidateNested({ each: true })

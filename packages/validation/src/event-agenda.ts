@@ -3,9 +3,12 @@ import { normalizeProofLink } from "./task-proof";
 /**
  * An event's agenda and attachments (#4934, `spec/behavior/events.md`
  * § Agenda and attachments). Both belong to one meeting, never to a series,
- * and are written whole by whoever can edit the event. The API's DTOs and the
- * `events` table's checks enforce these limits; the forms read them so a
- * member never types past one.
+ * and are written whole by whoever can edit the event. The API's DTOs and
+ * `normalizeAgenda` / `normalizeAttachments` enforce every limit here; the
+ * `events` table checks only that each column is a list within its count
+ * (`EVENT_AGENDA_MAX`, `EVENT_ATTACHMENTS_MAX`), so a writer that skips the
+ * API gets no length check. The forms read them so a member never types past
+ * one.
  */
 
 /** Items on one meeting's agenda (the table's check holds the same number). */
