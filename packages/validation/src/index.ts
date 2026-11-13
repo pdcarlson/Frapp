@@ -27,10 +27,10 @@ export * from "./api-error-codes";
 export * from "./ask";
 // People and channels named in an Ask answer (#4904).
 export * from "./ask-entities";
-export * from "./ask-find";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
+export * from "./ask-find";
 export * from "./ask-post";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
