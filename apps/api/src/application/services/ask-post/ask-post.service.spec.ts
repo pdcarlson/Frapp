@@ -619,6 +619,152 @@ describe('AskPostService', () => {
       ]);
     });
 
+    it("lets the asker's own read win when two reads share a title", async () => {
+      // Through the tool loop the calendar and one opened event (which
+      // holds the asker's attendance) are both "Events".
+      const { post, messageRepo } = build();
+      const shown = receipt().shown;
+      const own: Given = {
+        title: 'Events, Formal (live data, read just now)',
+        text: 'You are going.',
+        ref: { type: 'tool', name: 'event:event-1', reach: 'asker' },
+        label: 'Events',
+        kind: 'events',
+      };
+      for (const given of [
+        [own, calendar()],
+        [calendar(), own],
+      ]) {
+        messageRepo.insertIdempotent.mockClear();
+        await post(
+          receipt({
+            given,
+            shown: {
+              ...shown,
+              sources: [
+                {
+                  kind: 'events',
+                  title: 'Events',
+                  detail: null,
+                  date: null,
+                  target: { type: 'page', page: 'events' },
+                },
+              ],
+            },
+          }),
+          { acknowledged: ['tool:event:event-1'] },
+        );
+        const [row] = messageRepo.insertIdempotent.mock.calls[0] as [
+          { payload: { sources: unknown[] } },
+        ];
+        expect(row.payload.sources).toEqual([
+          expect.objectContaining({ own: true, target: null, limited: true }),
+        ]);
+      }
+    });
+
+    describe('reads that share a chip title (the tool loop reads one thing twice)', () => {
+      const eventsChip = {
+        kind: 'events',
+        title: 'Events',
+        detail: null,
+        date: null,
+        target: { type: 'page', page: 'events' },
+      };
+      const sourcesOf = (messageRepo: {
+        insertIdempotent: jest.Mock;
+      }): unknown[] =>
+        (
+          messageRepo.insertIdempotent.mock.calls[0] as [
+            { payload: { sources: unknown[] } },
+          ]
+        )[0].payload.sources;
+
+      it('marks the chip limited when either calendar read was', async () => {
+        const second: Given = {
+          ...calendar(),
+          ref: { type: 'tool', name: 'events:formal', reach: 'events' },
+        };
+        const { post, messageRepo, events } = build();
+        events.visibleToAll.mockResolvedValue(new Set());
+        await post(
+          receipt({
+            given: [calendar(['event-1']), second],
+            shown: { ...receipt().shown, sources: [eventsChip] },
+          }),
+          { acknowledged: ['tool:events'] },
+        );
+        expect(sourcesOf(messageRepo)).toEqual([
+          { ...eventsChip, limited: true },
+        ]);
+      });
+
+      it('does not link a read it has no rule for, and marks it limited', async () => {
+        const officer: Given = {
+          title: 'Chapter tasks (live data, read just now)',
+          text: '3 tasks are late.',
+          ref: { type: 'other' },
+          label: 'Chapter tasks',
+          kind: 'tasks',
+        };
+        const { post, messageRepo } = build();
+        await post(
+          receipt({
+            given: [officer],
+            shown: {
+              ...receipt().shown,
+              sources: [
+                {
+                  kind: 'tasks',
+                  title: 'Chapter tasks',
+                  detail: null,
+                  date: null,
+                  target: { type: 'page', page: 'tasks' },
+                },
+              ],
+            },
+          }),
+          { acknowledged: ['other:0'] },
+        );
+        expect(sourcesOf(messageRepo)).toEqual([
+          {
+            kind: 'tasks',
+            title: 'Chapter tasks',
+            detail: null,
+            date: null,
+            target: null,
+            limited: true,
+          },
+        ]);
+      });
+
+      it('keeps a document its own, whatever it is called', async () => {
+        const own: Given = {
+          title: 'Events, Formal (live data, read just now)',
+          text: 'You are going.',
+          ref: { type: 'tool', name: 'event:event-1', reach: 'asker' },
+          label: 'Events',
+          kind: 'events',
+        };
+        const { post, messageRepo } = build();
+        const document = {
+          kind: 'document',
+          title: 'Events',
+          detail: null,
+          date: null,
+          target: { type: 'document', document_id: DOC },
+        };
+        await post(
+          receipt({
+            given: [{ ...bylaws, label: 'Events' }, own],
+            shown: { ...receipt().shown, sources: [document] },
+          }),
+          { acknowledged: ['tool:event:event-1'] },
+        );
+        expect(sourcesOf(messageRepo)).toEqual([document]);
+      });
+    });
+
     it('says when the answer was cut short', async () => {
       const { post, messageRepo } = build();
       await post(receipt({ shown: { ...receipt().shown, truncated: true } }));

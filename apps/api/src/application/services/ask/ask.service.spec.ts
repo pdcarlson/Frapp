@@ -2112,5 +2112,79 @@ describe('AskService', () => {
         else process.env.AI_STORED_TEXT_KEY = savedKey;
       }
     });
+
+    it('seals who else may open each source, so the answer can be posted to a channel (#4713)', async () => {
+      const KEY_RING = `1:${Buffer.alloc(32, 7).toString('base64')}`;
+      const savedKey = process.env.AI_STORED_TEXT_KEY;
+      process.env.AI_STORED_TEXT_KEY = KEY_RING;
+      try {
+        const { service } = build({
+          asker: { display_name: 'Sam Ortiz', role_ids: [] },
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                sources: [
+                  source({ audience: { type: 'chapter' } }),
+                  source({
+                    id: 'tool:my_tasks',
+                    title: 'Your tasks',
+                    audience: { type: 'asker' },
+                  }),
+                  source({
+                    id: 'tool:events',
+                    title: 'Events',
+                    audience: { type: 'events', limited: ['event-1'] },
+                  }),
+                  source({
+                    id: 'tool:events:next',
+                    title: 'Events',
+                    audience: { type: 'events', limited: [] },
+                  }),
+                  source({
+                    id: 'document:doc-1:0',
+                    title: 'Bylaws',
+                    audience: { type: 'document', id: 'doc-1' },
+                  }),
+                  source({
+                    id: 'meeting:meeting-1',
+                    title: 'Chapter meeting',
+                    audience: { type: 'meeting', id: 'meeting-1' },
+                  }),
+                  // A read that says nothing is never taken to be open.
+                  source({ id: 'tool:chapter_tasks', title: 'Chapter tasks' }),
+                ],
+              }),
+            },
+          ],
+        });
+        const { answer } = await run(service);
+        const receipt = openAskReportReceipt(
+          parseAiTextKeyRing(KEY_RING),
+          answer.report_receipt!,
+          { chapterId: CHAPTER, userId: USER },
+          NOW,
+        );
+        expect(receipt.given.map(({ ref }) => ref)).toEqual([
+          // Who is asking, which the roster shows of them.
+          { type: 'tool', name: 'asker', reach: 'chapter' },
+          { type: 'tool', name: 'tool:roster', reach: 'chapter' },
+          { type: 'tool', name: 'tool:my_tasks', reach: 'asker' },
+          {
+            type: 'tool',
+            name: 'tool:events',
+            reach: 'events',
+            events: ['event-1'],
+          },
+          { type: 'tool', name: 'tool:events:next', reach: 'events' },
+          { type: 'document', id: 'doc-1' },
+          { type: 'meeting', id: 'meeting-1' },
+          { type: 'other' },
+        ]);
+      } finally {
+        if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
+        else process.env.AI_STORED_TEXT_KEY = savedKey;
+      }
+    });
   });
 });

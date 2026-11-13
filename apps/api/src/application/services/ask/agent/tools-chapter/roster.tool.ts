@@ -135,6 +135,7 @@ export class RosterAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.role, args.group),
         kind: 'roster',
+        audience: { type: 'chapter' },
         title: 'Roster',
         page: 'members',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

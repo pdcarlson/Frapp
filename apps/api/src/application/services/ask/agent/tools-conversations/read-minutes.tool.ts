@@ -141,6 +141,7 @@ export class ReadMinutesTool implements AgentReadTool<Args> {
         text,
         chat: false,
         authorIds: [],
+        audience: { type: 'meeting', id: meeting.id },
       });
     }
     if (sources.length === 0) {

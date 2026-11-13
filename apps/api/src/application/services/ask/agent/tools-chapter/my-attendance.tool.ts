@@ -152,6 +152,7 @@ export class MyAttendanceAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.from, args.to),
         kind: 'events',
+        audience: { type: 'asker' },
         title: 'Your attendance',
         page: 'events',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

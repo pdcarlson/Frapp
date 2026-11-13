@@ -12,6 +12,7 @@ import {
   AGENT_RESULT_MAX_CHARS,
   type AgentEntity,
   type AgentSource,
+  type AgentSourceAudience,
   type AgentToolContext,
   type AgentToolResult,
 } from '../agent-tool';
@@ -436,6 +437,8 @@ export function liveSource(source: {
   date?: string | null;
   page: AskSourcePage | null;
   lines: readonly string[];
+  /** Who else could open it. Left out: only the asker. */
+  audience?: AgentSourceAudience;
 }): AgentSource {
   return {
     id: source.id,
@@ -447,6 +450,7 @@ export function liveSource(source: {
     text: source.lines.join('\n'),
     chat: false,
     authorIds: [],
+    ...(source.audience ? { audience: source.audience } : {}),
   };
 }
 
