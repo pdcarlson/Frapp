@@ -8,7 +8,7 @@ import {
   collectFromDrop,
   collectFromList,
   type CollectedFiles,
-} from "@/lib/backwork-bulk/collect-files";
+} from "@/lib/bulk-upload/collect-files";
 import { cn } from "@/lib/utils";
 
 /**

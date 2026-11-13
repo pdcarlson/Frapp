@@ -19,7 +19,15 @@ function pdf(name: string): File {
 }
 
 /** A queue whose prepare and finish calls the test settles one by one. */
-function harness(opts: { lookahead?: number; maxFinishing?: number } = {}) {
+function harness(
+  opts: {
+    lookahead?: number;
+    maxFinishing?: number;
+    trim?: (prepared: string) => string;
+    sizeOf?: (prepared: string) => number;
+    maxHeldBytes?: number;
+  } = {},
+) {
   const prepares = new Map<string, ReturnType<typeof deferred<string>>>();
   const finishes = new Map<string, ReturnType<typeof deferred<void>>>();
   const release = vi.fn();
@@ -292,5 +300,55 @@ describe("BulkUploadQueue", () => {
     await flush();
     expect(queue.getSnapshot().items[0]!.status).toBe("failed");
     expect(queue.unsaved()).toBe(0);
+  });
+
+  it("trims what only review needed the moment an item is submitted (#3540)", async () => {
+    const trim = vi.fn((prepared: string) => `${prepared}-trimmed`);
+    const h = harness({ trim });
+    h.queue.add([pdf("a.pdf")]);
+    h.prepares.get("a.pdf")!.resolve("A+previews");
+    await flush();
+
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+
+    expect(trim).toHaveBeenCalledWith("A+previews");
+    const item = h.queue.getSnapshot().items[0]!;
+    expect(item.prepared).toBe("A+previews-trimmed");
+    // Finishing frees what the item kept, not what it had before the trim.
+    h.finishes.get("a.pdf")!.resolve();
+    await flush();
+    expect(h.release).toHaveBeenCalledWith("A+previews-trimmed");
+  });
+
+  it("stops preparing ahead while waiting uploads hold more than the budget (#3540)", async () => {
+    const h = harness({
+      maxFinishing: 1,
+      sizeOf: () => 60,
+      maxHeldBytes: 100,
+    });
+    h.queue.add(["a.pdf", "b.pdf", "c.pdf", "d.pdf", "e.pdf", "f.pdf"].map(pdf));
+    for (const name of ["a.pdf", "b.pdf", "c.pdf"]) {
+      h.prepares.get(name)!.resolve(name);
+    }
+    await flush();
+    // Submitting a (60 held) leaves the lookahead on, so d is prepared.
+    h.queue.submit(h.idOf("a.pdf"), { title: "a" });
+    expect(h.prepares.has("d.pdf")).toBe(true);
+    // a uploading and b waiting hold 120, over 100: c is current and
+    // nothing past it is prepared, not even once c is submitted too.
+    h.queue.submit(h.idOf("b.pdf"), { title: "b" });
+    h.queue.submit(h.idOf("c.pdf"), { title: "c" });
+    expect(h.prepares.has("e.pdf")).toBe(false);
+
+    // a finishes, b starts: b and c still hold 120, so still no lookahead.
+    h.finishes.get("a.pdf")!.resolve();
+    await flush();
+    expect(h.prepares.has("e.pdf")).toBe(false);
+
+    // b finishes: c alone holds 60, under the budget, so lookahead resumes.
+    h.finishes.get("b.pdf")!.resolve();
+    await flush();
+    expect(h.prepares.has("e.pdf")).toBe(true);
+    expect(h.prepares.has("f.pdf")).toBe(true);
   });
 });

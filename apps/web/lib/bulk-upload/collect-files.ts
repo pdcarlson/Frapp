@@ -1,12 +1,14 @@
 /**
- * Turns a drop or a picker selection into the PDFs bulk upload queues
- * (#3499). Folders are walked recursively; anything that isn't a PDF is
- * counted and skipped, so the person sees "3 files skipped" instead of a
- * silent gap.
+ * Turns a drop or a picker selection into the files a bulk upload takes:
+ * backwork's PDFs (#3499) or a Documents folder import (#2242). Folders are
+ * walked recursively and each file keeps the path it had under what was
+ * dropped ({@link relativePath}); a file `keep` refuses is counted and skipped,
+ * so the person sees "3 files skipped" instead of a silent gap. The operating
+ * system's own files (.DS_Store and the like) are dropped without counting.
  */
 export type CollectedFiles = {
   files: File[];
-  /** Files that aren't PDFs. */
+  /** Files `keep` refused (for backwork, files that aren't PDFs). */
   skipped: number;
   /** Files or folders the browser couldn't read (permissions, moved mid-drop). */
   unreadable?: number;
@@ -18,11 +20,30 @@ export function isPdfFile(file: { name: string; type: string }): boolean {
   );
 }
 
-export function collectFromList(list: Iterable<File>): CollectedFiles {
+/**
+ * Files a folder carries for the operating system, never for the person:
+ * Finder's `.DS_Store` and `._` resource forks, Windows' `Thumbs.db` and
+ * `desktop.ini`. Picking or dropping a folder brings them along unseen.
+ */
+export function isSystemFile(file: { name: string }): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name === ".ds_store" ||
+    name.startsWith("._") ||
+    name === "thumbs.db" ||
+    name === "desktop.ini"
+  );
+}
+
+export function collectFromList(
+  list: Iterable<File>,
+  keep: (file: File) => boolean = isPdfFile,
+): CollectedFiles {
   const files: File[] = [];
   let skipped = 0;
   for (const file of list) {
-    if (isPdfFile(file)) files.push(file);
+    if (isSystemFile(file)) continue;
+    if (keep(file)) files.push(file);
     else skipped += 1;
   }
   return { files, skipped };
@@ -55,6 +76,7 @@ type DropItem = {
  */
 export async function collectFromDrop(
   items: ArrayLike<DropItem>,
+  keep: (file: File) => boolean = isPdfFile,
 ): Promise<CollectedFiles> {
   const entries: Entry[] = [];
   const looseFiles: File[] = [];
@@ -80,12 +102,18 @@ export async function collectFromDrop(
       numeric: true,
     }),
   );
-  return { ...collectFromList(all), unreadable: counts.unreadable };
+  return { ...collectFromList(all, keep), unreadable: counts.unreadable };
 }
 
-const PATH_KEY = "__backworkPath";
+const PATH_KEY = "__frappPath";
 
-function relativePath(file: File): string {
+/**
+ * Where the file sat under what was picked or dropped, folders and name
+ * ("Treasurer/2025/Budget.xlsx"): the path a folder drop walked, else the
+ * browser's `webkitRelativePath` for a folder picked with the picker, else
+ * the bare name for a file on its own.
+ */
+export function relativePath(file: File): string {
   const tagged = (file as File & { [PATH_KEY]?: string })[PATH_KEY];
   // `webkitRelativePath` is "" for a file picked or dropped on its own.
   return tagged ?? (file.webkitRelativePath || file.name);

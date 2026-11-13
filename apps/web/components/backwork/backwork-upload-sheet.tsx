@@ -62,7 +62,7 @@ import {
   readSignedUpload,
   SEMESTERS,
 } from "@repo/validation";
-import { isPdfFile } from "@/lib/backwork-bulk/collect-files";
+import { isPdfFile } from "@/lib/bulk-upload/collect-files";
 import {
   BACKWORK_YEAR_MIN,
   confirmFields,

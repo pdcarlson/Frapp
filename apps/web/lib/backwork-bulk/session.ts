@@ -16,7 +16,7 @@ import type { BulkFields } from "@/lib/backwork-bulk/fields";
 import { finishUpload, sha256Hex } from "@/lib/backwork-bulk/finish";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
-import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
+import { BulkUploadQueue } from "@/lib/bulk-upload/queue";
 import { clearStagedBulkUpload } from "./handoff";
 
 /**
@@ -82,6 +82,24 @@ function loadPdfModule() {
   return pdfModule;
 }
 
+/**
+ * Bytes a waiting backwork item may hold before the queue stops loading the
+ * next ones ahead (#3540): four documents at the 50 MB a typical scan stays
+ * under, well short of what gets a phone tab killed.
+ */
+export const BACKWORK_MAX_HELD_BYTES = 200 * 1024 * 1024;
+
+/**
+ * What a submitted item keeps: the bytes, and the PDF for flattening. Its
+ * page previews were for review and go now (#3540).
+ */
+function trimPrepared(prepared: Prepared): Prepared {
+  for (const preview of prepared.previews.values()) {
+    preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
+  }
+  return { ...prepared, previews: new Map() };
+}
+
 function releasePrepared(prepared: Prepared) {
   for (const preview of prepared.previews.values()) {
     preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
@@ -107,6 +125,9 @@ function createSession(userId: string, chapterId: string): BulkSession {
   let claimLine: Promise<unknown> = Promise.resolve();
 
   const queue = new BulkUploadQueue<Prepared, Submission>({
+    trim: trimPrepared,
+    sizeOf: (prepared) => prepared.bytes.byteLength,
+    maxHeldBytes: BACKWORK_MAX_HELD_BYTES,
     prepare: async (file, id) => {
       // Files read and hash side by side, but claim their hash one at a time
       // in the order the queue started them. The queue starts the files it

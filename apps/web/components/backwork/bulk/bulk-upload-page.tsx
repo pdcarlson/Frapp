@@ -41,10 +41,10 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   type CollectedFiles,
-} from "@/lib/backwork-bulk/collect-files";
+} from "@/lib/bulk-upload/collect-files";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
-import type { ItemStatus, QueueItem } from "@/lib/backwork-bulk/queue";
+import type { ItemStatus, QueueItem } from "@/lib/bulk-upload/queue";
 import { PdfRedactor } from "./pdf-redactor";
 import { BulkDropZone } from "./drop-zone";
 import { BulkFieldsForm } from "./bulk-fields";
@@ -62,7 +62,7 @@ import { InlineNote } from "@/components/shared/inline-note";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
- * one, and keep going. The queue (`lib/backwork-bulk/queue.ts`) loads the next
+ * one, and keep going. The queue (`lib/bulk-upload/queue.ts`) loads the next
  * documents while the person works on the current one, and flattens and
  * uploads finished ones behind them, so nobody waits between documents.
  *
