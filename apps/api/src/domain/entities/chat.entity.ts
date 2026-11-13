@@ -25,6 +25,7 @@ export const CHAT_MESSAGE_KINDS = [
   'announcement',
   'signup',
   'form',
+  'ask_answer',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -45,10 +46,15 @@ export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
  *   chapter for a card reconciled away seconds later, leaving a notification
  *   pointing at a message that no longer exists. It is internal machinery, not
  *   a category of message a member receives.
+ * - **`ask_answer`**: an Ask Frapp answer its asker posted to the channel
+ *   (#4713). It notifies nobody (`spec/behavior/ai.md` § Posting an answer to the channel):
+ *   the worker returns on it and `decidePush` refuses it, as for `imported`,
+ *   so a preference for it could never be consulted.
  */
 export const NON_SETTABLE_NOTIFICATION_KINDS = [
   'loading',
   'imported',
+  'ask_answer',
 ] as const satisfies readonly ChatMessageKind[];
 
 type NonSettableNotificationKind =
@@ -379,7 +385,64 @@ export interface ChatMessage {
    * viewer who blocked them (`chat-block-mask.ts`).
    */
   thread_last_reply?: ChatThreadLastReply | null;
+  /**
+   * Set when this message is a forward (#4864): a copy of the original the
+   * server built when the forwarder sent it, never a live reference, since
+   * the people here may not be able to read the source channel. The row's own
+   * `content` is the forwarder's comment, and may be empty. Blanked to
+   * `deleted: true` by a trigger when the original is deleted
+   * (`20261113185033_chat_message_forwarded_from.sql`), and nulled on a
+   * deleted forward. The ORIGINAL author's content: a read that masks
+   * withholds it from a viewer who blocked them (`chat-block-mask.ts`).
+   *
+   * Optional for rows written before the column existed.
+   */
+  forwarded_from?: ChatForwardedMessage | null;
   created_at: string;
+}
+
+/**
+ * The GIF a forwarded copy carries, the same shape as a GIF message's
+ * `metadata.gif` (`MessageGif` in `gif.service.ts`), so readers draw it with
+ * the same renderer.
+ */
+export interface ChatForwardedGif {
+  provider: string;
+  id: string;
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * What a forward holds of the message it copies (#4864). Built by
+ * `ChatService.forwardMessage`, never taken from a client.
+ */
+export interface ChatForwardedMessage {
+  /** The original message. */
+  message_id: string;
+  /** Where the original lives. Readers name it only if they can see it. */
+  channel_id: string;
+  /** The original's author, or null for an imported row or a deleted original. */
+  sender_id: string | null;
+  /** The author's name when it was forwarded; rewritten on account deletion. */
+  author_name: string | null;
+  /** The original's text; `''` for a GIF or files only, or once deleted. */
+  content: string;
+  gif: ChatForwardedGif | null;
+  /** How many files the original had. They are not copied. */
+  attachment_count: number;
+  /** The original's `created_at`. */
+  created_at: string;
+  /** True once the original was deleted: everything but where and when is gone. */
+  deleted?: boolean;
+  /**
+   * Set by a read that masks, as `ChatThreadLastReply.sender_blocked` is:
+   * `true` when the viewer blocked the original's author, so the copy is
+   * withheld; `false` when it was cleared. Absent on the Realtime echo.
+   */
+  sender_blocked?: boolean;
 }
 
 /**
@@ -548,6 +611,12 @@ export interface ChannelLatestMessage {
   payload: Record<string, unknown> | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * The latest message's forwarded copy (#4864), its `content` cut to 500;
+   * withheld (`sender_blocked: true`) when the caller blocked the original's
+   * author. Null when the latest message is not a forward.
+   */
+  forwarded_from: ChatForwardedMessage | null;
 }
 
 /**
@@ -635,8 +704,8 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — a ten-field projection,
- * not a whole {@link ChatMessage}.
+ * The message as the bookmarks endpoint serves it — a narrow projection, not a
+ * whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
  * size optimization: `ChatService.deleteMessage` blanked `content` and
@@ -663,6 +732,13 @@ export interface BookmarkedMessage {
    * never in the channel's timeline.
    */
   thread_root_id: string | null;
+  /**
+   * A forward's copy of its original (#4864), so a saved forward with no
+   * comment previews as "Forwarded: ..." (#4875). Null on every other row.
+   * Masked like the timeline's copy when the caller blocked the original's
+   * author, and dropped from a row whose channel access was lost.
+   */
+  forwarded_from: ChatForwardedMessage | null;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *
@@ -734,8 +810,8 @@ export type StoredChatMessageBookmark = Omit<
  * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
  * indexes it: one row per link per message. `spec/behavior/activity.md`
  * § Links. Which hosts are gathered is decided by the database's
- * `activity_action_links`; the API's title read keeps its own copy of the
- * list (`isSignUpHost`) for what it may open.
+ * `activity_action_links`; the API's title read opens only what the
+ * TypeScript copy of the list (`signUpLinkKind` in `@repo/validation`) allows.
  */
 export interface ChatMessageLink {
   id: string;

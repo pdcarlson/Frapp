@@ -42,7 +42,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
-import { parsePulledEnv, prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
+import { STAGING_RUNTIME_ENV, parsePulledEnv, prepareUpdate, pulledNames, uploadSourceMaps } from "./eas-update.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MOBILE_BUILD_WORKFLOW = path.join(ROOT, ".github", "workflows", "_mobile-build.yml");
@@ -393,7 +393,7 @@ export function pullEasEnv(
     if (result.error) return { error: result.error.message };
     if (result.status !== 0) return { error: `eas env:pull exited ${result.status}; its output above says why` };
     text = readFileSync(file, "utf8");
-    return { vars: parsePulledEnv(text) };
+    return { vars: parsePulledEnv(text), names: pulledNames(text) };
   } catch (err) {
     return { error: err.message };
   } finally {
@@ -409,7 +409,7 @@ export function pullEasEnv(
 
 function pullEnvFor(env) {
   return Object.fromEntries(
-    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k) && k !== SENTRY_TOKEN),
+    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k) && k !== SENTRY_TOKEN && k !== STAGING_RUNTIME_ENV),
   );
 }
 

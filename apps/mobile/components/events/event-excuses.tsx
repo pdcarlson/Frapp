@@ -134,54 +134,56 @@ export function MyExcuseCard({
   };
 
   if (view.kind === "offer") {
+    // Closed, the offer is one quiet underlined line, not a card: declining
+    // reads quieter than going (#4933, the way Google Calendar's and Luma's
+    // RSVP rows keep No secondary). Writing opens the card around the field.
+    if (!writing) {
+      return (
+        <TextAction
+          label="Can't make it?"
+          hint="Send an excuse for this event."
+          underline
+          onPress={() => setWriting(true)}
+        />
+      );
+    }
     return (
       <View style={styles.card} accessibilityLabel="Can't make it">
-        {writing ? (
-          <>
-            <Text style={styles.title}>Can&apos;t make it</Text>
-            <Text style={styles.caption}>
-              Say why in one line. It goes to whoever runs this event.
-            </Text>
-            <TextInput
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Exam review, away game, sick…"
-              placeholderTextColor={tokens.color.text.muted}
-              maxLength={EVENT_EXCUSE_REASON_MAX}
-              autoFocus
-              returnKeyType="send"
-              onSubmitEditing={() => void submit()}
-              accessibilityLabel="Reason"
-              // On the card, so a step above it: the field's own input step
-              // is the card's fill on a screen (`lib/surfaces.ts`).
-              style={[field.field, styles.fieldOnCard]}
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <SheetPrimaryButton
-              label="Send excuse"
-              accent={accent}
-              onAccent={tokens.color.gold.onHouse}
-              onPress={() => void submit()}
-              busy={send.isPending}
-              disabled={!trimmed || busy || writeBlockedReason !== null}
-              accessibilityHint={writeBlockedReason ?? undefined}
-            />
-            <TextAction
-              label="Cancel"
-              onPress={() => {
-                setWriting(false);
-                setError(null);
-              }}
-            />
-          </>
-        ) : (
-          <TextAction
-            label="Can't make it"
-            hint="Send an excuse for this event."
-            color={accent}
-            onPress={() => setWriting(true)}
-          />
-        )}
+        <Text style={styles.title}>Can&apos;t make it</Text>
+        <Text style={styles.caption}>
+          Say why in one line. It goes to whoever runs this event.
+        </Text>
+        <TextInput
+          value={reason}
+          onChangeText={setReason}
+          placeholder="Exam review, away game, sick…"
+          placeholderTextColor={tokens.color.text.muted}
+          maxLength={EVENT_EXCUSE_REASON_MAX}
+          autoFocus
+          returnKeyType="send"
+          onSubmitEditing={() => void submit()}
+          accessibilityLabel="Reason"
+          // On the card, so a step above it: the field's own input step
+          // is the card's fill on a screen (`lib/surfaces.ts`).
+          style={[field.field, styles.fieldOnCard]}
+        />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <SheetPrimaryButton
+          label="Send excuse"
+          accent={accent}
+          onAccent={tokens.color.gold.onHouse}
+          onPress={() => void submit()}
+          busy={send.isPending}
+          disabled={!trimmed || busy || writeBlockedReason !== null}
+          accessibilityHint={writeBlockedReason ?? undefined}
+        />
+        <TextAction
+          label="Cancel"
+          onPress={() => {
+            setWriting(false);
+            setError(null);
+          }}
+        />
       </View>
     );
   }
@@ -330,12 +332,15 @@ function TextAction({
   color,
   disabled = false,
   hint,
+  underline = false,
 }: {
   label: string;
   onPress: () => void;
   color?: string;
   disabled?: boolean;
   hint?: string;
+  /** The standalone quiet link: underlined, centered, padded to 44×44. */
+  underline?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -348,6 +353,7 @@ function TextAction({
       onPress={onPress}
       style={({ pressed }) => [
         styles.textAction,
+        underline ? styles.textLink : null,
         pressed && !disabled ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}
@@ -355,6 +361,7 @@ function TextAction({
       <Text
         style={[
           styles.textActionLabel,
+          underline ? styles.textLinkLabel : null,
           { color: color ?? tokens.color.text.mutedForeground },
         ]}
       >
@@ -449,6 +456,14 @@ function createStyles(tokens: SignetTokens) {
     },
     textActionLabel: {
       ...typeRole(tokens.typography.role.label),
+    },
+    textLink: {
+      alignSelf: "center",
+      minWidth: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.lg,
+    },
+    textLinkLabel: {
+      textDecorationLine: "underline",
     },
     pressed: {
       opacity: 0.7,

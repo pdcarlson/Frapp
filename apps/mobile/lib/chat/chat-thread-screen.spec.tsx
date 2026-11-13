@@ -482,6 +482,9 @@ const setNotificationLevel = {
   variables: undefined,
 };
 const markRead = { mutate: vi.fn() };
+const markUnread = {
+  mutateAsync: vi.fn<(messageId: string) => Promise<unknown>>(async () => ({})),
+};
 const requestUploadUrl = { mutateAsync: vi.fn() };
 
 const rosterCatchUp = vi.hoisted(() =>
@@ -494,63 +497,79 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  // The roster catch-up has its own spec in `@repo/hooks`.
-  useRosterCatchUp: rosterCatchUp,
-  // GIFs (#4631): off here, so the + sheet offers no GIF row.
-  useGifAvailability: () => ({ available: false, provider: "" }),
-  useActiveChapterId: () => "chapter-1",
-  // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
-  useBookmarkedMessageIds: () => SAVED,
-  useBookmarkMessage: () => bookmarkWrites.save,
-  useUnbookmarkMessage: () => bookmarkWrites.unsave,
-  useBookmarks: () => ({ data: [], isPending: false, isError: false }),
-  usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
-  useChannel: (id: string) =>
-    channelRow === "found"
-      ? {
-          data: {
-            id,
-            name: "general",
-            type: channelType,
-            description: "The whole chapter.",
-            can_post: !channelIsAuditLog && !channelIsReadOnly,
-            is_read_only: channelIsAuditLog || channelIsReadOnly,
-            is_audit_log: channelIsAuditLog,
-            display_locked: channelLocked,
-          },
-          dataUpdatedAt: channelReadAt,
-          isFetching: false,
-        }
-      : // No row and no cached list: a blank title while it is read, then the
-        // `Thread` fallback (`threadTitleFor`).
-        { data: undefined, isFetching: channelRow === "reading" },
-  useCurrentUser: () => viewerQuery,
-  useMemberDisplayNames: () => ROSTER,
-  useChapterRoster: () => ({ data: MENTION_ROSTER }),
-  useMentionRoles: () => ({ data: MENTION_ROLES }),
-  // No imported authors with avatars in these fixtures.
-  useAuthorAvatars: () => ({ data: undefined }),
-  usePermissionList: () => permissionList,
-  useMyPermissions: () => ({
-    data: { permissions: permissionList },
-    isError: false,
-    fetchStatus: "idle",
-  }),
-  useCurrentChapter: () =>
-    chapterUnread
-      ? { data: undefined, fetchStatus: "fetching" }
-      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
-  useMarkChannelRead: () => markRead,
-  useRequestChatUploadUrl: () => requestUploadUrl,
-  useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
-  useSetChannelNotificationLevel: () => setNotificationLevel,
-  useImportantMessages: () => importantState,
-  useBlockedUserIds: () => BLOCK_LIST,
-  // The viewer reads the message's images through the row's query.
-  useMessageAttachments: () => ({ data: [IMAGE] }),
-}));
+/** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
+const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  const { useQuery } = await import("@tanstack/react-query");
+  return {
+    ...actual,
+    // The real hook's shape, minus the API client this spec doesn't provide:
+    // one query under the shared key, always with its fetch (#4885).
+    useChannelUnreadCounts: (options?: { enabled?: boolean }) =>
+      useQuery({
+        queryKey: actual.CHANNEL_UNREAD_COUNTS_KEY,
+        queryFn: unreadCountsFetch,
+        enabled: options?.enabled ?? true,
+      }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+    // GIFs (#4631): off here, so the + sheet offers no GIF row.
+    useGifAvailability: () => ({ available: false, provider: "" }),
+    useActiveChapterId: () => "chapter-1",
+    // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
+    useBookmarkedMessageIds: () => SAVED,
+    useBookmarkMessage: () => bookmarkWrites.save,
+    useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    useBookmarks: () => ({ data: [], isPending: false, isError: false }),
+    usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    useChannel: (id: string) =>
+      channelRow === "found"
+        ? {
+            data: {
+              id,
+              name: "general",
+              type: channelType,
+              description: "The whole chapter.",
+              can_post: !channelIsAuditLog && !channelIsReadOnly,
+              is_read_only: channelIsAuditLog || channelIsReadOnly,
+              is_audit_log: channelIsAuditLog,
+              display_locked: channelLocked,
+            },
+            dataUpdatedAt: channelReadAt,
+            isFetching: false,
+          }
+        : // No row and no cached list: a blank title while it is read, then the
+          // `Thread` fallback (`threadTitleFor`).
+          { data: undefined, isFetching: channelRow === "reading" },
+    useCurrentUser: () => viewerQuery,
+    useMemberDisplayNames: () => ROSTER,
+    useChapterRoster: () => ({ data: MENTION_ROSTER }),
+    useMentionRoles: () => ({ data: MENTION_ROLES }),
+    // No imported authors with avatars in these fixtures.
+    useAuthorAvatars: () => ({ data: undefined }),
+    usePermissionList: () => permissionList,
+    useMyPermissions: () => ({
+      data: { permissions: permissionList },
+      isError: false,
+      fetchStatus: "idle",
+    }),
+    useCurrentChapter: () =>
+      chapterUnread
+        ? { data: undefined, fetchStatus: "fetching" }
+        : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
+    useMarkChannelRead: () => markRead,
+    useMarkMessageUnread: () => markUnread,
+    useRequestChatUploadUrl: () => requestUploadUrl,
+    useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
+    useSetChannelNotificationLevel: () => setNotificationLevel,
+    useImportantMessages: () => importantState,
+    useBlockedUserIds: () => BLOCK_LIST,
+    // The viewer reads the message's images through the row's query.
+    useMessageAttachments: () => ({ data: [IMAGE] }),
+  };
+});
 
 /** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
@@ -2282,6 +2301,116 @@ describe("chat thread reports its transport to the connection pill", () => {
 });
 
 /*
+ * Mark unread (#3723): the sheet's row moves the read cursor back, and the
+ * thread stops stamping it for the rest of the visit, or leaving would read
+ * the channel straight back. Then it leaves, so the list shows the badge.
+ */
+describe("chat thread Mark unread", () => {
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+    markUnread.mutateAsync.mockClear();
+    markUnread.mutateAsync.mockImplementation(async () => ({}));
+  });
+
+  const openSheetOn = (tree: ReturnType<typeof render>) => {
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Mark unread, moves the cursor, skips the blur's stamp and leaves", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    expect(sheet.props.target.canMarkUnread).toBe(true);
+    const goBack = vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo);
+    goBack.mockClear();
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+    });
+
+    expect(markUnread.mutateAsync).toHaveBeenCalledWith("m1");
+    // The activity handler no longer re-stamps this channel.
+    expect(viewedChannelId()).toBeNull();
+    // Leaving runs the focus effect's cleanup, which must not stamp it back.
+    // (An unmount, not the global blur: another spec's mounted screen would
+    // answer that.)
+    markRead.mutate.mockClear();
+    act(() => tree.unmount());
+    expect(markRead.mutate).not.toHaveBeenCalled();
+    // A pushed thread with nothing below goes back to Chat home.
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("reads the channel as usual on the next visit", () => {
+    channel = channelState({ messages: [message("m1")] });
+    markRead.mutate.mockClear();
+    const tree = render();
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("says so when it fails, without claiming the channel back for a screen that has gone", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    markUnread.mutateAsync.mockImplementation(async () => {
+      throw new Error("Couldn't reach the server");
+    });
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't mark unread",
+      expect.any(String),
+    );
+    expect(viewedChannelId()).toBeNull();
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("holds the channel against the activity handler's stamps until the next visit", async () => {
+    const { isChannelHeldUnread } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    act(() => (sheet.props.onMarkUnread as (id: string) => void)("m1"));
+    expect(isChannelHeldUnread(CHANNEL)).toBe(true);
+    // Back on the same screen: the hold ends and the visit reads as usual.
+    markRead.mutate.mockClear();
+    act(() => refocus());
+    expect(isChannelHeldUnread(CHANNEL)).toBe(false);
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("isn't offered on the viewer's own message, which never counts as unread", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER })],
+    });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.canMarkUnread).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+/*
  * The thread says it is the one on screen only while focused (#3698): the
  * activity handler re-stamps the viewed channel read when a message lands in
  * it, and this screen stays mounted under one pushed over it (another thread
@@ -2628,6 +2757,34 @@ describe("message threads (#3785)", () => {
       pathname: "/chat-thread",
       params: { channelId: CHANNEL, threadRootId: "m2" },
     });
+    act(() => tree.unmount());
+  });
+
+  it("offers Forward with the copy it will carry, and wires the picker (#4864)", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { content: "pizza at eight" }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      forward: {
+        messageId: "m2",
+        preview: { message_id: "m2", content: "pizza at eight" },
+        hidden: null,
+      },
+    });
+    expect(sheet.props.nameFor).toBeTypeOf("function");
+    // A card can't be forwarded.
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { kind: "poll" }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target.forward,
+    ).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -3039,6 +3196,21 @@ describe("Catch me up in a channel (#3946)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers the summary when the counts land after the channel opens", async () => {
+    // A cold launch opens the last channel while Chat home's read is still
+    // out: the screen's own observer of the counts is what catches them.
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    // TanStack tells observers on its next tick.
+    await act(async () => {
+      arriveWith(60);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
+    act(() => tree.unmount());
+  });
+
   it("asks for no unread stretch on a channel opened cold", () => {
     catchUp.surface = true;
     const tree = render();
@@ -3390,6 +3562,26 @@ describe("chat thread asks Frapp instead of posting (#4713)", () => {
         ?.findAllByType("ThreadMessageRow" as never)
         .map((node) => node.props.row.message.client_message_id),
     ).toEqual(["c-m1"]);
+    act(() => tree.unmount());
+  });
+});
+
+describe("The unread counts the screen observes (#4885)", () => {
+  it("passes their fetch, so no render logs TanStack's no-queryFn error", () => {
+    // In a development build TanStack console.errors on every render of a
+    // query with no `queryFn`, and Expo shows each one as a red toast.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: 3 },
+    ]);
+    const tree = render();
+    const noQueryFn = errors.mock.calls.filter((args) =>
+      String(args[0]).includes("No queryFn was passed"),
+    );
+    errors.mockRestore();
+    expect(noQueryFn).toEqual([]);
+    // Observed, never asked for from here.
+    expect(unreadCountsFetch).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

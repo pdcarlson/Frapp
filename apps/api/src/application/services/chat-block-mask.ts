@@ -1,5 +1,6 @@
 import type {
   BookmarkedMessage,
+  ChatForwardedMessage,
   ChatMessage,
   StoredBookmarkedMessage,
 } from '#domain/entities/chat.entity';
@@ -144,13 +145,17 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
     // The latest reply is another member's content, which this mask is not
     // about: `maskBlockedMessages` applies the viewer's list to its replier.
     thread_last_reply: message.thread_last_reply ?? null,
+    // The forwarded copy (#4864) is content the blocked member chose to put
+    // in front of the blocker, whoever wrote the original, so it goes with
+    // the rest of what they posted.
+    forwarded_from: null,
     created_at: message.created_at,
     sender_blocked: true,
   };
 }
 
 /**
- * The same rule over the bookmarks endpoint's **nine-field projection**.
+ * The same rule over the bookmarks endpoint's **narrow projection**.
  *
  * A separate function rather than a call to {@link maskBlockedMessages}, and
  * the reason is the projection itself. `BookmarkedMessage` is narrow as a
@@ -175,7 +180,15 @@ export function maskBlockedBookmarkMessage(
   blockedUserIds: ReadonlySet<string>,
 ): BookmarkedMessage {
   if (!isFromBlockedSender(message.sender_id, blockedUserIds)) {
-    return { ...message, sender_blocked: false };
+    return {
+      ...message,
+      // A forward's copy (#4875) answers to the original author's block,
+      // whoever forwarded it, as the timeline's does.
+      forwarded_from: message.forwarded_from
+        ? maskForwardedCopy(message.forwarded_from, blockedUserIds)
+        : null,
+      sender_blocked: false,
+    };
   }
   return {
     id: message.id,
@@ -188,6 +201,8 @@ export function maskBlockedBookmarkMessage(
     is_deleted: message.is_deleted,
     created_at: message.created_at,
     thread_root_id: message.thread_root_id,
+    // What the blocked member put in front of the blocker, as above.
+    forwarded_from: null,
     sender_blocked: true,
   };
 }
@@ -264,6 +279,8 @@ export function redactDeletedMessage<T extends ChatMessage>(message: T): T {
     content: DELETED_MESSAGE_CONTENT,
     payload: tombstonePayload(message),
     metadata: tombstoneMetadata(message),
+    // A deleted forward keeps nothing of the copy it carried (#4864).
+    forwarded_from: null,
   };
 }
 
@@ -284,16 +301,66 @@ export function maskBlockedMessages(
   const blocked = new Set(blockedUserIds);
 
   return messages.map((message) =>
-    withThreadPreviewMasked(
-      isFromBlockedSender(message.sender_id, blocked)
-        ? maskMessage(message)
-        : withFlaggerMasked(
-            redactDeletedMessage({ ...message, sender_blocked: false }),
-            blocked,
-          ),
+    withForwardMasked(
+      withThreadPreviewMasked(
+        isFromBlockedSender(message.sender_id, blocked)
+          ? maskMessage(message)
+          : withFlaggerMasked(
+              redactDeletedMessage({ ...message, sender_blocked: false }),
+              blocked,
+            ),
+        blocked,
+      ),
       blocked,
     ),
   );
+}
+
+/**
+ * A forward whose original is by a blocked member serves that copy withheld
+ * (#4864), whoever forwarded it, and every other copy flagged clear.
+ *
+ * The same rule {@link withThreadPreviewMasked} applies to a thread's latest
+ * reply, for the same reason: the copy is the original author's content
+ * riding on someone else's row, so the row's own mask never reaches it. What
+ * survives is structure: the original's id, channel, author id and time, and
+ * whether it was deleted, with `sender_blocked: true`, which a client reads
+ * to draw the blocked placeholder in the card. The Realtime echo carries the
+ * copy raw, and each client applies its own list.
+ */
+function withForwardMasked(
+  message: MaskedChatMessage,
+  blocked: ReadonlySet<string>,
+): MaskedChatMessage {
+  const copy = message.forwarded_from;
+  if (!copy) return message;
+  return { ...message, forwarded_from: maskForwardedCopy(copy, blocked) };
+}
+
+/**
+ * One forwarded copy as a viewer whose block list is `blocked` is served it.
+ * Chat home's preview is masked in SQL to the same shape
+ * (`get_channel_latest_messages`), so the two must stay in step.
+ */
+function maskForwardedCopy(
+  copy: ChatForwardedMessage,
+  blocked: ReadonlySet<string>,
+): ChatForwardedMessage {
+  if (!isFromBlockedSender(copy.sender_id ?? null, blocked)) {
+    return { ...copy, sender_blocked: false };
+  }
+  return {
+    message_id: copy.message_id,
+    channel_id: copy.channel_id,
+    sender_id: copy.sender_id,
+    author_name: null,
+    content: '',
+    gif: null,
+    attachment_count: 0,
+    created_at: copy.created_at,
+    deleted: copy.deleted === true,
+    sender_blocked: true,
+  };
 }
 
 /**

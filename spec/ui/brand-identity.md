@@ -20,6 +20,7 @@
 - **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
 - **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet: copy tables, screen and footer descriptions, and legal-page summaries. Each one changes to Frapp in the same series step as the code that renders it. The one list of those specs, per step, is in [ADR-25](../architecture/adr/adr-25.md), with the command that regenerates it. This rule sets the target. Until its step lands, a prescribed Signet string is what ships, not a license to add new Signet strings.
 - **Code identifiers are frapp permanently:** the repo and package names (`@repo/*`); `frapp.live` and its subdomains, including `app.frapp.live` and `api.frapp.live`, the API origin every mobile binary bakes in; the `frapp://` scheme; the Expo slug `frapp`; the Sentry org `frapp-live`; and `live.frapp.mobile` as both the iOS bundle id and the Android package (Google Play fixes the package on the first upload, as App Store Connect fixes the bundle id). When citing code, cite the real current names.
+- **The staging variant has its own three names** (Paul, 2026-11-13, [#2511](https://github.com/pdcarlson/Frapp/issues/2511)): the home-screen name `Frapp Staging`, the scheme `frapp-staging://`, and `live.frapp.mobile.staging` as its iOS bundle id and Android package. It is a second app that installs beside the store app so staging can be tested on a phone, built only by the `staging` profile in `apps/mobile/eas.json`; `apps/mobile/app.config.js` derives it from `app.json` and refuses to point it at production. The names become as permanent as the production ones with the variant's first upload to TestFlight and Play. Everything else is shared: the Expo slug, the EAS project and the Sentry org. Its audience is the people who build Frapp, never a chapter.
 
 ---
 
@@ -53,6 +54,8 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
 > **One exception, Paul's, 2026-11-13: the crest on Ask Frapp's front doors takes the chapter accent.** Changed in #4702 by pdcarlson, 2026-11-13 (Paul's pick on the Ask redesign, default 2 on #4698: "it should show up with the logo"). The crest's outline is drawn as a one-colour glyph in the chapter's accent in three places and nowhere else: the Ask Frapp button in the web chat composer, the Ask Frapp bar above the phone's tab bar, and the header of the conversation each opens. There it is an icon for Ask, always beside the words "Ask Frapp", not the brand's signature: the mark everywhere else (the app icon, sign-in, the landing, the What's new sheet, every raster) stays the fixed gold on charcoal above, and `check:brand-assets` still holds the rasters to it. The glyph's one path is `FRAPP_CREST_PATH` in `packages/theme/src/crest.ts`, held to the brand vector by `crest.spec.ts`.
+>
+> Changed in #4904 by pdcarlson, 2026-11-13: on web the first of those places is now the Ask Frapp row in the Find dialog, since the composer button is gone. The exception itself is unchanged.
 
 ### Banned logo vocabulary
 

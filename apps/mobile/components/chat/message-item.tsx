@@ -67,6 +67,7 @@ import {
   runLinkA11yAction,
   type MessageLink,
 } from "./message-markdown";
+import { ForwardedCard } from "./forwarded-card";
 import { ReplyQuote } from "./reply-quote";
 
 /**
@@ -155,6 +156,13 @@ export interface MessageItemProps {
    * "Original message not loaded". Decided in `thread-message-row.tsx`.
    */
   replyParentHidden?: string;
+  /**
+   * What a forward's card says in place of its copy when the viewer's block
+   * list hides the original's author (`hiddenForwardedText` in
+   * `@repo/chat-core/blocks`), or `null` to draw the copy (#4864). Decided in
+   * `thread-message-row.tsx`, beside `replyParentHidden`.
+   */
+  forwardedHidden?: string | null;
   /**
    * Opens the message actions sheet (react, reply, edit, copy, mention,
    * report, delete; Block is on its report form — #2257, #2775). Passed only for a row that offers them
@@ -407,11 +415,11 @@ export function MessageRowFrame({
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   // A row that @-mentions the viewer wears the chapter accent the way Discord
   // marks one (components.md §11, see `MentionHighlight`). The list is the
-  // server's (`chat_messages.mentions`), the same set the notifier used, and a
-  // viewer's own message never lights up.
+  // server's (`chat_messages.mentions`), the same set the notifier used. A
+  // viewer's own message lights up too when it reaches them (their own
+  // `@here`, a role they hold), as on Discord (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -775,6 +783,7 @@ export function MessageItem({
   onUnreact,
   replyParent,
   replyParentHidden,
+  forwardedHidden = null,
   onOpenActions,
   onJumpToParent,
   onOpenProfile,
@@ -837,6 +846,20 @@ export function MessageItem({
       clientMessageId={message.client_message_id}
       confirmed={isConfirmed}
       photos={message.attachment_photos}
+      onLongPress={onOpenActions}
+    />
+  ) : null;
+
+  // A forward's card (#4864), under the forwarder's comment, or alone when
+  // there is none. Not on a deleted row: the server nulls the copy with the
+  // content, and a tombstone carries no one's words.
+  const forwardedCopy = message.is_deleted ? null : message.forwarded_from;
+  const forwardedCard = forwardedCopy ? (
+    <ForwardedCard
+      forwarded={forwardedCopy}
+      hidden={forwardedHidden}
+      nameFor={nameFor}
+      viewerId={viewerId}
       onLongPress={onOpenActions}
     />
   ) : null;
@@ -996,6 +1019,7 @@ export function MessageItem({
             </Bubble>
           </View>
         ) : null}
+        {forwardedCard}
         {attachments && pending ? (
           <View style={styles.pendingFiles}>{attachments}</View>
         ) : (
@@ -1066,6 +1090,7 @@ export function MessageItem({
           {text}
         </View>
       ) : null}
+      {forwardedCard}
       {attachments && pending ? (
         <View style={styles.pendingFiles}>{attachments}</View>
       ) : (
@@ -1207,10 +1232,7 @@ function BubbleRowFrame({
   children: ReactNode;
 }) {
   const mentionsViewer =
-    !!viewerId &&
-    message.sender_id !== viewerId &&
-    !message.is_deleted &&
-    message.mentions.includes(viewerId);
+    !!viewerId && !message.is_deleted && message.mentions.includes(viewerId);
   const { authorName, authorLabel, roleColor } = rowAuthor(
     message,
     nameFor,

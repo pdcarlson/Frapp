@@ -35,5 +35,7 @@ import { RbacModule } from '../rbac/rbac.module';
     },
     { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
   ],
+  // Ask's conversation tools read a channel through `readStretch` (#4900).
+  exports: [ChatCatchUpService],
 })
 export class ChatCatchUpModule {}

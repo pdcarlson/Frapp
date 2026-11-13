@@ -43,6 +43,7 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { downscaleImage } from "@/lib/downscale-image";
 import {
   isSettingsTabVisible,
   visibleSettingsTools,
@@ -454,7 +455,10 @@ function SettingsPageContent() {
 
   async function saveLogo(upload: ChapterLogoUpload) {
     try {
-      await uploadLogo.mutateAsync(upload);
+      // Stored at 512px for the crests that draw it (#2912).
+      await uploadLogo.mutateAsync(
+        await downscaleImage(upload, { keepAlpha: true }),
+      );
       toast({
         title: "Logo saved",
         description: "An entry was written to the chapter audit log.",

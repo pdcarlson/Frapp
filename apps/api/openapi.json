@@ -2926,6 +2926,53 @@
         ]
       }
     },
+    "/v1/notifications/clear": {
+      "post": {
+        "operationId": "NotificationController_clearNotifications_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearNotificationsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearNotificationsResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear (delete) the caller's own notifications by id",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v1/notifications/{id}/read": {
       "patch": {
         "operationId": "NotificationController_markRead_v1",
@@ -4520,6 +4567,62 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/forward": {
+      "post": {
+        "operationId": "ChatController_forwardMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForwardMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForwardResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}/close": {
       "post": {
         "operationId": "ChatController_closeCard_v1",
@@ -5016,6 +5119,45 @@
           }
         ],
         "summary": "Mark channel as read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/unread": {
+      "post": {
+        "operationId": "ChatController_markMessageUnread_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a message unread: move the caller’s read cursor to just before it",
         "tags": [
           "Chat"
         ]
@@ -16632,6 +16774,220 @@
         ]
       }
     },
+    "/v1/ai/ask/{ask_id}/feedback": {
+      "put": {
+        "description": "Sets the caller’s thumbs on an answer they were given, replacing an earlier one. A `down` may carry one of four reasons. Nothing of the question or the answer is sent or kept: to send those, the member reports the answer (`POST /v1/ai/reports`). Kept with the answer’s trace, for at most 90 days.",
+        "operationId": "AskFeedbackController_rate_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAskFeedbackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskFeedbackDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A reason sent with a thumbs up (`ai.ask.feedback.reason_needs_down`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rate an answer: thumbs up or down",
+        "tags": [
+          "AI"
+        ]
+      },
+      "delete": {
+        "description": "Succeeds whether or not there was one.",
+        "operationId": "AskFeedbackController_clear_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a thumbs back",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/ask/{ask_id}/signals": {
+      "post": {
+        "description": "One tap under an answer the caller was given: Try again, Think harder, a source opened, a proposed card confirmed or dismissed. Counted as an analytics event; nothing is stored.",
+        "operationId": "AskFeedbackController_signal_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskSignalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Say what the member did with an answer",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/ask/posts": {
+      "post": {
+        "description": "The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.",
+        "operationId": "AskPostController_post_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskPostDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskPostOutcomeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`)."
+          },
+          "403": {
+            "description": "The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or the channel does not exist."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post an Ask Frapp answer to a channel, or ask what posting would warn about",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/nudges/current": {
       "post": {
         "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
@@ -19670,6 +20026,62 @@
           "updated"
         ]
       },
+      "NotificationConversationDto": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "The chat channel (`data.target.channelId`)",
+            "format": "uuid"
+          },
+          "threadRootId": {
+            "type": "string",
+            "description": "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "ClearNotificationsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped.",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "conversation": {
+            "description": "Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationConversationDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "ClearNotificationsResultDto": {
+        "type": "object",
+        "properties": {
+          "cleared": {
+            "type": "number",
+            "description": "How many notifications this call cleared"
+          }
+        },
+        "required": [
+          "cleared"
+        ]
+      },
       "UpdateNotificationPreferenceDto": {
         "type": "object",
         "properties": {
@@ -19843,6 +20255,102 @@
           "mention_count"
         ]
       },
+      "ForwardedGifDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "provider",
+          "id",
+          "title",
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "ForwardedMessageDto": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The original message."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks."
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The original’s author; null for an imported archive message, and once the original is deleted."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked."
+          },
+          "content": {
+            "type": "string",
+            "description": "The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview."
+          },
+          "gif": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedGifDto"
+              }
+            ]
+          },
+          "attachment_count": {
+            "type": "number",
+            "description": "How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the original was sent."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise."
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list."
+          }
+        },
+        "required": [
+          "message_id",
+          "channel_id",
+          "sender_id",
+          "author_name",
+          "content",
+          "gif",
+          "attachment_count",
+          "created_at"
+        ]
+      },
       "ChannelLatestMessageDto": {
         "type": "object",
         "properties": {
@@ -19884,6 +20392,16 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
           }
         },
         "required": [
@@ -19895,7 +20413,8 @@
           "kind",
           "payload",
           "attachment_count",
-          "created_at"
+          "created_at",
+          "forwarded_from"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -20092,7 +20611,8 @@
               "loading",
               "announcement",
               "signup",
-              "form"
+              "form",
+              "ask_answer"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -20518,7 +21038,8 @@
               "loading",
               "announcement",
               "signup",
-              "form"
+              "form",
+              "ask_answer"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -20614,6 +21135,16 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/ChatThreadLastReplyDto"
+              }
+            ]
+          },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
               }
             ]
           },
@@ -20776,7 +21307,8 @@
               "loading",
               "announcement",
               "signup",
-              "form"
+              "form",
+              "ask_answer"
             ]
           },
           "gif": {
@@ -20840,6 +21372,231 @@
         },
         "required": [
           "content"
+        ]
+      },
+      "ForwardMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel or DM to forward to. It may be the channel the message is in."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 10000,
+            "description": "The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do."
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made."
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "ForwardResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_avatar_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TEXT",
+              "POLL"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "rush",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement",
+              "signup",
+              "form",
+              "ask_answer"
+            ],
+            "nullable": true,
+            "description": "Null on rows written before the column existed; read as 'text'."
+          },
+          "payload": {
+            "type": "object",
+            "nullable": true,
+            "description": "Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575)."
+          },
+          "client_message_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "reply_to_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
+          },
+          "is_pinned": {
+            "type": "boolean"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "flag": {
+            "type": "string",
+            "enum": [
+              "important",
+              "funny",
+              "interesting",
+              "question",
+              "hype",
+              "fyi"
+            ],
+            "nullable": true,
+            "description": "The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag."
+          },
+          "flagged_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld."
+          },
+          "flagged_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "edited_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "mentions": {
+            "nullable": true,
+            "description": "`users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline."
+          },
+          "thread_reply_count": {
+            "type": "number",
+            "description": "On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row."
+          },
+          "thread_last_reply_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "thread_recent_sender_ids": {
+            "description": "On a thread parent: up to three recent repliers, newest first.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thread_last_reply": {
+            "nullable": true,
+            "description": "On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatThreadLastReplyDto"
+              }
+            ]
+          },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`."
+          },
+          "deduplicated": {
+            "type": "boolean",
+            "description": "True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one."
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "sender_id",
+          "content",
+          "type",
+          "reply_to_id",
+          "metadata",
+          "is_pinned",
+          "pinned_at",
+          "edited_at",
+          "is_deleted",
+          "created_at",
+          "sender_blocked",
+          "deduplicated"
         ]
       },
       "SetMessageFlagDto": {
@@ -21142,6 +21899,16 @@
             "nullable": true,
             "description": "The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row."
           },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
+          },
           "sender_blocked": {
             "type": "boolean",
             "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
@@ -21155,6 +21922,7 @@
           "is_deleted",
           "created_at",
           "thread_root_id",
+          "forwarded_from",
           "sender_blocked"
         ]
       },
@@ -22082,6 +22850,66 @@
           "next_page"
         ]
       },
+      "EventAgendaItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "done": {
+            "type": "boolean",
+            "description": "Checked off during the meeting."
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "done"
+        ]
+      },
+      "EventAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the attachment. Unique within the event."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "link",
+              "document"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "A `link` attachment's address: http or https only."
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "What the list shows. For a document, its name when it was attached."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ]
+      },
       "GeofenceCoordinateDto": {
         "type": "object",
         "properties": {
@@ -22157,6 +22985,20 @@
           },
           "notes": {
             "type": "string"
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
           },
           "check_in_zone": {
             "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
@@ -22271,6 +23113,20 @@
             "type": "string",
             "nullable": true
           },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
           "check_in_zone": {
             "nullable": true,
             "description": "Optional check-in geofence. `null` means the event has no zone.",
@@ -22327,6 +23183,8 @@
           "excluded_role_ids",
           "others_invited",
           "notes",
+          "agenda",
+          "attachments",
           "check_in_zone",
           "check_in_zone_name",
           "check_in_opens_minutes",
@@ -22391,6 +23249,20 @@
           },
           "notes": {
             "type": "string"
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
           },
           "check_in_zone": {
             "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
@@ -28658,6 +29530,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28671,6 +29548,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at"
         ]
@@ -28715,6 +29593,11 @@
             "type": "boolean",
             "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
           },
+          "discord_user_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543)."
+          },
           "discord_username": {
             "type": "string",
             "nullable": true,
@@ -28732,6 +29615,7 @@
         "required": [
           "available",
           "linked",
+          "discord_user_id",
           "discord_username",
           "linked_at",
           "messages_linked"
@@ -29021,6 +29905,26 @@
           "answer"
         ]
       },
+      "AskFromDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel the member had open."
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event the member had open."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The task the member had open."
+          }
+        }
+      },
       "AskRequestDto": {
         "type": "object",
         "properties": {
@@ -29053,6 +29957,24 @@
               "chat_private"
             ],
             "description": "Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message."
+          },
+          "from": {
+            "nullable": true,
+            "description": "What the member had open when they asked, so \"this channel\" or \"this event\" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskFromDto"
+              }
+            ]
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "default",
+              "more"
+            ],
+            "description": "How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet."
           }
         },
         "required": [
@@ -29420,6 +30342,160 @@
           "unverified_points",
           "covers_from",
           "covers_to"
+        ]
+      },
+      "SetAskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true,
+            "description": "With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before."
+          }
+        },
+        "required": [
+          "rating"
+        ]
+      },
+      "AskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "ask_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "ask_id",
+          "rating",
+          "reason",
+          "updated_at"
+        ]
+      },
+      "AskSignalDto": {
+        "type": "object",
+        "properties": {
+          "signal": {
+            "type": "string",
+            "enum": [
+              "retried",
+              "think_harder",
+              "source_opened",
+              "card_confirmed",
+              "card_dismissed"
+            ],
+            "description": "What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`."
+          }
+        },
+        "required": [
+          "signal"
+        ]
+      },
+      "AskPostDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to post in. The caller must be able to post there."
+          },
+          "receipt": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning."
+          },
+          "acknowledged": {
+            "description": "The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "channel_id",
+          "receipt",
+          "confirm"
+        ]
+      },
+      "AskPostRestrictedDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Stable for the same source, for `acknowledged`."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The kind of source, as an answer names it."
+          },
+          "title": {
+            "type": "string",
+            "description": "The source’s name, or the records’ (\"Your tasks\")."
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "title"
+        ]
+      },
+      "AskPostOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "posted": {
+            "type": "boolean",
+            "description": "Whether the answer is now in the channel."
+          },
+          "restricted": {
+            "description": "What the answer drew on that not everyone who can read the channel could open, as of this call.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskPostRestrictedDto"
+            }
+          }
+        },
+        "required": [
+          "posted",
+          "restricted"
         ]
       },
       "MemberNudgeDto": {

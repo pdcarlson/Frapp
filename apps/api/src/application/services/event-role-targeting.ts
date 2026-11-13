@@ -54,6 +54,31 @@ export function memberAttendance(
   return status;
 }
 
+/** A member as the read gate needs them, already resolved. */
+export interface EventViewer {
+  permissions: ReadonlySet<string>;
+  role_ids: readonly string[];
+}
+
+/**
+ * The read gate for a member whose permissions and roles are already in
+ * hand: the same rule as {@link isEventVisibleTo}, with no lookups. For a
+ * caller checking many members at once (`EventService.visibleToAll`).
+ */
+export function isEventVisibleWith(
+  event: EventAttendanceFields,
+  viewer: EventViewer,
+): boolean {
+  if (!eventLimitsAudience(event)) return true;
+  if (
+    viewer.permissions.has('*') ||
+    viewer.permissions.has(SystemPermissions.EVENTS_UPDATE)
+  ) {
+    return true;
+  }
+  return isInvited(event, viewer.role_ids);
+}
+
 /**
  * Whether `userId` may see `event` through the read routes
  * (`spec/behavior/events.md` § Attendance by role): an event that invites
@@ -67,7 +92,8 @@ export function memberAttendance(
  * (`AttendanceService.getMyAttendance`) both answer through it. The list
  * (`EventService.findByChapter`) and search (`SearchService.filterVisibleEvents`)
  * apply the same rule in batch form, reading the permission and member row
- * once for many events, so a change to the rule lands in all three.
+ * once for many events, and {@link isEventVisibleWith} states it for a member
+ * already resolved, so a change to the rule lands in all four.
  */
 export async function isEventVisibleTo(
   event: EventAttendanceFields,

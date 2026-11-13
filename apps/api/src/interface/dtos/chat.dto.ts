@@ -666,6 +666,50 @@ export class SendMessageDto {
 }
 
 /**
+ * `POST /v1/channels/messages/{messageId}/forward` (#4864): send a copy of
+ * that message to one channel or DM the caller can post in, with an optional
+ * comment. The copy is built server-side (`forwarded_from` on the new
+ * message); nothing about the original is taken from the client.
+ */
+export class ForwardMessageDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The channel or DM to forward to. It may be the channel the message is in.',
+  })
+  @IsUUID()
+  channel_id: string;
+
+  @ApiPropertyOptional({
+    minLength: 0,
+    maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+    description:
+      'The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
+  content?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made.',
+  })
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
+
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
+}
+
+/**
  * Per-user reaction / vote / RSVP / card-action. Writes to
  * `chat_message_actions` (Chunk 02). For `action_type === "vote"` the
  * server UPSERTS — same row, replaced `payload` — so a poll vote can
@@ -950,6 +994,14 @@ export class ChannelLatestMessageDto {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    description:
+      'When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.',
+  })
+  forwarded_from: ForwardedMessageDto | null;
 }
 
 /**
@@ -1110,6 +1162,95 @@ export class ChatThreadLastReplyDto {
     required: false,
     description:
       'Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list.',
+  })
+  sender_blocked?: boolean;
+}
+
+/** The GIF a forwarded copy carries: the same shape as a GIF message's `metadata.gif`. */
+export class ForwardedGifDto {
+  @ApiProperty()
+  provider: string;
+
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty()
+  url: string;
+
+  @ApiProperty()
+  width: number;
+
+  @ApiProperty()
+  height: number;
+}
+
+/**
+ * What a forward holds of the message it copies (#4864). A copy made when it
+ * was forwarded, not a live reference: an edit to the original changes
+ * nothing here, and a delete of the original blanks it (`deleted: true`).
+ */
+export class ForwardedMessageDto {
+  @ApiProperty({ format: 'uuid', description: 'The original message.' })
+  message_id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks.',
+  })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The original’s author; null for an imported archive message, and once the original is deleted.',
+  })
+  sender_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked.',
+  })
+  author_name: string | null;
+
+  @ApiProperty({
+    description:
+      'The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview.',
+  })
+  content: string;
+
+  @ApiProperty({ type: () => ForwardedGifDto, nullable: true })
+  gif: ForwardedGifDto | null;
+
+  @ApiProperty({
+    description:
+      'How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”.',
+  })
+  attachment_count: number;
+
+  @ApiProperty({ description: 'When the original was sent.' })
+  created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise.',
+  })
+  deleted?: boolean;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list.',
   })
   sender_blocked?: boolean;
 }
@@ -1278,6 +1419,15 @@ export class ChatMessageDto {
   })
   thread_last_reply?: ChatThreadLastReplyDto | null;
 
+  @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    required: false,
+    description:
+      'Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).',
+  })
+  forwarded_from?: ForwardedMessageDto | null;
+
   @ApiProperty()
   created_at: string;
 
@@ -1351,11 +1501,32 @@ export class BookmarkedMessageDto {
   thread_root_id: string | null;
 
   @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    description:
+      'Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.',
+  })
+  forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
     type: Boolean,
     description:
       'Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows.',
   })
   sender_blocked: boolean;
+}
+
+/**
+ * What `POST /v1/channels/messages/{messageId}/forward` answers (#4864): the
+ * new message as a read would serve it, and whether a retry answered it.
+ */
+export class ForwardResultDto extends ChatMessageDto {
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one.',
+  })
+  deduplicated: boolean;
 }
 
 /**

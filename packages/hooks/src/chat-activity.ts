@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
+import { isChannelHeldUnread, trackActivityStamping } from "./read-cursor";
 import { invalidateChannelSummaries } from "./use-chat";
 
 /**
@@ -113,7 +114,9 @@ export function createChatActivityHandler(
   let stamping: Promise<void> = Promise.resolve();
 
   const round = async () => {
-    const toStamp = [...stamps];
+    // A channel Mark unread is holding sends nothing, even a stamp queued
+    // before the hold (#3723).
+    const toStamp = [...stamps].filter((id) => !isChannelHeldUnread(id));
     stamps.clear();
     const shouldRefresh = refresh || toStamp.length > 0;
     refresh = false;
@@ -129,6 +132,7 @@ export function createChatActivityHandler(
     // Taken now, at the end of the coalescing window; what arrives while the
     // previous round is still running joins this round.
     stamping = stamping.then(round, round);
+    trackActivityStamping(stamping);
   };
 
   const handle = (activity: ChatActivity) => {

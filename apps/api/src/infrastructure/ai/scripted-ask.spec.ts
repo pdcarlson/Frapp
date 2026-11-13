@@ -1,5 +1,9 @@
 import type { LanguageModelRequest } from '#domain/adapters/language-model.interface';
-import { scriptedAskAnswer, scriptedAskPlan } from './scripted-ask';
+import {
+  scriptedAskAgent,
+  scriptedAskAnswer,
+  scriptedAskPlan,
+} from './scripted-ask';
 import type { ScriptedReply } from './scripted-language-model';
 
 type Said = Extract<ScriptedReply, { text: string }>;
@@ -170,5 +174,63 @@ describe('the scripted Ask replies', () => {
     expect(after('Who is the treasurer?').citations).toEqual([
       { sourceId: 'p2', quote: 'Devin Okafor is the treasurer.' },
     ]);
+  });
+});
+
+describe('scriptedAskAgent', () => {
+  const request = (rounds: unknown[], mustAnswer = false) =>
+    ({
+      kind: 'agent',
+      messages: [{ role: 'user', content: 'Who is the treasurer?' }],
+      tools: ['search_records', 'roster', 'my_dues', 'pay_dues'].map(
+        (name) => ({ name, description: '', inputSchema: {} }),
+      ),
+      context: [],
+      rounds,
+      ...(mustAnswer ? { mustAnswer: true } : {}),
+    }) as unknown as LanguageModelRequest;
+
+  it('first searches for the question and asks for the live reads its words name', () => {
+    expect((scriptedAskAgent(request([])) as Said).toolCalls).toEqual([
+      {
+        id: 'scripted-call-1',
+        name: 'search_records',
+        input: { query: 'Who is the treasurer?' },
+      },
+      { id: 'scripted-call-2', name: 'roster', input: {} },
+    ]);
+  });
+
+  it('then quotes what the reads returned, and calls nothing more', () => {
+    const reply = scriptedAskAgent(
+      request([
+        {
+          replay: null,
+          results: [
+            {
+              callId: 'scripted-call-2',
+              note: null,
+              sources: [
+                {
+                  id: 'tool:roster',
+                  title: 'Roster',
+                  text: 'Devin Okafor is the treasurer.',
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    ) as Said;
+    expect(reply.toolCalls ?? []).toEqual([]);
+    expect(reply.citations).toEqual([
+      { sourceId: 'tool:roster', quote: 'Devin Okafor is the treasurer.' },
+    ]);
+  });
+
+  it('answers without reading when it is told to', () => {
+    expect(
+      (scriptedAskAgent(request([], true)) as Said).toolCalls ?? [],
+    ).toEqual([]);
   });
 });

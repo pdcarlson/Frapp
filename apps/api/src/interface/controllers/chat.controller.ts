@@ -82,8 +82,14 @@ import {
   ResolveAuthorAvatarsDto,
   GetChannelMessagesQueryDto,
   ChatMessageDto,
+  ForwardMessageDto,
+  ForwardResultDto,
 } from '../dtos/chat.dto';
-import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+import type {
+  ChannelType,
+  ChatChannel,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
 
 /** What `POST :id/messages` answers with. */
 type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
@@ -764,6 +770,56 @@ export class ChatController {
     );
   }
 
+  /**
+   * Forward a message to one channel or DM (#4864): a new text message there,
+   * sent by the caller, with their optional comment and a copy of the
+   * original the server builds (`forwarded_from`). The original must be
+   * readable and the destination postable; a card or a deleted message is a
+   * 400. A retry with the same `client_message_id` answers the forward
+   * already made.
+   */
+  @Post('messages/:messageId/forward')
+  @ApiOperation({
+    summary:
+      'Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)',
+  })
+  @ApiCreatedResponse({ type: ForwardResultDto })
+  // The caller's own new row, so its `content` is their comment, unmasked. A
+  // retry on the same `client_message_id` answers `deduplicated: true` and
+  // records nothing: the forward was counted when it was first made.
+  @FeatureEvent(
+    'message-forwarded',
+    ({
+      result,
+    }: FeatureEventInput<
+      ForwardMessageDto,
+      ChatMessage & { deduplicated: boolean }
+    >) =>
+      result.deduplicated
+        ? null
+        : {
+            has_comment:
+              typeof result.content === 'string' &&
+              result.content.trim() !== '',
+          },
+  )
+  async forwardMessage(
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ForwardMessageDto,
+  ) {
+    return this.chatService.forwardMessage({
+      message_id: messageId,
+      chapter_id: chapterId,
+      sender_id: userId,
+      channel_id: dto.channel_id,
+      content: dto.content,
+      client_message_id: dto.client_message_id,
+      mention_picks: dto.mention_picks,
+    });
+  }
+
   // ── Sign-up and form cards (#3926) ───────────────────────────────────
 
   @Post('messages/:messageId/close')
@@ -1036,6 +1092,23 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.markChannelRead(channelId, chapterId, userId);
+  }
+
+  /**
+   * Mark unread (#3723): the caller's own read cursor, so it needs only read
+   * access to the message's channel, like Mark as read.
+   */
+  @Post('messages/:messageId/unread')
+  @ApiOperation({
+    summary:
+      'Mark a message unread: move the caller’s read cursor to just before it',
+  })
+  async markMessageUnread(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.markMessageUnread(messageId, chapterId, userId);
   }
 
   // ── Per-channel notification level (mute) ────────────────────────────

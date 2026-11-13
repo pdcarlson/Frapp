@@ -31,7 +31,7 @@ import { maskBlockedBookmarkMessage } from './chat-block-mask';
  * (An earlier revision said "four" and then listed three. The count is now the
  * length of the list below, which is the only way it stays right.)
  *
- * The redacted object is the same nine-field shape as an available one. It used
+ * The redacted object is the same shape as an available one. It used
  * to be wider, because the redaction was written while the endpoint still served
  * all 19 message columns — leaving redacted and available rows structurally
  * different on one endpoint, which is the same "carries fields its declared
@@ -58,6 +58,8 @@ function redactBookmarkedMessage(
       is_deleted: false,
       // The row can't be opened, so where it would open is withheld too.
       thread_root_id: null,
+      // The original's copy is channel content like any other (#4875).
+      forwarded_from: null,
       // Lost channel access is not a block, and saying otherwise would tell a
       // member they had blocked someone they had not. The two redactions are
       // deliberately separate signals; this one is `message_available: false`.

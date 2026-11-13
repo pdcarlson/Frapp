@@ -370,6 +370,30 @@ describe('ChatReportService', () => {
       );
     });
 
+    it('names the member who posted an Ask Frapp answer, not the Frapp sender (#4713)', async () => {
+      channelAccess.assertMessageAccess.mockResolvedValue({
+        ...baseMessage,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        kind: 'ask_answer',
+        content: 'Dues are due on the 1st.',
+        payload: { v: 1, asked_by: 'user-asker', question: 'When are dues?' },
+      } satisfies ChatMessage);
+
+      await service.fileReport(CHAPTER, REPORTER, {
+        message_id: MESSAGE_ID,
+        reason: 'other',
+      });
+
+      expect(reportRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reported_content:
+            'Asked Frapp: When are dues?\nDues are due on the 1st.',
+          reported_sender_id: 'user-asker',
+          reported_author_name: null,
+        }),
+      );
+    });
+
     it('snapshots author_name for an imported message with no sender_id', async () => {
       // The case that makes carrying BOTH author columns necessary rather than
       // belt-and-braces. A Discord-imported row has `sender_id: null` and names
@@ -1942,6 +1966,23 @@ describe('reportedContentSnapshot', () => {
     metadata: {},
   };
 
+  it('keeps the question a posted Ask Frapp answer was given (#4713)', () => {
+    const posted = {
+      content: 'Dues are due on the 1st.',
+      type: 'TEXT' as const,
+      kind: 'ask_answer' as const,
+      payload: { v: 1, question: ' When are dues due? ' },
+      metadata: {},
+    };
+    expect(reportedContentSnapshot(posted)).toBe(
+      'Asked Frapp: When are dues due?\nDues are due on the 1st.',
+    );
+    // A payload this build cannot read still files the answer.
+    expect(reportedContentSnapshot({ ...posted, payload: null })).toBe(
+      'Dues are due on the 1st.',
+    );
+  });
+
   it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
     const gif = {
       provider: 'klipy',
@@ -1961,6 +2002,69 @@ describe('reportedContentSnapshot', () => {
         metadata: { gif: { ...gif, title: '' } },
       }),
     ).toBe('GIF: https://static.klipy.com/ii/a/dance.webp');
+  });
+
+  it("keeps a forward's copy after its comment, unless the original was deleted (#4864)", () => {
+    const copy = {
+      message_id: 'orig-1',
+      channel_id: 'chan-src',
+      sender_id: 'user-ana',
+      author_name: 'Ana',
+      content: 'harassing words',
+      gif: null,
+      attachment_count: 0,
+      created_at: '2026-11-01T00:00:00Z',
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', forwarded_from: copy }),
+    ).toBe('Forwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: copy,
+      }),
+    ).toBe('look\n\nForwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: {
+          ...copy,
+          content: '',
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: 'Happy dance',
+            url: 'https://static.klipy.com/ii/a/dance.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      }),
+    ).toBe(
+      'Forwarded GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp',
+    );
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: { ...copy, content: '', attachment_count: 2 },
+      }),
+    ).toBe('Forwarded from Ana: 2 attachments');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: {
+          ...copy,
+          sender_id: null,
+          author_name: null,
+          content: '',
+          deleted: true,
+        },
+      }),
+    ).toBe('look');
   });
 
   it('is the content for anything that is not a poll', () => {

@@ -336,7 +336,7 @@ Only changed fields are sent.
 After a series save that rebuilds the occurrence on screen, or a delete, the screen returns to Events (`lib/events/edit-event.ts`, sharing `event-edit.ts` in `@repo/validation` with web).
 **Check-in card (#3703):** before the window it says only "Check-in opens at 7:50 PM" (with the day when it isn't today);
 a viewer who may host (`events:update`) gets Host check-in (s22) as the card's button, from before the window opens, with a quieter "Check myself in" under it while the window is open and they aren't in;
-a member who has checked in sees "Checked in at 7:52 PM" and the points instead of the camera line, and one an officer marked sees "Marked excused" (or absent, present) and no check-in, while a guest sees one line saying to point the phone's camera at the officer's code and a quieter Enter code, read from their own row (`GET /v1/events/:eventId/attendance/me`)
+a member who has checked in sees "Checked in at 7:52 PM" and the points instead of the camera line, and one an officer marked sees "Marked excused" (or absent, present) and no check-in, while a guest sees one line saying to scan the officer's code here or with the phone's camera and a quieter Scan code, which opens s18 with its viewport up (2026-11-13), read from their own row (`GET /v1/events/:eventId/attendance/me`)
 
 ### s08 Tasks + points
 
@@ -441,6 +441,7 @@ A mention is not a tinted row: the list stays flat.
 The unread dot is `--foreground`, as on web (it was the chapter accent until #4346), and a read row's title drops to regular weight and the body's tone.
 The category word that sat under each row until #4346 was derived from `data.target.screen`; the badge and the row's spoken label carry it now.
 Since 2026-11-13 (#3948) a conversation's rows are one row, its newest, with how many messages it stands for under the preview ("14 messages") and in its spoken label, and an All / Unread segmented control spans the top of the list (shown once there is a row, and kept under Unread when it empties the list, so All is a tap away); [`notifications.md` § The in-app list](../../behavior/notifications.md#the-in-app-list) owns the rules.
+A long press offers Clear in a one-tap alert (Clear or Cancel), and a screen reader gets Clear as a named action; a conversation's row clears the whole conversation (#3948).
 A tap marks the row read (every unread row a conversation's row stands for) **and** deep-links: the destination comes from `lib/notifications/targets.ts`, the same resolver the push handler uses, so an in-app tap and a push tap cannot name different screens.
 An unrecognized target resolves to this screen, so the row marks itself read and stays put rather than guessing
 
@@ -497,7 +498,9 @@ Its header is the crest in the chapter accent and "Ask Frapp".
 **It is drawn on the page's background (`surface.background`), not a sheet's `popover` grey** (#4702; Paul, 2026-11-13, on the first captures: at full height it is a screen, and his reference, Bevel's assistant, talks on the app's own dark background), so a suggestion, the field and a proposal card take the page's `surface1`.
 The field is a capsule like the bar that opened it, and the send button is round and the chapter's solid accent.
 **One conversation in one field** ([`../../behavior/ai.md` § One conversation](../../behavior/ai.md#one-conversation); changed in #4699 by pdcarlson, 2026-11-13: until then it showed one question at a time, said so under the field, and had an Ask / Do switch beside the title for a member who could have Frapp act).
-The title row is pinned, with a New conversation button once there is a turn; the thread scrolls under it and follows the newest words unless the member has scrolled up; the field is pinned above the keyboard and reads "Ask Frapp anything".
+The title row is pinned, with a New conversation button once there is a turn; the thread scrolls under it and follows the newest words unless the member has scrolled up; the field is pinned above the keyboard and reads "Search or ask Frapp" ("Ask Frapp anything" until #4904).
+
+**The field searches too** (changed in #4904 by pdcarlson, 2026-11-13; Paul's pick, one field for search and Ask). From three characters, the channels, members, messages and events that match what is typed are listed just above the field, grouped, at most three a group, each one line with its hint at the right (`components/ask/ask-find.tsx`, off the list web's Find dialog builds, `@repo/hooks` `find-results.ts`). The list hangs over the thread's last lines from the composer's top edge, so the thread is never laid out again; the last settled list stays up while the next search is out; with nothing found there is no list. A tap closes the sheet and opens the channel, the message in its channel, the directory or the event's details; what was typed is dropped, and nothing is asked. Send asks Frapp, whatever is listed. Backwork is not listed (the phone has no screen for it), nor Events while the module is off, nor DMs. The Google app, Arc Search and Perplexity offer places while typing and an answer on Send in the same way.
 Each turn (`components/ask/ask-turn.tsx`) is what the member typed in a bubble on the right (the chapter's solid accent since #4702, `surface1` before), then Frapp on the left with no frame: the step it is on while it works ("Searching your chapter's sources") under the streamed words, then the answer with a numbered gold marker after each cited sentence and a wrapping row of source chips under it (36pt drawn, the number then the name; kind and date are in the chip's spoken name).
 Between the answer and its chips one caption line says what Frapp read to write it ("Read the events calendar and 3 sources"), and after the chips sit two muted icons, Copy and Report, where the words "Report this" were (#4702; Paul, 2026-11-13; [`../design-system/components.md`](../design-system/components.md) §11).
 A chip opens the real thing: a document in the in-app browser over the sheet, minutes on the minutes screen, a channel message's channel, live data on its screen (`lib/ask/source-route.ts`); a source this build has no screen for is a plain chip.
@@ -548,7 +551,7 @@ Also reached from a row at the foot of Events (s06)
 
 Route: `(app)/check-in.tsx`.
 
-Live — opened by the check-in link the phone's camera reads (`?event=…&t=…`, sent once per code, latched) or by the event's Enter code for the typed code; asks for location in context; no in-app scanner since 2026-11-13 ([`patterns.md`](patterns.md))
+Live — opened by the check-in link the phone's camera reads (`?event=…&t=…`, sent once per code, latched), or by the event's Scan code with its viewport up; Scan code hands a code it reads to the screen as that link's parameters, and the typed code is a sheet; asks for location in context ([`patterns.md`](patterns.md))
 
 ### s19 New task sheet
 

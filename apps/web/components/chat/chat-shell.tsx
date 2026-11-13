@@ -140,10 +140,10 @@ import {
   classifyMessage,
   hiddenQuoteText,
   visibleTypingUsers,
+  withForwardedMasked,
 } from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { AskSlot } from "@/components/ask/ask-host";
 import {
   useChannelAsk,
   useChannelAskAccess,
@@ -2812,7 +2812,9 @@ export function ChatShell({
     return {
       id: parent.id,
       author: resolveAuthorLabel(parent, nameFor, userId),
-      preview: replyPreviewText(parent),
+      preview: replyPreviewText(
+        withForwardedMasked(parent, blockState, userId),
+      ),
       hidden: hiddenQuoteText(parent, blockState, userId),
     };
   }, [
@@ -3914,8 +3916,6 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
-        {/* Where Ask Frapp's conversation rises from: the composer's top edge. */}
-        {activeChannel ? <AskSlot /> : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved

@@ -259,9 +259,17 @@ export class ChatMentionService {
         hereView?.mentionable &&
         tokens.some((token) => foldMentionName(token) === HERE_MENTION_NAME)
       ) {
+        // On a send the sender is always among who their own `@here`
+        // reaches: they are here, sending it, whatever the presence read says
+        // (Paul, 2026-11-13: "that should ping me too"). It lights their own
+        // row and nothing else: the push, the unread badge and catch-up all
+        // skip a sender's own message. An edit keeps what the send stored.
         hereView.member_ids =
           here === 'read'
-            ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
+            ? withSender(
+                [...((await this.presence.onlineUserIds(chapterId)) ?? [])],
+                senderId,
+              )
             : reachedByHere(here, candidates, allowed);
       }
 
@@ -305,6 +313,11 @@ export class ChatMentionService {
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
+}
+
+/** `ids` with `senderId` last, once. */
+function withSender(ids: string[], senderId: string): string[] {
+  return ids.includes(senderId) ? ids : [...ids, senderId];
 }
 
 /** Where `@here`'s members come from: read now (a send), or an edit's earlier body. */

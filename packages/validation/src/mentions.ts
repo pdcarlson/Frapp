@@ -680,8 +680,8 @@ function matchMentionRole(
   const folded = fold(token);
   if (folded.length === 0) return undefined;
   // `@here` is reserved (2026-11-12): it is the online members the caller's
-  // `here` entry holds, and it reaches nobody when there is no entry or no one
-  // is online. It never falls through to a member, or an empty room would page
+  // `here` entry holds (the API adds the sender), and it reaches nobody when
+  // there is no entry. It never falls through to a member, or an empty room would page
   // whoever's name starts with "here" past their mute.
   if (folded === HERE_FOLDED) {
     return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;

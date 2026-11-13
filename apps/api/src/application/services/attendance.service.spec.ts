@@ -86,6 +86,8 @@ describe('AttendanceService', () => {
     check_in_zone_name: null,
     check_in_opens_minutes: 10,
     event_type_id: null,
+    agenda: [],
+    attachments: [],
     created_by: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
@@ -767,6 +769,47 @@ describe('AttendanceService', () => {
         service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
       ).rejects.toThrow(new NotFoundException('Event not found'));
       expect(mockAttendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyAttendanceForEvents', () => {
+    it("reads the caller's rows for this chapter's events in one read", async () => {
+      mockAttendanceRepo.findByUserForEvents.mockResolvedValue([
+        baseAttendance,
+      ]);
+
+      await expect(
+        service.getMyAttendanceForEvents('user-1', 'ch-1', [
+          { id: 'evt-1', chapter_id: 'ch-1' },
+          { id: 'evt-2', chapter_id: 'ch-1' },
+        ]),
+      ).resolves.toEqual([baseAttendance]);
+      expect(mockAttendanceRepo.findByUserForEvents).toHaveBeenCalledWith(
+        'user-1',
+        ['evt-1', 'evt-2'],
+      );
+    });
+
+    it("drops another chapter's event instead of reading it", async () => {
+      mockAttendanceRepo.findByUserForEvents.mockResolvedValue([]);
+
+      await service.getMyAttendanceForEvents('user-1', 'ch-1', [
+        { id: 'evt-1', chapter_id: 'ch-1' },
+        { id: 'evt-other', chapter_id: 'ch-2' },
+      ]);
+      expect(mockAttendanceRepo.findByUserForEvents).toHaveBeenCalledWith(
+        'user-1',
+        ['evt-1'],
+      );
+    });
+
+    it('reads nothing when no event is left', async () => {
+      await expect(
+        service.getMyAttendanceForEvents('user-1', 'ch-1', [
+          { id: 'evt-other', chapter_id: 'ch-2' },
+        ]),
+      ).resolves.toEqual([]);
+      expect(mockAttendanceRepo.findByUserForEvents).not.toHaveBeenCalled();
     });
   });
 

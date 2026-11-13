@@ -70,7 +70,7 @@ export const BACKWORK_SEARCH_COLUMNS =
   'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at';
 
 export const EVENT_SEARCH_COLUMNS =
-  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes, created_by, event_type_id';
+  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes, created_by, event_type_id, agenda, attachments';
 
 /**
  * Not `*`: `content_search` is the STORED tsvector `searchMessages` matches on,
@@ -78,7 +78,7 @@ export const EVENT_SEARCH_COLUMNS =
  * on the one read whose result set the archive import grows most.
  */
 const MESSAGE_SEARCH_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, forwarded_from, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at';
 
 /**
  * The order `searchMessages` asks PostgREST for, `created_at desc, id desc`,

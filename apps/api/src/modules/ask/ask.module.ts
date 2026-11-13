@@ -1,4 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AgentLoopService } from '../../application/services/ask/agent/agent-loop.service';
+import {
+  AGENT_READ_TOOLS,
+  type AgentReadTool,
+} from '../../application/services/ask/agent/agent-tool';
+import { CHAPTER_AGENT_TOOLS } from '../../application/services/ask/agent/tools-chapter';
+import { CONVERSATION_AGENT_TOOLS } from '../../application/services/ask/agent/tools-conversations';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import {
   ASK_TOOLS,
@@ -19,14 +26,19 @@ import { SupabaseAskDiagnosticsRepository } from '../../infrastructure/supabase/
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import { SupabaseUserRepository } from '../../infrastructure/supabase/repositories/supabase-user.repository';
 import { ASK_DIAGNOSTICS_REPOSITORY } from '#domain/repositories/ask-diagnostics.repository.interface';
 import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { ActModule } from '../act/act.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { AiModule } from '../ai/ai.module';
+import { AskConversationToolsModule } from '../ask-conversation-tools/ask-conversation-tools.module';
+import { AskObserveModule } from '../ask-observe/ask-observe.module';
+import { ChapterAgentToolsModule } from './chapter-agent-tools.module';
 import { CorpusModule } from '../corpus/corpus.module';
 import { EventModule } from '../event/event.module';
 import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
@@ -68,6 +80,10 @@ import { TaskModule } from '../task/task.module';
     MeetingModule,
     ActModule,
     AnalyticsModule,
+    // The tool loop's reads, and the trace it leaves of each turn.
+    AskConversationToolsModule,
+    ChapterAgentToolsModule,
+    AskObserveModule,
   ],
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
@@ -83,12 +99,23 @@ import { TaskModule } from '../task/task.module';
       useFactory: (...tools: AskTool[]) => tools,
       inject: [...ASK_TOOL_CLASSES],
     },
+    // The tool loop (epic #4898), off unless `ASK_AGENT=on`. What it may
+    // read is these two lists and nothing else, in the order a model is
+    // shown them: conversations and records, then people, tasks, events and
+    // standing. `AskService` offers a member only the ones they may use.
+    AgentLoopService,
+    {
+      provide: AGENT_READ_TOOLS,
+      useFactory: (...tools: AgentReadTool[]) => tools,
+      inject: [...CONVERSATION_AGENT_TOOLS, ...CHAPTER_AGENT_TOOLS],
+    },
     {
       provide: ASK_DIAGNOSTICS_REPOSITORY,
       useClass: SupabaseAskDiagnosticsRepository,
     },
     // The window is the president's to start and stop, and both are audited.
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     ChapterAuditLogService,
     {

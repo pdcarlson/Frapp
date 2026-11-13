@@ -27,7 +27,6 @@ import {
   purposeStringProblems,
   reactNativeCoreCategories,
   requesterProblems,
-  appVersionOf,
   requiredReasonCategories,
   requiredReasonProblems,
   scanPod,
@@ -65,6 +64,9 @@ const REMOVE = { "tools:node": "remove" };
 const RECORDER =
   "requestRecordingPermissionsAsync( requestNotificationPermissionsAsync( setAudioModeAsync( allowsBackgroundRecording";
 
+/** The calls every requester but location's makes: the scanner, the picker and the recorder. */
+const NOT_LOCATION = `useCameraPermissions( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+
 /** The app manifest `expo config --type introspect` returned when this gate landed. */
 function currentManifest() {
   return manifestOf([
@@ -98,7 +100,7 @@ function currentScan() {
     pod("expo-updates", { [UD]: ["EXUpdates/UpdatesConfigOverride.swift"] }),
     pod("expo-file-system", { [DISK]: ["FileSystemModule.swift"], [FT]: ["FileSystemPath.swift"] }, true),
     pod("react-native", { [BOOT]: ["React/Fabric/RCTConversions.h"], [FT]: ["x.mm"], [UD]: ["y.mm"] }, true),
-    pod("expo-camera"),
+    pod("expo-image-picker"),
   ];
 }
 
@@ -168,44 +170,30 @@ test("every roster entry's requester call exists in the app today", () => {
       return null;
     }
   };
-  assert.deepEqual(requesterProblems(read, undefined, appVersionOf(read)), []);
+  assert.deepEqual(requesterProblems(read), []);
 });
 
-test("a retiring permission is excused only while expo.version is the one it ships in", () => {
-  // The camera's requester went with the in-app scanner (2026-11-13); its
-  // declarations leave with the next native version (#4763).
-  const gone = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : `requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`);
-  assert.deepEqual(requesterProblems(gone, undefined, "0.12.0"), []);
-  assert.deepEqual(requesterProblems(gone, undefined, "0.13.0"), [
-    "NSCameraUsageDescription: retiring with #4763, and expo.version moved past 0.12.0, so this native change is the one that drops the permission and its roster entry",
-    "android.permission.CAMERA: retiring with #4763, and expo.version moved past 0.12.0, so this native change is the one that drops the permission and its roster entry",
-  ]);
-  assert.equal(appVersionOf(() => '{"expo":{"version":"0.12.0"}}'), "0.12.0");
-  assert.equal(appVersionOf(() => "not json"), null);
-});
+const LOCATION_GONE = (call) =>
+  [
+    `NSLocationWhenInUseUsageDescription: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+    `android.permission.ACCESS_FINE_LOCATION: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+    `android.permission.ACCESS_COARSE_LOCATION: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+  ];
 
 test("a purpose string whose feature is gone fails", () => {
-  const read = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : `useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`);
-  const problems = requesterProblems(read);
-  assert.deepEqual(
-    problems,
-    [
-      "NSCameraUsageDescription: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
-      "android.permission.CAMERA: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
-    ],
-  );
+  const read = (file) => (file.endsWith("location.ts") ? "export function here() {}" : NOT_LOCATION);
+  assert.deepEqual(requesterProblems(read), LOCATION_GONE("requestForegroundPermissionsAsync"));
 });
 
 test("a requester call that survives only in a comment fails", () => {
-  const live = `requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+  const live = NOT_LOCATION;
   for (const leftover of [
-    "// was useCameraPermissions() before the check-in rebuild",
-    "/* useCameraPermissions(); */",
-    "/**\n * Calls useCameraPermissions() on mount.\n */",
+    "// was requestForegroundPermissionsAsync() before the study-zone rebuild",
+    "/* requestForegroundPermissionsAsync(); */",
+    "/**\n * Calls requestForegroundPermissionsAsync() on mount.\n */",
   ]) {
-    const problems = requesterProblems((file) => (file.endsWith("check-in.tsx") ? leftover : live));
-    assert.equal(problems.length, 2, leftover);
-    assert.match(problems[0], /check-in\.tsx no longer calls useCameraPermissions/);
+    const problems = requesterProblems((file) => (file.endsWith("location.ts") ? leftover : live));
+    assert.deepEqual(problems, LOCATION_GONE("requestForegroundPermissionsAsync"), leftover);
   }
 });
 
@@ -247,7 +235,7 @@ test("a declined linked-only purpose string fails, because App Store Connect rej
 });
 
 test("a linked-only key has no requester to check", () => {
-  const live = `useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+  const live = `requestForegroundPermissionsAsync( ${NOT_LOCATION}`;
   assert.deepEqual(requesterProblems(() => live), []);
 });
 
@@ -256,9 +244,11 @@ test("every iOS roster entry names exactly one of a requester or a linked API", 
     const linked = entry.linkedBy !== undefined;
     assert.equal(linked, entry.requestedBy === null, `${key}: requestedBy is null exactly when linkedBy is set`);
     if (linked) {
-      for (const field of ["packageName", "symbol", "requestCall"]) {
+      for (const field of ["packageName", "symbol"]) {
         assert.equal(typeof entry.linkedBy[field], "string", `${key}: linkedBy.${field}`);
       }
+      const calls = [entry.linkedBy.requestCall].flat();
+      assert.ok(calls.length > 0 && calls.every((call) => typeof call === "string" && call.endsWith("(")), `${key}: linkedBy.requestCall`);
     } else {
       assert.equal(typeof entry.requestedBy?.file, "string", `${key}: requestedBy.file`);
       assert.equal(typeof entry.requestedBy?.call, "string", `${key}: requestedBy.call`);
@@ -336,7 +326,8 @@ test("the app never makes a linked-only key's request today", () => {
   assert.ok(sources.length > 50, "read the real app sources");
   for (const [, entry] of IOS_PURPOSE_STRINGS) {
     if (!entry.linkedBy) continue;
-    const callers = sources.filter((s) => withoutComments(s.text).includes(entry.linkedBy.requestCall)).map((s) => s.file);
+    const calls = [entry.linkedBy.requestCall].flat();
+    const callers = sources.filter((s) => calls.some((call) => withoutComments(s.text).includes(call))).map((s) => s.file);
     assert.deepEqual(callers, []);
   }
 });
@@ -348,8 +339,9 @@ test("the manifest introspection returned when this gate landed passes", () => {
 });
 
 test("a declined camera option on the picker fails, the #2296 defect", () => {
-  // `cameraPermission: false` on expo-image-picker compiles to
-  // withBlockedPermissions: the add disappears and a removal takes its place.
+  // `cameraPermission: false` on expo-image-picker (or the camera in
+  // `android.blockedPermissions`) compiles to withBlockedPermissions: the add
+  // disappears and a removal takes its place, which kills s18's Scan code.
   const manifest = currentManifest();
   manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].filter(
     (entry) => entry.$["android:name"] !== "android.permission.CAMERA",
@@ -665,7 +657,7 @@ test("swiftPackageFiles finds spm_dependency in a podspec or a Ruby file beside 
 test("swiftPackageProblems fails a Swift package unless pods link as dynamic frameworks", () => {
   const pods = [
     { packageName: "@stripe/stripe-react-native", swiftPackageFiles: ["stripe_spm.rb"] },
-    { packageName: "expo-camera", swiftPackageFiles: [] },
+    { packageName: "expo-image-picker", swiftPackageFiles: [] },
   ];
   for (const podfileProperties of [undefined, {}, { "ios.useFrameworks": "static" }]) {
     const problems = swiftPackageProblems(pods, podfileProperties);
@@ -731,7 +723,7 @@ function fixture({
   declared = DECLARED,
   podSource = "UserDefaults.standard",
   modules,
-  checkIn = "useCameraPermissions();",
+  location = "requestForegroundPermissionsAsync();",
   reactNativeSource = "[[NSUserDefaults standardUserDefaults] boolForKey:k]; mach_absolute_time();",
   aggregation = AGGREGATION_RB,
   reactNativePath = true,
@@ -743,8 +735,8 @@ function fixture({
     mkdirSync(dirname(join(root, rel)), { recursive: true });
     writeFileSync(join(root, rel), text);
   };
-  put("apps/mobile/app/(app)/check-in.tsx", checkIn);
-  put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
+  put("apps/mobile/components/check-in/check-in-scanner.tsx", "useCameraPermissions();");
+  put("apps/mobile/lib/location.ts", location);
   put("apps/mobile/lib/minutes/recorder/device.ts", RECORDER);
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
@@ -794,13 +786,13 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
 test("main reports each check's failure together", () => {
   const f = fixture({
     infoPlist: rosterInfoPlist({ NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone" }),
-    manifest: manifestOf([["android.permission.CAMERA", REMOVE]]),
+    manifest: manifestOf([["android.permission.WAKE_LOCK", REMOVE]]),
     podSource: "UserDefaults.standard; UITextInputMode.activeInputModes",
   });
   try {
     const text = main(f.root, f.run).violations.join("\n");
     assert.match(text, /NSMicrophoneUsageDescription/);
-    assert.match(text, /removes android\.permission\.CAMERA/);
+    assert.match(text, /removes android\.permission\.WAKE_LOCK/);
     assert.match(text, /ActiveKeyboards API/);
   } finally {
     f.cleanup();
@@ -821,10 +813,14 @@ test("main reads a linked-only key's symbol from the pod autolinking lists, and 
 });
 
 test("main reports a purpose string whose requester is gone", () => {
-  const f = fixture({ checkIn: "// useCameraPermissions() went with the old scanner\nexport default function CheckIn() {}" });
+  const f = fixture({ location: "// requestForegroundPermissionsAsync() went with study zones\nexport function here() {}" });
   try {
     const { violations } = main(f.root, f.run);
-    assert.deepEqual(violations.map((v) => v.split(":")[0]), ["NSCameraUsageDescription", "android.permission.CAMERA"]);
+    assert.deepEqual(violations.map((v) => v.split(":")[0]), [
+      "NSLocationWhenInUseUsageDescription",
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+    ]);
   } finally {
     f.cleanup();
   }

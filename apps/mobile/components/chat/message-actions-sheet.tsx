@@ -48,6 +48,11 @@ import { selectionHaptic } from "@/lib/haptics";
 import { confirmBlockMember, useBlockActions } from "@/lib/chat/block-actions";
 import { AddReactionGlyph } from "@/components/control-glyphs";
 import { EmojiPickerSheet } from "@/components/chat/emoji-picker-sheet";
+import {
+  ForwardSheet,
+  type ForwardSheetHandle,
+} from "@/components/chat/forward-sheet";
+import type { ForwardTarget } from "@/lib/chat/forward";
 import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
 import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
 import {
@@ -75,8 +80,8 @@ import type { ChatMessageFlag } from "@repo/validation";
  *
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
- * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
- * text, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * conversation actions (Reply, Start thread, Forward, Edit), then the copy-and-reference ones (Copy
+ * text, Mark unread, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
@@ -102,10 +107,18 @@ import type { ChatMessageFlag } from "@repo/validation";
  * offers it for, cards included, as Discord's does. Either row turns to
  * "Copied" in place, then the sheet closes.
  *
+ * **Mark unread** (#3723) sits after Copy text, where Discord's long-press
+ * puts it. The thread moves the read cursor back and leaves the channel.
+ *
  * **Reply, Edit, Mention and Delete hand off to the thread.** Reply and Edit
  * stage in the composer, Mention puts `@Name` in the draft, and Delete asks for
  * confirmation in a native alert, so each row closes the sheet and tells the
  * screen which message it was for.
+ *
+ * **Forward** (#4864) opens the Forward to picker (`ForwardSheet`) in place
+ * of the menu, as the report form does, on any confirmed text message
+ * (`canForwardMessage`); where it lands, and Discord's order for it, are
+ * `spec/behavior/chat/README.md` § Forward's.
  *
  * **Pin message and Save message** (#3723) sit after Copy message link, where
  * Discord's long-press puts Pin. Pin is the chapter-public elevation and shows
@@ -123,7 +136,7 @@ import type { ChatMessageFlag } from "@repo/validation";
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
  * fixed detent with the sheet-aware scroll view as its direct child
  * (`spec/ui/mobile/patterns.md` § Bottom sheets) — one sheet cannot be both, so
- * the report form and the emoji picker are their own sheets that replace the
+ * the report form, the emoji picker and the Forward picker are their own sheets that replace the
  * menu (gorhom's `stackBehavior="replace"`), where s19 stacks its assignee
  * picker on top.
  *
@@ -160,6 +173,11 @@ export const UNPIN_LABEL = "Unpin message";
 export const SAVE_LABEL = "Save message";
 export const UNSAVE_LABEL = "Remove from Saved";
 
+/** The Forward row's label (#4864), Discord's word. */
+export const FORWARD_LABEL = "Forward";
+/** The row that marks the channel unread from a message (#3723). */
+export const MARK_UNREAD_LABEL = "Mark unread";
+
 /** The Copy text row's label once the text is on the clipboard. */
 export const COPIED_LABEL = "Copied";
 /** How long "Copied" shows before the sheet closes: long enough to read. */
@@ -180,6 +198,12 @@ export interface MessageActionsTarget {
    */
   copyText: string | null;
   /**
+   * Mark unread (#3723): a confirmed message on the channel's timeline. The
+   * thread moves the viewer's read cursor to just before it and leaves the
+   * channel, so it reads as unread on the list.
+   */
+  canMarkUnread?: boolean;
+  /**
    * What "Copy message link" copies (#3723): the message's
    * `app.frapp.live/chat?…` link (`messageLinkUrl` in `@repo/validation`),
    * which opens it in the app or on the web. Absent where there's no link to
@@ -192,6 +216,11 @@ export interface MessageActionsTarget {
    * thread yet (one that has replies opens from its chip).
    */
   canStartThread?: boolean;
+  /**
+   * Forward (#4864): the message as the picker previews it, present only
+   * where `messageActionsFor` says `canForward`, which draws the row.
+   */
+  forward?: ForwardTarget;
   canEdit: boolean;
   /**
    * Someone else's message in a channel the viewer can post in: Mention puts
@@ -274,6 +303,12 @@ export interface MessageActionsSheetHandle {
 export interface MessageActionsSheetProps {
   target: MessageActionsTarget | null;
   /**
+   * Resolves a member's name and says who "You" is, for the Forward picker's
+   * preview of the message. Without them the Forward row is not drawn.
+   */
+  nameFor?: (userId: string) => string | null;
+  viewerId?: string | null;
+  /**
    * A block attempt came back as the API's "not a member of this chapter"
    * (`isMemberNotFound`): the caller can stop offering Block for them.
    */
@@ -288,6 +323,8 @@ export interface MessageActionsSheetProps {
   onDelete?: (messageId: string) => void;
   /** Put `@Sender` in the composer's draft. */
   onMention?: (messageId: string) => void;
+  /** Mark the channel unread from this message on (#3723). */
+  onMarkUnread?: (messageId: string) => void;
   /**
    * Add a reaction from the quick row. Omit it, with `onUnreact`, and the row
    * is not drawn.
@@ -309,12 +346,15 @@ export const MessageActionsSheet = forwardRef<
 >(function MessageActionsSheet(
   {
     target,
+    nameFor,
+    viewerId = null,
     onSenderDeparted,
     onReply,
     onStartThread,
     onEdit,
     onDelete,
     onMention,
+    onMarkUnread,
     onReact,
     onUnreact,
     onFlag,
@@ -332,6 +372,7 @@ export const MessageActionsSheet = forwardRef<
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
+  const forwardSheetRef = useRef<ForwardSheetHandle>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
   // Whether each modal is up, so the thread's dismiss (its message was
@@ -367,13 +408,14 @@ export const MessageActionsSheet = forwardRef<
         willPresentMenu();
         menuRef.current?.present();
       },
-      // The picker too: it replaced the menu and acts on the same message.
-      // Each only while presented. The thread calls this whenever the
-      // long-pressed message is deleted, which can be long after the menu
-      // closed, and usually while the picker was never opened (#3795).
+      // The pickers too: each replaced the menu and acts on the same
+      // message. Each only while presented. The thread calls this whenever
+      // the long-pressed message is deleted, which can be long after the menu
+      // closed, and usually while neither picker was opened (#3795).
       dismiss: () => {
         dismissMenu();
         dismissPicker();
+        forwardSheetRef.current?.dismiss();
       },
     }),
     [dismissMenu, dismissPicker, willPresentMenu],
@@ -549,6 +591,12 @@ export const MessageActionsSheet = forwardRef<
   const openReport = useCallback(() => {
     reportRef.current?.present();
   }, []);
+  // The Forward picker replaces the menu the same way, presented from here
+  // rather than by the thread after the menu closed (`ForwardSheet`).
+  const openForward = useCallback(() => {
+    forwardSheetRef.current?.present();
+  }, []);
+  const canForward = !!target?.forward && !!nameFor;
 
   /** Block, from the report form or its "Report sent" screen. */
   const startBlock = useCallback(() => {
@@ -684,6 +732,7 @@ export const MessageActionsSheet = forwardRef<
           ) : null}
           {target?.canReply ||
           (target?.canStartThread && onStartThread) ||
+          (target?.forward && nameFor) ||
           target?.canEdit ? (
             <ListSection>
               {target.canReply ? (
@@ -699,6 +748,9 @@ export const MessageActionsSheet = forwardRef<
                   action
                   onPress={() => handOff(onStartThread)}
                 />
+              ) : null}
+              {canForward ? (
+                <ListRow label={FORWARD_LABEL} action onPress={openForward} />
               ) : null}
               {target.canEdit ? (
                 <ListRow
@@ -758,6 +810,7 @@ export const MessageActionsSheet = forwardRef<
             </View>
           ) : null}
           {target?.copyText ||
+          (target?.canMarkUnread && onMarkUnread) ||
           target?.link ||
           (target?.pin && onSetPinned) ||
           (target?.save && onSetSaved) ||
@@ -768,6 +821,13 @@ export const MessageActionsSheet = forwardRef<
                   label={isCopied("text") ? COPIED_LABEL : "Copy text"}
                   action
                   onPress={() => copy("text")}
+                />
+              ) : null}
+              {target.canMarkUnread && onMarkUnread ? (
+                <ListRow
+                  label={MARK_UNREAD_LABEL}
+                  action
+                  onPress={() => handOff(onMarkUnread)}
                 />
               ) : null}
               {target.link ? (
@@ -959,6 +1019,15 @@ export const MessageActionsSheet = forwardRef<
           )}
         </BottomSheetScrollView>
       </BottomSheetModal>
+
+      {nameFor ? (
+        <ForwardSheet
+          ref={forwardSheetRef}
+          target={target?.forward ?? null}
+          nameFor={nameFor}
+          viewerId={viewerId}
+        />
+      ) : null}
 
       {onReact && onUnreact ? (
         <EmojiPickerSheet

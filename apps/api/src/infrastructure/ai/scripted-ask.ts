@@ -2,7 +2,7 @@ import type { LanguageModelRequest } from '#domain/adapters/language-model.inter
 import type { ScriptedReply } from './scripted-language-model';
 
 /**
- * What the scripted adapter answers for Ask's two tasks in the running app
+ * What the scripted adapter answers for Ask's tasks in the running app
  * (`AI_PROVIDER=scripted`), so Ask can be walked end to end with no key.
  *
  * Neither is a model. The planner picks tools by a few keywords, and the
@@ -137,20 +137,62 @@ export function scriptedAskAnswer(
   request: LanguageModelRequest,
 ): ScriptedReply {
   if (request.kind !== 'cited') return { text: '' };
-  const last = request.messages.at(-1)?.content ?? '';
+  return answerFrom(request.messages, request.sources);
+}
+
+/**
+ * `ask.agent`: one round of reads, then the same answer. The first round
+ * searches for the question and asks for each offered live read whose
+ * keywords the question uses; the second quotes what came back.
+ */
+export function scriptedAskAgent(request: LanguageModelRequest): ScriptedReply {
+  if (request.kind !== 'agent') return { text: '' };
+  if (request.rounds.length > 0 || request.mustAnswer) {
+    return answerFrom(
+      request.messages,
+      request.rounds.flatMap((round) =>
+        round.results.flatMap((result) => result.sources),
+      ),
+    );
+  }
+  const question = request.messages.at(-1)?.content ?? '';
+  const said: string[] = question.toLowerCase().match(/[a-z'-]+/g) ?? [];
+  const asked = new Set(said);
+  const names = request.tools
+    .map((tool) => tool.name)
+    .filter(
+      (name) =>
+        name === 'search_records' ||
+        (TOOL_KEYWORDS[name] ?? []).some((keyword) => asked.has(keyword)),
+    );
+  return {
+    text: '',
+    toolCalls: names.map((name, index) => ({
+      id: `scripted-call-${index + 1}`,
+      name,
+      input: name === 'search_records' ? { query: question.slice(0, 200) } : {},
+    })),
+  };
+}
+
+function answerFrom(
+  messages: LanguageModelRequest['messages'],
+  sources: readonly { id: string; text: string }[],
+): ScriptedReply {
+  const last = messages.at(-1)?.content ?? '';
   const asked = words(last);
   // A follow-up that leans on the turn before ("and the one after that?")
   // is read beside the question before it, as the real search does. A
   // question that stands on its own is not.
   if (asked.size < 3 && LEANS_ON_BEFORE.test(last)) {
-    const before = request.messages
+    const before = messages
       .slice(0, -1)
       .filter((message) => message.role === 'user')
       .at(-1);
     for (const word of words(before?.content ?? '')) asked.add(word);
   }
   const candidates: Candidate[] = [];
-  for (const source of request.sources) {
+  for (const source of sources) {
     for (const raw of source.text.split(/(?<=[.!?])\s+|\n+/)) {
       const sentence = raw.trim();
       if (sentence.length < 12) continue;

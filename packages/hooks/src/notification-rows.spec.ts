@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   groupNotificationsBySource,
   isTileKind,
+  notificationConversation,
   notificationEntryCount,
   notificationLook,
   notificationPreview,
@@ -303,5 +304,24 @@ describe("groupNotificationsBySource (#3948)", () => {
     );
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ lead: { id: "b" }, messageCount: 1 });
+  });
+});
+
+describe("notificationConversation (#3948)", () => {
+  it("names a channel's or a thread's conversation, and nothing for a row on its own", () => {
+    const chat = (target: Record<string, unknown>, extra = {}) => ({
+      target: { screen: "chat", channelId: "c1", ...target },
+      ...extra,
+    });
+    expect(notificationConversation(chat({}))).toEqual({ channelId: "c1" });
+    expect(notificationConversation(chat({ threadRootId: "m1" }))).toEqual({
+      channelId: "c1",
+      threadRootId: "m1",
+    });
+    expect(notificationConversation(chat({}, { mentioned: true }))).toBeNull();
+    expect(
+      notificationConversation({ target: { screen: "events" } }),
+    ).toBeNull();
+    expect(notificationConversation(null)).toBeNull();
   });
 });

@@ -37,6 +37,7 @@
  */
 import { Writable } from 'node:stream';
 import type { Response } from 'express';
+import { z } from 'zod';
 import type {
   ILanguageModel,
   ILanguageModelRegistry,
@@ -51,6 +52,10 @@ import type { CorpusPassage } from '../../application/services/corpus/corpus-ret
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import type { AskTool } from '../../application/services/ask/ask-tool';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AgentLoopService } from '../../application/services/ask/agent/agent-loop.service';
+import type { AgentReadTool } from '../../application/services/ask/agent/agent-tool';
+import { AskTraceService } from '../../application/services/ask/observe/ask-trace.service';
+import { SupabaseAskTraceRepository } from '../../infrastructure/supabase/repositories/supabase-ask-trace.repository';
 import { AskService } from '../../application/services/ask/ask.service';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
 import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
@@ -105,6 +110,7 @@ jest.mock('@sentry/nestjs', () => {
 
 const CHAPTER = '0a000000-0000-4000-8000-000000004315';
 const USER = '0b000000-0000-4000-8000-000000004315';
+const MEMBER = '0d000000-0000-4000-8000-000000004315';
 const NOW = new Date('2026-11-12T18:00:00.000Z');
 
 /** Text that goes into and comes out of the model, each marked. */
@@ -114,6 +120,7 @@ const CANARY = {
   chat: 'canarychat4315',
   tool: 'canarytool4315',
   answer: 'canaryans4315',
+  asker: 'canaryasker4890',
 } as const;
 const CANARIES = Object.values(CANARY);
 
@@ -232,6 +239,37 @@ function scriptedModel(): ScriptedLanguageModel {
         citations: doc ? [{ sourceId: doc.id, quote: DOCUMENT_TEXT }] : [],
       };
     },
+    // The tool loop: it asks for both reads, with the question in a tool's
+    // arguments, then repeats everything it was handed.
+    'ask.agent': (request: LanguageModelRequest) => {
+      if (request.kind !== 'agent') return { text: '' };
+      if (request.rounds.length === 0) {
+        return {
+          text: `Let me look for the ${CANARY.answer} formal.`,
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'search_records',
+              input: { query: QUESTION },
+            },
+            { id: 'call-2', name: 'roster', input: {} },
+          ],
+        };
+      }
+      const sources = request.rounds.flatMap((round) =>
+        round.results.flatMap((result) => result.sources),
+      );
+      const doc = sources.find((source) => source.text === DOCUMENT_TEXT);
+      return {
+        text: `The ${CANARY.answer} formal is on March 3. ${[
+          ...request.context,
+          ...sources,
+        ]
+          .map((source) => source.text)
+          .join(' ')}`,
+        citations: doc ? [{ sourceId: doc.id, quote: DOCUMENT_TEXT }] : [],
+      };
+    },
   });
 }
 
@@ -249,6 +287,83 @@ function echoingModel(): ILanguageModel {
     },
     embed: (request) => scripted.embed(request),
   };
+}
+
+/**
+ * Two reads for the tool loop, each handing back text under a canary: a
+ * search that takes the question in its arguments and returns a document
+ * and a chat message, and a roster.
+ */
+function agentTools(): AgentReadTool[] {
+  const base = {
+    permission: SystemPermissions.MEMBERS_VIEW,
+    module: null,
+    effect: 'read' as const,
+  };
+  const source = {
+    detail: null,
+    date: null,
+    target: null,
+    chat: false,
+    authorIds: [],
+  };
+  return [
+    {
+      ...base,
+      name: 'search_records',
+      description: 'Searches the chapter.',
+      reading: 'Searching',
+      input: z.object({ query: z.string() }),
+      run: () =>
+        Promise.resolve({
+          chapterId: CHAPTER,
+          entities: [],
+          note: null,
+          leftOutMessages: 0,
+          sources: [
+            {
+              ...source,
+              id: 'document:doc-1:0',
+              kind: 'document',
+              title: 'Social calendar',
+              text: DOCUMENT_TEXT,
+            },
+            {
+              ...source,
+              id: 'message:message-1',
+              kind: 'chat',
+              title: '#general',
+              text: `Dana: the ${CANARY.chat} bus leaves at 6.`,
+              chat: true,
+              authorIds: ['dana'],
+            },
+          ],
+        }),
+    },
+    {
+      ...base,
+      name: 'roster',
+      description: 'Who is in the chapter.',
+      reading: 'Reading the roster',
+      input: z.object({}),
+      run: () =>
+        Promise.resolve({
+          chapterId: CHAPTER,
+          entities: [],
+          note: null,
+          leftOutMessages: 0,
+          sources: [
+            {
+              ...source,
+              id: 'tool:roster',
+              kind: 'roster',
+              title: 'Roster',
+              text: `Social chair: ${CANARY.tool}`,
+            },
+          ],
+        }),
+    },
+  ] as AgentReadTool[];
 }
 
 function build(model: ILanguageModel, captured: Captured) {
@@ -290,6 +405,7 @@ function build(model: ILanguageModel, captured: Captured) {
     kind: 'roster',
     title: 'Roster',
     page: 'members',
+    reach: 'chapter',
     permission: SystemPermissions.MEMBERS_VIEW,
     module: null,
     effect: 'read',
@@ -326,10 +442,44 @@ function build(model: ILanguageModel, captured: Captured) {
     consent as never,
     {
       getEffectivePermissions: () =>
-        Promise.resolve([SystemPermissions.MEMBERS_VIEW]),
+        Promise.resolve([
+          SystemPermissions.AI_USE,
+          SystemPermissions.MEMBERS_VIEW,
+        ]),
+      // Who is asking reaches the model too (#4890), under its own canary.
+      findByChapter: () =>
+        Promise.resolve([
+          { id: 'role-1', name: `${CANARY.asker} chair`, system_key: null },
+        ]),
+    } as never,
+    {
+      findByUserAndChapter: () => Promise.resolve({ role_ids: ['role-1'] }),
+    } as never,
+    {
+      findDisplayIdentitiesByIds: () =>
+        Promise.resolve([{ id: USER, display_name: `Sam ${CANARY.asker}` }]),
     } as never,
     diagnostics,
     [roster],
+    // The tool loop reads the same sources through its tools, and is on
+    // only for the case that sets `ASK_AGENT`.
+    new AgentLoopService(gateway),
+    agentTools(),
+    // The real recorder, so what a turn's trace writes is read for leaks
+    // with everything else (#4902).
+    new AskTraceService(
+      new SupabaseAskTraceRepository(supabase as never),
+      {
+        findByUserAndChapter: () => Promise.resolve({ id: MEMBER }),
+      } as never,
+      consent as never,
+      {
+        track: (...args: unknown[]) => {
+          captured.analytics.push(args);
+          return Promise.resolve();
+        },
+      } as never,
+    ),
   );
   return new AskController(
     ask,
@@ -453,6 +603,45 @@ describe('Stored AI text: an AI call with no report made keeps no text (#4315)',
     ).toBe(true);
     expect(captured.analytics.length).toBeGreaterThan(0);
     expect(captured.sentry.some((call) => call[0] === 'startSpan')).toBe(true);
+
+    expect(leaks(captured)).toEqual([]);
+  });
+
+  it('an answer through the tool loop leaves none either', async () => {
+    process.env.ASK_AGENT = 'on';
+    const { captured, body } = await askThrough(scriptedModel());
+
+    // Both reads ran and what they returned reached the model and the
+    // member: the document, the chat message, the roster and the asker.
+    expect(body).toContain(CANARY.answer);
+    expect(body).toContain(CANARY.document);
+    expect(body).toContain(CANARY.chat);
+    expect(body).toContain(CANARY.tool);
+    expect(body).toContain(CANARY.asker);
+    expect(body).toContain('"status":"answered"');
+    // One ledger row for each of the two rounds.
+    expect(
+      captured.database.filter((call) => call[1] === 'settle_ai_spend'),
+    ).toHaveLength(2);
+    // The turn's trace was written, steps and all, and the answer names it.
+    expect(captured.database).toContainEqual(['from', 'ai_ask_trace_steps']);
+    const frames = body
+      .split('\n\n')
+      .map((frame) => frame.replace(/^data: /, ''))
+      .filter((frame) => frame.startsWith('{'))
+      .map(
+        (frame) =>
+          JSON.parse(frame) as {
+            type: string;
+            ask_id?: string;
+            answer?: { ask_id?: string };
+          },
+      );
+    const started = frames.find((frame) => frame.type === 'start')?.ask_id;
+    expect(started).toEqual(expect.any(String));
+    expect(frames.find((frame) => frame.type === 'done')?.answer?.ask_id).toBe(
+      started,
+    );
 
     expect(leaks(captured)).toEqual([]);
   });

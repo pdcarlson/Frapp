@@ -38,7 +38,11 @@
 
 import { errorCopy } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { hiddenQuoteText, type BlockState } from "@repo/chat-core/blocks";
+import {
+  hiddenQuoteText,
+  withForwardedMasked,
+  type BlockState,
+} from "@repo/chat-core/blocks";
 import {
   canActOnMessage,
   replyTargetId,
@@ -187,7 +191,11 @@ export function replyContextFor(
   if (hidden !== null) return { title: REPLYING_TO_A_MESSAGE, preview: hidden };
   return {
     title: `Replying to ${resolveAuthorLabel(parent, nameFor, viewerId)}`,
-    preview: replyPreviewText(parent),
+    // A forward's copy the block list hides quotes as "Forwarded a message",
+    // never its text, as the card draws it (#4864).
+    preview: replyPreviewText(
+      withForwardedMasked(parent, blockState, viewerId),
+    ),
   };
 }
 

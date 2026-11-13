@@ -51,6 +51,7 @@ import {
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
 import { MessageGifImage } from "./message-gif";
+import { ForwardedCard } from "./forwarded-card";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
   canActOnMessage,
@@ -77,8 +78,10 @@ import {
 } from "@repo/chat-core/profile-targets";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
+  hiddenForwardedText,
   hiddenQuoteText,
   threadPreviewVisible,
+  withForwardedMasked,
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
@@ -467,10 +470,11 @@ export function MessageItem({
   );
   // The server resolved who this message pings (`chat_messages.mentions`),
   // so the row trusts that list rather than re-reading the body: it is the
-  // same set the notifier used. A viewer's own message never lights up.
+  // same set the notifier used. A viewer's own message lights up too when it
+  // reaches them (their own `@here`, a role they hold), as on Discord; only
+  // the push and the badge skip a sender's own message (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -807,7 +811,15 @@ export function MessageItem({
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)
               : null
           }
-          preview={replyParent ? replyPreviewText(replyParent) : null}
+          preview={
+            replyParent
+              ? // A forwarded parent's copy previews only where the list
+                // clears its author, as its own card draws it (#4864).
+                replyPreviewText(
+                  withForwardedMasked(replyParent, blockState, viewerId),
+                )
+              : null
+          }
           hidden={hiddenParent}
           onOpen={
             replyParent && onJumpToParent
@@ -817,6 +829,22 @@ export function MessageItem({
         />
       </div>
     ) : null;
+
+  /*
+   * A forward's card (#4864), under the forwarder's comment. Not on a deleted
+   * row: the server nulls the copy with the content, and a tombstone carries
+   * no one's words. Its author is classified on their own, so a blocked
+   * author's words draw as the block placeholder inside the forwarder's row.
+   */
+  const forwardedCopy = message.is_deleted ? null : message.forwarded_from;
+  const forwardedCard = forwardedCopy ? (
+    <ForwardedCard
+      forwarded={forwardedCopy}
+      hidden={hiddenForwardedText(forwardedCopy, message, blockState, viewerId)}
+      nameFor={nameFor}
+      viewerId={viewerId}
+    />
+  ) : null;
 
   /*
     Attachments render under the body for every kind, not inside the text
@@ -1500,6 +1528,7 @@ export function MessageItem({
                   <div className="px-3">{flagCaption}</div>
                 ) : null}
                 {bubble}
+                {forwardedCard}
                 {attachments}
                 {trailingOnOwnLine && trailing && !isEditing ? (
                   <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
@@ -1798,6 +1827,7 @@ export function MessageItem({
               ) : (
                 body
               )}
+              {forwardedCard}
               {attachments}
               {trailingOnOwnLine && trailing && !isEditing ? (
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>

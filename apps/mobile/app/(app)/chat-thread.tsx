@@ -29,8 +29,10 @@ import {
 import {
   isBlockableSender,
   visibleTypingUsers,
+  withForwardedMasked,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { forwardTargetOf } from "@/lib/chat/forward";
 import {
   channelAllowsReplies,
   channelAllowsThreads,
@@ -41,7 +43,7 @@ import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
@@ -55,9 +57,13 @@ import {
   useChapterRoster,
   useMentionRoles,
   useChannelNotificationPreferences,
+  useChannelUnreadCounts,
   useCurrentUser,
   claimViewedChannel,
   useMarkChannelRead,
+  useMarkMessageUnread,
+  holdChannelUnread,
+  releaseChannelUnread,
   useMemberDisplayNames,
   usePermissionList,
   useRosterCatchUp,
@@ -550,16 +556,28 @@ function ChannelThreadScreen() {
   //    Focus, not mount: this screen stays mounted under one pushed over it.
   const requestUploadUrl = useRequestChatUploadUrl();
 
+  //
+  // Mark unread (#3723) holds both stamps for the rest of the visit
+  // (`unreadHeldFor`): it drops the claim so the activity handler stops
+  // re-stamping, and the blur skips its stamp, or leaving would read the
+  // channel straight back. The next focus clears the hold, so opening the
+  // channel again reads it, as on Discord.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  const unreadHeldFor = useRef<string | null>(null);
+  const releaseViewedRef = useRef<(() => void) | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      unreadHeldFor.current = null;
+      releaseChannelUnread(channelId);
       markReadMutate(channelId);
       const releaseViewed = claimViewedChannel(channelId);
+      releaseViewedRef.current = releaseViewed;
       return () => {
         releaseViewed();
-        markReadMutate(channelId);
+        releaseViewedRef.current = null;
+        if (unreadHeldFor.current !== channelId) markReadMutate(channelId);
       };
     }, [channelId, markReadMutate]),
   );
@@ -811,9 +829,12 @@ function ChannelThreadScreen() {
   }
   // The counts can land after the channel does: a cold launch opens the last
   // channel while Chat home's read is still out. Taken once, as web does;
-  // never asked for from here.
+  // never asked for from here. Observed through the shared hook, disabled,
+  // so the observer carries the fetch function: TanStack console.errors on
+  // every render of one without, which a development build shows as a red
+  // toast (#4885).
   const liveUnread = arrivalUnread(
-    useQuery({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, enabled: false }).data,
+    useChannelUnreadCounts({ enabled: false }).data,
     channelId,
   );
   if (
@@ -1192,6 +1213,31 @@ function ChannelThreadScreen() {
     [channelId, jumpToImportant, openThreadFor, router],
   );
 
+  // Mark unread (#3723): hold the channel so no read stamp follows (the blur
+  // one, and the activity handler's, queued ones included), move the cursor
+  // back, and leave at once, as Slack's phone app does, so the screen below
+  // shows the badge. The write is ordered after any stamp still pending
+  // (`useMarkMessageUnread`). A failure is an alert wherever the member is by
+  // then; nothing is re-claimed, since the screen has gone.
+  const markUnread = useMarkMessageUnread();
+  const markUnreadAsync = markUnread.mutateAsync;
+  const handleMarkUnread = useCallback(
+    (messageId: string) => {
+      if (!channelId) return;
+      selectionHaptic();
+      unreadHeldFor.current = channelId;
+      holdChannelUnread(channelId);
+      releaseViewedRef.current?.();
+      releaseViewedRef.current = null;
+      markUnreadAsync(messageId).catch((error: unknown) => {
+        Alert.alert("Couldn't mark unread", errorCopy(error));
+      });
+      if (below) below.goBack();
+      else goBackTo(router, "/");
+    },
+    [below, channelId, markUnreadAsync, router],
+  );
+
   // A poll card's Close poll (#3794), asked first like Delete.
   const handleClosePoll = useCallback(
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
@@ -1336,7 +1382,15 @@ function ChannelThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
-        copyText: copyableText(message),
+        // A forward's copy is copied only where the block list clears its
+        // author, as its card draws it (#4864).
+        copyText: copyableText(
+          withForwardedMasked(message, blockState, viewerId),
+        ),
+        // Mark unread (#3723): someone else's message. The unread count never
+        // counts the viewer's own, an imported row or a blocked member's, so
+        // moving the cursor before one of those would change nothing.
+        canMarkUnread: actions.canReport && message.kind !== "imported",
         // Copy message link (#3723). A channel message only: this sheet never
         // holds a thread reply, whose link would open on a timeline it's not in.
         link: channelId
@@ -1345,6 +1399,12 @@ function ChannelThreadScreen() {
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
+        forward: forwardTargetOf(
+          message,
+          actions.canForward,
+          blockState,
+          viewerId,
+        ),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -1374,6 +1434,7 @@ function ChannelThreadScreen() {
       actionsSheetRef.current?.present();
     },
     [
+      blockState,
       canManageChannel,
       channelId,
       canReplyHere,
@@ -2095,12 +2156,15 @@ function ChannelThreadScreen() {
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        nameFor={nameFor}
+        viewerId={viewerId}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onStartThread={openThreadFor}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}
+        onMarkUnread={handleMarkUnread}
         onReact={handleReact}
         onUnreact={handleUnreact}
         onFlag={handleFlag}

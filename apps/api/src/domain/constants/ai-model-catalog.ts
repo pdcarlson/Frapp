@@ -34,7 +34,7 @@ interface CatalogEntryBase {
 }
 
 export interface GenerationCatalogEntry extends CatalogEntryBase {
-  kind: 'structured' | 'cited';
+  kind: 'structured' | 'cited' | 'agent';
   maxOutputTokens: number;
   effort: LanguageModelEffort;
   inputUsdPerMillionTokens: number;
@@ -111,6 +111,20 @@ export const AI_MODEL_CATALOG = {
     kind: 'cited',
     maxOutputTokens: 4_000,
     effort: 'low',
+  },
+  /**
+   * One round of Ask's tool loop (#4899): the model is offered the read
+   * tools this member may use and either calls some or writes the answer.
+   * A question is several of these, each admitted against the caps on its
+   * own. Medium effort, where the plan page starts; the bake-off (#4903)
+   * decides the model and the effort with numbers.
+   */
+  'ask.agent': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'agent',
+    maxOutputTokens: 4_000,
+    effort: 'medium',
   },
   /**
    * An officer's request, read into one action and its details (#718). It is
@@ -226,6 +240,7 @@ type TasksOfKind<K extends AiCatalogEntry['kind']> = {
 
 export type AiStructuredTaskName = TasksOfKind<'structured'>;
 export type AiCitedTaskName = TasksOfKind<'cited'>;
+export type AiAgentTaskName = TasksOfKind<'agent'>;
 export type AiEmbeddingTaskName = TasksOfKind<'embedding'>;
 export type AiTranscriptionTaskName = TasksOfKind<'transcription'>;
 

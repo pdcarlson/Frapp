@@ -20,7 +20,14 @@
  *   really in its source is the gateway's check, not the provider's
  *   (decision 4). A request with no sources is plain prose.
  *
- * The two never combine: a provider's structured output mode and its
+ * - `agent` (#4899): one round of a loop the caller owns. The model is
+ *   offered tools and either calls some or writes the answer, citing what
+ *   earlier calls returned. The adapter runs no tool and makes no second
+ *   request: the caller runs the calls, checks them, and asks again with the
+ *   results as the next round. So every round is one metered call, and what
+ *   a tool may do is decided in Frapp, not by a provider's tool runner.
+ *
+ * The first two never combine: a provider's structured output mode and its
  * citations are mutually exclusive, so a feature that needs both makes two
  * calls (`spec/architecture/README.md` §13, Citation protocol).
  */
@@ -61,6 +68,44 @@ export interface LanguageModelCitation {
   at?: number;
 }
 
+/** A tool an `agent` request offers. The schema is JSON Schema. */
+export interface LanguageModelTool {
+  name: string;
+  /** For the model: what it reads and when it fits. Operator text only. */
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** The model asking for a tool to be run. `input` is unchecked. */
+export interface LanguageModelToolCall {
+  /** The provider's id for this call; its result names it. */
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+/** What one call came to, as the model is told. */
+export interface LanguageModelToolResult {
+  callId: string;
+  /** What the tool read. Each may be quoted in the answer, by its `id`. */
+  sources: LanguageModelSource[];
+  /** A line that is not a source: "No open tasks.". Null for none. */
+  note: string | null;
+  /** The call was not run: unknown tool, bad arguments, a limit, a failure. */
+  failed?: boolean;
+}
+
+/**
+ * One finished round: what the model said, and what its calls came to.
+ * `replay` is the completion's own `replay`, passed back unchanged; only the
+ * adapter that made it reads it. It holds model output, so it is never
+ * logged or stored.
+ */
+export interface LanguageModelAgentRound {
+  replay: unknown;
+  results: LanguageModelToolResult[];
+}
+
 export interface LanguageModelUsage {
   inputTokens: number;
   outputTokens: number;
@@ -91,16 +136,53 @@ export interface CitedLanguageModelRequest extends LanguageModelRequestBase {
   sources: LanguageModelSource[];
 }
 
+export interface AgentLanguageModelRequest extends LanguageModelRequestBase {
+  kind: 'agent';
+  /** The tools the model may call this round. Empty: it must answer. */
+  tools: LanguageModelTool[];
+  /**
+   * Read beside the last message and never quoted: who is asking, where
+   * from. Data, not instructions, so it is not part of `system`.
+   */
+  context: LanguageModelSource[];
+  /** The rounds already run for this turn, oldest first. */
+  rounds: LanguageModelAgentRound[];
+  /**
+   * The model may call nothing this round and must write the answer: the
+   * caller's limits are spent. The tools stay listed, because the rounds
+   * before this one name them.
+   */
+  mustAnswer?: boolean;
+  /**
+   * Let the provider reuse the unchanged start of the request (the tools,
+   * the system text, the rounds so far) from its cache. So `system` and
+   * `tools` must be the same bytes from round to round.
+   */
+  cache?: boolean;
+}
+
 export type LanguageModelRequest =
-  StructuredLanguageModelRequest | CitedLanguageModelRequest;
+  | StructuredLanguageModelRequest
+  | CitedLanguageModelRequest
+  | AgentLanguageModelRequest;
 
 export interface LanguageModelCompletion {
   outcome: 'completed';
   text: string;
   /** The parsed JSON value of a `structured` request; absent otherwise. */
   object?: unknown;
-  /** What a `cited` request quoted, unchecked; empty otherwise. */
+  /**
+   * What a `cited` request quoted, or an `agent` request quoted from its
+   * rounds' results, unchecked; empty otherwise.
+   */
   citations: LanguageModelCitation[];
+  /**
+   * `agent`: the calls the model wants run before it goes on. Absent or
+   * empty means `text` is the answer.
+   */
+  toolCalls?: LanguageModelToolCall[];
+  /** `agent`: this turn as the adapter needs it back in the next round. */
+  replay?: unknown;
   /** The output hit `maxOutputTokens` and stops mid-thought. */
   truncated: boolean;
   usage: LanguageModelUsage;

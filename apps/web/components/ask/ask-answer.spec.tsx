@@ -16,8 +16,14 @@ import {
   type AskAnswer,
 } from "@repo/validation";
 
+const channelList = vi.hoisted(() => ({ reads: 0 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The reader has #rush-week and not #exec.
+  useChannels: () => {
+    channelList.reads += 1;
+    return { data: [{ id: "c1", name: "rush-week" }] };
+  },
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -221,6 +227,28 @@ describe("AskTurn", () => {
     ).toHaveClass("bg-primary", "text-primary-foreground");
   });
 
+  it("says whose message a chat source is and when, on its chip and its marker (#4904)", () => {
+    const sources = ANSWER.sources.map((source) =>
+      source.id === "s2" ? { ...source, author: "Sam Ortiz" } : source,
+    );
+    show(exchange({ answer: { ...ANSWER, sources } }));
+    const list = screen.getByRole("list", { name: ASK_COPY.sources });
+    const chip = within(list).getByRole("link", {
+      name: /^Source 2: Sam Ortiz in #general, /,
+    });
+    expect(chip).toHaveTextContent("Sam Ortiz in #general");
+    expect(chip).toHaveTextContent("November 9, 2026");
+    // A source with no author reads as before, with no day on the chip.
+    const bylaws = within(list).getByRole("link", {
+      name: /^Source 1: Bylaws/,
+    });
+    expect(bylaws).not.toHaveTextContent("2026");
+    expect(
+      screen.getAllByRole("link", { name: "Source 2: Sam Ortiz in #general" })
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it("tells the card when a cited chat message is followed, and not for a source that opens beside chat", async () => {
     const followMessage = vi.fn();
     show(exchange(), { followMessage });
@@ -241,6 +269,45 @@ describe("AskTurn", () => {
       { ctrlKey: true },
     );
     expect(followMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a listed person as a mention and a channel the reader has as a link (#4904)", async () => {
+    const followMessage = vi.fn();
+    show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: "Ask @Sam Abernathy in #rush-week or #exec, not @Nobody.",
+          citations: [],
+          entities: [
+            { type: "member", id: "u1", name: "Sam Abernathy" },
+            { type: "channel", id: "c1", name: "rush-week" },
+            { type: "channel", id: "c9", name: "exec" },
+          ],
+        } as AskAnswer,
+      }),
+      { followMessage },
+    );
+
+    expect(screen.getByText("@Sam Abernathy").tagName).toBe("MARK");
+    const channel = screen.getByRole("link", { name: "#rush-week" });
+    expect(channel.getAttribute("href")).toContain("c1");
+    channel.addEventListener("click", (event) => event.preventDefault());
+    await userEvent.click(channel);
+    expect(followMessage).toHaveBeenCalledTimes(1);
+
+    // A channel the reader cannot open, and a name the server did not list,
+    // are the plain words.
+    expect(screen.queryByRole("link", { name: "#exec" })).toBeNull();
+    expect(screen.queryByText("@Nobody")).toBeNull();
+    expect(screen.getByText(/or #exec, not @Nobody\./)).toBeTruthy();
+  });
+
+  it("reads the channel list only for an answer that names a channel", () => {
+    channelList.reads = 0;
+    show(exchange());
+    expect(channelList.reads).toBe(0);
+    expect(screen.queryByRole("mark")).toBeNull();
   });
 
   it("marks each cited sentence with a link to its source", () => {

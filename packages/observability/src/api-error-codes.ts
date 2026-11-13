@@ -38,6 +38,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // these is a client sending what its own validation should have stopped,
   // or contract drift between a shipped build and the API.
   "request.validation_failed",
+  // A reason sent with a thumbs up on an Ask answer (#4902), which the
+  // shared schema (`AskFeedbackRequestSchema`) refuses before it is sent.
+  "ai.ask.feedback.reason_needs_down",
   // An invite with no role named, no default invite role configured, and no
   // seeded Everyone role (once Member): the chapter's rows are missing what every chapter is
   // created with.
@@ -155,6 +158,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.report.not_found",
   "ai.report.too_old",
   "ai.report.receipt_invalid",
+  // A thumbs or a tap on an Ask answer (#4902) whose trace is gone: past its
+  // 90 days, or the member answered No on the AI sheet since it was drawn.
+  "ai.ask.feedback.not_found",
   // Start pressed away from the study zone, or on a zone an officer turned
   // off. The study screen says which.
   "study.outside_zone",

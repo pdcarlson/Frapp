@@ -8,7 +8,7 @@ import { releaseChannel } from '../workers/worker-subscription';
 /**
  * Longest a read waits for the chapter's roster. `@here` is the only caller,
  * and a send waits on it, so past this the read gives up and the `@here`
- * reaches nobody rather than hold the message.
+ * reaches only its sender rather than hold the message.
  */
 export const CHAPTER_PRESENCE_READ_TIMEOUT_MS = 3_000;
 
@@ -79,7 +79,7 @@ export class ChapterPresenceReader {
       MAX_CONCURRENT_CHAPTER_READS
     ) {
       this.logger.warn(
-        `chapter presence: ${MAX_CONCURRENT_CHAPTER_READS} chapters already being read; @here in ${chapterId} reaches nobody`,
+        `chapter presence: ${MAX_CONCURRENT_CHAPTER_READS} chapters already being read; @here in ${chapterId} reaches only its sender`,
       );
       return Promise.resolve(null);
     }
@@ -133,7 +133,7 @@ export class ChapterPresenceReader {
       });
       if (!synced) {
         this.logger.warn(
-          `chapter presence: no roster for ${chapterId} (join refused or over ${CHAPTER_PRESENCE_READ_TIMEOUT_MS}ms); @here reaches nobody`,
+          `chapter presence: no roster for ${chapterId} (join refused or over ${CHAPTER_PRESENCE_READ_TIMEOUT_MS}ms); @here reaches only its sender`,
         );
         return null;
       }
@@ -142,7 +142,7 @@ export class ChapterPresenceReader {
       reportCaughtFailure(this.logger, {
         level: 'warning',
         site: 'chapter-presence-read',
-        message: `Failed to read who is online in chapter ${chapterId}; @here reaches nobody`,
+        message: `Failed to read who is online in chapter ${chapterId}; @here reaches only its sender`,
         error,
       });
       return null;
