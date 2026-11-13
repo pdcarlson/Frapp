@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { notificationSourceKey } from "./notification-rows";
 
 /**
  * Query keys for this module.
@@ -214,17 +215,29 @@ export function useNotifications(limit?: number) {
         : null;
     },
   });
+  // Rows a clear still in flight names (#3948) are left out the same way, so
+  // they go on the tap and a refetch that lands first can't bring them back.
+  const pendingClears = useMutationState({
+    filters: { mutationKey: clearNotificationsMutationKey, status: "pending" },
+    select: (mutation) => {
+      const scope = mutation.state.variables as ClearScope | undefined;
+      return scope ? clearScopeKeys(scope).join("\n") : null;
+    },
+  });
   // Reduced to a string, so the `select` below keeps its identity (and the
   // query its memoized result) until the set of pending receipts changes.
   const pendingKey = pendingReads.filter(Boolean).sort().join("\n");
+  const clearingKey = pendingClears.filter(Boolean).sort().join("\n");
   const select = useMemo(() => {
     const pending = new Map<string, string>();
     for (const entry of pendingKey ? pendingKey.split("\n") : []) {
       const [id = "", sentAt = ""] = entry.split("\t");
       pending.set(id, sentAt);
     }
-    return <T,>(data: T): T => withPendingReads(data, pending);
-  }, [pendingKey]);
+    const clearing = new Set(clearingKey ? clearingKey.split("\n") : []);
+    return <T,>(data: T): T =>
+      withPendingReads(withoutCleared(data, clearing), pending);
+  }, [pendingKey, clearingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
@@ -396,6 +409,88 @@ function markCachedRowsRead(
 export function invalidateNotificationLists(queryClient: QueryClient) {
   return queryClient.invalidateQueries({
     predicate: (query) => isNotificationListKey(query.queryKey),
+  });
+}
+
+/**
+ * What a clear removes (#3948): the entry's row ids and, for a conversation,
+ * its `notificationSourceKey`, so rows of it the list hid (past its page, or
+ * read under Unread) go with it, as the server deletes them.
+ */
+export interface ClearScope {
+  ids: readonly string[];
+  conversation?: { channelId: string; threadRootId?: string };
+}
+
+function conversationKey(conversation: {
+  channelId: string;
+  threadRootId?: string;
+}): string {
+  return notificationSourceKey({
+    target: { screen: "chat", ...conversation },
+  }) as string;
+}
+
+/** A clear's ids and conversation key, as one set of strings. */
+function clearScopeKeys(scope: ClearScope): string[] {
+  return scope.conversation
+    ? [...scope.ids, conversationKey(scope.conversation)]
+    : [...scope.ids];
+}
+
+/**
+ * The cached list without the rows `keys` names, by id or by conversation
+ * key; the same list if none goes.
+ */
+function withoutCleared<T>(data: T, keys: ReadonlySet<string>): T {
+  if (keys.size === 0 || !Array.isArray(data)) return data;
+  const kept = data.filter((row: unknown) => {
+    if (!row || typeof row !== "object") return true;
+    const { id, data: rowData } = row as CachedNotificationRow;
+    if (typeof id === "string" && keys.has(id)) return false;
+    const source = notificationSourceKey(rowData);
+    return !(source && keys.has(source));
+  });
+  return (kept.length === data.length ? data : kept) as T;
+}
+
+/** Identifies {@link useClearNotifications}'s writes. */
+const clearNotificationsMutationKey = ["notifications", "clear"] as const;
+
+/**
+ * Clear notifications from the member's list (#3948):
+ * `POST /v1/notifications/clear` with the rows' ids, the caller's own in the
+ * active chapter, and for a conversation's entry the conversation, so the
+ * server deletes the rest of it too.
+ *
+ * The rows leave the list on the tap, through `useNotifications`' overlay of
+ * pending clears, and on success leave every cached list (an unmounted one
+ * included, which the refetch below doesn't reach) before the overlay lifts;
+ * a failed clear simply stops hiding them. The lists then refetch.
+ */
+export function useClearNotifications() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: clearNotificationsMutationKey,
+    mutationFn: async (scope: ClearScope) => {
+      const result = await client.POST("/v1/notifications/clear", {
+        body: {
+          ids: [...scope.ids],
+          ...(scope.conversation ? { conversation: scope.conversation } : {}),
+        },
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+    onSuccess: (_result, scope) => {
+      const gone = new Set(clearScopeKeys(scope));
+      queryClient.setQueriesData(
+        { predicate: (query) => isNotificationListKey(query.queryKey) },
+        (rows: unknown) => withoutCleared(rows, gone),
+      );
+      return invalidateNotificationLists(queryClient);
+    },
   });
 }
 

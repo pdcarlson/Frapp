@@ -2926,6 +2926,53 @@
         ]
       }
     },
+    "/v1/notifications/clear": {
+      "post": {
+        "operationId": "NotificationController_clearNotifications_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearNotificationsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearNotificationsResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear (delete) the caller's own notifications by id",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v1/notifications/{id}/read": {
       "patch": {
         "operationId": "NotificationController_markRead_v1",
@@ -19668,6 +19715,62 @@
         "required": [
           "read_at",
           "updated"
+        ]
+      },
+      "NotificationConversationDto": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "The chat channel (`data.target.channelId`)",
+            "format": "uuid"
+          },
+          "threadRootId": {
+            "type": "string",
+            "description": "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "ClearNotificationsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped.",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "conversation": {
+            "description": "Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationConversationDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "ClearNotificationsResultDto": {
+        "type": "object",
+        "properties": {
+          "cleared": {
+            "type": "number",
+            "description": "How many notifications this call cleared"
+          }
+        },
+        "required": [
+          "cleared"
         ]
       },
       "UpdateNotificationPreferenceDto": {

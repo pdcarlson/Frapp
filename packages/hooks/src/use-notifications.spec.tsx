@@ -10,6 +10,7 @@ import {
   markChannelNotificationsReadInCache,
   markNotificationReadOnOpenMutationKey,
   notificationKeys,
+  useClearNotifications,
   useMarkNotificationRead,
   useMarkNotificationScreensSeen,
   useMarkNotificationsRead,
@@ -297,6 +298,138 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     ).toBe("2026-11-09T05:00:00.000Z");
     expect(get).toHaveBeenCalledTimes(2);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
+  });
+});
+
+describe("clearing notifications (#3948)", () => {
+  type Row = { id: string; title: string; read_at: string | null };
+  const serverRows = (): Row[] => [
+    { id: "notif-1", title: "A", read_at: null },
+    { id: "notif-2", title: "B", read_at: null },
+    { id: "notif-3", title: "C", read_at: null },
+  ];
+  function deferredPost() {
+    let settle!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      settle = resolve;
+    });
+    return {
+      post: vi.fn(() => pending),
+      succeed: () =>
+        settle({
+          data: { cleared: 2 },
+          error: undefined,
+          response: { ok: true, status: 200 },
+        }),
+      fail: () =>
+        settle({
+          data: undefined,
+          error: { message: "Too many requests" },
+          response: { ok: false, status: 429 },
+        }),
+    };
+  }
+  function renderInbox(
+    client: Record<string, unknown>,
+    queryClient: QueryClient,
+  ) {
+    return renderHook(
+      () => ({ list: useNotifications(), clear: useClearNotifications() }),
+      { wrapper: createWrapper(client, queryClient) },
+    );
+  }
+  const ids = (rows: unknown) => (rows as Row[] | undefined)?.map((r) => r.id);
+
+  it("takes the rows out on the tap, and out of the cache once the server agrees", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi
+      .fn()
+      .mockResolvedValue({ data: serverRows(), error: undefined });
+    const { post, succeed } = deferredPost();
+    const { result } = renderInbox({ GET: get, POST: post }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.clear.mutate({ ids: ["notif-1", "notif-3"] }));
+
+    await waitFor(() =>
+      expect(ids(result.current.list.data)).toEqual(["notif-2"]),
+    );
+    expect(post).toHaveBeenCalledWith("/v1/notifications/clear", {
+      body: { ids: ["notif-1", "notif-3"] },
+    });
+
+    get.mockResolvedValue({ data: [serverRows()[1]], error: undefined });
+    await act(async () => succeed());
+    await waitFor(() => expect(result.current.clear.isSuccess).toBe(true));
+    expect(ids(result.current.list.data)).toEqual(["notif-2"]);
+  });
+
+  it("scrubs every cached list, a list nobody is showing included, and a conversation's other rows", async () => {
+    const queryClient = makeQueryClient();
+    const chat = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      title: id,
+      read_at: null,
+      data: { target: { screen: "chat", channelId: "c-1" }, ...extra },
+    });
+    // No `useNotifications` is mounted, so the refetch never runs: the scrub
+    // is the only thing that can take these out.
+    queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), [
+      chat("shown"),
+      chat("older-read", { read: true }),
+      chat("mention", { mentioned: true }),
+      {
+        id: "event",
+        title: "e",
+        read_at: null,
+        data: { target: { screen: "events" } },
+      },
+    ]);
+    const post = vi.fn().mockResolvedValue({
+      data: { cleared: 2 },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(() => useClearNotifications(), {
+      wrapper: createWrapper({ POST: post }, queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        ids: ["shown"],
+        conversation: { channelId: "c-1" },
+      });
+    });
+
+    expect(post).toHaveBeenCalledWith("/v1/notifications/clear", {
+      body: { ids: ["shown"], conversation: { channelId: "c-1" } },
+    });
+    expect(
+      ids(
+        queryClient.getQueryData(notificationKeys.list("chapter-1", undefined)),
+      ),
+    ).toEqual(["mention", "event"]);
+  });
+
+  it("brings the rows back when the clear fails", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi
+      .fn()
+      .mockResolvedValue({ data: serverRows(), error: undefined });
+    const { post, fail } = deferredPost();
+    const { result } = renderInbox({ GET: get, POST: post }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.clear.mutate({ ids: ["notif-2"] }));
+    await waitFor(() => expect(ids(result.current.list.data)).toHaveLength(2));
+    await act(async () => fail());
+
+    await waitFor(() => expect(result.current.clear.isError).toBe(true));
+    expect(ids(result.current.list.data)).toEqual([
+      "notif-1",
+      "notif-2",
+      "notif-3",
+    ]);
   });
 });
 
