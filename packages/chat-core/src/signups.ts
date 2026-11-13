@@ -184,7 +184,7 @@ export function isHeadcountSignup(payload: SignupPayload): boolean {
 
 /**
  * Whether the card takes no more claims: closed early, or its end time has
- * come. The API's answer (`isSignupCardClosed`), including `<=` at the end
+ * come. The API's answer (`isCardClosed`), including `<=` at the end
  * time itself, so a card never offers a tap the server refuses.
  */
 export function isSignupClosed(payload: SignupPayload, now: number): boolean {
@@ -197,7 +197,7 @@ export function isSignupClosed(payload: SignupPayload, now: number): boolean {
  * Whether the viewer is offered Close sign-ups on this card: it is on the
  * server and not deleted, still open, and the viewer posted it or holds
  * `channels:manage`. The same rule as Close poll (`canClosePoll`); the API
- * enforces it (`ChatService.closeSignup`).
+ * enforces it (`ChatService.closeCard`).
  */
 export function canCloseSignup(
   message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,

@@ -23,7 +23,7 @@ describe('ChatController', () => {
     Pick<
       ChatService,
       | 'deleteMessage'
-      | 'closeSignup'
+      | 'closeCard'
       | 'editMessage'
       | 'pinMessage'
       | 'unpinMessage'
@@ -60,7 +60,7 @@ describe('ChatController', () => {
     reactions = { recordMessageAction: jest.fn() };
     service = {
       deleteMessage: jest.fn(),
-      closeSignup: jest.fn(),
+      closeCard: jest.fn(),
       setDisplayLock: jest.fn(),
       editMessage: jest.fn(),
       pinMessage: jest.fn(),
@@ -143,13 +143,13 @@ describe('ChatController', () => {
 
   // The card's creator needs no permission, so the moderator check is a lazy
   // closure the service asks only for someone else's card (#3926).
-  describe('closeSignup', () => {
+  describe('closeCard', () => {
     it("asks for channels:manage in the caller's chapter", async () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(true);
-      await controller.closeSignup('msg-1', 'ch-1', 'user-1');
+      await controller.closeCard('msg-1', 'ch-1', 'user-1');
 
       const [messageId, chapterId, userId, canModerate] =
-        service.closeSignup.mock.calls[0];
+        service.closeCard.mock.calls[0];
       expect([messageId, chapterId, userId]).toEqual([
         'msg-1',
         'ch-1',
@@ -166,8 +166,8 @@ describe('ChatController', () => {
 
     it('answers false for a member without it', async () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
-      await controller.closeSignup('msg-1', 'ch-1', 'user-1');
-      const canModerate = service.closeSignup.mock.calls[0][3];
+      await controller.closeCard('msg-1', 'ch-1', 'user-1');
+      const canModerate = service.closeCard.mock.calls[0][3];
       await expect(canModerate!()).resolves.toBe(false);
     });
   });

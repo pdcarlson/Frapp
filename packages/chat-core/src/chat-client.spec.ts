@@ -6,7 +6,7 @@ import {
   classifyChatError,
   definitiveRefusalMessage,
   closePoll,
-  closeSignup,
+  closeCard,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -596,7 +596,7 @@ describe("closePoll (#3794)", () => {
   });
 });
 
-describe("closeSignup (#3926)", () => {
+describe("closeCard (#3926)", () => {
   it("posts the close and merges the closed card before any Realtime echo", async () => {
     const card = {
       title: "Formal",
@@ -641,7 +641,7 @@ describe("closeSignup (#3926)", () => {
       toast,
     });
 
-    await closeSignup(ctx, { channelId: "chan-1", messageId: "msg-1" });
+    await closeCard(ctx, { channelId: "chan-1", messageId: "msg-1" });
 
     expect(apiClient.POST).toHaveBeenCalledWith(
       "/v1/channels/messages/{messageId}/close",
@@ -670,7 +670,7 @@ describe("closeSignup (#3926)", () => {
     });
 
     await expect(
-      closeSignup(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+      closeCard(ctx, { channelId: "chan-1", messageId: "msg-1" }),
     ).rejects.toThrow();
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
