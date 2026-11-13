@@ -727,11 +727,9 @@ describe("activityRowAction (#4402)", () => {
         event({ id: "later", name: "Later" }),
       ],
     });
+    const rows = allRows(data, new Date("2026-11-12T00:00:00.000Z"));
     const actions = Object.fromEntries(
-      allRows(data, new Date("2026-11-12T00:00:00.000Z")).map((row) => [
-        row.title,
-        activityRowAction(row),
-      ]),
+      rows.map((row) => [row.title, activityRowAction(row)]),
     );
     expect(actions).toEqual({
       Open: "check-in",
@@ -761,13 +759,9 @@ describe("activityRowAction (#4402)", () => {
         }),
       ],
     });
-    const row = activityGroups(
-      data,
-      "all",
-      new Date("2026-11-12T00:00:00.000Z"),
-    )
-      .flatMap((group) => group.rows)
-      .find((each) => each.kind === "event")!;
+    const row = allRows(data, new Date("2026-11-12T00:00:00.000Z")).find(
+      (each) => each.kind === "event",
+    )!;
     expect(activityRowAction(row)).toBeNull();
     expect(activityRowAction(row, { canSupplyLocation: true })).toBe(
       "check-in",
