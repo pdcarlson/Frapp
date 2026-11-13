@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { TaskProofKind } from '@repo/validation';
 import {
   CHECK_IN_GRACE_MINUTES,
   can,
@@ -91,6 +92,11 @@ export interface ActivityTask {
   confirmed_at: string | null;
   /** When an officer last sent the completion back; `null` if never. */
   sent_back_at: string | null;
+  /**
+   * What Mark done needs (#4635). With `point_reward` it tells a completion
+   * that needed no sign-off (Done) from one an officer confirmed.
+   */
+  proof_kind: TaskProofKind;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
@@ -799,6 +805,7 @@ export class ActivityService {
       completed_at: task.completed_at,
       confirmed_at: task.confirmed_at,
       sent_back_at: task.sent_back_at ?? null,
+      proof_kind: task.proof_kind ?? 'none',
       created_at: task.created_at,
       unread: false,
     });

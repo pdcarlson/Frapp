@@ -1,3 +1,5 @@
+import type { TaskProofKind } from '@repo/validation';
+
 export enum TaskStatus {
   TODO = 'TODO',
   IN_PROGRESS = 'IN_PROGRESS',
@@ -30,16 +32,23 @@ export interface Task {
    */
   sent_back_at: string | null;
   /**
-   * Task photos (#4565), storage keys in the private `tasks` bucket under
-   * `chapters/{chapter_id}/tasks/`. The reference photo is the officer's (what
-   * the job looks like); the proof photo is the assignee's, sent with Mark
-   * done and cleared when the completion is taken back, sent back, or the task
-   * is handed to someone else. Read through `GET /v1/tasks/:id/photo-url`.
+   * What Mark done needs (#4635): nothing, one or more proof photos, or a
+   * link. `none` by default. Replaced #4565's `photo_required`.
    */
-  reference_photo_path: string | null;
-  proof_photo_path: string | null;
-  /** When on, Mark done is refused without a proof photo. */
-  photo_required: boolean;
+  proof_kind: TaskProofKind;
+  /**
+   * The assignee's link proof, sent with Mark done (http/https, stored as
+   * typed, never fetched). Cleared with the completion, like proof photos.
+   */
+  proof_link: string | null;
+  /**
+   * Why an officer last sent the completion back (#4635). Kept through the
+   * next Mark done so the officer sees what they asked beside the reply, and
+   * cleared when the task is handed to someone else.
+   */
+  sent_back_reason: string | null;
+  /** The assignee's reply sent with Mark done, cleared with the completion. */
+  completion_note: string | null;
   created_at: string;
 }
 
@@ -68,6 +77,32 @@ export interface TaskView extends Task {
    * the ones it holds.
    */
   subtasks?: TaskSubtask[];
+  /**
+   * The task's photos (#4635): reference photos, then proof photos, each in
+   * order. Present on the list and detail reads and on status writes.
+   */
+  photos?: TaskPhoto[];
+}
+
+/** Which of a task's photos: the officer's reference or the assignee's proof. */
+export type TaskPhotoKind = 'reference' | 'proof';
+
+/**
+ * One task photo (#4635), a storage key in the private `tasks` bucket under
+ * `chapters/{chapter_id}/tasks/`. Up to 6 per task and kind. A proof photo
+ * goes with its completion: taking it back, sending it back or handing the
+ * task over deletes it. Read through `GET /v1/tasks/:id/photos/:photoId/url`.
+ */
+export interface TaskPhoto {
+  id: string;
+  task_id: string;
+  chapter_id: string;
+  kind: TaskPhotoKind;
+  storage_path: string;
+  /** Order within its kind, 0 first. */
+  position: number;
+  created_by: string | null;
+  created_at: string;
 }
 
 /**

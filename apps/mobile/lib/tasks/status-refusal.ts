@@ -36,7 +36,7 @@ export function taskStatusGateRefusal(error: unknown): string | null {
  */
 export function taskProofRequiredRefusal(error: unknown): string | null {
   return statusOf(error) === 400 && codeOf(error) === TASK_PROOF_REQUIRED_CODE
-    ? "This task needs a photo of the finished job. Add it and mark it done from Frapp on the web."
+    ? "This task needs proof of the finished job. Add it and mark it done from Frapp on the web."
     : null;
 }
 

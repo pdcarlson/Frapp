@@ -24,9 +24,16 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     assignee_id: undefined,
     subtasks: [],
     due: undefined,
-    reference_photo_path: null,
-    proof_photo_path: null,
-    photo_required: false,
+    // Points, so a completion waits on an officer unless a test says not.
+    point_reward: 5,
+    proof_kind: "none",
+    proof_link: null,
+    sent_back_at: null,
+    sent_back_reason: null,
+    completion_note: null,
+    completed_at: null,
+    confirmed_at: null,
+    photos: [],
     ...overrides,
   };
 }
@@ -93,12 +100,28 @@ describe("readLiveTask", () => {
         status: "OVERDUE",
         stored_status: "IN_PROGRESS",
         points_awarded: true,
+        point_reward: 5,
+        proof_kind: "link",
+        proof_link: "https://docs.google.com/x",
+        sent_back_at: "2026-11-13T10:00:00.000Z",
+        sent_back_reason: "Floor is still sticky",
+        completion_note: "",
+        photos: [
+          { id: "p1", kind: "proof", storage_path: "chapters/c/tasks/1/a.jpg" },
+        ],
       }),
     ).toEqual(
       live({
         status: "OVERDUE",
         stored_status: "IN_PROGRESS",
         points_awarded: true,
+        proof_kind: "link",
+        proof_link: "https://docs.google.com/x",
+        sent_back_at: "2026-11-13T10:00:00.000Z",
+        sent_back_reason: "Floor is still sticky",
+        photos: [
+          { id: "p1", kind: "proof", storage_path: "chapters/c/tasks/1/a.jpg" },
+        ],
       }),
     );
   });
@@ -128,6 +151,60 @@ describe("taskStatusLabel", () => {
       taskStatusLabel(live({ status: "COMPLETED", points_awarded: true })),
     ).toBe("Confirmed");
   });
+
+  it("reads Done for a completion that needed no sign-off (#4635)", () => {
+    const done = live({
+      status: "COMPLETED",
+      points_awarded: true,
+      point_reward: null,
+    });
+    expect(taskStatusLabel(done)).toBe("Done");
+    // Proof makes it the officer's to confirm.
+    expect(taskStatusLabel({ ...done, proof_kind: "photo" })).toBe("Confirmed");
+    // A caller that doesn't pass the proof kind can't tell, so Confirmed.
+    expect(taskStatusLabel({ status: "COMPLETED", points_awarded: true })).toBe(
+      "Confirmed",
+    );
+  });
+
+  it("reads Needs changes for a sent-back task until it is marked done (#4635)", () => {
+    const sentBack = live({
+      status: "IN_PROGRESS",
+      stored_status: "IN_PROGRESS",
+      sent_back_at: "2026-11-13T10:00:00.000Z",
+    });
+    expect(taskStatusLabel(sentBack)).toBe("Needs changes");
+    expect(taskStatusLabel({ ...sentBack, status: "OVERDUE" })).toBe(
+      "Needs changes",
+    );
+    expect(
+      taskStatusLabel({
+        ...sentBack,
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+      }),
+    ).toBe("Waiting on an officer");
+  });
+});
+
+describe("canReopenOwnTask (#4635)", () => {
+  it("lets the assignee take back a Done that needed no sign-off", () => {
+    expect(
+      canReopenOwnTask({
+        stored: "COMPLETED",
+        pointsAwarded: true,
+        isAssignee: true,
+        signedOffAutomatically: true,
+      }),
+    ).toBe(true);
+    expect(
+      canReopenOwnTask({
+        stored: "COMPLETED",
+        pointsAwarded: true,
+        isAssignee: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("canReopenOwnTask", () => {
@@ -152,6 +229,43 @@ describe("canReadCardTask", () => {
     expect(canReadCardTask({ isAssignee: false, canManage: false })).toBe(
       false,
     );
+  });
+});
+
+describe("taskCardControls (#4635)", () => {
+  it("offers only Send back on a completion that needed no sign-off", () => {
+    const at = "2026-11-13T10:00:00.000Z";
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: at,
+          confirmed_at: at,
+        }),
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["reject"]);
+  });
+
+  it("keeps Confirmed on a no-points task an officer confirmed", () => {
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: "2026-11-01T10:00:00.000Z",
+          confirmed_at: "2026-11-02T10:00:00.000Z",
+        }),
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["confirmed"]);
   });
 });
 
@@ -374,21 +488,38 @@ describe("readEditableCardTask", () => {
       status: "TODO",
       stored_status: "TODO",
       subtasks: [],
-      reference_photo_path: null,
-      photo_required: false,
+      photos: [],
+      proof_kind: "none",
     });
   });
 
-  it("carries the task's photo and its Photo required switch (#4565)", () => {
+  it("carries the task's reference photos and its proof kind (#4635)", () => {
     expect(
       readEditableCardTask({
         ...raw,
-        reference_photo_path: "chapters/c/tasks/p/mess.jpg",
-        photo_required: true,
+        proof_kind: "link",
+        photos: [
+          {
+            id: "p1",
+            kind: "reference",
+            storage_path: "chapters/c/tasks/1/a.jpg",
+          },
+          { id: "p2", kind: "proof", storage_path: "chapters/c/tasks/2/b.jpg" },
+          { id: "p3", kind: "bogus", storage_path: "x" },
+        ],
       }),
     ).toMatchObject({
-      reference_photo_path: "chapters/c/tasks/p/mess.jpg",
-      photo_required: true,
+      // The edit form keeps the reference ones; the board's rows carry the
+      // same `photos`, so both open the form the same way.
+      photos: [
+        {
+          id: "p1",
+          kind: "reference",
+          storage_path: "chapters/c/tasks/1/a.jpg",
+        },
+        { id: "p2", kind: "proof", storage_path: "chapters/c/tasks/2/b.jpg" },
+      ],
+      proof_kind: "link",
     });
   });
 
