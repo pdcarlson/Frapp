@@ -33,8 +33,8 @@ const LABELS: Record<RowAction, string> = {
  * (`activityRowActionGate`); offline or still loading the chapter, it is
  * disabled with the gate's reason.
  *
- * Once the write lands the button stays disabled: the row leaves Needs you
- * on the page's re-read, and a second press before then would be refused
+ * Once the write lands the button stays disabled: the row leaves the To
+ * review card on the page's re-read, and a second press before then would be refused
  * as a repeat. `onActed` re-reads and resolves when that read settles, and
  * focus then moves to the row after this one (or before it, at the end of a
  * list), so a keyboard user carries on down the list instead of starting

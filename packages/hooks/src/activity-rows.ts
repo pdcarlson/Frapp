@@ -99,7 +99,7 @@ interface RowBase {
    * it (#4402, item 4): the poster of a poll or link, whoever assigned a task
    * to the member, the member whose completion or hours wait on them. `null`
    * when there is no one else to show (an event, a task the member set
-   * themselves, Made by you), and the row leads with its glyph. A client that
+   * themselves, Waiting on others), and the row leads with its glyph. A client that
    * can't resolve the id on the roster (they have left) draws the glyph too.
    */
   faceId: string | null;
@@ -115,7 +115,7 @@ interface RowBase {
   /**
    * Whether the member hasn't opened it from Activity since it started
    * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
-   * dot. Never on a Made by you row.
+   * dot. Never on a Waiting on others row.
    */
   unread: boolean;
   /** The item `POST /v1/activity/reads` records when the row is opened. */

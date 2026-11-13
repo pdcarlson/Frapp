@@ -81,8 +81,8 @@ Its copy is `writing.md` § 7, Terms prompt.
 
 **`(app)/(tabs)/activity.tsx`, Activity** ([#3897](https://github.com/pdcarlson/Frapp/issues/3897)), has no drawn Canvas screen.
 Live since 2026-11-11, and tab 2 since 2026-11-12 ([#4610](https://github.com/pdcarlson/Frapp/issues/4610)).
-It is on the read web's `/activity` uses ([`../../behavior/activity.md`](../../behavior/activity.md)) and opens the same records, but since 2026-11-13 it is laid out around the member's week rather than as web's page ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
-Web's page keeps the earlier shape until it follows in its own change ([`../web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity)), which [`principles.md`](../design-system/principles.md) P6 counts as drift until then.
+It is on the read web's `/activity` uses ([`../../behavior/activity.md`](../../behavior/activity.md)) and opens the same records, and since 2026-11-13 it is laid out around the member's week ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
+Web's page took the same shape, from the same model in `@repo/hooks`, later that day ([`../web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity)), so the two are one page again ([`principles.md`](../design-system/principles.md) P6).
 The screen is drawn and checked for four people ([`principles.md` § Three people](../design-system/principles.md#three-people)): a member with nothing due, an average member, a committee chair and the president.
 Top to bottom:
 
@@ -123,9 +123,9 @@ Top to bottom:
   The row on the week card is not repeated here, and when it was the only one the section is not drawn.
   With nothing at all it says "Nothing to do right now."
 - **Waiting on others**, then **Links**: what the member made (the polls they posted, the events they made, the tasks they assigned, by kind, three of each then "Show all N", with Archived polls behind its button) and the sign-up links posted for them, from the shared `activityGroups`.
-  "Waiting on others" is web's "Made by you" renamed for what the member wants from it.
+  "Waiting on others" is the old "Made by you" renamed for what the member wants from it, on web too.
   Each is left out when it holds nothing, rather than drawn as an empty line, and both step back while the list is narrowed.
-- **Gone from the phone** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles (#4173), the filter chips and the Needs you chip (#4402), the Now and Later split, and the Coming up group, whose events are now on their days in To do.
+- **Gone from the phone, and from web** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles (#4173), the filter chips and the Needs you chip (#4402), the Now and Later split, and the Coming up group, whose events are now on their days in To do.
   "Needs you" as a name went with them (Paul: not a fan of it).
 
 What else differs from web:
