@@ -10,7 +10,7 @@ A row is deleted:
 
 - 30 days after the report (a sweep runs every hour, whether or not AI is still on);
 - when the reporter deletes their account;
-- when a member whose words are in it (`quoted_user_ids`) deletes their account or answers No on the AI sheet;
+- when a member whose words are in it (`quoted_user_ids`) deletes their account or turns Frapp AI off;
 - when the chapter is deleted.
 
 A report is not kept at all when the reporter or a member it quotes had already deleted their account when it was made (the table's insert trigger, `ai_reports_refuse_deleted_users`): an Ask answer can be reported up to 7 days after it was given, so a chat author can be gone by then. The member is still told their report was sent.
@@ -55,7 +55,7 @@ A row is deleted when:
 
 - the window reaches its end date (a sweep runs every ten minutes, whether or not AI is still on);
 - the president stops the window early, which deletes everything it kept;
-- the member who asked leaves the chapter, deletes their account, or answers No on the AI sheet;
+- the member who asked leaves the chapter, deletes their account, or turns Frapp AI off;
 - the chapter is deleted.
 
 ### Turning it off, and moving it to another chapter

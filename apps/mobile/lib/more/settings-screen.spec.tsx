@@ -77,10 +77,14 @@ vi.mock("react-native", async () => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
-  useAiConsent: () => ({
-    data: state.aiConsent,
-    isPending: false,
-    isError: false,
+  useFrappAiChoice: () => ({
+    consent: state.aiConsent,
+    providers: ["Anthropic", "Google"],
+    forChapter: false,
+    chapterSettled: true,
+    notNow: aiNotNow,
+    turnOn: vi.fn(),
+    pending: false,
   }),
   useChapterChatLevel: () => ({
     data: "all",
@@ -146,13 +150,14 @@ vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
 
-// The AI consent sheet as a stand-in whose `present` a spec can see; the
-// sheet itself has its own spec (`components/ai/ai-consent-sheet.spec.tsx`).
+// Meet Frapp AI as a stand-in whose `present` a spec can see; the sheet
+// itself has its own spec (`components/ai/meet-frapp-ai.spec.tsx`).
 const aiSheet = vi.hoisted(() => ({ present: vi.fn() }));
-vi.mock("@/components/ai/ai-consent-sheet", async () => {
+const aiNotNow = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@/components/ai/meet-frapp-ai", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
-    AiConsentSheet: forwardRef(function AiConsentSheet(_props, ref) {
+    MeetFrappAiSheet: forwardRef(function MeetFrappAiSheet(_props, ref) {
       useImperativeHandle(ref, () => aiSheet);
       return null;
     }),
@@ -395,13 +400,12 @@ describe("Settings copy", () => {
     expect(densitySheet.present).toHaveBeenCalled();
   });
 
-  describe("the AI row", () => {
-    const aiRow = (tree: ReactTestRenderer) =>
+  describe("the Frapp AI switch", () => {
+    const aiSwitch = (tree: ReactTestRenderer) =>
       tree.root.findAll(
         (node) =>
-          node.props.accessibilityHint ===
-            "Shows what AI features use, and lets you change your answer." &&
-          typeof node.props.onPress === "function",
+          node.props.accessibilityLabel === "Frapp AI" &&
+          typeof node.props.onValueChange === "function",
       );
     afterEach(() => {
       state.aiConsent = null;
@@ -410,33 +414,37 @@ describe("Settings copy", () => {
     it("isn't drawn where the server has no AI", () => {
       state.aiConsent = null;
       const tree = render();
-      expect(aiRow(tree)).toHaveLength(0);
-      expect(screenText(tree)).not.toContain("Use AI features");
+      expect(aiSwitch(tree)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("Frapp AI");
     });
 
     it.each([
-      [{ answer: "yes" as const, sheet_changed: false }, "Yes"],
-      [{ answer: "no" as const, sheet_changed: false }, "No"],
-      [{ answer: null, sheet_changed: false }, "Not answered"],
-      // A changed sheet voids the earlier yes (silence is no).
-      [{ answer: "yes" as const, sheet_changed: true }, "Not answered"],
-    ])("states the member's answer %o as %s", (consent, value) => {
-      state.aiConsent = consent;
+      ["yes" as const, true],
+      ["no" as const, false],
+      [null, false],
+    ])("is on only for a member who said yes (%s)", (answer, on) => {
+      state.aiConsent = { answer, sheet_changed: false };
       const tree = render();
-      const row = aiRow(tree)[0];
-      const text = row
-        .findAll((node) => (node.type as unknown) === "Text")
-        .map((node) => [node.props.children].flat().join(""));
-      expect(text).toContain("Use AI features");
-      expect(text).toContain(value);
+      expect(aiSwitch(tree)[0].props.value).toBe(on);
+      expect(screenText(tree)).toContain("Works with Anthropic and Google.");
     });
 
-    it("opens the consent sheet", () => {
+    it("opens Meet Frapp AI to turn it on, so the yes is given there", () => {
       aiSheet.present.mockClear();
+      aiNotNow.mockClear();
       state.aiConsent = { answer: "no", sheet_changed: false };
       const tree = render();
-      act(() => aiRow(tree)[0].props.onPress());
+      act(() => aiSwitch(tree)[0].props.onValueChange(true));
       expect(aiSheet.present).toHaveBeenCalled();
+      expect(aiNotNow).not.toHaveBeenCalled();
+    });
+
+    it("turns it off at once", () => {
+      aiNotNow.mockClear();
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const tree = render();
+      act(() => aiSwitch(tree)[0].props.onValueChange(false));
+      expect(aiNotNow).toHaveBeenCalledTimes(1);
     });
   });
 

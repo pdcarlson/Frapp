@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  AI_CONSENT_COPY,
   AI_SWITCHES,
+  FRAPP_AI_COPY,
   formatAiAnswerDate,
   joinNames,
 } from "./ai-copy";
@@ -35,13 +35,21 @@ describe("AI copy", () => {
     }
   });
 
-  it("says what a No leaves in, not only what it keeps out", () => {
-    // spec/behavior/ai.md § Consent: a No is not a promise that nothing
-    // about the member reaches a model, and the sheet must say it that way.
-    const text = AI_CONSENT_COPY.noMeans.join(" ");
-    expect(text).toMatch(/can't use AI features/);
-    expect(text).toMatch(/messages in channels are left out/);
-    expect(text).toMatch(/minutes that name you/);
-    expect(text).toMatch(/roster details/);
+  it("names the companies and that Continue turns it on, in one line", () => {
+    // Apple 5.1.2(i): Continue is an explicit yes only because the line
+    // above it says who it works with and what Continue does.
+    expect(FRAPP_AI_COPY.disclosure("Anthropic and Google", false)).toBe(
+      "Frapp AI works with Anthropic and Google. Continuing turns it on for your account.",
+    );
+    expect(FRAPP_AI_COPY.disclosure("Anthropic and Google", true)).toMatch(
+      /for you and your chapter\.$/,
+    );
+  });
+
+  it("keeps the screen to three short lines (Paul: say no more than needed)", () => {
+    expect(FRAPP_AI_COPY.points).toHaveLength(3);
+    for (const point of FRAPP_AI_COPY.points) {
+      expect(point.text.length).toBeLessThanOrEqual(80);
+    }
   });
 });

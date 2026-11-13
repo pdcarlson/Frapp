@@ -84,7 +84,7 @@ vi.mock("@/components/ai/suggested-tasks", () => ({
   ),
 }));
 
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: mocks.ensureConsent,
     consentDialog: null,
@@ -727,7 +727,7 @@ describe("MinutesPage", () => {
       mocks.ensureConsent.mockResolvedValueOnce(false);
       mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
       render(<MinutesPage id="m-1" />);
-      expect(screen.getByText(/you haven't agreed to that yet/)).toBeTruthy();
+      expect(screen.getByText(/Turn on Frapp AI to draft from your notes/)).toBeTruthy();
       fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
         target: { value: "notes" },
       });

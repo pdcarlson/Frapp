@@ -116,7 +116,7 @@ vi.mock("@/components/minutes/recording-row", () => ({
 vi.mock("@/lib/minutes/recorder/session", () => ({
   useMeetingRecorder: () => ({ state: state.recorder, recorder: null }),
 }));
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: vi.fn(),
     consentSheet: null,

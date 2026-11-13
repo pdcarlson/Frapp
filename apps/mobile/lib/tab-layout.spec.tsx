@@ -41,6 +41,10 @@ vi.mock("@/components/onboarding/tour", () => ({
 vi.mock("@/components/whats-new/whats-new-host", () => ({
   WhatsNewHost: "WhatsNewHost",
 }));
+// And Meet Frapp AI's (`components/ai/meet-frapp-ai-host.spec.tsx`).
+vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
+  MeetFrappAiHost: "MeetFrappAiHost",
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));

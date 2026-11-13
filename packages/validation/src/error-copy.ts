@@ -81,13 +81,13 @@ export function copyForErrorCode(code: string | null): string | null {
     return "Accept the Terms and Privacy Policy to continue.";
   }
   if (code === "ai.consent.required") {
-    return "Turn on AI for your account in Settings to use this.";
+    return "Turn on Frapp AI in Settings to use this.";
   }
   if (code === "ai.chapter_off") {
     return "Your chapter's president hasn't turned this on.";
   }
   if (code === "ai.consent.stale_sheet") {
-    return "What AI uses has changed since you opened this. Read it again, then answer.";
+    return "Frapp AI changed since you opened this. Look again, then answer.";
   }
   if (code === "ai.settings.president_only") {
     return "Only your chapter's president can turn AI features on or off.";

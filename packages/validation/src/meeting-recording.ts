@@ -108,7 +108,7 @@ export type MeetingRecordingStatus =
 export const MEETING_RECORDING_FAILURES = [
   /** The president has not turned meeting notes on. */
   "chapter_off",
-  /** The officer has not said yes on the AI sheet. */
+  /** The officer has not turned Frapp AI on. */
   "consent_required",
   /** The chapter's, the member's or the platform's AI limit was reached. */
   "spend_limit",
@@ -140,7 +140,7 @@ export const MEETING_RECORDING_FAILURE_COPY: Readonly<
   chapter_off:
     "Meeting notes are turned off for your chapter. The president can turn them on in Chapter settings.",
   consent_required:
-    "Transcribing sends the recording to an AI provider, and you haven't agreed to that yet.",
+    "Turn on Frapp AI to transcribe the recording.",
   spend_limit:
     "Your chapter has reached its AI limit for now. The recording was deleted. You can type your notes instead.",
   unavailable:

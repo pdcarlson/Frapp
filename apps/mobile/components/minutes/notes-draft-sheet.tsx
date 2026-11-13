@@ -25,7 +25,7 @@ import {
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import {
   useAiReport,
   type AiReportTarget,

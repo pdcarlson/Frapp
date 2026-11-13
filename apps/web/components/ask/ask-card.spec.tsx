@@ -58,7 +58,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: state.consent,
     consentDialog: null,

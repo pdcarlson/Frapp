@@ -95,6 +95,18 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    - **An answer says how many messages were left out, and never whose.** He described a notice on
      the member's messages. Marking them would show the chapter who said no.
 
+   > **Paul, 2026-11-13 (#4790):** "I don't know why we need consent again. Just put this in the
+   > privacy policy." Then: "make it one of those screens", an onboarding screen that introduces
+   > Frapp AI, with "a continue button that's highly prominent" and a small underlined opt-out.
+   > "It's not forced... it should be encouraged during the signup process." The member's yes is
+   > now given once, on that screen (Meet Frapp AI), not on a separate AI sheet at the first AI
+   > feature. Continue is the yes; Not now is a no, changed any time in Settings. The screen
+   > names the companies in one line and links the privacy policy, which carries the kinds of
+   > data and the rest, so a new kind of data no longer asks everyone again (a new company
+   > still does). Silence still counts as no, and the yes is still explicit, which is what keeps
+   > it within Apple's 5.1.2(i). The four tester accounts were recorded as yes by migration. A
+   > president whose chapter never set its switches turns them on with the same Continue.
+
    The president also turns chat on as a source for the chapter, separately from the other AI
    features. All of it is in [`spec/behavior/ai.md` § Chat as a source](../../behavior/ai.md#chat-as-a-source)
    and [§ Consent](../../behavior/ai.md#consent).
@@ -243,7 +255,7 @@ The catalog names the models. This table is a dated observation, not a pin.
 - The credentials are Paul's to create: the Anthropic organization
   ([#3279](https://github.com/pdcarlson/Frapp/issues/3279)) and the Google Cloud projects
   ([#4316](https://github.com/pdcarlson/Frapp/issues/4316)).
-- The consent sheet, the privacy page's subprocessor list and the store answers ship in the same
+- The consent screen (Meet Frapp AI since #4790), the privacy page's subprocessor list and the store answers ship in the same
   release that first sends member data to a model, not before and not after
   ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
 

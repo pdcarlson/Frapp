@@ -7,10 +7,13 @@ import { createFrappClient } from "@repo/api-sdk";
 import {
   aiAvailableFrom,
   aiConsentKey,
+  chapterAiNeverSet,
   isFirstAiReadInFlight,
+  shouldMeetFrappAi,
   useAiChapterSettings,
   useAiConsent,
   useAnswerAiConsent,
+  useFrappAiChoice,
   useUpdateAiChapterSettings,
 } from "./use-ai";
 import { FrappClientProvider } from "./use-frapp-client";
@@ -172,6 +175,142 @@ describe("the AI hooks", () => {
       body: { ask: true },
     });
     await waitFor(() => expect(result.current.settings.data).toEqual(saved));
+  });
+});
+
+describe("Meet Frapp AI's answers (#4790)", () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+  });
+  const wrapper = (client: unknown) => {
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={client as ReturnType<typeof createFrappClient>}
+        chapterId="chapter-1"
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </FrappClientProvider>
+    );
+    Wrapper.displayName = "MeetAiWrapper";
+    return Wrapper;
+  };
+  const NEVER_SET = {
+    ask: false,
+    meeting_notes: false,
+    chat_source: false,
+    updated_at: null,
+    can_change: true,
+  };
+
+  it("is put in front of a member only while they have never answered", () => {
+    expect(shouldMeetFrappAi(STATE as never)).toBe(true);
+    expect(shouldMeetFrappAi({ ...STATE, answer: "no" } as never)).toBe(false);
+    expect(shouldMeetFrappAi({ ...STATE, answer: "yes" } as never)).toBe(false);
+    expect(shouldMeetFrappAi(null)).toBe(false);
+    expect(shouldMeetFrappAi(undefined)).toBe(false);
+  });
+
+  it("covers the chapter only for its president, and only before anyone set its switches", () => {
+    expect(chapterAiNeverSet(NEVER_SET)).toBe(true);
+    expect(chapterAiNeverSet({ ...NEVER_SET, can_change: false })).toBe(false);
+    expect(chapterAiNeverSet(SETTINGS)).toBe(false);
+    expect(
+      chapterAiNeverSet({ ...NEVER_SET, updated_at: "2026-11-12T03:00:00Z" }),
+    ).toBe(false);
+    expect(chapterAiNeverSet(null)).toBe(false);
+  });
+
+  it("Continue records the yes and, for a new chapter's president, turns its switches on", async () => {
+    const GET = vi.fn((path: string) =>
+      Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
+    );
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PATCH = vi.fn().mockResolvedValue(answered({ ...NEVER_SET, ask: true }));
+    const { result } = renderHook(() => useFrappAiChoice(), {
+      wrapper: wrapper({ GET, PUT, PATCH }),
+    });
+    await waitFor(() => expect(result.current.forChapter).toBe(true));
+    await act(async () => {
+      await expect(result.current.turnOn()).resolves.toBe(true);
+    });
+    expect(PUT).toHaveBeenCalledWith("/v1/ai/consent", {
+      body: { sheet_version: 1, answer: "yes" },
+    });
+    expect(PATCH).toHaveBeenCalledWith("/v1/ai/settings", {
+      body: { ask: true, meeting_notes: true, chat_source: true },
+    });
+  });
+
+  it("never touches a chapter's switches when told not to, or once someone set them", async () => {
+    const GET = vi.fn((path: string) =>
+      Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : SETTINGS)),
+    );
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PATCH = vi.fn();
+    const { result } = renderHook(() => useFrappAiChoice(), {
+      wrapper: wrapper({ GET, PUT, PATCH }),
+    });
+    await waitFor(() => expect(result.current.consent).toBeTruthy());
+    await act(async () => {
+      await result.current.turnOn();
+    });
+    expect(PUT).toHaveBeenCalledTimes(1);
+    expect(PATCH).not.toHaveBeenCalled();
+
+  });
+
+  it("leaves a never-set chapter alone when told not to, and never reads it", async () => {
+    const GET = vi.fn((path: string) =>
+      Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
+    );
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PATCH = vi.fn();
+    const { result } = renderHook(
+      () => useFrappAiChoice({ includeChapter: false }),
+      { wrapper: wrapper({ GET, PUT, PATCH }) },
+    );
+    await waitFor(() => expect(result.current.consent).toBeTruthy());
+    expect(result.current.forChapter).toBe(false);
+    expect(result.current.chapterSettled).toBe(true);
+    await act(async () => {
+      await expect(result.current.turnOn()).resolves.toBe(true);
+    });
+    expect(PATCH).not.toHaveBeenCalled();
+    expect(GET).not.toHaveBeenCalledWith("/v1/ai/settings");
+  });
+
+  it("counts Continue as on once the yes is saved, even when the chapter's switches fail", async () => {
+    const GET = vi.fn((path: string) =>
+      Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
+    );
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PATCH = vi.fn().mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useFrappAiChoice(), {
+      wrapper: wrapper({ GET, PUT, PATCH }),
+    });
+    await waitFor(() => expect(result.current.forChapter).toBe(true));
+    await act(async () => {
+      await expect(result.current.turnOn()).resolves.toBe(true);
+    });
+    expect(PUT).toHaveBeenCalledTimes(1);
+    expect(PATCH).toHaveBeenCalledTimes(1);
+  });
+
+  it("Not now records a No", async () => {
+    const GET = vi.fn().mockResolvedValue(answered(STATE));
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "no" }));
+    const { result } = renderHook(() => useFrappAiChoice(), {
+      wrapper: wrapper({ GET, PUT }),
+    });
+    await act(async () => {
+      await result.current.notNow();
+    });
+    expect(PUT).toHaveBeenCalledWith("/v1/ai/consent", {
+      body: { sheet_version: 1, answer: "no" },
+    });
   });
 });
 

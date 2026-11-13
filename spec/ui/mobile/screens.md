@@ -212,13 +212,14 @@ Copy: [`writing.md` § New account](../design-system/writing.md#new-account-pre-
 
 Route: `(auth)/welcome.tsx`.
 
-Live — up to three beats on one route, then chat with the first-run tour over it ([`onboarding.md` § Behavior](../../behavior/onboarding.md#behavior)).
-Nothing is drawn while the profile and push reads come back (given up on after 4 seconds); a member with a photo, a real name and push on sees only the display beat.
+Live — up to four beats on one route, then chat with the first-run tour over it ([`onboarding.md` § Behavior](../../behavior/onboarding.md#behavior)).
+Nothing is drawn while the profile and push reads come back (given up on after 4 seconds); a member with a photo, a real name, push on and Frapp AI answered sees only the display beat.
 The `You're in.` card that opened s03 (the chapter, its school and the auto-joined channels) was removed on 2026-11-07; the tour's first stop says it over the real channels.
 First, only when the member has no photo or no real name yet: `How the chapter sees you`, the profile photo control and a `Your name` field ([`writing.md` § Profile step (mobile s03)](../design-system/writing.md#profile-step-mobile-s03)); the photo is optional, the name is required when there isn't one, and a changed name is saved (`PATCH /v1/users/me`) before the beat moves on.
 Second, for every member: `Pick your chat display`, Settings' three Chat density cards with the phone's current display preselected, Cozy on a fresh phone (#3787, [`writing.md` § Display step (onboarding)](../design-system/writing.md#display-step-onboarding)).
-Third, only when the build can push and push is off ([#2299](https://github.com/pdcarlson/Frapp/issues/2299); [`patterns.md`](patterns.md#push-notifications) § Push notifications): `Turn on notifications`, with its three rows and the gold `Turn on notifications` (or `Open Settings` when no OS prompt can appear) over a quiet `Not now`, both pinned above the inset;
-Android's back returns to the display beat, and from there to the profile beat when it was shown.
+Third, only when the server has AI on and the member never answered it: `Meet Frapp AI` ([`../../behavior/ai.md` § Consent](../../behavior/ai.md#consent), #4790), its three lines and the companies line over a gold `Continue` and a quiet underlined `Not now`; either answer moves on, and a Continue that fails to save keeps the member here with the reason.
+Fourth, only when the build can push and push is off ([#2299](https://github.com/pdcarlson/Frapp/issues/2299); [`patterns.md`](patterns.md#push-notifications) § Push notifications): `Turn on notifications`, with its three rows and the gold `Turn on notifications` (or `Open Settings` when no OS prompt can appear) over a quiet `Not now`, both pinned above the inset;
+Android's back returns to Meet Frapp AI when it was shown, else to the display beat, and from there to the profile beat when it was shown.
 Either answer leaves for chat, PATCHing `has_completed_onboarding` (#3352).
 The notifications beat was a card under the channels until 2026-11-07, which the board drew with `Go to chat` outlined beside it; it is its own step now so every member decides.
 The auth gate sends a member here when that flag is false.
@@ -480,8 +481,8 @@ The title row is pinned, with a New conversation button once there is a turn; th
 Each turn (`components/ask/ask-turn.tsx`) is what the member typed in a bubble on the right (the chapter's solid accent since #4702, `surface1` before), then Frapp on the left with no frame: the step it is on while it works ("Searching your chapter's sources") under the streamed words, then the answer with a numbered gold marker after each cited sentence and a wrapping row of source chips under it (36pt drawn, the number then the name; kind and date are in the chip's spoken name).
 Between the answer and its chips one caption line says what Frapp read to write it ("Read the events calendar and 3 sources"), and after the chips sit two muted icons, Copy and Report, where the words "Report this" were (#4702; Paul, 2026-11-13; [`../design-system/components.md`](../design-system/components.md) §11).
 A chip opens the real thing: a document in the in-app browser over the sheet, minutes on the minutes screen, a channel message's channel, live data on its screen (`lib/ask/source-route.ts`); a source this build has no screen for is a plain chip.
-A turn says in plain words when Ask can't answer: not found, refused, off for the chapter, over the month's allowance, or not agreed to, which offers the AI sheet.
-The AI question is asked at the first question, not when the sheet opens (`components/ai/ai-consent-sheet.tsx`).
+A turn says in plain words when Ask can't answer: not found, refused, off for the chapter, over the month's allowance, or Frapp AI not on, which offers Meet Frapp AI.
+For a member who chose Not now, Meet Frapp AI is offered at the first question, not when the sheet opens (`components/ai/meet-frapp-ai.tsx`; #4790).
 The empty sheet says what Frapp answers from, then offers what this member could ask about their own account right now: up to three questions and one request the server builds from their records ([`../../behavior/ai.md` § What Ask opens with](../../behavior/ai.md#what-ask-opens-with); changed in #4700 by pdcarlson, 2026-11-13: until then it was a fixed list of things to try).
 They are read once the sheet is open and fade in under the opening lines, where nothing sits below them to move; with nothing to suggest the two lines stand alone.
 Nothing sits under the field; while the beta diagnostics window is on, one caption line above the field says questions and answers are saved and until when ([#4315](https://github.com/pdcarlson/Frapp/issues/4315)), and because the composer is anchored to the sheet's bottom its arrival moves neither the field nor the top of the thread.

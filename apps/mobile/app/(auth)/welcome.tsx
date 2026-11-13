@@ -14,6 +14,12 @@ import {
   PushAskActions,
   PushAskBody,
 } from "@/components/notifications/push-ask";
+import {
+  MeetFrappAiActions,
+  MeetFrappAiBody,
+  useMeetFrappAiStep,
+} from "@/components/ai/meet-frapp-ai";
+import { FRAPP_AI_COPY } from "@repo/validation";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import {
   OnboardingFieldLabel,
@@ -51,8 +57,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
  *
- * The screens right after a member joins, in up to three beats on one route,
- * the first and last shown only when they have something to ask:
+ * The screens right after a member joins, in up to four beats on one route,
+ * all but the display beat shown only when they have something to ask:
  *
  * 1. **How the chapter sees you**, when the member has no photo or no real
  *    name yet (`lib/onboarding/profile-step.ts`). The photo is optional; the
@@ -63,7 +69,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *    member decides while setting up). The phone's current display is
  *    preselected (Cozy on a fresh phone), so Continue keeps it; a tap saves
  *    the pick on this phone at once.
- * 3. **Turn on notifications**, when this build can push and push isn't on
+ * 3. **Meet Frapp AI**, when the server has AI and the member has never
+ *    answered it (#4790, `components/ai/meet-frapp-ai.tsx`). Continue turns
+ *    it on; Not now leaves it off. Either moves on. Shown only if the read
+ *    is back by the time the member leaves the display beat; otherwise the
+ *    chat home asks once instead (`MeetFrappAiHost`).
+ * 4. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
  *    now" comes back once, days later, on the chat home (`usePushReminder`).
  *
@@ -91,12 +102,13 @@ export default function Welcome() {
   const queryClient = useQueryClient();
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
+  const ai = useMeetFrappAiStep();
   const [leaving, setLeaving] = useState(false);
   // The guard itself, since two taps in one frame both read `leaving` false.
   const leavingRef = useRef(false);
   // `deciding` until the profile and push reads are back (or given up on).
   const [step, setStep] = useState<
-    "deciding" | "profile" | "display" | "notifications"
+    "deciding" | "profile" | "display" | "ai" | "notifications"
   >("deciding");
   const [waitedOut, setWaitedOut] = useState(false);
   const userQuery = useCurrentUser();
@@ -110,6 +122,9 @@ export default function Welcome() {
   // returns to it only when it was shown. A photo chosen on it must not make
   // it vanish under the member.
   const [profileShown, setProfileShown] = useState(false);
+  // Latched when the AI beat opens, so the notifications beat's back returns
+  // to it only when it was shown.
+  const [aiShown, setAiShown] = useState(false);
   // Whether there was a photo when the beat opened, so its event can tell a
   // photo chosen on it from one the member already had.
   const [hadPhoto, setHadPhoto] = useState(false);
@@ -140,7 +155,8 @@ export default function Welcome() {
   // answer is stored before the OS dialog opens and before the PATCH, and
   // the step must stay on screen (busy) until the member has left for chat.
   const asking = step === "notifications";
-  const answering = primer.isRequesting || leaving || savingName;
+  const answering =
+    primer.isRequesting || leaving || savingName || ai.answering;
 
   useEffect(() => {
     const timer = setTimeout(() => setWaitedOut(true), DECIDE_TIMEOUT_MS);
@@ -165,10 +181,31 @@ export default function Welcome() {
 
   function leaveDisplay() {
     if (leaving) return;
+    if (ai.show) {
+      setAiShown(true);
+      setStep("ai");
+    } else {
+      leaveAi();
+    }
+  }
+
+  // After the AI beat, or past it when there is none.
+  function leaveAi() {
     if (primer.showPrimer) {
       setStep("notifications");
     } else {
       void finish();
+    }
+  }
+
+  async function answerAi(on: boolean) {
+    if (answering) return;
+    if (on) {
+      // A failed save keeps the member here with the reason under the line.
+      if (await ai.turnOn()) leaveAi();
+    } else {
+      await ai.notNow();
+      leaveAi();
     }
   }
 
@@ -213,8 +250,12 @@ export default function Welcome() {
   useEffect(() => {
     const previous =
       step === "notifications"
-        ? "display"
-        : step === "display" && profileShown
+        ? aiShown
+          ? "ai"
+          : "display"
+        : step === "ai"
+          ? "display"
+          : step === "display" && profileShown
           ? "profile"
           : null;
     if (previous === null) return;
@@ -223,7 +264,7 @@ export default function Welcome() {
       return true;
     });
     return () => sub.remove();
-  }, [step, answering, profileShown]);
+  }, [step, answering, profileShown, aiShown]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -258,6 +299,19 @@ export default function Welcome() {
               </Text>
               <View style={styles.channels}>
                 <PushAskBody />
+              </View>
+            </>
+          ) : step === "ai" ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {FRAPP_AI_COPY.title}
+              </Text>
+              <View style={styles.channels}>
+                <MeetFrappAiBody
+                  providers={ai.providers}
+                  forChapter={ai.forChapter}
+                  error={ai.error}
+                />
               </View>
             </>
           ) : step === "display" ? (
@@ -333,9 +387,16 @@ export default function Welcome() {
                 });
               }}
             />
+          ) : step === "ai" ? (
+            <MeetFrappAiActions
+              busy={ai.answering}
+              disabled={answering}
+              onContinue={() => void answerAi(true)}
+              onNotNow={() => void answerAi(false)}
+            />
           ) : step === "display" ? (
             <OnboardingPrimaryButton
-              label={primer.showPrimer ? "Continue" : "Go to chat"}
+              label={primer.showPrimer || ai.show ? "Continue" : "Go to chat"}
               disabled={answering}
               busy={answering}
               onPress={leaveDisplay}

@@ -11168,7 +11168,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the AI sheet and the caller’s answer",
+        "summary": "Get what Meet Frapp AI shows and the caller’s answer",
         "tags": [
           "AI"
         ]
@@ -11220,7 +11220,7 @@
             "bearer": []
           }
         ],
-        "summary": "Answer the AI sheet",
+        "summary": "Answer Meet Frapp AI (turn Frapp AI on or off)",
         "tags": [
           "AI"
         ]

@@ -19,7 +19,7 @@ import {
   formatAiAnswerDate,
   type AskSuggestion,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskTurn } from "@/components/ask/ask-answer";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import {

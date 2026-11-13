@@ -1,21 +1,19 @@
 /**
- * The words around Frapp's AI settings and the member's AI sheet
- * (`spec/behavior/ai.md` § Consent, #4308; store gate #3297), shared by web
- * and mobile so the two never say different things about what leaves Frapp.
+ * The words around Frapp AI, shared by web and mobile so the two never say
+ * different things about it (`spec/behavior/ai.md` § Consent).
  *
- * What the sheet names (the providers and each kind of data) is not here: the
- * API serves it with its version (`GET /v1/ai/consent`), so an app built
- * before a new version still shows the current one. This module holds only
- * the framing around those rows, which does not change with a version.
+ * The member meets Frapp AI on one screen, "Meet Frapp AI" (#4790, Paul
+ * 2026-11-13): during onboarding, once on next open for an account that
+ * never answered, and at an AI entry point for a member who chose Not now.
+ * It says what Frapp AI does in three lines, names the companies it works
+ * with in one, and links the privacy policy, which carries the detail.
+ * Continue is the member's Yes; Not now is a No they can change in
+ * Settings. Paul's rule for the wording: say no more about the process than
+ * the member needs.
  *
- * **Draft copy.** Paul approves the sheet's words before the release that
- * first sends member data to a model (#3297). Changing a sentence here is not
- * a new sheet version; changing what a row covers is, and that happens in the
- * API's `AI_CONSENT_SHEET`.
- *
- * What a No means is the table in `spec/behavior/ai.md` § Consent. The
- * sentences under `noMeans` must say the same thing, so the sheet never
- * promises a No keeps more out than it does.
+ * The companies are not here: the API serves them (`GET /v1/ai/consent`,
+ * `sheet.providers`), so an app built before a provider changes still names
+ * the current ones.
  */
 
 /** The president's switches, as the API names them (`AI_CHAPTER_SWITCHES`). */
@@ -50,7 +48,7 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     key: "chat_source",
     label: "Include channel messages",
     description:
-      "Ask Frapp also reads messages in chapter channels, and members can ask for a summary of a channel's new messages or of a thread. Only messages from members who said yes. Never direct messages.",
+      "Ask Frapp also reads messages in chapter channels, and members can ask for a summary of a channel's new messages or of a thread. Only messages from members who have Frapp AI on. Never direct messages.",
     dependsOn: "ask",
   },
 ];
@@ -59,7 +57,7 @@ export const AI_SETTINGS_COPY = {
   title: "AI",
   /** `{providers}` is the sheet's providers, joined with {@link joinNames}. */
   description: (providers: string) =>
-    `These features send chapter information to ${providers}. Each is off until the president turns it on, and each member is asked once before anything of theirs is sent.`,
+    `These features send chapter information to ${providers}. Each is off until the president turns it on, and each member chooses for themselves whether Frapp AI is on.`,
   presidentOnly: "Only the chapter president can turn these on or off.",
   dependsOnAsk: "Turn on Ask Frapp first.",
   lastChanged: (date: string) => `Last changed ${date}.`,
@@ -72,39 +70,49 @@ export const AI_SETTINGS_COPY = {
   retryLater: "Retry in a moment.",
 } as const;
 
-export const AI_CONSENT_COPY = {
-  title: "Use AI features in Frapp?",
-  titleChanged: "What Frapp's AI uses has changed",
-  /** `{providers}` is the sheet's providers, joined with {@link joinNames}. */
-  intro: (providers: string) =>
-    `Some Frapp features, like drafting minutes from meeting notes, use AI from ${providers}. Nothing of yours is sent to them unless you say yes.`,
-  introChanged: (providers: string) =>
-    `Frapp's AI now uses ${providers}, or sends a kind of information it didn't before. Your earlier answer no longer counts, so read it again and answer.`,
-  sentToHeading: "Sent to",
-  dataHeading: "What can be sent",
-  noHeading: "If you say no",
-  noMeans: [
-    "You can't use AI features.",
-    "Your messages in channels are left out.",
-    "Chapter documents, announcements and roster details, and minutes that name you, can still be used once your president turns a feature on. They are the chapter's records.",
-  ],
-  changeLater: "You can change your answer any time in Settings.",
-  yes: "Yes, use AI",
-  no: "No",
-  saveFailed: "Couldn't save your answer",
-  loadFailed: "Couldn't load your AI settings",
-  offlineTitle: "AI settings unavailable offline",
-  offlineDescription: "Reconnect to see your answer.",
-  /** The personal Settings section. */
-  settingsTitle: "AI",
-  settingsSwitch: "Use AI features",
-  answeredYes: (date: string) => `You said yes on ${date}.`,
-  answeredNo: (date: string) => `You said no on ${date}.`,
-  unanswered: "You haven't answered yet, which counts as no.",
-  changedSince:
-    "What Frapp's AI uses has changed since you answered, so your earlier answer no longer counts.",
-  turnedOn: "AI features are on for you",
-  turnedOff: "AI features are off for you",
+/** One line of what Frapp AI does, on the Meet Frapp AI screen. */
+export interface FrappAiPoint {
+  key: "ask" | "catch_up" | "nudge";
+  text: string;
+}
+
+export const FRAPP_AI_COPY = {
+  title: "Meet Frapp AI",
+  points: [
+    {
+      key: "ask",
+      text: "Ask anything about your chapter and get an answer with its sources.",
+    },
+    { key: "catch_up", text: "Catch up on a busy channel in a few lines." },
+    {
+      key: "nudge",
+      text: "Get a nudge when something needs you, with a place to start.",
+    },
+  ] as readonly FrappAiPoint[],
+  /**
+   * The one line that makes Continue an explicit yes (Apple 5.1.2(i)): who
+   * it works with, and that Continue turns it on. `forChapter` is a
+   * president whose chapter has never had its AI switches set: their
+   * Continue turns them on too, and the line says so.
+   */
+  disclosure: (providers: string, forChapter: boolean) =>
+    forChapter
+      ? `Frapp AI works with ${providers}. Continuing turns it on for you and your chapter.`
+      : `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
+  privacyLink: "Privacy policy",
+  continue: "Continue",
+  notNow: "Not now",
+  saveFailed: "Couldn't turn on Frapp AI. Try again.",
+  loadFailed: "Couldn't load your Frapp AI setting",
+  offlineTitle: "Frapp AI setting unavailable offline",
+  offlineDescription: "Reconnect to see whether Frapp AI is on.",
+  /** Settings: the member's own switch. */
+  settingsTitle: "Frapp AI",
+  settingsSwitch: "Frapp AI",
+  settingsCaption: (providers: string) => `Works with ${providers}.`,
+  turnOffFailed: "Couldn't turn off Frapp AI",
+  turnedOn: "Frapp AI is on",
+  turnedOff: "Frapp AI is off",
 } as const;
 
 /** `["Anthropic", "Google"]` → `"Anthropic and Google"`. */

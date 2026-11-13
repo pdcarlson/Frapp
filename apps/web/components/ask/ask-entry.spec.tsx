@@ -43,7 +43,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 vi.mock("@/lib/stores/role-preview-store", () => ({
   useIsRolePreviewActive: () => who.previewing,
 }));
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: vi.fn().mockResolvedValue(true),
     consentDialog: null,

@@ -40,21 +40,29 @@ const sections = [
     ],
   },
   {
-    heading: "4. Data Retention",
+    heading: "4. Frapp AI",
+    paragraphs: [
+      "Frapp AI features, such as asking about your chapter, channel summaries and drafting meeting minutes, work with Anthropic, Google and AssemblyAI. You turn Frapp AI on for your account when you sign up or later in Settings, and your chapter's president turns each feature on for the chapter. When a feature runs, Frapp sends it what it needs: your question; your chapter's documents, announcements, events, tasks and posted minutes; roster details (name, role, points, dues status and attendance, never your phone number, email or address); messages in chapter channels from members who have Frapp AI on, never direct messages; and, for meeting features, an officer's notes and a meeting's recording and transcript. AssemblyAI receives only meeting recordings, to transcribe them.",
+      "These companies process it only to return a result to Frapp, and Frapp's agreements with them do not allow them to use it to train their models. A provider may hold a request for a short time to check for abuse, on its own terms. Frapp does not keep the text of your questions or of AI answers, except an answer you report to us, kept encrypted for 30 days, and, during the beta, the questions and answers of one chapter whose president turns on diagnostics, kept encrypted for 14 days. A meeting recording is deleted once it is transcribed. Frapp keeps a search index of your chapter's records, and of channel messages from members who have Frapp AI on, so answers can point to their sources.",
+      "You can turn Frapp AI off any time in Settings. Your channel messages then stop being read and leave the index within a day, and anything an AI feature kept that quotes you is deleted. Your chapter's own records, such as documents, announcements, roster details and minutes that name you, can still be used while your president has a feature on.",
+    ],
+  },
+  {
+    heading: "5. Data Retention",
     paragraphs: [
       "If a chapter subscription is canceled, chapter data is retained and remains available in a limited access mode according to product policy.",
       "Users can delete their account in the app or dashboard (see the Support page), or by emailing team@frapp.live. Certain records may be retained in anonymized form for audit and legal compliance obligations.",
     ],
   },
   {
-    heading: "5. Security and Controls",
+    heading: "6. Security and Controls",
     paragraphs: [
       "Frapp uses role-based access controls, tenant isolation patterns, and secure transport to protect chapter data.",
       "No internet service is perfectly secure, but we continuously monitor and improve controls against evolving threats.",
     ],
   },
   {
-    heading: "6. Contact",
+    heading: "7. Contact",
     paragraphs: [
       "For privacy requests or questions, contact team@frapp.live.",
       "If policy terms materially change, Frapp will provide notice before those changes take effect.",

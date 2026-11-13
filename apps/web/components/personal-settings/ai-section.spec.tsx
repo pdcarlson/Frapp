@@ -4,19 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   consent: undefined as Record<string, unknown> | null | undefined,
-  answer: vi.fn(),
+  turnOn: vi.fn(),
+  notNow: vi.fn(),
   toast: vi.fn(),
   offline: false,
 }));
-
-const SHEET = {
-  version: 2,
-  providers: [
-    { key: "anthropic", name: "Anthropic" },
-    { key: "google", name: "Google" },
-  ],
-  data: [{ key: "questions", label: "Questions you ask" }],
-};
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -27,7 +19,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     fetchStatus: "idle",
     refetch: vi.fn(),
   }),
-  useAnswerAiConsent: () => ({ mutateAsync: state.answer, isPending: false }),
+  useFrappAiChoice: () => ({
+    consent: state.consent,
+    consentFailed: false,
+    readConsent: () => Promise.resolve(state.consent ?? null),
+    providers: ["Anthropic", "Google"],
+    forChapter: false,
+    turnOn: state.turnOn,
+    notNow: state.notNow,
+    pending: false,
+  }),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -41,7 +42,14 @@ vi.mock("@/lib/providers/network-provider", () => ({
 const { AiSection } = await import("./ai-section");
 
 const consent = (overrides: Record<string, unknown> = {}) => ({
-  sheet: SHEET,
+  sheet: {
+    version: 2,
+    providers: [
+      { key: "anthropic", name: "Anthropic" },
+      { key: "google", name: "Google" },
+    ],
+    data: [],
+  },
   answer: null,
   answered_at: null,
   sheet_changed: false,
@@ -49,83 +57,59 @@ const consent = (overrides: Record<string, unknown> = {}) => ({
 });
 
 /**
- * Settings → AI (#4308): a member changing their answer on the AI sheet
- * weeks after they first saw it, with the same rows in front of them.
+ * Settings → Frapp AI (#4790): one switch. On opens Meet Frapp AI, where
+ * the companies are named; off is immediate.
  */
-describe("the member's AI answer in Settings", () => {
+describe("the member's Frapp AI switch in Settings", () => {
   beforeEach(() => {
-    state.answer.mockReset().mockResolvedValue(consent());
+    state.turnOn.mockReset().mockResolvedValue(true);
+    state.notNow.mockReset().mockResolvedValue(undefined);
     state.toast.mockReset();
     state.offline = false;
   });
 
-  it("shows an unanswered sheet as off, and says it counts as no", () => {
+  it("shows it off until the member said yes, and names the companies", () => {
     state.consent = consent();
     render(<AiSection />);
+    expect(screen.getByRole("switch", { name: "Frapp AI" })).not.toBeChecked();
     expect(
-      screen.getByRole("switch", { name: "Use AI features" }),
-    ).not.toBeChecked();
-    expect(screen.getByText(/haven't answered yet/i)).toBeInTheDocument();
-    expect(screen.getByText("Anthropic and Google")).toBeInTheDocument();
-    expect(screen.getByText("Questions you ask")).toBeInTheDocument();
+      screen.getByText("Works with Anthropic and Google."),
+    ).toBeInTheDocument();
   });
 
-  it("turning it on records a Yes for the sheet shown", async () => {
+  it("turning it on opens Meet Frapp AI, and Continue there turns it on", async () => {
     const user = userEvent.setup();
-    state.consent = consent();
+    state.consent = consent({ answer: "no" });
     render(<AiSection />);
-    await user.click(screen.getByRole("switch", { name: "Use AI features" }));
-    expect(state.answer).toHaveBeenCalledWith({
-      sheet_version: 2,
-      answer: "yes",
-    });
-    expect(state.toast).toHaveBeenCalledWith({
-      title: "AI features are on for you",
-    });
+    await user.click(screen.getByRole("switch", { name: "Frapp AI" }));
+    expect(state.turnOn).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Meet Frapp AI");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(state.turnOn).toHaveBeenCalledTimes(1);
+    expect(state.toast).toHaveBeenCalledWith({ title: "Frapp AI is on" });
   });
 
-  it("shows a Yes as on with its date, and turning it off records a No", async () => {
+  it("turning it off records a No at once", async () => {
     const user = userEvent.setup();
-    state.consent = consent({
-      answer: "yes",
-      answered_at: "2026-11-12T12:00:00.000Z",
-    });
+    state.consent = consent({ answer: "yes" });
     render(<AiSection />);
-    const control = screen.getByRole("switch", { name: "Use AI features" });
+    const control = screen.getByRole("switch", { name: "Frapp AI" });
     expect(control).toBeChecked();
-    expect(
-      screen.getByText("You said yes on November 12, 2026."),
-    ).toBeInTheDocument();
     await user.click(control);
-    expect(state.answer).toHaveBeenCalledWith({
-      sheet_version: 2,
-      answer: "no",
-    });
+    expect(state.notNow).toHaveBeenCalledTimes(1);
+    expect(state.toast).toHaveBeenCalledWith({ title: "Frapp AI is off" });
   });
 
-  it("shows a No as off with its date", () => {
-    state.consent = consent({
-      answer: "no",
-      answered_at: "2026-11-12T12:00:00.000Z",
-    });
-    render(<AiSection />);
-    expect(
-      screen.getByRole("switch", { name: "Use AI features" }),
-    ).not.toBeChecked();
-    expect(
-      screen.getByText("You said no on November 12, 2026."),
-    ).toBeInTheDocument();
-  });
-
-  it("says why when the answer can't be saved", async () => {
+  it("says why when turning it off can't be saved", async () => {
     const user = userEvent.setup();
-    state.consent = consent();
-    state.answer.mockRejectedValue({ statusCode: 500 });
+    state.consent = consent({ answer: "yes" });
+    state.notNow.mockRejectedValue({ statusCode: 500 });
     render(<AiSection />);
-    await user.click(screen.getByRole("switch", { name: "Use AI features" }));
+    await user.click(screen.getByRole("switch", { name: "Frapp AI" }));
     expect(state.toast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Couldn't save your answer",
+        title: "Couldn't turn off Frapp AI",
         variant: "destructive",
       }),
     );
@@ -135,9 +119,7 @@ describe("the member's AI answer in Settings", () => {
     state.consent = consent();
     state.offline = true;
     render(<AiSection />);
-    expect(
-      screen.getByRole("switch", { name: "Use AI features" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Frapp AI" })).toBeDisabled();
   });
 
   it("draws nothing on a server with no AI", () => {

@@ -27,7 +27,7 @@ import {
   type ChatCatchUpPoint,
   type ChatCatchUpRange,
 } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { PanelBody } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";

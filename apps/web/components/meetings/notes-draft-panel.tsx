@@ -23,7 +23,7 @@ import type {
   ConfirmRequest,
   ConfirmResult,
 } from "@/components/shared/confirm-dialog";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { RecordingUpload } from "@/components/meetings/recording-upload";
 import { getErrorMessage } from "@/lib/utils";
