@@ -40,10 +40,6 @@ import type {
   ChatChannelView,
   ChatMessage,
 } from '#domain/entities/chat.entity';
-import {
-  canAccessChannel,
-  listsNameGroups,
-} from '#domain/utils/channel-access';
 import type { Event } from '#domain/entities/event.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
@@ -68,9 +64,9 @@ import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
 import { ChatService } from './chat.service';
-import { toPredicateChannel } from './channel-access.service';
+import { ChannelAccessService } from './channel-access.service';
 import { EventService } from './event.service';
-import { attendanceFor } from './event-role-targeting';
+import { attendanceFor, checkInAdmits } from './event-role-targeting';
 import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
@@ -580,6 +576,7 @@ export class ActivityService {
     private readonly readRepo: IActivityItemReadRepository,
     @Inject(CHAT_FORM_RESPONSE_REPOSITORY)
     private readonly formResponseRepo: IChatFormResponseRepository,
+    private readonly channelAccess: ChannelAccessService,
   ) {}
 
   async getActivity(
@@ -678,7 +675,7 @@ export class ActivityService {
         ),
         this.settle('made_events', chapterId, () =>
           on('events')
-            ? this.readMadeEvents(chapterId, userId, now, viewer)
+            ? this.readMadeEvents(chapterId, userId, now, viewer, permissions)
             : Promise.resolve([]),
         ),
         // Chat has no module switch, so neither does this section.
@@ -1261,10 +1258,12 @@ export class ActivityService {
 
   /**
    * How many have voted on each of the caller's open polls, of the other
-   * members who can read its channel (#4792). Two reads for the whole list,
-   * whatever its length: the chapter's members with what they hold (the
-   * resolve chat's member list uses), and every vote row on these polls. None
-   * when the caller has no open poll, which is most members on most opens.
+   * members who can read its channel and haven't blocked the caller (#4792).
+   * The same reads for the whole list, whatever its length: chat's reader
+   * rule over every channel at once (`ChannelAccessService.readersOf`, the
+   * resolve its member list uses), every vote row on these polls (paged), and
+   * who among the readers blocked the caller. None when the caller has no
+   * open poll, which is most members on most opens.
    *
    * A closed poll waits on nobody, so it gets no count. Best effort: a failed
    * read leaves every row without one rather than failing the section.
@@ -1280,43 +1279,31 @@ export class ActivityService {
       .map((id) => channelById.get(id))
       .filter((channel): channel is PollChannel => !!channel);
     try {
-      const [members, votes] = await Promise.all([
-        this.rbacService.getChapterMemberAccess(
-          chapterId,
-          channels.some((channel) =>
-            listsNameGroups(toPredicateChannel(channel)),
-          ),
-        ),
+      const [readers, votes] = await Promise.all([
+        // Who could vote: whoever can read the channel, which is what a vote
+        // is checked against (`ChatReactionService`), by chat's own reader
+        // rule (`ChannelAccessService.readersOf`).
+        this.channelAccess.readersOf(chapterId, channels),
         this.actionRepo.findAllActionsOnMessages(
           rows.map((row) => row.message_id),
           CARD_VOTE_ACTION_TYPE,
         ),
       ]);
-      // Who could vote: whoever can read the channel, which is what a vote
-      // is checked against (`ChatReactionService`). The poster is left out:
-      // the row says what waits on others.
+      // A member who blocked the poster sees their polls masked and can't
+      // vote on one, so they would hold the count short of full forever.
+      // The caller is the poster of every row here, so one read covers all.
+      const allReaders = [
+        ...new Set([...readers.values()].flatMap((set) => [...set])),
+      ].filter((reader) => reader !== userId);
+      const canVote = new Set(
+        await this.chatBlocks.filterOutBlockers(chapterId, userId, allReaders),
+      );
+      // The poster is left out: the row says what waits on others.
       const readersOf = new Map(
-        channels.map((channel) => {
-          const predicate = toPredicateChannel(channel);
-          return [
-            channel.id,
-            new Set(
-              members
-                .filter(
-                  (member) =>
-                    member.user_id !== userId &&
-                    canAccessChannel({
-                      channel: predicate,
-                      userId: member.user_id,
-                      isChapterMember: true,
-                      holder: member.channel_access,
-                      operation: 'read',
-                    }),
-                )
-                .map((member) => member.user_id),
-            ),
-          ] as const;
-        }),
+        [...readers].map(([channelId, set]) => [
+          channelId,
+          new Set([...set].filter((reader) => canVote.has(reader))),
+        ]),
       );
       // A vote row with no picks is a cleared vote (#3793), as above.
       const votersOf = new Map<string, Set<string>>();
@@ -1619,6 +1606,7 @@ export class ActivityService {
     userId: string,
     now: number,
     viewer: () => Promise<EventViewer>,
+    permissions: string[],
   ): Promise<ActivityEvent[]> {
     // From the check-in grace behind now, so an event stays here for as long
     // as it stays in Coming up: its maker opens it to take attendance just
@@ -1640,7 +1628,12 @@ export class ActivityService {
       startsBefore: Number.POSITIVE_INFINITY,
       limit: LIST_LIMIT,
     });
-    return this.withEventProgress(chapterId, userId, now, rows, nextOfEach);
+    // Who has checked in is the attendance roster's to show, which needs
+    // `events:update` (`spec/behavior/events.md`); making an event grants
+    // nothing, so a maker without it gets no count (#4792).
+    return can(SystemPermissions.EVENTS_UPDATE, permissions)
+      ? this.withEventProgress(chapterId, userId, now, rows, nextOfEach)
+      : rows;
   }
 
   /**
@@ -1649,11 +1642,10 @@ export class ActivityService {
    * Before check-in opens nobody can, and a bar at nothing says nothing, so
    * those rows get no count; rarely is more than one open at once. Three
    * reads for the whole list (the roster, the Alumni role, every attendance
-   * row on these events), and none when no event is open.
+   * row on these events, paged), and none when no event is open.
    *
-   * Who counts is who check-in admits: the event invites them
-   * (`attendanceFor`), and an alumnus only through a role the event names,
-   * as `AttendanceService.checkIn` has it. Excused members are left out of
+   * Who counts is who check-in admits (`checkInAdmits`): the event invites
+   * them, and an alumnus only through a role the event names. Excused members are left out of
    * both sides, as the week leaves them out. Best effort, like
    * {@link withPollProgress}.
    */
@@ -1687,11 +1679,9 @@ export class ActivityService {
         let total = 0;
         for (const member of members) {
           if (member.user_id === userId) continue;
-          const answer = attendanceFor(event, member.role_ids);
-          if (answer.status === 'not_invited') continue;
           const alumnus =
             alumniRoleId !== null && member.role_ids.includes(alumniRoleId);
-          if (alumnus && !answer.byRole) continue;
+          if (!checkInAdmits(event, member.role_ids, alumnus)) continue;
           const status = statusOf.get(`${event.id}:${member.user_id}`);
           if (status === 'EXCUSED') continue;
           total += 1;

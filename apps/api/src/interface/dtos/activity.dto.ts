@@ -202,7 +202,7 @@ export class ActivityPollDto implements ActivityPoll {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.',
+      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.',
   })
   message_id: string;
 

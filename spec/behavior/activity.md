@@ -215,24 +215,34 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
 `null` on every other row.
 
 - **Polls:** on an open poll the caller posted, `done` is the members who have voted (a cleared
-  vote is not one, #3793) and `total` the members who can read its channel, by the predicate a
-  vote is checked against ([Polls and channel access](#polls-and-channel-access)). A closed poll
-  waits on nobody and has none.
-- **Events:** on an event the caller made, once its check-in has opened, `done` is the members
+  vote is not one, #3793) and `total` the members who can read its channel, by chat's own reader
+  rule, the one its member list uses and a vote is checked against
+  ([Polls and channel access](#polls-and-channel-access)). A member who has blocked the caller
+  is on neither side: the poll is masked for them and they can't vote on it
+  ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)),
+  so counting them would hold the bar short of full for good. A closed poll waits on nobody and
+  has none.
+- **Events:** on an event the caller made, once its check-in has opened, and only for a caller
+  holding `events:update`, `done` is the members
   marked present or late and `total` the members check-in admits: the event invites them
   (attendance by role), and an alumnus only through a role the event names
   ([`alumni.md`](alumni.md)). An excused member is on neither side, as the [Week](#week) leaves
   them out. Before check-in opens nobody can check in, and a bar at nothing says nothing, so the
-  row has none.
+  row has none. Who has checked in is the attendance roster's, which needs `events:update`
+  ([`events.md`](events.md)), and making an event grants nothing, so a maker without it (every
+  member may make one) gets no count either: the count is never a way around the roster.
 - **The caller is on neither side.** The section is "Waiting on others": their own vote or
   check-in is not what they are waiting on.
 - **Never "0 of 0".** A poll nobody else can read, or an event that holds nobody else to it, has
   `progress: null`, and the row draws no bar. `done` counts only members still on `total`'s side
   (a voter who has since lost the channel is not counted), so it never passes `total`.
-- **Bounded.** One read of the chapter's members with what they hold (the resolve chat's member
-  list uses) and one of every vote on the caller's open polls, whatever their number; for events,
-  the roster, the Alumni role and every attendance row on the open ones. None of it runs for a
-  member with no open poll and no event open for check-in, which is most members on most opens.
+- **Bounded.** The same reads whatever the number of rows, never one per row. For polls: the
+  chapter-wide resolve chat's member list uses (the roster, the roles, and group memberships when
+  a channel is opened by a group), every vote on the caller's open polls, and who among the
+  readers has blocked the caller. For events: the roster, the Alumni role and every attendance
+  row on the open ones. The vote and attendance reads are paged, so a busy chapter's rows past
+  the server's row cap are still counted. None of it runs for a member with no open poll and no
+  event open for check-in, which is most members on most opens.
 - **A hint, not a section.** When a count can't be read the rows are served with
   `progress: null` and the failure is reported; nothing lands in `unavailable`.
 

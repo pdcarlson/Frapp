@@ -159,7 +159,9 @@ describe('SupabaseAttendanceRepository — tenant scope', () => {
     const rows = await repo.findByEvents([...filler, EVENT_B]);
 
     expect(rows.map((r) => r.id)).toEqual([ATTEND_B]);
-    expect(harness.ops).toHaveLength(2);
+    // Paged within each chunk, past the server's row cap: an empty page is
+    // what proves a chunk ran out, so the chunk with a row takes a second.
+    expect(harness.ops).toHaveLength(3);
   });
 
   it('update stays inside the caller chapter and filters on the row id alone', async () => {

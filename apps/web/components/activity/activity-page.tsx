@@ -19,7 +19,10 @@ import {
   anyReadUncached,
 } from "@/components/shared/async-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import { meterFillClassName } from "@/components/shared/meter";
+import {
+  meterFillClassName,
+  meterTrackOnPageClassName,
+} from "@/components/shared/meter";
 import {
   useSubscriptionGate,
   type SubscriptionGate,
@@ -136,9 +139,8 @@ function RowContent({
  * How far along a Waiting on others row is (#4792), as the phone draws it: a
  * thin bar and "41 of 60" under the detail, on the week card's line recipe.
  * Google Forms' response count and GitHub's "2 of 3 approvals" are the
- * comparables. The groove is `bg-card`, not the meter's `bg-background`
- * (`components/shared/meter.ts`): the row sits on the page, where a recess
- * vanishes, and the accent holds 3:1 on every ladder step. The bar is
+ * comparables. The groove is the meter's on-page track
+ * (`meterTrackOnPageClassName`), since the row sits on the page. The bar is
  * decoration; the text says the count, whole for a screen reader.
  */
 function RowProgress({ progress }: { progress: ActivityRowProgress }) {
@@ -147,10 +149,14 @@ function RowProgress({ progress }: { progress: ActivityRowProgress }) {
     <span className="mt-1 flex items-center gap-2">
       <span
         aria-hidden="true"
-        className="h-1 w-40 min-w-0 shrink overflow-hidden rounded-full bg-card"
+        className={cn(meterTrackOnPageClassName, "w-40 min-w-0 shrink")}
       >
         <span
-          className={cn("block", meterFillClassName, share === 1 && "bg-success")}
+          className={cn(
+            "block",
+            meterFillClassName,
+            share === 1 && "bg-success",
+          )}
           style={{ width: `${Math.round(share * 100)}%` }}
         />
       </span>

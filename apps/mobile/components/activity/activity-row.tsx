@@ -288,9 +288,9 @@ function ActivityRowDetail({
  * Google Forms' response count and GitHub's "2 of 3 approvals" are the
  * comparables: a count where the list is, the detail one tap away.
  *
- * The groove is the card step, not `meterStyles`' `--background`: these rows
- * sit on the screen's floor, where a recess would vanish. The accent holds
- * 3:1 on every ladder step, so the fill still reads against it. A finished
+ * The groove is `meterStyles`' `trackOnPage`: these rows sit on the screen's
+ * floor, where the usual recess would vanish; on a card it is the recess
+ * again. A finished
  * count closes in the success hue, as the week card's lines do. Decoration:
  * the row's label says the count.
  */
@@ -315,7 +315,7 @@ function ActivityRowProgressLine({
       <View
         style={[
           styles.progressTrack,
-          onCard ? { backgroundColor: tokens.color.surface.background } : null,
+          onCard ? styles.progressTrackOnCard : null,
         ]}
       >
         <View
@@ -531,11 +531,11 @@ function createActivityRowStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.xs,
     },
     progressTrack: {
-      ...meter.track,
-      backgroundColor: tokens.color.surface.card,
+      ...meter.trackOnPage,
       width: 160,
       flexShrink: 1,
     },
+    progressTrackOnCard: { backgroundColor: meter.track.backgroundColor },
     progressFill: meter.fill,
     progressCount: {
       ...typeRole({

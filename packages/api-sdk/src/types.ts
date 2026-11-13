@@ -8549,7 +8549,7 @@ export interface components {
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.
              */
             message_id: string;
             /** Format: uuid */
