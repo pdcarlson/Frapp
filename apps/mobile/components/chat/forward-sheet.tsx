@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  type Ref,
   useCallback,
   useImperativeHandle,
   useMemo,
@@ -12,6 +13,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  type TextInput,
   View,
 } from "react-native";
 import {
@@ -20,6 +22,7 @@ import {
   BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
 import { useQueryClient } from "@tanstack/react-query";
+import type { TextInput as GestureTextInput } from "react-native-gesture-handler";
 import { randomClientId } from "@repo/api-sdk";
 import { mergeServerRow } from "@repo/chat-core/cache";
 import {
@@ -29,10 +32,17 @@ import {
 } from "@repo/chat-core/types";
 import {
   useChannels,
+  useChapterRoster,
   useForwardMessage,
   useMemberDisplayNames,
+  useMentionRoles,
 } from "@repo/hooks";
-import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from "@repo/validation";
+import {
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  MAX_MENTION_PICKS,
+  mentionPicksIn,
+  type MentionPick,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { CheckGlyph } from "@/components/control-glyphs";
 import {
@@ -66,6 +76,11 @@ import { useConnection } from "@/lib/connection/use-connection";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { ForwardedCard } from "./forwarded-card";
+import {
+  MentionPicker,
+  mentionPickFor,
+  useMentionPicker,
+} from "./mention-picker";
 
 /** As the report form: the sheet holds a list, so it takes a fixed detent. */
 const FORWARD_SNAP_POINTS = ["85%"];
@@ -100,6 +115,11 @@ export interface ForwardSheetProps {
  * search above the sheet-aware scroll view, the comment and Send pinned under
  * it (`ask-sheet.tsx`'s layout), so Send stays in reach however long the list
  * is (`spec/ui/mobile/patterns.md` § Bottom sheets).
+ *
+ * **@ in the comment** opens the composer's member list over the field
+ * (#4907), and a member picked there is sent as a `mention_picks` entry, so
+ * the comment reaches them as a post's mention does, by pick rather than by
+ * the server matching the text. Frapp isn't offered: a forward can't ask.
  *
  * **No queue.** A forward is a plain request, not the composer's outbox, so
  * offline it is disabled and says why (`writeBlockedReason`), as every
@@ -187,13 +207,20 @@ export function ForwardSheetBody({
   const forward = useForwardMessage();
   const { writeBlockedReason } = useConnection();
   const channelsQuery = useChannels();
-  const { byId: names } = useMemberDisplayNames();
+  const { byId: names, avatarFor, avatarTintFor } = useMemberDisplayNames();
+  // Who the comment's `@` offers: the roster read the names above come from
+  // (one query key) and the roles this member may ping, as the composer's.
+  const mentionRoster = useChapterRoster().data;
+  const mentionRoles = useMentionRoles().data;
 
   const [query, setQuery] = useState("");
   const [destination, setDestination] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   /** The draft's idempotency key; a new destination or comment is a new draft. */
   const draftKey = useRef<string | null>(null);
+  const commentRef = useRef<TextInput>(null);
+  /** Members picked from the comment's `@` list, as the composer keeps them. */
+  const picksRef = useRef<MentionPick[]>([]);
 
   const destinations = useMemo(
     () =>
@@ -213,12 +240,29 @@ export function ForwardSheetBody({
     draftKey.current = null;
     setComment(text);
   }, []);
+  const mention = useMentionPicker(
+    commentRef,
+    comment,
+    editComment,
+    mentionRoster,
+    mentionRoles,
+    false,
+  );
+  const addMentionPick = useCallback((pick: MentionPick) => {
+    // The newest pick of a label wins, as the composer's
+    // (`use-composer-staging.ts`).
+    picksRef.current = [
+      pick,
+      ...picksRef.current.filter((held) => held.label !== pick.label),
+    ].slice(0, MAX_MENTION_PICKS);
+  }, []);
 
   const reset = useCallback(() => {
     draftKey.current = null;
     setQuery("");
     setDestination(null);
     setComment("");
+    picksRef.current = [];
   }, []);
 
   const sending = forward.isPending;
@@ -236,6 +280,8 @@ export function ForwardSheetBody({
         channelId: destination,
         content: comment,
         clientMessageId,
+        // Only the picks the comment still writes, as a post sends them.
+        mentionPicks: mentionPicksIn(comment, picksRef.current),
       })
       .then((row) => {
         // The row in the destination's timeline at once where a cache holds
@@ -346,9 +392,28 @@ export function ForwardSheetBody({
         ) : null}
       </BottomSheetScrollView>
       <View style={styles.bottom}>
+        {mention.open ? (
+          <MentionPicker
+            suggestions={mention.suggestions}
+            avatarFor={avatarFor}
+            avatarTintFor={avatarTintFor}
+            onPick={(entry) => {
+              mention.pick(entry.label);
+              const pick = mentionPickFor(entry);
+              if (pick) addMentionPick(pick);
+            }}
+          />
+        ) : null}
         <BottomSheetTextInput
+          // gorhom types this ref as gesture-handler's TextInput component,
+          // not the instance it hands over, which is React Native's
+          // TextInput (what the `@` list moves the caret through).
+          ref={commentRef as unknown as Ref<GestureTextInput | undefined>}
           value={comment}
-          onChangeText={editComment}
+          onChangeText={mention.onChangeText}
+          onSelectionChange={mention.onSelectionChange}
+          onFocus={mention.onFocus}
+          onBlur={mention.onBlur}
           placeholder={FORWARD_COMMENT_PLACEHOLDER}
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel={FORWARD_COMMENT_PLACEHOLDER}
