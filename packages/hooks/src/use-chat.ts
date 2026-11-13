@@ -19,6 +19,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
+import { chatActivityStampsSettled } from "./read-cursor";
 import {
   invalidateNotificationLists,
   markChannelNotificationsReadInCache,
@@ -722,6 +723,8 @@ export function useMarkChannelRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: markChannelReadMutationKey,
+    // Ordered with Mark unread (#3723), which must land after it.
+    scope: READ_CURSOR_SCOPE,
     mutationFn: async (id: string) => {
       const result = await client.POST("/v1/channels/{id}/read", {
         params: { path: { id } },
@@ -745,8 +748,13 @@ export function useMarkChannelRead() {
   });
 }
 
-/** How long Mark unread waits for a read stamp already in flight. */
-const READ_STAMP_SETTLE_MS = 3_000;
+/**
+ * The scope both read-cursor writes run in (#3723): TanStack runs a scope's
+ * mutations one at a time, in order, so Mark unread waits behind a Mark as
+ * read already pending (a paused or retrying one included) rather than
+ * landing first and being stamped over.
+ */
+export const READ_CURSOR_SCOPE = { id: "chat-read-cursor" } as const;
 
 /**
  * Mark unread (#3723): move the viewer's read cursor in a message's channel to
@@ -754,26 +762,20 @@ const READ_STAMP_SETTLE_MS = 3_000;
  * channel's badge counts it and what came after, as Discord's and Slack's
  * Mark unread do.
  *
- * A read stamp already in flight (`useMarkChannelRead`, which the open thread
- * fires on focus and as messages land) would land after this and undo it, so
- * this waits, up to {@link READ_STAMP_SETTLE_MS}, for those to settle first.
- * The caller stops stamping before it calls: a thread screen keeps the
- * channel unread for the rest of the visit.
+ * Two kinds of read stamp could otherwise land after it and undo it. Mark as
+ * read (`useMarkChannelRead`) shares {@link READ_CURSOR_SCOPE}, so this waits
+ * behind it. The app-wide activity handler stamps without a mutation, so this
+ * waits for its round in flight (`chatActivityStampsSettled`), and the caller
+ * holds the channel (`holdChannelUnread`) so it queues no more.
  */
 export function useMarkMessageUnread() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["channels", "unread"],
+    scope: READ_CURSOR_SCOPE,
     mutationFn: async (messageId: string) => {
-      const deadline = Date.now() + READ_STAMP_SETTLE_MS;
-      while (
-        queryClient.isMutating({ mutationKey: markChannelReadMutationKey }) >
-          0 &&
-        Date.now() < deadline
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
+      await chatActivityStampsSettled();
       const result = await client.POST(
         "/v1/channels/messages/{messageId}/unread",
         { params: { path: { messageId } } },

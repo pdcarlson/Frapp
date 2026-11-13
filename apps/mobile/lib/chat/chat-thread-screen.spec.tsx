@@ -2286,12 +2286,6 @@ describe("chat thread reports its transport to the connection pill", () => {
 });
 
 /*
- * The thread says it is the one on screen only while focused (#3698): the
- * activity handler re-stamps the viewed channel read when a message lands in
- * it, and this screen stays mounted under one pushed over it (another thread
- * opened from the member sheet), where nothing it receives has been seen.
- */
-/*
  * Mark unread (#3723): the sheet's row moves the read cursor back, and the
  * thread stops stamping it for the rest of the visit, or leaving would read
  * the channel straight back. Then it leaves, so the list shows the badge.
@@ -2349,7 +2343,9 @@ describe("chat thread Mark unread", () => {
     act(() => tree.unmount());
   });
 
-  it("says so when it fails, and reads as before", async () => {
+  it("says so when it fails, without claiming the channel back for a screen that has gone", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
     const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
     markUnread.mutateAsync.mockImplementation(async () => {
       throw new Error("Couldn't reach the server");
@@ -2368,13 +2364,43 @@ describe("chat thread Mark unread", () => {
       "Couldn't mark unread",
       expect.any(String),
     );
-    markRead.mutate.mockClear();
-    act(() => tree.unmount());
-    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    expect(viewedChannelId()).toBeNull();
     alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("holds the channel against the activity handler's stamps until the next visit", async () => {
+    const { isChannelHeldUnread } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    act(() => (sheet.props.onMarkUnread as (id: string) => void)("m1"));
+    expect(isChannelHeldUnread(CHANNEL)).toBe(true);
+    // Back on the same screen: the hold ends and the visit reads as usual.
+    markRead.mutate.mockClear();
+    act(() => refocus());
+    expect(isChannelHeldUnread(CHANNEL)).toBe(false);
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("isn't offered on the viewer's own message, which never counts as unread", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER })],
+    });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.canMarkUnread).toBe(false);
+    act(() => tree.unmount());
   });
 });
 
+/*
+ * The thread says it is the one on screen only while focused (#3698): the
+ * activity handler re-stamps the viewed channel read when a message lands in
+ * it, and this screen stays mounted under one pushed over it (another thread
+ * opened from the member sheet), where nothing it receives has been seen.
+ */
 describe("chat thread claims the viewed channel while focused (#3698)", () => {
   const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 

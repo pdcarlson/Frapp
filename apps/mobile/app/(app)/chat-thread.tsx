@@ -59,6 +59,8 @@ import {
   claimViewedChannel,
   useMarkChannelRead,
   useMarkMessageUnread,
+  holdChannelUnread,
+  releaseChannelUnread,
   useMemberDisplayNames,
   usePermissionList,
   useRosterCatchUp,
@@ -565,6 +567,7 @@ function ChannelThreadScreen() {
     useCallback(() => {
       if (!channelId) return;
       unreadHeldFor.current = null;
+      releaseChannelUnread(channelId);
       markReadMutate(channelId);
       const releaseViewed = claimViewedChannel(channelId);
       releaseViewedRef.current = releaseViewed;
@@ -1204,9 +1207,12 @@ function ChannelThreadScreen() {
     [channelId, jumpToImportant, openThreadFor, router],
   );
 
-  // Mark unread (#3723): hold the read stamps, move the cursor back, then
-  // leave, as Slack's phone app does, so the channel list shows the badge. A
-  // failure says so and the visit carries on reading as before.
+  // Mark unread (#3723): hold the channel so no read stamp follows (the blur
+  // one, and the activity handler's, queued ones included), move the cursor
+  // back, and leave at once, as Slack's phone app does, so the screen below
+  // shows the badge. The write is ordered after any stamp still pending
+  // (`useMarkMessageUnread`). A failure is an alert wherever the member is by
+  // then; nothing is re-claimed, since the screen has gone.
   const markUnread = useMarkMessageUnread();
   const markUnreadAsync = markUnread.mutateAsync;
   const handleMarkUnread = useCallback(
@@ -1214,21 +1220,14 @@ function ChannelThreadScreen() {
       if (!channelId) return;
       selectionHaptic();
       unreadHeldFor.current = channelId;
+      holdChannelUnread(channelId);
       releaseViewedRef.current?.();
       releaseViewedRef.current = null;
-      markUnreadAsync(messageId)
-        .then(() => {
-          if (unreadHeldFor.current !== channelId) return;
-          if (below) below.goBack();
-          else goBackTo(router, "/");
-        })
-        .catch((error: unknown) => {
-          if (unreadHeldFor.current === channelId) {
-            unreadHeldFor.current = null;
-            releaseViewedRef.current = claimViewedChannel(channelId);
-          }
-          Alert.alert("Couldn't mark unread", errorCopy(error));
-        });
+      markUnreadAsync(messageId).catch((error: unknown) => {
+        Alert.alert("Couldn't mark unread", errorCopy(error));
+      });
+      if (below) below.goBack();
+      else goBackTo(router, "/");
     },
     [below, channelId, markUnreadAsync, router],
   );
@@ -1378,9 +1377,10 @@ function ChannelThreadScreen() {
       setActionTarget({
         messageId: message.id,
         copyText: copyableText(message),
-        // Mark unread (#3723): any message the sheet opens on, all of them
-        // on the channel's timeline.
-        canMarkUnread: true,
+        // Mark unread (#3723): someone else's message. The unread count never
+        // counts the viewer's own, an imported row or a blocked member's, so
+        // moving the cursor before one of those would change nothing.
+        canMarkUnread: actions.canReport && message.kind !== "imported",
         // Copy message link (#3723). A channel message only: this sheet never
         // holds a thread reply, whose link would open on a timeline it's not in.
         link: channelId
