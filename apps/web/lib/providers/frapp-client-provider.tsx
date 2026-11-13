@@ -199,7 +199,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   }, [authUserId, queryClient]);
 
   return (
-    <FrappClientProvider client={client} chapterId={activeChapterId}>
+    <FrappClientProvider
+      client={client}
+      chapterId={activeChapterId}
+      userId={authUserId ?? null}
+    >
       <PermissionPreviewProvider permissions={preview?.permissions ?? null}>
         {children}
       </PermissionPreviewProvider>

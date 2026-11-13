@@ -158,7 +158,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
     expect(screen.queryByText("Draft restored")).toBeNull();
   });
 
-  it("doesn't pull the officer to the new minutes once they have left the page", async () => {
+  it("doesn't pull the officer to the new minutes once they have left the page, nor offer them again", async () => {
     let land: (value: { id: string }) => void = () => {};
     mocks.start.mockReturnValue(
       new Promise((resolve) => {
@@ -173,10 +173,37 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     first.unmount();
+    // Back before it lands: nothing to start a second time.
+    const second = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    second.unmount();
     land({ id: "m-1" });
     await Promise.resolve();
     await Promise.resolve();
     expect(mocks.push).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("StartMinutesPanel keeps a draft whose start failed (#4593)", () => {
+  it("puts the draft back when the start fails after the page was left", async () => {
+    let fail: (error: Error) => void = () => {};
+    mocks.start.mockReset().mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fillNewMeeting("yesterday");
+    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
+    first.unmount();
+    fail(new Error("offline"));
+    await vi.waitFor(() => {
+      const view = render(<StartMinutesPanel open onOpenChange={() => {}} />);
+      const restored = screen.queryByText("Draft restored");
+      view.unmount();
+      expect(restored).not.toBeNull();
+    });
   });
 });

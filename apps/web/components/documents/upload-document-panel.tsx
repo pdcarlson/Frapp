@@ -47,13 +47,10 @@ import {
   titleFromFilename,
 } from "@/lib/documents/upload-defaults";
 import {
-  dropKeptDraft,
-  hasKeptDraft,
   readKeptDraft,
-  readKeptPanel,
   useKeptDraftKeys,
-  writeKeptDraft,
-  writeKeptPanel,
+  useKeptFormDraft,
+  useKeptPanel,
 } from "@repo/hooks/kept-drafts";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import {
@@ -109,18 +106,16 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
   autoFolder: true,
 };
 
-/**
- * Worth keeping when the officer leaves (#4593): a file, or anything typed or
- * picked. The folder on screen, which every fresh draft files into, is not.
- */
-function isWorthKeeping(draft: UploadDraft): boolean {
-  return (
-    draft.file !== null ||
-    draft.title !== "" ||
-    draft.description !== "" ||
-    draft.effectiveDate !== "" ||
-    (!draft.autoType && draft.documentType !== "")
-  );
+/** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
+const UPLOAD_DRAFT = "document-upload";
+
+/** What decides "changed" for a kept draft: a `File` is opaque to JSON. */
+function uploadSignature(draft: UploadDraft): string {
+  const { file, ...fields } = draft;
+  return JSON.stringify({
+    ...fields,
+    file: file ? [file.name, file.size, file.lastModified] : null,
+  });
 }
 
 /** The draft fields an officer edits by hand; editing one ends its guessing. */
@@ -146,8 +141,11 @@ export function useDocumentUpload(
     typeOptions,
     folders,
     documents,
+    canUpload = true,
   }: {
     activeFolder: string | null;
+    /** The viewer may upload: the panel reopens on return only then. */
+    canUpload?: boolean;
     typeOptions: readonly string[];
     folders: readonly string[];
     documents: ReadonlyArray<{
@@ -160,34 +158,25 @@ export function useDocumentUpload(
   const requestUpload = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
   const uploadDialog = useGatedDialog(gate);
-  /*
-    Kept when the officer leaves the page mid-upload (#4593), file and all, in
-    memory for the tab: coming back opens the panel on it if the page was left
-    with the panel open, and the toolbar button opens on it otherwise. Read
-    once, as the page mounts; the page is keyed by chapter, and so are these.
-  */
   const keptKeys = useKeptDraftKeys();
-  const draftKey = keptKeys.draft("document-upload");
-  const panelKey = keptKeys.panel("documents");
+  /*
+    Kept when the officer goes back or leaves the page mid-upload (#4593),
+    file and all, in memory for the tab: coming back opens the panel on it if
+    the page was left with the panel open, and the toolbar button opens on it
+    otherwise. The page is keyed by chapter, and so are these.
+  */
   const [uploadDraft, setUploadDraft] = useState<UploadDraft>(
-    () => readKeptDraft<UploadDraft>(draftKey) ?? EMPTY_UPLOAD_DRAFT,
+    () =>
+      readKeptDraft<UploadDraft>(keptKeys.draft(UPLOAD_DRAFT)) ??
+      EMPTY_UPLOAD_DRAFT,
   );
-  const [restored, setRestored] = useState(() => hasKeptDraft(draftKey));
-  const [reopen] = useState(
-    () => readKeptPanel(panelKey) === true && hasKeptDraft(draftKey),
-  );
-  useEffect(() => {
-    writeKeptDraft(draftKey, isWorthKeeping(uploadDraft) ? uploadDraft : null);
-  }, [draftKey, uploadDraft]);
   const panelOpen = uploadDialog.dialogProps.open;
-  useEffect(() => {
-    writeKeptPanel(panelKey, panelOpen ? true : null);
-  }, [panelKey, panelOpen]);
-  const setUploadOpen = uploadDialog.setOpen;
-  useEffect(() => {
-    if (reopen) setUploadOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
-  }, []);
+  const kept = useKeptFormDraft<UploadDraft>(
+    UPLOAD_DRAFT,
+    panelOpen,
+    uploadDraft,
+    { signature: uploadSignature(uploadDraft) },
+  );
   const [uploading, setUploading] = useState(false);
   /** Bumped when an upload lands and the draft starts over. */
   const [draftGeneration, setDraftGeneration] = useState(0);
@@ -251,18 +240,34 @@ export function useDocumentUpload(
   const openPanel = useCallback(
     (file?: File) => {
       setUploadError(null);
+      // What the officer left here, said so in the footer (#4593).
+      const restored = kept.take();
       // A folder on screen is a choice the officer already made, so it is
       // not guessed over; from "All files" or "No folder" the type decides.
-      setUploadDraft((prev) =>
-        prev.file || !prev.autoFolder
+      setUploadDraft((current) => {
+        const prev = restored ?? current;
+        return prev.file || !prev.autoFolder
           ? prev
-          : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder },
-      );
+          : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder };
+      });
       if (file) chooseFile(file);
       uploadDialog.setOpen(true);
     },
-    [activeFolder, chooseFile, uploadDialog],
+    [activeFolder, chooseFile, uploadDialog, kept],
   );
+  // Back to the panel the page was left with open, through the same door as
+  // the toolbar button, so it says the draft was restored.
+  const reopenPanel = useCallback(
+    (next: boolean) => (next ? openPanel() : uploadDialog.setOpen(false)),
+    [openPanel, uploadDialog],
+  );
+  useKeptPanel({
+    page: "documents",
+    form: UPLOAD_DRAFT,
+    open: panelOpen,
+    setOpen: reopenPanel,
+    ready: gate.allowed && canUpload,
+  });
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -284,6 +289,9 @@ export function useDocumentUpload(
     setUploadError(null);
     const contentType = inspected.contentType;
     setUploading(true);
+    // Out of the store while it uploads: an officer who leaves and comes back
+    // before it lands mustn't be offered the same file to upload twice.
+    kept.hold();
     try {
       const signed = await requestUpload.mutateAsync({
         filename: file.name,
@@ -318,11 +326,11 @@ export function useDocumentUpload(
           : `${file.name} is now in the chapter library.`,
       });
       uploadDialog.setOpen(false);
-      dropKeptDraft(draftKey);
+      kept.drop();
       setUploadDraft(EMPTY_UPLOAD_DRAFT);
-      setRestored(false);
       setDraftGeneration((n) => n + 1);
     } catch (error) {
+      kept.release();
       toast({
         title: "Couldn't upload document",
         description: getErrorMessage(error, "Try the upload again."),
@@ -334,25 +342,34 @@ export function useDocumentUpload(
   }
 
   /*
-    Cancel and Discard: the officer's own way to drop the draft. Going back,
-    Escape and leaving the page keep it.
+    Cancel and Discard: the officer's own ways to drop the draft. Going back,
+    Escape and leaving the page keep it. Cancel closes, so the next open files
+    into whichever folder is on screen then; Discard starts over in place, on
+    the folder on screen now, as opening does.
   */
-  const discardDraft = useCallback(() => {
-    dropKeptDraft(draftKey);
+  const cancelDraft = useCallback(() => {
+    kept.drop();
     setUploadError(null);
-    setUploadDraft(
-      activeFolder
-        ? { ...EMPTY_UPLOAD_DRAFT, folder: activeFolder, autoFolder: false }
-        : EMPTY_UPLOAD_DRAFT,
-    );
-    setRestored(false);
+    setUploadDraft(EMPTY_UPLOAD_DRAFT);
     setDraftGeneration((n) => n + 1);
-  }, [activeFolder, draftKey]);
+    uploadDialog.setOpen(false);
+  }, [kept, uploadDialog]);
+  const discardDraft = useCallback(() => {
+    kept.discard();
+    setUploadError(null);
+    setUploadDraft({
+      ...EMPTY_UPLOAD_DRAFT,
+      folder: activeFolder || "",
+      autoFolder: !activeFolder,
+    });
+    setDraftGeneration((n) => n + 1);
+  }, [activeFolder, kept]);
 
   return {
     uploadDialog,
     uploadDraft,
-    restored,
+    restored: kept.restored,
+    cancelDraft,
     discardDraft,
     editField,
     uploading,
@@ -408,6 +425,7 @@ export function UploadDocumentPanel({
     openPanel,
     handleUpload,
     restored,
+    cancelDraft,
     discardDraft,
   } = upload;
 
@@ -657,10 +675,7 @@ export function UploadDocumentPanel({
             <Button
               variant="secondary"
               className={UPLOAD_SHEET_BUTTON_CLASS}
-              onClick={() => {
-                discardDraft();
-                uploadDialog.setOpen(false);
-              }}
+              onClick={cancelDraft}
               disabled={uploading}
             >
               Cancel

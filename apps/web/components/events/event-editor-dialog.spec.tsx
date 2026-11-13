@@ -1717,3 +1717,41 @@ describe("EventEditorDialog keeps its draft (#4593)", () => {
     expect(screen.getByLabelText("Event name")).toHaveValue("");
   });
 });
+
+describe("EventEditorDialog kept edits over a changed record (#4593)", () => {
+  beforeEach(() => {
+    updateMutate.mockReset().mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  it("keeps only what the officer changed, over the event as it is now", () => {
+    const before = {
+      id: "e1",
+      name: "Chapter",
+      location: "Hall A",
+      start_time: "2026-07-01T18:00:00.000Z",
+      end_time: "2026-07-01T19:00:00.000Z",
+    };
+    const editor = (event: Record<string, unknown>) => (
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={event}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        keptDraft="event-edit:e1"
+      />
+    );
+    const view = render(editor(before));
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Chapter meeting" },
+    });
+    view.unmount();
+    // Someone else moves it while the draft waits.
+    render(editor({ ...before, location: "Hall B" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(screen.getByLabelText("Location")).toHaveValue("Hall B");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+});

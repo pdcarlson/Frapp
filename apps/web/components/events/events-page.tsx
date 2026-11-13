@@ -296,26 +296,14 @@ export function EventsPage() {
   function keepEditorOpen(next: KeptEditor | null) {
     writeKeptPanel(keptKeys.panel("events"), next);
   }
-  const reopenedEditor = useRef(false);
-  useEffect(() => {
-    if (reopenedEditor.current) return;
-    reopenedEditor.current = true;
+  // The editor the page was left with, waiting until the page could open it
+  // itself (below, once the events and permissions are in).
+  const [leftEditor, setLeftEditor] = useState<KeptEditor | null>(() => {
     const left = readKeptPanel<KeptEditor>(keptKeys.panel("events"));
-    if (!left) return;
-    if (!hasKeptDraft(keptKeys.draft(editorDraftNameOf(left)))) {
-      keepEditorOpen(null);
-      return;
-    }
-    /* eslint-disable react-hooks/set-state-in-effect -- reopen, once, the form the page was left with */
-    setEditorMode(left.mode);
-    setActiveEvent(left.event);
-    setActiveSeriesKey(left.event ? eventSeriesKey(left.event) : null);
-    setCalendarCreateDay(left.day);
-    setEventPlan(left.plan);
-    /* eslint-enable react-hooks/set-state-in-effect */
-    editorDialog.setOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
-  }, []);
+    return left && hasKeptDraft(keptKeys.draft(editorDraftNameOf(left)))
+      ? left
+      : null;
+  });
   // Lifted here (not local to EventsCalendar) because the calendar unmounts
   // when the list is showing — see EventsCalendar's own comment.
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() =>
@@ -359,6 +347,45 @@ export function EventsPage() {
     }
     return [];
   }, [eventsQuery.data]);
+
+  // Reopen the editor the page was left with (#4593), once this viewer could
+  // open it from the page: the create or edit permission and the
+  // subscription gate, as its buttons have. An edit reopens on the event as
+  // it is now, and not at all when the event has gone.
+  useEffect(() => {
+    if (!leftEditor) return;
+    const permitted =
+      leftEditor.mode === "edit" ? canMarkAttendance : canCreateEvents;
+    if (!permitted || !eventWriteGate.allowed) return;
+    let event: EventRow | null = null;
+    if (leftEditor.mode === "edit") {
+      if (!Array.isArray(eventsQuery.data)) return;
+      const id = leftEditor.event ? eventIdOf(leftEditor.event) : "";
+      event = events.find((row) => eventIdOf(row) === id) ?? null;
+    }
+    /* eslint-disable react-hooks/set-state-in-effect -- reopen, once, the form the page was left with */
+    setLeftEditor(null);
+    if (leftEditor.mode === "edit" && !event) {
+      writeKeptPanel(keptKeys.panel("events"), null);
+      return;
+    }
+    setEditorMode(leftEditor.mode);
+    setActiveEvent(event);
+    setActiveSeriesKey(event ? eventSeriesKey(event) : null);
+    setCalendarCreateDay(leftEditor.day);
+    setEventPlan(leftEditor.plan);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    editorDialog.setOpen(true);
+  }, [
+    leftEditor,
+    canMarkAttendance,
+    canCreateEvents,
+    eventWriteGate.allowed,
+    eventsQuery.data,
+    events,
+    editorDialog,
+    keptKeys,
+  ]);
 
   const nowTick = useNow();
 

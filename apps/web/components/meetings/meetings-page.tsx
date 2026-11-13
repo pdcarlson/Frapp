@@ -1,15 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   useMeetings,
   useMemberDisplayNames,
+  useMyPermissions,
   useViewerUserId,
   type MeetingSummary,
 } from "@repo/hooks";
 import {
   MEETING_LIST_COPY,
+  can,
   meetingTypeLabel,
   type MeetingType,
 } from "@repo/validation";
@@ -26,7 +28,7 @@ import {
   MINUTES_DRAFT,
   StartMinutesPanel,
 } from "@/components/meetings/start-minutes-panel";
-import { useKeptPanelOpen } from "@repo/hooks/kept-drafts";
+import { useKeptPanel } from "@repo/hooks/kept-drafts";
 import { MeetingRowsSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -49,8 +51,20 @@ function ChapterMeetingsPage() {
   const meetingsQuery = useMeetings();
   const viewerId = useViewerUserId();
   const names = useMemberDisplayNames();
-  // Reopens on return when the page was left mid-form (#4593).
-  const [starting, setStarting] = useKeptPanelOpen("meetings", MINUTES_DRAFT);
+  const [starting, setStarting] = useState(false);
+  // Reopens on return when the page was left mid-form (#4593), once the
+  // viewer is known to still start minutes, as the button that opens it is.
+  const canRecord = can(
+    "meetings:record",
+    useMyPermissions().data?.permissions ?? [],
+  );
+  useKeptPanel({
+    page: "meetings",
+    form: MINUTES_DRAFT,
+    open: starting,
+    setOpen: setStarting,
+    ready: canRecord,
+  });
   const { drafts, posted } = useMemo(() => {
     const rows = meetingsQuery.data ?? [];
     return {

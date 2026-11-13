@@ -36,10 +36,9 @@ import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
-  dropKeptDraft,
   readKeptDraft,
   useKeptDraftKeys,
-  writeKeptDraft,
+  useKeptFormDraft,
 } from "@repo/hooks/kept-drafts";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -169,7 +168,6 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   */
   const draftKey = useKeptDraftKeys().draft(MINUTES_DRAFT);
   const [kept] = useState(() => readKeptDraft<MinutesDraft>(draftKey));
-  const [restored, setRestored] = useState(kept !== undefined);
   const initial = kept ?? freshMinutesDraft();
   const [source, setSource] = useState<Source | null>(initial.source);
   const [type, setType] = useState<MeetingType>(initial.type);
@@ -180,33 +178,22 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const [endTime, setEndTime] = useState(initial.endTime);
   const [audience, setAudience] = useState(initial.audience);
   const [roleIds, setRoleIds] = useState<string[]>(initial.roleIds);
-  const [fresh] = useState(() => JSON.stringify(freshMinutesDraft()));
-  const current: MinutesDraft = {
-    source,
-    type,
-    otherLabel,
-    name,
-    date,
-    startTime,
-    endTime,
-    audience,
-    roleIds,
-  };
-  const currentJson = JSON.stringify(current);
-  const latest = useRef(current);
-  useEffect(() => {
-    latest.current = current;
-  });
-  // Kept once it differs from a fresh form (an opened, untouched form keeps
-  // nothing), or always once it opened on a kept one.
-  const done = useRef(false);
-  useEffect(() => {
-    if (done.current) return;
-    writeKeptDraft(
-      draftKey,
-      restored || currentJson !== fresh ? latest.current : null,
-    );
-  }, [draftKey, currentJson, fresh, restored]);
+  const draft = useKeptFormDraft<MinutesDraft>(
+    MINUTES_DRAFT,
+    true,
+    {
+      source,
+      type,
+      otherLabel,
+      name,
+      date,
+      startTime,
+      endTime,
+      audience,
+      roleIds,
+    },
+    { restoredAtMount: kept !== undefined },
+  );
   // A start that lands after the officer left the page doesn't pull them to
   // the new minutes: they are somewhere else now.
   const mounted = useRef(true);
@@ -229,8 +216,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     setRoleIds(draft.roleIds);
   }
   function discard() {
-    dropKeptDraft(draftKey);
-    setRestored(false);
+    draft.discard();
     setProblems({});
     fill(freshMinutesDraft());
   }
@@ -252,8 +238,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     const existing = started.get(event.id);
     if (existing) {
       // Their minutes are what the officer came for; nothing to keep.
-      done.current = true;
-      dropKeptDraft(draftKey);
+      draft.drop();
       onDone();
       router.push(meetingHref(existing));
       return;
@@ -287,6 +272,9 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     const found = validate();
     setProblems(found);
     if (Object.keys(found).length > 0 || !source) return;
+    // Out of the store while it runs: coming back mid-start must not offer
+    // the same minutes to start twice.
+    draft.hold();
     try {
       const meeting = await start.mutateAsync({
         meeting_type: type,
@@ -303,12 +291,12 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
               },
             }),
       });
-      done.current = true;
-      dropKeptDraft(draftKey);
+      draft.drop();
       if (!mounted.current) return;
       onDone();
       router.push(meetingHref(meeting.id));
     } catch (error) {
+      draft.release();
       if (codeOf(error) === "meeting.already_started") {
         // Someone started them while this panel was open. The list refetches
         // with them in it when the viewer may read them.
@@ -567,13 +555,12 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         </div>
       </PanelBody>
       <PanelFooter>
-        {restored ? <KeptDraftNote onDiscard={discard} /> : null}
+        {draft.restored ? <KeptDraftNote onDiscard={discard} /> : null}
         <Button
           type="button"
           variant="secondary"
           onClick={() => {
-            done.current = true;
-            dropKeptDraft(draftKey);
+            draft.drop();
             onDone();
           }}
         >
