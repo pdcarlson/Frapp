@@ -78,7 +78,7 @@ These are fixed regardless of chapter accent; the engine's output MUST NOT repla
 
 - **Mention/DM red** — a direct-address signal, not a themeable one; value and rule in [`foundations.md`](foundations.md) §5.
 - **Semantic status colors** (success/warning/danger/info) — status-only, values in [`foundations.md`](foundations.md).
-- **The Signet mark** — the logo never takes the chapter accent ([`../brand-identity.md`](../brand-identity.md)).
+- **The Signet mark** — the logo never takes the chapter accent ([`../brand-identity.md`](../brand-identity.md); one exception since #4702, Paul's: the crest drawn as a one-colour glyph on Ask Frapp's front doors, §2 there).
 - **Neutral ladder** — backgrounds, borders, and text colors are constants, not gray-scale outputs of the generator.
 
 ## 6. Implementation status

@@ -82,6 +82,10 @@ export function AskHost({ children }: { children: ReactNode }) {
     !previewing;
 
   const [open, setOpen] = useState(false);
+  // A member who lost Ask (a role preview began, the president turned Ask
+  // off) has no card left to come back to. Without this the card would open
+  // itself, over the chat and with the cursor in it, when Ask returned.
+  if (!has && open) setOpen(false);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const toggle = useCallback((from: HTMLElement | null) => {
@@ -142,6 +146,10 @@ export function AskComposerButton({ className }: { className?: string }) {
       type="button"
       variant="tinted"
       aria-expanded={entry.open}
+      // How the card finds the entry on screen now, to hand focus back to
+      // when the one that opened it is gone (`ASK_ENTRY_SELECTOR` in
+      // `ask-card.tsx`; `ask-entry.spec.tsx` holds the two together).
+      data-ask-entry=""
       title={ASK_COPY.entry_label}
       onClick={(event) => entry.toggle(event.currentTarget)}
       className={cn(

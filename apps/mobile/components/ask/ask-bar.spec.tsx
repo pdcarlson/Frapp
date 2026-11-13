@@ -13,7 +13,7 @@ import { screenText } from "@/test/screen-text";
  * up with the logo" and have "a little bit more character" than the words).
  */
 
-// A purple chapter: the bar is the one Ask surface that takes the accent.
+// A purple chapter: the bar's crest, edge and arrow take the accent.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#8B5CF6" }),
 }));

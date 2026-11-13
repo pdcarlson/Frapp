@@ -1026,7 +1026,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
+      // One step above the card it sits in (`lib/surfaces.ts`): on the card's
+      // own fill only the border said it was a button.
+      backgroundColor: tokens.color.surface.card,
     },
     quietText: {
       ...typeRole(tokens.typography.role.label),

@@ -48,7 +48,16 @@ import { cn } from "@/lib/utils";
  * moves: the channel header, the messages above the card and the composer
  * under it stay live, as they do behind the composer's + card
  * (`composer-plus-card.tsx`). Following a source opens its page beside the
- * chat and leaves the conversation where it was.
+ * chat and leaves the conversation where it was, with two exceptions. A
+ * cited chat message is in the thread the card covers, so following one
+ * closes the card (the conversation is kept, and the button reopens it). And
+ * in a window too narrow for a page beside chat, the page takes chat's place
+ * and the card waits with it, as below.
+ *
+ * **The app's own background, not a raised surface** (Paul, 2026-11-13: the
+ * popover grey was "way too different from the rest of the app"). The card
+ * is `bg-background`, the colour of the thread it sits over, and is told
+ * from it by its border and the shadow above it.
  *
  * It is drawn into the slot chat provides (`AskSlot`) and owned by
  * `AskHost` above the whole dashboard, so the thread is the same thread in
@@ -100,6 +109,14 @@ import { cn } from "@/lib/utils";
  * exists, and again each time the card opens, so the line is in place when
  * the card comes up and is true at the moment of asking.
  */
+/**
+ * The entry on screen (`AskComposerButton` carries the attribute). The
+ * composer is remounted for each channel, so the button that opened the
+ * conversation is often not the one there when it closes; the card looks the
+ * live one up to return focus to it.
+ */
+const ASK_ENTRY_SELECTOR = "[data-ask-entry]";
+
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK_PX = 80;
 
@@ -163,21 +180,48 @@ export function AskCard({
   // On screen only where chat gave it a place to be.
   const shown = open && container !== null;
 
+  // Focus follows the member's own open and close, not the card coming and
+  // going with chat: a card left open while a tool page covered the chat is
+  // drawn again on the way back, and must not pull the cursor into its field
+  // (on a phone, that raises the keyboard).
+  const focusOnShow = useRef(false);
   useEffect(() => {
-    if (!shown) return;
+    if (!open) return;
+    focusOnShow.current = true;
     const opener = returnFocus?.current ?? null;
-    field.current?.focus({ preventScroll: true });
     return () => {
+      focusOnShow.current = false;
       // Only when focus would otherwise fall to the body: a member who
       // closed the card from the page keeps their place there.
-      if (
-        opener?.isConnected &&
-        (!document.activeElement || document.activeElement === document.body)
-      ) {
-        opener.focus({ preventScroll: true });
-      }
+      if (document.activeElement && document.activeElement !== document.body)
+        return;
+      // The button that opened it, or the one on screen now: the composer is
+      // remounted for each channel, so after a change of channel the opener
+      // is a detached node.
+      const entry = opener?.isConnected
+        ? opener
+        : document.querySelector<HTMLElement>(ASK_ENTRY_SELECTOR);
+      entry?.focus({ preventScroll: true });
     };
-  }, [shown, returnFocus]);
+  }, [open, returnFocus]);
+  useEffect(() => {
+    if (!shown || !focusOnShow.current) return;
+    focusOnShow.current = false;
+    field.current?.focus({ preventScroll: true });
+  }, [shown]);
+
+  // The field grows with what is typed. `field-sizing: content` does that
+  // where the browser has it; elsewhere the height is set from the text, or a
+  // long question would be read one line at a time.
+  useEffect(() => {
+    const element = field.current;
+    if (!shown || !element) return;
+    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content"))
+      return;
+    element.style.height = "auto";
+    if (element.scrollHeight > 0)
+      element.style.height = `${element.scrollHeight}px`;
+  }, [shown, draft]);
 
   // A new turn, or the card opening on a thread, shows the newest words.
   useEffect(() => {
@@ -251,7 +295,7 @@ export function AskCard({
           // Hung from the slot's top edge, which is the composer's: it grows
           // upward over the thread as the conversation does, to a height that
           // leaves the channel's header and the composer in view.
-          className="absolute inset-x-3 bottom-2 flex max-h-[min(40rem,calc(100dvh-15rem))] min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-[0_-16px_48px_-12px_rgb(0_0_0/0.7)] animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none"
+          className="absolute inset-x-3 bottom-2 flex max-h-[min(40rem,calc(100dvh-15rem))] min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-[0_-16px_48px_-12px_rgb(0_0_0/0.7)] animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none"
           onKeyDown={(event) => {
             // Escape inside the card only, and only when nothing inside
             // (the consent sheet, a menu) took it first.
@@ -308,6 +352,7 @@ export function AskCard({
                       key={exchange.id}
                       exchange={exchange}
                       busy={working && exchange.phase !== "working"}
+                      onFollowMessage={close}
                       onRetry={() => void retry(exchange.id, options())}
                       onAnswerConsent={() => void retry(exchange.id, options())}
                       onProposal={(proposal) =>

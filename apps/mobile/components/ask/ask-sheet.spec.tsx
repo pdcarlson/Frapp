@@ -106,8 +106,8 @@ vi.mock("@/components/ai/report-ai-sheet", () => ({
   }),
 }));
 
-// A purple chapter. Only the header's crest takes it (#4702); the send
-// button and everything in a turn keep Ask's fixed gold.
+// A purple chapter. The header's crest, the member's bubble and the send
+// button take it (#4702); Frapp's source markers keep Ask's fixed gold.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#8B5CF6",

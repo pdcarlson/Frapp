@@ -7,12 +7,14 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
+import * as Clipboard from "expo-clipboard";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
   askLeftOutLine,
+  askReadLine,
   askSourceMetaLine,
   askUnavailableLine,
   type AskAnswer,
@@ -353,13 +355,18 @@ describe("askSourceMetaLine", () => {
   });
 });
 
-describe("Report this on an answer", () => {
-  it("draws Report this last, only for something Ask wrote, and Reported once sent", () => {
+describe("under an answer", () => {
+  const REPORT = AI_REPORT_COPY.titles.ask_answer;
+
+  it("draws Report last as a quiet icon, only for something Ask wrote, and Reported once sent", () => {
     const onPress = vi.fn();
     const done = exchange({ answer: answer(), askId: "ask-1" });
     const tree = render(done, { report: { reported: false, onPress } });
-    act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
+    act(() => byLabel(tree, REPORT)[0]!.props.onPress());
     expect(onPress).toHaveBeenCalledTimes(1);
+    // Paul, 2026-11-13: Report is not the answer's one loud control. Its
+    // words are for a screen reader, and are not on screen.
+    expect(screenText(tree)).not.toContain(AI_REPORT_COPY.action);
 
     const sent = render(done, { report: { reported: true, onPress } });
     expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(true);
@@ -374,7 +381,7 @@ describe("Report this on an answer", () => {
           }),
           { report: { reported: false, onPress } },
         ),
-        AI_REPORT_COPY.action,
+        REPORT,
       ),
     ).toHaveLength(0);
     expect(
@@ -382,9 +389,47 @@ describe("Report this on an answer", () => {
         render(exchange({ answer: answer() }), {
           report: { reported: false, onPress },
         }),
-        AI_REPORT_COPY.action,
+        REPORT,
       ),
     ).toHaveLength(0);
-    expect(byLabel(render(done), AI_REPORT_COPY.action)).toHaveLength(0);
+    expect(byLabel(render(done), REPORT)).toHaveLength(0);
+  });
+
+  it("copies the answer's words and says so, and has nothing to copy where there are none", async () => {
+    const tree = render(exchange({ answer: answer(), askId: "ask-1" }));
+    await act(async () => {
+      byLabel(tree, ASK_COPY.copy_answer)[0]!.props.onPress();
+    });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      "Dues are due on the first. Ana is treasurer.",
+    );
+    expect(byLabel(tree, ASK_COPY.copied_answer)).not.toHaveLength(0);
+
+    const miss = render(
+      exchange({
+        askId: "ask-2",
+        answer: answer({ status: "not_found", text: "", sources: [] }),
+      }),
+    );
+    expect(byLabel(miss, ASK_COPY.copy_answer)).toHaveLength(0);
+  });
+
+  it("says what Frapp read, after the answer and before its sources", () => {
+    const tree = render(
+      exchange({
+        answer: answer(),
+        askId: "ask-1",
+        read: { reads: ["events"], found: 2 },
+      }),
+    );
+    const text = screenText(tree);
+    const line = askReadLine({ reads: ["events"], found: 2 })!;
+    expect(text).toContain(line);
+    expect(text.indexOf("Ana is treasurer")).toBeLessThan(text.indexOf(line));
+    expect(text.indexOf(line)).toBeLessThan(text.lastIndexOf("Bylaws"));
+    // And no line when the server named nothing it read.
+    expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
+      /Read the /,
+    );
   });
 });

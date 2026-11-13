@@ -455,7 +455,7 @@ both re-exporting the shell's silhouettes rather than redrawing them. Rendered a
 16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
 or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
 § Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
-onboarding tutorial's per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
+onboarding tutorial's per-slide glyphs (§6.2.7) and the mark on s17's "Ask Frapp" (components.md §11; the ✦ until #4702, the crest since) stay.
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.

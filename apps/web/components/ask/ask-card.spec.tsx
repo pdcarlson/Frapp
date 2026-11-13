@@ -488,7 +488,87 @@ describe("AskCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("stays open when a source is followed: its page opens beside the chat, and the answer is still there to read against it", async () => {
+    it("leaves Escape to whatever inside it took the key first", async () => {
+      const onOpenChange = vi.fn();
+      render(<Card onOpenChange={onOpenChange} />);
+      const field = screen.getByRole("textbox", { name: ASK_COPY.placeholder });
+      // A menu or the consent sheet inside the card that closes on Escape.
+      field.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") event.preventDefault();
+      });
+      await userEvent.setup().keyboard("{Escape}");
+      expect(onOpenChange).not.toHaveBeenCalled();
+    });
+
+    it("takes the cursor when it is opened, and not again when chat comes back under it", async () => {
+      const view = render(
+        <>
+          <input aria-label="Search" />
+          <Card />
+        </>,
+      );
+      expect(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+      ).toHaveFocus();
+      // A tool page covers the chat, and the member is typing in it.
+      view.rerender(
+        <>
+          <input aria-label="Search" />
+          <Card container={null} />
+        </>,
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole("textbox", { name: "Search" }));
+      view.rerender(
+        <>
+          <input aria-label="Search" />
+          <Card />
+        </>,
+      );
+      expect(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Search" })).toHaveFocus();
+    });
+
+    it("is drawn on the app's own background, not a raised grey", () => {
+      render(<Card />);
+      const card = screen.getByRole("region", { name: ASK_COPY.name });
+      expect(card).toHaveClass("bg-background");
+      expect(card).not.toHaveClass("bg-popover");
+    });
+
+    it("closes when a cited chat message is followed: that message is in the thread the card covers", async () => {
+      state.exchanges = [
+        {
+          ...DONE,
+          answer: {
+            ...DONE.answer,
+            sources: [
+              {
+                id: "s2",
+                kind: "chat",
+                title: "#general",
+                detail: null,
+                date: "2026-11-09T12:00:00.000Z",
+                target: { type: "message", channel_id: "c1", message_id: "m1" },
+              },
+            ],
+          },
+        },
+      ];
+      const onOpenChange = vi.fn();
+      render(<Card onOpenChange={onOpenChange} />);
+      const source = screen.getByRole("link", { name: /#general/ });
+      source.addEventListener("click", (event) => event.preventDefault());
+      await userEvent.setup().click(source);
+      expect(onOpenChange).toHaveBeenLastCalledWith(false);
+      // Closing is not starting over.
+      expect(state.reset).not.toHaveBeenCalled();
+    });
+
+    it("stays open when a source with a page of its own is followed: the page opens beside the chat, and the answer is still there to read against it", async () => {
       state.exchanges = [DONE];
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);

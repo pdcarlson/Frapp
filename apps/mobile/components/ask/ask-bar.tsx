@@ -27,7 +27,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * tap opens the conversation (`ask-sheet.tsx`) at full height; the bar holds
  * no text of its own.
  *
- * **The chapter's colour, here only.** The crest, the capsule's edge and the
+ * **The chapter's colour.** The crest, the capsule's edge and the
  * arrow take the accent (Paul, 2026-11-13, default 2 on #4698). Inside the
  * conversation what is the member's follows it and what is Frapp's, the
  * source markers, keeps Ask's fixed gold
@@ -59,16 +59,7 @@ export function AskBar({ onPress }: { onPress: () => void }) {
         </Text>
         <View style={[styles.arrow, { backgroundColor: tint(accent) }]}>
           {/* The conversation's own send arrow (`ask-sheet.tsx`). */}
-          <Svg width={16} height={16} viewBox="0 0 17 17">
-            <Path
-              d="M2.5 8.5h9M8 3.5l6 5-6 5"
-              stroke={accent}
-              strokeWidth={1.9}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
+          <AskSendGlyph color={accent} size={16} />
         </View>
       </Pressable>
     </GlassSurface>
@@ -104,4 +95,31 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
   });
+}
+
+/**
+ * The send arrow, transcribed from `canvas-screens.dc.html` s17 (the visual
+ * truth that wins over prose per #937): on the bar's end and on the
+ * conversation's send button, so the two are one mark. Colour arrives as a
+ * prop for the reason `components/tab-glyphs.tsx` gives.
+ */
+export function AskSendGlyph({
+  color,
+  size = 17,
+}: {
+  color: string;
+  size?: number;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 17 17">
+      <Path
+        d="M2.5 8.5h9M8 3.5l6 5-6 5"
+        stroke={color}
+        strokeWidth={1.9}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
 }

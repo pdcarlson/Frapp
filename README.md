@@ -43,7 +43,7 @@ uses, so structured answers are correct when given and inherit the caller's perm
 never read, vault documents are excluded, and every answer must cite its source inline.
 
 **It is built on the `ai-integration` branch and switched off.** The API's `ai` module, web's
-Ask panel and the phone's Ask sheet exist there, behind one server switch, `AI_ENABLED`, which is
+Ask card and the phone's Ask sheet exist there, behind one server switch, `AI_ENABLED`, which is
 off by default everywhere. With it off every AI route answers 404 and neither client draws an AI
 entry; a `frapp://ask` link goes to Chat home. With it on, a chapter still sees nothing until its
 president turns a feature on and a member's role may use it. Scope, non-goals and the citation

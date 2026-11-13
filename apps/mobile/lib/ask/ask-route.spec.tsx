@@ -9,8 +9,8 @@ import { FrappThemeProvider } from "@/lib/theme";
 /**
  * #2259: a member without Ask has no Ask anywhere, and `frapp://ask` goes to
  * Chat home rather than an empty shell. Whether a member has Ask is the
- * server's answer (`useAiSurfaces`), no longer a build flag. The panel's Ask
- * bar is gated in `components/glass-tab-bar.spec.tsx`.
+ * server's answer (`useAiSurfaces`), no longer a build flag. The Ask bar
+ * above the tab bar is gated in `components/glass-tab-bar.spec.tsx`.
  *
  * Lives here, not beside the route: a spec under `app/` ships as a route
  * module (`lib/routes.spec.ts`).

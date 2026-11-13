@@ -42,7 +42,7 @@ Three golds now coexist, and they are not interchangeable:
 
 | Gold | Value | What it is |
 | ---- | ----- | ---------- |
-| House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. |
+| House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. Since #4702 (2026-11-13) what it paints on Ask is what is Frapp's inside the conversation, the source markers and the number on a source chip; Ask's entry and the member's own controls take the chapter accent ([`../design-system/components.md` §11](../design-system/components.md)). |
 | Mark gold | `#DDB844` | The emblem, per [`../brand-identity.md`](../brand-identity.md) §2. Never takes the chapter accent. The committed rasters measured `#DDA220` until #2153 re-exported the mark — see L-08. |
 | Accent seed | `#DDB844` | The default fed to the accent engine. **Changed** to equal the *spec'd* mark gold. |
 
@@ -375,9 +375,9 @@ single edit that would retint all of them at once. The lock that test enforces i
 [`README.md` § Brand and copy locks](README.md#brand-and-copy-locks).
 
 **2026-11-13: the consumer changed, the family stands.** #4702 removed the top-bar pill (Paul,
-2026-11-13). The family now paints Ask's source markers, chip numbers and Confirm inside the
-conversation ([`../design-system/components.md` §11](../design-system/components.md)); Ask's entry
-button takes the chapter accent instead.
+2026-11-13). The family now paints what is Frapp's inside the conversation: the source markers
+and the number on a source chip ([`../design-system/components.md` §11](../design-system/components.md)).
+Ask's entry button, the member's bubble, send and Confirm take the chapter accent instead.
 
 ---
 

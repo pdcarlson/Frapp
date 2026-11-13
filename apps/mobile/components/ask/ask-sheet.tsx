@@ -23,7 +23,6 @@ import {
   BottomSheetTextInput,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import Svg, { Path } from "react-native-svg";
 import {
   useAsk,
   useAskStatus,
@@ -51,15 +50,17 @@ import {
   type ActLink,
   type KeptTargets,
 } from "@/components/ask/ask-proposal";
+import { AskSendGlyph } from "@/components/ask/ask-bar";
 import { AskTurn } from "@/components/ask/ask-turn";
-import { CloseGlyph, PencilGlyph } from "@/components/control-glyphs";
+import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappCrest } from "@/components/frapp-crest";
-import { IconButton } from "@/components/icon-button";
+import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
 import {
   SheetGrabber,
   SheetScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
+  SheetCloseButton,
   useSheetClose,
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
@@ -380,31 +381,23 @@ export const AskSheet = forwardRef<
           </View>
           <View style={styles.headerActions}>
             {exchanges.length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={ASK_COPY.new_conversation}
-                // 36pt drawn against the 44pt minimum.
-                hitSlop={4}
+              <IconButton
+                label={ASK_COPY.new_conversation}
                 onPress={() => {
                   reset();
                   setKept({});
                   setSourceNotice(null);
                 }}
-                style={({ pressed }) => [
-                  styles.headerAction,
-                  pressed ? styles.pressed : null,
-                ]}
               >
-                <PencilGlyph
-                  size={18}
-                  color={tokens.color.text.mutedForeground}
-                />
-              </Pressable>
+                <PencilGlyph color={tokens.color.text.mutedForeground} />
+              </IconButton>
             ) : null}
-            {/* At full height no scrim is left to tap. */}
-            <IconButton label={ASK_COPY.close} onPress={closeSheet}>
-              <CloseGlyph color={tokens.color.text.mutedForeground} />
-            </IconButton>
+            {/* At full height no scrim is left to tap: every tall sheet's
+                own close control (`sheet-scaffold.tsx`). */}
+            <SheetCloseButton
+              accessibilityLabel={ASK_COPY.close}
+              onPress={closeSheet}
+            />
           </View>
         </View>
         <BottomSheetScrollView
@@ -521,7 +514,7 @@ export const AskSheet = forwardRef<
                 pressed && canSend ? styles.pressed : null,
               ]}
             >
-              <SendGlyph color={accentOnPrimary} />
+              <AskSendGlyph color={accentOnPrimary} />
             </Pressable>
           </View>
         </View>
@@ -604,26 +597,6 @@ function reportFor(
 
 const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
 
-/**
- * The send arrow, transcribed from `canvas-screens.dc.html` s17 — the visual
- * truth that wins over prose per #937. Colour arrives as a prop for the reason
- * `components/tab-glyphs.tsx` gives.
- */
-function SendGlyph({ color, size = 17 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 17 17">
-      <Path
-        d="M2.5 8.5h9M8 3.5l6 5-6 5"
-        stroke={color}
-        strokeWidth={1.9}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
@@ -663,15 +636,9 @@ function createStyles(tokens: SignetTokens) {
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
-      // New conversation's slop (4) and the close's (12) never overlap.
-      gap: tokens.spacing.lg,
-    },
-    headerAction: {
-      width: 36,
-      height: 36,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: tokens.radius.navItem,
+      // Each icon button's slop reaches 12pt past its box, so the two touch
+      // areas never overlap (`sheet-scaffold.tsx` § headerActions).
+      gap: ICON_BUTTON_HIT_SLOP * 2,
     },
     turn: {
       gap: tokens.spacing.sm,
