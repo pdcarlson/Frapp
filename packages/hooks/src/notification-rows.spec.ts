@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupNotificationsBySource,
   isTileKind,
+  notificationEntryCount,
   notificationLook,
   notificationPreview,
   notificationTitle,
@@ -188,5 +190,118 @@ describe("notificationWhen", () => {
 
   it("drops a timestamp that doesn't parse", () => {
     expect(notificationWhen("not a date", NOW)).toBeNull();
+  });
+});
+
+describe("groupNotificationsBySource (#3948)", () => {
+  type Row = { id: string; data: unknown; unread: boolean };
+  const row = (id: string, data: unknown, unread = true): Row => ({
+    id,
+    data,
+    unread,
+  });
+  const inChannel = (
+    channelId: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    target: { screen: "chat", channelId },
+    senderId: "ryan",
+    ...extra,
+  });
+  const isUnread = (r: Row) => r.unread;
+
+  it("collapses one channel's rows into its newest", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1")),
+        row("b", { target: { screen: "events" } }),
+        row("c", inChannel("c1"), false),
+        row("d", inChannel("c2")),
+        row("e", inChannel("c1")),
+      ],
+      { isUnread },
+    );
+    expect(entries.map((e) => e.key)).toEqual(["chat:c1", "b", "chat:c2"]);
+    expect(entries[0]).toMatchObject({
+      lead: { id: "a" },
+      messageCount: 3,
+      bundled: false,
+      unreadIds: ["a", "e"],
+    });
+    expect(entries[0]!.rows.map((r) => r.id)).toEqual(["a", "c", "e"]);
+    expect(notificationEntryCount(entries[0]!)).toBe("3 messages");
+    expect(notificationEntryCount(entries[1]!)).toBeNull();
+  });
+
+  it("counts a bundled burst as a floor, not on top of the rows it covers", () => {
+    // burst-bundler: messages 1 and 2 push a row each, message 3 pushes a
+    // bundle of 3 that covers them, and later messages write no row.
+    const bundle = (id: string, sender: string, count: number) =>
+      row(id, inChannel("c1", { senderId: sender, bundled: true, count }));
+    const single = (id: string, sender: string) =>
+      row(id, inChannel("c1", { senderId: sender }));
+    const [ryan] = groupNotificationsBySource(
+      [bundle("r3", "ryan", 3), single("r2", "ryan"), single("r1", "ryan")],
+      { isUnread },
+    );
+    expect(ryan!.messageCount).toBe(3);
+    expect(notificationEntryCount(ryan!)).toBe("3+ messages");
+
+    const [two] = groupNotificationsBySource(
+      [single("d1", "devin"), bundle("r3", "ryan", 3), single("r1", "ryan")],
+      { isUnread },
+    );
+    expect(two!.messageCount).toBe(4);
+
+    // A bundle on its own already says "3 new messages": no second count.
+    const [alone] = groupNotificationsBySource([bundle("r3", "ryan", 3)], {
+      isUnread,
+    });
+    expect(notificationEntryCount(alone!)).toBeNull();
+  });
+
+  it("keeps a mention on its own and a thread apart from its channel", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1", { mentioned: true })),
+        row("b", inChannel("c1")),
+        row("c", {
+          target: { screen: "chat", channelId: "c1", threadRootId: "m1" },
+        }),
+        row("d", inChannel("c1", { mentioned: true })),
+      ],
+      { isUnread },
+    );
+    expect(entries.map((e) => e.key)).toEqual([
+      "a",
+      "chat:c1",
+      "chat:c1:thread:m1",
+      "d",
+    ]);
+  });
+
+  it("never groups rows that aren't chat", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", { target: { screen: "events" } }),
+        row("b", { target: { screen: "events" } }),
+        row("c", null),
+      ],
+      { isUnread },
+    );
+    expect(entries).toHaveLength(3);
+  });
+
+  it("under unread, drops read rows before grouping", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1"), false),
+        row("b", inChannel("c1")),
+        row("c", { target: { screen: "events" } }, false),
+      ],
+      { isUnread, filter: "unread" },
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ lead: { id: "b" }, messageCount: 1 });
   });
 });

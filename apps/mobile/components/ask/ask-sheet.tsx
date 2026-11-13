@@ -185,8 +185,14 @@ export const AskSheet = forwardRef<
      * navigate over it.
      */
     onClosed?: (leftForSource: boolean) => void;
+    /**
+     * A question to open with, in the box for the member to send or change
+     * (a nudge card's "Ask about this", #4781). Never sent on its own. Read
+     * once, when the sheet mounts: a host gives each question its own `key`.
+     */
+    initialDraft?: string;
   }
->(function AskSheet({ onClosed }, ref) {
+>(function AskSheet({ onClosed, initialDraft }, ref) {
   const closeSheet = useSheetClose(ref);
   const router = useRouter();
   const { tokens } = useFrappTheme();
@@ -227,7 +233,7 @@ export const AskSheet = forwardRef<
   const { suggestions } = useAskSuggestions({ enabled: shownOpen });
   const [kept, setKept] = useState<KeptTargets>({});
 
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
   // A source that didn't open, said under the turn it belongs to.
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);

@@ -2425,6 +2425,7 @@
         ]
       },
       "get": {
+        "description": "Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.",
         "operationId": "InviteController_list_v1",
         "parameters": [],
         "responses": {
@@ -2677,8 +2678,47 @@
         ]
       }
     },
+    "/v1/invites/roles": {
+      "get": {
+        "description": "Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.",
+        "operationId": "InviteController_listInvitableRoles_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitableRolesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The roles the caller may invite someone into",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/{id}": {
       "delete": {
+        "description": "Not found (404) for an invite the list leaves out for the caller (#4546).",
         "operationId": "InviteController_revoke_v1",
         "parameters": [
           {
@@ -2880,7 +2920,7 @@
             "bearer": []
           }
         ],
-        "summary": "Mark all unread notifications read, or only those pointing at the named screens",
+        "summary": "Mark all unread notifications read, or only those pointing at the named screens, or only the named ids",
         "tags": [
           "Notifications"
         ]
@@ -16592,6 +16632,222 @@
         ]
       }
     },
+    "/v1/nudges/current": {
+      "post": {
+        "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
+        "operationId": "MemberNudgeController_current_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeCurrentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's card for Activity, if one is due",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/seen": {
+      "post": {
+        "operationId": "MemberNudgeController_seen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the card was on screen",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/dismiss": {
+      "post": {
+        "description": "Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.",
+        "operationId": "MemberNudgeController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissMemberNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "No such card is showing for the caller."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close the card",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/settings": {
+      "get": {
+        "operationId": "MemberNudgeController_settings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own switch for these cards",
+        "tags": [
+          "AI"
+        ]
+      },
+      "put": {
+        "description": "Off also closes the card that is showing.",
+        "operationId": "MemberNudgeController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the cards on or off for the caller",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/reports": {
       "get": {
         "operationId": "AiReportController_policy_v1",
@@ -19340,6 +19596,21 @@
           "token"
         ]
       },
+      "InvitableRolesDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "description": "Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
+      },
       "RegisterPushTokenDto": {
         "type": "object",
         "properties": {
@@ -19368,6 +19639,15 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "ids": {
+            "description": "Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         }
@@ -20856,6 +21136,12 @@
           "created_at": {
             "type": "string"
           },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row."
+          },
           "sender_blocked": {
             "type": "boolean",
             "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
@@ -20868,6 +21154,7 @@
           "content",
           "is_deleted",
           "created_at",
+          "thread_root_id",
           "sender_blocked"
         ]
       },
@@ -29120,6 +29407,119 @@
           "unverified_points",
           "covers_from",
           "covers_to"
+        ]
+      },
+      "MemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise today; a client shows a kind it does not know as a plain card.",
+            "example": "task_due_soon"
+          },
+          "title": {
+            "type": "string",
+            "description": "A few words, plain text."
+          },
+          "body": {
+            "type": "string",
+            "description": "One or two sentences, plain text."
+          },
+          "start_here": {
+            "type": "string",
+            "nullable": true,
+            "description": "A suggested place to start: one sentence, or null when the card has none."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The task the card is about."
+          },
+          "task_title": {
+            "type": "string",
+            "description": "The task's own title."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "False until the member has had the card on screen."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "start_here",
+          "task_id",
+          "task_title",
+          "seen",
+          "created_at"
+        ]
+      },
+      "MemberNudgeCurrentDto": {
+        "type": "object",
+        "properties": {
+          "nudge": {
+            "nullable": true,
+            "description": "The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberNudgeDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "nudge"
+        ]
+      },
+      "DismissMemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_now",
+              "fewer",
+              "thanks"
+            ],
+            "description": "`not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "MemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The member's own switch for these cards."
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "UpdateMemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
         ]
       },
       "AiReportPolicyDto": {

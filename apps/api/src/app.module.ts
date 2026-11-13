@@ -11,6 +11,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { ChapterModule } from './modules/chapter/chapter.module';
 import { MemberModule } from './modules/member/member.module';
+import { MemberNudgeModule } from './modules/member-nudge/member-nudge.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
@@ -126,6 +127,7 @@ import { validateEnv } from './config/env.validation';
     AskModule,
     ActModule,
     ChatCatchUpModule,
+    MemberNudgeModule,
     AiReportModule,
     CalendarFeedModule,
     GoogleCalendarModule,

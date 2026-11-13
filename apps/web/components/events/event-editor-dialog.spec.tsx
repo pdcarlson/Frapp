@@ -1597,3 +1597,161 @@ describe("EventEditorDialog for a member who can't edit events", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * Going back or leaving the page keeps what was typed (Paul, 2026-11-13,
+ * #4593); Cancel and a save drop it.
+ */
+describe("EventEditorDialog keeps its draft (#4593)", () => {
+  beforeEach(() => {
+    createMutate.mockReset().mockResolvedValue(undefined);
+    updateMutate.mockReset().mockResolvedValue(undefined);
+    mockToast.mockReset();
+    chapter.active();
+  });
+
+  function editor(
+    props: Partial<React.ComponentProps<typeof EventEditorDialog>> = {},
+  ) {
+    return (
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        keptDraft="event-create"
+        {...props}
+      />
+    );
+  }
+
+  it("opens on the kept draft after going back, with More options as left", () => {
+    const view = render(editor());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    fillRequiredFields();
+    openMoreOptions();
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Exec Sync");
+    expect(screen.getByLabelText("Points for attending")).toBeInTheDocument();
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("opens on the kept draft after the page was left", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    view.unmount();
+    render(editor());
+    expect(screen.getByLabelText("Event name")).toHaveValue("Exec Sync");
+  });
+
+  it("keeps nothing for a form opened and left untouched", () => {
+    const view = render(editor());
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("drops the draft on Cancel", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+
+  it("drops the draft once the event is created", async () => {
+    const view = render(editor());
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+
+  it("keeps an edit to its own event", () => {
+    const one = {
+      id: "e1",
+      name: "Chapter",
+      start_time: "2026-07-01T18:00:00.000Z",
+      end_time: "2026-07-01T19:00:00.000Z",
+    };
+    const two = { ...one, id: "e2", name: "Rush" };
+    const view = render(
+      editor({ mode: "edit", event: one, keptDraft: "event-edit:e1" }),
+    );
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Chapter meeting" },
+    });
+    view.unmount();
+    const other = render(
+      editor({ mode: "edit", event: two, keptDraft: "event-edit:e2" }),
+    );
+    expect(screen.getByLabelText("Event name")).toHaveValue("Rush");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    other.unmount();
+    render(editor({ mode: "edit", event: one, keptDraft: "event-edit:e1" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+  });
+
+  it("keeps nothing from chat's /event, which has no draft name", () => {
+    const view = render(editor({ keptDraft: undefined }));
+    fillRequiredFields();
+    view.unmount();
+    render(editor({ keptDraft: undefined }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+});
+
+describe("EventEditorDialog kept edits over a changed record (#4593)", () => {
+  beforeEach(() => {
+    updateMutate.mockReset().mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  it("keeps only what the officer changed, over the event as it is now", () => {
+    const before = {
+      id: "e1",
+      name: "Chapter",
+      location: "Hall A",
+      start_time: "2026-07-01T18:00:00.000Z",
+      end_time: "2026-07-01T19:00:00.000Z",
+    };
+    const editor = (event: Record<string, unknown>) => (
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={event}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        keptDraft="event-edit:e1"
+      />
+    );
+    const view = render(editor(before));
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Chapter meeting" },
+    });
+    view.unmount();
+    // Someone else moves it while the draft waits.
+    render(editor({ ...before, location: "Hall B" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(screen.getByLabelText("Location")).toHaveValue("Hall B");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+});

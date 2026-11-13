@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
 import {
@@ -35,6 +35,12 @@ import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
+import {
+  readKeptDraft,
+  useKeptDraftKeys,
+  useKeptFormDraft,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import {
@@ -52,6 +58,36 @@ const ROLE_FILTER_AT = 8;
 
 type EventRow = { id: string; name: string; start_time: string };
 type Source = { kind: "event"; id: string } | { kind: "new" };
+
+/** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
+export const MINUTES_DRAFT = "minutes-start";
+
+/** What the form keeps when the officer leaves it before starting. */
+type MinutesDraft = {
+  source: Source | null;
+  type: MeetingType;
+  otherLabel: string;
+  name: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  audience: "everyone" | "roles";
+  roleIds: string[];
+};
+
+function freshMinutesDraft(): MinutesDraft {
+  return {
+    source: null,
+    type: "chapter",
+    otherLabel: "",
+    name: "",
+    date: todayInput(),
+    startTime: "",
+    endTime: "",
+    audience: "everyone",
+    roleIds: [],
+  };
+}
 
 function todayInput(now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -125,15 +161,65 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     return byEvent;
   }, [meetingsQuery.data]);
 
-  const [source, setSource] = useState<Source | null>(null);
-  const [type, setType] = useState<MeetingType>("chapter");
-  const [otherLabel, setOtherLabel] = useState("");
-  const [name, setName] = useState("");
-  const [date, setDate] = useState(() => todayInput());
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [audience, setAudience] = useState<"everyone" | "roles">("everyone");
-  const [roleIds, setRoleIds] = useState<string[]>([]);
+  /*
+    Kept when the officer goes back or leaves the page before starting
+    (#4593): the form mounts on what it held, and Meetings reopens it on
+    return when it was left open. Cancel, Discard and a start drop it.
+  */
+  const draftKey = useKeptDraftKeys().draft(MINUTES_DRAFT);
+  const [kept] = useState(() => readKeptDraft<MinutesDraft>(draftKey));
+  const initial = kept ?? freshMinutesDraft();
+  const [source, setSource] = useState<Source | null>(initial.source);
+  const [type, setType] = useState<MeetingType>(initial.type);
+  const [otherLabel, setOtherLabel] = useState(initial.otherLabel);
+  const [name, setName] = useState(initial.name);
+  const [date, setDate] = useState(initial.date);
+  const [startTime, setStartTime] = useState(initial.startTime);
+  const [endTime, setEndTime] = useState(initial.endTime);
+  const [audience, setAudience] = useState(initial.audience);
+  const [roleIds, setRoleIds] = useState<string[]>(initial.roleIds);
+  const draft = useKeptFormDraft<MinutesDraft>(
+    MINUTES_DRAFT,
+    true,
+    {
+      source,
+      type,
+      otherLabel,
+      name,
+      date,
+      startTime,
+      endTime,
+      audience,
+      roleIds,
+    },
+    { restoredAtMount: kept !== undefined },
+  );
+  // A start that lands after the officer left the page doesn't pull them to
+  // the new minutes: they are somewhere else now.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  function fill(draft: MinutesDraft) {
+    setSource(draft.source);
+    setType(draft.type);
+    setOtherLabel(draft.otherLabel);
+    setName(draft.name);
+    setDate(draft.date);
+    setStartTime(draft.startTime);
+    setEndTime(draft.endTime);
+    setAudience(draft.audience);
+    setRoleIds(draft.roleIds);
+  }
+  function discard() {
+    draft.discard();
+    setProblems({});
+    fill(freshMinutesDraft());
+  }
   const [roleFilter, setRoleFilter] = useState("");
   const [problems, setProblems] = useState<Record<string, string>>({});
 
@@ -151,6 +237,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   function pickEvent(event: EventRow) {
     const existing = started.get(event.id);
     if (existing) {
+      // Their minutes are what the officer came for; nothing to keep.
+      draft.drop();
       onDone();
       router.push(meetingHref(existing));
       return;
@@ -184,6 +272,9 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     const found = validate();
     setProblems(found);
     if (Object.keys(found).length > 0 || !source) return;
+    // Out of the store while it runs: coming back mid-start must not offer
+    // the same minutes to start twice.
+    draft.hold();
     try {
       const meeting = await start.mutateAsync({
         meeting_type: type,
@@ -200,9 +291,12 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
               },
             }),
       });
+      draft.drop();
+      if (!mounted.current) return;
       onDone();
       router.push(meetingHref(meeting.id));
     } catch (error) {
+      draft.release();
       if (codeOf(error) === "meeting.already_started") {
         // Someone started them while this panel was open. The list refetches
         // with them in it when the viewer may read them.
@@ -461,7 +555,15 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         </div>
       </PanelBody>
       <PanelFooter>
-        <Button type="button" variant="secondary" onClick={onDone}>
+        {draft.restored ? <KeptDraftNote onDiscard={discard} /> : null}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            draft.drop();
+            onDone();
+          }}
+        >
           Cancel
         </Button>
         <Button type="submit" form={`${ids}-form`} disabled={start.isPending}>

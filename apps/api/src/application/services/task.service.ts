@@ -23,6 +23,7 @@ import type {
   TaskView,
 } from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
+import { taskDueInstant } from '#domain/utils/member-nudge';
 import {
   normalizeProofLink,
   TASK_COMPLETION_NOTE_MAX,
@@ -107,9 +108,7 @@ function isPastDue(
   task: Pick<Task, 'due_date' | 'due_at'>,
   now: Date,
 ): boolean {
-  const dueAt = task.due_at ? Date.parse(task.due_at) : Number.NaN;
-  if (!Number.isNaN(dueAt)) return dueAt <= now.getTime();
-  return task.due_date < now.toISOString().slice(0, 10);
+  return taskDueInstant(task) <= now.getTime();
 }
 
 function toDisplayStatusList(tasks: Task[]): TaskView[] {

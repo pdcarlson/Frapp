@@ -183,8 +183,33 @@ const standing = vi.hoisted(() => ({
   },
 }));
 
+/** The nudge card (#4781): what the server sent, and what the card did. */
+const nudge = vi.hoisted(() => ({
+  ask: false,
+  data: null as null | Record<string, unknown>,
+  enabled: undefined as boolean | undefined,
+  dismiss: vi.fn(),
+  markSeen: vi.fn(),
+  recheck: vi.fn(),
+  setEnabled: vi.fn(),
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({ ask: nudge.ask, ready: true, available: true }),
+}));
+vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useMemberNudge: (options: { enabled?: boolean }) => {
+    nudge.enabled = options.enabled;
+    return { data: nudge.data };
+  },
+  useMemberNudgeActions: () => ({
+    dismiss: nudge.dismiss,
+    markSeen: nudge.markSeen,
+    recheck: nudge.recheck,
+  }),
+  useSetMemberNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
   useActivity: () => activity.value,
   useActivityStanding: () => standing.value,
   useViewerUserId: () => "me",
@@ -376,6 +401,13 @@ describe("Activity screen (#3897)", () => {
     writes.checkIn.mockReset().mockResolvedValue(undefined);
     writes.fix.mockReset();
     writes.writeBlockedReason = null;
+    nudge.ask = false;
+    nudge.data = null;
+    nudge.enabled = undefined;
+    nudge.dismiss.mockReset();
+    nudge.markSeen.mockReset();
+    nudge.recheck.mockReset();
+    nudge.setEnabled.mockReset();
     activity.value = {
       data: read(),
       isPending: false,
@@ -899,6 +931,78 @@ describe("Activity screen (#3897)", () => {
       expect(drawnText(render().root.findByType(ReviewCard))).toContain(
         "Couldn't load hours waiting for approval.",
       );
+    });
+  });
+
+  describe("the nudge card (#4781)", () => {
+    const CARD = {
+      id: "nudge-1",
+      kind: "task_due_soon",
+      title: "A good day to start",
+      body: "A call today keeps Monday calm.",
+      start_here: "Call the first venue on your list.",
+      task_id: "no-such-task",
+      task_title: "Book the venue",
+      seen: false,
+      created_at: "2026-11-13T15:00:00.000Z",
+    };
+    const cards = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.testID === "activity-nudge-card",
+      );
+
+    it("is not asked for, and not drawn, for a member without Ask", () => {
+      nudge.data = CARD;
+      const tree = render();
+      expect(nudge.enabled).toBe(false);
+      expect(cards(tree)).toHaveLength(0);
+    });
+
+    it("draws nothing when the server sends no card", () => {
+      nudge.ask = true;
+      const tree = render();
+      expect(nudge.enabled).toBe(true);
+      expect(cards(tree)).toHaveLength(0);
+    });
+
+    it("draws the one card, and records that it was seen", () => {
+      nudge.ask = true;
+      nudge.data = CARD;
+      const tree = render();
+      expect(cards(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain("A good day to start");
+      expect(nudge.markSeen).toHaveBeenCalledWith("nudge-1");
+    });
+
+    it("goes to the task board for a task the page does not hold", () => {
+      nudge.ask = true;
+      nudge.data = CARD;
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith("/tasks");
+    });
+
+    it("closes with the reason the member gave", () => {
+      nudge.ask = true;
+      nudge.data = { ...CARD, kind: "task_praise", start_here: null };
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-thanks").props.onPress();
+      });
+      expect(nudge.dismiss).toHaveBeenCalledWith("nudge-1", "thanks");
+    });
+
+    it("is not asked for while the chapter has Tasks off", () => {
+      nudge.ask = true;
+      chapter.data = { enabled_modules: { tasks: false } };
+      render();
+      expect(nudge.enabled).toBe(false);
     });
   });
 

@@ -62,6 +62,8 @@ import {
   type RepeatEditSeries,
 } from "@repo/validation";
 import { MemberFacingError } from "@repo/hooks/error-copy";
+import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -173,6 +175,172 @@ function ScheduleEnd({
  * so reordering rows moves the values rather than the focus.
  */
 type ZoneVertexDraft = { id: string; lat: string; lng: string };
+
+/**
+ * What the form keeps when the officer leaves it unsaved (#4593): every field
+ * as typed, and whether More options and the zone were open, so it comes back
+ * exactly as it was left.
+ */
+type EventFields = {
+  name: string;
+  description: string;
+  location: string;
+  startAt: string;
+  endAt: string;
+  pointValue: string;
+  attendance: EventAttendanceDraft;
+  repeat: RepeatDraft;
+  notes: string;
+  eventTypeId: string | null;
+  checkInZone: ZoneVertexDraft[];
+  checkInZoneName: string;
+};
+type EventFormDraft = EventFields & {
+  typeFilledName: string | null;
+  showMore: boolean;
+  showZone: boolean;
+  /**
+   * An edit's record as the form opened on it. A kept edit is only the fields
+   * the officer changed from this: the rest come from the record as it is
+   * when the form opens again, so a kept draft never sends back a location
+   * someone else has changed since.
+   */
+  base: EventFields | null;
+};
+
+const EVENT_FIELD_KEYS = [
+  "name",
+  "description",
+  "location",
+  "startAt",
+  "endAt",
+  "pointValue",
+  "attendance",
+  "repeat",
+  "notes",
+  "eventTypeId",
+  "checkInZone",
+  "checkInZoneName",
+] as const satisfies readonly (keyof EventFields)[];
+
+/** A kept edit over the record as it is now: only what the officer changed. */
+function keepEditsOver(kept: EventFormDraft, now: EventFormDraft): EventFormDraft {
+  const base = kept.base;
+  if (!base) return kept;
+  const merged = { ...now } as Record<string, unknown>;
+  for (const key of EVENT_FIELD_KEYS) {
+    if (JSON.stringify(kept[key]) !== JSON.stringify(base[key])) {
+      merged[key] = kept[key];
+    }
+  }
+  return {
+    ...(merged as EventFormDraft),
+    typeFilledName: kept.typeFilledName,
+    showMore: kept.showMore,
+    showZone: kept.showZone,
+    base: now.base,
+  };
+}
+
+/** What the form opens on: the record, a template, or a fresh event. */
+function openingDraft({
+  mode,
+  event,
+  template,
+  initialStartAt,
+  initialEndAt,
+  initialName,
+  initialLocation,
+  initialPointValue,
+}: {
+  mode: "create" | "edit";
+  event: EventRecord | null;
+  template: EventRecord | null | undefined;
+  initialStartAt?: string;
+  initialEndAt?: string;
+  initialName?: string;
+  initialLocation?: string;
+  initialPointValue?: number;
+}): EventFormDraft {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const points = (value: unknown) =>
+    String(typeof value === "number" ? value : 10);
+  if (mode === "edit" && event) {
+    const zone = zoneToDrafts(event.check_in_zone);
+    const fields: EventFields = {
+      name: text(event.name),
+      description: text(event.description),
+      location: text(event.location),
+      startAt: isoToLocalInput(event.start_time),
+      endAt: isoToLocalInput(event.end_time),
+      pointValue: points(event.point_value),
+      attendance: attendanceFromEvent(attendanceFieldsOf(event)),
+      // A generated meeting's rule arrives with its parent (the effect
+      // after the fill).
+      repeat: repeatDraftFromRule(
+        editTargetOf(event, null)?.seriesRule ?? null,
+      ),
+      notes: text(event.notes),
+      eventTypeId:
+        typeof event.event_type_id === "string" ? event.event_type_id : null,
+      checkInZone: zone,
+      checkInZoneName: text(event.check_in_zone_name),
+    };
+    return {
+      ...fields,
+      typeFilledName: null,
+      // Open on edit, where the officer came to change something.
+      showMore: true,
+      showZone: zone.length > 0,
+      base: fields,
+    };
+  }
+  if (template) {
+    const zone = zoneToDrafts(template.check_in_zone);
+    return {
+      name: text(template.name),
+      description: text(template.description),
+      location: text(template.location),
+      startAt: initialStartAt ?? "",
+      endAt: initialEndAt ?? "",
+      pointValue: points(template.point_value),
+      attendance: attendanceFromEvent(attendanceFieldsOf(template)),
+      repeat: noRepeatDraft(),
+      notes: text(template.notes),
+      eventTypeId:
+        typeof template.event_type_id === "string"
+          ? template.event_type_id
+          : null,
+      checkInZone: zone,
+      checkInZoneName: text(template.check_in_zone_name),
+      typeFilledName: null,
+      // Open, so nothing copied from last year is saved unseen.
+      showMore: true,
+      showZone: zone.length > 0,
+      base: null,
+    };
+  }
+  return {
+    name: initialName ?? "",
+    description: "",
+    location: initialLocation ?? "",
+    startAt: initialStartAt ?? "",
+    endAt: initialEndAt ?? "",
+    pointValue: String(initialPointValue ?? 10),
+    attendance: emptyAttendanceDraft(),
+    repeat: noRepeatDraft(),
+    notes: "",
+    eventTypeId: null,
+    checkInZone: [],
+    checkInZoneName: "",
+    typeFilledName: null,
+    // Closed on create, so the form opens on the four fields every event
+    // needs.
+    showMore: false,
+    showZone: false,
+    base: null,
+  };
+}
 
 let vertexKeySequence = 0;
 function nextVertexKey(): string {
@@ -335,6 +503,13 @@ type EventEditorDialogProps = {
    * edit mode.
    */
   template?: EventRecord | null;
+  /**
+   * Keep what is typed when the officer leaves without saving (#4593), under
+   * this name (`event-create`, `event-edit:<id>`): going back, Escape or
+   * leaving the page keep it, and the form opens on it next time. Cancel and
+   * a save drop it. Omitted from chat's `/event`, whose + card keeps its own.
+   */
+  keptDraft?: string;
   /** Told the new event's id after a create, before `onSaved`. */
   onCreated?: (eventId: string) => Promise<void> | void;
   /**
@@ -371,6 +546,7 @@ export function EventEditorDialog({
   initialLocation,
   initialPointValue,
   template,
+  keptDraft,
   onCreated,
   postToChannelId,
   trackChatCard,
@@ -437,6 +613,38 @@ export function EventEditorDialog({
   const [showZone, setShowZone] = useState(false);
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
+  // Kept when left unsaved (#4593). The open sections are kept with it but
+  // aren't an edit, so only the fields decide whether there is a draft.
+  const fields = {
+    name,
+    description,
+    location,
+    startAt,
+    endAt,
+    pointValue,
+    attendance,
+    repeat,
+    notes,
+    eventTypeId,
+    checkInZone,
+    checkInZoneName,
+  };
+  // An edit's record as the form opened on it (`EventFormDraft.base`).
+  const [openedBase, setOpenedBase] = useState<EventFields | null>(null);
+  const kept = useKeptFormDraft<EventFormDraft>(
+    keptDraft ?? null,
+    open,
+    { ...fields, typeFilledName, showMore, showZone, base: openedBase },
+    { signature: JSON.stringify(fields) },
+  );
+  // Set where the form fills on open, for the effect after it in the same
+  // pass: `kept.restored` is state and reads the last render's.
+  const openedOnDraft = useRef(false);
+  // And whether that draft changed Repeat, which a series rule arriving
+  // after the fill then leaves alone.
+  const keptRepeatEdited = useRef(false);
+  // Discard refills the form from scratch.
+  const [fillCount, setFillCount] = useState(0);
   const rolesQuery = useRoles();
   // Adding or changing a type is `events:update` on the server; anyone who
   // can open this form may pick one.
@@ -519,95 +727,45 @@ export function EventEditorDialog({
     return (id: string) => byId.get(id);
   }, [roleOptions]);
 
+  const takeKept = kept.take;
   /* eslint-disable react-hooks/set-state-in-effect -- hydrate or reset the form when the dialog opens on a different event */
   useEffect(() => {
     if (!open) return;
-    if (mode === "edit" && event) {
-      setName(typeof event.name === "string" ? event.name : "");
-      setDescription(
-        typeof event.description === "string" ? event.description : "",
-      );
-      setLocation(typeof event.location === "string" ? event.location : "");
-      setStartAt(isoToLocalInput(event.start_time));
-      lastWholeStart.current = parseInstant(event.start_time);
-      setEndAt(isoToLocalInput(event.end_time));
-      setPointValue(
-        String(typeof event.point_value === "number" ? event.point_value : 10),
-      );
-      setAttendance(attendanceFromEvent(attendanceFieldsOf(event)));
-      // A generated meeting's rule arrives with its parent (below).
-      setRepeat(
-        repeatDraftFromRule(editTargetOf(event, null)?.seriesRule ?? null),
-      );
-      setNotes(typeof event.notes === "string" ? event.notes : "");
-      setEventTypeId(
-        typeof event.event_type_id === "string" ? event.event_type_id : null,
-      );
-      setTypeFilledName(null);
-      setCheckInZone(zoneToDrafts(event.check_in_zone));
-      setShowMore(true);
-      setShowZone(zoneToDrafts(event.check_in_zone).length > 0);
-      setCheckInZoneName(
-        typeof event.check_in_zone_name === "string"
-          ? event.check_in_zone_name
-          : "",
-      );
-      return;
-    }
-
-    if (template) {
-      const text = (value: unknown) => (typeof value === "string" ? value : "");
-      const zone = zoneToDrafts(template.check_in_zone);
-      setName(text(template.name));
-      setDescription(text(template.description));
-      setLocation(text(template.location));
-      setStartAt(initialStartAt ?? "");
-      // As the other two branches do: without it a start move here would be
-      // measured from whatever the dialog last held (#4473).
-      lastWholeStart.current = parseInstant(
-        localInputToIso(initialStartAt ?? ""),
-      );
-      setEndAt(initialEndAt ?? "");
-      setPointValue(
-        String(
-          typeof template.point_value === "number" ? template.point_value : 10,
-        ),
-      );
-      setAttendance(attendanceFromEvent(attendanceFieldsOf(template)));
-      setRepeat(noRepeatDraft());
-      setNotes(text(template.notes));
-      setEventTypeId(
-        typeof template.event_type_id === "string"
-          ? template.event_type_id
-          : null,
-      );
-      setTypeFilledName(null);
-      setCheckInZone(zone);
-      setCheckInZoneName(text(template.check_in_zone_name));
-      // Open, so nothing copied from last year is saved unseen.
-      setShowMore(true);
-      setShowZone(zone.length > 0);
-      return;
-    }
-
-    setName(initialName ?? "");
-    setDescription("");
-    setLocation(initialLocation ?? "");
-    setStartAt(initialStartAt ?? "");
-    lastWholeStart.current = parseInstant(
-      localInputToIso(initialStartAt ?? ""),
-    );
-    setEndAt(initialEndAt ?? "");
-    setPointValue(String(initialPointValue ?? 10));
-    setAttendance(emptyAttendanceDraft());
-    setRepeat(noRepeatDraft());
-    setNotes("");
-    setEventTypeId(null);
-    setTypeFilledName(null);
-    setCheckInZone([]);
-    setCheckInZoneName("");
-    setShowMore(false);
-    setShowZone(false);
+    const opened = openingDraft({
+      mode,
+      event,
+      template,
+      initialStartAt,
+      initialEndAt,
+      initialName,
+      initialLocation,
+      initialPointValue,
+    });
+    const draft = takeKept();
+    openedOnDraft.current = draft !== undefined;
+    keptRepeatEdited.current =
+      !!draft?.base &&
+      JSON.stringify(draft.repeat) !== JSON.stringify(draft.base.repeat);
+    const fill = draft ? keepEditsOver(draft, opened) : opened;
+    setName(fill.name);
+    setDescription(fill.description);
+    setLocation(fill.location);
+    setStartAt(fill.startAt);
+    // As every fill does: without it a start move here would be measured
+    // from whatever the dialog last held (#4473).
+    lastWholeStart.current = parseInstant(localInputToIso(fill.startAt));
+    setEndAt(fill.endAt);
+    setPointValue(fill.pointValue);
+    setAttendance(fill.attendance);
+    setRepeat(fill.repeat);
+    setNotes(fill.notes);
+    setEventTypeId(fill.eventTypeId);
+    setTypeFilledName(fill.typeFilledName);
+    setCheckInZone(fill.checkInZone);
+    setCheckInZoneName(fill.checkInZoneName);
+    setShowMore(fill.showMore);
+    setShowZone(fill.showZone);
+    setOpenedBase(opened.base);
   }, [
     template,
     event,
@@ -618,17 +776,27 @@ export function EventEditorDialog({
     initialName,
     initialLocation,
     initialPointValue,
+    takeKept,
+    fillCount,
   ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // A generated meeting's rule arrives with its parent, after the form has
   // opened. Repeat is locked until then, so nothing typed is overwritten.
   const parentRule = editTarget?.parent ? editTarget.seriesRule : null;
+  const rebaseKept = kept.rebase;
   /* eslint-disable react-hooks/set-state-in-effect -- the parent's rule lands after the form hydrates */
   useEffect(() => {
     if (!open || parentRule === null) return;
-    setRepeat(repeatDraftFromRule(parentRule));
-  }, [open, parentRule]);
+    const rule = repeatDraftFromRule(parentRule);
+    // The record's Repeat, as the kept edit's base.
+    setOpenedBase((base) => (base ? { ...base, repeat: rule } : base));
+    // A kept draft that changed Repeat keeps the officer's own.
+    if (!keptRepeatEdited.current) setRepeat(rule);
+    // The form filling itself, not an edit to keep.
+    if (!openedOnDraft.current) rebaseKept();
+    // `fillCount`: Discard refills from the record, rule included.
+  }, [open, parentRule, rebaseKept, fillCount]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
@@ -807,6 +975,9 @@ export function EventEditorDialog({
       is_mandatory: wire.is_mandatory,
       notes: notes.trim() || undefined,
     };
+    // Out of the store while the save runs: an officer who leaves and comes
+    // back before it lands mustn't be offered the same form to send twice.
+    kept.hold();
     try {
       if (mode === "create") {
         // Role lists are omitted when empty on create; on update (below)
@@ -879,7 +1050,10 @@ export function EventEditorDialog({
           }
         }
       } else {
-        if (!event || !editTarget || parentLoading) return;
+        if (!event || !editTarget || parentLoading) {
+          kept.release();
+          return;
+        }
         // Only what changed is sent (`eventEditPatch`): a time or location in
         // the patch pushes "Event Updated" to the chapter, so a renamed
         // meeting must not carry them.
@@ -919,6 +1093,7 @@ export function EventEditorDialog({
         );
         // Nothing changed: nothing to send, and nobody to notify.
         if (isEmptyEventPatch(patch)) {
+          kept.drop();
           onOpenChange(false);
           return;
         }
@@ -934,7 +1109,10 @@ export function EventEditorDialog({
             alternativeLabel: SERIES_SCOPE_COPY.thisEvent,
             tone: "default",
           });
-          if (!picked) return;
+          if (!picked) {
+            kept.release();
+            return;
+          }
           scope = picked.alternative ? "instance" : "series";
         }
         const request = saveRequestFor(editTarget, patch, scope);
@@ -972,6 +1150,7 @@ export function EventEditorDialog({
         });
       }
     } catch (error) {
+      kept.release();
       // A lost answer isn't a refusal: the event may exist (#1717).
       const unconfirmed =
         error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED;
@@ -990,6 +1169,7 @@ export function EventEditorDialog({
       return;
     }
 
+    kept.drop();
     onOpenChange(false);
     try {
       await onSaved();
@@ -1380,9 +1560,25 @@ export function EventEditorDialog({
         </PanelBody>
 
         <PanelFooter>
-          {/* Cancel only closes the panel — gating the way out of a surface the
-              gate just blocked would be a trap. */}
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          {kept.restored ? (
+            <KeptDraftNote
+              onDiscard={() => {
+                kept.discard();
+                setFillCount((count) => count + 1);
+              }}
+            />
+          ) : null}
+          {/* Cancel isn't gated: gating the way out of a surface the gate just
+              blocked would be a trap. It closes the panel and drops what was
+              typed, the one explicit discard; going back, Escape and leaving
+              the page keep it (#4593). */}
+          <Button
+            variant="secondary"
+            onClick={() => {
+              kept.drop();
+              onOpenChange(false);
+            }}
+          >
             Cancel
           </Button>
           <Button

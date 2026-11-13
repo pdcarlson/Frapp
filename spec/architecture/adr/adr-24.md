@@ -150,4 +150,5 @@ digest 07).
   ([`alert-routing.md`](../../../docs/ops/alert-routing.md#automated-github-issue-alerts));
   egress and Realtime peak connections have no API, so only the Usage page shows them;
 - the pager test firing not arriving;
-- desktop work starting (#2512 records the shell choice in its own ADR).
+- desktop work starting (#2512 records the shell choice in its own ADR). *Updated 2026-11-13:* desktop work started; the shell choice
+  (Electron) is [ADR-29](adr-29.md).

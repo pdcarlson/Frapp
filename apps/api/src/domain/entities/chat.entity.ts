@@ -635,7 +635,7 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — a nine-field projection,
+ * The message as the bookmarks endpoint serves it — a ten-field projection,
  * not a whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
@@ -657,6 +657,12 @@ export interface BookmarkedMessage {
   content: string;
   is_deleted: boolean;
   created_at: string;
+  /**
+   * The thread a reply belongs to (#3785), or `null` for a channel message,
+   * so a client opening a saved reply opens its thread (#3723): a reply is
+   * never in the channel's timeline.
+   */
+  thread_root_id: string | null;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *

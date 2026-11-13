@@ -289,6 +289,7 @@ function ChapterDocumentsPage() {
     typeOptions,
     folders: folderNames,
     documents,
+    canUpload,
   });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —

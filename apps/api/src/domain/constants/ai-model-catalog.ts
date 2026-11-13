@@ -149,6 +149,20 @@ export const AI_MODEL_CATALOG = {
     effort: 'low',
   },
   /**
+   * Member nudges (#4781): a short list of facts about one of a member's
+   * tasks in, a card's title, line and starting point out, which the caller
+   * checks against the facts. In the `ask` family: the card is the AI
+   * reading the member's own tasks for them, as Ask's "your tasks" does, so
+   * it stands behind the Ask switch and the member's yes.
+   */
+  'nudges.write': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 400,
+    effort: 'low',
+  },
+  /**
    * Corpus embeddings (#720). Gemini Embedding at 1,536 dimensions, decision
    * 3. Model id and price unverified (see above). Served by the Google adapter
    * once `GOOGLE_VERTEX_PROJECT` and its key are set; until then, outside

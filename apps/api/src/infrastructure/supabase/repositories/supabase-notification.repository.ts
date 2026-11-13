@@ -163,6 +163,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     chapterId: string,
     readThrough: string,
     screens?: readonly string[],
+    ids?: readonly string[],
   ): Promise<number> {
     const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
     // `read_at is null` and the `created_at` bound, as in `markChatChannelRead`:
@@ -179,6 +180,10 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       // The DTO admits only lowercase screen names, so nothing here needs
       // quoting inside the `in (...)` list.
       query = query.in('data->target->>screen', [...screens]);
+    }
+    if (ids && ids.length > 0) {
+      // One inbox entry's rows (#3948); the DTO admits only UUIDs.
+      query = query.in('id', [...ids]);
     }
     const { data, error } = await query.select('id');
 

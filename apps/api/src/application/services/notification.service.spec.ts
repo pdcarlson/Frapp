@@ -1665,11 +1665,28 @@ describe('NotificationService', () => {
         'chapter-1',
         '2026-11-09T22:00:00.000Z',
         undefined,
+        undefined,
       );
       expect(result).toEqual({
         read_at: '2026-11-09T22:00:00.000Z',
         updated: 20,
       });
+    });
+
+    it('narrows to the named rows, once each (#3948)', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(2);
+
+      await service.markNotificationsRead('user-1', 'chapter-1', {
+        ids: ['n-1', 'n-2', 'n-1'],
+      });
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        undefined,
+        ['n-1', 'n-2'],
+      );
     });
 
     it('narrows to the named screens, once each', async () => {
@@ -1684,6 +1701,7 @@ describe('NotificationService', () => {
         'chapter-1',
         '2026-11-09T22:00:00.000Z',
         ['tasks', 'points'],
+        undefined,
       );
     });
 
@@ -1698,6 +1716,7 @@ describe('NotificationService', () => {
         'user-1',
         'chapter-1',
         '2026-11-09T22:00:00.000Z',
+        undefined,
         undefined,
       );
     });
