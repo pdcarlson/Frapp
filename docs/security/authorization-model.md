@@ -28,12 +28,23 @@ guards compose, in this order:
 
 Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, still a refusal ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md), #3143).
 
-`ChapterGuard` shares two of its reads between requests that arrive together (`InFlightLookups` in
-`guards/guard-lookup.ts`, #3728): the caller's `users` row id and the chapter's subscription and module state. A request
-joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its answer can predate the request by at most
-that. Only the guard's own reads share this way: when the request names a chapter, the prefetch below reads both rows
-per request in `get_request_context` (#3583), so on that path nothing is shared between requests. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
-[`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
+Requests that arrive together share their guards' lookups (`InFlightLookups` in
+`infrastructure/supabase/in-flight-lookups.ts`, #3728, #3752). A request joins a lookup only within
+`IN_FLIGHT_JOIN_WINDOW_MS` (250 ms) of its start, so its answer can predate the request by at most that. Paul accepted
+that bound for the session, membership and roles on 2026-11-13 (#3752; [`rbac.md`](../../spec/behavior/rbac.md),
+[`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md)). What is shared, and under which key:
+
+| Lookup | Key | Where |
+| --- | --- | --- |
+| Session check (`auth.getUser`) | SHA-256 of the bearer token | `SupabaseAuthGuard` (`sessionLookups`) |
+| `get_request_context` (user, chapter, membership, roles) | Auth user id and chapter id | `ChapterGuard` prefetch (`requestContextLookups`) |
+| The caller's `users` row id | Auth user id | `ChapterGuard` (`appUserLookups`) |
+| The chapter's subscription and module state | Chapter id | `ChapterGuard` (`chapterLookups`) |
+| Membership row | App user id and chapter id | `readMemberByUserAndChapter` (`readSharedInBurst`) |
+| Roles by id | Chapter id and the sorted role ids | `readRolesByIds` (`readSharedInBurst`) |
+
+Each request gets its own copy of a shared answer. The membership and role reads are shared only while the request's
+store is live, so a write's handler, a worker or a cron always reads the database itself.
 
 *Within* one request those reads happen once (`infrastructure/supabase/request-reads.ts`, #3728). Every
 read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChapter`) and of roles by id
@@ -46,7 +57,7 @@ come from one call, `get_request_context`, and each lands in the store under the
 the call fails, they are read separately as before #3583, one failed call later, and Sentry gets one warning per
 process every ten minutes. A `GET` or `HEAD` keeps the store to its end. Any other method
 keeps it only through its guards: `RequestReadsInterceptor` seals it before the handler, so a handler
-that writes a membership or a role and reads it back reads the database. The store is created per request and never outlives it.
+that writes a membership or a role and reads it back reads the database. The store is created per request and never outlives it; only the in-flight reads in the table above cross between requests.
 
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard

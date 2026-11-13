@@ -10,13 +10,33 @@ import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { createHash } from 'node:crypto';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
+import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
 import {
   authRejected,
   safeAuthErrorCode,
   tokenExpired,
 } from './auth-rejected.exception';
 import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
+
+/**
+ * Process-wide: requests that arrive together with one token share one
+ * `auth.getUser` (#3752, Paul 2026-11-13). An app open sends dozens of
+ * requests at once, and each one's session check was its own call to Auth.
+ * A joiner's answer can predate its request by up to
+ * `IN_FLIGHT_JOIN_WINDOW_MS`, so a session revoked inside that window is still
+ * accepted by the requests that joined. Keyed by a hash of the token, so the
+ * map never holds one.
+ */
+const sessionLookups = new InFlightLookups<
+  Awaited<ReturnType<FrappSupabaseClient['auth']['getUser']>>
+>();
+
+/** The key `sessionLookups` shares a token's session check under. */
+export function sessionLookupKey(token: string): string {
+  return createHash('sha256').update(token).digest('base64url');
+}
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -46,7 +66,9 @@ export class SupabaseAuthGuard implements CanActivate {
     // queue behind it. Nothing they read is used unless this check passes for
     // that same user. No second verifier runs here: the throttler's is the one
     // that bounds unknown `kid`s (`custom-throttler.guard.ts`).
-    const sessionCheck = this.supabase.auth.getUser(token);
+    const sessionCheck = sessionLookups.run(sessionLookupKey(token), () =>
+      this.supabase.auth.getUser(token),
+    );
     const verified = request.throttlerVerifiedClaims;
     if (
       typeof verified?.sub === 'string' &&
@@ -73,7 +95,8 @@ export class SupabaseAuthGuard implements CanActivate {
       });
     }
 
-    request.supabaseUser = data.user;
+    // A copy: the answer may be shared with other requests (`sessionLookups`).
+    request.supabaseUser = structuredClone(data.user);
     request.jwtClaims = await this.readClaims(token);
     return true;
   }

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { InFlightLookups } from './in-flight-lookups';
 
 /**
  * One read per request for the lookups every chat request repeats (#3728).
@@ -16,11 +17,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * chapter rows through `readOncePerRequest` as before, the membership and
  * roles recorded with `keepForRequest`.
  *
- * **Never across requests.** `spec/behavior/rbac.md` § Permission Check
- * Algorithm and `spec/behavior/multi-tenancy.md` promise that each request resolves
- * membership and roles afresh, and Paul kept that promise in #3752. The store
- * is created per request by `requestReadsMiddleware` and dies with it, so a
- * role change or a removal still takes effect on the very next request.
+ * **Across requests, only a burst's in-flight reads.** The store is created
+ * per request by `requestReadsMiddleware` and dies with it. Requests that
+ * arrive together may also join a membership or role read another request
+ * started at most `IN_FLIGHT_JOIN_WINDOW_MS` earlier (`readSharedInBurst`),
+ * the bound Paul accepted on 2026-11-13 (#3752; `spec/behavior/rbac.md`
+ * § Permission Check Algorithm, `spec/behavior/multi-tenancy.md`). A role
+ * change or a removal takes effect on every request that arrives after that.
  *
  * **A write's handler reads afresh.** A `GET` or `HEAD` keeps its store to the
  * end. Any other method keeps it only through the guards:
@@ -33,6 +36,23 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * by hand) has no store and reads straight through.
  */
 const READ_METHODS = new Set(['GET', 'HEAD']);
+
+const burstReads = new InFlightLookups<unknown>();
+
+/**
+ * Runs `read`, or joins the same `key`'s read that another request started at
+ * most `IN_FLIGHT_JOIN_WINDOW_MS` ago (#3752). Only while this request's store
+ * is live (`requestReadsActive`): a write's handler, a worker or a cron reads
+ * the database itself. The answer is shared by reference, so call it inside
+ * `readOncePerRequest`, which hands each caller a copy.
+ */
+export function readSharedInBurst<T>(
+  key: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!requestReadsActive()) return read();
+  return burstReads.run(key, read) as Promise<T>;
+}
 
 interface RequestReads {
   readonly reads: Map<string, Promise<unknown>>;

@@ -1,5 +1,6 @@
 import {
   readOncePerRequest,
+  readSharedInBurst,
   requestReadsActive,
   runWithRequestReads,
   sealRequestReadsForWrites,
@@ -7,9 +8,9 @@ import {
 
 /**
  * The per-request read store (#3728). What it may never do is the point of
- * these cases: answer a second request from the first's read
- * (spec/behavior/rbac.md, #3752), or answer a write's handler from a read made
- * before its write.
+ * these cases: hand a second request the first's store (only an in-flight
+ * read is shared, through `readSharedInBurst`, #3752), or answer a write's
+ * handler from a read made before its write.
  */
 describe('request reads', () => {
   const counting = <T>(value: T) => {
@@ -101,5 +102,76 @@ describe('request reads', () => {
       await readOncePerRequest('k', read);
     });
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  // Requests that arrive together may join one membership or role read, within
+  // IN_FLIGHT_JOIN_WINDOW_MS of its start (#3752, Paul 2026-11-13).
+  describe('readSharedInBurst', () => {
+    let caseNo = 0;
+    let key: string;
+    beforeEach(() => {
+      caseNo += 1;
+      key = `burst:${caseNo}`;
+    });
+
+    const inRequest = <T>(method: string, fn: () => Promise<T>) =>
+      runWithRequestReads(method, fn);
+
+    it("joins the same key's read across requests that arrive together", async () => {
+      const read = counting({ id: 'member-1' });
+
+      const [a, b] = await Promise.all([
+        inRequest('GET', () =>
+          readOncePerRequest(key, () => readSharedInBurst(key, read)),
+        ),
+        inRequest('GET', () =>
+          readOncePerRequest(key, () => readSharedInBurst(key, read)),
+        ),
+      ]);
+
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(a).toEqual({ id: 'member-1' });
+      // Each request still gets its own copy.
+      expect(a).not.toBe(b);
+    });
+
+    it('reads each key on its own', async () => {
+      const read = counting('row');
+
+      await Promise.all([
+        inRequest('GET', () => readSharedInBurst(key, read)),
+        inRequest('GET', () => readSharedInBurst(`${key}:other`, read)),
+      ]);
+
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    it('shares nothing outside a request', async () => {
+      const read = counting('row');
+
+      await Promise.all([
+        readSharedInBurst(key, read),
+        readSharedInBurst(key, read),
+      ]);
+
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    it("shares nothing with a write's handler", async () => {
+      const read = counting('row');
+
+      await Promise.all([
+        inRequest('POST', async () => {
+          sealRequestReadsForWrites();
+          return readSharedInBurst(key, read);
+        }),
+        inRequest('POST', async () => {
+          sealRequestReadsForWrites();
+          return readSharedInBurst(key, read);
+        }),
+      ]);
+
+      expect(read).toHaveBeenCalledTimes(2);
+    });
   });
 });
