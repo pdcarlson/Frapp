@@ -260,57 +260,108 @@ export function formPageNotice(
 
 /**
  * Where the form page's open-time read of the viewer's answers stands
- * (#4727, #4752), from the TanStack query state both twins share. The page
- * reads again on open (`refetchOnMount: "always"`), because the card's copy
- * can be a minute old and answers sent from the other device since must not
- * be overwritten by a stale prefill.
+ * (#4727, #4752). The page reads again on open (`refetchOnMount: "always"`),
+ * because the card's copy can be a minute old and answers sent from the other
+ * device since must not be overwritten by a stale prefill.
  *
  * - `reading`: the read is in flight. The questions are drawn but held, so
  *   the first edit is made on the newest answers.
- * - `read`: one read since the page opened has landed.
+ * - `read`: a read since the page opened has landed.
  * - `offline`: the read is waiting for the network. Nothing would settle it,
- *   so the page doesn't wait: the answers already on screen become
- *   editable, and {@link formOpenReadNote} says why they may be behind.
- * - `unchecked`: the read failed, or failed once and is retrying. Same as
- *   offline: editable on the copy there is, and a send reaches the server,
- *   which has the say.
+ *   so the page doesn't wait: the answers already on screen become editable,
+ *   and {@link formOpenReadNote} says why they may be behind.
+ * - `unchecked`: the read failed, is retrying, or is being tried again after
+ *   the page stopped waiting for it. Editable on the copy there is, with a
+ *   note; a send reaches the server, which has the say.
  *
- * `isFetchedAfterMount` counts a data or an error update, so a refetch that
- * cancels another can't pass for a read that landed. A failure is checked
- * first: `failureCount` survives the error, and resets only when a later
- * read starts.
+ * Edits made before a late read lands are kept per question
+ * ({@link formAnswersWithEdits}), so the questions the member didn't touch
+ * still show what the read brought.
  */
 export type FormOpenRead = "reading" | "read" | "offline" | "unchecked";
 
-export function formOpenRead(query: {
-  fetchStatus: "fetching" | "paused" | "idle";
-  failureCount: number;
-  isFetchedAfterMount: boolean;
-}): FormOpenRead {
-  if (query.fetchStatus === "paused") return "offline";
-  if (query.failureCount > 0) return "unchecked";
-  return query.isFetchedAfterMount ? "read" : "reading";
+/**
+ * {@link FormOpenRead} from the TanStack query state both twins share.
+ *
+ * `gaveUp` is the page's own latch: true once this has returned `offline` or
+ * `unchecked`. Without it, a read that resumes after a pause, or is tried
+ * again on window focus, starts with `failureCount` back at 0 and would
+ * read as `reading`, locking the questions mid-edit and dropping the note.
+ *
+ * Landed means a success since mount: `isFetchedAfterMount` also counts an
+ * error update, and `status` stays `"error"` through a later refetch until
+ * one succeeds.
+ *
+ * `online` is TanStack's `onlineManager` (`useQueryOnline`), not the
+ * query's `fetchStatus`: the phone's `offlineFirst` sends the first attempt
+ * even offline, where it can hang until the OS gives up, and a paused
+ * retry there can be waiting for the app's focus, not the network.
+ */
+export function formOpenRead(
+  query: {
+    status: "pending" | "error" | "success";
+    fetchStatus: "fetching" | "paused" | "idle";
+    failureCount: number;
+    isFetchedAfterMount: boolean;
+  },
+  { online, gaveUp }: { online: boolean; gaveUp: boolean },
+): FormOpenRead {
+  if (query.isFetchedAfterMount && query.status === "success") return "read";
+  if (!online) return "offline";
+  if (query.fetchStatus === "paused" || query.failureCount > 0 || gaveUp) {
+    return "unchecked";
+  }
+  return "reading";
 }
 
 /**
  * The line a form page shows while its answers may be behind the server's,
  * or `null` when they aren't. `loaded` is whether there are answers on screen
- * at all: without them, offline says the answers will load, not that they're
- * being edited.
+ * at all; `pending` is the query's own (no answers yet and no final error).
+ * A closed form only shows what was sent, so it says nothing once loaded.
  */
 export function formOpenReadNote(
   read: FormOpenRead,
-  loaded: boolean,
+  {
+    loaded,
+    closed,
+    pending,
+  }: { loaded: boolean; closed: boolean; pending: boolean },
 ): string | null {
+  if (closed && loaded) return null;
   if (read === "offline") {
     return loaded
       ? "You're offline, so newer answers from another device may not show here. Send needs a connection."
       : "You're offline. Your answers load when you're back online.";
   }
-  if (read === "unchecked" && loaded) {
-    return "Couldn't check for newer answers, so these are the ones last loaded here.";
+  if (read === "unchecked") {
+    if (loaded) {
+      return "Couldn't check for newer answers, so these are the ones last loaded here.";
+    }
+    return pending ? "Couldn't load your answers yet. Trying again." : null;
   }
   return null;
+}
+
+/**
+ * A member's edits on the form page, per question: the new answer, or
+ * `null` for one they cleared. Kept apart from the answers they edit, so a
+ * read that lands after the first edit still updates every question they
+ * didn't touch (#4752).
+ */
+export type FormAnswerEdits = Record<string, string | string[] | null>;
+
+/** The answers the page shows: the saved ones with the member's edits on top. */
+export function formAnswersWithEdits(
+  saved: FormAnswers | null | undefined,
+  edits: FormAnswerEdits,
+): FormAnswers {
+  const out: FormAnswers = { ...(saved ?? {}) };
+  for (const [questionId, value] of Object.entries(edits)) {
+    if (value === null) delete out[questionId];
+    else out[questionId] = value;
+  }
+  return out;
 }
 
 /** Above Send once it was pressed with questions still to answer. */

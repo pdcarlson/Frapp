@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FormCard } from "./form-card";
-import { FormFillHost } from "../form-fill-dialog";
+import { FormFillDialog, FormFillHost } from "../form-fill-dialog";
 import { FormResponsesHost } from "../form-responses-dialog";
 import { memberFallbackLabel } from "@repo/hooks";
 
@@ -583,12 +583,43 @@ describe("FormCard (#3926 step 3)", () => {
     expect(within(dialog).getByRole("status")).toHaveTextContent(
       "You're offline",
     );
-    // Back online, the read goes out and lands, and the note goes.
+    // The member edits offline, then comes back online: the read goes out,
+    // lands answers sent from the phone meanwhile, and the note goes. The
+    // question they didn't touch shows the newer answer; the one they did
+    // keeps their edit, and the questions never lock again.
+    await user.type(within(dialog).getByRole("textbox"), "Late checkout");
+    let land: (value: unknown) => void = () => {};
+    api.GET.mockReturnValue(new Promise((resolve) => (land = resolve)));
     onlineManager.setOnline(true);
+    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(2));
+    expect(within(dialog).getByRole("textbox")).not.toHaveAttribute("readonly");
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeEnabled();
+    land({
+      data: {
+        response: { answers: { room: "double" }, updated_at: "2026-11-14" },
+      },
+    });
     await waitFor(() =>
       expect(within(dialog).queryByRole("status")).not.toBeInTheDocument(),
     );
-    expect(api.GET).toHaveBeenCalledTimes(2);
+    expect(within(dialog).getByRole("radio", { name: "Double" })).toBeChecked();
+    expect(within(dialog).getByRole("textbox")).toHaveValue("Late checkout");
+  });
+
+  it("says the answers load once back online when none were loaded", async () => {
+    api.GET.mockResolvedValue(SAVED);
+    onlineManager.setOnline(false);
+    // The dialog on its own: no card has read the answers.
+    wrap(<FormFillDialog message={form()} onOpenChange={() => {}} />);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Your answers load when you're back online.",
+    );
+    expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Loading your answers…"),
+    ).not.toBeInTheDocument();
+    expect(api.GET).not.toHaveBeenCalled();
   });
 
   it("holds a reopened form until a save sent before it closed lands and is read again", async () => {

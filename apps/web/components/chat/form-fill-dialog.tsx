@@ -25,18 +25,20 @@ import {
   formDeadlineLine,
   formOpenRead,
   formOpenReadNote,
+  formAnswersWithEdits,
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
   isFormClosed,
   readFormPayload,
   saveFormResponse,
+  type FormAnswerEdits,
   type FormAnswers,
   type FormPayload,
   type FormQuestion,
 } from "@repo/chat-core/forms";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useFrappClient, useNow } from "@repo/hooks";
+import { useFrappClient, useNow, useQueryOnline } from "@repo/hooks";
 import {
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
   FORM_SHORT_ANSWER_MAX_LENGTH,
@@ -187,11 +189,16 @@ function FormFillBody({
     queryFn: () => fetchOwnFormResponse(apiClient, messageId),
     refetchOnMount: "always",
   });
-  const read = formOpenRead(response);
+  // Once the page stops waiting for the read, it doesn't start again: a read
+  // resumed after a pause, or tried again, mustn't lock the questions
+  // mid-edit (`formOpenRead`).
+  const [gaveUp, setGaveUp] = useState(false);
+  const online = useQueryOnline();
+  const read = formOpenRead(response, { online, gaveUp });
+  if (!gaveUp && (read === "offline" || read === "unchecked")) setGaveUp(true);
   const synced = read !== "reading";
-  // The member's edits, or `null` before their first: until then the form
-  // shows the answers they last sent.
-  const [edited, setEdited] = useState<FormAnswers | null>(null);
+  // The member's edits, per question, over the answers they last sent.
+  const [edits, setEdits] = useState<FormAnswerEdits>({});
   const saved = response.data?.answers;
   // Loaded at least once (`null` is "not answered yet"). A failed background
   // refetch keeps the last answers on screen rather than swapping the
@@ -203,8 +210,8 @@ function FormFillBody({
   const [sending, setSending] = useState(false);
   // A closed form shows what was sent, never edits that didn't go out.
   const current = useMemo(
-    () => (closed ? (saved ?? {}) : (edited ?? saved ?? {})),
-    [closed, edited, saved],
+    () => (closed ? (saved ?? {}) : formAnswersWithEdits(saved, edits)),
+    [closed, edits, saved],
   );
   const problems = useMemo(
     () => formAnswerProblems(payload.questions, current),
@@ -212,21 +219,19 @@ function FormFillBody({
   );
   const problemCount = Object.keys(problems).length;
   const answered = !!response.data;
-  // Why the answers on screen may be behind the server's. A closed form only
-  // shows what was sent, so it has nothing to say once they're loaded.
-  const note = closed && loaded ? null : formOpenReadNote(read, loaded);
+  // Why the answers on screen may be behind the server's.
+  const note = formOpenReadNote(read, {
+    loaded,
+    closed,
+    pending: response.isPending,
+  });
 
   const setAnswer = (
     questionId: string,
     value: string | string[] | undefined,
   ) => {
     setFailure(null);
-    setEdited((prev) => {
-      const next = { ...(prev ?? saved ?? {}) };
-      if (value === undefined) delete next[questionId];
-      else next[questionId] = value;
-      return next;
-    });
+    setEdits((prev) => ({ ...prev, [questionId]: value ?? null }));
   };
 
   // A save that lands after this page closed (or another form opened in its

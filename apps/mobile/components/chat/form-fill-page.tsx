@@ -26,18 +26,24 @@ import {
   formDeadlineLine,
   formOpenRead,
   formOpenReadNote,
+  formAnswersWithEdits,
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
   isFormClosed,
   readFormPayload,
   saveFormResponse,
-  type FormAnswers,
+  type FormAnswerEdits,
   type FormPayload,
   type FormQuestion,
 } from "@repo/chat-core/forms";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useFrappClient, useNow, type NameResolver } from "@repo/hooks";
+import {
+  useFrappClient,
+  useNow,
+  useQueryOnline,
+  type NameResolver,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
@@ -286,7 +292,13 @@ function FormFillBody({
   // is, a note says why, and a send reaches the server, which has the say
   // (`formOpenRead`, #4752).
   const response = useOwnFormResponse(messageId, true, true);
-  const read = formOpenRead(response);
+  // Once the page stops waiting for the read, it doesn't start again: a read
+  // resumed after a pause, or tried again, mustn't lock the questions
+  // mid-edit (`formOpenRead`).
+  const [gaveUp, setGaveUp] = useState(false);
+  const online = useQueryOnline();
+  const read = formOpenRead(response, { online, gaveUp });
+  if (!gaveUp && (read === "offline" || read === "unchecked")) setGaveUp(true);
   const synced = read !== "reading";
   const saved = response.data?.answers;
   // Loaded at least once (`null` is "not answered yet"). A failed background
@@ -294,20 +306,22 @@ function FormFillBody({
   // swapping them for an error mid-edit.
   const loaded = response.data !== undefined;
   const answered = !!response.data;
-  // Why the answers on screen may be behind the server's. A closed form only
-  // shows what was sent, so it has nothing to say once they're loaded.
-  const note = closed && loaded ? null : formOpenReadNote(read, loaded);
+  // Why the answers on screen may be behind the server's.
+  const note = formOpenReadNote(read, {
+    loaded,
+    closed,
+    pending: response.isPending,
+  });
 
-  // The member's edits, or `null` before their first: until then the page
-  // shows the answers they last sent.
-  const [edited, setEdited] = useState<FormAnswers | null>(null);
+  // The member's edits, per question, over the answers they last sent.
+  const [edits, setEdits] = useState<FormAnswerEdits>({});
   const [showProblems, setShowProblems] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // A closed form shows what was sent, never edits that didn't go out.
   const current = useMemo(
-    () => (closed ? (saved ?? {}) : (edited ?? saved ?? {})),
-    [closed, edited, saved],
+    () => (closed ? (saved ?? {}) : formAnswersWithEdits(saved, edits)),
+    [closed, edits, saved],
   );
   const problems = useMemo(
     () => formAnswerProblems(payload.questions, current),
@@ -318,14 +332,9 @@ function FormFillBody({
   const setAnswer = useCallback(
     (questionId: string, value: string | string[] | undefined) => {
       setFailure(null);
-      setEdited((prev) => {
-        const next = { ...(prev ?? saved ?? {}) };
-        if (value === undefined) delete next[questionId];
-        else next[questionId] = value;
-        return next;
-      });
+      setEdits((prev) => ({ ...prev, [questionId]: value ?? null }));
     },
-    [saved],
+    [],
   );
 
   // A save that lands after this page closed (or another form opened in its

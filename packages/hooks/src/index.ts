@@ -91,6 +91,7 @@ export * from "./use-meetings";
 export * from "./use-members";
 export * from "./use-notifications";
 export * from "./use-now";
+export * from "./use-query-online";
 export * from "./use-org-config";
 export * from "./use-own-status-at";
 export * from "./use-pledge-classes";
