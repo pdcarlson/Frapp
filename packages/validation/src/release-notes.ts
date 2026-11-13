@@ -139,6 +139,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A pinned message's pin now fills in, so it's easy to spot.",
       "A muted channel stays quiet in the channel list: its new messages no longer light a folded section's heading or keep it under Unread only, unless one mentions you. Direct messages still show.",
       "When something you save doesn't go through because the connection dropped or our server hiccuped, the error now offers Try again.",
+      "You can check in to an event right from its row in Activity, on the web for events that don't need your location and on your phone for any event.",
+      "Frapp AI now introduces itself once with what it can do, and one switch in Settings turns it on or off.",
+      "Deleting a role no longer locks out the people who held it, since anyone left without a role keeps the chapter's everyday access.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
