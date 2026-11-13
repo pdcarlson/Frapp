@@ -8639,6 +8639,8 @@ export interface components {
             check_in_open: boolean;
             /** @description Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses. */
             check_in_needs_location: boolean;
+            /** @description Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise. */
+            check_in_needs_code: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
             /**

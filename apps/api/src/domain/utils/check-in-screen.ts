@@ -78,6 +78,16 @@ export const CHECK_IN_SCREEN_CHECKS = [
 ] as const;
 export type CheckInScreenCheck = (typeof CHECK_IN_SCREEN_CHECKS)[number];
 
+/**
+ * Whether check-in needs the code, given the event's live screen rows: once
+ * any officer's screen has shown it, until check-in closes (#4532). The one
+ * rule behind `AttendanceService.checkIn`'s `needs_code` refusal and the
+ * reads' `check_in_needs_code` (#4808), so the two can't drift.
+ */
+export function screensRequireCode(liveScreens: readonly unknown[]): boolean {
+  return liveScreens.length > 0;
+}
+
 /** A screen row that knows where it is. */
 export type LocatedScreen = { lat: number; lng: number; accuracy_m: number };
 

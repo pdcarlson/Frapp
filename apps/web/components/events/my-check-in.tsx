@@ -7,7 +7,11 @@ import {
   useNow,
   type OwnAttendanceRow,
 } from "@repo/hooks";
-import { checkInWindowBounds, isValidZoneOutline } from "@repo/validation";
+import {
+  CHECK_IN_NEEDS_CODE_COPY,
+  checkInWindowBounds,
+  isValidZoneOutline,
+} from "@repo/validation";
 import {
   formatRelativeDayTime,
   formatTimeOfDay,
@@ -25,19 +29,30 @@ import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
 import { checkInLabel, pointsLabel } from "@/components/events/event-labels";
 import { attendanceStatusLabel } from "@/components/events/attendance-status";
 
-/** Where the event's check-in zone leaves a web viewer. */
-export type ZoneState = "none" | "zone" | "malformed";
+/**
+ * Where the event's check-in leaves a web viewer: `none` is the one state web
+ * can check in from. `code` is an event with no zone whose check-in now needs
+ * the code on an officer's screen, which web can't scan (#4808).
+ */
+export type ZoneState = "none" | "zone" | "malformed" | "code";
 
 /**
- * An event's `check_in_zone` as a {@link ZoneState}. Three states, not two:
- * an outline that isn't a usable polygon is not "no zone", because the server
- * (`isValidZone`, which runs `isValidZoneOutline`) then refuses every
- * check-in, so calling it "check in from anywhere" would say the opposite of
- * what members get. The same check the server runs; only a missing zone is
- * none. The event sheet and the chat event card both read it.
+ * An event's `check_in_zone`, and its read's `check_in_needs_code`, as a
+ * {@link ZoneState}. An outline that isn't a usable polygon is not "no zone",
+ * because the server (`isValidZone`, which runs `isValidZoneOutline`) then
+ * refuses every check-in, so calling it "check in from anywhere" would say the
+ * opposite of what members get. The same check the server runs. A zone wins
+ * over the code: its line already sends the member to the phone. Only an
+ * explicit `true` is the code (a read from before the field says nothing).
+ * The event sheet and the chat event card both read it.
  */
-export function checkInZoneState(zone: unknown): ZoneState {
-  if (zone === null || zone === undefined) return "none";
+export function checkInZoneState(
+  zone: unknown,
+  needsCode: unknown = false,
+): ZoneState {
+  if (zone === null || zone === undefined) {
+    return needsCode === true ? "code" : "none";
+  }
   return isValidZoneOutline(zone) ? "zone" : "malformed";
 }
 
@@ -45,10 +60,13 @@ export function checkInZoneState(zone: unknown): ZoneState {
  * What an open check-in says when web can't take it: the sheet's detail line,
  * and the chat card's note in place of its Check in button.
  */
-export const ZONE_CHECK_IN_LINE: Record<"zone" | "malformed", string> = {
+export const ZONE_CHECK_IN_LINE: Record<Exclude<ZoneState, "none">, string> = {
   zone: "This event checks your location, so check in from the Frapp mobile app.",
   malformed:
     "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it.",
+  // The words the server's `needs_code` refusal shows, from the same map, so
+  // the line and a stale read's refusal can't drift apart.
+  code: CHECK_IN_NEEDS_CODE_COPY,
 };
 
 export type MyCheckInView =
@@ -146,7 +164,8 @@ function clockLabel(at: Date, now: Date): string {
  * roster, so this is what a member sees on the event sheet (#3855). Check in
  * is the chat card's (`useSelfCheckIn`): no token and no coordinates, so an
  * event with a check-in zone, which needs the member's location, says to use
- * the mobile app instead (`spec/behavior/events.md` § Check-In). Live updates
+ * the mobile app instead, and one whose check-in needs the officer's code
+ * says to scan it (`spec/behavior/events.md` § Check-In). Live updates
  * arrive through the sheet's `attendance:<eventId>` subscription.
  */
 export function MyCheckIn({
@@ -157,6 +176,7 @@ export function MyCheckIn({
   pointValue,
   zone,
   eventUnavailable = false,
+  eventPending = false,
 }: {
   eventId: string;
   start: unknown;
@@ -166,6 +186,12 @@ export function MyCheckIn({
   zone: ZoneState;
   /** The event's own read failed (deleted, or out of reach). */
   eventUnavailable?: boolean;
+  /**
+   * The event's own read hasn't landed, so whether check-in needs an
+   * officer's code is unknown: held as loading rather than offering a Check
+   * in that may be refused (#4808).
+   */
+  eventPending?: boolean;
 }) {
   const mine = useMyAttendance(eventId);
   const checkIn = useSelfCheckIn();
@@ -180,7 +206,8 @@ export function MyCheckIn({
     eventUnavailable,
     // Not while the read is paused offline: then the window is still worth
     // saying, and the server refuses a repeat anyway.
-    ownLoading: mine.isPending && mine.fetchStatus !== "paused",
+    ownLoading:
+      (mine.isPending && mine.fetchStatus !== "paused") || eventPending,
     start,
     end,
     opensMinutes,

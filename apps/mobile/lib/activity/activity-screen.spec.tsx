@@ -1795,6 +1795,27 @@ describe("Activity screen (#3897)", () => {
       expect(button(tree, "Formal").props.disabled).toBe(true);
     });
 
+    it("keeps Check in on the row while an officer's screen needs the code (#4808)", async () => {
+      // The phone scans; web leaves the row's Check in off for this.
+      writes.checkIn.mockResolvedValue({});
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            {
+              ...openEvent("ev-code", "Chapter", false),
+              check_in_needs_code: true,
+            },
+          ],
+        }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.checkIn).toHaveBeenLastCalledWith({ eventId: "ev-code" });
+    });
+
     it("says only that a row exists on a 409, and re-reads so the row shows which (#4427)", async () => {
       // A 409 may be an officer's excused or absent mark, not a check-in.
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});

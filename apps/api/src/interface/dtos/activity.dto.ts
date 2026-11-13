@@ -356,6 +356,12 @@ export class ActivityEventDto implements ActivityEvent {
   check_in_needs_location: boolean;
 
   @ApiProperty({
+    description:
+      'Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise.',
+  })
+  check_in_needs_code: boolean;
+
+  @ApiProperty({
     type: Boolean,
     nullable: true,
     description:
