@@ -89,7 +89,7 @@ end;
 $$;
 
 comment on function public.set_member_role_ids(uuid, uuid, text[], text[]) is
-  'Writes a member''s role_ids only if the row still holds p_expected and every newly given id names a live role of the chapter, under locks ordered as delete_role takes them; returns the row, or none when it wrote nothing (PATCH /v1/members/:id/roles answers 409, #4830). See 20261113175520_set_member_role_ids.sql.';
+  'Writes a member''s role_ids only if the row still holds p_expected and every newly given id names a live role of the chapter, under locks ordered as delete_role takes them; returns the row, or none when it wrote nothing (PATCH /v1/members/:id/roles answers 409, #4830). See 20261113184311_set_member_role_ids.sql.';
 
 revoke execute on function public.set_member_role_ids(uuid, uuid, text[], text[]) from public;
 

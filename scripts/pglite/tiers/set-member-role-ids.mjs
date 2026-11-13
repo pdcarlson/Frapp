@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: set_member_role_ids (20261113175520) ────────────────────────
+// ─── Functional: set_member_role_ids (20261113184311) ────────────────────────
 //
 // #4830: `PATCH /v1/members/:id/roles` reads the member, then the chapter's
 // roles, then writes. A `delete_role` (20261113164050) committing between
@@ -24,7 +24,7 @@ import { db, miss } from "../harness.mjs";
 // #4862.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: set_member_role_ids (20261113175520) ===");
+console.log("\n=== Functional: set_member_role_ids (20261113184311) ===");
 {
   const A = "a4830000-0000-4000-8000-00000000000a";
   const B = "b4830000-0000-4000-8000-00000000000b";

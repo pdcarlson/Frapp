@@ -1073,7 +1073,7 @@ export interface Database {
         Returns: ChatSidebarPreferences[];
       };
       /**
-       * `20261113175520` (#4830). Writes a member's `role_ids` only if the row
+       * `20261113184311` (#4830). Writes a member's `role_ids` only if the row
        * still holds `p_expected` and every newly given id names a live role;
        * returns the row, or none when it wrote nothing.
        */
