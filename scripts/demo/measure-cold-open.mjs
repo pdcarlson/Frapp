@@ -33,6 +33,9 @@
  *      http://localhost:3002), API_URL (default http://localhost:3001),
  *      RUNS (default 3), WINDOW_MS (default 8000), CHROMIUM_PATH,
  *      DEMO_EMAIL, DEMO_PASSWORD, JSON=1 (machine-readable output),
+ *      RESUME_AFTER_MS (measure a return to the app that long after the
+ *      open instead of the open itself; 65000 is past both clients' stale
+ *      times),
  *      TRACE=1 (each run's requests in order, with their `include` and
  *      whether they started before the first screen).
  */
@@ -50,6 +53,12 @@ if (!Number.isInteger(RUNS) || RUNS < 1) {
   process.exit(2);
 }
 const WINDOW_MS = Number(process.env.WINDOW_MS ?? 8000);
+/**
+ * Measure a return to the app instead of the open (#3728): after the open,
+ * wait this long (past the clients' stale times), hide the page, show it
+ * again, and count what the return fires in `WINDOW_MS`.
+ */
+const RESUME_AFTER_MS = process.env.RESUME_AFTER_MS ? Number(process.env.RESUME_AFTER_MS) : null;
 const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
 const PASSWORD = process.env.DEMO_PASSWORD ?? LOCAL_DEMO_PASSWORD;
 const CHAPTER_ID = demoIds(TEMPLATE_NAMESPACE).chapterId;
@@ -145,6 +154,20 @@ function routeOf(url) {
   return pathname.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id");
 }
 
+/**
+ * Hide or show the page the way a backgrounded tab or app does: both clients
+ * (TanStack's focus manager, mobile's AppState on react-native-web, web's
+ * realtime resume) listen for `visibilitychange`.
+ */
+async function setVisibility(page, state) {
+  await page.evaluate((next) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => next });
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => next === "hidden" });
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+    if (next === "visible") window.dispatchEvent(new Event("focus"));
+  }, state);
+}
+
 function percentile(values, p) {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -179,8 +202,18 @@ async function measureOnce(browser, surface, storageState) {
   t0 = Date.now();
   await page.goto(`${surface.url}${surface.route}`, { waitUntil: "commit", timeout: 120_000 });
   await page.waitForFunction(surface.firstScreen, null, { timeout: 60_000, polling: 50 });
-  const firstScreenMs = Date.now() - t0;
-  const remaining = WINDOW_MS - firstScreenMs;
+  let firstScreenMs = Date.now() - t0;
+  if (RESUME_AFTER_MS !== null) {
+    await page.waitForTimeout(Math.max(0, RESUME_AFTER_MS - firstScreenMs));
+    await setVisibility(page, "hidden");
+    await page.waitForTimeout(2000);
+    requests.length = 0;
+    t0 = Date.now();
+    await setVisibility(page, "visible");
+    // Everything a return fires counts; there is no first screen to wait for.
+    firstScreenMs = WINDOW_MS;
+  }
+  const remaining = WINDOW_MS - (Date.now() - t0);
   if (remaining > 0) await page.waitForTimeout(remaining);
   await context.close();
 
@@ -247,7 +280,8 @@ async function main() {
       console.log(JSON.stringify(summary, null, 2));
       return;
     }
-    console.log(`${SURFACE}: median of ${runs.length} cold opens (window ${WINDOW_MS} ms)`);
+    const what = RESUME_AFTER_MS === null ? "cold opens" : `returns to the app after ${RESUME_AFTER_MS} ms`;
+    console.log(`${SURFACE}: median of ${runs.length} ${what} (window ${WINDOW_MS} ms)`);
     console.log(`  requests before first screen: ${summary.beforeFirstScreen}`);
     console.log(`  requests in window:           ${summary.inWindow}`);
     console.log(`  first screen:                 ${summary.firstScreenMs} ms`);
