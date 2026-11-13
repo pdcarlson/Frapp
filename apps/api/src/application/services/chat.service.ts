@@ -1375,7 +1375,7 @@ export class ChatService {
 
   /**
    * Forward one message to one channel or DM (#4864,
-   * spec/behavior/chat/README.md § Forwarding a message).
+   * spec/behavior/chat/README.md § Forward).
    *
    * The forward is an ordinary text message in the destination, sent by the
    * caller through {@link sendMessage}, so it dedupes on `client_message_id`,

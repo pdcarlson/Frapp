@@ -1,7 +1,7 @@
 /**
  * The words a forwarded message's card draws (#4864), one wording for web and
- * mobile. `spec/behavior/chat/README.md` § Forward a message owns the
- * behavior; `ForwardedFrom` in `./types` is the copy itself.
+ * mobile. `spec/behavior/chat/README.md` § Forward owns the behavior;
+ * `ForwardedFrom` in `./types` is the copy itself.
  */
 
 /** The label over a forward's card, as Discord and WhatsApp label one. */

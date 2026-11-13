@@ -8,6 +8,7 @@ import {
 import type { ForwardedFrom } from "@repo/chat-core/types";
 import { formatRelativeDayTime } from "@repo/formatting";
 import { resolveAuthorLabel, useChannels } from "@repo/hooks";
+import { isDirectChannel } from "@repo/validation";
 import { cn } from "@/lib/utils";
 import { MessageGifImage } from "./message-gif";
 import { MessageMarkdown } from "./renderers/message-markdown";
@@ -40,7 +41,7 @@ function useSourceChannelName(channelId: string | null): string | null {
   const channel = (
     data as ReadonlyArray<{ id?: string; name?: string; type?: string }>
   ).find((row) => row.id === channelId);
-  if (!channel?.name || channel.type === "DM" || channel.type === "GROUP_DM") {
+  if (!channel?.name || isDirectChannel({ type: channel.type ?? "" })) {
     return null;
   }
   return channel.name;

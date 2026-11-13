@@ -267,6 +267,7 @@ export function MessageThreadScreen({
     viewerId,
     nameFor,
     channelTitle,
+    blockState,
   });
   const rows = useMemo(
     () => applyBlockList(thread.messages, blockState, viewerId).rows,

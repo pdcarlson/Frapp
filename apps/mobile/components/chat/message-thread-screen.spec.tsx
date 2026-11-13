@@ -913,6 +913,32 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers Forward with the copy it will carry, and not on a card or a deleted reply (#4864)", () => {
+    const tree = render();
+    act(() => rowFor(tree, "r1").props.onOpenActions(thread.messages[0]));
+    expect(sheet(tree).props.target).toMatchObject({
+      forward: {
+        messageId: "r1",
+        preview: { message_id: "r1", content: "I can" },
+        hidden: null,
+      },
+    });
+    // A card can't be forwarded, nor a deleted message.
+    act(() =>
+      rowFor(tree, "r1").props.onOpenActions(
+        message("r1", { thread_root_id: ROOT, kind: "poll" }),
+      ),
+    );
+    expect(sheet(tree).props.target.forward).toBeUndefined();
+    act(() =>
+      rowFor(tree, "r1").props.onOpenActions(
+        message("r1", { thread_root_id: ROOT, is_deleted: true }),
+      ),
+    );
+    expect(sheet(tree).props.target?.forward).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
   it("gates Edit as web does: the parent as a post, a reply as a thread reply", () => {
     // A read-only channel: no posting, but thread replies are open to readers.
     channelRow = { ...channelRow, can_post: false, is_read_only: true };

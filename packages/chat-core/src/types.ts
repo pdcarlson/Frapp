@@ -531,7 +531,7 @@ export interface RawForwardedFrom {
 
 /**
  * A forward's copy of its original, read defensively (#4864,
- * `spec/behavior/chat/README.md` § Forward a message).
+ * `spec/behavior/chat/README.md` § Forward).
  */
 export interface ForwardedFrom {
   /** The original message's id. */
