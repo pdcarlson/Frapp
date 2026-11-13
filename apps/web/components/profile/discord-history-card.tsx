@@ -3,7 +3,6 @@
 import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CHAT_MESSAGE_QUERY_ROOT } from "@repo/chat-core/types";
 import {
   useActiveChapterId,
   useBeginDiscordAuthorLink,
@@ -17,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { InlineNote } from "@/components/shared/inline-note";
+import { refreshTimelinesForDiscordAuthor } from "@/lib/chat/discord-author-reads";
 
 const DISCORD_HISTORY_TITLE = "Discord history";
 const DISCORD_HISTORY_DESCRIPTION =
@@ -59,9 +59,10 @@ export function linkedMessage(count: number): string {
  * history under this member's name.
  *
  * Linking and unlinking change who a message's sender is on the server.
- * Imported messages never arrive over Realtime, so cached chat threads are
- * dropped afterwards (only ones no screen is showing) and read fresh on the
- * next visit to chat.
+ * Imported messages never arrive over Realtime, so afterwards cached chat
+ * threads no screen shows are dropped, and an open one holding the affected
+ * accounts' imported messages is refetched (`refreshTimelinesForDiscordAuthor`, #4543):
+ * chat stays mounted beside this page.
  */
 export function DiscordHistoryCard() {
   const chapterId = useActiveChapterId();
@@ -106,12 +107,19 @@ export function DiscordHistoryCard() {
     window.history.replaceState(null, "", url.toString());
   }, [toast]);
 
-  const dropCachedThreads = useCallback(() => {
-    queryClient.removeQueries({
-      queryKey: [CHAT_MESSAGE_QUERY_ROOT],
-      type: "inactive",
-    });
-  }, [queryClient]);
+  const refreshThreads = useCallback(
+    (discordUserIds: string[] | null) => {
+      void refreshTimelinesForDiscordAuthor(queryClient, discordUserIds);
+    },
+    [queryClient],
+  );
+  // The link status as of now, for the confirm below: a link to a different
+  // account replaces the one held, and that account's rows go back to its
+  // Discord name too. `undefined` while the status hasn't loaded.
+  const linkedRef = useRef(link.data);
+  useEffect(() => {
+    linkedRef.current = link.data;
+  }, [link.data]);
 
   // Spent exactly once, as soon as a chapter is active. Clearing the ref is
   // what stops React's development double-invoke from spending it twice, which
@@ -123,7 +131,18 @@ export function DiscordHistoryCard() {
     handshake.current = null;
     confirmLink({ handshake: token })
       .then((result) => {
-        dropCachedThreads();
+        const linked = result?.discord_user_id ?? null;
+        const before = linkedRef.current;
+        // Unknown if either account is: then every open thread holding an
+        // imported row is refreshed.
+        refreshThreads(
+          linked === null || before === undefined
+            ? null
+            : [
+                linked,
+                ...(before.discord_user_id ? [before.discord_user_id] : []),
+              ],
+        );
         toast({ description: linkedMessage(result?.messages_linked ?? 0) });
       })
       .catch((error: unknown) => {
@@ -136,7 +155,7 @@ export function DiscordHistoryCard() {
           ),
         });
       });
-  }, [chapterId, confirmLink, dropCachedThreads, toast]);
+  }, [chapterId, confirmLink, refreshThreads, toast]);
 
   async function startLink() {
     try {
@@ -160,9 +179,12 @@ export function DiscordHistoryCard() {
   }
 
   async function removeLink() {
+    // Read before the unlink: its response doesn't name the account, and the
+    // link status it invalidates may refetch first.
+    const discordUserId = link.data?.discord_user_id ?? null;
     try {
       const result = await unlink.mutateAsync();
-      dropCachedThreads();
+      refreshThreads(discordUserId === null ? null : [discordUserId]);
       toast({
         description:
           result && result.messages_restored > 0

@@ -205,6 +205,9 @@ export default function ServiceHoursScreen() {
         key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
+        // Kept past this screen (#4593): going back and coming here again
+        // opens Log hours on the entry left in it.
+        keptDraft="service-hours-log"
       />
     </ScreenShell>
   );

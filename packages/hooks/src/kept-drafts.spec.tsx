@@ -72,6 +72,65 @@ describe("kept drafts (#4593)", () => {
     expect(readKeptDraft(key)).toEqual({ text: "Hi" });
   });
 
+  it("reopens on what it sent while the save is in flight, and the outcome settles it", () => {
+    const wrapper = inChapter("chapter-a");
+    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
+      .current.draft("note");
+    const form = renderHook(
+      ({ value, open }: { value: { text: string }; open: boolean }) =>
+        useKeptFormDraft("note", open, value),
+      { wrapper, initialProps: { value: { text: "" }, open: true } },
+    );
+    act(() => {
+      form.result.current.take();
+    });
+    form.rerender({ value: { text: "" }, open: true });
+    form.rerender({ value: { text: "Hi" }, open: true });
+    act(() => form.result.current.hold());
+    // Closed and reopened before the save lands: the form opens on what it
+    // sent, not a blank, and nothing goes back to the store meanwhile.
+    form.rerender({ value: { text: "Hi" }, open: false });
+    let reopened: { text: string } | undefined;
+    act(() => {
+      reopened = form.result.current.take();
+    });
+    expect(reopened).toEqual({ text: "Hi" });
+    form.rerender({ value: { text: "Hi" }, open: true });
+    form.rerender({ value: { text: "Hi" }, open: true });
+    expect(hasKeptDraft(key)).toBe(false);
+    act(() => form.result.current.release());
+    expect(readKeptDraft(key)).toEqual({ text: "Hi" });
+  });
+
+  it("puts a failed save back as it was sent once the form has become another one", () => {
+    const wrapper = inChapter("chapter-a");
+    const keys = renderHook(() => useKeptDraftKeys(), { wrapper }).result
+      .current;
+    const form = renderHook(
+      ({ name, value }: { name: string; value: { text: string } }) =>
+        useKeptFormDraft(name, true, value),
+      { wrapper, initialProps: { name: "zone:a", value: { text: "" } } },
+    );
+    act(() => {
+      form.result.current.take();
+    });
+    form.rerender({ name: "zone:a", value: { text: "" } });
+    form.rerender({ name: "zone:a", value: { text: "Library" } });
+    const sentFrom = form.result.current;
+    act(() => sentFrom.hold());
+    // The officer opens zone B before zone A's save fails.
+    form.rerender({ name: "zone:b", value: { text: "Library" } });
+    act(() => {
+      form.result.current.take();
+    });
+    form.rerender({ name: "zone:b", value: { text: "Gym" } });
+    act(() => sentFrom.release());
+    expect(readKeptDraft(keys.draft("zone:a"))).toEqual({ text: "Library" });
+    // Zone B keeps its own.
+    form.rerender({ name: "zone:b", value: { text: "Gym" } });
+    expect(readKeptDraft(keys.draft("zone:b"))).toEqual({ text: "Gym" });
+  });
+
   it("keeps an edited form, and nothing for one left as it opened", () => {
     const wrapper = inChapter("chapter-a");
     const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result

@@ -981,6 +981,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear (delete) the caller's own notifications by id */
+        post: operations["NotificationController_clearNotifications_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/{id}/read": {
         parameters: {
             query?: never;
@@ -1440,6 +1457,23 @@ export interface paths {
         patch: operations["ChatController_editMessage_v1"];
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id) */
+        post: operations["ChatController_forwardMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}/close": {
         parameters: {
             query?: never;
@@ -1573,6 +1607,23 @@ export interface paths {
         put?: never;
         /** Mark channel as read */
         post: operations["ChatController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a message unread: move the caller’s read cursor to just before it */
+        post: operations["ChatController_markMessageUnread_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5989,6 +6040,28 @@ export interface components {
             /** @description How many notifications this call marked read */
             updated: number;
         };
+        NotificationConversationDto: {
+            /**
+             * Format: uuid
+             * @description The chat channel (`data.target.channelId`)
+             */
+            channelId: string;
+            /**
+             * Format: uuid
+             * @description A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.
+             */
+            threadRootId?: string;
+        };
+        ClearNotificationsDto: {
+            /** @description The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped. */
+            ids: string[];
+            /** @description Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid. */
+            conversation?: components["schemas"]["NotificationConversationDto"];
+        };
+        ClearNotificationsResultDto: {
+            /** @description How many notifications this call cleared */
+            cleared: number;
+        };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
             chapter_id: string;
@@ -6077,6 +6150,44 @@ export interface components {
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
         };
+        ForwardedGifDto: {
+            provider: string;
+            id: string;
+            title: string;
+            url: string;
+            width: number;
+            height: number;
+        };
+        ForwardedMessageDto: {
+            /**
+             * Format: uuid
+             * @description The original message.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description The original’s author; null for an imported archive message, and once the original is deleted.
+             */
+            sender_id: string | null;
+            /** @description The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked. */
+            author_name: string | null;
+            /** @description The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview. */
+            content: string;
+            gif: components["schemas"]["ForwardedGifDto"] | null;
+            /** @description How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”. */
+            attachment_count: number;
+            /** @description When the original was sent. */
+            created_at: string;
+            /** @description True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise. */
+            deleted?: boolean;
+            /** @description Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list. */
+            sender_blocked?: boolean;
+        };
         ChannelLatestMessageDto: {
             /** Format: uuid */
             channel_id: string;
@@ -6099,6 +6210,8 @@ export interface components {
             attachment_count: number;
             /** Format: date-time */
             created_at: string;
+            /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -6367,6 +6480,8 @@ export interface components {
             thread_recent_sender_ids?: string[];
             /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
             thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
@@ -6420,6 +6535,21 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ForwardMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to forward to. It may be the channel the message is in.
+             */
+            channel_id: string;
+            /** @description The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do. */
+            content?: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made.
+             */
+            client_message_id?: string;
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         SetMessageFlagDto: {
@@ -9147,6 +9277,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9166,6 +9298,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -11801,6 +11935,38 @@ export interface operations {
             };
         };
     };
+    NotificationController_clearNotifications_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearNotificationsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearNotificationsResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     NotificationController_markRead_v1: {
         parameters: {
             query?: never;
@@ -12901,6 +13067,40 @@ export interface operations {
             };
         };
     };
+    ChatController_forwardMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForwardMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatController_closeCard_v1: {
         parameters: {
             query?: never;
@@ -13213,6 +13413,34 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_markMessageUnread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
             };
             cookie?: never;
         };

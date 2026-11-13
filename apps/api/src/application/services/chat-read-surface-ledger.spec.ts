@@ -194,6 +194,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",
   },
+  ChatController_markMessageUnread_v1: {
+    status: 'no-foreign-content',
+    why: "Moves the caller's own read cursor back (#3723); answers with that receipt only.",
+  },
 
   // ── Preferences ────────────────────────────────────────────────────
   ChatController_getChannelNotificationPreferences_v1: OWN_PREFERENCES,
@@ -253,6 +257,15 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_sendMessage_v1: {
     status: 'no-foreign-content',
     why: "Returns the caller's own message.",
+  },
+  // #4864: the caller's own forward, carrying a copy of someone else's
+  // message, which is withheld when the caller blocked its author.
+  ChatController_forwardMessage_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_SERVICE_SPEC,
+      test: 'withholds the copy in its answer when the caller blocked the author',
+    },
   },
   ChatController_editMessage_v1: {
     status: 'no-foreign-content',

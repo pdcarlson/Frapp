@@ -35,6 +35,7 @@ import {
   type SentUpload,
 } from "@/lib/more/document-upload";
 import type { DocumentFolder } from "@/lib/more/documents";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -115,6 +116,14 @@ export const RETRY_KEEPS_DRAFT =
  * (`components/profile/edit-profile-sheet.tsx`): a sheet reopened mid-upload
  * shows the draft held, and `dismiss()` runs only on a presented sheet.
  */
+/** What a kept draft holds (`keptDraft`). */
+type KeptUpload = {
+  picked: PickedImage | null;
+  title: string;
+  chosenFolder: string | null | undefined;
+  stored: SentUpload | null;
+};
+
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
   {
@@ -130,9 +139,15 @@ export const UploadDocumentSheet = forwardRef<
      * its pending state when the filed document is on screen.
      */
     onPending?: (pending: PendingDocumentUpload | null) => void;
+    /**
+     * Keeps the draft past this sheet's host, under this name (#4593): the
+     * Documents screen's sheet goes when the member goes back, and its draft
+     * is there the next time they upload from that screen.
+     */
+    keptDraft?: string;
   }
 >(function UploadDocumentSheet(
-  { folders, initialFolder, onUploaded, onPending },
+  { folders, initialFolder, onUploaded, onPending, keptDraft },
   ref,
 ) {
   const closeSheet = useSheetClose(ref);
@@ -143,14 +158,18 @@ export const UploadDocumentSheet = forwardRef<
   const requestUploadUrl = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
 
-  const [picked, setPicked] = useState<PickedImage | null>(null);
+  // The draft kept from the screen's last visit (`keptDraft`), if any.
+  const opening = useKeptSheetOpening<KeptUpload>(keptDraft ?? null);
+  const [picked, setPicked] = useState<PickedImage | null>(
+    () => opening?.picked ?? null,
+  );
   const [picking, setPicking] = useState(false);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(() => opening?.title ?? "");
   // `undefined` until the member taps a chip: the sheet then follows s12's
   // filter, which can change between visits. Read through `draftFolder`,
   // never directly, since the folder it names may be gone by the next visit.
   const [chosenFolder, setChosenFolder] = useState<string | null | undefined>(
-    undefined,
+    () => opening?.chosenFolder,
   );
   const [titleFocused, setTitleFocused] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -168,8 +187,21 @@ export const UploadDocumentSheet = forwardRef<
    * § "A confirm that fails keeps the bytes it already sent"). A new pick
    * drops them.
    */
-  const [stored, setStored] = useState<SentUpload | null>(null);
+  const [stored, setStored] = useState<SentUpload | null>(
+    () => opening?.stored ?? null,
+  );
   const draftHeld = uploading || stored !== null;
+  const kept = useKeptSheetDraft<KeptUpload>(
+    keptDraft ?? null,
+    { picked, title, chosenFolder, stored },
+    JSON.stringify([
+      picked?.uri ?? null,
+      title,
+      chosenFolder ?? null,
+      stored?.uploaded ?? null,
+    ]),
+    opening,
+  );
 
   // A folder the chips can show: None, or one s12 still lists. A kept chip,
   // or s12's filter, can name one an officer deleted or renamed since.
@@ -190,7 +222,9 @@ export const UploadDocumentSheet = forwardRef<
   const folder = stored ? heldFolder : draftFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
 
+  const { clear: clearKept } = kept;
   const reset = useCallback(() => {
+    clearKept();
     setPicked(null);
     setTitle("");
     setChosenFolder(undefined);
@@ -199,7 +233,7 @@ export const UploadDocumentSheet = forwardRef<
     setFailure(null);
     setRefusal(null);
     setStored(null);
-  }, []);
+  }, [clearKept]);
 
   const { onAnimate, markClosed, dismiss } = useSheetVisit(ref);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
@@ -273,6 +307,9 @@ export const UploadDocumentSheet = forwardRef<
     setUploading(true);
     setFailure(null);
     setRefusal(null);
+    // Out of the kept store until it files or fails, so the screen reopened
+    // mid-upload can't send it twice.
+    kept.hold();
     // The title it will be filed under, for the pending row: a retry files
     // the one it was first sent with.
     const filedAs = stored ? stored.title : documentTitle(title, picked);
@@ -298,6 +335,9 @@ export const UploadDocumentSheet = forwardRef<
       return;
     }
     if (result.sent) setStored(result.sent);
+    // With the bytes it left, which this render hasn't drawn yet: a sheet
+    // that has gone keeps them for the next visit's retry.
+    kept.release(result.sent ? { stored: result.sent } : undefined);
     // Kept for the visit the pending row reopens, which is how the member
     // hears of it: the sheet closed when Upload was tapped.
     if (result.final) setRefusal(result.reason);
@@ -412,7 +452,9 @@ export const UploadDocumentSheet = forwardRef<
             {failure}
           </Text>
         ) : null}
-        {failure && stored ? (
+        {stored ? (
+          // Also on a visit opened on a kept draft, whose failure went with
+          // the last screen: it says why title and folder hold still.
           <Text style={styles.note}>{RETRY_KEEPS_DRAFT}</Text>
         ) : null}
 

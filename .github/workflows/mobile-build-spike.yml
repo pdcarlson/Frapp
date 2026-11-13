@@ -1,0 +1,187 @@
+name: Mobile build spike
+
+# A measurement, not a gate and not a release. It answers one question from
+# the staging research (#2511): can GitHub's free standard runners compile the
+# app's Release binaries, and how long does that take next to Expo's cloud
+# (iOS 8 to 11 minutes, Android 17 to 20, read from the EAS build list on
+# 2026-11-13)?
+#
+# It holds no secret and signs nothing. Each job runs `expo prebuild` and then
+# the platform's own Release compile: an unsigned Xcode archive, and a Gradle
+# bundle signed with the template's debug keystore. Nothing is uploaded or
+# installed anywhere. A real staging build would add signing and the store
+# upload on top; this proves the slow, uncertain half first.
+#
+# What to compare: Expo's figures cover its whole build, so the number to set
+# beside them is each job's "whole job" line in the run summary, which counts
+# the install and the prebuild too. The per-phase lines only show where the
+# time went. A phase that fails still writes its line, with its exit status.
+#
+# It runs only when this file changes on a pull request, or by hand.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-build-spike.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-build-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: iOS Release archive (unsigned)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      # No Sentry token here, and a Release build fails its upload phase
+      # without one (docs/ops/deployment/mobile.md § 6.3).
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # eas.json pins an Xcode 26 image for every profile (#2477). A local
+      # build ignores that field, so the runner's own Xcode is what counts.
+      # A beta or release candidate is skipped: its time would not compare with
+      # Expo's stable image, and a failure there would say nothing about the
+      # runner. With no stable Xcode 26 the job stops, because that is the
+      # answer and a build on an older Xcode would not be the app's build.
+      - name: Pick the newest stable Xcode 26 on the runner
+        run: |
+          echo "SPIKE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+          {
+            echo "### Xcode on this runner (image ${ImageOS:-unknown} ${ImageVersion:-})"
+            ls -d /Applications/Xcode*.app | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+          newest="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n 1 || true)"
+          if [ -z "$newest" ]; then
+            echo "::error::No stable Xcode 26 on this runner image (${ImageOS:-unknown}); the app pins Xcode 26 (#2477)."
+            echo "**No stable Xcode 26 on this image, so nothing was built.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          sudo xcode-select -s "$newest/Contents/Developer"
+          {
+            echo
+            echo "Building with: $(xcodebuild -version | tr '\n' ' ')"
+            echo
+            echo "Runner: $(sysctl -n machdep.cpu.brand_string), $(sysctl -n hw.ncpu) cores, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Prebuild the iOS project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: |
+          trap 'echo "- pod install: $(( SECONDS / 60 )) min $(( SECONDS % 60 )) s (exit $?)" >> "$GITHUB_STEP_SUMMARY"' EXIT
+          pod install
+
+      # The whole log goes to a file that the next step uploads whatever
+      # happens, a timeout included; the job log gets the error lines and the
+      # end of it. The step's own timeout leaves the job time to upload.
+      - name: Archive (Release, unsigned)
+        working-directory: apps/mobile/ios
+        timeout-minutes: 70
+        run: |
+          workspace="$(ls -d *.xcworkspace | head -n 1)"
+          scheme="${workspace%.xcworkspace}"
+          log="$RUNNER_TEMP/xcodebuild.log"
+          trap 'status=$?; echo "- xcodebuild archive: $(( SECONDS / 60 )) min $(( SECONDS % 60 )) s (exit $status)" >> "$GITHUB_STEP_SUMMARY"; echo "::group::xcodebuild error lines"; grep -n "error:" "$log" | head -n 100 || true; echo "::endgroup::"; echo "::group::xcodebuild log, last 80 lines"; tail -n 80 "$log" || true; echo "::endgroup::"' EXIT
+          xcodebuild \
+            -workspace "$workspace" \
+            -scheme "$scheme" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/spike.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            > "$log" 2>&1
+          du -sh "$RUNNER_TEMP/spike.xcarchive" | sed 's/^/- archive size: /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the xcodebuild log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Whole job time
+        if: ${{ always() }}
+        run: |
+          if [ -n "${SPIKE_JOB_START:-}" ]; then
+            total=$(( $(date +%s) - SPIKE_JOB_START ))
+            echo "- **whole job, the figure to set beside Expo's: $(( total / 60 )) min $(( total % 60 )) s** (job status: ${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  android:
+    name: Android Release bundle (debug keystore)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Start the clock
+        run: echo "SPIKE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Note the runner's Java and Android SDK
+        run: |
+          if [ -n "${JAVA_HOME_17_X64:-}" ]; then
+            echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          fi
+          {
+            echo "### Android toolchain on this runner"
+            echo "- JAVA_HOME_17_X64: ${JAVA_HOME_17_X64:-not set}"
+            echo "- ANDROID_HOME: ${ANDROID_HOME:-not set}"
+            echo "- cores: $(nproc), memory: $(free -g | awk '/Mem:/ {print $2}') GB"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prebuild the Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Bundle (Release)
+        working-directory: apps/mobile/android
+        run: |
+          trap 'echo "- gradle bundleRelease: $(( SECONDS / 60 )) min $(( SECONDS % 60 )) s (exit $?)" >> "$GITHUB_STEP_SUMMARY"' EXIT
+          # The template's default JVM settings ran out in the release
+          # lint tasks ("Metaspace", run 43494274899, after 16 min 40 s), so the
+          # JVM gets room the runner has.
+          ./gradlew :app:bundleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
+          find app/build/outputs/bundle -name '*.aab' -exec du -sh {} \; | sed 's/^/- bundle: /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Whole job time
+        if: ${{ always() }}
+        run: |
+          if [ -n "${SPIKE_JOB_START:-}" ]; then
+            total=$(( $(date +%s) - SPIKE_JOB_START ))
+            echo "- **whole job, the figure to set beside Expo's: $(( total / 60 )) min $(( total % 60 )) s** (job status: ${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
+          fi

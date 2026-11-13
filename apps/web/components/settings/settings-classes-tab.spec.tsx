@@ -386,3 +386,97 @@ describe("SettingsClassesTab", () => {
     });
   });
 });
+
+/**
+ * Leaving a class's member editor keeps its draft (#4593): no "are you
+ * sure", and it opens on it next time. Cancel and Save give it up.
+ */
+describe("SettingsClassesTab keeps the class editor's draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClasses.mockReturnValue({
+      data: CLASSES,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn().mockResolvedValue(undefined),
+    });
+    mockMembers.mockReturnValue({ data: MEMBERS, isError: false });
+    mockAssign.mockResolvedValue(undefined);
+  });
+
+  const editAlpha = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: "Edit members of Alpha" }),
+    );
+  const removeAda = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: "Remove Ada from Alpha" }),
+    );
+
+  it("opens on the draft after it was closed, and says so", async () => {
+    renderTab();
+    await editAlpha();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+
+    expect(screen.queryByLabelText("Fraternal order for Ada")).toBeNull();
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+    // Still worked out against the roster it opened on.
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mockAssign).toHaveBeenCalledWith([
+      { member_id: "m1", pledge_class_id: null, order_number: 2 },
+    ]);
+  });
+
+  it("reopens the editor when Settings was left with it open", async () => {
+    const first = renderTab();
+    await editAlpha();
+    await removeAda();
+    first.unmount();
+
+    renderTab();
+    expect(await screen.findByText("Draft restored")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Fraternal order for Ada")).toBeNull();
+  });
+
+  it("doesn't reopen it for an officer who can no longer manage classes", async () => {
+    const first = renderTab();
+    await editAlpha();
+    await removeAda();
+    first.unmount();
+
+    renderTab(false);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Members of Alpha" })).toBeNull();
+  });
+
+  it("keeps nothing on Cancel, or for an editor left untouched", async () => {
+    renderTab();
+    await editAlpha();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await editAlpha();
+    expect(screen.getByLabelText("Fraternal order for Ada")).toBeInTheDocument();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over from the roster on Discard", async () => {
+    renderTab();
+    await editAlpha();
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.getByLabelText("Fraternal order for Ada")).toBeInTheDocument();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+});

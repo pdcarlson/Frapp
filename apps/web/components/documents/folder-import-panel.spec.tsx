@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -177,5 +184,51 @@ describe("FolderImportPanel (#2242)", () => {
     await waitFor(() =>
       expect(within(dialog).getByText("Imported 1 of 1 file")).toBeInTheDocument(),
     );
+  });
+  it("keeps a review left unfinished, and says so when it opens again (#4593)", async () => {
+    const dialog = await openAndPick([picked("Drop/notes.pdf", "b")]);
+    await waitFor(() =>
+      expect(within(dialog).getByText(/1 file to import/)).toBeInTheDocument(),
+    );
+    fireEvent.change(within(dialog).getByLabelText("Title for Drop/notes.pdf"), {
+      target: { value: "Spring notes" },
+    });
+    expect(within(dialog).queryByText("Draft restored")).toBeNull();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: /^close$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /import a folder/i }));
+    const again = screen.getByRole("dialog");
+    expect(within(again).getByLabelText("Title for Drop/notes.pdf")).toHaveValue(
+      "Spring notes",
+    );
+    expect(within(again).getByText("Draft restored")).toBeInTheDocument();
+
+    // Discard starts over, ready for another folder.
+    await userEvent.click(within(again).getByRole("button", { name: "Discard" }));
+    expect(within(again).getByTestId("bulk-folder-input")).toBeInTheDocument();
+  });
+
+  it("reopens the review when Documents was left with it open (#4593)", async () => {
+    const dialog = await openAndPick([picked("Drop/notes.pdf", "b")]);
+    await waitFor(() =>
+      expect(within(dialog).getByText(/1 file to import/)).toBeInTheDocument(),
+    );
+    cleanup();
+
+    render(<FolderImportPanel gate={GATE} context={CONTEXT} />);
+    const again = await screen.findByRole("dialog");
+    expect(within(again).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("gives the review up on Cancel (#4593)", async () => {
+    const dialog = await openAndPick([picked("Drop/notes.pdf", "b")]);
+    await waitFor(() =>
+      expect(within(dialog).getByText(/1 file to import/)).toBeInTheDocument(),
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await userEvent.click(screen.getByRole("button", { name: /import a folder/i }));
+    const again = screen.getByRole("dialog");
+    expect(within(again).getByTestId("bulk-folder-input")).toBeInTheDocument();
+    expect(within(again).queryByText("Draft restored")).toBeNull();
   });
 });

@@ -167,12 +167,14 @@ const REPLACES = /\bstackBehavior="replace"/;
 
 /**
  * The sheets that may replace the one under them, by file and count. Only
- * the message menu's emoji picker and report form: `"replace"` dismisses the
- * sheet underneath, so on any other sheet it brings #3790 back. A new entry
+ * the message menu's emoji picker, report form and Forward picker (#4864):
+ * `"replace"` dismisses the sheet underneath, so on any other sheet it brings
+ * #3790 back. A new entry
  * here is a product call that closing that sheet should show the screen.
  */
 const REPLACING: Record<string, number> = {
   "components/chat/emoji-picker-sheet.tsx": 1,
+  "components/chat/forward-sheet.tsx": 1,
   "components/chat/message-actions-sheet.tsx": 1,
 };
 

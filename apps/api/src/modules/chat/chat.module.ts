@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
@@ -94,6 +95,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     ChapterModule,
     ChannelCacheModule,
     ChatBlockModule,
+    // `USER_REPOSITORY`: a forward's copy names the original's author (#4864).
+    AuthModule,
   ],
   controllers: [
     ChatController,

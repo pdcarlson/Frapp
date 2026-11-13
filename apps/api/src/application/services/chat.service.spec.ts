@@ -52,6 +52,7 @@ describe('ChatService', () => {
   let mockRoleRepo: ChatServiceFixture['mockRoleRepo'];
   let mockTierRepo: ChatServiceFixture['mockTierRepo'];
   let mockCategoryRepo: ChatServiceFixture['mockCategoryRepo'];
+  let mockUserRepo: ChatServiceFixture['mockUserRepo'];
   beforeEach(async () => {
     ({
       service,
@@ -71,6 +72,7 @@ describe('ChatService', () => {
       mockRoleRepo,
       mockTierRepo,
       mockCategoryRepo,
+      mockUserRepo,
     } = await createChatServiceFixture());
   });
 
@@ -3809,6 +3811,7 @@ describe('ChatService', () => {
         flag: null,
         flagged_by: null,
         flagged_at: null,
+        forwarded_from: null,
       });
     });
 
@@ -4260,6 +4263,294 @@ describe('ChatService', () => {
         await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
 
         expect(order).toEqual(['update', 'deleteFiles']);
+      });
+    });
+  });
+
+  // #4864: a forward is a text message in the destination, sent by the
+  // forwarder, carrying a server-built copy of the original.
+  describe('forwardMessage', () => {
+    const DEST = 'ch-dest';
+    const destChannel: ChatChannel = {
+      ...baseChannel,
+      id: DEST,
+      name: 'social',
+    };
+    const original: ChatMessage = {
+      ...baseMessage,
+      id: 'orig-1',
+      sender_id: 'user-author',
+      content: 'grill is in my garage',
+      kind: 'text',
+      metadata: { attachment_count: 2 },
+    };
+    const channels = (dest: ChatChannel | null) =>
+      mockChannelRepo.findById.mockImplementation(async (id: string) =>
+        id === DEST ? dest : baseChannel,
+      );
+    const forward = (overrides: Record<string, unknown> = {}) =>
+      service.forwardMessage({
+        message_id: 'orig-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        channel_id: DEST,
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      channels(destChannel);
+      mockMessageRepo.findById.mockResolvedValue(original);
+      mockMessageRepo.create.mockImplementation(async (row) => ({
+        ...baseMessage,
+        ...row,
+        id: 'fwd-1',
+      }));
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-author', display_name: 'Devin', avatar_url: null },
+      ]);
+    });
+
+    it('posts the comment with a copy of the original, naming its author as they are', async () => {
+      const result = await forward({
+        content: 'look',
+        client_message_id: 'cm-1',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel_id: DEST,
+          sender_id: 'user-1',
+          content: 'look',
+          kind: 'text',
+          client_message_id: 'cm-1',
+          forwarded_from: {
+            message_id: 'orig-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-author',
+            author_name: 'Devin',
+            content: 'grill is in my garage',
+            gif: null,
+            attachment_count: 2,
+            created_at: original.created_at,
+          },
+        }),
+      );
+      expect(result).toMatchObject({ id: 'fwd-1', sender_blocked: false });
+      expect(result.forwarded_from?.sender_blocked).toBe(false);
+    });
+
+    it('allows no comment at all', async () => {
+      await forward();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '' }),
+      );
+    });
+
+    it("copies a GIF message's GIF", async () => {
+      const gif = {
+        provider: 'klipy',
+        id: 'dance',
+        title: 'Happy dance',
+        url: 'https://static.klipy.com/h.webp',
+        width: 498,
+        height: 280,
+      };
+      mockMessageRepo.findById.mockResolvedValue({
+        ...original,
+        content: '',
+        metadata: { gif },
+      });
+
+      await forward();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          forwarded_from: expect.objectContaining({
+            content: '',
+            gif,
+            attachment_count: 0,
+          }),
+        }),
+      );
+    });
+
+    it("resolves the comment's mentions like a send's", async () => {
+      mockMemberRepo.findChapterMemberIdentities.mockResolvedValue([
+        { user_id: 'user-sam', display_name: 'Sam', role_ids: [] },
+      ]);
+
+      await forward({ content: '@Sam see this' });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: ['user-sam'] }),
+      );
+    });
+
+    it('passes on the copy a forward with no comment carries, so it never nests', async () => {
+      const inner = {
+        message_id: 'orig-0',
+        channel_id: 'ch-src',
+        sender_id: 'user-author',
+        author_name: 'Devin',
+        content: 'first said here',
+        gif: null,
+        attachment_count: 0,
+        created_at: '2026-01-01T00:00:00.000Z',
+      };
+      mockMessageRepo.findById.mockResolvedValue({
+        ...original,
+        content: '',
+        metadata: {},
+        forwarded_from: { ...inner, sender_blocked: false },
+      });
+
+      await forward();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ forwarded_from: inner }),
+      );
+    });
+
+    it('copies a forward with a comment as itself, dropping its own copy', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...original,
+        content: 'my take',
+        metadata: {},
+        forwarded_from: {
+          message_id: 'orig-0',
+          channel_id: 'ch-src',
+          sender_id: 'user-x',
+          author_name: 'X',
+          content: 'first said here',
+          gif: null,
+          attachment_count: 0,
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
+      });
+
+      await forward();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          forwarded_from: expect.objectContaining({
+            message_id: 'orig-1',
+            content: 'my take',
+            author_name: 'Devin',
+          }),
+        }),
+      );
+    });
+
+    it.each([
+      ['a deleted message', { is_deleted: true }],
+      ['a card', { kind: 'poll' as const }],
+      [
+        'a forward of a deleted original with no comment',
+        {
+          content: '',
+          metadata: {},
+          forwarded_from: {
+            message_id: 'orig-0',
+            channel_id: 'ch-src',
+            sender_id: null,
+            author_name: null,
+            content: '',
+            gif: null,
+            attachment_count: 0,
+            created_at: '2026-01-01T00:00:00.000Z',
+            deleted: true,
+          },
+        },
+      ],
+    ])('refuses %s with a 400', async (_label, overrides) => {
+      mockMessageRepo.findById.mockResolvedValue({ ...original, ...overrides });
+
+      await expect(forward()).rejects.toThrow(
+        new BadRequestException("This message can't be forwarded"),
+      );
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a message the caller cannot read', async () => {
+      mockMessageRepo.findById.mockResolvedValue(null);
+
+      await expect(forward()).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    // The source is authorized as a read by the REAL ChannelAccessService: a
+    // message that exists, in a channel the caller can't read, is refused with
+    // the 403 every message action answers there (`assertMessageAccess`). A
+    // bare `findById` in its place would forward it.
+    it.each([
+      [
+        "someone else's DM",
+        {
+          type: 'DM' as const,
+          name: 'dm-user-2-user-3',
+          member_ids: ['user-2', 'user-3'],
+        },
+      ],
+      [
+        'a private channel the caller is not in',
+        {
+          type: 'PRIVATE' as const,
+          name: 'exec-secrets',
+          member_ids: ['user-2'],
+        },
+      ],
+    ])('answers 403 for a message in %s', async (_label, shape) => {
+      const hidden: ChatChannel = { ...baseChannel, id: 'ch-hidden', ...shape };
+      mockChannelRepo.findById.mockImplementation(async (id: string) =>
+        id === DEST ? destChannel : id === 'ch-hidden' ? hidden : baseChannel,
+      );
+      mockMessageRepo.findById.mockResolvedValue({
+        ...original,
+        channel_id: 'ch-hidden',
+      });
+
+      await expect(forward()).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a destination in another chapter', async () => {
+      channels(null);
+
+      await expect(forward()).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('answers 403 for a destination the caller cannot post in', async () => {
+      channels({ ...announcementsChannel, id: DEST });
+
+      await expect(forward()).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('forwards with no name when the author read fails', async () => {
+      mockUserRepo.findDisplayIdentitiesByIds.mockRejectedValue(
+        new Error('pg down'),
+      );
+
+      await forward();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          forwarded_from: expect.objectContaining({ author_name: null }),
+        }),
+      );
+    });
+
+    it('withholds the copy in its answer when the caller blocked the author', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-author']);
+
+      const result = await forward();
+
+      expect(result.forwarded_from).toMatchObject({
+        content: '',
+        author_name: null,
+        sender_blocked: true,
       });
     });
   });
@@ -4790,6 +5081,7 @@ describe('ChatService', () => {
         flag: null,
         flagged_by: null,
         flagged_at: null,
+        forwarded_from: null,
       });
       // Same tail as `deleteMessage`: the attachment purge runs, scoped to the
       // chapter.
@@ -5009,6 +5301,69 @@ describe('ChatService', () => {
   });
 
   // ── Read Receipts ────────────────────────────────────────────────────
+
+  describe('markMessageUnread (#3723)', () => {
+    beforeEach(() => {
+      mockReadReceiptRepo.upsert.mockImplementation(
+        async (channelId, userId, lastReadAt) => ({
+          id: 'rr-1',
+          channel_id: channelId,
+          user_id: userId,
+          last_read_at: lastReadAt,
+          hidden_at: null,
+          updated_at: lastReadAt,
+        }),
+      );
+    });
+
+    it("moves the caller's cursor in the message's channel to just before it", async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        created_at: '2026-11-13T18:00:00.500Z',
+      });
+
+      const receipt = await service.markMessageUnread(
+        'msg-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockReadReceiptRepo.upsert).toHaveBeenCalledWith(
+        baseMessage.channel_id,
+        'user-1',
+        '2026-11-13T18:00:00.499Z',
+      );
+      expect(receipt.last_read_at < '2026-11-13T18:00:00.500Z').toBe(true);
+      // Mark unread clears nothing: the notifications stay as they are.
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('refuses a thread reply, which never counts in its channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        thread_root_id: 'root-1',
+      });
+
+      await expect(
+        service.markMessageUnread('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockReadReceiptRepo.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deleted message', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+
+      await expect(
+        service.markMessageUnread('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockReadReceiptRepo.upsert).not.toHaveBeenCalled();
+    });
+  });
 
   describe('markChannelRead', () => {
     it('should upsert read receipt', async () => {
@@ -5303,6 +5658,7 @@ describe('ChatService', () => {
       payload: null,
       attachment_count: 0,
       created_at: '2026-11-06T18:00:00Z',
+      forwarded_from: null,
     });
 
     it('drops channels the caller cannot read, and DMs they hid', async () => {

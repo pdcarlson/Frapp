@@ -1,6 +1,6 @@
 "use client";
 
-import { throwUnlessOk } from "@repo/api-sdk";
+import { randomClientId, throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
   isDirectChannel,
@@ -19,6 +19,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
+import { chatActivityStampsSettled } from "./read-cursor";
 import {
   invalidateNotificationLists,
   markChannelNotificationsReadInCache,
@@ -722,6 +723,8 @@ export function useMarkChannelRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: markChannelReadMutationKey,
+    // Ordered with Mark unread (#3723), which must land after it.
+    scope: READ_CURSOR_SCOPE,
     mutationFn: async (id: string) => {
       const result = await client.POST("/v1/channels/{id}/read", {
         params: { path: { id } },
@@ -742,6 +745,46 @@ export function useMarkChannelRead() {
         void invalidateNotificationLists(queryClient);
       }
     },
+  });
+}
+
+/**
+ * The scope both read-cursor writes run in (#3723): TanStack runs a scope's
+ * mutations one at a time, in order, so Mark unread waits behind a Mark as
+ * read already pending (a paused or retrying one included) rather than
+ * landing first and being stamped over.
+ */
+export const READ_CURSOR_SCOPE = { id: "chat-read-cursor" } as const;
+
+/**
+ * Mark unread (#3723): move the viewer's read cursor in a message's channel to
+ * just before it (`POST /v1/channels/messages/{messageId}/unread`), so the
+ * channel's badge counts it and what came after, as Discord's and Slack's
+ * Mark unread do.
+ *
+ * Two kinds of read stamp could otherwise land after it and undo it. Mark as
+ * read (`useMarkChannelRead`) shares {@link READ_CURSOR_SCOPE}, so this waits
+ * behind it. The app-wide activity handler stamps without a mutation, so this
+ * waits for its round in flight (`chatActivityStampsSettled`), and the caller
+ * holds the channel (`holdChannelUnread`) so it queues no more.
+ */
+export function useMarkMessageUnread() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "unread"],
+    scope: READ_CURSOR_SCOPE,
+    mutationFn: async (messageId: string) => {
+      await chatActivityStampsSettled();
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/unread",
+        { params: { path: { messageId } } },
+      );
+      throwUnlessOk(result);
+      return result.data;
+    },
+    // Every channel badge and the unread counts live under `["channels"]`.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 }
 
@@ -1303,6 +1346,76 @@ export function useUnbookmarkMessage() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: bookmarkKeys.lists(chapterId!),
+      });
+    },
+  });
+}
+
+/** What {@link useForwardMessage} sends (#4864). */
+export interface ForwardMessageInput {
+  /** The original message's server id. */
+  messageId: string;
+  /** The channel or DM it goes to; may be the channel it is in. */
+  channelId: string;
+  /** The forwarder's optional comment, posted as the new message's text. */
+  content?: string;
+  /**
+   * The idempotency key. Keep one per draft (the same destination and
+   * comment) so a retry after a lost response answers the forward already
+   * made instead of posting a second; a fresh one is drawn when omitted.
+   */
+  clientMessageId?: string;
+}
+
+/**
+ * Forward a message to a channel or DM, with an optional comment (#4864,
+ * `spec/behavior/chat/README.md` § Forward). The server posts it as an
+ * ordinary message from the forwarder, so it arrives in the destination's
+ * timeline over Realtime like any post; the caller may also merge the
+ * returned row into that channel's cache (this package doesn't know chat-core's
+ * cache shape).
+ *
+ * A failure throws with the HTTP status on it (`throwUnlessOk`), so the
+ * caller can tell a refusal (403 / 404) from one worth retrying.
+ *
+ * On success it re-reads the two per-channel summaries exactly, the Messages
+ * order and preview and the unread counts, as a message arriving does
+ * (`createChatActivityHandler`), never the `["channels"]` prefix.
+ */
+export function useForwardMessage() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "forward-message"],
+    mutationFn: async ({
+      messageId,
+      channelId,
+      content,
+      clientMessageId,
+    }: ForwardMessageInput) => {
+      const comment = content?.trim() ? content : undefined;
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/forward",
+        {
+          params: { path: { messageId } },
+          body: {
+            channel_id: channelId,
+            ...(comment !== undefined ? { content: comment } : {}),
+            client_message_id: clientMessageId ?? randomClientId(),
+          },
+        },
+      );
+      throwUnlessOk(result);
+      return result.data!;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+        exact: true,
       });
     },
   });

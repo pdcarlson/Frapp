@@ -219,11 +219,14 @@ export interface MessageActions {
   canDelete: boolean;
   canReport: boolean;
   canBlock: boolean;
+  /** Forward to another channel or DM (#4864): `canForwardMessage`. */
+  canForward: boolean;
 }
 
 const NO_ACTIONS: MessageActions = {
   canOpen: false,
   canReply: false,
+  canForward: false,
   canEdit: false,
   canDelete: false,
   canReport: false,
@@ -353,7 +356,8 @@ export function messageActionsFor(
     ChatMessage,
     "id" | "sender_id" | "kind" | "_status" | "is_deleted"
   > &
-    Partial<Pick<ChatMessage, "payload">>,
+    Partial<Pick<ChatMessage, "payload">> &
+    ForwardableFields,
   viewerId: string | null,
   context: MessageActionsContext,
 ): MessageActions {
@@ -365,7 +369,38 @@ export function messageActionsFor(
     canDelete: canDeleteMessage(message, viewerId, context.canManageChannel),
     canReport: canReportMessage(message, viewerId),
     canBlock: canBlockSender(message, viewerId, context.isMember),
+    canForward: canForwardMessage(message),
   };
+}
+
+/** What `canForwardMessage` reads beyond the row's status and kind. */
+type ForwardableFields = Partial<
+  Pick<ChatMessage, "content" | "gif" | "attachment_count" | "forwarded_from">
+>;
+
+/**
+ * Forward (#4864): a confirmed, undeleted plain-text message, GIFs and
+ * messages with files included, whoever sent it. The channel's `can_post`
+ * does not enter into it: the forward posts somewhere else, and the picker
+ * offers only the channels the viewer can post in. Never a card (its words
+ * live in `payload`), an imported archive row, or a pending, failed or
+ * unconfirmed row, which the API has no id for (or can't vouch for); the
+ * API refuses each with 400. A forward of a forward with no comment is
+ * forwarded as its copy, so one whose original was deleted has nothing left
+ * to send.
+ */
+export function canForwardMessage(
+  message: Pick<ChatMessage, "kind" | "_status" | "is_deleted"> &
+    ForwardableFields,
+): boolean {
+  if (!canActOnMessage(message) || message.kind !== "text") return false;
+  const copy = message.forwarded_from;
+  if (!copy?.deleted) return true;
+  return (
+    (message.content ?? "").trim().length > 0 ||
+    !!message.gif ||
+    (message.attachment_count ?? 0) > 0
+  );
 }
 
 /**
@@ -406,12 +441,21 @@ export function canBlockSender(
  * photo-only message). The body is copied as the member wrote it, markdown and
  * `@handles` included, as Discord and iMessage copy what was typed rather than
  * how it was drawn.
+ *
+ * A forward with no comment (#4864) copies its copy's text, unless the
+ * original was deleted or the viewer's block list masks it: pass
+ * `forwarded_from` already through `forwardedSnapshotVisible`, as the card
+ * draws it, or leave it out to copy only the comment.
  */
 export function copyableText(
-  message: Pick<ChatMessage, "content" | "kind" | "is_deleted">,
+  message: Pick<ChatMessage, "content" | "kind" | "is_deleted"> &
+    Partial<Pick<ChatMessage, "forwarded_from">>,
 ): string | null {
   if (message.is_deleted || isCardMessage(message)) return null;
-  return message.content.trim() ? message.content : null;
+  if (message.content.trim()) return message.content;
+  const copy = message.forwarded_from;
+  if (!copy || copy.deleted || copy.sender_blocked) return null;
+  return copy.content.trim() ? copy.content : null;
 }
 
 /**

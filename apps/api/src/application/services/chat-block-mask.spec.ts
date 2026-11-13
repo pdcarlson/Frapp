@@ -64,6 +64,7 @@ describe('maskBlockedMessages', () => {
     thread_last_reply_at: null,
     thread_recent_sender_ids: [],
     thread_last_reply: null,
+    forwarded_from: null,
     is_pinned: false,
     pinned_at: null,
     flag: null,
@@ -165,6 +166,101 @@ describe('maskBlockedMessages', () => {
       );
       expect(row.thread_last_reply).toEqual({
         ...imported,
+        sender_blocked: false,
+      });
+    });
+  });
+
+  describe('a forwarded copy (#4864)', () => {
+    const copy = (sender_id: string | null) => ({
+      message_id: 'orig-1',
+      channel_id: 'chan-src',
+      sender_id,
+      author_name: 'Devin',
+      content: 'grill is in my garage',
+      gif: null,
+      attachment_count: 2,
+      created_at: '2026-02-28T00:00:00.000Z',
+    });
+
+    it("withholds a copy of a blocked author's message under a clear forward", () => {
+      const [served] = maskBlockedMessages(
+        [message({ content: '', forwarded_from: copy(BLOCKED) })],
+        [BLOCKED],
+      );
+
+      expect(served.sender_blocked).toBe(false);
+      expect(served.forwarded_from).toEqual({
+        message_id: 'orig-1',
+        channel_id: 'chan-src',
+        sender_id: BLOCKED,
+        author_name: null,
+        content: '',
+        gif: null,
+        attachment_count: 0,
+        created_at: '2026-02-28T00:00:00.000Z',
+        deleted: false,
+        sender_blocked: true,
+      });
+    });
+
+    it("keeps another member's copy, flagged clear", () => {
+      const [served] = maskBlockedMessages(
+        [message({ forwarded_from: copy(FRIEND) })],
+        [BLOCKED],
+      );
+
+      expect(served.forwarded_from).toEqual({
+        ...copy(FRIEND),
+        sender_blocked: false,
+      });
+    });
+
+    it('keeps a copy of an imported message, which no one can block', () => {
+      const [served] = maskBlockedMessages(
+        [message({ forwarded_from: copy(null) })],
+        [BLOCKED],
+      );
+
+      expect(served.forwarded_from?.content).toBe('grill is in my garage');
+      expect(served.forwarded_from?.sender_blocked).toBe(false);
+    });
+
+    it('drops the copy with the rest of a blocked forwarder’s message', () => {
+      const [served] = maskBlockedMessages(
+        [message({ sender_id: BLOCKED, forwarded_from: copy(FRIEND) })],
+        [BLOCKED],
+      );
+
+      expect(served.sender_blocked).toBe(true);
+      expect(served.forwarded_from).toBeNull();
+    });
+
+    it('drops the copy from a deleted forward', () => {
+      const [served] = maskBlockedMessages(
+        [message({ is_deleted: true, forwarded_from: copy(FRIEND) })],
+        [],
+      );
+
+      expect(served.content).toBe(DELETED_MESSAGE_CONTENT);
+      expect(served.forwarded_from).toBeNull();
+    });
+
+    it('keeps a copy whose original was deleted as the trigger blanked it', () => {
+      const blanked = {
+        ...copy(null),
+        author_name: null,
+        content: '',
+        attachment_count: 0,
+        deleted: true,
+      };
+      const [served] = maskBlockedMessages(
+        [message({ forwarded_from: blanked })],
+        [BLOCKED],
+      );
+
+      expect(served.forwarded_from).toEqual({
+        ...blanked,
         sender_blocked: false,
       });
     });
