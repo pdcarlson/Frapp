@@ -162,6 +162,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp now lives in the chat box next to GIF, and the conversation opens over your chat instead of in a side panel.",
       "The Events calendar has Week and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
       "Leaving a page halfway through a new event, a document upload or new minutes keeps what you typed, and the form picks up where you left off.",
+      "While an officer's check-in screen is up, an event's chat card, page and Activity row say to point your phone's camera at the code instead of offering a Check in that can't work.",
+      "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -183,6 +185,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity can now show a short note from Frapp about one of your tasks, with a suggested place to start, when your chapter has Ask on.",
       "Long-press a message to pin it for the channel or save it for yourself, and find both under Pinned messages and Saved messages in the channel's menu.",
       "Events in the Calendar list now look like they do on Activity, with an arrow that shows each one opens, and the buttons beside each section name on the chat list line up.",
+      "New task, Log service hours and Upload document keep what you typed when you go back, and open on it next time.",
+      "Copy message link on a message's long-press gives you a link to that message. It opens on the web, and in the app when you tap it in a Frapp message.",
     ],
   },
   {
