@@ -33,6 +33,26 @@ export const ASK_REPORT_RECEIPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** A plaintext marker, so a later format can be told apart. */
 const PLAINTEXT_PREFIX = 'z1:';
 
+/**
+ * Where one thing the model was handed came from, by id and never by text
+ * (#4713). Posting an answer to a channel reads these to check, when the
+ * asker posts, whether everyone in that channel could open each one
+ * (`AskPostService`). `reach` is the tool's own (`AskTool.reach`), and
+ * `events` the events it listed that not every member can see.
+ */
+export type AskGivenRef =
+  | { type: 'document'; id: string }
+  | { type: 'meeting'; id: string }
+  | { type: 'chat' }
+  | {
+      type: 'tool';
+      name: string;
+      reach: 'chapter' | 'asker' | 'events';
+      events?: string[];
+    }
+  /** A source this build has no rule for. Never treated as open to all. */
+  | { type: 'other' };
+
 /** What the member was shown, from the `done` event. */
 export interface AskReceiptShown {
   status: string;
@@ -44,6 +64,11 @@ export interface AskReceiptShown {
     title: string;
     detail: string | null;
     date: string | null;
+    /**
+     * Where the chip opens, as the answer carried it. Absent on a receipt
+     * sealed before #4713, which can be reported but not posted.
+     */
+    target?: unknown;
   }>;
   left_out_messages: number;
   unverified_citations: number;
@@ -59,7 +84,15 @@ export interface AskReportReceipt {
   written: string;
   shown: AskReceiptShown;
   /** Every source the model was handed, as it read them. */
-  given: Array<{ title: string; text: string }>;
+  given: Array<{
+    title: string;
+    text: string;
+    /** Absent on a receipt sealed before #4713. */
+    ref?: AskGivenRef;
+    /** What the source is called on a chip ("Bylaws", "Your tasks"). */
+    label?: string;
+    kind?: string;
+  }>;
   /** The live-data tools that ran. */
   tools: string[];
   model: string;
@@ -70,6 +103,13 @@ export interface AskReportReceipt {
    * No on the AI sheet. Never sent anywhere readable: the receipt is sealed.
    */
   quoted_user_ids: string[];
+  /**
+   * The question came with earlier turns of the conversation (#4713). Those
+   * turns are the client's text and were read by the model beside `given`,
+   * so nothing here says where they came from: such an answer can be
+   * reported, never posted to a channel. Absent when there were none.
+   */
+  followed_up?: true;
 }
 
 export class AskReportReceiptError extends Error {

@@ -21,7 +21,20 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
+// #2912: what goes up is what the downscale hands back, never the picked file.
+vi.mock("@/lib/downscale-image", () => ({
+  downscaleImage: vi.fn(
+    async (image: { filename: string }, opts: { keepAlpha: boolean }) => ({
+      body: new Blob(["small"], {
+        type: opts.keepAlpha ? "image/png" : "image/jpeg",
+      }),
+      filename: `small-${image.filename}`,
+      contentType: opts.keepAlpha ? "image/png" : "image/jpeg",
+    }),
+  ),
+}));
 
+import { downscaleImage } from "@/lib/downscale-image";
 import {
   PHOTO_SIZE_REFUSAL,
   PHOTO_TYPE_REFUSAL,
@@ -58,16 +71,25 @@ describe("ProfilePhotoControl", () => {
     await pick(file);
 
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(PATH));
+    // The downscaled photo (#2912), a JPEG with no alpha, is what is minted for
+    // and PUT: its name, type and size, not the picked file's.
+    expect(downscaleImage).toHaveBeenCalledWith(
+      { body: file, filename: "me.png", contentType: "image/png" },
+      { keepAlpha: false },
+    );
     expect(mocks.requestUrl).toHaveBeenCalledWith({
-      filename: "me.png",
-      content_type: "image/png",
-      size_bytes: file.size,
+      filename: "small-me.png",
+      content_type: "image/jpeg",
+      size_bytes: 5,
     });
     expect(mocks.put).toHaveBeenCalledWith({
       signedUrl: "https://storage/put",
-      body: file,
-      contentType: "image/png",
+      body: expect.any(Blob),
+      contentType: "image/jpeg",
     });
+    const put = mocks.put.mock.calls[0]![0] as { body: Blob };
+    expect(put.body).not.toBe(file);
+    expect(put.body.size).toBe(5);
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Photo updated" }),
     );
@@ -77,19 +99,22 @@ describe("ProfilePhotoControl", () => {
     ["an SVG", new File(["<svg/>"], "me.svg", { type: "image/svg+xml" })],
     ["a PDF", new File(["%PDF"], "me.pdf", { type: "application/pdf" })],
     ["a HEIC", new File(["heic"], "me.heic", { type: "image/heic" })],
-  ])("refuses %s with a clear error and sends nothing", async (_label, file) => {
-    render(<ProfilePhotoControl hasPhoto={false} />);
+  ])(
+    "refuses %s with a clear error and sends nothing",
+    async (_label, file) => {
+      render(<ProfilePhotoControl hasPhoto={false} />);
 
-    await pick(file);
+      await pick(file);
 
-    expect(mocks.toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        description: PHOTO_TYPE_REFUSAL,
-        variant: "destructive",
-      }),
-    );
-    expect(mocks.requestUrl).not.toHaveBeenCalled();
-  });
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: PHOTO_TYPE_REFUSAL,
+          variant: "destructive",
+        }),
+      );
+      expect(mocks.requestUrl).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses an image over the size cap before minting", async () => {
     render(<ProfilePhotoControl hasPhoto={false} />);
@@ -138,12 +163,18 @@ describe("ProfilePhotoControl", () => {
     render(<ProfilePhotoControl hasPhoto />);
 
     expect(
-      (screen.getByRole("button", { name: "Change photo" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "Change photo",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (screen.getByRole("button", { name: "Remove photo" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "Remove photo",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
     expect(screen.getByText("Choose a chapter to add a photo.")).toBeTruthy();
   });

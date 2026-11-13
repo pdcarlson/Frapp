@@ -155,13 +155,14 @@ A lost answer, or a write whose card didn't post, closes the sheet and says so i
 ## Server-originated kinds (anti-forgery)
 
 A `points`, `task`, `event`, `hours`, `rush`, or `system_audit` card asserts that a server-side side effect happened (a committed ledger row, a created task, event, service entry, or rush candidate, an audit entry).
-A client therefore **cannot** post these kinds directly: `chat.service.sendMessage` rejects any send whose `kind` is in `SERVER_ONLY_KINDS` (`event`, `points`, `task`, `hours`, `rush`, `system_audit`, `imported`) unless the trusted internal caller sets `system_originated: true` (never exposed on `SendMessageDto`).
+A client therefore **cannot** post these kinds directly: `chat.service.sendMessage` rejects any send whose `kind` is in `SERVER_ONLY_KINDS` (`event`, `points`, `task`, `hours`, `rush`, `system_audit`, `imported`, `ask_answer`) unless the trusted internal caller sets `system_originated: true` (never exposed on `SendMessageDto`).
 `PointsService.adjustPoints` is the only writer of `points` cards; `TaskService.create` is the only writer of `task` cards;
 `EventService.create` is the only writer of `event` cards (it posts through `EventAnnouncementService.postEventCard`);
 `ServiceEntryService.create` is the only writer of `hours` cards; `RushService.create` is the only writer of `rush` cards;
 `system_audit` has four server-side writers — the `#chapter-audit` bridge worker, plus `PollService` (expiry notices, into the poll's own channel), `InviteService` (acceptance notices, into the DM between the inviter and the new member) and `ChapterOnboardingService` (the one-time welcome message, whose channel [`onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard) owns).
 **None of the four goes through `sendMessage`** — each writes on the service-role path instead (`PollService` and `InviteService` say why in comments).
 So `SERVER_ONLY_KINDS` is what stops a *client* posting the kind; it is not what gates these four.
+`ask_answer` (#4713) has one writer, `AskPostService`, which inserts on the service-role path keyed `client_message_id = 'ask:<ask id>'`, from an answer the server sealed for the member posting it ([`../ai.md` § Posting an answer to the channel](../ai.md#posting-an-answer-to-the-channel)).
 The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
 
 ## Announcement gating
@@ -353,7 +354,7 @@ Both card reads tell those answers from `ChapterGuard`'s `chapter.context.mismat
 Nothing live is drawn and no control is offered before that read lands, because the snapshot has no votes and its bid is `none` forever.
 Every member may Vote (then a disabled Voted, since there is no unvote) and Extend bid (gone once a bid is out); while Recruitment is known to be off the card offers neither, and keeps its tally, since the reads still answer.
 A gate's refusal of either write is told in a member's words, `rushCardGateRefusal`, never the guard's officer-addressed message.
-Voter names are never shown); mobile draws `poll`, `signup`, `form`, `event`, `task`, `points`, `hours`, `rush`, `announcement` and `system_audit` as cards in the same row frame (`apps/mobile/components/chat/`), and `dues` and `loading` as text via `message-item.tsx`; a card whose payload doesn't read is drawn as its `content` text, as on web.
+Voter names are never shown); mobile draws `poll`, `signup`, `form`, `event`, `task`, `points`, `hours`, `rush`, `announcement`, `system_audit` and `ask_answer` as cards in the same row frame (`apps/mobile/components/chat/`), and `dues` and `loading` as text via `message-item.tsx`; a card whose payload doesn't read is drawn as its `content` text, as on web.
 The `announcement` card draws the message's `content` through the message markdown, and `payload.body` only when `content` is empty: `content` is what the push and the channel preview showed, and `announcement` is not a server-only kind, so a client could send a body that says something else.
 The `system_audit` card names its actor through `actorLabel` (`@repo/hooks`): the roster's name, "Frapp" for the system, or the member fallback, never a bare id prefix.
 Only the `#chapter-audit` mirror writes that payload; the server's own notices (a poll closing, an invite accepted, the chapter welcome) are `system_audit` rows without one, whose `content` is the whole sentence: mobile draws them as text, and web as that sentence in a muted card frame, because the renderer registry keeps every card kind out of the text body.

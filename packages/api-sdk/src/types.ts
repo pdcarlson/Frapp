@@ -4992,6 +4992,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an Ask Frapp answer to a channel, or ask what posting would warn about
+         * @description The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.
+         */
+        post: operations["AskPostController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/catch-up": {
         parameters: {
             query?: never;
@@ -6266,7 +6286,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -6423,7 +6443,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -6500,7 +6520,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer";
             gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
@@ -6553,7 +6573,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -9543,6 +9563,33 @@ export interface components {
             reason?: string;
             /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
             keep_earlier?: boolean;
+        };
+        AskPostDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post in. The caller must be able to post there.
+             */
+            channel_id: string;
+            /** @description The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request. */
+            receipt: string;
+            /** @description False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning. */
+            confirm: boolean;
+            /** @description The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned. */
+            acknowledged?: string[];
+        };
+        AskPostRestrictedDto: {
+            /** @description Stable for the same source, for `acknowledged`. */
+            key: string;
+            /** @description The kind of source, as an answer names it. */
+            kind: string;
+            /** @description The source’s name, or the records’ ("Your tasks"). */
+            title: string;
+        };
+        AskPostOutcomeDto: {
+            /** @description Whether the answer is now in the channel. */
+            posted: boolean;
+            /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
+            restricted: components["schemas"]["AskPostRestrictedDto"][];
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -21207,6 +21254,59 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off (`ai.not_available`), or the event was not found for this caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskPostController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskPostOutcomeDto"];
+                };
+            };
+            /** @description The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;

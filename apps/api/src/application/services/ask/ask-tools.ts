@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eventAttendanceFor } from '@repo/validation';
+import { eventAttendanceFor, eventLimitsAudience } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TaskStatus } from '#domain/entities/task.entity';
 import { localDateIn } from '#domain/utils/zoned-time';
@@ -9,6 +9,7 @@ import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
 import { TaskService } from '../task.service';
+import { nameInLine, oneLine } from './ask-lines';
 import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
 
 /**
@@ -29,7 +30,6 @@ const EVENTS_BACK_DAYS = 30;
 const EVENTS_AHEAD_DAYS = 120;
 const EVENTS_LIMIT = 60;
 const DUES_LIMIT = 20;
-const FREE_TEXT_LIMIT = 300;
 const TRANSACTIONS_LIMIT = 10;
 const LEADERBOARD_LIMIT = 25;
 /** How many of the asker's unconfirmed tasks are read, and how many shown. */
@@ -97,24 +97,6 @@ function longDate(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
-/** One line of member-written text: no line breaks, cut to a sane length. */
-function oneLine(text: string | null | undefined): string {
-  const flat = (text ?? '').replace(/\s+/g, ' ').trim();
-  return flat.length > FREE_TEXT_LIMIT
-    ? `${flat.slice(0, FREE_TEXT_LIMIT).trimEnd()}...`
-    : flat;
-}
-
-/**
- * A member's name inside a `name: fact` line. Members choose their own
- * display name, so the characters that separate a name from its fact are
- * taken out: "Jordan Lee: Treasurer" as a name would otherwise read as a
- * role the roster never gave.
- */
-function nameInLine(name: string | null | undefined): string {
-  return oneLine((name ?? '').replace(/[:;.,|()[\]]+/g, ' '));
-}
-
 function dollars(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -134,6 +116,7 @@ export class RosterAskTool implements AskTool {
   readonly page = 'members' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = null;
+  readonly reach = 'chapter' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -182,6 +165,7 @@ export class EventsAskTool implements AskTool {
   readonly page = 'events' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'events';
+  readonly reach = 'events' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -256,10 +240,16 @@ export class EventsAskTool implements AskTool {
         `${cut} more events in this period are not listed here. The Events page has all of them.`,
       );
     }
-    return result(chapterId, [
+    const read = result(chapterId, [
       `Today is ${longDate(now.toISOString(), timeZone)}. Times are in ${timeZone}.`,
       ...lines,
     ]);
+    // Which of the listed events not every member can see, for the check a
+    // post to a channel makes (#4713). Ids only.
+    const limited = kept.filter(eventLimitsAudience).map((event) => event.id);
+    return read && limited.length > 0
+      ? { ...read, limitedEventIds: limited }
+      : read;
   }
 }
 
@@ -274,6 +264,7 @@ export class MyPointsAskTool implements AskTool {
   readonly page = 'points' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'points';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly points: PointsService) {}
@@ -312,6 +303,7 @@ export class PointsLeaderboardAskTool implements AskTool {
   readonly page = 'points' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'points';
+  readonly reach = 'chapter' as const;
   readonly effect = 'read' as const;
 
   constructor(
@@ -357,6 +349,7 @@ export class MyDuesAskTool implements AskTool {
   // Off for every chapter during the beta (`BETA_OFF_MODULES`), so this tool
   // is not offered until dues come back.
   readonly module = 'dues';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly invoices: FinancialInvoiceService) {}
@@ -402,6 +395,7 @@ export class MyTasksAskTool implements AskTool {
   readonly page = 'tasks' as const;
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'tasks';
+  readonly reach = 'asker' as const;
   readonly effect = 'read' as const;
 
   constructor(private readonly tasks: TaskService) {}

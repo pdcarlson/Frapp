@@ -127,6 +127,7 @@ function evalTools(
       kind: 'roster',
       title: result.toolName,
       page: 'members',
+      reach: 'chapter',
       permission: 'members:view',
       module: null,
       effect: 'read',
@@ -152,6 +153,7 @@ function evalTools(
     kind: 'dues',
     title: 'Record a payment',
     page: 'dues',
+    reach: 'chapter',
     permission: 'billing:manage',
     module: null,
     effect: 'propose',
@@ -207,7 +209,14 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         } as never,
         {
           getEffectivePermissions: () => Promise.resolve(caller.permissions),
+          findByChapter: () => Promise.resolve([]),
         } as never,
+        // The cases name no asker yet, so Ask answers without one, as it
+        // does when that read fails (#4890).
+        {
+          findByUserAndChapter: () => Promise.reject(new Error('no asker')),
+        } as never,
+        { findDisplayIdentitiesByIds: () => Promise.resolve([]) } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
       );

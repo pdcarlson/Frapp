@@ -29,7 +29,7 @@ import {
   needsAccessHolder,
 } from '#domain/utils/channel-access';
 import type { ChannelOperation } from '#domain/utils/channel-access';
-import { RbacService } from './rbac.service';
+import { RbacService, type ChapterMemberAccess } from './rbac.service';
 
 /**
  * The projection `canAccessChannel` decides on. Spelled once so the single-read
@@ -257,33 +257,45 @@ export class ChannelAccessService {
       userId,
       'read',
     );
+    return (await this.channelReaders(channel, chapterId)).map((member) => ({
+      user_id: member.user_id,
+      role_rank: member.top_role_order,
+      role_id: member.top_role?.id ?? null,
+      // Everyone (#4191) is offered by no list, so its holders read as the
+      // rest of the chapter rather than as a role called Everyone.
+      role_name: member.top_role
+        ? member.top_role.everyone
+          ? EVERYONE_MEMBER_LIST_HEADING
+          : member.top_role.name
+        : null,
+    }));
+  }
+
+  /**
+   * Every chapter member who can read `channel`, with what each holds: the
+   * audience behind {@link listChannelMembers}, for a caller that has to ask
+   * something of each reader (whether everyone in the channel could open
+   * what an Ask Frapp answer drew on, `AskPostService`, #4713). The caller
+   * authorizes the channel first; this decides nothing about the caller.
+   */
+  async channelReaders(
+    channel: ChatChannel,
+    chapterId: string,
+  ): Promise<ChapterMemberAccess[]> {
     const predicateChannel = toPredicateChannel(channel);
     const access = await this.rbac.getChapterMemberAccess(
       chapterId,
       listsNameGroups(predicateChannel),
     );
-    return access
-      .filter((member) =>
-        canAccessChannel({
-          channel: predicateChannel,
-          userId: member.user_id,
-          isChapterMember: true,
-          holder: member.channel_access,
-          operation: 'read',
-        }),
-      )
-      .map((member) => ({
-        user_id: member.user_id,
-        role_rank: member.top_role_order,
-        role_id: member.top_role?.id ?? null,
-        // Everyone (#4191) is offered by no list, so its holders read as the
-        // rest of the chapter rather than as a role called Everyone.
-        role_name: member.top_role
-          ? member.top_role.everyone
-            ? EVERYONE_MEMBER_LIST_HEADING
-            : member.top_role.name
-          : null,
-      }));
+    return access.filter((member) =>
+      canAccessChannel({
+        channel: predicateChannel,
+        userId: member.user_id,
+        isChapterMember: true,
+        holder: member.channel_access,
+        operation: 'read',
+      }),
+    );
   }
 
   /**

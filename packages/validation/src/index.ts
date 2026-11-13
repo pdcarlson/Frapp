@@ -25,6 +25,8 @@ export * from "./analytics-opt-out";
 export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+// An Ask Frapp answer posted to a channel (#4713).
+export * from "./ask-post";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";
@@ -195,6 +197,7 @@ export * from "./time-zone";
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
   acceptAttribute,
+  AVATAR_MAX_EDGE,
   contentTypeByExtension,
   DOCUMENT_UPLOAD_SURFACES,
   fileExtension,

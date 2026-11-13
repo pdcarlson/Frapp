@@ -178,6 +178,16 @@ or tool turn. Anything that reaches a user/tool turn is forgeable by whoever can
 underlying surface. Corpus content is passed as delimited source material in a user or tool turn
 (document content blocks where the provider has them), never concatenated into the system prompt.
 
+Who is asking follows the same rule (#4890, 2026-11-13). Ask tells the answering call the asker's
+display name, the roles they hold and whether they are an alumni member, so "me" and "my" mean
+someone. A display name and a role's name are text a member wrote, so they are given as a source
+titled "The member asking", each with its separators removed the way a roster line removes them, and
+the system prompt only says that the first source names the asker. Any other source whose title
+would read as that one is renamed before the model sees it. It is what the roster shows of the
+asker, so it is read only for a member who holds `members:view` (C2). The planning call is not shown
+it. It is added only beside something that was found, a citation of it backs nothing, and it is
+never shown as a source, so it is never a reason to write (C6, C7). No contact detail is in it.
+
 **C2 — Every tool call runs under the caller's permissions, never the service's.** The agent must
 resolve authority through the same `ChapterGuard` / permission-decorator path as every other route.
 The `service_role` client must not be reachable from a tool implementation.
@@ -311,9 +321,47 @@ officer's typed request into a proposal they confirm
   reads their sources for both). The lanes do hold services that can post or notify from other
   methods, so this is a tripwire on new calls and not a proof: a hostile source still has no tool
   that posts, because the planner's tools are the fixed read tools and the acting planner only
-  proposes a card for the asker. Posting an answer to the channel is a separate step that is not
-  built; the rule decided for it is in
-  [`ai.md` § Asking from a channel](../../spec/behavior/ai.md#asking-from-a-channel).
+  proposes a card for the asker. Posting an answer to the channel is a separate request the asker
+  makes afterwards (next item).
+- **Posting an answer is the asker's act, on text the server wrote** (added in #4713 by pdcarlson,
+  2026-11-13; [`ai.md` § Posting an answer to the channel](../../spec/behavior/ai.md#posting-an-answer-to-the-channel)).
+  `POST /v1/ai/ask/posts` (`AskPostService`, outside `services/ask/`) calls no model and has no
+  tool, so nothing retrieved can cause a post (C3, C5): it runs only when the asker presses Post.
+  What it writes:
+  - **Only a sealed answer.** The request carries the answer's report receipt, which the server
+    sealed for this member in this chapter, and no answer text. A member cannot post text the
+    model did not write, replay another member's receipt, or post one from another chapter (C4).
+    The receipt is refused after 24 hours. The seal proves authorship by the model, not that the
+    asker did not steer it: the question is theirs, so it is posted above the answer for readers
+    to judge.
+  - **Never a follow-up's answer.** `history` is client text the model reads as its own earlier
+    turns. It could carry an earlier answer's restricted content past the audience check, or
+    words the asker wrote for the model to repeat with no trace in the posted question. The
+    receipt records that history was sent (`followed_up`) and the post is refused
+    (`ai.ask.post.follow_up`); found in this change's review.
+  - **Asking's conditions again.** The chapter's Ask switch and the asker's own consent are
+    checked on the post, so an answer written before either was withdrawn is not published after.
+  - **Under the asker's own permission to post** (C2): `assertChannelAccess(..., 'post')`, the gate
+    a message passes, so the audit log, an archived channel and a read-only one refuse.
+  - **This is a deliberate widening of who sees an answer's text.** Until now what a run produced
+    was shown only to people who could open its sources. Paul's decision (2026-11-13) lets the
+    asker publish their own answer to a wider audience after a warning. The server checks every
+    source the model was handed against every other reader of the channel, by each source kind's
+    own read rule, and returns what not all of them can open; it posts only when the request
+    acknowledges every entry, and checks again at post time. A source kind with no rule is never
+    called open. The residual risk is the one Paul accepted: an asker can post an answer that
+    paraphrases a source some readers cannot open. A reader still cannot open the source: the
+    posted row carries each source's name and target, never its quoted passages, and a target
+    opens through that source's ordinary route and its ordinary checks.
+  - **No chat text leaves its channel this way** (C8). An answer whose model input included a chat
+    message is refused outright, cited or not, so an author's message is never republished to a
+    channel they did not post in, and consent is not widened.
+  - **The posted row instructs nobody.** It is written with no mentions and the push worker
+    returns on its kind. The question is stored and drawn as plain text. `@Frapp` inside it asks
+    nothing, since asking happens only in the asker's own composer. The kind is not indexed into
+    the corpus, so a posted answer cannot come back as a source for a later one.
+  - **Clients cannot forge the kind.** `ask_answer` is in `SERVER_ONLY_KINDS`; `payload.asked_by`
+    is written by the server from the session, and is what lets the asker delete the row.
 - **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
   it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
   questions and requests the member typed earlier in the sitting (the last three), so "make it 10"
@@ -418,7 +466,7 @@ Mapping of control to enforcement:
 | C2 caller's permissions | `authority-ceiling`, on tool calls the product made; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED` (`AskService.offeredTools`; `ActService.offered`, and again at Confirm in `AiSuggestionService.accept`) |
 | C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached. The acting agent's planner is shown the officer's request, their own earlier messages in the conversation (since #4699) and the offered actions only (`act-agent.eval-spec.ts`, `act.service.spec.ts`) |
 | C4 chapter scoping | `chapter-scoping` (citations and tool calls); `act-agent.eval-spec.ts` (a name, id or roster line outside the chapter resolves to nobody) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
-| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown) | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. The v2 prompts have not been graded against a real provider yet (#4707) |
+| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown) | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. The prompts (`ask.plan@v3`, `ask.answer@v3` since #4890) have not been graded against a real provider yet (#4707) |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding` | yes, behind `AI_ENABLED` (the gateway) |
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer) |
 | C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450) |
