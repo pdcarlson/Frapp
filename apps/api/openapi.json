@@ -26767,6 +26767,10 @@
             "type": "boolean",
             "description": "Whether the caller can check in right now: the window is open and check-in would not refuse them."
           },
+          "check_in_needs_location": {
+            "type": "boolean",
+            "description": "Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses."
+          },
           "checked_in": {
             "type": "boolean",
             "nullable": true,
@@ -26797,6 +26801,7 @@
           "point_value",
           "check_in_opens_minutes",
           "check_in_open",
+          "check_in_needs_location",
           "checked_in",
           "created_by",
           "created_at",

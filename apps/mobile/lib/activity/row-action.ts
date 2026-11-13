@@ -5,6 +5,7 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
+import { checkInFailure } from "@/lib/events/check-in-outcome";
 import {
   TASK_CONFIRM_FAILURE,
   taskStatusGateRefusal,
@@ -42,14 +43,15 @@ export function activityRowActionsAllowed(
 }
 
 /**
- * Why a row's Confirm or Approve failed (#4437), in the words its sheet
- * uses: the task card's for a confirm (`useCardWrite` over
- * `taskStatusGateRefusal`), the hours sheet's for an approval. `gate` marks
+ * Why a row's Confirm, Approve or Check in failed (#4437, #4427), in the
+ * words its sheet uses: the task card's for a confirm (`useCardWrite` over
+ * `taskStatusGateRefusal`), the hours sheet's for an approval, the chat
+ * event card's for a check-in (`checkInFailure`). `gate` marks
  * a refusal from the plan or the module gate, which a retry can't win, so
  * the screen withdraws the buttons as the card withdraws its controls.
  */
 export function rowActionFailure(
-  action: "confirm" | "approve",
+  action: "confirm" | "approve" | "check-in",
   error: unknown,
 ): { text: string; gate: boolean } {
   const gate =
@@ -59,7 +61,9 @@ export function rowActionFailure(
       action === "confirm"
         ? (taskStatusGateRefusal(error) ??
           errorCopy(error, TASK_CONFIRM_FAILURE))
-        : hoursReviewFailure(error, "APPROVED"),
+        : action === "check-in"
+          ? checkInFailure(error).message
+          : hoursReviewFailure(error, "APPROVED"),
     gate,
   };
 }

@@ -218,6 +218,13 @@ export interface ActivityEvent {
    */
   check_in_open: boolean;
   /**
+   * Whether checking in needs the member's location: the event has a
+   * check-in zone (`spec/behavior/events.md` § Check-In). A surface that
+   * can't supply one says to use the phone instead of offering a check-in
+   * the server refuses. The zone itself never leaves the server here.
+   */
+  check_in_needs_location: boolean;
+  /**
    * Whether the member has an attendance row for it. Read only while check-in
    * is open; `null` otherwise, and when that read failed.
    */
@@ -1278,6 +1285,7 @@ export class ActivityService {
           point_value: event.point_value,
           check_in_opens_minutes: event.check_in_opens_minutes,
           check_in_open: checkInOpen,
+          check_in_needs_location: event.check_in_zone != null,
           // Only for an event the member can check in to right now, which
           // is rarely more than one: the answer is what decides whether it
           // still needs them.

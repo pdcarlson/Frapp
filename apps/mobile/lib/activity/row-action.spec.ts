@@ -34,3 +34,19 @@ describe("activityRowActionsAllowed", () => {
     );
   });
 });
+
+/** Why a row's Check in failed (#4427): the chat event card's words. */
+describe("rowActionFailure for a check-in", () => {
+  it("says a refusal in the event card's words, and a location refusal as itself", async () => {
+    const { rowActionFailure } = await import("@/lib/activity/row-action");
+    const { checkInFailure } = await import("@/lib/events/check-in-outcome");
+    const refusal = {
+      status: 400,
+      message: "You need to be at the event to check in.",
+    };
+    expect(rowActionFailure("check-in", refusal)).toEqual({
+      text: checkInFailure(refusal).message,
+      gate: false,
+    });
+  });
+});

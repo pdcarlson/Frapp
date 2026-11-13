@@ -1112,6 +1112,35 @@ describe('ActivityService', () => {
       expect(after.needs_you_count).toBe(0);
     });
 
+    it('says which events need the caller’s location, and sends no zone', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({ id: 'plain', check_in_zone: null }),
+        event({
+          id: 'zoned',
+          start_time: iso(50 * HOUR),
+          end_time: iso(51 * HOUR),
+          check_in_zone: [
+            { lat: 1, lng: 1 },
+            { lat: 1, lng: 2 },
+            { lat: 2, lng: 2 },
+          ],
+          check_in_zone_name: 'Great Hall',
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.coming_up.map((row) => [row.id, row.check_in_needs_location]),
+      ).toEqual([
+        ['plain', false],
+        ['zoned', true],
+      ]);
+      expect(view.coming_up[1]).not.toHaveProperty('check_in_zone');
+      expect(view.coming_up[1]).not.toHaveProperty('check_in_zone_name');
+    });
+
     it('still lists an open event, as needing the caller, when its attendance cannot be read', async () => {
       const { service, eventService, attendanceRepo } = build();
       eventService.findByChapter.mockResolvedValue([

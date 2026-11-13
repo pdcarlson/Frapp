@@ -120,10 +120,20 @@ const chapter = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   confirm: vi.fn(),
   review: vi.fn(),
+  checkIn: vi.fn(),
+  fix: vi.fn(),
   writeBlockedReason: null as string | null,
 }));
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: writes.writeBlockedReason }),
+}));
+// A zoned event's row check-in asks for the phone's position (#4427).
+vi.mock("@/lib/location", () => ({
+  requireForegroundFix: writes.fix,
+  latLngOf: (fix: { lat: number; lng: number }) => ({
+    lat: fix.lat,
+    lng: fix.lng,
+  }),
 }));
 
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
@@ -160,6 +170,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useConfirmTask: () => ({ mutateAsync: writes.confirm }),
   useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
+  useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
@@ -1192,7 +1203,7 @@ describe("Activity screen (#3897)", () => {
       expect(sheet.props?.rowActionState).toBe("done");
     });
 
-    it("leaves Vote and Check in as the row's ask, which opens the sheet", () => {
+    it("leaves Vote as the row's ask, which opens the sheet", () => {
       activity.value = {
         ...activity.value,
         data: read({
@@ -1206,30 +1217,72 @@ describe("Activity screen (#3897)", () => {
               },
             ],
           },
+        }),
+      };
+      const tree = render();
+      expect(
+        row(tree, "Formal theme").findAllByType(ActivityAskButton),
+      ).toHaveLength(0);
+      expect(
+        row(tree, "Formal theme").findByType(ActivityAsk).props.label,
+      ).toBe("Vote");
+    });
+
+    const openEvent = (id: string, name: string, zoned: boolean) => ({
+      id,
+      name,
+      start_time: new Date(Date.now() + 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 7_200_000).toISOString(),
+      location: "Great Hall",
+      attendance: "required",
+      point_value: 10,
+      check_in_opens_minutes: 15,
+      check_in_open: true,
+      check_in_needs_location: zoned,
+      checked_in: false,
+    });
+
+    it("checks in from the row, asking for the phone's position only for a zoned event (#4427)", async () => {
+      writes.checkIn.mockResolvedValue({});
+      writes.fix.mockResolvedValue({ lat: 1, lng: 2, accuracy: 5 });
+      activity.value = {
+        ...activity.value,
+        data: read({
           coming_up: [
-            {
-              id: "ev-1",
-              name: "Chapter",
-              start_time: new Date(Date.now() + 3_600_000).toISOString(),
-              end_time: null,
-              location: "Great Hall",
-              attendance: "required",
-              check_in_open: true,
-              checked_in: false,
-            },
+            openEvent("ev-plain", "Chapter", false),
+            openEvent("ev-zoned", "Formal", true),
           ],
         }),
       };
       const tree = render();
-      for (const [label, ask] of [
-        ["Formal theme", "Vote"],
-        ["Chapter", "Check in"],
-      ] as const) {
-        expect(row(tree, label).findAllByType(ActivityAskButton)).toHaveLength(
-          0,
-        );
-        expect(row(tree, label).findByType(ActivityAsk).props.label).toBe(ask);
-      }
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.fix).not.toHaveBeenCalled();
+      expect(writes.checkIn).toHaveBeenLastCalledWith({ eventId: "ev-plain" });
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.fix).toHaveBeenCalledTimes(1);
+      expect(writes.checkIn).toHaveBeenLastCalledWith({
+        eventId: "ev-zoned",
+        lat: 1,
+        lng: 2,
+      });
+      expect(button(tree, "Formal").props.disabled).toBe(true);
+    });
+
+    it("settles the row when the member was already on the list", async () => {
+      writes.checkIn.mockRejectedValue({ status: 409 });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(button(tree, "Chapter").props.disabled).toBe(true);
     });
 
     it("is offered to a screen reader as the row's named action", async () => {

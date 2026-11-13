@@ -62,6 +62,7 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   point_value: 10,
   check_in_opens_minutes: 10,
   check_in_open: false,
+  check_in_needs_location: false,
   checked_in: null,
   ...overrides,
 });
@@ -1168,17 +1169,28 @@ describe("activityRowAction (#4402)", () => {
           check_in_open: true,
           checked_in: false,
         }),
+        event({
+          id: "zoned",
+          name: "Zoned",
+          check_in_open: true,
+          checked_in: false,
+          check_in_needs_location: true,
+        }),
         event({ id: "later", name: "Later" }),
       ],
     });
+    const rows = activityGroups(
+      data,
+      "all",
+      new Date("2026-11-12T00:00:00.000Z"),
+    ).flatMap((group) => group.rows);
     const actions = Object.fromEntries(
-      activityGroups(data, "all", new Date("2026-11-12T00:00:00.000Z"))
-        .flatMap((group) => group.rows)
-        .map((row) => [row.title, activityRowAction(row)]),
+      rows.map((row) => [row.title, activityRowAction(row)]),
     );
     expect(actions).toEqual({
-      // Not yet: an event may need a location the web can't give (#4427).
-      Open: null,
+      Open: "check-in",
+      // A zone needs a location the web can't give (#4427): it opens.
+      Zoned: null,
       Mine: null,
       Done: "confirm",
       Proof: null,
@@ -1186,6 +1198,34 @@ describe("activityRowAction (#4402)", () => {
       "Formal venue?": null,
       Later: null,
     });
+    // The phone can supply one, so the zoned event checks in from its row.
+    const zoned = rows.find((row) => row.title === "Zoned")!;
+    expect(activityRowAction(zoned, { canSupplyLocation: true })).toBe(
+      "check-in",
+    );
+  });
+
+  it("treats an event from a read that doesn't say as needing a location", () => {
+    const data = activity({
+      coming_up: [
+        event({
+          check_in_open: true,
+          checked_in: false,
+          check_in_needs_location: undefined,
+        }),
+      ],
+    });
+    const row = activityGroups(
+      data,
+      "all",
+      new Date("2026-11-12T00:00:00.000Z"),
+    )
+      .flatMap((group) => group.rows)
+      .find((each) => each.kind === "event")!;
+    expect(activityRowAction(row)).toBeNull();
+    expect(activityRowAction(row, { canSupplyLocation: true })).toBe(
+      "check-in",
+    );
   });
 });
 
