@@ -153,9 +153,13 @@ export class AskConversationService {
           enabledModules: input.enabledModules,
           timeZone: input.timeZone,
           request: input.question,
-          // The member's own earlier messages, never an answer. How many of
-          // them the planner reads is the request lane's own rule.
-          earlier: (input.history ?? []).map((turn) => turn.question),
+          // The member's own earlier messages, never an answer. A turn they
+          // tapped from the opening suggestions is not their words: it can
+          // name a record another member wrote, so it is left out (C3). How
+          // many of the rest the planner reads is the request lane's own rule.
+          earlier: (input.history ?? [])
+            .filter((turn) => turn.suggested !== true)
+            .map((turn) => turn.question),
           keepEarlier: true,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },

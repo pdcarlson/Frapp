@@ -2,6 +2,7 @@ import {
   EventsAskTool,
   MyDuesAskTool,
   MyPointsAskTool,
+  MyTasksAskTool,
   PointsLeaderboardAskTool,
   RosterAskTool,
 } from './ask-tools';
@@ -22,6 +23,7 @@ describe('Ask tools', () => {
       new MyPointsAskTool({} as never),
       new PointsLeaderboardAskTool({} as never, {} as never),
       new MyDuesAskTool({} as never),
+      new MyTasksAskTool({} as never),
     ];
     expect(tools.map((tool) => tool.effect)).toEqual(tools.map(() => 'read'));
     expect(tools.every((tool) => tool.permission.length > 0)).toBe(true);
@@ -282,6 +284,96 @@ describe('Ask tools', () => {
     it('says nothing when there is nothing to show', async () => {
       const result = await new MyDuesAskTool({
         findByUser: jest.fn(async () => []),
+      } as never).run(context);
+      expect(result).toBeNull();
+    });
+  });
+  describe('tasks', () => {
+    const task = (overrides: Record<string, unknown> = {}) => ({
+      title: 'Book the hall',
+      description: null,
+      due_date: '2026-11-14',
+      due_at: null,
+      status: 'TODO',
+      stored_status: 'TODO',
+      point_reward: null,
+      sent_back_at: null,
+      sent_back_reason: null,
+      subtasks: [],
+      ...overrides,
+    });
+
+    it('reads only the asker’s own unfinished tasks, soonest first, with full dates', async () => {
+      const tasks = {
+        list: jest.fn(async () => [
+          task({
+            title: 'Send  the\nrecap',
+            due_date: '2026-11-20',
+            due_at: '2026-11-21T00:30:00.000Z',
+            status: 'IN_PROGRESS',
+            stored_status: 'IN_PROGRESS',
+            point_reward: 5,
+            description: 'To the whole chapter',
+          }),
+          task({
+            title: 'Buy cups',
+            due_date: '2026-11-10',
+            status: 'OVERDUE',
+            sent_back_at: '2026-11-11T10:00:00.000Z',
+            sent_back_reason: 'Wrong size',
+            subtasks: [
+              { done_at: '2026-11-09T10:00:00.000Z' },
+              { done_at: null },
+            ],
+          }),
+          task({
+            title: 'Clean the van',
+            due_date: '2026-11-08',
+            status: 'COMPLETED',
+            stored_status: 'COMPLETED',
+          }),
+          task(),
+        ]),
+      };
+      const result = await new MyTasksAskTool(tasks as never).run(context);
+      // `false`: an officer asking about their own tasks reads their own.
+      expect(tasks.list).toHaveBeenCalledWith('chapter-a', 'user-1', false, {
+        confirmed: false,
+        limit: 100,
+      });
+      expect(result).toEqual({
+        chapterId: 'chapter-a',
+        text: [
+          'Today is Thursday, November 12, 2026. Times are in America/New_York.',
+          'You have 3 open tasks.',
+          'Buy cups: due Tuesday, November 10, 2026. It is past due. An officer sent it back: Wrong size. 1 of 2 steps checked off.',
+          'Book the hall: due Saturday, November 14, 2026. Not started.',
+          'Send the recap: due Friday, November 20, 2026 at 7:30 PM. You have started it. Worth 5 points. About: To the whole chapter.',
+          'Clean the van: due Sunday, November 8, 2026. You marked it done and it is waiting for an officer to confirm.',
+        ].join('\n'),
+      });
+    });
+
+    it('says how many were left out when the list is too long', async () => {
+      const tasks = {
+        list: jest.fn(async () =>
+          Array.from({ length: 43 }, (_, index) =>
+            task({ title: `Task ${index + 1}` }),
+          ),
+        ),
+      };
+      const result = await new MyTasksAskTool(tasks as never).run(context);
+      const lines = result?.text.split('\n') ?? [];
+      expect(lines[1]).toBe('You have 43 open tasks.');
+      expect(lines).toHaveLength(43);
+      expect(lines.at(-1)).toBe(
+        '3 more of your tasks are not listed here. The Tasks page has all of them.',
+      );
+    });
+
+    it('says nothing when the member has no unfinished task', async () => {
+      const result = await new MyTasksAskTool({
+        list: jest.fn(async () => []),
       } as never).run(context);
       expect(result).toBeNull();
     });

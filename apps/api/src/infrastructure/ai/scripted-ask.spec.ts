@@ -12,8 +12,16 @@ type Said = Extract<ScriptedReply, { text: string }>;
 const askPlanMessage = (
   question: string,
   offered: ReadonlyArray<{ name: string; description: string }>,
+  earlier: readonly string[] = [],
 ): string =>
   [
+    ...(earlier.length === 0
+      ? []
+      : [
+          'Earlier in the conversation the member asked:',
+          ...earlier.map((asked) => `- ${asked}`),
+          '',
+        ]),
     `Question: ${question}`,
     '',
     'Tools:',
@@ -26,6 +34,7 @@ const tools = [
   'my_points',
   'points_leaderboard',
   'my_dues',
+  'my_tasks',
 ].map((name) => ({ name, description: `About ${name}.` }));
 
 const plan = (question: string) =>
@@ -52,6 +61,28 @@ describe('the scripted Ask replies', () => {
     expect(plan('When is the next chapter meeting?').tools).toEqual(['events']);
     expect(plan('How many points do I have?').tools).toEqual(['my_points']);
     expect(plan('What do the bylaws say about quorum?').tools).toEqual([]);
+    expect(plan('Which of my 3 open tasks is due first?').tools).toEqual([
+      'my_tasks',
+    ]);
+    expect(plan('How much do I owe for Fall dues?').tools).toEqual(['my_dues']);
+  });
+
+  it('picks tools for the question, not for what was asked before it', () => {
+    const planned = (
+      scriptedAskPlan({
+        kind: 'structured',
+        messages: [
+          {
+            role: 'user',
+            content: askPlanMessage('What do the bylaws say?', tools, [
+              'Who is the treasurer?',
+              'How many points do I have?',
+            ]),
+          },
+        ],
+      } as unknown as LanguageModelRequest) as Said
+    ).object as { tools: string[] };
+    expect(planned.tools).toEqual([]);
   });
 
   it('never plans a tool that was not offered', () => {

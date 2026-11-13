@@ -9,6 +9,7 @@ import {
   createAskStreamReader,
   type AskAnswer,
   type AskStreamEvent,
+  type AskSuggestion,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
 import type { ActResponse } from "./use-act";
@@ -59,6 +60,39 @@ export function useAskStatus(options?: { enabled?: boolean }) {
     staleTime: 30_000,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
+}
+
+const askSuggestionsKey = (chapterId: string | null | undefined) =>
+  ["ai", "ask", "suggestions", chapterId] as const;
+
+/**
+ * What Ask opens with for this member (#4700): questions and one request
+ * built on the server from their own records, with no model call. Empty
+ * until it arrives and whenever it cannot be read, so a screen shows its
+ * plain opening and nothing waits on this.
+ *
+ * Read when Ask opens. A minute is long enough that closing and reopening
+ * does not reshuffle the list, and short enough that a task finished since
+ * is not still suggested.
+ */
+export function useAskSuggestions(options?: { enabled?: boolean }): {
+  suggestions: AskSuggestion[];
+} {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const query = useQuery({
+    queryKey: askSuggestionsKey(chapterId),
+    queryFn: async (): Promise<AskSuggestion[]> => {
+      const result = await client.GET("/v1/ai/ask/suggestions");
+      if (isAiNotAvailable(result.error)) return [];
+      throwUnlessOk(result);
+      return result.data?.suggestions ?? [];
+    },
+    staleTime: 60_000,
+    retry: false,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+  return { suggestions: query.data ?? [] };
 }
 
 /**
@@ -114,6 +148,12 @@ export interface AskExchange {
   /** This turn's place in the conversation: a list key, and what the turn's changes name. */
   id: string;
   question: string;
+  /**
+   * The member tapped this from the opening suggestions and did not type it.
+   * It can name a record another member wrote, so it is sent without
+   * `actions` and marked in later history (`ask.ts`).
+   */
+  suggested?: boolean;
   /**
    * The server's id for this ask, from the stream's `start` event: what
    * "Report this" names (#4315). Null until the stream begins.
@@ -227,7 +267,11 @@ function askHistoryOf(exchanges: readonly AskExchange[]) {
           exchange.phase === "done" &&
           exchange.answer?.status !== "unavailable",
       )
-      .map(({ question, answer }) => ({ question, answer })),
+      .map(({ question, answer, suggested }) => ({
+        question,
+        answer,
+        suggested,
+      })),
   );
 }
 
@@ -236,6 +280,11 @@ export interface AskOptions {
   savedNoticeShown?: boolean;
   /** This screen shows proposal cards, and the member may have Frapp act. */
   actions?: boolean;
+  /**
+   * The words are an opening suggestion the member tapped, not ones they
+   * typed. A suggested turn never asks for a card, whatever `actions` says.
+   */
+  suggested?: boolean;
   /**
    * Runs after the question is on screen and before it is sent: the AI
    * sheet's gate. False ends the turn as "answer the AI question first"; a
@@ -339,6 +388,7 @@ export function useAsk(): {
         {
           id,
           question: trimmed,
+          ...(options?.suggested ? { suggested: true } : {}),
           phase: "working",
           step: "searching",
           preview: "",
@@ -375,7 +425,9 @@ export function useAsk(): {
           body: {
             question: trimmed,
             ...(history.length > 0 ? { history } : {}),
-            ...(options?.actions ? { actions: true } : {}),
+            ...(options?.actions && !options.suggested
+              ? { actions: true }
+              : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
           },
           parseAs: "stream",
@@ -452,7 +504,12 @@ export function useAsk(): {
       );
       const again = latest.current.find((exchange) => exchange.id === id);
       return again && !busy
-        ? run(again.question, options, id)
+        ? run(
+            again.question,
+            // A suggestion asked again is still not the member's own words.
+            again.suggested ? { ...options, suggested: true } : options,
+            id,
+          )
         : Promise.resolve();
     },
     [run],

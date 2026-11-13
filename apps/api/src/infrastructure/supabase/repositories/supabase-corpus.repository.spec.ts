@@ -90,6 +90,52 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
     await expect(repo.findSource(CHAPTER_A, 'source-b')).resolves.toBeNull();
   });
 
+  it('indexedSourceIds names only the chapter’s own records that are searchable now', async () => {
+    const rows = [
+      {
+        id: 'indexed',
+        ...source({
+          source_type: 'meeting_minutes',
+          source_id: 'meeting-1',
+          indexed_revision: 2,
+        }),
+      },
+      // Waiting for its first index: nothing to find in it yet.
+      {
+        id: 'waiting',
+        ...source({ source_type: 'meeting_minutes', source_id: 'meeting-2' }),
+      },
+      // The same id as another kind of record is another record.
+      {
+        id: 'document',
+        ...source({ source_id: 'meeting-3', indexed_revision: 1 }),
+      },
+    ];
+    harness = createTenantHarness({
+      tables: {
+        corpus_sources: [
+          ...rows.map((row) => inA({ ...row, id: `${row.id}-a` })),
+          ...rows.map((row) => inB({ ...row, id: `${row.id}-b` })),
+        ],
+      },
+    });
+    repo = new SupabaseCorpusRepository(harness.client);
+    // The other chapter holds the same three; one row comes back, not two.
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.indexedSourceIds(CHAPTER_A, 'meeting_minutes', [
+          'meeting-1',
+          'meeting-2',
+          'meeting-3',
+        ]),
+      ),
+    ).resolves.toEqual(['meeting-1']);
+    // Nothing asked for is nothing read.
+    await expect(
+      repo.indexedSourceIds(CHAPTER_A, 'meeting_minutes', []),
+    ).resolves.toEqual([]);
+  });
+
   it('postponeChapter holds one chapter’s waiting sources, gives claimed ones their try back, and leaves indexed rows and the other chapter alone', async () => {
     harness = createTenantHarness({
       tables: {

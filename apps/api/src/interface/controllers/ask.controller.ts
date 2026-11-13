@@ -34,6 +34,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
@@ -49,6 +50,7 @@ import {
   AskDiagnosticsDto,
   AskRequestDto,
   AskStatusDto,
+  AskSuggestionsDto,
 } from '../dtos/ask.dto';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -86,6 +88,7 @@ export class AskController {
     private readonly askService: AskService,
     private readonly conversation: AskConversationService,
     private readonly diagnostics: AskDiagnosticsService,
+    private readonly suggestions: AskSuggestionsService,
   ) {}
 
   @Get()
@@ -106,6 +109,32 @@ export class AskController {
       new Date(),
     );
     return { saved_until: diagnostics.ends_at, diagnostics };
+  }
+
+  @Get('suggestions')
+  @ApiOperation({
+    summary: 'What Ask opens with for this member',
+    description:
+      'Up to three questions and one request, each built from a record the caller’s own account holds right now (their next event, their open tasks, what they owe, minutes they can read, their points). No model is called, and the chapter’s Ask switch and the AI sheet are not checked: nothing here leaves the server. Each question is one Ask could answer for this caller. Empty when there is nothing to ask about.',
+  })
+  @ApiOkResponse({ type: AskSuggestionsDto })
+  @ApiNotFoundResponse(AI_OFF)
+  async openingSuggestions(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
+  ): Promise<AskSuggestionsDto> {
+    return {
+      suggestions: await this.suggestions.suggest({
+        chapterId,
+        userId,
+        enabledModules,
+        timeZone: isSupportedTimeZone(timeZoneHeader)
+          ? timeZoneHeader
+          : FALLBACK_TIME_ZONE,
+      }),
+    };
   }
 
   @Post()

@@ -64,6 +64,16 @@ export interface ICorpusRepository {
   ): Promise<CorpusSource[]>;
   findSource(chapterId: string, id: string): Promise<CorpusSource | null>;
   /**
+   * Of `sourceIds` (ids in the source's own table, such as a meeting's), the
+   * ones of this chapter and type the index holds a revision of: what a
+   * search can find right now.
+   */
+  indexedSourceIds(
+    chapterId: string,
+    sourceType: string,
+    sourceIds: readonly string[],
+  ): Promise<string[]>;
+  /**
    * Holds every waiting source of the chapter until `until`, and gives back
    * the try a claim counted for a source that was then never attempted.
    */

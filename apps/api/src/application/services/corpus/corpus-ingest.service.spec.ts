@@ -62,6 +62,7 @@ function setup(read: CorpusSourceRead = okRead('Dues are $225.')) {
   const corpus: jest.Mocked<ICorpusRepository> = {
     claimSources: jest.fn().mockResolvedValue([]),
     findSource: jest.fn().mockResolvedValue(source()),
+    indexedSourceIds: jest.fn().mockResolvedValue([]),
     postponeChapter: jest.fn().mockResolvedValue(undefined),
     deleteSource: jest.fn().mockResolvedValue(undefined),
     writeChunks: jest.fn().mockResolvedValue(true),

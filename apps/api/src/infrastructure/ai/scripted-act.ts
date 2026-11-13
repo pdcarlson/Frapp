@@ -47,8 +47,19 @@ function addDays(day: string, count: number): string {
   return isoDay(at);
 }
 
-/** The day a request names, worked out from the prompt's "Today is". */
+/**
+ * The day a request names, worked out from the prompt's "Today is". A day
+ * said after "due" is the one meant, whatever other day the request names
+ * ("get ready for Sunday's event, due Saturday").
+ */
 function dayIn(text: string, today: string): string | null {
+  const due = DUE_TAIL.exec(text);
+  return (due ? dayNamed(due[1], today) : null) ?? dayNamed(text, today);
+}
+
+const DUE_TAIL = /,?\s*\bdue\b(.*)$/i;
+
+function dayNamed(text: string, today: string): string | null {
   const lower = text.toLowerCase();
   if (/\b(tonight|today)\b/.test(lower)) return today;
   if (/\btomorrow\b/.test(lower)) return addDays(today, 1);
@@ -163,7 +174,12 @@ export function scriptedActPlan(request: LanguageModelRequest): ScriptedReply {
     const shaped = /\bfor\s+(.+?)\s+to\s+(.+)$/i.exec(said);
     if (shaped) {
       plan.people = listOf(shaped[1]);
-      plan.title = clean(shaped[2].replace(WHEN_TAIL, ''));
+      // "…, due Saturday" says when; without it the last day named does.
+      plan.title = clean(
+        DUE_TAIL.test(shaped[2])
+          ? shaped[2].replace(DUE_TAIL, '')
+          : shaped[2].replace(WHEN_TAIL, ''),
+      );
     } else {
       plan.title = clean(
         /\b(?:task|to-?do)\s*(?:to|:)?\s*(.+)$/i

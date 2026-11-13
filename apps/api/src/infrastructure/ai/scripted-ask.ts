@@ -90,14 +90,18 @@ const TOOL_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   my_points: ['points'],
   points_leaderboard: ['leaderboard', 'standings', 'most', 'ranking', 'top'],
   my_dues: ['dues', 'owe', 'invoice', 'paid', 'pay'],
+  my_tasks: ['task', 'tasks', 'todo', 'to-do'],
 };
 
 /** `ask.plan`: the offered tools whose keywords the question uses. */
 export function scriptedAskPlan(request: LanguageModelRequest): ScriptedReply {
   const message = request.messages.at(-1)?.content ?? '';
   const [questionPart, toolsPart = ''] = message.split('\nTools:\n');
-  const askedWords: string[] =
-    questionPart.toLowerCase().match(/[a-z']+/g) ?? [];
+  // In a conversation the member's earlier questions come first. Tools are
+  // picked for the question, so only the last "Question:" line on is read.
+  const question =
+    /(?:^|\n)Question: ([\s\S]*)$/.exec(questionPart)?.[1] ?? questionPart;
+  const askedWords: string[] = question.toLowerCase().match(/[a-z'-]+/g) ?? [];
   const asked = new Set(askedWords);
   const offered = [...toolsPart.matchAll(/^- ([a-z_]+):/gm)].map(
     (match) => match[1],

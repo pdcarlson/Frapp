@@ -63,6 +63,23 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
     return data;
   }
 
+  async indexedSourceIds(
+    chapterId: string,
+    sourceType: string,
+    sourceIds: readonly string[],
+  ): Promise<string[]> {
+    if (sourceIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('corpus_sources')
+      .select('source_id')
+      .eq('chapter_id', chapterId)
+      .eq('source_type', sourceType)
+      .in('source_id', [...sourceIds])
+      .gt('indexed_revision', 0);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.source_id);
+  }
+
   async postponeChapter(chapterId: string, until: Date): Promise<void> {
     const at = until.toISOString();
     // The sources a sweep just claimed carry the claim's own, longer wait

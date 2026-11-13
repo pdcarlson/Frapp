@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { eventAttendanceFor } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TaskStatus } from '#domain/entities/task.entity';
 import { EventService } from '../event.service';
 import { FinancialInvoiceService } from '../financial-invoice.service';
 import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
+import { TaskService } from '../task.service';
 import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
 
 /**
@@ -14,6 +16,9 @@ import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
  *
  * Attendance is not here yet: there is no read of one member's attendance
  * across events, only per event, and Ask does not add queries of its own.
+ *
+ * Every opening suggestion (#4700, `ask-suggestions.service.ts`) is tied to
+ * one of these, so Frapp never suggests a question it has no way to answer.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,6 +30,9 @@ const EVENTS_LIMIT = 60;
 const FREE_TEXT_LIMIT = 300;
 const TRANSACTIONS_LIMIT = 10;
 const LEADERBOARD_LIMIT = 25;
+/** How many of the asker's unconfirmed tasks are read, and how many shown. */
+const MY_TASKS_READ = 100;
+const MY_TASKS_LIMIT = 40;
 
 /** "Sunday, November 15, 2026 at 7:00 PM", in the asker's zone. Never abbreviated. */
 function longDateTime(iso: string, timeZone: string): string {
@@ -40,6 +48,20 @@ function longDateTime(iso: string, timeZone: string): string {
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * "Saturday, November 14, 2026". A task's day with its weekday, because
+ * "which is due first" and "is it this weekend" are asked by the day.
+ */
+function longDay(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: DATE_ONLY.test(iso) ? 'UTC' : timeZone,
+  }).format(new Date(iso));
+}
 
 /**
  * "December 1, 2026". A calendar date with no time (an invoice's due date)
@@ -330,5 +352,82 @@ export class MyDuesAskTool implements AskTool {
           : `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, not paid, due ${longDate(invoice.due_date, timeZone)}.`,
       );
     return result(chapterId, lines);
+  }
+}
+
+/** The asker's own tasks that are not finished: what is open and when each is due. */
+@Injectable()
+export class MyTasksAskTool implements AskTool {
+  readonly name = 'my_tasks';
+  readonly description =
+    "The asking member's own tasks: what is assigned to them, when each is due, and whether it is past due, sent back or waiting for an officer to confirm.";
+  readonly kind = 'tasks' as const;
+  readonly title = 'Your tasks';
+  readonly page = 'tasks' as const;
+  readonly permission = SystemPermissions.MEMBERS_VIEW;
+  readonly module = 'tasks';
+  readonly effect = 'read' as const;
+
+  constructor(private readonly tasks: TaskService) {}
+
+  async run({
+    chapterId,
+    userId,
+    now,
+    timeZone,
+  }: AskToolContext): Promise<AskToolResult | null> {
+    // The member's own list, as `GET /v1/tasks` reads it for someone without
+    // `tasks:manage`. An officer asking about "my tasks" gets theirs too, not
+    // the chapter's: `false` keeps the read to the asker whoever they are.
+    const mine = await this.tasks.list(chapterId, userId, false, {
+      confirmed: false,
+      limit: MY_TASKS_READ,
+    });
+    const due = (task: (typeof mine)[number]) => task.due_at ?? task.due_date;
+    const open = mine
+      .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
+      .sort((a, b) => due(a).localeCompare(due(b)));
+    const waiting = mine.filter(
+      (task) => task.stored_status === TaskStatus.COMPLETED,
+    );
+    const kept = [...open, ...waiting].slice(0, MY_TASKS_LIMIT);
+    if (kept.length === 0) return null;
+    const lines = kept.map((task) => {
+      const done = task.stored_status === TaskStatus.COMPLETED;
+      const steps = task.subtasks ?? [];
+      const parts = [
+        `${oneLine(task.title)}: due ${
+          task.due_at
+            ? longDateTime(task.due_at, timeZone)
+            : longDay(task.due_date, timeZone)
+        }`,
+        done
+          ? 'You marked it done and it is waiting for an officer to confirm'
+          : task.status === TaskStatus.OVERDUE
+            ? 'It is past due'
+            : task.stored_status === TaskStatus.IN_PROGRESS
+              ? 'You have started it'
+              : 'Not started',
+        !done && task.sent_back_at
+          ? `An officer sent it back${task.sent_back_reason ? `: ${oneLine(task.sent_back_reason)}` : ''}`
+          : null,
+        steps.length > 0
+          ? `${steps.filter((step) => step.done_at).length} of ${steps.length} steps checked off`
+          : null,
+        task.point_reward ? `Worth ${task.point_reward} points` : null,
+        task.description ? `About: ${oneLine(task.description)}` : null,
+      ];
+      return `${parts.filter(Boolean).join('. ')}.`;
+    });
+    if (mine.length > kept.length) {
+      lines.push(
+        `${mine.length - kept.length} more of your tasks are not listed here. The Tasks page has all of them.`,
+      );
+    }
+    return result(chapterId, [
+      `Today is ${longDay(now.toISOString(), timeZone)}. Times are in ${timeZone}.`,
+      `You have ${open.length} open ${open.length === 1 ? 'task' : 'tasks'}.`,
+      ...lines,
+    ]);
   }
 }

@@ -89,10 +89,16 @@ function build(
       ends_at: null,
     })),
   };
+  const suggestions = {
+    suggest: jest.fn(async () => [
+      { kind: 'event', text: 'When and where is Formal?', request: false },
+    ]),
+  };
   const controller = new AskController(
     askService as never,
     conversation as never,
     diagnostics as never,
+    suggestions as never,
   );
   const response = new FakeResponse();
   const ask = (zone?: string, body: Record<string, unknown> = {}) =>
@@ -111,6 +117,7 @@ function build(
     askService,
     conversation,
     diagnostics,
+    suggestions,
     response,
     ask,
   };
@@ -255,6 +262,43 @@ describe('AskController', () => {
     expect(response.events().map((event) => event.type)).toEqual(['start']);
     expect(reportSwallowed).not.toHaveBeenCalled();
     expect(response.ended).toBe(true);
+  });
+
+  it('opening suggestions are read for the caller, in their zone, with no consent check and no model', async () => {
+    const { controller, suggestions, askService, conversation } = build(
+      async function* () {
+        yield done;
+      },
+    );
+    await expect(
+      controller.openingSuggestions(
+        'chapter-a',
+        'user-1',
+        { events: true },
+        'America/Chicago',
+      ),
+    ).resolves.toEqual({
+      suggestions: [
+        { kind: 'event', text: 'When and where is Formal?', request: false },
+      ],
+    });
+    expect(suggestions.suggest).toHaveBeenCalledWith({
+      chapterId: 'chapter-a',
+      userId: 'user-1',
+      enabledModules: { events: true },
+      timeZone: 'America/Chicago',
+    });
+    await controller.openingSuggestions(
+      'chapter-a',
+      'user-1',
+      null,
+      'Not/A_Zone',
+    );
+    expect(suggestions.suggest).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timeZone: 'America/New_York' }),
+    );
+    expect(askService.assertMayAsk).not.toHaveBeenCalled();
+    expect(conversation.converse).not.toHaveBeenCalled();
   });
 
   it('status tells the panel when saving ends', async () => {

@@ -39,6 +39,14 @@ export class AskHistoryTurnDto {
   @IsString()
   @MaxLength(ASK_HISTORY_ANSWER_MAX_LENGTH)
   answer: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  suggested?: boolean;
 }
 
 export class AskRequestDto {
@@ -121,4 +129,34 @@ export class AskStatusDto {
 
   @ApiProperty({ type: AskDiagnosticsDto })
   diagnostics: AskDiagnosticsDto;
+}
+
+export class AskSuggestionDto {
+  @ApiProperty({
+    description:
+      'What the suggestion is about. A client shows the text and does not need to know every kind.',
+    example: 'event',
+  })
+  kind: string;
+
+  @ApiProperty({
+    description: 'The words to show, and to send when the member taps it.',
+    example: 'When and where is Chapter meeting?',
+  })
+  text: string;
+
+  @ApiProperty({
+    description:
+      'False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed.',
+  })
+  request: boolean;
+}
+
+export class AskSuggestionsDto {
+  @ApiProperty({
+    type: [AskSuggestionDto],
+    description:
+      'At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about.',
+  })
+  suggestions: AskSuggestionDto[];
 }

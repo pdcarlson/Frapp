@@ -15,6 +15,7 @@ import {
   applyAskEvent,
   useAsk,
   useAskStatus,
+  useAskSuggestions,
   useSetAskDiagnostics,
   type AskExchange,
 } from "./use-ask";
@@ -268,6 +269,54 @@ describe("the Ask hooks", () => {
       ]);
     });
 
+    it("never asks for a card with a tapped suggestion, and marks its turn in what later questions carry", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() =>
+        result.current.ask("When and where is Formal?", {
+          actions: true,
+          suggested: true,
+        }),
+      );
+      // A suggestion can name a record someone else wrote: no `actions`.
+      expect(POST.mock.calls[0]![1].body).toEqual({
+        question: "When and where is Formal?",
+      });
+      expect(result.current.exchanges[0]!.suggested).toBe(true);
+      await act(() => result.current.ask("Give 5 points to everyone who came", { actions: true }));
+      expect(POST.mock.calls[1]![1].body).toEqual({
+        question: "Give 5 points to everyone who came",
+        actions: true,
+        history: [
+          {
+            question: "When and where is Formal?",
+            answer: ANSWER.text,
+            suggested: true,
+          },
+        ],
+      });
+    });
+
+    it("keeps a suggestion a suggestion when it is asked again", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValueOnce(
+          streamed([{ v, type: "error", code: "ai.ask.failed", retryable: true }]),
+        )
+        .mockResolvedValue(streamed([{ v, type: "done", answer: ANSWER }]));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() =>
+        result.current.ask("When and where is Formal?", { suggested: true }),
+      );
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, { actions: true }),
+      );
+      expect(POST.mock.calls[1]![1].body).toEqual({
+        question: "When and where is Formal?",
+      });
+      expect(result.current.exchanges[0]!.suggested).toBe(true);
+    });
+
     it("swaps a turn's proposal for the one an event pick answers with", async () => {
       const POST = vi
         .fn()
@@ -437,6 +486,49 @@ describe("the Ask hooks", () => {
     await act(() => result.current.ask("   "));
     expect(POST).not.toHaveBeenCalled();
     expect(result.current.exchanges).toEqual([]);
+  });
+
+  describe("the opening suggestions", () => {
+    const ok = (data: unknown) => ({
+      data,
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
+
+    it("reads what the server built for this member", async () => {
+      const suggestions = [
+        { kind: "event", text: "When and where is Formal?", request: false },
+      ];
+      const GET = vi.fn().mockResolvedValue(ok({ suggestions }));
+      const { result } = renderHook(() => useAskSuggestions(), {
+        wrapper: wrapper({ GET }),
+      });
+      // Nothing to show while it loads: the screen opens plain.
+      expect(result.current.suggestions).toEqual([]);
+      await waitFor(() => expect(result.current.suggestions).toEqual(suggestions));
+      expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions");
+    });
+
+    it("does not read until the screen is open", () => {
+      const GET = vi.fn();
+      renderHook(() => useAskSuggestions({ enabled: false }), {
+        wrapper: wrapper({ GET }),
+      });
+      expect(GET).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["AI is off", refusedWith({ statusCode: 404, code: "ai.not_available" })],
+      ["the read fails", refusedWith({ statusCode: 500 })],
+    ])("shows none when %s", async (_name, answer) => {
+      const GET = vi.fn().mockResolvedValue(answer);
+      const { result } = renderHook(() => useAskSuggestions(), {
+        wrapper: wrapper({ GET }),
+      });
+      await waitFor(() => expect(GET).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(result.current.suggestions).toEqual([]);
+    });
   });
 
   it("reads a server with AI off as no status, not as a failure", async () => {

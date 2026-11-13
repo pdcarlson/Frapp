@@ -7,16 +7,17 @@ import {
   useActStatus,
   useAsk,
   useAskStatus,
+  useAskSuggestions,
   useMyPermissions,
   type AskOptions,
 } from "@repo/hooks";
 import {
-  ACT_COPY,
   ASK_COPY,
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
   can,
   formatAiAnswerDate,
+  type AskSuggestion,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { AskTurn } from "@/components/ask/ask-answer";
@@ -69,6 +70,16 @@ import { cn } from "@/lib/utils";
  * on reload. A question still being answered when the panel closes is
  * dropped; the turns before it stay.
  *
+ * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
+ * just be like some presets"). Before the first turn the panel offers up to
+ * three questions and one request the server built from what this member's
+ * account holds now: their next event, their open tasks, minutes they can
+ * read, their points. There is no fixed list; a member with nothing to ask
+ * about sees the two lines of the opening and the field. They are read when
+ * the panel opens and fade in under the opening words, where nothing sits
+ * below them to move. A tapped question is sent as a suggestion, never as
+ * words the member typed (`useAsk`'s `suggested`).
+ *
  * **Consent is asked at the first question**, not when the panel opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
  * first, so the sheet opens over the words it is about. The server checks
@@ -119,6 +130,7 @@ export function AskPanel({
   const mayAct = !!permissions && can("ai:act", permissions);
   const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
   const canAct = actions !== null && actions.length > 0;
+  const { suggestions } = useAskSuggestions({ enabled: open });
   // What was changed on waiting cards, kept while the panel is closed.
   const [cardEdits] = useState<AskCardEditsStore>(() => new Map());
   const [draft, setDraft] = useState("");
@@ -201,8 +213,8 @@ export function AskPanel({
   const options = (): AskOptions => ({
     savedNoticeShown: saving,
     // Asked for on the permission alone, which is already loaded. The list
-    // of actions only picks the opening example: a request typed before it
-    // arrives, or after it failed to load, must still come back as a card.
+    // of actions only words the opening: a request typed before it arrives,
+    // or after it failed to load, must still come back as a card.
     actions: mayAct,
     gate: ensureConsent,
   });
@@ -211,6 +223,16 @@ export function AskPanel({
     if (!text.trim() || working) return;
     setDraft("");
     void ask(text, options());
+  }
+
+  function pick(suggestion: AskSuggestion) {
+    if (working) return;
+    // A question can name a record someone else wrote, so it is sent as a
+    // suggestion. The one request holds none and is sent like typed words.
+    void ask(suggestion.text, {
+      ...options(),
+      suggested: !suggestion.request,
+    });
   }
 
   if (!open) return consentDialog;
@@ -287,8 +309,9 @@ export function AskPanel({
                   ))
                 ) : (
                   <AskEmpty
-                    actions={canAct ? actions : null}
-                    onPick={(example) => submit(example)}
+                    canAct={canAct}
+                    suggestions={suggestions}
+                    onPick={pick}
                   />
                 )}
               </div>
@@ -348,23 +371,20 @@ export function AskPanel({
 }
 
 /**
- * Before the first turn: what Frapp answers from, and a few things to try.
- * A member Frapp can act for is told so, and offered one request beside the
- * questions.
+ * Before the first turn: what Frapp answers from, and what this member could
+ * ask about their own account right now. A member Frapp can act for is told
+ * so. With nothing to suggest, the two lines stand alone.
  */
 function AskEmpty({
-  actions,
+  canAct,
+  suggestions,
   onPick,
 }: {
-  /** The actions this member can ask for, or null when they cannot. */
-  actions: readonly string[] | null;
-  onPick: (question: string) => void;
+  /** Frapp can take at least one action for this member. */
+  canAct: boolean;
+  suggestions: readonly AskSuggestion[];
+  onPick: (suggestion: AskSuggestion) => void;
 }) {
-  const request = (actions ?? []).flatMap((action) => {
-    const example = (ACT_COPY.examples as Record<string, string>)[action];
-    return example ? [example] : [];
-  })[0];
-  const examples = [...ASK_COPY.examples, ...(request ? [request] : [])];
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -373,25 +393,28 @@ function AskEmpty({
         </p>
         <p className="text-sm text-muted-foreground">
           {ASK_COPY.empty_body}
-          {actions ? ` ${ASK_COPY.empty_body_act}` : ""}
+          {canAct ? ` ${ASK_COPY.empty_body_act}` : ""}
         </p>
       </div>
-      <ul className="space-y-1.5">
-        {examples.map((example) => (
-          <li key={example}>
-            <button
-              type="button"
-              onClick={() => onPick(example)}
-              className={cn(
-                "w-full rounded-md border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-card-hover",
-                FOCUS_RING,
-              )}
-            >
-              {example}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {suggestions.length > 0 ? (
+        // Fades in when it arrives. Nothing sits below it, so nothing moves.
+        <ul className="space-y-1.5 animate-in fade-in duration-300 motion-reduce:animate-none">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.text}>
+              <button
+                type="button"
+                onClick={() => onPick(suggestion)}
+                className={cn(
+                  "w-full rounded-md border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-card-hover",
+                  FOCUS_RING,
+                )}
+              >
+                {suggestion.text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

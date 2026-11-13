@@ -38,6 +38,8 @@ const hooks = vi.hoisted(() => ({
   actions: [] as string[],
   actEnabled: [] as boolean[],
   mayAct: false,
+  suggestions: [] as Array<{ kind: string; text: string; request: boolean }>,
+  suggestionsEnabled: [] as boolean[],
 }));
 vi.mock("@/lib/ai/availability", () => ({
   useMayAct: () => hooks.mayAct,
@@ -67,6 +69,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useAskSuggestions: (options: { enabled: boolean }) => {
+    hooks.suggestionsEnabled.push(options.enabled);
+    return { suggestions: options.enabled ? hooks.suggestions : [] };
+  },
   useActEventAudience: () => ({ mutateAsync: vi.fn() }),
   useAcceptAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDismissAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -129,8 +135,19 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
   );
 const open = (tree: ReactTestRenderer) =>
   act(() => sheet(tree).props.onAnimate(-1, 0));
-async function askExample(tree: ReactTestRenderer) {
-  await act(async () => byLabel(tree, ASK_COPY.examples[0])[0].props.onPress());
+/** What the server built from this member's account (#4700). */
+const EVENT = {
+  kind: "event",
+  text: "When and where is Formal?",
+  request: false,
+};
+const REQUEST = {
+  kind: "request",
+  text: "Make a task for me to get ready for Sunday's event, due Saturday",
+  request: true,
+};
+async function askSuggested(tree: ReactTestRenderer, suggestion = EVENT) {
+  await act(async () => byLabel(tree, suggestion.text)[0].props.onPress());
 }
 
 const DOCUMENT = {
@@ -237,6 +254,8 @@ beforeEach(() => {
   hooks.actions = [];
   hooks.actEnabled = [];
   hooks.mayAct = false;
+  hooks.suggestions = [EVENT];
+  hooks.suggestionsEnabled = [];
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -246,24 +265,62 @@ beforeEach(() => {
 });
 
 describe("AskSheet", () => {
-  it("opens on what Frapp answers from and things to try, with no word about one question at a time", () => {
+  it("opens on what Frapp answers from and what this member could ask about their own account, with no word about one question at a time", () => {
     const tree = render();
+    open(tree);
     const text = screenText(tree);
     expect(text).toContain(ASK_COPY.name);
     expect(text).toContain(ASK_COPY.empty_title);
     expect(text).toContain(ASK_COPY.empty_body);
-    for (const example of ASK_COPY.examples) expect(text).toContain(example);
+    expect(text).toContain(EVENT.text);
     expect(text).not.toContain("answered on its own");
+    // They fade in where nothing sits below them.
+    const list = tree.root.findAll(
+      (node) => (node.type as unknown) === "Animated.View",
+    );
+    expect(list).toHaveLength(1);
+    expect(list[0].props.entering).toMatchObject({ animation: "FadeIn" });
     expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
     // Nothing to clear yet.
     expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(0);
+  });
+
+  it("opens plain for a member with nothing to ask about: no preset stands in", () => {
+    hooks.suggestions = [];
+    const tree = render();
+    open(tree);
+    expect(screenText(tree)).toContain(ASK_COPY.empty_title);
+    expect(
+      tree.root.findAll((node) => node.props.accessibilityHint === "Sends this."),
+    ).toHaveLength(0);
+  });
+
+  it("sends a tapped question as a suggestion, and the one request like typed words", async () => {
+    hooks.mayAct = true;
+    hooks.suggestions = [EVENT, REQUEST];
+    const tree = render();
+    open(tree);
+    await askSuggested(tree);
+    expect(hooks.ask).toHaveBeenLastCalledWith(EVENT.text, {
+      ...ASKING,
+      actions: true,
+      suggested: true,
+    });
+    await askSuggested(tree, REQUEST);
+    expect(hooks.ask).toHaveBeenLastCalledWith(REQUEST.text, {
+      ...ASKING,
+      actions: true,
+      suggested: false,
+    });
   });
 
   it("asks nothing of the server until the sheet is actually open", () => {
     const tree = render();
     expect(hooks.statusEnabled.every((enabled) => !enabled)).toBe(true);
     expect(hooks.actEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(hooks.suggestionsEnabled.every((enabled) => !enabled)).toBe(true);
     open(tree);
+    expect(hooks.suggestionsEnabled.at(-1)).toBe(true);
     expect(hooks.statusEnabled.at(-1)).toBe(true);
     expect(hooks.actEnabled.at(-1)).toBe(true);
   });
@@ -284,10 +341,11 @@ describe("AskSheet", () => {
     expect(screenText(tree)).not.toContain(askSavedLine("November 26, 2026"));
     open(tree);
     expect(screenText(tree)).toContain(askSavedLine("November 26, 2026"));
-    await askExample(tree);
-    expect(hooks.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
+    await askSuggested(tree);
+    expect(hooks.ask).toHaveBeenCalledWith(EVENT.text, {
       ...ASKING,
       savedNoticeShown: true,
+      suggested: true,
     });
   });
 
@@ -432,11 +490,10 @@ describe("AskSheet", () => {
   });
 
   describe("asking for something to be done (#718)", () => {
-    it("is one field for everyone: no switch, and no request example for a member who can't act", () => {
+    it("is one field for everyone: no switch, and no word about acting for a member who can't", () => {
       const tree = render();
       const text = screenText(tree);
       expect(text).not.toContain(ASK_COPY.empty_body_act);
-      expect(text).not.toContain(ACT_COPY.examples.give_points);
       expect(
         tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
       ).toHaveLength(0);
@@ -445,7 +502,7 @@ describe("AskSheet", () => {
     it("asks for a card on the permission alone: a request typed before the list of actions has loaded is still read as one", () => {
       hooks.mayAct = true;
       const tree = render();
-      // The list only picks the opening example.
+      // The list only words the opening.
       expect(screenText(tree)).not.toContain(ASK_COPY.empty_body_act);
       act(() => field(tree).props.onChangeText("Give Ana 5 points"));
       act(() => field(tree).props.onSubmitEditing());
@@ -469,22 +526,17 @@ describe("AskSheet", () => {
       expect(byLabel(tree, ASK_COPY.try_again)[0].props.disabled).toBe(true);
     });
 
-    it("tells a member Frapp can act for, offers one request, and says so with each question", async () => {
+    it("tells a member Frapp can act for, and says so with what they type", () => {
       hooks.mayAct = true;
       hooks.actions = ["give_points", "create_task"];
       const tree = render();
-      const text = screenText(tree);
-      expect(text).toContain(ASK_COPY.empty_body_act);
-      expect(text).toContain(ACT_COPY.examples.give_points);
-      expect(text).not.toContain(ACT_COPY.examples.create_task);
+      expect(screenText(tree)).toContain(ASK_COPY.empty_body_act);
       expect(
         tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
       ).toHaveLength(0);
-
-      await act(async () =>
-        byLabel(tree, ACT_COPY.examples.give_points)[0].props.onPress(),
-      );
-      expect(hooks.ask).toHaveBeenCalledWith(ACT_COPY.examples.give_points, {
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      act(() => field(tree).props.onSubmitEditing());
+      expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
         ...ASKING,
         actions: true,
       });

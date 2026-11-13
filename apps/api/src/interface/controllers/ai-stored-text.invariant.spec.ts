@@ -336,6 +336,8 @@ function build(model: ILanguageModel, captured: Captured) {
     // The request lane is never reached: these asks do not send `actions`.
     new AskConversationService(ask, {} as never),
     diagnostics,
+    // The opening suggestions call no model and store nothing.
+    {} as never,
   );
 }
 
