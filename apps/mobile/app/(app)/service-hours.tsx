@@ -26,6 +26,7 @@ import {
   summarizeServiceEntries,
 } from "@/lib/more/service-hours";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Service hours: the member's approved total, their history, and the s20 "Log
@@ -210,12 +211,13 @@ export default function ServiceHoursScreen() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     summaryCard: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     summaryLabelRow: {

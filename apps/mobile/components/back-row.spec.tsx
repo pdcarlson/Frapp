@@ -173,7 +173,7 @@ describe("BackRow in (auth)", () => {
     ).toEqual(expect.objectContaining({ opacity: 0.5 }));
   });
 
-  it("shows a press on the glass, as a lift to popover, never a fade", () => {
+  it("shows a press on the glass, as a lift of one step, never a fade", () => {
     const tree = render(<BackRow {...BACK_TO_YOU} />);
     const capsuleStyle = () =>
       Object.assign(
@@ -185,8 +185,10 @@ describe("BackRow in (auth)", () => {
     act(() => {
       pressable(tree).props.onPressIn();
     });
+    // The glass is the `surface1` step, so one step up is `card`, as the
+    // floating create button lifts (`lib/surfaces.ts`).
     expect(capsuleStyle().backgroundColor).toBe(
-      signetDarkTokens.color.surface.popover,
+      signetDarkTokens.color.surface.card,
     );
     expect(capsuleStyle()).not.toHaveProperty("opacity");
 

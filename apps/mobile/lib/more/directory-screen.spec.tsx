@@ -860,7 +860,7 @@ describe("s13's member rows", () => {
 
     expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
     expect(held).not.toHaveProperty("opacity");
   });
 

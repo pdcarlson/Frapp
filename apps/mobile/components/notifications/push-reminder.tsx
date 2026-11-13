@@ -4,6 +4,7 @@ import { CloseGlyph } from "@/components/control-glyphs";
 import { BellGlyph } from "@/components/notifications/push-ask";
 import { usePushReminder } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
@@ -70,6 +71,7 @@ export function PushReminder() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -78,7 +80,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.md,
       paddingLeft: tokens.spacing.md,
       paddingRight: tokens.spacing.sm,

@@ -95,6 +95,7 @@ import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * First-officer chapter setup (`spec/behavior/onboarding.md`, #3351).
@@ -1268,6 +1269,7 @@ function Field({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: {
@@ -1354,7 +1356,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     cardCopy: {
@@ -1411,7 +1413,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       gap: 2,
@@ -1419,7 +1421,7 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     archetypeRowPressed: {
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     archetypeRowOn: {
       borderColor: tokens.color.gold.house,

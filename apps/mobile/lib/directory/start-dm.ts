@@ -107,17 +107,6 @@ export const MESSAGE_CHECKING_BLOCK_LIST = "Checking your block list first.";
 /** A read that failed, whether a retry can run now or waits for the network. */
 const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
 
-/**
- * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
- * body has none, so the caller reports a failure instead of navigating to a
- * thread with no id.
- */
-export function dmChannelIdOf(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const id = (data as { id?: unknown }).id;
-  return typeof id === "string" && id.length > 0 ? id : null;
-}
-
 export function startDmFailedTitle(name: string): string {
   return `Couldn't message ${name}`;
 }

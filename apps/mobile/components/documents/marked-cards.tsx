@@ -4,6 +4,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { formatDay } from "@repo/formatting";
 import type { MarkedItem } from "@repo/hooks/document-library";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { NavGlyph } from "@/components/nav-glyph";
 import { PressableRow, SectionHeader } from "@/components/list-section";
@@ -195,12 +196,14 @@ function CardList({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     list: {
       gap: tokens.spacing.sm,
     },
-    // The board's card: `card` fill at radius 14 with a hairline, as
-    // `ListSection` draws its grouped list, one card per item.
+    // The board's card: a screen's card fill (`lib/surfaces.ts`) at radius 14
+    // with a hairline, as `ListSection` draws its grouped list, one card per
+    // item.
     card: {
       flexDirection: "row",
       alignItems: "center",
@@ -211,7 +214,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     text: {
       flex: 1,

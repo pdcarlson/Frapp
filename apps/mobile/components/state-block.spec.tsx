@@ -267,10 +267,11 @@ describe("SkeletonLines", () => {
   });
 
   // A skeleton takes the shape of what replaces it, so the screen doesn't
-  // change when its content lands: every tone sits on `card`, and a grouped
-  // list's skeleton takes the list's smaller corners.
+  // change when its content lands: every tone sits on a card's fill, which on
+  // a screen is `surface1` (`lib/surfaces.ts`), and a grouped list's skeleton
+  // takes the list's smaller corners.
   it("sits on the tone of what it turns into", () => {
-    const { card } = signetDarkTokens.color.surface;
+    const card = signetDarkTokens.color.surface.surface1;
     const { radius } = signetDarkTokens;
     expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(card);
     const list = cardStyle(render(<SkeletonLines tone="list" />));

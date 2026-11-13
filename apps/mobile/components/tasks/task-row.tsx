@@ -6,6 +6,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
@@ -406,6 +407,7 @@ export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -420,8 +422,8 @@ function createStyles(tokens: SignetTokens) {
       // of it.
       ...gutterBleed(tokens, { rounded: false }),
     },
-    // Documents' tile shape (`documents/document-tiles.tsx`): `card` fill,
-    // card radius, a hairline. Its own padding, since it doesn't bleed.
+    // Documents' tile shape (`documents/document-tiles.tsx`): a screen's card
+    // fill, card radius, a hairline. Its own padding, since it doesn't bleed.
     tile: {
       flex: 1,
       gap: tokens.spacing.xs,
@@ -429,7 +431,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     tileHead: {
       flexDirection: "row",
@@ -467,7 +469,7 @@ function createStyles(tokens: SignetTokens) {
     },
     checkboxDone: {
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: surfaces.raised,
     },
     body: {
       flex: 1,

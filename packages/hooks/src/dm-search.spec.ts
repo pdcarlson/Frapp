@@ -144,10 +144,20 @@ describe("normalizeDmSearchText", () => {
 });
 
 describe("dmChannelIdOf", () => {
-  it("reads the id, or null for a body without one", () => {
-    expect(dmChannelIdOf({ id: "c1" })).toBe("c1");
-    expect(dmChannelIdOf({ id: "" })).toBeNull();
-    expect(dmChannelIdOf(null)).toBeNull();
-    expect(dmChannelIdOf("c1")).toBeNull();
+  it("reads the channel id from the DM response", () => {
+    expect(dmChannelIdOf({ id: "c1", type: "DM" })).toBe("c1");
+  });
+
+  // Every case a caller must report as a failure rather than open a thread
+  // with no id (moved from the phone's start-dm spec with the reader).
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    ["a bare string", "c1"],
+    ["a body with no id", { type: "DM" }],
+    ["an empty id", { id: "" }],
+    ["a non-string id", { id: 42 }],
+  ])("returns null for %s", (_, body) => {
+    expect(dmChannelIdOf(body)).toBeNull();
   });
 });
