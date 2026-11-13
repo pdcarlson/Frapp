@@ -50,7 +50,6 @@ function task(overrides: Partial<Task> = {}): Task {
 const NO_HISTORY = {
   similarDone: 0,
   similarTypicalDays: null,
-  similarTypicalAllowedDays: null,
   ownDone: 0,
   ownOnTime: 0,
 };
@@ -385,8 +384,8 @@ describe('nudgeHistory', () => {
       finished: [
         finished('a', 'Book formal venue', 2),
         finished('b', 'Book the formal venue 2025', 6),
-        finished('c', 'Clean the kitchen', 1, 'user-1'),
       ],
+      own: [finished('c', 'Clean the kitchen', 1, 'user-1')],
     });
     expect(history.similarDone).toBe(2);
     expect(history.similarTypicalDays).toBe(4);
@@ -399,6 +398,7 @@ describe('nudgeHistory', () => {
       task: task(),
       userId: 'user-1',
       finished: [finished('a', 'Book formal venue', 2)],
+      own: [],
     });
     expect(history.similarDone).toBe(1);
     expect(history.similarTypicalDays).toBeNull();
@@ -595,5 +595,98 @@ describe('fixedNudgeWords', () => {
       }),
     );
     expect(words.start_here).toBe('Start with "Pay deposit".');
+  });
+});
+
+describe('review fixes (#4781)', () => {
+  it("tells the model how tasks like this went and the member's own record", () => {
+    const built = facts({
+      history: {
+        similarDone: 4,
+        similarTypicalDays: 6,
+        ownDone: 9,
+        ownOnTime: 7,
+      },
+    });
+    const content = nudgeMessages(built)[0]?.content ?? '';
+    expect(content).toContain(
+      'Earlier tasks like this one that the chapter finished: 4',
+    );
+    expect(content).toContain('from handed out to done: 6');
+    expect(content).toContain('9, of which on time: 7');
+  });
+
+  it('counts the name as a whole word, not inside other words', () => {
+    const built = facts({ firstName: 'Ed' });
+    expect(
+      checkNudgeWords(
+        {
+          title: 'Coming up',
+          body: 'You started this and finished the first step.',
+          start_here: 'Open the task.',
+        },
+        built,
+      ),
+    ).not.toBeNull();
+    expect(
+      checkNudgeWords(
+        {
+          title: 'Coming up',
+          body: 'Ed, this one is close. Go on, Ed.',
+          start_here: 'Open the task.',
+        },
+        built,
+      ),
+    ).toBeNull();
+  });
+
+  it('always gives a place to start on a card that asks for something', () => {
+    for (const kind of [
+      'task_due_soon',
+      'task_overdue',
+      'task_sent_back',
+    ] as const) {
+      expect(fixedNudgeWords(facts({ kind, steps: [] })).start_here).toEqual(
+        expect.any(String),
+      );
+    }
+    expect(
+      fixedNudgeWords(
+        facts({
+          kind: 'task_due_soon',
+          steps: [],
+          history: {
+            similarDone: 3,
+            similarTypicalDays: 5,
+            ownDone: 0,
+            ownOnTime: 0,
+          },
+        }),
+      ).start_here,
+    ).toContain('about 5 days');
+    expect(
+      fixedNudgeWords(facts({ kind: 'task_praise' })).start_here,
+    ).toBeNull();
+  });
+
+  it('closes a card when the task was started or its deadline moved', () => {
+    const overdue = {
+      kind: 'task_overdue' as const,
+      user_id: 'user-1',
+      created_at: NOW.toISOString(),
+      expires_at: new Date(NOW.getTime() + 7 * DAY).toISOString(),
+    };
+    const late = task({ due_date: '2026-11-01', due_at: null });
+    expect(showingNudgeFate(overdue, late, NOW)).toBe('keep');
+    expect(
+      showingNudgeFate(
+        overdue,
+        { ...late, status: TaskStatus.IN_PROGRESS },
+        NOW,
+      ),
+    ).toBe('done');
+    expect(
+      showingNudgeFate(overdue, { ...late, due_date: '2026-12-20' }, NOW),
+    ).toBe('expired');
   });
 });

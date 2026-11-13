@@ -258,14 +258,14 @@ export function showingNudgeFate(
       : 'expired';
   }
   if (task.status === TaskStatus.COMPLETED) return 'done';
-  if (nudge.kind === 'task_due_soon') {
-    // Started since the card was written: it did its job.
-    return task.status === TaskStatus.IN_PROGRESS ? 'done' : 'keep';
-  }
   if (nudge.kind === 'task_sent_back') {
     return task.sent_back_at ? 'keep' : 'expired';
   }
-  return 'keep';
+  // Started since the card was written: it did its job. (A task sent back
+  // is already in progress, so starting says nothing there.)
+  if (task.status === TaskStatus.IN_PROGRESS) return 'done';
+  // The deadline moved: the card names a day that is no longer the task's.
+  return nudgeKindFor(task, now) === nudge.kind ? 'keep' : 'expired';
 }
 
 // ── The facts ────────────────────────────────────────────────────────────────
@@ -276,8 +276,6 @@ export interface NudgeHistory {
   similarDone: number;
   /** The usual days from handed out to done among those, or null. */
   similarTypicalDays: number | null;
-  /** The usual days from handed out to due among those, or null. */
-  similarTypicalAllowedDays: number | null;
   /** Tasks this member finished in the stretch read, and how many on time. */
   ownDone: number;
   ownOnTime: number;
@@ -305,29 +303,30 @@ export function nudgeHistory(input: {
   userId: string;
   /** The chapter's finished tasks in the stretch read. */
   finished: readonly Task[];
+  /** The member's own finished tasks in the stretch read. */
+  own: readonly Task[];
 }): NudgeHistory {
   const tokens = titleTokens(input.task.title);
   const durations: number[] = [];
-  const allowed: number[] = [];
   let ownDone = 0;
   let ownOnTime = 0;
+  for (const other of input.own) {
+    if (other.id === input.task.id || !other.completed_at) continue;
+    if (other.assignee_id !== input.userId) continue;
+    ownDone += 1;
+    if (Date.parse(other.completed_at) <= taskDueInstant(other)) ownOnTime += 1;
+  }
   for (const other of input.finished) {
     if (other.id === input.task.id || !other.completed_at) continue;
-    const done = Date.parse(other.completed_at);
-    const created = Date.parse(other.created_at);
-    if (other.assignee_id === input.userId) {
-      ownDone += 1;
-      if (done <= taskDueInstant(other)) ownOnTime += 1;
-    }
     if (!sameThing(tokens, titleTokens(other.title))) continue;
-    durations.push((done - created) / DAY_MS);
-    allowed.push((taskDueInstant(other) - created) / DAY_MS);
+    durations.push(
+      (Date.parse(other.completed_at) - Date.parse(other.created_at)) / DAY_MS,
+    );
   }
   const enough = durations.length >= 2;
   return {
     similarDone: durations.length,
     similarTypicalDays: enough ? median(durations) : null,
-    similarTypicalAllowedDays: enough ? median(allowed) : null,
     ownDone,
     ownOnTime,
   };
@@ -539,7 +538,7 @@ export function nudgeMessages(facts: NudgeFacts): LanguageModelMessage[] {
   }
   if (history.ownDone > 0) {
     lines.push(
-      `Tasks this member finished in the past year: ${history.ownDone}, of which on time: ${history.ownOnTime}`,
+      `Tasks this member finished in about the past year: ${history.ownDone}, of which on time: ${history.ownOnTime}`,
     );
   }
   return [{ role: 'user', content: lines.join('\n') }];
@@ -597,6 +596,8 @@ function numbersInFacts(facts: NudgeFacts): Set<number> {
     facts.taskTitle,
     facts.taskDescription ?? '',
     facts.due,
+    // The model is told today's date, so it may say it.
+    facts.today,
     facts.sentBackReason ?? '',
     ...facts.steps.map((step) => step.title),
   ].join(' ');
@@ -644,8 +645,12 @@ export function checkNudgeWords(
   if (HARSH.test(all)) return null;
   const name = facts.firstName.trim();
   if (name !== '') {
-    const uses = all.toLowerCase().split(name.toLowerCase()).length - 1;
-    if (uses > 1) return null;
+    // Whole words only: "Ed" is not in "started", nor "Tom" in "tomorrow".
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const uses = all.match(
+      new RegExp(`(?<![\\p{L}])${escaped}(?![\\p{L}])`, 'giu'),
+    );
+    if ((uses?.length ?? 0) > 1) return null;
   }
   const allowed = numbersInFacts(facts);
   if (numbersIn(all).some((value) => !allowed.has(value))) return null;
@@ -660,9 +665,16 @@ export function checkNudgeWords(
 export function fixedNudgeWords(facts: NudgeFacts): NudgeWords {
   const task = `"${clip(facts.taskTitle, 60)}"`;
   const next = facts.steps.find((step) => !step.done);
+  const usual = facts.history.similarTypicalDays;
+  // Every card that asks for something says where to begin: the next step
+  // on the task's own list, else the note, else a small first sitting.
   const start = next
     ? clip(`Start with "${next.title}".`, MEMBER_NUDGE_START_MAX)
-    : null;
+    : facts.kind === 'task_sent_back'
+      ? "Start by reading the officer's note on the task."
+      : usual === null
+        ? 'Give it ten minutes today and see how far that gets you.'
+        : `Give it ten minutes today. Tasks like this usually take about ${usual} ${usual === 1 ? 'day' : 'days'}.`;
   switch (facts.kind) {
     case 'task_due_soon':
       return {

@@ -61,6 +61,12 @@ export interface IMemberNudgeRepository {
   ): Promise<boolean>;
   /** Deletes every card of this person's, in every chapter. */
   deleteByUser(userId: string): Promise<void>;
+
+  /**
+   * Closes every showing card in the chapter whose time has passed, and
+   * deletes its words. For cards whose member never came back to them.
+   */
+  closeExpired(chapterId: string, now: string): Promise<void>;
   findSettings(
     chapterId: string,
     userId: string,

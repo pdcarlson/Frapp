@@ -154,6 +154,22 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async closeExpired(chapterId: string, now: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('member_nudges')
+      .update({
+        status: 'expired',
+        closed_at: now,
+        title: null,
+        body: null,
+        start_here: null,
+      })
+      .eq('chapter_id', chapterId)
+      .eq('status', 'showing')
+      .lte('expires_at', now);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async findSettings(
     chapterId: string,
     userId: string,

@@ -79,6 +79,7 @@ function setup(options: { tasks?: Task[]; showing?: MemberNudge | null } = {}) {
     markSeen: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(true),
     deleteByUser: jest.fn().mockResolvedValue(undefined),
+    closeExpired: jest.fn().mockResolvedValue(undefined),
     findSettings: jest.fn().mockResolvedValue(null),
     saveSettings: jest.fn(async (chapterId, userId, change, now) => ({
       chapter_id: chapterId,
@@ -185,9 +186,29 @@ describe('MemberNudgeService.current', () => {
       reason: 'member_declined',
     });
     expect(await service.current(INPUT, NOW)).toBeNull();
-    expect(nudges.findShowing).not.toHaveBeenCalled();
+    expect(nudges.close).not.toHaveBeenCalled();
     expect(taskRepo.findByChapter).not.toHaveBeenCalled();
     expect(gateway.generateObject).not.toHaveBeenCalled();
+  });
+
+  it('closes a card left showing when AI went off, and sweeps cards past their time', async () => {
+    const { service, consent, nudges } = setup();
+    consent.check.mockResolvedValue({
+      allowed: false,
+      reason: 'chapter_off',
+    });
+    nudges.findShowing.mockResolvedValue({ id: 'card-1' } as MemberNudge);
+    expect(await service.current(INPUT, NOW)).toBeNull();
+    expect(nudges.closeExpired).toHaveBeenCalledWith(
+      'chapter-1',
+      NOW.toISOString(),
+    );
+    expect(nudges.close).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      'card-1',
+      expect.objectContaining({ status: 'expired' }),
+    );
   });
 
   it('shows nothing while the chapter has tasks turned off', async () => {

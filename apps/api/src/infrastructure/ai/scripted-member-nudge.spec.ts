@@ -60,7 +60,6 @@ describe('scriptedMemberNudge', () => {
       history: {
         similarDone: 3,
         similarTypicalDays: 4,
-        similarTypicalAllowedDays: 7,
         ownDone: 2,
         ownOnTime: 2,
       },

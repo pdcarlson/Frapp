@@ -37,7 +37,7 @@ const sections = [
     paragraphs: [
       "Frapp has optional AI features: answers to questions about your chapter, summaries of channels you can read, minutes drafted from an officer's notes, and short notes on your Activity page about your own tasks. They run only when your chapter has them on and you have agreed to them, and you can turn them off for yourself at any time in the app's settings.",
       "When one runs, Frapp sends the text it needs to an AI provider to produce the result: your question, chapter records you are already allowed to open, an officer's meeting notes, or the details of your own task and how long similar tasks took before. Messages you wrote in chat are read only if you agreed to that and your chapter turned it on. Our AI providers are Anthropic and Google, and AssemblyAI to transcribe a meeting recording an officer uploads. They process what they are sent only to return the result, and may hold a request briefly to check for abuse. Member data is never sent to a free tier or to a consumer AI app.",
-      "Frapp does not keep the text of AI questions and answers, except for an exchange you choose to report (kept 30 days) and a time-limited diagnostics period a chapter's president can turn on during the beta (kept 14 days), both encrypted. A note shown on your Activity page is kept only while it is showing.",
+      "Frapp does not keep the text of AI questions and answers, except for an exchange you choose to report (kept 30 days) and a time-limited diagnostics period a chapter's president can turn on during the beta (kept 14 days), both encrypted. The text of a note on your Activity page is deleted when the note closes.",
     ],
   },
   {

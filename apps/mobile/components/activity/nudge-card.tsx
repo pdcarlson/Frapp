@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { MemberNudge } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
-import { isMemberNudgePraise } from "@repo/validation";
+import { MEMBER_NUDGE_KINDS, isMemberNudgePraise } from "@repo/validation";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -47,6 +47,9 @@ export function NudgeCard({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const praise = isMemberNudgePraise(nudge.kind);
+  // A kind from a newer server than this build: its two lines and "Not
+  // now", and none of the task buttons, which may not fit it.
+  const known = (MEMBER_NUDGE_KINDS as readonly string[]).includes(nudge.kind);
 
   // On screen is seen: the card sits at the top of the page.
   const { id, seen } = nudge;
@@ -68,7 +71,7 @@ export function NudgeCard({
     <View style={styles.card} testID="activity-nudge-card">
       <View style={styles.head}>
         <Text style={styles.eyebrow}>From Frapp</Text>
-        {praise ? null : (
+        {praise || !known ? null : (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="More"
@@ -86,7 +89,7 @@ export function NudgeCard({
         {nudge.title}
       </Text>
       <Text style={styles.body}>{nudge.body}</Text>
-      {nudge.start_here ? (
+      {known && nudge.start_here ? (
         <View style={styles.start}>
           <Text style={styles.startLabel}>A place to start</Text>
           <Text style={styles.startText}>{nudge.start_here}</Text>
@@ -98,6 +101,12 @@ export function NudgeCard({
             label="Thanks"
             onPress={() => onDismiss("thanks")}
             testID="activity-nudge-thanks"
+          />
+        ) : !known ? (
+          <CardButton
+            label="Not now"
+            onPress={() => onDismiss("not_now")}
+            testID="activity-nudge-not-now"
           />
         ) : (
           <>

@@ -200,6 +200,22 @@ describe('SupabaseMemberNudgeRepository — tenant scope', () => {
     expect(cardsOf(CHAPTER_A, USER_A)[0]?.status).toBe('showing');
   });
 
+  it('closes cards past their time in this chapter only', async () => {
+    await repo.closeExpired(CHAPTER_A, '2999-01-01T00:00:00.000Z');
+    expect(
+      harness
+        .rows('member_nudges')
+        .filter((row) => row.chapter_id === CHAPTER_A)
+        .every((row) => row.status === 'expired' && row.title === null),
+    ).toBe(true);
+    expect(
+      harness
+        .rows('member_nudges')
+        .filter((row) => row.chapter_id === CHAPTER_B)
+        .every((row) => row.status === 'showing'),
+    ).toBe(true);
+  });
+
   it('deletes a person’s cards in every chapter, and nobody else’s', async () => {
     // On purpose not chapter-scoped: a No on the AI sheet is the person's,
     // not a chapter's (`AiConsentService.onConsentWithdrawn`).

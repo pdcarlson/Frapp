@@ -164,10 +164,23 @@ export class MemberNudgeService implements OnModuleInit {
       model: entry.model,
       promptVersion: MEMBER_NUDGE_PROMPT_VERSION,
     });
-    if (!decision.allowed) return null;
-    const chapter = await this.chapters.findById(chapterId);
+    const chapter = decision.allowed
+      ? await this.chapters.findById(chapterId)
+      : null;
     const modules = chapter?.enabled_modules;
+    // A card nobody came back to: its time passed, so its words go, for
+    // every member of the chapter, whoever opens Activity next.
+    await this.nudges.closeExpired(chapterId, now.toISOString());
     if (!chapter || (modules && !isModuleEnabled(modules, 'tasks'))) {
+      // AI or Tasks went off since the card was written: it is not shown
+      // again, so its words are not kept either.
+      const stale = await this.nudges.findShowing(chapterId, userId);
+      if (stale) {
+        await this.nudges.close(chapterId, userId, stale.id, {
+          status: 'expired',
+          closed_at: now.toISOString(),
+        });
+      }
       return null;
     }
 
@@ -337,14 +350,23 @@ export class MemberNudgeService implements OnModuleInit {
     now: Date,
   ): Promise<{ words: NudgeWords; by: MemberNudge['written_by'] } | null> {
     const { chapterId, userId } = input;
-    const [identities, subtasks, finished] = await Promise.all([
+    const completedSince = new Date(
+      now.getTime() - NUDGE_HISTORY_MS,
+    ).toISOString();
+    const [identities, subtasks, finished, own] = await Promise.all([
       this.users.findDisplayIdentitiesByIds([userId]),
       this.tasks.findSubtasks(chapterId, [candidate.task.id]),
       this.tasks.findByChapter(chapterId, {
         status: TaskStatus.COMPLETED,
-        completedSince: new Date(
-          now.getTime() - NUDGE_HISTORY_MS,
-        ).toISOString(),
+        completedSince,
+        limit: HISTORY_LIMIT,
+      }),
+      // The member's own record, read on its own so a busy chapter's cap
+      // does not cut it short.
+      this.tasks.findByChapter(chapterId, {
+        assigneeId: userId,
+        status: TaskStatus.COMPLETED,
+        completedSince,
         limit: HISTORY_LIMIT,
       }),
     ]);
@@ -352,7 +374,7 @@ export class MemberNudgeService implements OnModuleInit {
       candidate,
       firstName: firstName(identities[0]?.display_name),
       subtasks,
-      history: nudgeHistory({ task: candidate.task, userId, finished }),
+      history: nudgeHistory({ task: candidate.task, userId, finished, own }),
       timeZone: input.timeZone,
       now,
     });
