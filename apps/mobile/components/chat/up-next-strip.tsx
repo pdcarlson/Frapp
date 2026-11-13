@@ -309,7 +309,7 @@ export function UpNextStrip({
                 {event.location ? ` · ${event.location}` : null}
               </Text>
             </View>
-            <ForwardGlyph color={tokens.color.text.muted} />
+            <ForwardGlyph color={tokens.color.text.mutedForeground} />
           </PressableRow>
         ) : null}
 
@@ -345,7 +345,7 @@ export function UpNextStrip({
                 {taskDue}
               </Text>
             </View>
-            <ForwardGlyph color={tokens.color.text.muted} />
+            <ForwardGlyph color={tokens.color.text.mutedForeground} />
           </PressableRow>
         ) : null}
       </ListSection>
