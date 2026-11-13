@@ -21,15 +21,11 @@ const RESTING_SURFACES = {
 
 /**
  * A hovered row (the channel member list and the notifications dropdown) lifts
- * to `--card-hover`, and `--card-hover` has to sit a perceptible step above
- * `--popover`. At the lowest value that does (`#3B3B3B`) the resting Rose and
- * Violet read 4.49:1 and 4.42:1, a hair under AA (#4387). Rather than re-pitch
- * the stored palette — which the API stores verbatim and shipped mobile builds
- * paint only exact matches of — web lifts the *painted* name on hover
- * (`role-name-paint.ts`): it mixes white into the role color while the row is
- * hovered. So the measurement that matters on `--card-hover` is the lifted
- * color, and there is no recorded exception left. This reads the mix out of the
- * class string so the two cannot drift.
+ * to `--card-hover`, where Rose and Violet at full strength fall a hair under
+ * AA (#4387; figures in `ROLE_COLOR_PALETTE`'s doc). Web lifts the painted name
+ * on hover instead (`role-name-paint.ts`), so the measurement that matters on
+ * `--card-hover` is the lifted color, and no exception is recorded. This reads
+ * the mix out of the class string so the two cannot drift.
  */
 const HOVER_LIFT = (() => {
   const match = ROLE_NAME_CLASS.match(/var\(--role-name\)_(\d+)%,white/);
@@ -39,6 +35,13 @@ const HOVER_LIFT = (() => {
   expect(kept).toBeCloseTo(1 - ROLE_NAME_HOVER_LIFT, 5);
   return ROLE_NAME_HOVER_LIFT;
 })();
+
+describe("role name paint", () => {
+  it("paints the role colour at rest, not only on hover", () => {
+    // The inline style only sets --role-name; this token is what paints it.
+    expect(ROLE_NAME_CLASS.split(" ")).toContain("text-(--role-name)");
+  });
+});
 
 describe("role color palette contrast", () => {
   for (const swatch of ROLE_COLOR_PALETTE) {

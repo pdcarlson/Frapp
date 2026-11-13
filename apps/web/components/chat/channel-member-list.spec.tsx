@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { memberAvatarHue } from "@repo/hooks";
 import { ChannelMemberList } from "./channel-member-list";
+import { ROLE_NAME_CLASS } from "@/components/roles/role-name-paint";
 
 const membersQuery = vi.hoisted(() => ({
   value: {} as {
@@ -136,7 +137,7 @@ describe("ChannelMemberList", () => {
     // on hover so Rose/Violet clear AA on --card-hover (#4387).
     const amy = screen.getByText("Amy Officer");
     expect(amy).toHaveStyle({ "--role-name": "#5865F2" });
-    expect(amy.className).toMatch(/group-hover\/row:text-\[color-mix/);
+    expect(amy).toHaveClass(...ROLE_NAME_CLASS.split(" "));
   });
 
   // #3726: a row opens that member's profile, as on mobile.
@@ -149,6 +150,9 @@ describe("ChannelMemberList", () => {
     const row = within(screen.getByText("Bob Member").closest("li")!).getByRole(
       "button",
     );
+    // A clickable row hovers to --card-hover, so it carries the named group the
+    // role-name lift keys off (#4387); without it hovered Rose/Violet drop under AA.
+    expect(row).toHaveClass("group/row");
     fireEvent.click(row);
     expect(onOpenProfile).toHaveBeenCalledWith("u-member");
 
