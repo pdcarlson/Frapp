@@ -70,6 +70,7 @@ import {
   closeCard as closeCardAction,
   type ClosableCardKind,
   setMessageFlag as setMessageFlagAction,
+  setMessagePinned as setMessagePinnedAction,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -370,6 +371,12 @@ export interface UseChatChannelResult {
    * answer lands. Rejects with a member-facing message, a lost race included.
    */
   flag: (messageId: string, flag: ChatMessageFlag | null) => Promise<void>;
+  /**
+   * Pins (`true`) or unpins a message for the channel (#3723). Pessimistic
+   * like `flag`: the row reads Pinned when the server's answer lands, and the
+   * channel's pin list refetches. Rejects with a member-facing message.
+   */
+  setPinned: (messageId: string, pinned: boolean) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -1224,6 +1231,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const setPinned = useCallback(
+    async (messageId: string, pinned: boolean) => {
+      const failure = pinned
+        ? "Couldn't pin message. Try again."
+        : "Couldn't unpin message. Try again.";
+      if (!channelId || !ctx) throw new MemberFacingError(failure);
+      await withFailureMessage(
+        (onError) =>
+          setMessagePinnedAction(
+            { ...ctx, onError },
+            { channelId, messageId, pinned },
+          ),
+        failure,
+      );
+      // The header's Pinned list (`usePinnedMessages`) reads the server's
+      // list, which this write just changed.
+      void queryClient.invalidateQueries({
+        queryKey: ["channels", channelId, "pins"],
+      });
+    },
+    [channelId, ctx, queryClient],
+  );
+
   const updatePhoto = useCallback(
     (key: string, patch: Partial<StagedPhoto>) => {
       const before = latestPhotoRef.current.get(key);
@@ -1461,6 +1491,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     closePoll,
     closeCard,
     flag,
+    setPinned,
     react,
     unreact,
     act,

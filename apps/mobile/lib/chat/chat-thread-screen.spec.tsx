@@ -385,6 +385,7 @@ function channelState(
     closePoll: vi.fn(async () => {}),
     closeCard: vi.fn(async () => {}),
     flag: vi.fn(async () => {}),
+    setPinned: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
     act: vi.fn(async () => {}),
@@ -487,6 +488,11 @@ const rosterCatchUp = vi.hoisted(() =>
   vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
 );
 
+const NO_SAVED: Set<string> = new Set();
+const bookmarkWrites = vi.hoisted(() => ({
+  save: { mutateAsync: vi.fn(async () => undefined) },
+  unsave: { mutateAsync: vi.fn(async () => undefined) },
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
@@ -494,6 +500,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // GIFs (#4631): off here, so the + sheet offers no GIF row.
   useGifAvailability: () => ({ available: false, provider: "" }),
   useActiveChapterId: () => "chapter-1",
+  // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
+  useBookmarkedMessageIds: () => NO_SAVED,
+  useBookmarkMessage: () => bookmarkWrites.save,
+  useUnbookmarkMessage: () => bookmarkWrites.unsave,
+  useBookmarks: () => ({ data: [], isPending: false, isError: false }),
+  usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
   useChannel: (id: string) =>
     channelRow === "found"
       ? {
@@ -2767,7 +2779,11 @@ describe("Catch me up in a channel (#3946)", () => {
     const tree = render();
     expect(strips(tree)).toHaveLength(0);
     openMuteMenu(tree);
-    expect(menuActions(tree)).toBeUndefined();
+    // Only the lists every channel has (#3723), no Catch me up.
+    expect(menuActions(tree)?.map((action) => action.label)).toEqual([
+      "Pinned messages",
+      "Saved messages",
+    ]);
     act(() => tree.unmount());
   });
 
@@ -2830,6 +2846,8 @@ describe("Catch me up in a channel (#3946)", () => {
     const actions = menuActions(tree)!;
     expect(actions.map((action) => action.label)).toEqual([
       CHAT_CATCH_UP_COPY.name,
+      "Pinned messages",
+      "Saved messages",
     ]);
     act(() => actions[0]!.onPress());
     expect(catchUp.start).toHaveBeenCalledTimes(1);
