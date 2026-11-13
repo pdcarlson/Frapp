@@ -1,4 +1,5 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
+import { searchIndexingHeaders } from "@repo/validation/search-indexing";
 import {
   getAnonymousSentryBuildConfig,
   sentryEnvironmentForVercelEnv,
@@ -10,7 +11,8 @@ import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env
 // http://localhost:3001 fallback or the staging API/DB. Preview and CI
 // `web-production-build` leave VERCEL_ENV unset (CI uses localhost stand-ins
 // on purpose) so this is a no-op there. Do not import @repo/validation from
-// this file — its "import" condition is TypeScript source.
+// this file — its "import" condition is TypeScript source. The one exception
+// is `@repo/validation/search-indexing`, which is plain `.mjs`.
 assertProductionWebPublicEnv({
   vercelEnv: process.env.VERCEL_ENV,
   apiUrl: process.env.NEXT_PUBLIC_API_URL,
@@ -27,6 +29,11 @@ const sentryGitSha = process.env.VERCEL_GIT_COMMIT_SHA || "";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@repo/theme", "@repo/formatting", "@repo/observability"],
+  // `X-Robots-Tag: noindex, nofollow` on every response while Frapp is hidden
+  // from search (#4758); `SEARCH_INDEXING_ENABLED` turns it off.
+  async headers() {
+    return searchIndexingHeaders();
+  },
   experimental: {
     // Next 16 defaults this to true and then looks for `typescript/bin/tsc`.
     // The `typescript` package here is `@typescript/typescript6` (compiler API

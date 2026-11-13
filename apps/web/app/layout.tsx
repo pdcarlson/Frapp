@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { SEARCH_ROBOTS_METADATA } from "@repo/validation/search-indexing";
 import { AppProviders } from "./providers";
 import { ConnectionPill } from "@/components/shared/connection-pill";
 import { Toaster } from "@/components/ui/toaster";
@@ -45,6 +46,12 @@ export const metadata: Metadata = {
     template: "%s · Frapp",
   },
   description: "Ask your chapter anything.",
+  // Hidden from search while Frapp is in testing (#4758): one switch,
+  // `SEARCH_INDEXING_ENABLED` in @repo/validation/search-indexing.mjs, which also
+  // sets an `X-Robots-Tag` header in next.config.js. robots.txt already turns
+  // crawlers away from everything but /.well-known/; this covers a page a
+  // crawler reaches anyway, such as sign-in or an invite link.
+  robots: SEARCH_ROBOTS_METADATA,
 };
 
 export default function RootLayout({
