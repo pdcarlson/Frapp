@@ -540,7 +540,7 @@ function ImportProgress({
           aria-valuenow={done}
         >
           <div
-            className="h-full bg-accent transition-[width]"
+            className="h-full bg-primary transition-[width]"
             style={{ width: `${total ? (done / total) * 100 : 0}%` }}
           />
         </div>
