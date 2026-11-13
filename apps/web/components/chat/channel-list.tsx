@@ -199,6 +199,29 @@ function isDm(channel: ChatChannel): boolean {
 }
 
 /**
+ * A row's name, then the muted mark (`MuteGlyph`, the crossed-out speaker)
+ * straight after it on a muted channel, where the phone's row and GroupMe put
+ * theirs (#4136): the mark describes the name, and the row's far end stays
+ * the count badge's. The name truncates
+ * first, so the mark never leaves it.
+ *
+ * The glyph is `aria-hidden` (every duotone glyph is), so it carries its own
+ * `sr-only` word. The muted state used to be the literal text "muted", which a
+ * screen reader read for free; swapping it for a mark without this would have
+ * silently dropped it.
+ */
+function ChannelRowName({ title, muted }: { title: string; muted: boolean }) {
+  if (!muted) return <span className="truncate">{title}</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      <span className="truncate">{title}</span>
+      <MuteGlyph className="h-3.5 w-3.5 shrink-0 text-muted" active />
+      <span className="sr-only">Muted</span>
+    </span>
+  );
+}
+
+/**
  * Badge text. A mention badge leads with `@` and shows the **mention** count,
  * not the total — s04 draws `@ 2` on a row whose unread total is higher. Same
  * rule mobile's `channel-row.tsx` ships, and the same 99+ cap.
@@ -207,6 +230,7 @@ function isDm(channel: ChatChannel): boolean {
  * a cross-app change that does not belong in a web repaint. Consolidation into
  * `@repo/formatting` is #1194.
  */
+
 export function badgeLabel(unreadCount: number, mentionCount: number): string {
   const count = mentionCount > 0 ? mentionCount : unreadCount;
   const capped = count > 99 ? "99+" : String(count);
@@ -840,7 +864,10 @@ export function ChannelList({
             />
             {twoLine ? (
               <span className="flex min-w-0 flex-col">
-                <span className="truncate">{titleFor(channel)}</span>
+                <ChannelRowName
+                  title={titleFor(channel)}
+                  muted={!!channel.muted}
+                />
                 {/*
                   Caption, muted, never bold: the name carries the unread
                   weight, as on the phone. A non-breaking space holds the line
@@ -854,22 +881,12 @@ export function ChannelList({
                 </span>
               </span>
             ) : (
-              <span className="truncate">{titleFor(channel)}</span>
+              <ChannelRowName
+                title={titleFor(channel)}
+                muted={!!channel.muted}
+              />
             )}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              {/*
-              The glyphs below are `aria-hidden` (every duotone
-              glyph is), so each carries its own `sr-only` word.
-              The muted state used to be the literal text "muted",
-              which a screen reader read for free; swapping it for a
-              mark without this would have silently dropped it.
-            */}
-              {channel.muted ? (
-                <>
-                  <MuteGlyph className="h-4 w-4 text-muted" active />
-                  <span className="sr-only">Muted</span>
-                </>
-              ) : null}
               {/*
               No read-only mark here any more (#2877). The lock that used to
               sit at this end meant "read-only" while the same glyph at the

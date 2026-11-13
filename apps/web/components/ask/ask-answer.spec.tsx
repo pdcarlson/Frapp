@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
@@ -251,6 +251,29 @@ describe("AskTurn", () => {
     );
     expect(screen.getByText("Quorum is")).toBeInTheDocument();
     expect(screen.getByText(ASK_COPY.steps.reading)).toBeInTheDocument();
+  });
+
+  it("says what is being read, and that a card is being worked out", () => {
+    show(
+      exchange({
+        phase: "working",
+        step: "reading",
+        stepDetail: { reads: ["events", "my_tasks"], found: 3 },
+        answer: null,
+      }),
+    );
+    expect(
+      screen.getByText("Reading the events calendar, your tasks and 3 sources"),
+    ).toBeInTheDocument();
+    cleanup();
+    show(exchange({ phase: "working", step: "proposing", answer: null }));
+    expect(screen.getByText(ASK_COPY.steps.proposing)).toBeInTheDocument();
+  });
+
+  it("says nothing under a turn that has not been sent yet", () => {
+    // The AI question is still open: no search has started.
+    show(exchange({ phase: "working", step: null, answer: null }));
+    expect(screen.queryByText(ASK_COPY.steps.searching)).toBeNull();
   });
 
   it("falls back to a step it knows for one it does not", () => {

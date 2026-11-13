@@ -132,6 +132,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Mandatory now shows only on the events that need you, as a quiet label instead of a red badge.",
       "A sign-up sheet, headcount or form you haven't answered yet now shows under Needs you on Activity until you answer it or it closes, and tapping it takes you straight to it in chat.",
       "Events and the Directory now say the same thing on the web and on your phone when a list is empty, a search finds nobody, or something fails to load, and points read the same everywhere.",
+      "Chat cards are one width and check you in the same way on the web and your phone, a muted channel's mark sits right after its name, and pinned messages show a pin on both.",
+      "Ask Frapp opens with questions about your own account, like your next event or your open tasks, instead of the same three examples for everyone.",
+      "Weekly and monthly repeating events set up or changed from now on keep the same time of day when the clocks change for daylight saving.",
+      "While Ask Frapp works, it now says what it is really doing, like which records it is reading and how many sources it found.",
+      "A pinned message's pin now fills in, so it's easy to spot.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -140,6 +145,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can ask for a photo or a link as proof on a task, add up to six photos, and say what needs to change when they send a task back.",
       "When you upload a document, the Type choices are now your chapter's own list, and officers who manage documents can rename, add or remove types with Edit types.",
       "Officers can import a whole folder into Documents: Frapp suggests a folder, type and title for each file, sets aside copies and files it can't take, and imports them all once you've checked.",
+      "You can now post a form in chat from the + menu, with short answer, paragraph, multiple choice, checkbox, dropdown and yes or no questions. Your answers aren't posted in the chat, and you can change them until the form closes.",
+      "Pinning a channel or saving a message now fills in its pin or ribbon, so it's clear which ones are on.",
+      "If an email sign-in link opens a brand-new account instead of the one you already have, you're now told so and can sign out in one step.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -148,6 +156,10 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Chat home shows you the swipe to Messages the first time you rest on it, and the screen now gives under your finger as you swipe.",
       "Tasks can now carry photos, you can mark a task done with a photo or a link as proof, and officers can see that proof and say what needs to change when they send a task back.",
       "Private channels now show a lock in your channel list, so you can tell which ones not everyone can see.",
+      "A muted channel's mark is now a crossed-out speaker, the same as on the web, so it no longer looks like the notifications bell.",
+      "You can now post a form in chat from the + menu and answer it on its own page, where your answers stay private and can be changed until the form closes.",
+      "The + beside the tab bar now lays its shortcuts out three to a row, and you can keep up to nine of them.",
+      "Check in by pointing your phone's camera at the code on the officer's screen, and Frapp asks for your location right there if it needs it.",
     ],
   },
   {

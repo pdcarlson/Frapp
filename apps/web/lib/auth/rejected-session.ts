@@ -63,6 +63,9 @@ const SIGNED_OUT_ROUTES = [
   // Its own Sign out sends the member to `/sign-in` with the destination kept;
   // leaving first would drop it (#3786).
   "/new-account",
+  // The camera check-in link's page: signed out, it offers the app and sign
+  // in with the link kept, and its Sign out keeps the link the same way.
+  "/check-in",
   "/auth",
 ];
 
@@ -137,7 +140,8 @@ export async function handleRejectedSession(): Promise<void> {
 
 /**
  * The signed-in user, for a page that sends a signed-out visitor to sign in
- * itself (`/join`). Null when there is no live session, and once Auth judges
+ * itself (`/join`, `/check-in`), which names itself as `screen` for the
+ * failure report. Null when there is no live session, and once Auth judges
  * the browser's session over (`isSessionOver`) the local one is cleared first.
  *
  * Clearing it is the point (#3776). `proxy.ts` decides with `getSession()`,
@@ -151,17 +155,19 @@ export async function handleRejectedSession(): Promise<void> {
  * `isSessionOver`), so the page shows its retryable error instead of signing
  * the visitor out or bouncing them into the same loop.
  */
-export async function getLiveSessionUser(): Promise<User | null> {
+export async function getLiveSessionUser(
+  screen: "/join" | "/check-in" = "/join",
+): Promise<User | null> {
   const supabase = createSupabaseBrowserClient();
   const result = await supabase.auth.getUser();
   if (result.data.user) return result.data.user;
   // No session in this browser at all: nothing to clear.
   if (isAuthSessionMissingError(result.error)) return null;
   if (!isSessionOver(result)) {
-    reportAuthFailure({ flow: "session_check", screen: "/join", error: result.error });
+    reportAuthFailure({ flow: "session_check", screen, error: result.error });
     throw result.error;
   }
-  reportAuthFailure({ flow: "session_check", screen: "/join", error: result.error });
+  reportAuthFailure({ flow: "session_check", screen, error: result.error });
   await signOutCurrentSession({ scope: "local" });
   return null;
 }

@@ -1105,8 +1105,11 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       eyebrow: "Rush",
     },
   };
-  /** Card kinds mobile draws as their text on purpose (`cardFor`). */
-  const TEXT_ON_MOBILE = ["dues", "loading"];
+  /**
+   * Card kinds mobile draws as their text on purpose (`cardFor`). A form
+   * (#3926 step 3) reads as its title until the phone's form card lands.
+   */
+  const TEXT_ON_MOBILE = ["dues", "loading", "form"];
 
   it("draws every card kind as a card, but the ones it means to leave as text", () => {
     expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(

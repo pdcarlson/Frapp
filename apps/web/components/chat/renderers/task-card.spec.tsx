@@ -185,6 +185,22 @@ describe("TaskCard", () => {
     );
   });
 
+  it("offers the assignee no Start while the chapter has Tasks turned off (#4136)", () => {
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.queryByRole("button", { name: /start/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /mark done/i })).toBeNull();
+  });
+
   it("hides assignee actions from a non-assignee", () => {
     render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
     expect(
@@ -346,6 +362,29 @@ describe("TaskCard", () => {
     expect(
       screen.getByRole("button", { name: /send back/i }),
     ).toBeInTheDocument();
+  });
+
+  it("offers no lifecycle control while the chapter has Tasks turned off (#4136)", () => {
+    canManage = true;
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: false,
+        point_reward: 10,
+      },
+    });
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /send back/i })).toBeNull();
   });
 
   it("hides Confirm from a tasks:manage assignee on their own card (#1056)", () => {

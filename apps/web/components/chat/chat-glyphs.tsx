@@ -22,7 +22,13 @@
  */
 
 import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
-import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
+import {
+  Svg,
+  detail,
+  fillProps,
+  markFillProps,
+  stroke,
+} from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
 export {
@@ -39,12 +45,18 @@ export type ChatGlyphProps = DuotoneGlyphProps;
 
 /**
  * Pinned message — pin body filled, needle stroke-only. Also a channel pinned
- * to the top of the member's own list (#2877), filled while it is pinned.
+ * to the top of the member's own list (#2877), solid while it is pinned
+ * (`markFillProps`, #4292), as Documents' pin is (#4289). Documents'
+ * `PinGlyph` re-exports this one.
  */
 export function PinGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>
-      <path d={MARK_GLYPH_PATHS.pin.body} {...stroke} {...fillProps(active)} />
+      <path
+        d={MARK_GLYPH_PATHS.pin.body}
+        {...stroke}
+        {...markFillProps(active)}
+      />
       <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
     </Svg>
   );
@@ -60,8 +72,8 @@ export function PinGlyph({ className, active }: ChatGlyphProps) {
  * Two similar silhouettes there would invite a member to elevate a message to
  * the whole chapter while meaning to save it for themselves.
  *
- * Filled when `active`, matching `PinGlyph`'s convention for "this state is on"
- * (§1), so the toggle reads at a glance without relying on the label alone.
+ * Solid when `active`, like `PinGlyph` (§1 rule 1's exception, #4292), so the
+ * toggle reads at a glance without relying on the label or the colour alone.
  */
 export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
   return (
@@ -69,7 +81,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
       <path
         d="M6.5 3.75h11v16.5l-5.5-4.2-5.5 4.2z"
         {...stroke}
-        {...fillProps(active)}
+        {...markFillProps(active)}
       />
     </Svg>
   );
@@ -303,22 +315,12 @@ export function StartThreadGlyph({ className, active }: ChatGlyphProps) {
  * a channel's alert level must not draw the same silhouette.
  */
 export function MuteGlyph({ className, active }: ChatGlyphProps) {
+  const paths = MARK_GLYPH_PATHS.mute;
   return (
     <Svg className={className}>
-      <path
-        d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M7.5 9.5v5" {...detail} />
-      {active ? (
-        <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
-      ) : (
-        <path
-          d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4"
-          {...detail}
-        />
-      )}
+      <path d={paths.body} {...stroke} {...fillProps(active)} />
+      <path d={paths.split} {...detail} />
+      <path d={active ? paths.muted : paths.waves} {...detail} />
     </Svg>
   );
 }

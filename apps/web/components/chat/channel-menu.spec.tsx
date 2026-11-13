@@ -490,9 +490,10 @@ describe("ChannelMenu pin to top (#2877)", () => {
     renderMenu({ pinToTop: { pinned: true, onToggle: vi.fn() } });
     await openMenu(user);
 
-    expect(
-      screen.getByRole("button", { name: "Unpin from top" }),
-    ).toBeInTheDocument();
+    const unpin = screen.getByRole("button", { name: "Unpin from top" });
+    expect(unpin).toBeInTheDocument();
+    // The pin reads as on: solid, not the outline (#4292).
+    expect(unpin.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
   });
 
   describe("search pickers (#3958)", () => {

@@ -417,11 +417,21 @@ export class NotificationService {
    * when they have none or the read fails. For a sender whose zone stands in
    * for a recipient who has never reported one: chapter members share a
    * campus, so the person who scheduled an event is the best guess for it.
+   *
+   * A failed read is reported, not only swallowed: a recurring series' legacy
+   * token is stepped in this zone and its meetings are stored (#4505), so a
+   * read that failed leaves rows a DST change moves, and the report says why.
    */
   async timeZoneFor(userId: string): Promise<string | null> {
     try {
       return recipientTimeZone(await this.settingsRepo.findByUser(userId));
-    } catch {
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'notification-time-zone-read',
+        message: `Reading the time zone of ${userId} failed; carrying on without one.`,
+        error,
+      });
       return null;
     }
   }

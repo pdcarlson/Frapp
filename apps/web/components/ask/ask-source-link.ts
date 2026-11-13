@@ -10,6 +10,7 @@ const PAGE_ROUTES: Record<string, string | null> = {
   events: "/events",
   points: "/points",
   dues: null,
+  tasks: "/tasks",
 };
 
 /**

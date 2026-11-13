@@ -54,6 +54,7 @@ import {
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MemberAvatar } from "@/components/member-avatar";
 import { AlertGlyph } from "@/components/control-glyphs";
+import { PinGlyph } from "@/components/documents/document-glyphs";
 import { ThreadChip, threadCardMiddle } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
@@ -690,20 +691,50 @@ function CompactLead({
 }
 
 /**
- * `· Pinned` in the muted trailing text, like `(edited)` beside it. A marker
- * is metadata, so it never takes the chapter accent (foundations.md §6,
- * "Where the accent goes").
+ * The pin glyph and `Pinned` in the muted trailing text, like `(edited)`
+ * beside it, as web draws it (#4136: the phone drew `· Pinned` with no glyph).
+ * A marker is metadata, so it never takes the chapter accent (foundations.md
+ * §6, "Where the accent goes"). The glyph rides the line inline, at the
+ * caption's size, in the text's own colour.
  */
 function PinnedMarker({
   style,
   lead = true,
 }: {
-  style: ReturnType<typeof createStyles>["trailing"];
-  /** Whether it follows text on its line, and so needs the " · " before it. */
+  style: StyleProp<TextStyle>;
+  /** Whether it follows text on its line, and so needs space before it. */
   lead?: boolean;
 }) {
-  return <Text style={style}>{lead ? " · Pinned" : "Pinned"}</Text>;
+  const color = StyleSheet.flatten(style)?.color;
+  return (
+    <Text style={style}>
+      {lead ? " " : ""}
+      <PinGlyph
+        color={typeof color === "string" ? color : "currentColor"}
+        size={PIN_MARKER_SIZE}
+        on
+      />
+      {" Pinned"}
+    </Text>
+  );
 }
+
+/** {@link PinnedMarker} in the viewer's bubble, in its contrast colour. */
+function SelfPinnedMarker({
+  style,
+  lead,
+}: {
+  style: StyleProp<TextStyle>;
+  lead: boolean;
+}) {
+  const { accentOnPrimary } = useChapterBranding();
+  return (
+    <PinnedMarker style={[style, { color: accentOnPrimary }]} lead={lead} />
+  );
+}
+
+/** The caption role's size, so the glyph sits at the marker's height. */
+const PIN_MARKER_SIZE = 13;
 
 /**
  * The trailing markers on a line of their own, under whatever the row draws
@@ -947,11 +978,12 @@ export function MessageItem({
                     edited || pinned ? (
                       <SelfText style={styles.trailing}>
                         {edited ? `${ownLine ? "" : " "}${EDITED_MARKER}` : ""}
-                        {pinned
-                          ? edited || !ownLine
-                            ? " · Pinned"
-                            : "Pinned"
-                          : ""}
+                        {pinned ? (
+                          <SelfPinnedMarker
+                            style={styles.trailing}
+                            lead={edited || !ownLine}
+                          />
+                        ) : null}
                       </SelfText>
                     ) : undefined
                   }

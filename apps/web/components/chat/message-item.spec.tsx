@@ -1046,6 +1046,8 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+    // A pinned message's pin is solid, as every on pin is (#4292).
+    expect(pinned.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
     // A marker, not an action: the trailing captions' muted tone, never the
     // chapter accent (`foundations.md` §6).
     expect(pinned.closest("span")!.className).not.toContain("accent");
@@ -1094,16 +1096,16 @@ describe("MessageItem edited marker", () => {
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
   });
 
-  it("sizes a card to its content, not the thread's width", () => {
-    // The body column stretches its children, as the bubble's column did not.
+  it("draws every card one width: the column, up to 28rem (#4136)", () => {
+    // Filling, not hugging: a column of cards lines up, as the phone's do.
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-[28rem]", "max-w-full");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-[28rem]", "max-w-full");
   });
 
   it("marks an edited card under the card, not inside it", () => {
@@ -1543,6 +1545,8 @@ describe("MessageItem bookmark toggle (#462)", () => {
 
     const button = screen.getByRole("button", { name: "Save" });
     expect(button).toHaveAttribute("aria-pressed", "true");
+    // The ribbon reads as on: solid, not the outline (#4292).
+    expect(button.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
     expect(button).toHaveAttribute("title", "Saved");
   });
 

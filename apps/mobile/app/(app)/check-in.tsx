@@ -8,8 +8,9 @@ import {
 } from "react";
 import {
   AccessibilityInfo,
-  ActivityIndicator,
+  AppState,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -23,33 +24,42 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { useScreenBelow } from "@/lib/back-target";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Location from "expo-location";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import Svg, { Path } from "react-native-svg";
-import { useCheckIn, useEvent, useMyAttendance } from "@repo/hooks";
-import { statusLabel } from "@repo/validation";
+import Svg, { Circle, Path } from "react-native-svg";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  isTransientCheckInFailure,
+  useCheckIn,
+  useEvent,
+  useMyAttendance,
+} from "@repo/hooks";
+import {
+  CHECK_IN_CODE_CHANGED_COPY,
+  checkInTargetFrom,
+  statusLabel,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { useScreenBelow } from "@/lib/back-target";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
 import { ErrorState } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import {
-  isPlausibleManualCode,
-  parseCheckInCode,
-} from "@/lib/events/check-in-code";
+import { isPlausibleManualCode } from "@/lib/events/check-in-code";
 import { createScanLatch, type ScanLatch } from "@/lib/events/scan-latch";
 import {
   ALREADY_CHECKED_IN_TITLE,
-  CHECK_IN_LOCATION_DENIED_COPY,
+  CHECK_IN_CODE_REFUSED_MESSAGE,
   checkInFailure,
   checkInSuccess,
+  needsLocationRefusal,
 } from "@/lib/events/check-in-outcome";
-import { requireForegroundFix, tryForegroundFix } from "@/lib/location";
 import {
-  CHECK_IN_FIX_TIMEOUT_MS,
-  useWarmCheckInFix,
-} from "@/lib/events/check-in-fix";
+  getCheckInLocation,
+  locationBlockerCopy,
+  type LocationBlocker,
+} from "@/lib/events/check-in-location";
+import { useWarmCheckInFix } from "@/lib/events/check-in-fix";
 import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
@@ -61,41 +71,39 @@ import {
 } from "@/components/glass-close-button";
 
 /**
- * s18 — QR check-in scanner (`canvas-screens.dc.html:600`).
+ * s18 — Check in (2026-11-13: the phone's camera, not Frapp's scanner).
  *
- * Deliberately not on `ScreenShell`: the shell wraps children in a `ScrollView`,
- * and a full-bleed camera viewport inside a scroll container fights the scroll
- * gesture and cannot fill the screen. s05 opts out for the same class of reason
- * (`spec/ui/mobile/patterns.md`).
+ * The officer's screen (s22) shows a QR that is an ordinary link,
+ * `https://app.frapp.live/check-in?event=…&t=…` (`@repo/validation`
+ * `check-in-link.ts`). A member points the phone's own camera at it and taps
+ * the banner, as with a Venmo or Cash App code; the link opens this screen with
+ * the event and the token, and the check-in goes at once. There is no scanner
+ * in the app any more: the first real check-in (2026-11-13) had members open
+ * the app, find the event and tap Scan before pointing anything at the
+ * screen, which is the slow path the camera skips.
  *
- * The layout is the board's: a square viewport with corner brackets, centred,
- * in the foreground text rather than the board's accent (a decorative frame is
- * neutral: foundations.md §6, "Where the accent goes", 2026-11-05), with
- * "Enter code manually" and the torch along the bottom. The typed code goes in
- * a sheet (`components/check-in/manual-code-sheet.tsx`),
- * which rises with the keyboard; it used to be a card at the foot of this
- * screen that the keyboard covered.
+ * Opened without a token (the event's "Enter code", or the chat card once a
+ * code is required), the screen says to use the camera and offers the typed
+ * code, for a phone whose camera or link handling is broken.
  *
- * ## What this screen claims, and what is actually enforced
+ * ## Location is asked for here, in context
  *
- * The reference draws "Geofence is the real check — screenshots don't work."
- * That sentence is only true for an event that *has* a zone, and zones are
- * opt-in per event. Rendering it unconditionally would be a security claim
- * about a check that is not running, so the line is bound to
- * `event.hasCheckInZone`. The server is the authority either way — it rejects
- * an out-of-zone or unlocated check-in regardless of what this screen says.
+ * Both of the first real scans were refused for carrying no location. So a
+ * check-in asks for it the moment it needs it (`lib/events/check-in-location.ts`):
+ * the OS prompt the first time, Android's own "turn on location" dialog when
+ * location is off, and when the OS won't ask again, a button to Settings that
+ * checks the member in when they come back. The check-in goes without a
+ * location only when the phone has none to give, because an event nobody is
+ * hosting a code for, with no zone, needs none; when the server answers that
+ * it needed one, the screen says what to change rather than relaying the
+ * refusal.
  *
- * The board's zone pill carries a green dot and reads "Inside the Great Hall
- * zone", which is a live claim that the member is inside it. Nothing here
- * knows that before the server answers, so the pill states the requirement
- * and draws no dot.
+ * ## The token lasts long enough
  *
- * ## The camera runs only while the screen is focused
- *
- * The screen stays mounted under anything pushed over it, and while the app
- * is in the background. A `CameraView` left mounted keeps the camera session
- * (and the torch) on behind whatever the member went to, so it is drawn only
- * while this screen has focus.
+ * A scanned token is good for 90 to 120 seconds (the API's
+ * `TOKEN_PREVIOUS_WINDOWS`), which covers the banner, the app starting and a
+ * location prompt. A trip to Settings can outlast it; then the screen says the
+ * code changed and to point the camera at it again.
  */
 
 /**
@@ -107,61 +115,80 @@ type Status =
   | { kind: "idle" }
   /**
    * `checkInSuccess`'s words, and the event they are about, both fixed when
-   * the check-in was sent. The panel draws these rather than whatever event
-   * the screen holds when it renders: the tab instance is reused, so the
-   * screen's event can change while a check-in is in flight.
+   * the check-in was sent: the screen's event can change while a check-in is
+   * in flight (a second link opened over this one).
    */
   | (ReturnType<typeof checkInSuccess> & {
       eventId: string;
       eventName: string | null;
     })
   /**
-   * `attemptOnly` is `checkInFailure`'s: the line is about this one attempt
-   * (the code it sent, or a request that may go through if sent again), not
-   * about the member, so it clears when they turn to typing a code (see
-   * `openManual`).
-   * `foreign` marks the scanner's "different event" line, which is
-   * attempt-only too, and which `handleBarcode` reports once per code.
+   * The check-in needed a location the phone didn't give. `blocker` decides
+   * what the screen offers (`locationBlockerCopy`).
    */
-  | { kind: "error"; message: string; attemptOnly: boolean; foreign?: true }
+  | { kind: "location"; blocker: LocationBlocker }
+  /**
+   * `attemptOnly` is `checkInFailure`'s: a line about this one attempt (the
+   * code it sent, or a request that may go through if sent again), cleared
+   * when the member turns to typing a code. `retryable` is a request that may
+   * go through if sent again (`isTransientCheckInFailure`), which offers Try
+   * again: a scanned link the member can't simply re-tap, because the camera
+   * hands over the same link and it was sent once already.
+   */
+  | { kind: "error"; message: string; attemptOnly: boolean; retryable: boolean }
   /**
    * The subscription gate (#2297) or the module gate (#2393) refused the
-   * write. Terminal until an officer acts, so — unlike `error` — it re-arms neither the
-   * scanner nor the manual field. A separate variant rather than a flag on
-   * `error`, so "no retry" is structural and a future branch cannot forget it.
+   * write. Terminal until an officer acts, so it arms nothing.
    */
   | { kind: "blocked"; message: string };
 
+/** What a check-in in flight is doing, for the one muted status line. */
+type Phase = "locating" | "sending";
+
+/** The words for a scanned token the server no longer accepts. */
+export const CODE_CHANGED_COPY = CHECK_IN_CODE_CHANGED_COPY;
+
 /**
- * Which state a failed check-in lands in. The copy, gate refusals included,
- * is `checkInFailure`'s, shared with the chat event card.
+ * Which state a failed check-in lands in.
  *
- * A 409 means the member already has a row for this event. When that row is
- * PRESENT or LATE (a check-in, or an officer's mark that counts them), they
- * are on the list, which is what they came
- * here for, so it lands on the success panel in its own words and with no
- * points (none were awarded this time), rather than in the error style it
- * used to take (#3703: the owner chose to keep the API's 409 and have the
- * scanner read it as "you're in"). The panel resets on focus like any
- * success, so the next event's scanner is armed.
+ * A 409 means the member already has a row. PRESENT or LATE is on the list,
+ * which is what they came for, so it lands on the success panel in its own
+ * words and with no points (#3703). An officer's absent or excused mark is
+ * said as one, so "you're in" never contradicts the record; an unread row
+ * keeps the plain line, which claims nothing about it.
  *
- * The API answers 409 for any row, though, including one an officer marked
- * absent or excused after the member checked in. Telling that member
- * "you're in" would contradict their record, so the caller reads their own
- * row first (`ownRow`) and passes what it found: a mark is said as one
- * ("An officer marked you absent for this event."), the same fact the event
- * page shows. An unread row (the read failed) keeps the old error line,
- * which claims nothing about the record.
+ * A refusal for a missing location becomes the location state when the phone
+ * gave none (`blocker`), and a scanned token refused as stale becomes
+ * {@link CODE_CHANGED_COPY}: the shared copy's "ask the host for the current
+ * one" is for a typed code.
  */
 function failureStatus(
   error: unknown,
   eventId: string,
   eventName: string | null,
   ownRow: ReturnType<typeof selectMyAttendance> | undefined,
+  context: { blocker: LocationBlocker | null; scanned: boolean },
 ): Status {
+  if (context.blocker && needsLocationRefusal(error)) {
+    return { kind: "location", blocker: context.blocker };
+  }
+  if (
+    context.scanned &&
+    statusOf(error) === 403 &&
+    serverMessageOf(error) === CHECK_IN_CODE_REFUSED_MESSAGE
+  ) {
+    return {
+      kind: "error",
+      message: CODE_CHANGED_COPY,
+      attemptOnly: true,
+      retryable: false,
+    };
+  }
   const failure = checkInFailure(error);
+  if (failure.kind === "error") {
+    return { ...failure, retryable: isTransientCheckInFailure(error) };
+  }
   if (failure.kind !== "already") return failure;
-  // PRESENT or LATE is on the list, whether scanned or marked by hand.
   if (ownRow && (ownRow.status === "PRESENT" || ownRow.status === "LATE")) {
     return {
       kind: "success",
@@ -178,24 +205,14 @@ function failureStatus(
       ? `An officer marked you ${statusLabel("attendance", ownRow.status).toLowerCase()} for this event.`
       : failure.message,
     attemptOnly: false,
+    retryable: false,
   };
 }
 
-/** The drawn corner bracket: 36pt arms, a 3pt stroke in the foreground text. */
-const BRACKET_SIZE = 36;
-const BRACKET_STROKE = 3;
-/** Where the viewport sits inside the brackets, as drawn (`inset: 22px`). */
-const VIEWPORT_INSET = 22;
-/** The board's torch glyph, at its drawn 19pt. */
-const TORCH_GLYPH_SIZE = 19;
-/**
- * iconography.md §1's neutral fill, "white at 6%", for the torch while it is
- * off. A literal, as `components/tab-glyphs.tsx` and
- * `components/more/more-glyphs.tsx` keep it: no token carries it.
- */
-const TORCH_OFF_FILL = "rgba(255,255,255,0.06)";
 /** The success mark: a circle big enough to read from arm's length. */
 const SUCCESS_MARK_SIZE = 72;
+/** The glyph above the camera and location states. */
+const STATE_GLYPH_SIZE = 56;
 
 export default function CheckInScreen() {
   const { tokens } = useFrappTheme();
@@ -204,10 +221,24 @@ export default function CheckInScreen() {
   const router = useRouter();
   const below = useScreenBelow();
 
-  const params = useLocalSearchParams<{ eventId?: string | string[] }>();
-  const eventId = Array.isArray(params.eventId)
-    ? params.eventId[0]
-    : (params.eventId ?? "");
+  /**
+   * The link names the event `event` and the token `t`; the app's own
+   * buttons push `eventId`. A link with no token (hand-typed, or cut short)
+   * is the plain screen.
+   */
+  const params = useLocalSearchParams<{
+    eventId?: string | string[];
+    event?: string | string[];
+    t?: string | string[];
+  }>();
+  const eventId = useMemo(() => {
+    const raw = params.event ?? params.eventId;
+    return (Array.isArray(raw) ? raw[0] : raw)?.trim() ?? "";
+  }, [params.event, params.eventId]);
+  const linkToken = useMemo(
+    () => checkInTargetFrom(eventId, params.t)?.token ?? null,
+    [eventId, params.t],
+  );
 
   const eventQuery = useEvent(eventId);
   const event = useMemo(
@@ -215,59 +246,31 @@ export default function CheckInScreen() {
     [eventQuery.data],
   );
   /**
-   * Nothing is sent until the event has loaded. A check-in reads it twice:
-   * whether the event has a zone decides whether a location is required (a
-   * zoned event refuses a check-in without one, even from a member standing
-   * in the zone; without a zone one is sent when the phone has it, for the
-   * officer's screen), and the success panel names the event and its points as
-   * they were when the check-in was sent. The camera still shows while it
-   * loads; it just doesn't decode, and the manual Check in stays off.
+   * Nothing is sent until the event has loaded: whether it has a drawn zone
+   * decides whether a check-in may go without a location, and the success
+   * panel names the event and its points as they were when it was sent.
    */
   const eventLoaded = event !== null;
   const needsLocation = event?.hasCheckInZone ?? false;
 
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  // True on a focused screen's first render, so the camera mounts without
-  // waiting a commit for an effect to say so.
   const focused = useIsFocused();
-  // A GPS fix kept ready while the scanner is up, so a scan doesn't wait on
-  // one (see `resolveLocation`).
+  // A GPS fix kept ready while the screen is up, when location is already
+  // allowed, so a check-in doesn't wait on one.
   const warmFix = useWarmCheckInFix(focused);
-  const [torchOn, setTorchOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
 
   /**
    * The check-in on its way for each event, keyed by event, holding its
-   * request's number.
-   *
-   * The tab instance is reused, so a check-in sent for one event can still be
-   * on its way when the screen is on another, and the member can come back to
-   * the first before it answers. So whether a check-in is on its way is kept
-   * per event, and so is the latch that lets one through at a time
-   * (`latchFor`): event A's check-in in flight never switches B's scanner or
-   * manual Check in off, and when it settles it clears only its own mark and
-   * releases only A's latch, never a hold that B's own check-in has. Coming
-   * back to A while it is still on its way shows it as sending, and its answer
-   * lands; once it has settled, wherever the screen was, nothing is left
-   * sending.
-   *
-   * Slots in this one screen rather than a screen remounted per event
-   * (`key={eventId}`): a remount would restart the camera session on a
-   * `frapp://` move and pull the manual sheet's modal out from under
-   * `useSheetVisit` mid-presentation, and the record of what is on its way
-   * would still have to live above it, for the event the member comes back
-   * to. Everything else the screen holds is only ever the current event's: a
-   * result for an event the screen has left is dropped, so the status, the
-   * typed code and the foreign-code memory are simply reset on a move (below).
+   * request's number and what it is doing. A second link opened over this
+   * screen hands it a new event in place, so a check-in for the first can
+   * still be on its way; it clears only its own mark when it settles.
    */
-  const [sending, setSending] = useState<ReadonlyMap<string, number>>(
-    () => new Map(),
-  );
+  const [sending, setSending] = useState<
+    ReadonlyMap<string, { request: number; phase: Phase }>
+  >(() => new Map());
   const lastRequestRef = useRef(0);
-  // `useRef` rather than state: a latch change must never trigger a render, or
-  // the camera remounts mid-scan.
+  // A ref, not state: a latch change must never cause a render.
   const latchesRef = useRef(new Map<string, ScanLatch>());
   const latchFor = useCallback((id: string) => {
     let latch = latchesRef.current.get(id);
@@ -277,22 +280,12 @@ export default function CheckInScreen() {
     }
     return latch;
   }, []);
-  const sendingHere = sending.has(eventId);
+  const sendingHere = sending.get(eventId) ?? null;
 
   /**
-   * What the screen says belongs to one event.
-   *
-   * The tab instance is reused, so `eventId` can change under it: a member
-   * leaves one event's scanner and opens the next (where the focus reset
-   * below also runs), or a `frapp://` link moves the focused screen to
-   * another event (where it doesn't). Either way, the last event's refusal,
-   * its confirmation, and a code typed for it are not about this one: a
-   * "You're already checked in" or a zone refusal from the last event would
-   * otherwise greet the member here, in the scanner and in the manual sheet,
-   * and the last event's code would sit in the field ready to send. So they
-   * are reset during the render that changes the event, before anything of
-   * the old one is drawn. A check-in on its way for the event the screen is
-   * now on needs nothing here: `sending` is per event, so it shows.
+   * What the screen says belongs to one event: a new event handed over in
+   * place resets the status and the typed code during the render that
+   * changes it, before anything of the old one is drawn.
    */
   const [shownEventId, setShownEventId] = useState(eventId);
   if (shownEventId !== eventId) {
@@ -303,77 +296,28 @@ export default function CheckInScreen() {
 
   const sheetRef = useRef<BottomSheetModal>(null);
   const sheet = useSheetVisit(sheetRef);
-  // State, not the visit hook's ref, because the decoder reads it: while the
-  // sheet is up the member is typing a code, and a scan landing behind the
-  // scrim would submit a second check-in under them.
   const [manualOpen, setManualOpen] = useState(false);
   const { dismiss: dismissSheet } = sheet;
 
-  /**
-   * A refusal must not outlive the visit that produced it.
-   *
-   * `check-in` is pushed with an `eventId` param, and an instance can be handed
-   * new params in place (a `frapp://` link opened over it) rather than
-   * remounted, so state from one event can meet the next. It used to be a tab
-   * that stayed mounted for the whole session, which is where the bug below
-   * came from; the reset stays for the in-place case. Unlike `error`, `blocked` disarms both the
-   * camera decoder and the manual field, so without this reset a member
-   * refused at one event would find the scanner silently dead at the next one,
-   * weeks later, under copy naming a chapter state that has since been fixed.
-   * Only killing the app would clear it.
-   *
-   * `success` is reset for the same reason: the success panel replaces the
-   * camera, so a member who checked in at one event would otherwise re-enter
-   * at the next one to "You're checked in" for the *previous* event, with no
-   * scanner at all. A repeat scan's 409 lands on the same panel when the
-   * member's row is a check-in (`failureStatus`), so it is reset here too;
-   * ordinary failures, and a 409 over an officer's mark, leave the scanner
-   * armed and need no reset.
-   *
-   * Leaving the screen also turns the torch off and closes the manual sheet,
-   * which is portalled above the navigator and would otherwise float over
-   * the event the member went back to.
-   */
+  // Leaving the screen closes the manual sheet, which is portalled above the
+  // navigator and would otherwise float over wherever the member went.
   useFocusEffect(
     useCallback(() => {
-      setStatus((current) =>
-        current.kind === "blocked" || current.kind === "success"
-          ? { kind: "idle" }
-          : current,
-      );
       return () => {
-        setTorchOn(false);
         dismissSheet();
       };
     }, [dismissSheet]),
   );
 
-  // One mutation, used only to send. Its `isPending` follows its latest call,
-  // whichever event that was for, so nothing here reads it: `sending` and the
-  // latches are per event.
   const { mutateAsync: sendCheckIn } = useCheckIn();
-  // Read only on a 409, to tell a check-in from an officer's mark
-  // (`failureStatus`); never fetched up front.
+  // Read only on a 409, to tell a check-in from an officer's mark.
   const { refetch: refetchOwnRow } = useMyAttendance(eventId, {
     enabled: false,
   });
 
-  // Last foreign-event code already reported — see `handleBarcode`.
-  const reportedForeignRef = useRef<string | null>(null);
-  // Forgotten as soon as its line leaves the screen, by whatever path (the
-  // sheet opening, a check-in starting, the screen moving to another event),
-  // so the same wrong code held up again is reported again rather than
-  // dropped in silence.
-  useEffect(() => {
-    if (status.kind !== "error" || !status.foreign) {
-      reportedForeignRef.current = null;
-    }
-  }, [status]);
-
   /**
-   * The event this screen is showing now, for a check-in that was sent for
-   * another one. `submit` closes over the event it started with; reading this
-   * after the request lands tells it whether the screen has moved on.
+   * The event this screen is showing now, for a check-in sent for another:
+   * `submit` closes over the event it started with.
    */
   const eventIdRef = useRef(eventId);
   useLayoutEffect(() => {
@@ -381,77 +325,23 @@ export default function CheckInScreen() {
   }, [eventId]);
 
   /**
-   * Check-in has **no outbox** — a submit with no network is lost, and a member
-   * standing at the door would believe they had checked in. That is why
-   * `spec/ui/resilience/connection-state.md`'s "Disabled with tooltip: 'Reconnect to make
-   * changes'" applies here (#501) while the chat composer does the opposite:
-   * chat has a queue, this does not.
-   *
-   * Read through a ref as well, because `handleBarcode` is a `useCallback` the
-   * camera holds for the life of the screen — reading the value directly there
-   * would close over whatever it was when the callback was built.
+   * Check-in has no outbox: a check-in sent with no network is lost, and a
+   * member at the door would believe they were in. So it waits for the
+   * connection (`spec/ui/resilience/connection-state.md`, #501), and says so.
    */
   const { writeBlockedReason } = useConnection();
-  const writeBlockedReasonRef = useRef(writeBlockedReason);
-  useLayoutEffect(() => {
-    writeBlockedReasonRef.current = writeBlockedReason;
-  }, [writeBlockedReason]);
+
+  /** The last check-in tried, so a trip to Settings can send it again. */
+  const lastAttemptRef = useRef<{
+    eventId: string;
+    payload: { token?: string; manualCode?: string };
+  } | null>(null);
 
   /**
-   * Read the member's position for the server's presence check.
-   *
-   * With a drawn zone it is required, so a refusal stops here with the
-   * zone's own words. Without one, the officer's screen showing the code may
-   * be the zone (#4532): within 100 yards of it. Only the server knows
-   * whether that screen could tell where it was, so the scan asks for a fix
-   * without insisting, and sends the code either way; when the server needed
-   * the location it says so. A GPS fix ("high"), because the screen is
-   * checked against a 91 m radius and a "balanced" iOS fix can be 100 m off.
-   *
-   * The fix is usually ready before the scan (`useWarmCheckInFix`), and a
-   * scan that has to find its own waits at most `CHECK_IN_FIX_TIMEOUT_MS`:
-   * the scanned code expires in 30 to 60 seconds, and a code refused as
-   * expired is worse than a check-in the server can ask to retry.
-   *
-   * The permission-and-accuracy rules live in `lib/location.ts`, shared with
-   * s10: the "no background location" ban binds every surface, and one
-   * module asking is easier to keep honest than two.
-   */
-  const resolveLocation = useCallback(async (): Promise<{
-    lat?: number;
-    lng?: number;
-    accuracy_meters?: number;
-  }> => {
-    const warm = warmFix();
-    if (warm) return warm;
-    const fix = needsLocation
-      ? await requireForegroundFix(
-          CHECK_IN_LOCATION_DENIED_COPY,
-          "high",
-          CHECK_IN_FIX_TIMEOUT_MS,
-        )
-      : (await tryForegroundFix("high", CHECK_IN_FIX_TIMEOUT_MS)).fix;
-    return fix ?? {};
-  }, [needsLocation, warmFix]);
-
-  /**
-   * The one path a check-in takes, scanned or typed, so its confirmation is
-   * made in one place: the success branch below is where the screen marks the
-   * moment, for the member who sees it, feels it, and hears it.
-   *
-   * It claims the event's latch before anything else, with the code it sends
-   * (`claim`), and returns if a check-in for this event already holds it. That
-   * is synchronous, so it holds where a render would come too late: the camera
-   * hands over a code many times a second, and a double tap on the sheet's
-   * button lands its second press before the re-render that disables it.
-   *
-   * A result that lands after the screen has moved to another event is
-   * dropped, success or failure: it is about an event the member is no longer
-   * looking at, and drawing it would confirm (or refuse) the wrong one. A
-   * dropped result touches nothing of the event on screen: the move already
-   * reset the screen to it (see `shownEventId`), and a status, or a code typed
-   * since, belongs to that event. It clears only its own event's `sending`
-   * mark and latch.
+   * The one path a check-in takes, from a link or a typed code. It claims the
+   * event's latch first (synchronously, so a double tap or a link opened twice
+   * sends once), finds the location, sends, and draws the answer if the screen
+   * is still on that event.
    */
   const submit = useCallback(
     async (payload: { token?: string; manualCode?: string }, claim: string) => {
@@ -461,25 +351,45 @@ export default function CheckInScreen() {
       const request = ++lastRequestRef.current;
       const eventName = event?.name ?? null;
       const outcome = checkInSuccess(event?.point_value);
+      lastAttemptRef.current = { eventId: submittedFor, payload };
+      const mark = (phase: Phase) =>
+        setSending((current) =>
+          new Map(current).set(submittedFor, { request, phase }),
+        );
       setStatus({ kind: "idle" });
-      setSending((current) => new Map(current).set(submittedFor, request));
+      mark("locating");
+      let blocker: LocationBlocker | null = null;
       try {
-        const fix = await resolveLocation();
-        await sendCheckIn({ eventId: submittedFor, ...payload, ...fix });
+        const location = await getCheckInLocation(warmFix());
+        if (location.kind === "none") {
+          blocker = location.blocker;
+          // A drawn zone refuses every check-in without a location, so there
+          // is nothing to send yet.
+          if (needsLocation) {
+            if (eventIdRef.current === submittedFor) {
+              setStatus({ kind: "location", blocker });
+              // The fix is on the screen behind the typed code's sheet.
+              setManualCode("");
+              Keyboard.dismiss();
+              dismissSheet();
+            }
+            return;
+          }
+        }
+        mark("sending");
+        await sendCheckIn({
+          eventId: submittedFor,
+          ...payload,
+          ...(location.kind === "fix" ? location.fix : {}),
+        });
         if (eventIdRef.current !== submittedFor) return;
         setStatus({ ...outcome, eventId: submittedFor, eventName });
         setManualCode("");
-        // A typed code succeeds with the sheet up; the panel replaces the
-        // scanner underneath it, so the sheet goes too, and the keyboard with
-        // it (Android can leave it up when its focused field unmounts).
         Keyboard.dismiss();
         dismissSheet();
-        // Once per check-in, here rather than on the panel's render
-        // (spec/ui/mobile/README.md, Native-feel rules).
         successHaptic();
         // `accessibilityLiveRegion` is Android-only, and TalkBack reads the
-        // panel out as it fills the region (see the render); announcing there
-        // as well would say it twice. VoiceOver has no live regions.
+        // panel out as it fills the region; VoiceOver has no live regions.
         if (Platform.OS === "ios") {
           AccessibilityInfo.announceForAccessibility(outcome.message);
         }
@@ -491,26 +401,27 @@ export default function CheckInScreen() {
           if (eventIdRef.current !== submittedFor) return;
           ownRow = read.isSuccess ? selectMyAttendance(read.data) : undefined;
         }
-        const next = failureStatus(error, submittedFor, eventName, ownRow);
+        const next = failureStatus(error, submittedFor, eventName, ownRow, {
+          blocker,
+          scanned: payload.token !== undefined,
+        });
         setStatus(next);
-        if (next.kind === "success") {
-          // As a fresh check-in clears them: the panel replaces the scanner.
+        if (next.kind === "success" || next.kind === "location") {
           setManualCode("");
           Keyboard.dismiss();
           dismissSheet();
-          if (Platform.OS === "ios") {
-            AccessibilityInfo.announceForAccessibility(next.message);
-          }
+        }
+        if (next.kind === "success" && Platform.OS === "ios") {
+          AccessibilityInfo.announceForAccessibility(next.message);
         }
       } finally {
         setSending((current) => {
-          if (current.get(submittedFor) !== request) return current;
+          if (current.get(submittedFor)?.request !== request) return current;
           const next = new Map(current);
           next.delete(submittedFor);
           return next;
         });
-        // Released on both paths so a failed scan can be retried. A latch that
-        // stayed closed after an error would strand the member on a dead screen.
+        // Released on every path, so a refused check-in can be tried again.
         latch.release();
       }
     },
@@ -519,84 +430,78 @@ export default function CheckInScreen() {
       event,
       eventId,
       latchFor,
+      needsLocation,
       refetchOwnRow,
-      resolveLocation,
       sendCheckIn,
+      warmFix,
     ],
   );
 
-  const handleBarcode = useCallback(
-    (result: { data?: string }) => {
-      const raw = result?.data ?? "";
-      const parsed = parseCheckInCode(raw);
-      // Not one of our codes: drop it without latching, so the camera stays
-      // live for the real one. A poster in frame must not block the scan.
-      if (!parsed) return;
-
-      if (parsed.eventId !== eventId) {
-        // Report a foreign code once, not once per frame. `onBarcodeScanned`
-        // fires continuously while a code is held in view, so an unconditional
-        // `setStatus` here re-renders at camera frame rate for as long as the
-        // wrong code is on screen. Remembering the last one reported collapses
-        // that to a single message while still reacting to a *different* wrong
-        // code. Deliberately not the scan latch: that one gates in-flight
-        // submissions, and borrowing it here would block the real code.
-        if (reportedForeignRef.current !== raw) {
-          reportedForeignRef.current = raw;
-          setStatus({
-            kind: "error",
-            message: "That code is for a different event.",
-            attemptOnly: true,
-            foreign: true,
-          });
-        }
-        return;
-      }
-
-      // The manual field is gated a few lines below; the scan has to be too.
-      // A scan submits immediately, so without this a member at the door with
-      // no signal gets a spinner that never resolves and a decoder that has
-      // already been switched off. Checked before `submit` claims the latch:
-      // a claim with no request behind it would never be released, and the
-      // scanner would drop every code after the member reconnected.
-      if (writeBlockedReasonRef.current !== null) return;
-      void submit({ token: parsed.token }, raw);
-    },
-    [eventId, submit],
-  );
-
+  /**
+   * A link's token is sent once, as soon as the event has loaded and the
+   * phone is online. Remembered per token, so coming back to the screen, or
+   * a re-render, never sends the same scan twice; a new scan is a new token.
+   * A link that arrives while this event's check-in is still under way waits
+   * for it, rather than being marked sent and dropped by the latch.
+   */
+  const sentTokensRef = useRef(new Set<string>());
   useEffect(() => {
-    if (!cameraPermission || cameraPermission.granted) return;
-    if (!cameraPermission.canAskAgain) return;
-    void requestCameraPermission();
-  }, [cameraPermission, requestCameraPermission]);
+    if (!linkToken || !eventLoaded || writeBlockedReason !== null) return;
+    if (sendingHere) return;
+    const key = `${eventId}:${linkToken}`;
+    if (sentTokensRef.current.has(key)) return;
+    sentTokensRef.current.add(key);
+    void submit({ token: linkToken }, linkToken);
+  }, [eventId, eventLoaded, linkToken, sendingHere, submit, writeBlockedReason]);
 
-  // Gated on this event's own state only: a check-in on its way for another
-  // event leaves both armed (see `sending`).
-  const scanning =
-    eventLoaded &&
-    !manualOpen &&
-    !sendingHere &&
-    status.kind !== "success" &&
-    status.kind !== "blocked";
+  /** Send the last check-in again (after Settings, or Try again). */
+  const retry = useCallback(() => {
+    const last = lastAttemptRef.current;
+    if (!last || last.eventId !== eventIdRef.current) return;
+    void submit(
+      last.payload,
+      last.payload.token ?? last.payload.manualCode ?? "",
+    );
+  }, [submit]);
+
+  /**
+   * Back from Settings: try again on its own, so allowing location is the
+   * member's last step rather than a tap on a button they have to find again.
+   */
+  const awaitingSettingsRef = useRef(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || !awaitingSettingsRef.current) return;
+      awaitingSettingsRef.current = false;
+      retry();
+    });
+    return () => subscription.remove();
+  }, [retry]);
+
+  const runLocationAction = (blocker: LocationBlocker) => {
+    const { action } = locationBlockerCopy(blocker);
+    if (action === "settings") {
+      awaitingSettingsRef.current = true;
+      void Linking.openSettings();
+      return;
+    }
+    if (action === "turn_on") {
+      // Google's dialog again; accepted, the check-in goes.
+      Location.enableNetworkProviderAsync().then(retry, () => undefined);
+      return;
+    }
+    retry();
+  };
 
   const manualSubmitDisabled =
     !eventLoaded ||
     !isPlausibleManualCode(manualCode) ||
     writeBlockedReason !== null ||
-    sendingHere ||
+    sendingHere !== null ||
     status.kind === "blocked";
 
   const openManual = () => {
-    // The sheet shows only lines that stay true of the code the member is
-    // about to type. A line about the last attempt (`attemptOnly`: the
-    // scanned code was refused as stale, malformed or another event's, or
-    // the request may go through if sent again) says nothing about a fresh
-    // code, so it clears. A line about the member or the environment stays:
-    // where they are (the zone, their location), that they're already
-    // checked in here, that check-in codes aren't set up here, or a refusal
-    // that is why the sheet's button is off. The screen already dropped
-    // whatever belonged to an earlier event (`shownEventId`).
+    // A line about the last attempt says nothing about a fresh code.
     setStatus((current) =>
       current.kind === "error" && current.attemptOnly
         ? { kind: "idle" }
@@ -613,18 +518,11 @@ export default function CheckInScreen() {
     ...(writeBlockedReason ? [writeBlockedReason] : []),
   ];
 
-  const cameraGranted = cameraPermission?.granted ?? false;
-
   /**
-   * Where ✕ and "Back to event" go: the event's detail, whose Scan QR button
-   * is the one way into this screen in the app, or Events when there is no
-   * event. When that detail is the screen under this one, they pop to it, as
-   * the edge swipe and Android's back do (`spec/ui/mobile/navigation.md`
-   * § Going back). Anything else under it (a `frapp://` link opened over the
-   * tabs) gets the fixed destination, so "Back to event" still lands on the
-   * event: popped down to (`dismissTo`), which takes this screen's place
-   * rather than going on top of it, so the swipe from there doesn't come back
-   * here.
+   * Where ✕ and "Back to event" go: the event's detail, popped to when it is
+   * the screen underneath (`spec/ui/mobile/navigation.md` § Going back), else
+   * put in this screen's place, so a link opened from the camera lands on the
+   * event rather than back here.
    */
   const leaveTo = (toEventId: string) => {
     if (below?.name === "event-details") {
@@ -638,6 +536,12 @@ export default function CheckInScreen() {
       router.dismissTo("/events");
     }
   };
+
+  const zoneLine = needsLocation
+    ? event?.check_in_zone_name
+      ? `You must be inside the ${event.check_in_zone_name} zone.`
+      : "You must be at the event location."
+    : null;
 
   return (
     <SafeAreaView
@@ -656,14 +560,11 @@ export default function CheckInScreen() {
       </View>
 
       {/*
-        The success panel's live region is mounted for the whole visit, empty
-        until a check-in lands, and the panel fills it. TalkBack announces a
-        change inside a live region it already knows; a region that mounts
-        with its content already in it isn't reliably read out, and Android
-        hears the success only through this. `collapsable={false}` keeps it a
-        real Android view: a View that only lays out is flattened away by the
-        renderer, and its live region with it. Empty, it draws nothing and
-        takes no space.
+        Mounted for the whole visit and filled when a check-in lands: TalkBack
+        announces a change inside a live region it already knows, and a
+        region that mounts with its content in it isn't reliably read out.
+        `collapsable={false}` keeps it a real Android view. Empty, it draws
+        nothing.
       */}
       <View
         accessibilityLiveRegion="polite"
@@ -697,28 +598,28 @@ export default function CheckInScreen() {
       </View>
 
       {status.kind === "success" ? (
-        <View style={styles.successFooter}>
+        <View style={styles.footer}>
           <Pressable
             accessibilityRole="button"
             onPress={() => leaveTo(status.eventId)}
             style={({ pressed }) => [
-              styles.doneButton,
+              styles.primaryButton,
               { backgroundColor: accentPrimary },
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={[styles.doneText, { color: accentOnPrimary }]}>
+            <Text style={[styles.primaryText, { color: accentOnPrimary }]}>
               Back to event
             </Text>
           </Pressable>
         </View>
       ) : !eventId ? (
         <View style={styles.stateWrap}>
-          <InlineNote>Open an event, then tap Scan QR to check in.</InlineNote>
+          <InlineNote>
+            Point your phone&apos;s camera at the check-in code to check in.
+          </InlineNote>
         </View>
       ) : !eventLoaded && eventQuery.isError ? (
-        // Nothing can be sent without the event (see `eventLoaded`), so a
-        // scanner here would be dead with nothing saying why.
         <View style={styles.stateWrap}>
           <ErrorState
             title="Event didn't load"
@@ -727,67 +628,65 @@ export default function CheckInScreen() {
             isRetrying={eventQuery.isFetching}
           />
         </View>
+      ) : status.kind === "location" ? (
+        <LocationState
+          blocker={status.blocker}
+          zoneLine={zoneLine}
+          busy={sendingHere !== null}
+          onAction={() => runLocationAction(status.blocker)}
+          onManual={openManual}
+          styles={styles}
+          glyphColor={tokens.color.text.mutedForeground}
+          accentPrimary={accentPrimary}
+          accentOnPrimary={accentOnPrimary}
+        />
       ) : (
         <>
           <View style={styles.body}>
-            <Text style={styles.prompt}>Point at the code up front</Text>
-
-            <View style={styles.frame}>
-              <View style={styles.viewport}>
-                {!cameraGranted ? (
-                  <View style={styles.cameraFallback}>
-                    <Text style={styles.fallbackTitle}>Camera unavailable</Text>
-                    <Text style={styles.fallbackBody}>
-                      {cameraPermission && !cameraPermission.canAskAgain
-                        ? "Allow camera access in Settings, or enter the code manually."
-                        : "Allow camera access, or enter the code manually."}
-                    </Text>
-                  </View>
-                ) : focused ? (
-                  <CameraView
-                    style={styles.camera}
-                    facing="back"
-                    enableTorch={torchOn}
-                    // Only QR: narrowing the symbologies keeps the decoder off
-                    // every barcode in the room.
-                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                    onBarcodeScanned={scanning ? handleBarcode : undefined}
-                  />
-                ) : null}
-              </View>
-              <View style={[styles.bracket, styles.bracketTopLeft]} />
-              <View style={[styles.bracket, styles.bracketTopRight]} />
-              <View style={[styles.bracket, styles.bracketBottomLeft]} />
-              <View style={[styles.bracket, styles.bracketBottomRight]} />
-            </View>
-
-            {/*
-              The zone, and only when there is one. `check_in_zone_name` is what
-              makes the drawn "Great Hall" possible.
-            */}
-            {needsLocation ? (
-              <View style={styles.zonePill}>
-                <Text style={styles.zoneText}>
-                  {event?.check_in_zone_name
-                    ? `You must be inside the ${event.check_in_zone_name} zone.`
-                    : "You must be at the event location."}
-                </Text>
-              </View>
-            ) : null}
-
-            <Text style={styles.hint}>
-              {needsLocation
-                ? "Code rotates every 30s. Your location is the real check — screenshots don't work."
-                : "Scan from the room where the code is shown."}
+            {linkToken ? null : (
+              <CameraGlyph color={tokens.color.text.mutedForeground} />
+            )}
+            <Text style={styles.title}>
+              {linkToken
+                ? (event?.name ?? "Check in")
+                : "Point your camera at the code"}
             </Text>
+            {linkToken ? null : (
+              <Text style={styles.bodyText}>
+                Open your phone&apos;s Camera, point it at the code on the
+                officer&apos;s screen, and tap the Frapp link that appears.
+              </Text>
+            )}
+            {zoneLine ? <Text style={styles.hint}>{zoneLine}</Text> : null}
 
+            {/* One muted line, no spinner, nothing that moves the layout. */}
             {sendingHere ? (
-              <View style={styles.statusRow}>
-                <ActivityIndicator color={tokens.color.text.muted} />
-                <Text style={styles.statusText}>Checking you in…</Text>
-              </View>
+              <Text style={styles.statusText}>
+                {sendingHere.phase === "locating"
+                  ? "Finding your location…"
+                  : "Checking you in…"}
+              </Text>
+            ) : linkToken && !eventLoaded ? (
+              <Text style={styles.statusText}>Checking you in…</Text>
             ) : status.kind === "error" || status.kind === "blocked" ? (
               <Text style={styles.error}>{status.message}</Text>
+            ) : null}
+
+            {/* A check-in that failed on the way (offline, a timeout, a 5xx)
+                can be sent again while its code is still good; a code the
+                server called stale can't, so it says to scan again. */}
+            {status.kind === "error" && status.retryable && !sendingHere ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={retry}
+                hitSlop={tokens.spacing.sm}
+                style={({ pressed }) => [
+                  styles.manualLink,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.manualLinkText}>Try again</Text>
+              </Pressable>
             ) : null}
 
             {/* Stated, not just implied by a greyed button
@@ -807,49 +706,15 @@ export default function CheckInScreen() {
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text style={styles.manualLinkText}>Enter code manually</Text>
+              <Text style={styles.manualLinkText}>Enter code instead</Text>
             </Pressable>
-            {cameraGranted ? (
-              <Pressable
-                accessibilityRole="switch"
-                accessibilityLabel="Flashlight"
-                accessibilityState={{ checked: torchOn }}
-                onPress={() => setTorchOn((on) => !on)}
-                style={({ pressed }) => [
-                  styles.torch,
-                  torchOn ? styles.torchOn : null,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                {/* One shape in both states: the state recolours it
-                    (iconography.md §1), it never swaps to a filled variant.
-                    Off is the neutral row (white at 6% under the muted
-                    stroke), on is the accent at 16%. */}
-                <Svg
-                  width={TORCH_GLYPH_SIZE}
-                  height={TORCH_GLYPH_SIZE}
-                  viewBox="0 0 24 24"
-                >
-                  <Path
-                    d="M13 3L5 13h5l-1 8 8-10h-5z"
-                    fill={torchOn ? tint(accent, 0.16) : TORCH_OFF_FILL}
-                    stroke={
-                      torchOn ? accent : tokens.color.text.mutedForeground
-                    }
-                    strokeWidth={1.6}
-                    strokeLinejoin="round"
-                  />
-                </Svg>
-              </Pressable>
-            ) : null}
           </View>
         </>
       )}
 
-      {/* Mounted for the whole visit, not inside the scanner branch: a typed
-          code's success swaps the scanner for the panel while the sheet is
-          still closing, and a modal unmounted mid-dismiss leaves
-          `useSheetVisit` believing it is still up. */}
+      {/* Mounted for the whole visit: a typed code's success swaps the body
+          while the sheet is still closing, and a modal unmounted mid-dismiss
+          leaves `useSheetVisit` believing it is still up. */}
       {eventId ? (
         <ManualCodeSheet
           ref={sheetRef}
@@ -859,8 +724,8 @@ export default function CheckInScreen() {
           // disables the control; `submit`'s latch claim drops it.
           onSubmit={() => void submit({ manualCode }, manualCode)}
           submitDisabled={manualSubmitDisabled}
-          submitting={sendingHere}
-          notices={manualNotices}
+          submitting={sendingHere !== null}
+          notices={manualOpen ? manualNotices : []}
           accessibilityHint={writeBlockedReason ?? undefined}
           onAnimate={sheet.onAnimate}
           onDismiss={() => {
@@ -874,11 +739,129 @@ export default function CheckInScreen() {
   );
 }
 
+/**
+ * What stands between the member and a located check-in, and the one thing
+ * that fixes it: Android's turn-on dialog, Settings, or asking again.
+ */
+function LocationState({
+  blocker,
+  zoneLine,
+  busy,
+  onAction,
+  onManual,
+  styles,
+  glyphColor,
+  accentPrimary,
+  accentOnPrimary,
+}: {
+  blocker: LocationBlocker;
+  zoneLine: string | null;
+  busy: boolean;
+  onAction: () => void;
+  onManual: () => void;
+  styles: ReturnType<typeof createStyles>;
+  glyphColor: string;
+  accentPrimary: string;
+  accentOnPrimary: string;
+}) {
+  const copy = locationBlockerCopy(blocker);
+  return (
+    <>
+      <View style={styles.body}>
+        <LocationGlyph color={glyphColor} />
+        <Text style={styles.title}>{copy.title}</Text>
+        <Text style={styles.bodyText}>{copy.body}</Text>
+        {zoneLine ? <Text style={styles.hint}>{zoneLine}</Text> : null}
+      </View>
+      <View style={styles.footer}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onAction}
+          disabled={busy}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: accentPrimary },
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={[styles.primaryText, { color: accentOnPrimary }]}>
+            {busy ? "Checking you in…" : copy.actionLabel}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onManual}
+          style={({ pressed }) => [
+            styles.manualLink,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.manualLinkText}>Enter code instead</Text>
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+/** A phone camera, in the app's line-glyph style (iconography.md §1). */
+function CameraGlyph({ color }: { color: string }) {
+  return (
+    <Svg
+      width={STATE_GLYPH_SIZE}
+      height={STATE_GLYPH_SIZE}
+      viewBox="0 0 24 24"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Path
+        d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.3-2h6l1.3 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinejoin="round"
+      />
+      <Circle
+        cx={12}
+        cy={13}
+        r={3.2}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+      />
+    </Svg>
+  );
+}
+
+/** A location pin, for the state that asks for location. */
+function LocationGlyph({ color }: { color: string }) {
+  return (
+    <Svg
+      width={STATE_GLYPH_SIZE}
+      height={STATE_GLYPH_SIZE}
+      viewBox="0 0 24 24"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Path
+        d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinejoin="round"
+      />
+      <Circle
+        cx={12}
+        cy={10}
+        r={2.2}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+      />
+    </Svg>
+  );
+}
+
 function createStyles(tokens: SignetTokens, accent: string) {
-  const bracketEdge = {
-    borderColor: tokens.color.text.foreground,
-    width: BRACKET_SIZE,
-  } as const;
   return StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -906,98 +889,14 @@ function createStyles(tokens: SignetTokens, accent: string) {
       paddingHorizontal: tokens.spacing["2xl"],
       gap: tokens.spacing.md,
     },
-    prompt: {
+    title: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.headline),
+      textAlign: "center",
+    },
+    bodyText: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
-      textAlign: "center",
-    },
-    // A square as wide as the screen allows, up to a size that still leaves
-    // the hint and the footer on a short phone. The board's 240 sits inside
-    // this range on its 402pt frame.
-    frame: {
-      width: "100%",
-      maxWidth: 280,
-      aspectRatio: 1,
-      marginTop: tokens.spacing.sm,
-    },
-    viewport: {
-      position: "absolute",
-      top: VIEWPORT_INSET,
-      right: VIEWPORT_INSET,
-      bottom: VIEWPORT_INSET,
-      left: VIEWPORT_INSET,
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.surface.surface1,
-      overflow: "hidden",
-    },
-    camera: {
-      flex: 1,
-    },
-    cameraFallback: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      padding: tokens.spacing.md,
-      gap: tokens.spacing.xs,
-    },
-    fallbackTitle: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-      textAlign: "center",
-    },
-    fallbackBody: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.caption),
-      textAlign: "center",
-    },
-    bracket: {
-      position: "absolute",
-      height: BRACKET_SIZE,
-    },
-    bracketTopLeft: {
-      ...bracketEdge,
-      top: 0,
-      left: 0,
-      borderTopWidth: BRACKET_STROKE,
-      borderLeftWidth: BRACKET_STROKE,
-      borderTopLeftRadius: tokens.radius.chipLarge,
-    },
-    bracketTopRight: {
-      ...bracketEdge,
-      top: 0,
-      right: 0,
-      borderTopWidth: BRACKET_STROKE,
-      borderRightWidth: BRACKET_STROKE,
-      borderTopRightRadius: tokens.radius.chipLarge,
-    },
-    bracketBottomLeft: {
-      ...bracketEdge,
-      bottom: 0,
-      left: 0,
-      borderBottomWidth: BRACKET_STROKE,
-      borderLeftWidth: BRACKET_STROKE,
-      borderBottomLeftRadius: tokens.radius.chipLarge,
-    },
-    bracketBottomRight: {
-      ...bracketEdge,
-      bottom: 0,
-      right: 0,
-      borderBottomWidth: BRACKET_STROKE,
-      borderRightWidth: BRACKET_STROKE,
-      borderBottomRightRadius: tokens.radius.chipLarge,
-    },
-    zonePill: {
-      marginTop: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-    },
-    zoneText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
       textAlign: "center",
     },
     hint: {
@@ -1005,15 +904,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.caption),
       textAlign: "center",
     },
-    statusRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: tokens.spacing.sm,
-    },
     statusText: {
-      color: tokens.color.text.mutedForeground,
+      color: tokens.color.text.muted,
       ...typeRole(tokens.typography.role.body),
+      textAlign: "center",
     },
     error: {
       color: tokens.color.semantic.destructive,
@@ -1021,34 +915,18 @@ function createStyles(tokens: SignetTokens, accent: string) {
       textAlign: "center",
     },
     footer: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: tokens.spacing["2xl"],
+      paddingHorizontal: tokens.spacing.xl,
       paddingBottom: tokens.spacing.xl,
-      minHeight: tokens.touch.minimum,
+      gap: tokens.spacing.sm,
     },
     manualLink: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
+      alignItems: "center",
     },
     manualLinkText: {
       color: accent,
       ...typeRole(tokens.typography.role.label),
-    },
-    torch: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.touch.minimum / 2,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.card,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    torchOn: {
-      borderColor: tint(accent, 0.3),
-      backgroundColor: tint(accent),
     },
     successBody: {
       flex: 1,
@@ -1058,10 +936,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
     successContent: {
       alignItems: "center",
       gap: tokens.spacing.sm,
-    },
-    successFooter: {
-      paddingHorizontal: tokens.spacing.xl,
-      paddingBottom: tokens.spacing.xl,
     },
     successMark: {
       width: SUCCESS_MARK_SIZE,
@@ -1091,13 +965,13 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.body),
       textAlign: "center",
     },
-    doneButton: {
+    primaryButton: {
       minHeight: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
     },
-    doneText: {
+    primaryText: {
       ...typeRole(tokens.typography.role.label),
     },
     pressed: {

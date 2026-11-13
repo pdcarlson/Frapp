@@ -841,7 +841,7 @@ export function MessageItem({
         {edited ? <span>{EDITED_MARKER}</span> : null}
         {pinned ? (
           <span className="inline-flex items-center gap-1">
-            <PinGlyph className="h-3.5 w-3.5" />
+            <PinGlyph className="h-3.5 w-3.5" active />
             Pinned
           </span>
         ) : null}

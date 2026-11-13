@@ -137,6 +137,22 @@ export class CorpusRetrievalService {
     private readonly gateway: AiGatewayService,
   ) {}
 
+  /**
+   * Of these sources (ids in their own table, such as a meeting's), the ones
+   * a search of this chapter can find right now: the index holds a revision
+   * of them. No model call. For a caller that must not point a member at
+   * something Ask cannot read yet (#4700).
+   */
+  async indexedAmong(
+    chapterId: string,
+    sourceType: string,
+    sourceIds: readonly string[],
+  ): Promise<Set<string>> {
+    return new Set(
+      await this.corpus.indexedSourceIds(chapterId, sourceType, sourceIds),
+    );
+  }
+
   async retrieve(
     request: CorpusRetrievalRequest,
     now = new Date(),

@@ -69,7 +69,7 @@ import {
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
-import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import {
   DETAIL_LIST,
   DetailRow,
@@ -199,20 +199,35 @@ type MemberDetailSheetProps = {
  * One role the officer can tick. The row is the role's name alone: its id and
  * key are the system's words, never the chapter's (principles.md P2.2).
  */
+/** Mobile's words for a locked row (`apps/mobile/lib/directory/role-editor.ts`). */
+const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";
+
 function RoleChecklistItem({
   title,
+  caption,
   checked,
   disabled,
   onChange,
 }: {
   title: string;
+  caption?: string;
   checked: boolean;
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-card-hover">
-      <p className="text-sm font-semibold">{title}</p>
+    <label
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-md border border-border p-3 transition-colors",
+        disabled ? "cursor-default" : "cursor-pointer hover:bg-card-hover",
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{title}</p>
+        {caption ? (
+          <p className="text-caption text-muted-foreground">{caption}</p>
+        ) : null}
+      </div>
       <input
         type="checkbox"
         className={dashboardTableCheckboxClassName}
@@ -377,9 +392,16 @@ export function MemberDetailSheet({
     rolesQuery.data === undefined &&
     memberRoleIds.length > 0;
 
-  const roleOptions = useMemo(
-    () => normalizeRoleOptions(rolesQuery.data),
+  const roles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
     [rolesQuery.data],
+  );
+  // The Everyone role (#4191) is no row. A locked role (one holding `*`,
+  // President above all) is a row nobody ticks here: the API refuses to move
+  // it, so it changes hands only through Transfer presidency, as on mobile.
+  const roleOptions = useMemo(
+    () => roles.filter((role) => !role.everyone),
+    [roles],
   );
 
   // `memberLabel`, the helper the directory row uses: this sheet opens from
@@ -465,12 +487,8 @@ export function MemberDetailSheet({
     if (
       removesMemberAccess(
         memberRoleIds,
-        rolesAfterSave(
-          selectedRoleIds,
-          memberRoleIds,
-          roleAccessRows(rolesQuery.data),
-        ),
-        memberAccessRoleIds(roleAccessRows(rolesQuery.data)),
+        rolesAfterSave(selectedRoleIds, memberRoleIds, roles),
+        memberAccessRoleIds(roles),
       )
     ) {
       const confirmed = await confirm({
@@ -784,8 +802,9 @@ export function MemberDetailSheet({
                       <RoleChecklistItem
                         key={role.id}
                         title={role.name}
+                        caption={role.locked ? ROLES_LOCKED_CAPTION : undefined}
                         checked={selectedRoleIds.includes(role.id)}
-                        disabled={updateRolesMutation.isPending}
+                        disabled={updateRolesMutation.isPending || role.locked}
                         onChange={(isChecked) =>
                           toggleSelection(
                             setSelectedRoleIds,

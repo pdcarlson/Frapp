@@ -187,7 +187,7 @@ export const EVENT_CREATE_PERMISSIONS = [
  * role whose permissions grant `members:view` (so `*` counts). The seeded flag
  * doesn't count on its own, because a seeded role's permissions are editable.
  * Web's member sheet calls it with the chapter's roles; mobile's roles sheet
- * calls it per role (`parseRoleOptions`). `transfer_presidency` applies the
+ * reads it per role (`parseChapterRoles` in `@repo/hooks`). `transfer_presidency` applies the
  * same rule in SQL.
  */
 export function memberAccessRoleIds(
@@ -213,6 +213,7 @@ export function removesMemberAccess(
   after: readonly string[],
   accessIds: ReadonlySet<string>,
 ): boolean {
-  const grants = (ids: readonly string[]) => ids.some((id) => accessIds.has(id));
+  const grants = (ids: readonly string[]) =>
+    ids.some((id) => accessIds.has(id));
   return grants(before) && !grants(after);
 }

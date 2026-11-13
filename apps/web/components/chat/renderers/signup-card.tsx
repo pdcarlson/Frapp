@@ -148,15 +148,13 @@ export function SignupCard({
   };
 
   return (
-    <Card
-      className={cn(MESSAGE_CARD, "w-full min-w-[min(20rem,100%)] max-w-md")}
-    >
+    <Card className={MESSAGE_CARD}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>
         {signupCardEyebrow(payload, tally, now)}
       </p>
       <div className="mt-2 text-base font-bold">{payload.title}</div>
       {payload.note ? (
-        <p className="mt-1 whitespace-pre-wrap text-caption text-muted-foreground">
+        <p className="mt-2 whitespace-pre-wrap text-caption text-muted-foreground">
           {payload.note}
         </p>
       ) : null}

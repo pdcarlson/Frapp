@@ -7,8 +7,6 @@ import {
   EyeOff,
   Link2,
   Pencil,
-  Pin,
-  PinOff,
   Trash2,
 } from "lucide-react";
 import {
@@ -24,6 +22,7 @@ import {
   type ChannelRowActionKey,
   type ChatNotificationLevel,
 } from "@repo/hooks";
+import { PinGlyph } from "@/components/chat/chat-glyphs";
 import { EDIT_CHANNEL_LABEL } from "@repo/hooks/channel-start";
 import {
   ContextMenu,
@@ -150,11 +149,9 @@ export function ChannelRowMenu({
       case "toggle-pin":
         return (
           <ContextMenuItem key={key} onSelect={onTogglePin}>
-            {pinned ? (
-              <PinOff aria-hidden="true" />
-            ) : (
-              <Pin aria-hidden="true" />
-            )}
+            {/* Chat's pin, solid while pinned, as the channel menu draws it
+                (iconography.md §6.2.2, #4292). */}
+            <PinGlyph active={pinned === true} />
             {pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}
           </ContextMenuItem>
         );

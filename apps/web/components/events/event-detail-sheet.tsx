@@ -48,11 +48,11 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
-import { MyCheckIn } from "@/components/events/my-check-in";
+import { checkInZoneState, MyCheckIn } from "@/components/events/my-check-in";
 import { ExcuseReview, MyExcuse } from "@/components/events/event-excuses";
 import { Can } from "@/components/shared/can";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { cn, getErrorMessage } from "@/lib/utils";
@@ -241,33 +241,11 @@ export function EventDetailSheet({
       : "";
   const notes =
     typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
-  // Three distinct states, not two. A non-empty polygon with fewer than 3 valid
-  // points is not "no zone": `isValidZone` fails closed on the server, so
-  // check-in is rejected outright. Rendering that as "check in from anywhere"
-  // would tell an officer the opposite of what members experience.
-  const checkInZoneEntries = Array.isArray(resolvedEvent?.check_in_zone)
-    ? resolvedEvent.check_in_zone
-    : [];
-  const checkInZonePoints = checkInZoneEntries.filter((point) => {
-    if (!point || typeof point !== "object") return false;
-    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
-    return (
-      typeof lat === "number" &&
-      Number.isFinite(lat) &&
-      typeof lng === "number" &&
-      Number.isFinite(lng)
-    );
-  }).length;
-  // Mirrors `isValidZone` on the server, which requires **every** entry to be a
-  // finite pair — not merely three of them. A 5-entry zone with 2 bad points
-  // fails there and rejects every check-in, so reporting the 3 good ones as a
-  // working zone would recreate the exact misdirection this block exists to
-  // prevent.
-  const hasCheckInZone =
-    checkInZoneEntries.length >= 3 &&
-    checkInZonePoints === checkInZoneEntries.length;
-  const checkInZoneIsMalformed =
-    checkInZoneEntries.length > 0 && !hasCheckInZone;
+  // Three states, not two (`checkInZoneState`): a zone with a bad point
+  // refuses every check-in, which is not "no zone".
+  const zoneState = checkInZoneState(resolvedEvent?.check_in_zone);
+  const hasCheckInZone = zoneState === "zone";
+  const checkInZoneIsMalformed = zoneState === "malformed";
   const checkInZoneName =
     typeof resolvedEvent?.check_in_zone_name === "string"
       ? resolvedEvent.check_in_zone_name.trim()
@@ -276,7 +254,7 @@ export function EventDetailSheet({
   const roleNameById = useMemo(
     () =>
       new Map(
-        normalizeRoleOptions(rolesQuery.data, "keep").map((role) => [
+        toRoleOptions(rolesQuery.data, "keep").map((role) => [
           role.id,
           role.name,
         ]),
@@ -442,13 +420,7 @@ export function EventDetailSheet({
                 opensMinutes={resolvedEvent?.check_in_opens_minutes}
                 pointValue={resolvedEvent?.point_value}
                 eventUnavailable={eventUnavailable}
-                zone={
-                  hasCheckInZone
-                    ? "zone"
-                    : checkInZoneIsMalformed
-                      ? "malformed"
-                      : "none"
-                }
+                zone={zoneState}
               />
             ) : null}
             {/* Keyed by event: the sheet switches series occurrences in

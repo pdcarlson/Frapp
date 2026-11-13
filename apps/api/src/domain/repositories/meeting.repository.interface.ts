@@ -24,6 +24,16 @@ export interface IMeetingRepository {
   /** The chapter's minutes, newest meeting first, at most `limit`. */
   findByChapter(chapterId: string, limit: number): Promise<Meeting[]>;
   /**
+   * Posted minutes for meetings held at or after `since`, newest meeting
+   * first, at most `limit`: a narrow read for a caller that wants only the
+   * latest few.
+   */
+  findPostedSince(
+    chapterId: string,
+    since: string,
+    limit: number,
+  ): Promise<Meeting[]>;
+  /**
    * Resolves to `null` when the event already has minutes (the unique index
    * on `event_id` won), so the caller can answer with the ones that exist.
    */

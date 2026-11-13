@@ -73,6 +73,13 @@ try {
     "a chapter can't have two types of the same name, ignoring case and spaces",
   ]);
 
+  checks.push([
+    await rejects(
+      `insert into event_types (chapter_id, name, position) values ('${CH_A}', E'\\t\\n ', 9);`,
+    ),
+    "a type name of only whitespace is refused (#4756)",
+  ]);
+
   const otherType = await typeId(CH_B, "Brotherhood");
   checks.push([
     await rejects(
