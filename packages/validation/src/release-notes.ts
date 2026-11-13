@@ -151,6 +151,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp now knows who is asking, so \"me\" and \"my\" mean you, and its answers are shorter and in its own words.",
       "An answer from @Frapp in a channel can be posted for everyone there with Post for everyone here, after Frapp tells you which of its sources not everyone can open.",
       "A forward you saved with no comment now shows what was forwarded in Saved messages.",
+      "On a required event, Can't make it is now a quiet link instead of a big button, on the event page and on its chat card.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -171,6 +172,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
       "You can clear a notification with the x that shows when you hover over it.",
       "After you link or unlink your Discord account, an open chat now shows your imported messages under the right name without a reload.",
+      "The search field at the top now asks Frapp too: type a question, press Enter, and the answer opens right there, from any page.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -198,6 +200,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
       "Long-press a message and tap Forward to send it to another channel or a direct message, with a note of your own if you like.",
       "On Android, pointing your camera at a check-in code now opens Frapp straight to the check-in, the way it already did on iPhone.",
+      "You can also check in without leaving Frapp: tap Scan code on the event and point it at the officer's code.",
+      "The Ask Frapp bar searches too: type a few letters to jump to a channel, member, message or event, or send a question as before.",
     ],
   },
   {
