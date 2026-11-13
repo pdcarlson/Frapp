@@ -1,5 +1,6 @@
 import {
   CHECK_IN_TOKEN_WINDOW_MS,
+  LOCATED_TOKEN_PREVIOUS_WINDOWS,
   checkInManualCode,
   currentCheckInWindow,
   mintCheckInToken,
@@ -69,28 +70,31 @@ describe('verifyCheckInToken', () => {
     ).toBe(true);
   });
 
-  it('accepts a token three windows old: a camera banner, an app launch and a location prompt sit between the scan and the request', () => {
+  it('accepts a token three windows old when the check-in is located too: a camera banner, an app launch and a location prompt sit between the scan and the request', () => {
     const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
-    expect(
+    const at = (windows: number) =>
       verifyCheckInToken(
         token,
         EVENT,
         SECRET,
-        NOW + 3 * CHECK_IN_TOKEN_WINDOW_MS,
-      ),
-    ).toBe(true);
+        NOW + windows * CHECK_IN_TOKEN_WINDOW_MS,
+        LOCATED_TOKEN_PREVIOUS_WINDOWS,
+      );
+    expect(at(3)).toBe(true);
+    expect(at(4)).toBe(false);
   });
 
-  it('rejects a token four windows old', () => {
+  it('keeps one spare window when nothing checks where the member is, where the token is the only proof', () => {
     const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
-    expect(
+    const at = (windows: number) =>
       verifyCheckInToken(
         token,
         EVENT,
         SECRET,
-        NOW + 4 * CHECK_IN_TOKEN_WINDOW_MS,
-      ),
-    ).toBe(false);
+        NOW + windows * CHECK_IN_TOKEN_WINDOW_MS,
+      );
+    expect(at(1)).toBe(true);
+    expect(at(2)).toBe(false);
   });
 
   it('rejects a token minted for a different event', () => {

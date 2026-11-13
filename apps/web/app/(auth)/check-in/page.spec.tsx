@@ -7,8 +7,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
  * with and without location, and a code that rotated out while they signed in.
  */
 
-const { checkInMutate, sessionUser, searchParams, device } = vi.hoisted(() => ({
+const { checkInMutate, ownRowRefetch, sessionUser, searchParams, device } = vi.hoisted(() => ({
   checkInMutate: vi.fn(),
+  ownRowRefetch: vi.fn(),
   sessionUser: vi.fn(),
   searchParams: { current: new URLSearchParams() },
   device: { phone: null as "ios" | "android" | null },
@@ -17,6 +18,7 @@ const { checkInMutate, sessionUser, searchParams, device } = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCheckIn: () => ({ mutateAsync: checkInMutate, isPending: false }),
+  useMyAttendance: () => ({ refetch: ownRowRefetch }),
 }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams.current,
@@ -70,6 +72,11 @@ const LINK = "event=ev-1&t=tok-abc";
 beforeEach(() => {
   checkInMutate.mockReset();
   checkInMutate.mockResolvedValue({});
+  ownRowRefetch.mockReset();
+  ownRowRefetch.mockResolvedValue({
+    isSuccess: true,
+    data: { attendance: { status: "PRESENT", check_in_time: null } },
+  });
   sessionUser.mockReset();
   sessionUser.mockResolvedValue({ id: "u-1", email: "brother@school.edu" });
   searchParams.current = new URLSearchParams(LINK);
@@ -218,6 +225,41 @@ describe("web check-in link page", () => {
     );
 
     expect(await screen.findByText("You're already checked in")).toBeTruthy();
+  });
+
+  it("says an officer's mark rather than checked in, when the row is one (#3703)", async () => {
+    checkInMutate.mockRejectedValueOnce({
+      statusCode: 409,
+      message: "Already checked in for this event",
+    });
+    ownRowRefetch.mockResolvedValueOnce({
+      isSuccess: true,
+      data: { attendance: { status: "EXCUSED", check_in_time: null } },
+    });
+    render(<CheckInPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Check in here" }),
+    );
+
+    expect(
+      await screen.findByText("An officer marked you excused for this event."),
+    ).toBeTruthy();
+    expect(screen.queryByText("You're already checked in")).toBeNull();
+  });
+
+  it("sends one check-in for a double tap", async () => {
+    let finish: (value: unknown) => void = () => {};
+    checkInMutate.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<CheckInPage />);
+
+    const button = await screen.findByRole("button", { name: "Check in here" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(checkInMutate).toHaveBeenCalledTimes(1));
+    finish({});
+    expect(await screen.findByText("You're checked in")).toBeTruthy();
+    expect(checkInMutate).toHaveBeenCalledTimes(1);
   });
 
   it("shows Checking in… while it works", async () => {

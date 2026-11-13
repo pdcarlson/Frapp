@@ -73,6 +73,21 @@ describe("getLiveSessionUser (#3776)", () => {
     });
   });
 
+  it("reports the page that asked, so a check-in link's failure isn't filed under /join", async () => {
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError(
+        "User from sub claim in JWT does not exist",
+        403,
+        "user_not_found",
+      ),
+    });
+    await expect(getLiveSessionUser("/check-in")).resolves.toBeNull();
+    expect(reportAuthFailure.mock.lastCall![0]).toMatchObject({
+      screen: "/check-in",
+    });
+  });
+
   it("throws on an Auth outage instead of signing anyone out", async () => {
     getUser.mockResolvedValue({
       data: { user: null },

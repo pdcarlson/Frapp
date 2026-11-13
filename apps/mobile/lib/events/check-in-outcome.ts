@@ -3,6 +3,10 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
 import {
+  CHECK_IN_CODE_REFUSED_MESSAGE,
+  CHECK_IN_NEEDS_LOCATION_MESSAGES,
+} from "@repo/validation";
+import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
@@ -61,32 +65,20 @@ export const CHECK_IN_LOCATION_DENIED_COPY =
   "This event checks you in by location. Allow location access to check in.";
 
 /**
- * The API's refusal of a scanned or typed code: stale, screenshotted, or
- * another event's. It carries no `code` (`@repo/api-sdk`'s `codeOf`), so the
- * message is what identifies it; a spec reads it from
- * `apps/api/src/application/services/attendance.service.ts` so the two can't
- * drift apart in silence.
+ * The API's refusal of a scanned or typed code, and its two refusals of a
+ * check-in with no location. One home in `@repo/validation`, which the web's
+ * check-in page reads too; this module's spec pins them to the API's source.
  */
-export const CHECK_IN_CODE_REFUSED_MESSAGE =
-  "That check-in code is not valid for this event, or it has expired";
+export { CHECK_IN_CODE_REFUSED_MESSAGE, CHECK_IN_NEEDS_LOCATION_MESSAGES };
 
 /**
  * The API's refusal of a check-in with no code once an officer's screen has
  * shown one for the event (#4532). The chat event card reads it to swap its
- * Check in for Scan code; a spec reads it from the API's source.
+ * Check in for Enter code; a spec reads it from the API's source.
  */
 export const CHECK_IN_NEEDS_CODE_MESSAGE =
   "Scan the code on the check-in screen with the Frapp app to check in";
 
-/**
- * The API's two refusals of a check-in that carried no location: near the
- * officer's screen (#4532) and inside a drawn zone. A spec reads both from the
- * API's source.
- */
-export const CHECK_IN_NEEDS_LOCATION_MESSAGES: readonly string[] = [
-  "This check-in needs your location. Allow location for Frapp and scan again.",
-  "This event checks you in by location — use the Frapp mobile app to check in.",
-];
 
 /** Whether a failed check-in was refused for carrying no location. */
 export function needsLocationRefusal(error: unknown): boolean {

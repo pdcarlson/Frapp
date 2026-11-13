@@ -32,6 +32,11 @@ import type { Event } from '#domain/entities/event.entity';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
 import { memberFixture } from '#test/helpers/entity-fixtures';
+import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
+
+jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
+  enqueueSanitizedLog: jest.fn(),
+}));
 
 describe('AttendanceService', () => {
   let service: AttendanceService;
@@ -1422,6 +1427,93 @@ describe('AttendanceService', () => {
           accuracyMeters: 20,
         }),
       ).resolves.toEqual(baseAttendance);
+    });
+
+    it('takes a link scanned 90 seconds back when a located screen checks where the member is', async () => {
+      // The camera banner, the app starting and a location prompt sit between
+      // the scan and the request (`check-in-token.ts`).
+      const scannedEarlier = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime() - 3 * CHECK_IN_TOKEN_WINDOW_MS,
+        'https://app.frapp.live',
+      ).token;
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: scannedEarlier,
+          ...north(30),
+          accuracyMeters: 20,
+        }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    it('keeps a link to one spare window when nothing checks where the member is', async () => {
+      // A screen that stored no location anchors nothing, so the token is the
+      // only proof: a forwarded link must not last two minutes.
+      const scannedEarlier = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime() - 2 * CHECK_IN_TOKEN_WINDOW_MS,
+        'https://app.frapp.live',
+      ).token;
+      mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token: scannedEarlier }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('logs why a check-in was refused, without where the member was', async () => {
+      const log = jest.mocked(enqueueSanitizedLog);
+      log.mockClear();
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token: freshToken() }),
+      ).rejects.toThrow(CHECK_IN_NEEDS_LOCATION);
+      expect(log).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          body: 'check_in_refused',
+          attributes: expect.objectContaining({
+            reason: 'needs_location',
+            has_code: true,
+            has_location: false,
+          }),
+        }),
+      );
+
+      const far = north(274);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          token: freshToken(),
+          ...far,
+          accuracyMeters: 20,
+        }),
+      ).rejects.toThrow(CHECK_IN_TOO_FAR);
+      const entry = log.mock.lastCall![0];
+      expect(entry.attributes).toMatchObject({
+        reason: 'too_far',
+        has_location: true,
+      });
+      const written = JSON.stringify(entry);
+      expect(written).not.toContain(String(far.lat));
+      expect(written).not.toContain('evt-1');
+      expect(written).not.toContain('user-1');
+    });
+
+    it('mints the QR as a check-in link on the configured dashboard origin', async () => {
+      const previous = process.env.APP_URL;
+      process.env.APP_URL = 'https://app.staging.frapp.live/';
+      try {
+        const minted = await service.mintCheckInToken('evt-1', 'ch-1');
+        expect(minted.qrPayload).toBe(
+          `https://app.staging.frapp.live/check-in?event=evt-1&t=${minted.token}`,
+        );
+      } finally {
+        if (previous === undefined) delete process.env.APP_URL;
+        else process.env.APP_URL = previous;
+      }
     });
 
     it('refuses a member 300 yards away holding a fresh code, before any write', async () => {

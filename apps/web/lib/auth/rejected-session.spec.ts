@@ -71,6 +71,7 @@ describe("leaveWhenSignedOutElsewhere", () => {
       ["/join", 0],
       ["/no-access", 0],
       ["/new-account", 0],
+      ["/check-in", 0],
     ] as const) {
       assign.mockClear();
       vi.stubGlobal("location", { pathname: path, assign });

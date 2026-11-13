@@ -561,6 +561,26 @@ describe("Check-in from the camera's link", () => {
     act(() => tree.unmount());
   });
 
+  it("sends a new scan that arrives while the last one is still under way, once it settles", async () => {
+    const answers = pendingCheckIns();
+    const tree = render();
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    moveTo(tree, "evt-1", "tok-2");
+    await settle();
+    // Not dropped by the latch: it waits.
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => answers[0]!.refuse(FAILED));
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(checkIn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ eventId: "evt-1", token: "tok-2" }),
+    );
+    act(() => tree.unmount());
+  });
+
   it("names the event while it checks in, with no camera instruction", async () => {
     pendingCheckIn();
     const tree = render();
@@ -1419,6 +1439,34 @@ describe("Check-in on an empty-bodied 5xx", () => {
       } finally {
         act(() => tree.unmount());
       }
+    }
+  });
+
+  it("offers Try again, which sends the scanned link once more", async () => {
+    // Re-tapping the camera's banner hands over the same link, which the
+    // screen sent once already, so the retry has to be on the screen.
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: undefined,
+        response: new Response(null, { status: 502 }),
+      })
+      .mockResolvedValueOnce({
+        data: {},
+        error: undefined,
+        response: new Response(null, { status: 201 }),
+      });
+    const tree = renderWithClient({ POST: post });
+    try {
+      await settle();
+      expect(post).toHaveBeenCalledTimes(1);
+      await press(tree, "Try again");
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(screenText(tree)).toContain("You're checked in");
+      expect(pressablesDrawing(tree, "Try again")).toHaveLength(0);
+    } finally {
+      act(() => tree.unmount());
     }
   });
 

@@ -77,7 +77,7 @@ export function openInAppUrl(platform: NativePlatform, token: string): string {
  * The one shape of a link into the app: `frapp://<route>` on iOS, Chrome's
  * `intent:` form naming the package on Android.
  */
-function appUrl(platform: NativePlatform, route: string): string {
+export function appUrl(platform: NativePlatform, route: string): string {
   if (platform === "android") {
     return `intent://${route}#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
   }

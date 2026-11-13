@@ -1,6 +1,10 @@
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { errorCopy } from "@repo/hooks";
-import type { NativePlatform } from "@repo/validation";
+import {
+  CHECK_IN_CODE_REFUSED_MESSAGE,
+  CHECK_IN_NEEDS_LOCATION_MESSAGES,
+  type NativePlatform,
+} from "@repo/validation";
 
 /**
  * Where the browser put this person, or why it couldn't say.
@@ -61,13 +65,6 @@ export function readBrowserLocation(): Promise<BrowserFix> {
   });
 }
 
-/** The API's refusal for a code that rotated out (`AttendanceService.checkIn`). */
-export const EXPIRED_CODE_SERVER_MESSAGE =
-  "That check-in code is not valid for this event, or it has expired";
-
-export const EXPIRED_CODE_COPY =
-  "That code has changed since you scanned it. Point your camera at the screen again.";
-
 /** What a refused check-in leaves the page saying. */
 export type CheckInFailure =
   /** The code rotated out while they signed in, or was never this event's. */
@@ -78,13 +75,14 @@ export type CheckInFailure =
 
 /**
  * The server's 400 for a check-in that needed coordinates: the drawn zone's
- * ("This event checks you in by location…") and the located screen's ("This
- * check-in needs your location…"). Read by status and the word, so a reworded
- * sentence still lands here rather than on a generic failure.
+ * and the located screen's, the same list mobile reads (`@repo/validation`,
+ * pinned to the API's source by mobile's `check-in-outcome.spec.ts`).
  */
 function isLocationRefusal(error: unknown): boolean {
   if (statusOf(error) !== 400) return false;
-  return /\blocation\b/i.test(serverMessageOf(error) ?? "");
+  return CHECK_IN_NEEDS_LOCATION_MESSAGES.includes(
+    serverMessageOf(error)?.trim() ?? "",
+  );
 }
 
 export function checkInFailure(
@@ -94,7 +92,7 @@ export function checkInFailure(
   const status = statusOf(error);
   if (
     status === 403 &&
-    serverMessageOf(error)?.trim() === EXPIRED_CODE_SERVER_MESSAGE
+    serverMessageOf(error)?.trim() === CHECK_IN_CODE_REFUSED_MESSAGE
   ) {
     return { kind: "expired" };
   }

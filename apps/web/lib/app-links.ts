@@ -25,13 +25,13 @@ import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
  * prerendered (`dynamic = "force-static"`), so serving it runs no function.
  */
 
-/** An Apple Team ID: ten uppercase letters and digits. */
 /** What each claimed path is for, as the file says it to a reader. */
 const APP_LINK_COMMENTS: Record<(typeof APP_LINK_PATHS)[number], string> = {
   "/join": "An invite link opens the app's join step (#4002)",
   "/check-in": "The check-in code a phone camera reads opens check-in",
 };
 
+/** An Apple Team ID: ten uppercase letters and digits. */
 function validTeamId(raw: string | undefined): string | null {
   const value = raw?.trim();
   return value && /^[A-Z0-9]{10}$/.test(value) ? value : null;

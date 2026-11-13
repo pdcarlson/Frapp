@@ -1,15 +1,17 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { statusOf } from "@repo/api-sdk";
-import { useCheckIn } from "@repo/hooks";
+import { selectOwnAttendance, useCheckIn, useMyAttendance } from "@repo/hooks";
 import {
+  CHECK_IN_CODE_CHANGED_COPY,
   CHECK_IN_LINK_PATH,
   STORE_LISTING_URLS,
   checkInTargetFrom,
   openCheckInInAppUrl,
+  statusLabel,
   type CheckInLinkTarget,
   type NativePlatform,
 } from "@repo/validation";
@@ -21,7 +23,6 @@ import { getLiveSessionUser } from "@/lib/auth/rejected-session";
 import { usePhonePlatform } from "@/lib/use-phone-platform";
 import { cn } from "@/lib/utils";
 import {
-  EXPIRED_CODE_COPY,
   checkInFailure,
   locationHelpCopy,
   readBrowserLocation,
@@ -91,6 +92,11 @@ function CheckInForTarget({
 }) {
   const phone = usePhonePlatform();
   const checkIn = useCheckIn();
+  // Read only on a 409, to tell "already on the list" from an officer's mark.
+  const ownRow = useMyAttendance(target.eventId, { enabled: false });
+  // Held from the tap until the answer: a second tap before React re-renders
+  // would otherwise send a second check-in, whose 409 could land last.
+  const sendingRef = useRef(false);
   const [session, setSession] = useState<SessionState>({ kind: "checking" });
   const [attempt, setAttempt] = useState(0);
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
@@ -98,7 +104,7 @@ function CheckInForTarget({
 
   useEffect(() => {
     let mounted = true;
-    getLiveSessionUser()
+    getLiveSessionUser(CHECK_IN_LINK_PATH)
       .then((user) => {
         if (!mounted) return;
         setSession(
@@ -121,7 +127,8 @@ function CheckInForTarget({
   }, []);
 
   async function checkInHere() {
-    if (outcome.kind === "pending") return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setOutcome({ kind: "pending" });
     const fix = await readBrowserLocation();
     try {
@@ -140,13 +147,29 @@ function CheckInForTarget({
       });
       setOutcome({ kind: "done", already: false });
     } catch (error) {
-      // A repeat (a second scan, or the app got there first) is a 409: they
-      // are on the list, which is what they came for.
+      // A 409 is a row already there. Checked in or late (a second scan, or
+      // the app got there first) is what they came for; an officer's absent
+      // or excused mark is said as one, so "you're in" never contradicts the
+      // record, as mobile's check-in says it (#3703).
       if (statusOf(error) === 409) {
-        setOutcome({ kind: "done", already: true });
+        const read = await ownRow.refetch();
+        const row = read.isSuccess ? selectOwnAttendance(read.data) : null;
+        if (row && row.status !== "PRESENT" && row.status !== "LATE") {
+          setOutcome({
+            kind: "failed",
+            failure: {
+              kind: "other",
+              message: `An officer marked you ${statusLabel("attendance", row.status).toLowerCase()} for this event.`,
+            },
+          });
+        } else {
+          setOutcome({ kind: "done", already: true });
+        }
         return;
       }
       setOutcome({ kind: "failed", failure: checkInFailure(error, fix.kind) });
+    } finally {
+      sendingRef.current = false;
     }
   }
 
@@ -255,7 +278,7 @@ function failureCopy(
 ): string {
   switch (failure.kind) {
     case "expired":
-      return EXPIRED_CODE_COPY;
+      return CHECK_IN_CODE_CHANGED_COPY;
     case "needs-location":
       return locationHelpCopy(failure.fix, phone);
     default:

@@ -42,6 +42,8 @@ import {
 } from '#domain/utils/check-in-screen';
 import {
   mintCheckInToken,
+  LOCATED_TOKEN_PREVIOUS_WINDOWS,
+  PREVIOUS_WINDOWS,
   verifyCheckInToken,
   verifyManualCode,
   type MintedCheckInToken,
@@ -118,26 +120,34 @@ export const CHECK_IN_TOO_FAR =
  * The dashboard origin the QR's check-in link names: `APP_URL`, as the invite
  * email reads it (`infrastructure/email/invite-link.util.ts`), else production.
  * The web serves the same path as the fallback for a phone without the app,
- * so a staging host screen links to staging.
+ * so a staging host screen links to staging. Read from the environment, as
+ * this service reads its signing key (`requireTokenSecret`); `checkInLinkUrl`
+ * trims a trailing slash.
  */
 function checkInLinkOrigin(): string {
-  const configured = process.env.APP_URL?.trim();
-  return configured ? configured.replace(/\/+$/, '') : PRODUCTION_APP_ORIGIN;
+  return process.env.APP_URL?.trim() || PRODUCTION_APP_ORIGIN;
 }
 
 /**
  * Why a check-in was turned away, for the operational log.
  *
  * The request log carries only the status, and several refusals share one (a
- * 400 is the window, a missing location, or a zone without one; a 403 is a bad
- * code, the wrong place, or too far from the screen). On 2026-11-13 two
- * members' scans failed with 400s and nothing recorded which, so this names
- * the branch, with whether a location came and how sure the phone was of it.
+ * 400 is the window, bad event times, a missing location, or a zone without
+ * one; a 403 is who may check in, a bad code, the wrong place, or too far from
+ * the screen). On 2026-11-13 two members' scans failed with 400s and nothing
+ * recorded which, so every refusal but "already checked in" (409, the clients'
+ * "you're in") names its branch here, with whether a location came and how
+ * sure the phone was of it.
  * No ids, coordinates or message text: the user is a pseudonym, as on the
  * request log, and the request id joins the two.
  */
 type CheckInRefusal =
+  | 'no_event'
+  | 'bad_times'
   | 'window'
+  | 'not_member'
+  | 'not_invited'
+  | 'alumni'
   | 'needs_code'
   | 'bad_code'
   | 'zone_invalid'
@@ -310,6 +320,9 @@ export class AttendanceService {
   ): Promise<EventAttendance> {
     const event = await this.eventRepo.findById(eventId, chapterId);
     if (!event) {
+      // Also a link scanned from another of the member's chapters, which the
+      // request carries the active chapter for.
+      logCheckInRefusal('no_event', userId, options);
       throw new NotFoundException('Event not found');
     }
 
@@ -318,6 +331,7 @@ export class AttendanceService {
     const end = new Date(event.end_time);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      logCheckInRefusal('bad_times', userId, options);
       throw new BadRequestException('Event times are invalid');
     }
 
@@ -355,11 +369,13 @@ export class AttendanceService {
         chapterId,
       );
       if (!member) {
+        logCheckInRefusal('not_member', userId, options);
         throw new ForbiddenException('You are not a member of this chapter');
       }
 
       const attendance = attendanceFor(event, member.role_ids);
       if (attendance.status === 'not_invited') {
+        logCheckInRefusal('not_invited', userId, options);
         throw new ForbiddenException(
           'You are not eligible to check in for this event',
         );
@@ -374,6 +390,7 @@ export class AttendanceService {
     // decision about who attends (an alumni homecoming lists the Alumni role),
     // so the lifecycle rule does not override it.
     if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
+      logCheckInRefusal('alumni', userId, options);
       throw new ForbiddenException(
         'Alumni members cannot check in to chapter events',
       );
@@ -411,11 +428,26 @@ export class AttendanceService {
       throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
     }
 
+    // Whether the checks below will test where the member is: a drawn zone, or
+    // a screen that stored its location. Only then may a scanned link last
+    // past one spare window (`check-in-token.ts`), because only then does a
+    // forwarded link still fail.
+    const zoned =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+    const anchors = screens.filter(isLocatedScreen);
+    const located = zoned || anchors.length > 0;
+
     if (hasCode) {
       const secret = this.requireTokenSecret();
       const accepted =
         (options.token !== undefined &&
-          verifyCheckInToken(options.token, eventId, secret, now.getTime())) ||
+          verifyCheckInToken(
+            options.token,
+            eventId,
+            secret,
+            now.getTime(),
+            located ? LOCATED_TOKEN_PREVIOUS_WINDOWS : PREVIOUS_WINDOWS,
+          )) ||
         (options.manualCode !== undefined &&
           verifyManualCode(options.manualCode, eventId, secret, now.getTime()));
 
@@ -480,11 +512,7 @@ export class AttendanceService {
     // accuracy, capped (`isNearCheckInScreen`). A screen that couldn't tell
     // where it is stored no location and anchors nothing; with no located
     // screen at all, nothing here runs.
-    const anchors = screens.filter(isLocatedScreen);
-    if (
-      (event.check_in_zone === null || event.check_in_zone === undefined) &&
-      anchors.length > 0
-    ) {
+    if (!zoned && anchors.length > 0) {
       const { lat, lng } = options;
       if (
         typeof lat !== 'number' ||

@@ -28,8 +28,17 @@ import * as Location from "expo-location";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Circle, Path } from "react-native-svg";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
-import { useCheckIn, useEvent, useMyAttendance } from "@repo/hooks";
-import { checkInTargetFrom, statusLabel } from "@repo/validation";
+import {
+  isTransientCheckInFailure,
+  useCheckIn,
+  useEvent,
+  useMyAttendance,
+} from "@repo/hooks";
+import {
+  CHECK_IN_CODE_CHANGED_COPY,
+  checkInTargetFrom,
+  statusLabel,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useScreenBelow } from "@/lib/back-target";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
@@ -121,9 +130,12 @@ type Status =
   /**
    * `attemptOnly` is `checkInFailure`'s: a line about this one attempt (the
    * code it sent, or a request that may go through if sent again), cleared
-   * when the member turns to typing a code.
+   * when the member turns to typing a code. `retryable` is a request that may
+   * go through if sent again (`isTransientCheckInFailure`), which offers Try
+   * again: a scanned link the member can't simply re-tap, because the camera
+   * hands over the same link and it was sent once already.
    */
-  | { kind: "error"; message: string; attemptOnly: boolean }
+  | { kind: "error"; message: string; attemptOnly: boolean; retryable: boolean }
   /**
    * The subscription gate (#2297) or the module gate (#2393) refused the
    * write. Terminal until an officer acts, so it arms nothing.
@@ -134,8 +146,7 @@ type Status =
 type Phase = "locating" | "sending";
 
 /** The words for a scanned token the server no longer accepts. */
-export const CODE_CHANGED_COPY =
-  "That code has changed since you scanned it. Point your camera at the screen again.";
+export const CODE_CHANGED_COPY = CHECK_IN_CODE_CHANGED_COPY;
 
 /**
  * Which state a failed check-in lands in.
@@ -166,9 +177,17 @@ function failureStatus(
     statusOf(error) === 403 &&
     serverMessageOf(error) === CHECK_IN_CODE_REFUSED_MESSAGE
   ) {
-    return { kind: "error", message: CODE_CHANGED_COPY, attemptOnly: true };
+    return {
+      kind: "error",
+      message: CODE_CHANGED_COPY,
+      attemptOnly: true,
+      retryable: false,
+    };
   }
   const failure = checkInFailure(error);
+  if (failure.kind === "error") {
+    return { ...failure, retryable: isTransientCheckInFailure(error) };
+  }
   if (failure.kind !== "already") return failure;
   if (ownRow && (ownRow.status === "PRESENT" || ownRow.status === "LATE")) {
     return {
@@ -186,6 +205,7 @@ function failureStatus(
       ? `An officer marked you ${statusLabel("attendance", ownRow.status).toLowerCase()} for this event.`
       : failure.message,
     attemptOnly: false,
+    retryable: false,
   };
 }
 
@@ -421,15 +441,18 @@ export default function CheckInScreen() {
    * A link's token is sent once, as soon as the event has loaded and the
    * phone is online. Remembered per token, so coming back to the screen, or
    * a re-render, never sends the same scan twice; a new scan is a new token.
+   * A link that arrives while this event's check-in is still under way waits
+   * for it, rather than being marked sent and dropped by the latch.
    */
   const sentTokensRef = useRef(new Set<string>());
   useEffect(() => {
     if (!linkToken || !eventLoaded || writeBlockedReason !== null) return;
+    if (sendingHere) return;
     const key = `${eventId}:${linkToken}`;
     if (sentTokensRef.current.has(key)) return;
     sentTokensRef.current.add(key);
     void submit({ token: linkToken }, linkToken);
-  }, [eventId, eventLoaded, linkToken, submit, writeBlockedReason]);
+  }, [eventId, eventLoaded, linkToken, sendingHere, submit, writeBlockedReason]);
 
   /** Send the last check-in again (after Settings, or Try again). */
   const retry = useCallback(() => {
@@ -647,6 +670,23 @@ export default function CheckInScreen() {
               <Text style={styles.statusText}>Checking you in…</Text>
             ) : status.kind === "error" || status.kind === "blocked" ? (
               <Text style={styles.error}>{status.message}</Text>
+            ) : null}
+
+            {/* A check-in that failed on the way (offline, a timeout, a 5xx)
+                can be sent again while its code is still good; a code the
+                server called stale can't, so it says to scan again. */}
+            {status.kind === "error" && status.retryable && !sendingHere ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={retry}
+                hitSlop={tokens.spacing.sm}
+                style={({ pressed }) => [
+                  styles.manualLink,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.manualLinkText}>Try again</Text>
+              </Pressable>
             ) : null}
 
             {/* Stated, not just implied by a greyed button
