@@ -117,7 +117,11 @@ vi.mock("@/components/events/attendance-panel", () => ({
   AttendancePanel: () => <div data-testid="attendance-roster" />,
 }));
 
-vi.mock("@/components/events/my-check-in", () => ({
+vi.mock("@/components/events/my-check-in", async (importOriginal) => ({
+  // The zone rule stays real: the sheet's zone tests read through it.
+  checkInZoneState: (
+    await importOriginal<typeof import("@/components/events/my-check-in")>()
+  ).checkInZoneState,
   MyCheckIn: ({
     zone,
     eventUnavailable,

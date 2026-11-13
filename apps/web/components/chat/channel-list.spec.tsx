@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import {
   ChannelFilters,
@@ -423,6 +423,21 @@ describe("ChannelList unread badges", () => {
     expect(row.className).toMatch(/\btext-muted\b/);
     expect(row.className).not.toMatch(/\bfont-bold\b/);
     expect(row.querySelector('[data-testid="channel-unread-pip"]')).toBeNull();
+  });
+
+  it("puts a muted channel's bell straight after its name (#4136)", () => {
+    renderList(
+      [{ ...general, muted: true } as ChatChannel],
+      new Map([["c-gen", { unreadCount: 0, mentionCount: 1 }]]),
+    );
+    const row = screen.getByRole("button", { name: /general/ });
+    const name = within(row).getByText(general.name);
+    const bell = within(row).getByText("Muted");
+    // In the name's own box, so it never drifts to the far end with the badge.
+    expect(name.parentElement).toBe(bell.parentElement);
+    expect(within(row).getByText("@ 1").parentElement).not.toBe(
+      bell.parentElement,
+    );
   });
 
   it("shows the mention badge, not the raw total, when the channel has an @-mention", () => {

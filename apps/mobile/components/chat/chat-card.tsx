@@ -459,10 +459,16 @@ export function useCardStyles() {
   return useMemo(() => createStyles(tokens, brand), [tokens, brand]);
 }
 
+/** Web's `max-w-md` (28rem): the widest a chat card draws on either app. */
+const CARD_MAX_WIDTH = 448;
+
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
-    // The body column's full width: a card in the row, under its author line.
+    // The body column's full width up to web's cap (`MESSAGE_CARD`'s
+    // `max-w-md`, 448), so a card is one width on both apps and a tablet's
+    // wide column doesn't stretch it (#4136).
     card: {
+      maxWidth: CARD_MAX_WIDTH,
       marginTop: tokens.spacing.xs,
       // components.md's card padding, the 16 web's MESSAGE_CARD draws.
       padding: tokens.spacing.lg,
@@ -496,7 +502,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
         weight: tokens.typography.weight.bold,
       }),
       color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.xs,
+      // 8 under the eyebrow, 8 to the meta and 12 to the actions: web's
+      // card spacing, one rhythm on both apps (#4136).
+      marginTop: tokens.spacing.sm,
     },
     // A card's body copy: a record card's sentence, an announcement's text.
     bodyText: {
@@ -525,7 +533,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flexWrap: "wrap",
       alignItems: "center",
       rowGap: tokens.spacing.xs,
-      marginTop: tokens.spacing.xs + 2,
+      marginTop: tokens.spacing.sm,
     },
     metaItem: {
       flexDirection: "row",
@@ -552,7 +560,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.md - 2,
+      marginTop: tokens.spacing.md,
     },
     button: {
       flexDirection: "row",

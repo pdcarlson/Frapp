@@ -143,9 +143,7 @@ export function SignupCard({
   };
 
   return (
-    <Card
-      className={cn(MESSAGE_CARD, "w-full min-w-[min(20rem,100%)] max-w-md")}
-    >
+    <Card className={MESSAGE_CARD}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>
         {signupCardEyebrow(payload, tally, now)}
       </p>

@@ -14,6 +14,10 @@ const mockEventCardExcuse = vi.fn<(payload: unknown) => unknown>(() => ({
   kind: "none",
 }));
 const checkIn = vi.fn().mockResolvedValue(undefined);
+// The viewer's own row and the event, read while check-in is open (#4136).
+const mockMyAttendance = vi.fn();
+const mockUseEvent = vi.fn();
+const checkInState = { isPending: false };
 
 const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -32,7 +36,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // these cases predate the gate, so they run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useAttendance: (id: string) => mockUseAttendance(id),
-  useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  useCheckIn: () => ({
+    mutateAsync: checkIn,
+    isPending: checkInState.isPending,
+  }),
+  useMyAttendance: (id: string) => mockMyAttendance(id),
+  useEvent: (id: string) => mockUseEvent(id),
   useMyPermissions: () => mockUseMyPermissions(),
   useNow: () => Date.now(),
   useEventCardExcuse: (payload: unknown) => mockEventCardExcuse(payload),
@@ -83,6 +92,16 @@ describe("EventCard", () => {
     vi.clearAllMocks();
     mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: [] });
+    checkInState.isPending = false;
+    mockMyAttendance.mockReturnValue({
+      data: null,
+      isPending: false,
+      fetchStatus: "idle",
+    });
+    mockUseEvent.mockReturnValue({
+      data: { id: "evt-1", check_in_zone: null },
+      isError: false,
+    });
     mockEventCardExcuse.mockReturnValue({ kind: "none" });
     // Default to an attendance-viewer (admin) so the count tests exercise the
     // count path; the non-admin case is covered explicitly below.
@@ -204,6 +223,122 @@ describe("EventCard", () => {
     // Object payload since #994 — the card sends no token and no coordinates,
     // which is what makes it the *plain* self check-in surface.
     expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+  });
+
+  // #4136: the phone's check-in states, read while the window is open.
+  describe("the viewer's own check-in (#4136)", () => {
+    function openCard() {
+      const now = Date.now();
+      return makeMessage({
+        start_time: new Date(now - 60_000).toISOString(),
+        end_time: new Date(now + 60_000).toISOString(),
+      });
+    }
+
+    it("reads the viewer's row and the event only while check-in is open", () => {
+      render(<EventCard message={makeMessage()} isConfirmed />);
+      expect(mockMyAttendance).toHaveBeenCalledWith("");
+      expect(mockUseEvent).toHaveBeenCalledWith("");
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(mockMyAttendance).toHaveBeenCalledWith("evt-1");
+      expect(mockUseEvent).toHaveBeenCalledWith("evt-1");
+    });
+
+    it("says Checking in… while the check-in runs", () => {
+      checkInState.isPending = true;
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByRole("button", { name: "Checking in…" }),
+      ).toBeDisabled();
+    });
+
+    it("turns into a disabled Checked in once the viewer is on the list", () => {
+      mockMyAttendance.mockReturnValue({
+        data: {
+          attendance: {
+            status: "PRESENT",
+            check_in_time: new Date().toISOString(),
+          },
+        },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByRole("button", { name: "Checked in" })).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: "Check in" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says the officer's mark instead of offering Check in", () => {
+      mockMyAttendance.mockReturnValue({
+        data: { attendance: { status: "EXCUSED", check_in_time: null } },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByText("Marked excused")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends a zoned event to the app, and waits for the event to say", () => {
+      mockUseEvent.mockReturnValue({ data: undefined, isError: false });
+      const { unmount } = render(
+        <EventCard message={openCard()} isConfirmed />,
+      );
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      mockUseEvent.mockReturnValue({
+        data: {
+          id: "evt-1",
+          check_in_zone: [
+            { lat: 1, lng: 1 },
+            { lat: 1, lng: 2 },
+            { lat: 2, lng: 2 },
+          ],
+        },
+        isError: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByText(
+          "This event checks your location, so check in from the Frapp mobile app.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers neither control with Events turned off, and says why", () => {
+      mockCurrentChapter.mockReturnValue({
+        data: {
+          subscription_status: "active",
+          enabled_modules: { events: false },
+        },
+        isPending: false,
+        isError: false,
+      });
+      mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Can't make it" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+        ),
+      ).toBeInTheDocument();
+      expect(mockMyAttendance).toHaveBeenCalledWith("");
+    });
   });
 
   it("hides Check in outside the event window", () => {

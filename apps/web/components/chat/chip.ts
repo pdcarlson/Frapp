@@ -130,11 +130,13 @@ export { EYEBROW } from "@/components/ui/typography";
  * the hairline and the shadow ban, and a message card that hand-rolls them is a
  * card that silently stops following §8 the next time §8 moves.
  *
- * `w-fit max-w-full`: a card sizes to its content inside the body column, as
- * it did in the bubble layout's column, rather than stretching across the
- * whole thread.
+ * `w-full max-w-md`: every card is one width, the body column up to 28rem
+ * (448px), as the phone's cards fill their column (#4136, `components.md`
+ * § Chat messages, "Cards"). Discord's embeds cap the same way. A card that
+ * hugged its content made a column of cards ragged, and a loading card
+ * jumped width when its card arrived.
  */
-export const MESSAGE_CARD = "mt-1 w-fit max-w-full rounded-lg p-4";
+export const MESSAGE_CARD = "mt-1 w-full max-w-md rounded-lg p-4";
 
 /**
  * One icon in the per-message action bar (`components.md` §11 § Per-message

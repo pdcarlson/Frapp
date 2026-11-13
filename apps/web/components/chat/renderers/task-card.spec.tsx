@@ -348,6 +348,29 @@ describe("TaskCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers no lifecycle control while the chapter has Tasks turned off (#4136)", () => {
+    canManage = true;
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: false,
+        point_reward: 10,
+      },
+    });
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /send back/i })).toBeNull();
+  });
+
   it("hides Confirm from a tasks:manage assignee on their own card (#1056)", () => {
     // The API refuses a self-confirmation, so the assignee gets no confirm
     // affordance here even holding tasks:manage. Send back survives — it withholds

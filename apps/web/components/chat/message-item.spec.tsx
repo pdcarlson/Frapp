@@ -1094,16 +1094,16 @@ describe("MessageItem edited marker", () => {
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
   });
 
-  it("sizes a card to its content, not the thread's width", () => {
-    // The body column stretches its children, as the bubble's column did not.
+  it("draws every card one width: the column, up to 28rem (#4136)", () => {
+    // Filling, not hugging: a column of cards lines up, as the phone's do.
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-full", "max-w-md");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-full", "max-w-md");
   });
 
   it("marks an edited card under the card, not inside it", () => {

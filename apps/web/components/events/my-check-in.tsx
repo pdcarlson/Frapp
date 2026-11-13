@@ -28,6 +28,42 @@ import { attendanceStatusLabel } from "@/components/events/attendance-status";
 /** Where the event's check-in zone leaves a web viewer. */
 export type ZoneState = "none" | "zone" | "malformed";
 
+/**
+ * An event's `check_in_zone` as a {@link ZoneState}. Three states, not two: a
+ * non-empty polygon with a point that isn't a finite pair, or fewer than three
+ * points, is not "no zone". It mirrors `isValidZone` on the server, which
+ * needs **every** entry to be a finite pair and then refuses every check-in,
+ * so calling it "check in from anywhere" would say the opposite of what
+ * members get. The event sheet and the chat event card both read it.
+ */
+export function checkInZoneState(zone: unknown): ZoneState {
+  const entries: unknown[] = Array.isArray(zone) ? zone : [];
+  if (entries.length === 0) return "none";
+  const points = entries.filter((point) => {
+    if (!point || typeof point !== "object") return false;
+    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
+    return (
+      typeof lat === "number" &&
+      Number.isFinite(lat) &&
+      typeof lng === "number" &&
+      Number.isFinite(lng)
+    );
+  }).length;
+  return entries.length >= 3 && points === entries.length
+    ? "zone"
+    : "malformed";
+}
+
+/**
+ * What an open check-in says when web can't take it: the sheet's detail line,
+ * and the chat card's note in place of its Check in button.
+ */
+export const ZONE_CHECK_IN_LINE: Record<"zone" | "malformed", string> = {
+  zone: "This event checks your location, so check in from the Frapp mobile app.",
+  malformed:
+    "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it.",
+};
+
 export type MyCheckInView =
   | { kind: "loading" }
   /** `label` is `null` just after this session's own check-in, before the row is re-read. */
@@ -190,11 +226,9 @@ export function MyCheckIn({
     case "open":
       title = "Check-in is open";
       detail =
-        view.zone === "zone"
-          ? "This event checks your location, so check in from the Frapp mobile app."
-          : view.zone === "malformed"
-            ? "This event's check-in zone is incomplete, so check-in isn't working. Ask an officer to fix it."
-            : `Closes ${clockLabel(view.closesAt, now)}`;
+        view.zone === "none"
+          ? `Closes ${clockLabel(view.closesAt, now)}`
+          : ZONE_CHECK_IN_LINE[view.zone];
       break;
     case "upcoming":
       title = `Check-in opens ${clockLabel(view.opensAt, now)}`;
