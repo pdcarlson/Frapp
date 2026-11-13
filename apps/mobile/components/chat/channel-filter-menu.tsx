@@ -36,6 +36,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const MENU_WIDTH = 264;
 
+/** The filter glyph's side, and how far it sits inside its 44pt target. */
+const TRIGGER_GLYPH_SIZE = 20;
+const triggerGlyphInset = (tokens: SignetTokens) =>
+  (tokens.touch.minimum - TRIGGER_GLYPH_SIZE) / 2;
+
 export type ChannelFilterMenuState = {
   visible: boolean;
   anchor: { top: number; left: number };
@@ -63,7 +68,13 @@ export function useChannelFilterMenu(): ChannelFilterMenuState {
 }
 
 /** Lucide's `ListFilter`, the web trigger's glyph, on the 24pt grid. */
-function FilterGlyph({ color, size = 20 }: { color: string; size?: number }) {
+function FilterGlyph({
+  color,
+  size = TRIGGER_GLYPH_SIZE,
+}: {
+  color: string;
+  size?: number;
+}) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
       <Path
@@ -79,10 +90,16 @@ function FilterGlyph({ color, size = 20 }: { color: string; size?: number }) {
 export function ChannelFilterButton({
   menu,
   active,
+  atEdge = true,
 }: {
   menu: ChannelFilterMenuState;
   /** A filter is on: the dot shows and the label says so. */
   active: boolean;
+  /**
+   * The trigger is the last thing on its heading, so its glyph's right edge
+   * sits on the gutter. False when a New channel + follows it (#4679).
+   */
+  atEdge?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -106,14 +123,23 @@ export function ChannelFilterButton({
           return menu.open({ top: 0, left: tokens.spacing.sm });
         }
         node.measureInWindow((x, y, width, height) => {
-          // The menu's right edge under the trigger's, kept on screen.
+          // The menu's right edge under the glyph's, not the 44pt target's,
+          // which reaches past the gutter when the trigger is at the edge.
+          // Kept on screen.
           menu.open({
             top: y + height + tokens.spacing.xs,
-            left: Math.max(tokens.spacing.sm, x + width - MENU_WIDTH),
+            left: Math.max(
+              tokens.spacing.sm,
+              x + width - triggerGlyphInset(tokens) - MENU_WIDTH,
+            ),
           });
         });
       }}
-      style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [
+        styles.trigger,
+        atEdge ? styles.triggerAtEdge : null,
+        pressed ? styles.pressed : null,
+      ]}
     >
       <FilterGlyph color={active ? brand.accent : tokens.color.text.muted} />
       {active ? (
@@ -207,9 +233,11 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
-      // The glyph's right edge sits on the gutter, like the rows' trailing
-      // badges below it.
-      marginRight: -(tokens.touch.minimum - 20) / 2,
+    },
+    // The glyph's right edge sits on the gutter, like the rows' trailing
+    // badges below it.
+    triggerAtEdge: {
+      marginRight: -triggerGlyphInset(tokens),
     },
     pressed: { opacity: 0.6 },
     dot: {

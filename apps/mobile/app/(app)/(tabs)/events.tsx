@@ -47,6 +47,7 @@ import {
   emptyEventDraft,
   type NewEventDraft,
 } from "@/lib/events/create-event";
+import { LEAD_TILE_SIZE } from "@/components/lead-tile";
 import {
   createEventRowStyles,
   EventRowCard,
@@ -213,7 +214,9 @@ export default function EventsScreen() {
   function renderDayGroups(groups: EventDayGroup[], leadCard: boolean) {
     return groups.map((group, groupIndex) => {
       // The next event is the page's one card; the rest of its day, and every
-      // later day, sit flush on the floor (owner pick 2026-11-05).
+      // later day, sit flush on the floor (owner pick 2026-11-05), each
+      // leading with a tile and ending in a chevron (his pick 2026-11-13,
+      // #4679).
       const card = leadCard && groupIndex === 0 ? group.entries[0] : null;
       const flat = card ? group.entries.slice(1) : group.entries;
       return (
@@ -457,7 +460,7 @@ const SKELETON_FLAT_ROWS = 3;
  * The list's loading state, on the loaded list's own styles: a day heading,
  * the next event as {@link EventRowCard} (the name and meta lines, a chip
  * where the points land), then a heading and flat rows as
- * {@link EventRowFlat} draws them, hairline-split. Which headings land
+ * {@link EventRowFlat} draws them: a tile, two lines, hairline-split. Which headings land
  * depends on the data, so they are bars.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
@@ -470,7 +473,7 @@ export function EventListSkeleton({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const rowStyles = createEventRowStyles(tokens);
-  const { body, caption, title } = tokens.typography.role;
+  const { caption, label, title } = tokens.typography.role;
 
   return (
     <SkeletonRegion label="Loading chapter events" style={styles.skeletonList}>
@@ -496,13 +499,18 @@ export function EventListSkeleton({
           <View
             key={index}
             style={[
-              rowStyles.flatRow,
+              rowStyles.leadRow,
               index === 0 ? null : rowStyles.flatDivider,
             ]}
           >
+            <SkeletonBlock
+              width={LEAD_TILE_SIZE.lead}
+              height={LEAD_TILE_SIZE.lead}
+              radius={tokens.radius.chipLarge}
+            />
             <View style={rowStyles.body}>
               <SkeletonText
-                role={body}
+                role={label}
                 width={
                   SKELETON_NAME_WIDTHS[
                     (index + 1) % SKELETON_NAME_WIDTHS.length

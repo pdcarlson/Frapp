@@ -9,6 +9,8 @@ import {
 } from "@repo/hooks/calendar-tasks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { Chip } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
@@ -18,7 +20,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Tasks on the Events calendar (#4144), as web draws them: an event is a
  * row with its time, a task leads with a round mark that says where it
- * stands. An empty ring is still to do (red when overdue), a ring with a
+ * stands, in the lead tile an event's row has (#4679). An empty ring is still to do (red when overdue), a ring with a
  * check is done and waiting on an officer, a filled green check is
  * confirmed. Rules and words: `@repo/hooks/calendar-tasks`.
  */
@@ -114,14 +116,18 @@ export function CalendarTaskRow({
           if (item.kind === "mine") onOpenTask(item.taskId);
           else if (canExpand) setExpanded((open) => !open);
         }}
-        style={[rowStyles.flatRow, isFirst ? null : rowStyles.flatDivider]}
+        style={[rowStyles.leadRow, isFirst ? null : rowStyles.flatDivider]}
       >
-        <TaskMark state={item.state} />
+        {/* The mark sits in the event rows' tile, so a day's events and
+            tasks share one text column (#4679). */}
+        <LeadTile size="lead" testID="calendar-task-lead">
+          <TaskMark state={item.state} />
+        </LeadTile>
         <View style={rowStyles.body}>
           <Text
             numberOfLines={1}
             style={[
-              rowStyles.flatTitle,
+              rowStyles.leadTitle,
               done ? styles.doneTitle : null,
               item.state === "confirmed" ? styles.struck : null,
             ]}
@@ -147,6 +153,9 @@ export function CalendarTaskRow({
               color={tokens.color.text.mutedForeground}
             />
           </View>
+        ) : item.kind === "mine" ? (
+          // It opens on Tasks, so it draws the chevron of a row that opens.
+          <ForwardGlyph color={tokens.color.text.mutedForeground} />
         ) : null}
       </PressableRow>
       {canExpand && expanded && item.kind === "assigned" ? (
@@ -279,7 +288,8 @@ function createStyles(tokens: SignetTokens) {
     },
     assignees: {
       gap: tokens.spacing.sm,
-      paddingLeft: 18 + tokens.spacing.md,
+      // Under the row's text column: past the lead tile and the row's gap.
+      paddingLeft: LEAD_TILE_SIZE.lead + tokens.spacing.md,
       paddingBottom: tokens.spacing.md,
     },
     assignee: {

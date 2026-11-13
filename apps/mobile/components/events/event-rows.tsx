@@ -1,8 +1,12 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatPoints, formatPointsChip, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import { NavGlyph } from "@/components/nav-glyph";
 import { AccentChip, HairlineChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
@@ -123,10 +127,17 @@ export function EventRowCard({
 }
 
 /**
- * Any other event: on the floor with a hairline between rows. Points move
- * into the meta line, as web writes them ("7:00 PM · Great Room · 10 points",
- * `formatPoints`: a count read as text is written out; a chip says "+10 pts"),
- * and Mandatory sits at the row's end, so a row is one line of chips at most.
+ * Any other event: on the floor with a hairline between rows, in the one row
+ * anatomy (`spec/ui/mobile/patterns.md` § Rows): the Events glyph in a lead
+ * tile, the name, a meta line, then the drawn chevron of a row that opens.
+ * It is the row Activity's To do draws for the same event, so an event has
+ * one shape on both tabs (owner pick 2026-11-13, #4679; until then the row
+ * was two lines of text with nothing that said it opened).
+ *
+ * Points move into the meta line, as web writes them ("7:00 PM · Great Room
+ * · 10 points", `formatPoints`: a count read as text is written out; a chip
+ * says "+10 pts"), and Mandatory sits before the chevron, so a row is one
+ * line of chips at most.
  */
 export function EventRowFlat({
   event,
@@ -159,14 +170,15 @@ export function EventRowFlat({
       accessibilityLabel={accessibilityLabelOf(event, cadence)}
       accessibilityHint="View event details and check in."
       onPress={onPress}
-      style={[styles.flatRow, isFirst ? null : styles.flatDivider]}
+      style={[styles.leadRow, isFirst ? null : styles.flatDivider]}
     >
+      <EventLeadTile />
       <View style={styles.body}>
         <EventName
           event={event}
           cadence={cadence}
           numberOfLines={1}
-          style={styles.flatTitle}
+          style={styles.leadTitle}
         />
         {meta ? (
           <Text numberOfLines={1} style={styles.meta}>
@@ -178,7 +190,26 @@ export function EventRowFlat({
       {/* Hairline, as web's row draws it (#3822, #4132): required of this
           viewer, by default or by a role of theirs (`useRequiredOfViewer`). */}
       {required ? <HairlineChip label="Mandatory" /> : null}
+      <ForwardGlyph color={tokens.color.text.mutedForeground} />
     </PressableRow>
+  );
+}
+
+/**
+ * What leads an event's row under a day heading: the Events glyph, neutral,
+ * as Activity's row leads one (`ACTIVITY_GLYPH_NAV.event`). Not the date
+ * block: the heading above the row already says the day.
+ */
+function EventLeadTile() {
+  const { tokens } = useFrappTheme();
+  return (
+    <LeadTile size="lead" testID="event-lead-tile">
+      <NavGlyph
+        paths={NAV_GLYPHS.events}
+        color={tokens.color.text.mutedForeground}
+        size={LEAD_TILE_GLYPH}
+      />
+    </LeadTile>
   );
 }
 
@@ -209,20 +240,31 @@ export function createEventRowStyles(tokens: SignetTokens) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
     },
-    flatTitle: {
-      ...typeRole(tokens.typography.role.body),
-      fontFamily: typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.semibold,
-      }).fontFamily,
+    // A row that leads with a 40pt tile (`patterns.md` § Rows): Activity's
+    // row frame, so the tile sets the height and the padding is the small
+    // step, where a row of text alone takes the medium one.
+    leadRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: tokens.spacing.sm,
+      ...gutterBleed(tokens, { rounded: false }),
+    },
+    // The row's title: the label role, as every tile row's is.
+    leadTitle: {
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
+    // After the name, in the title's size at the regular weight (a weight is
+    // its own Figtree family).
     cadence: {
       fontFamily: typeRole(tokens.typography.role.body).fontFamily,
       color: tokens.color.text.mutedForeground,
     },
     body: {
       flex: 1,
+      minWidth: 0,
       gap: tokens.spacing.xs,
     },
     titleRow: {

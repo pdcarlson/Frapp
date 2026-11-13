@@ -6,7 +6,7 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { Alert } from "react-native";
+import { Alert, StyleSheet } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -365,7 +365,10 @@ import {
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
-import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
+import {
+  ChannelFilterButton,
+  ChannelFilterMenu,
+} from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
@@ -1250,6 +1253,76 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     deleteMutateAsync.mockResolvedValue(undefined);
     await act(async () => button().props.onPress());
     expect(deleteMutateAsync).toHaveBeenCalledWith(general.id);
+  });
+
+  it("ends every heading with its +, the filter before it on the first, and the chevron beside the name (#4679)", () => {
+    const COMM = { id: "cat-comm", name: "Committees", display_order: 0 };
+    categoriesData.value = [COMM];
+    channelsData.value = [
+      general,
+      {
+        id: "c-phil",
+        name: "philanthropy",
+        type: "PUBLIC",
+        category_id: "cat-comm",
+      },
+    ];
+    // What a heading draws, in order: its name, the fold chevron, then each
+    // control by its label.
+    const drawn = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(StickyHeader)
+        .map((sticky) =>
+          sticky
+            .findAll(
+              (node) =>
+                node.type === DisclosureGlyph ||
+                ((node.type as unknown) === "Pressable" &&
+                  node.props.accessibilityRole === "button"),
+            )
+            .map((node) =>
+              node.type === DisclosureGlyph
+                ? "chevron"
+                : String(node.props.accessibilityLabel),
+            ),
+        );
+
+    // A member: the chevron, and the filter at the edge of the first heading.
+    const member = render();
+    expect(drawn(member)).toEqual([
+      ["chevron", "Filter channels"],
+      ["chevron"],
+    ]);
+    expect(member.root.findByType(ChannelFilterButton).props.atEdge).toBe(true);
+
+    // An officer: the + is last on both, so it runs in one column.
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    expect(drawn(officer)).toEqual([
+      ["chevron", "Filter channels", "New channel"],
+      ["chevron", "New channel in Committees"],
+    ]);
+    expect(officer.root.findByType(ChannelFilterButton).props.atEdge).toBe(
+      false,
+    );
+    const plusBoxes = pressablesLabelled(officer, "New channel")
+      .concat(pressablesLabelled(officer, "New channel in Committees"))
+      .map((plus) => {
+        let box = plus.parent!;
+        while ((box.type as unknown) !== "View") box = box.parent!;
+        return StyleSheet.flatten(box.props.style);
+      });
+    // The 18pt glyph's right edge on the gutter, out of its 44pt target.
+    expect(plusBoxes.map((style) => style.marginRight)).toEqual([-13, -13]);
+
+    // The name is only as wide as its text, so the chevron sits beside it.
+    const header = officer.root
+      .findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header")!;
+    const name = header.findAll(
+      (node) => (node.type as unknown) === "Text",
+    )[0]!;
+    expect(StyleSheet.flatten(name.props.style).flex).toBeUndefined();
   });
 
   it("puts a New channel + on section headings for officers only (#3838)", async () => {

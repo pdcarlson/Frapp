@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
-import { DisclosureGlyph } from "@/components/control-glyphs";
+import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
+import { LeadTile } from "@/components/lead-tile";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   CALENDAR_RANGE_STORAGE_KEY,
@@ -544,6 +545,38 @@ describe("Events after the first", () => {
     );
   });
 
+  it("draws a later row as Activity draws an event: a tile, the name in the label role, a chevron (#4679)", () => {
+    events = [make("a", 0), make("b", 2, { is_mandatory: true })];
+    const tree = render();
+    const rowOf = (name: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === `Open ${name}`,
+      );
+    const row = rowOf("Event b");
+    const tiles = row.findAllByType(LeadTile);
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0]!.props.size).toBe("lead");
+    // The chevron is the row's last thing, after Mandatory.
+    const trailing = row.findAll(
+      (node) =>
+        node.type === ForwardGlyph ||
+        ((node.type as unknown) === "Text" &&
+          node.props.children === "Mandatory"),
+    );
+    expect(trailing.map((node) => node.type === ForwardGlyph)).toEqual([
+      false,
+      true,
+    ]);
+    expect(styleOf(tree, "Event b").fontSize).toBe(
+      signetDarkTokens.typography.role.label.size,
+    );
+    // The next event's card is not a tile row: it keeps its own shape.
+    expect(rowOf("Event a").findAllByType(LeadTile)).toHaveLength(0);
+    expect(rowOf("Event a").findAllByType(ForwardGlyph)).toHaveLength(0);
+  });
+
   it("splits a day's rows by hairlines, none above the first, and bleeds into the gutter", () => {
     events = [
       make("a", 0),
@@ -779,6 +812,24 @@ describe("Tasks on the Calendar", () => {
     expect(text).toContain("Clean the kitchen");
     expect(text).toContain("Overdue");
     expect(text).toContain("Assigned by you · 1 of 2 done");
+    // Each task leads with the event rows' tile, so the day's rows share one
+    // text column, and the member's own ends in the chevron of a row that
+    // opens (#4679).
+    const taskTiles = tree.root
+      .findAllByType(LeadTile)
+      .filter((tile) => tile.props.testID === "calendar-task-lead");
+    expect(taskTiles).toHaveLength(2);
+    expect(
+      pressable(tree, "Clean the kitchen, your task, overdue").findAllByType(
+        ForwardGlyph,
+      ),
+    ).toHaveLength(1);
+    // One that opens in place keeps its turning chevron instead.
+    expect(
+      pressable(tree, "Dues form, assigned by you, 1 of 2 done").findAllByType(
+        ForwardGlyph,
+      ),
+    ).toHaveLength(0);
     // A ring marks the day, beside the event dot.
     expect(
       tree.root.findAll(
