@@ -43,7 +43,10 @@ export function useServiceReview() {
         error,
         fallback:
           "Only a pending entry someone else submitted can be approved.",
-        retry: () => approve(entry),
+        // No Try again here: the callers (the Service queue, the Activity row
+        // and sheet) act on this function's answer, and a retry from the
+        // toast would land with none of them told. Their Approve button is
+        // back and is the retry.
       });
       return false;
     }

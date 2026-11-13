@@ -214,4 +214,38 @@ describe("canTryAgain", () => {
   it("offers nothing for a failure the client already explained", () => {
     expect(canTryAgain(new MemberFacingError("Pick a day first."))).toBe(false);
   });
+
+  it("offers nothing for a statusless failure that would fail the same way", () => {
+    // Location denied: a GeolocationPositionError, which isn't an Error.
+    expect(canTryAgain({ code: 1, message: "User denied Geolocation" })).toBe(
+      false,
+    );
+    expect(
+      canTryAgain(new Error("Geolocation is not available in this browser.")),
+    ).toBe(false);
+    expect(
+      canTryAgain(new TypeError("Cannot read properties of undefined")),
+    ).toBe(false);
+    expect(
+      canTryAgain(Object.assign(new Error("x"), { name: "AbortError" })),
+    ).toBe(false);
+  });
+
+  it("offers Try again for each runtime's dropped connection", () => {
+    expect(canTryAgain(new TypeError("Load failed"))).toBe(true);
+    expect(canTryAgain(new TypeError("Load failed (api.frapp.live)"))).toBe(
+      true,
+    );
+    expect(canTryAgain(new TypeError("Network request failed"))).toBe(true);
+    expect(
+      canTryAgain(
+        new Error(
+          "fetch failed: UnexpectedException: The network connection was lost.",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      canTryAgain(new Error("fetch failed: The operation was aborted.")),
+    ).toBe(false);
+  });
 });

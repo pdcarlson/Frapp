@@ -208,6 +208,7 @@ import {
   ActivityListRow,
 } from "@/components/activity/activity-row";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { OFFLINE_COPY } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
@@ -1114,21 +1115,19 @@ describe("Activity screen (#3897)", () => {
 
     it("says any other refusal in the sheet's words, naming the item, and can be pressed again", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      writes.review.mockRejectedValueOnce(new Error("boom"));
+      writes.review.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
       // No answer came back, so asking again may work: Try again beside
       // Not now, and it sends the same approval.
-      expect(alert).toHaveBeenCalledWith(
-        "Food bank",
-        "Only a pending entry someone else submitted can be approved.",
-        [
-          expect.objectContaining({ text: "Not now", style: "cancel" }),
-          expect.objectContaining({ text: "Try again" }),
-        ],
-      );
+      expect(alert).toHaveBeenCalledWith("Food bank", OFFLINE_COPY, [
+        expect.objectContaining({ text: "Not now", style: "cancel" }),
+        expect.objectContaining({ text: "Try again" }),
+      ]);
       expect(button(tree, "Food bank").props.disabled).toBe(false);
       const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
       const sent = writes.review.mock.calls.length;
@@ -1623,7 +1622,9 @@ describe("Activity screen (#3897)", () => {
 
     it("says a failed write with the platform alert, and offers no Undo", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      links.hidden.mockRejectedValueOnce(new Error("nope"));
+      links.hidden.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         sheet.props!.linkActions.hide(linkRow());

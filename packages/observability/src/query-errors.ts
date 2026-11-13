@@ -1,6 +1,6 @@
 import {
   isClientContractErrorCode,
-  isMemberCausedErrorCode,
+  isUnreportedRefusalCode,
 } from "./api-error-codes";
 import { createKeyedRateLimiter } from "./rate-limit";
 import { httpStatusClass } from "./sentry-http";
@@ -265,7 +265,7 @@ function classify(
     // has nothing to fix. A 5xx is reported whatever its code.
     if (
       httpStatusClass(status) === "4xx" &&
-      isMemberCausedErrorCode(codeOf(error))
+      isUnreportedRefusalCode(codeOf(error))
     ) {
       return null;
     }

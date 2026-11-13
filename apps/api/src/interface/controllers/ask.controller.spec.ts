@@ -284,6 +284,15 @@ describe('AskController', () => {
     expect(reportedLevel()).toBe('error');
   });
 
+  it('keeps a timeout at error level: it can be ours (egress, a short timeout)', async () => {
+    const { ask } = build(async function* () {
+      yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
+      throw new LanguageModelError('timeout', 'anthropic');
+    });
+    await ask();
+    expect(reportedLevel()).toBe('error');
+  });
+
   it('stops quietly when the member went away: aborts the work, writes no error, reports nothing', async () => {
     let seen: AbortSignal | undefined;
     const { ask, response } = build(async function* (input) {

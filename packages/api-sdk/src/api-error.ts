@@ -120,8 +120,9 @@ const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
  *
  * One definition, deliberately shared by chat-core's `classifyChatError` (the
  * outbox/send path) and `dispatch.ts` (heavy commands) and by `@repo/hooks`'
- * `useAdjustPoints`, because "4xx means do not retry" is one policy and copies
- * of it drift. The carve-out above is why that matters: a proxy 408 treated as
+ * `useAdjustPoints` and `canTryAgain` (whether a failed write's toast or
+ * alert offers Try again), because "4xx means do not retry" is one policy and
+ * copies of it drift. The carve-out above is why that matters: a proxy 408 treated as
  * definitive tells a caller their write failed when it may have landed, and
  * the retry that follows is a fresh attempt rather than a replay.
  */

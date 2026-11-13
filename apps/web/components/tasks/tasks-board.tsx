@@ -352,7 +352,10 @@ export function TasksBoard() {
         error,
         fallback:
           "Only the person it's assigned to, or an officer, can move this task.",
-        retry: () => changeStatus(task, next, proof),
+        // No Try again: Mark done's proof dialog and the board's controls
+        // act on this function's answer, and a retry from the toast would
+        // land with them still showing the failure. Their control is back
+        // and is the retry.
       });
       return false;
     }

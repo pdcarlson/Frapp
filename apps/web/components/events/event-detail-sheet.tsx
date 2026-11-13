@@ -290,20 +290,17 @@ export function EventDetailSheet({
     );
     if (!confirmed) return;
     const scope = asksScope && !confirmed.alternative ? "series" : "instance";
-    await deleteConfirmed(scope);
-  }
 
-  /** The delete itself, after the member said yes: what Try again repeats. */
-  async function deleteConfirmed(scope: "series" | "instance") {
-    if (!eventId) return;
     try {
       await deleteEventMutation.mutateAsync({ id: eventId, scope });
     } catch (error) {
+      // No Try again: the toast outlives this sheet, and a retry that lands
+      // after the member opened another event would close that one. The
+      // sheet stays open on a failure, so Delete is still there.
       toastFailure({
         title: "Couldn't delete the event",
         error,
         fallback: "Nothing changed. Try again in a moment.",
-        retry: () => deleteConfirmed(scope),
       });
       return;
     }

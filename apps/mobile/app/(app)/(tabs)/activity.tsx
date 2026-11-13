@@ -435,10 +435,11 @@ function useLinkActions() {
     takeBack: Write,
     failure: string,
   ): (row: LinkRow) => void {
-    return (row: LinkRow) => {
-      // The sheet closes as this starts; the write re-reads Activity itself
-      // when it settles, and a re-read on close would race it.
-      skipCloseReread.current = true;
+    // `send` is the write itself; Try again repeats only it. The sheet's
+    // close flag is set once, by the press that closes the sheet: a retry
+    // from the alert closes nothing, and setting it then would skip the
+    // re-read of whatever sheet the member closes next.
+    const send = (row: LinkRow) => {
       const undoWrite = () => {
         takeBack
           .mutateAsync(row.link.id)
@@ -455,8 +456,14 @@ function useLinkActions() {
               undoWrite();
             },
           })),
-        failed(failure, () => act(write, message, takeBack, failure)(row)),
+        failed(failure, () => send(row)),
       );
+    };
+    return (row: LinkRow) => {
+      // The sheet closes as this starts; the write re-reads Activity itself
+      // when it settles, and a re-read on close would race it.
+      skipCloseReread.current = true;
+      send(row);
     };
   }
 

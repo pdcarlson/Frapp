@@ -73,32 +73,11 @@ describe("useServiceReview", () => {
     expect(recorded).toBe(false);
   });
 
-  it("offers Try again when the approval died on the server, not when it was refused", async () => {
-    const { result } = renderHook(() => useServiceReview());
-
+  it("leaves the retry to the caller's button, even when the server died", async () => {
+    // The Activity row and sheet act on approve's answer; a Try again from
+    // the toast would land with neither told, so none is offered.
     mockMutateAsync.mockRejectedValueOnce({ statusCode: 503, message: "x" });
-    await act(async () => {
-      await result.current.approve(entry);
-    });
-    const failed = mockToast.mock.calls.at(-1)?.[0] as {
-      action?: { props: { onClick: () => void } };
-    };
-    expect(failed.action).toBeDefined();
-
-    // Try again sends the same approval.
-    mockMutateAsync.mockResolvedValueOnce({});
-    await act(async () => {
-      failed.action!.props.onClick();
-    });
-    expect(mockMutateAsync).toHaveBeenLastCalledWith({
-      id: "entry-1",
-      body: { status: "APPROVED" },
-    });
-    expect(mockToast).toHaveBeenLastCalledWith(
-      expect.objectContaining({ title: "Entry approved" }),
-    );
-
-    mockMutateAsync.mockRejectedValueOnce({ statusCode: 400, message: "x" });
+    const { result } = renderHook(() => useServiceReview());
     await act(async () => {
       await result.current.approve(entry);
     });

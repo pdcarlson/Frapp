@@ -200,6 +200,16 @@ describe("createQueryErrorReporter", () => {
       expect(h.reports).toHaveLength(0);
     });
 
+    it("still reports a member-caused code that means the server's setup is wrong", () => {
+      const h = harness();
+      h.mutation(apiBody(409, { code: "meeting.recording_unavailable" }), [
+        "meetings",
+        "upload-recording",
+      ]);
+      expect(h.reports).toHaveLength(1);
+      expect(h.reports[0]!.level).toBe("warning");
+    });
+
     it("still reports a 5xx that carries a member-caused code", () => {
       const h = harness();
       h.query(apiBody(503, { code: "chapter.module.disabled" }));

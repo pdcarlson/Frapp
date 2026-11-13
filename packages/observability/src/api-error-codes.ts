@@ -17,7 +17,8 @@
  * chapter they left, a form missing its receipt, a cursor whose message was
  * deleted. A correct client meets these in normal use, so the reporter
  * leaves a 4xx carrying one out of Sentry altogether: the screen words it,
- * and there is nothing to fix. Usage questions about them belong in
+ * and there is nothing to fix. The exception is a code that also says the
+ * server's setup is wrong (`STILL_REPORTED` below), which stays at `warning`. Usage questions about them belong in
  * analytics, not error tracking.
  *
  * A code in neither list is reported at `warning`, the level its status
@@ -165,12 +166,32 @@ const CLIENT_CONTRACT: ReadonlySet<string> = new Set(
   CLIENT_CONTRACT_ERROR_CODES,
 );
 
-export type MemberCausedErrorCode = (typeof MEMBER_CAUSED_ERROR_CODES)[number];
+type MemberCausedErrorCode = (typeof MEMBER_CAUSED_ERROR_CODES)[number];
 
 const MEMBER_CAUSED: ReadonlySet<string> = new Set(MEMBER_CAUSED_ERROR_CODES);
 
+/**
+ * Member-caused codes that still say something is wrong with the server's
+ * setup, so the reporter keeps them (at `warning`) even though a member is
+ * the one who meets them.
+ */
+const STILL_REPORTED: ReadonlySet<string> = new Set([
+  // No transcription provider set up: on production, a missing credential.
+  "meeting.recording_unavailable",
+]);
+
+/**
+ * Whether the reporter leaves a 4xx with this code out of Sentry: a refusal a
+ * member meets in normal use, which the screen words and nobody needs to fix.
+ */
+export function isUnreportedRefusalCode(
+  code: string | null | undefined,
+): boolean {
+  return isMemberCausedErrorCode(code) && !STILL_REPORTED.has(code);
+}
+
 /** Whether `code` is a refusal a member meets in normal use. */
-export function isMemberCausedErrorCode(
+function isMemberCausedErrorCode(
   code: string | null | undefined,
 ): code is MemberCausedErrorCode {
   return typeof code === "string" && MEMBER_CAUSED.has(code);

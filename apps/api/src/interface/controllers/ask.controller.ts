@@ -219,18 +219,20 @@ export class AskController {
       if (!abort.signal.aborted) {
         const retryable =
           error instanceof LanguageModelError ? error.retryable : true;
+        // The provider saying it is overloaded is its weather, not our bug:
+        // the member is offered Try again (`retryable` below), and it goes at
+        // `warning` under a site of its own, so it stays out of the API
+        // error-spike monitor (which counts `error` only) and can't take the
+        // throttle slot of a real failure here. A timeout, a dropped
+        // connection or a rate limit can be ours (egress, a timeout set too
+        // short, our own tier), and like anything else stays `error`.
+        const providerOverloaded =
+          error instanceof LanguageModelError && error.kind === 'overloaded';
         reportCaughtFailure(this.logger, {
-          // A provider that is overloaded, rate limited, slow or unreachable
-          // is not our bug: the gateway already retried, and the member is
-          // offered Try again (`retryable` below). It goes at `warning`, so
-          // provider weather stays out of the API error-spike monitor, which
-          // counts `error` only. Anything else here is ours, and stays
-          // `error`.
-          level:
-            error instanceof LanguageModelError && error.retryable
-              ? 'warning'
-              : 'error',
-          site: 'ask-stream',
+          level: providerOverloaded ? 'warning' : 'error',
+          site: providerOverloaded
+            ? 'ask-stream-provider-overloaded'
+            : 'ask-stream',
           message: 'Ask: the answer failed after the stream began',
           // A `LanguageModelError` carries no provider text; anything else
           // here is a database or programming error, which carries none of

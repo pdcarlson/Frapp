@@ -438,6 +438,11 @@ export function StudyPage() {
     return () => window.removeEventListener("pagehide", handleUnload);
   }, [activeSession, stopSession]);
 
+  const startRef = useRef(handleStart);
+  useEffect(() => {
+    startRef.current = handleStart;
+  });
+
   async function handleStart() {
     const zoneId = selectedGeofenceId || geofences[0]?.id || "";
     if (!zoneId) {
@@ -476,7 +481,9 @@ export function StudyPage() {
         title: "Couldn't start study session",
         error,
         fallback: "Allow location access and try again.",
-        retry: handleStart,
+        // The latest render's Start, so a zone picked since the failure is
+        // the one Try again starts.
+        retry: () => startRef.current(),
       });
     }
   }
