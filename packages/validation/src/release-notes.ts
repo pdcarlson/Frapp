@@ -147,6 +147,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Notifications now show one row per conversation with how many messages it holds, and an Unread switch hides what you've already read.",
       "If your chapter has Ask Frapp on, type @Frapp and a question in any channel to ask it right there: nothing is posted and only you see the answer.",
       "Your own message now lights up for you when it mentions you, such as your own @here or @everyone.",
+      "A forwarded message shows up as a card marked Forwarded, with who wrote it and when.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -192,6 +193,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Copy message link on a message's long-press gives you a link to that message. It opens on the web, and in the app when you tap it in a Frapp message.",
       "You can clear a notification by pressing and holding it.",
       "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
+      "Long-press a message and tap Forward to send it to another channel or a direct message, with a note of your own if you like.",
     ],
   },
   {
