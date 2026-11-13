@@ -280,7 +280,7 @@ While the draft names `@Frapp`, the typing line's slot above the composer reads 
 Send asks instead of posting; a refusal (photos attached, no question, too long, still answering) is the composer's hint line in the error tone until the draft changes, and the text stays.
 The answer is drawn under the message that was newest when it was asked (`components/ask/ask-in-channel.tsx`; [`../design-system/components.md`](../design-system/components.md) §11 owns the row), for this member alone, with Dismiss; it is the same turn the Ask sheet (s17) shows, since both read one conversation held above the screens (`lib/ask/ask-conversation.tsx`).
 The list's `renderItem` does not change when an answer arrives: each row reads its answers from a small store (`useAskTurnsPlacement`), so no message row is drawn again.
-A source opens as it does from the Ask sheet, and Report and the AI question open as sheets over the channel.
+A source opens as it does from the Ask sheet, and Report and Meet Frapp AI open as sheets over the channel.
 Not while editing a message, and not in a thread: the thread screen refuses a reply that names `@Frapp` with "Ask Frapp from the channel, not from a reply." in its hint line and keeps the words.
 
 ### s06 Events list

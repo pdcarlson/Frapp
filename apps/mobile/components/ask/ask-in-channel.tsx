@@ -15,7 +15,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ASK_COPY, ASK_MENTION_NAME } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskReply } from "@/components/ask/ask-turn";
 import {
   SOURCE_OPEN_FAILED,

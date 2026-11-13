@@ -34,7 +34,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyPermissions: () => ({ data: { permissions: state.permissions } }),
 }));
 
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: state.consent,
     consentDialog: <div data-testid="consent-dialog" />,
@@ -115,7 +115,7 @@ beforeEach(() => {
 });
 
 describe("asking from a channel", () => {
-  it("gives a member without Ask nothing: no way to ask, no turns, no consent sheet", async () => {
+  it("gives a member without Ask nothing: no way to ask, no turns, no Meet Frapp AI", async () => {
     state.exchanges = [DONE];
     mount(false);
     expect(screen.getByTestId("ask")).toHaveTextContent("none");

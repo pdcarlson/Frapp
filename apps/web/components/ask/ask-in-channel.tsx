@@ -19,7 +19,7 @@ import {
   type AskProposalResolution,
 } from "@repo/hooks";
 import { ASK_COPY, ASK_MENTION_NAME, can } from "@repo/validation";
-import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskReply } from "@/components/ask/ask-answer";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import {
