@@ -1,4 +1,8 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsInt,
   IsOptional,
@@ -8,6 +12,7 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
@@ -109,6 +114,49 @@ export class ConfirmDocumentUploadDto {
   @IsOptional()
   @IsDateString()
   effective_date?: string;
+}
+
+/**
+ * Files one batch call takes: a folder import (#2242) mints its upload links
+ * and files its documents 25 at a time, so the fan-out throttle (10 calls a
+ * minute) still lets it move 250 files a minute.
+ */
+export const DOCUMENT_BATCH_MAX = 25;
+
+export class RequestDocumentUploadUrlsDto {
+  @ApiProperty({
+    type: [RequestDocumentUploadUrlDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} files, each checked as the single upload-url route checks it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RequestDocumentUploadUrlDto)
+  files: RequestDocumentUploadUrlDto[];
+}
+
+export class DocumentUploadUrlsResponseDto {
+  @ApiProperty({
+    type: [DocumentUploadUrlResponseDto],
+    description: 'One ticket per file, in the order sent',
+  })
+  tickets: DocumentUploadUrlResponseDto[];
+}
+
+export class ConfirmDocumentUploadsDto {
+  @ApiProperty({
+    type: [ConfirmDocumentUploadDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} uploads to file, each as the single confirm route takes it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmDocumentUploadDto)
+  documents: ConfirmDocumentUploadDto[];
 }
 
 export class CreateDocumentFolderDto {
@@ -264,4 +312,28 @@ export class DocumentPreviewUrlDto {
   @ApiProperty() id: string;
   @ApiProperty({ description: 'Inline signed URL, valid for an hour' })
   url: string;
+}
+
+export class DocumentConfirmResultDto {
+  @ApiProperty({ description: 'The storage path this result is for' })
+  storage_path: string;
+
+  @ApiPropertyOptional({
+    type: ChapterDocumentDto,
+    description: 'The filed document, when it was filed',
+  })
+  document?: ChapterDocumentDto;
+
+  @ApiPropertyOptional({
+    description: 'Why it was not filed, when it was not',
+  })
+  error?: string;
+}
+
+export class DocumentConfirmResultsDto {
+  @ApiProperty({
+    type: [DocumentConfirmResultDto],
+    description: 'One result per upload, in the order sent',
+  })
+  results: DocumentConfirmResultDto[];
 }

@@ -166,6 +166,12 @@ export const FEATURE_EVENTS = {
     properties: ['has_document_type', 'has_folder'],
   },
   'document-viewed': { feature: 'documents', properties: [] },
+  // One per batch a folder import files (#2242): counts only, since types
+  // and folders are chapter-chosen names.
+  'documents-imported': {
+    feature: 'documents',
+    properties: ['count', 'typed_count', 'filed_count'],
+  },
   'backwork-uploaded': {
     feature: 'backwork',
     properties: ['assignment_type', 'is_redacted', 'tag_count'],

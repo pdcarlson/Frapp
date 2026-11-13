@@ -54,6 +54,10 @@ import {
   DocumentFolderDto,
   DocumentPreviewUrlDto,
   CreateDocumentTypeDto,
+  RequestDocumentUploadUrlsDto,
+  DocumentUploadUrlsResponseDto,
+  ConfirmDocumentUploadsDto,
+  DocumentConfirmResultsDto,
   UpdateDocumentTypeDto,
   DocumentTypeDto,
 } from '../dtos/chapter-document.dto';
@@ -98,6 +102,90 @@ export class ChapterDocumentController {
       storage_path: ticket.storagePath,
       document_id: ticket.documentId,
     };
+  }
+
+  @Post('upload-urls')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary: 'Get signed upload URLs for up to 25 files (folder import)',
+  })
+  @ApiCreatedResponse({ type: DocumentUploadUrlsResponseDto })
+  async requestUploadUrls(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestDocumentUploadUrlsDto,
+  ): Promise<DocumentUploadUrlsResponseDto> {
+    const tickets = await this.chapterDocumentService.requestUploadUrls(
+      chapterId,
+      dto.files.map((file) => ({
+        filename: file.filename,
+        contentType: file.content_type,
+        sizeBytes: file.size_bytes,
+      })),
+    );
+    if (tickets.some((ticket) => !ticket.signedUrl || !ticket.storagePath)) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      tickets: tickets.map((ticket) => ({
+        upload_url: ticket.signedUrl,
+        storage_path: ticket.storagePath,
+        document_id: ticket.documentId,
+      })),
+    };
+  }
+
+  @Post('batch')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary:
+      'Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own',
+  })
+  @ApiCreatedResponse({ type: DocumentConfirmResultsDto })
+  @FeatureEvent(
+    'documents-imported',
+    ({ body }: FeatureEventInput<ConfirmDocumentUploadsDto>) => {
+      // Read defensively: a describer sees the body as sent.
+      const docs: unknown[] = Array.isArray(body.documents)
+        ? body.documents
+        : [];
+      const has = (key: 'document_type' | 'folder') =>
+        docs.filter(
+          (doc) =>
+            typeof doc === 'object' &&
+            doc !== null &&
+            hasText((doc as Record<string, unknown>)[key]),
+        ).length;
+      return {
+        count: docs.length,
+        typed_count: has('document_type'),
+        filed_count: has('folder'),
+      };
+    },
+  )
+  async confirmUploads(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ConfirmDocumentUploadsDto,
+  ): Promise<DocumentConfirmResultsDto> {
+    const results = await this.chapterDocumentService.confirmUploads(
+      dto.documents.map((doc) => ({
+        chapter_id: chapterId,
+        title: doc.title,
+        description: doc.description,
+        folder: doc.folder,
+        storage_path: doc.storage_path,
+        uploaded_by: userId,
+        content_type: doc.content_type,
+        byte_size: doc.byte_size,
+        document_type: doc.document_type,
+        effective_date: doc.effective_date,
+      })),
+    );
+    return { results };
   }
 
   @Post()

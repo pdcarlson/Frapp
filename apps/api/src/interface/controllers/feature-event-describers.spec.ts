@@ -164,6 +164,27 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ['an empty save', { body: {} }, null],
     ],
   },
+  'ChapterDocumentController.confirmUploads': {
+    'documents-imported': [
+      [
+        'a batch with one typed document and one filed in a folder',
+        {
+          body: {
+            documents: [
+              { document_type: 'Minutes', folder: ' ' },
+              { folder: 'Finance' },
+            ],
+          },
+        },
+        { count: 2, typed_count: 1, filed_count: 1 },
+      ],
+      [
+        'a body with no list, without throwing',
+        { body: { documents: 'nope' } },
+        { count: 0, typed_count: 0, filed_count: 0 },
+      ],
+    ],
+  },
   'ChapterDocumentController.confirmUpload': {
     'document-uploaded': [
       [

@@ -12443,6 +12443,100 @@
         ]
       }
     },
+    "/v1/documents/upload-urls": {
+      "post": {
+        "operationId": "ChapterDocumentController_requestUploadUrls_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDocumentUploadUrlsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadUrlsResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URLs for up to 25 files (folder import)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/batch": {
+      "post": {
+        "operationId": "ChapterDocumentController_confirmUploads_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDocumentUploadsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentConfirmResultsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents": {
       "post": {
         "operationId": "ChapterDocumentController_confirmUpload_v1",
@@ -25417,6 +25511,37 @@
           "document_id"
         ]
       },
+      "RequestDocumentUploadUrlsDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "One to 25 files, each checked as the single upload-url route checks it",
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestDocumentUploadUrlDto"
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "DocumentUploadUrlsResponseDto": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "description": "One ticket per file, in the order sent",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentUploadUrlResponseDto"
+            }
+          }
+        },
+        "required": [
+          "tickets"
+        ]
+      },
       "ConfirmDocumentUploadDto": {
         "type": "object",
         "properties": {
@@ -25456,6 +25581,22 @@
         "required": [
           "storage_path",
           "title"
+        ]
+      },
+      "ConfirmDocumentUploadsDto": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "description": "One to 25 uploads to file, each as the single confirm route takes it",
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfirmDocumentUploadDto"
+            }
+          }
+        },
+        "required": [
+          "documents"
         ]
       },
       "ChapterDocumentDto": {
@@ -25523,6 +25664,45 @@
           "document_type",
           "effective_date",
           "pinned_at"
+        ]
+      },
+      "DocumentConfirmResultDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "The storage path this result is for"
+          },
+          "document": {
+            "description": "The filed document, when it was filed",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChapterDocumentDto"
+              }
+            ]
+          },
+          "error": {
+            "type": "string",
+            "description": "Why it was not filed, when it was not"
+          }
+        },
+        "required": [
+          "storage_path"
+        ]
+      },
+      "DocumentConfirmResultsDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "description": "One result per upload, in the order sent",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentConfirmResultDto"
+            }
+          }
+        },
+        "required": [
+          "results"
         ]
       },
       "DocumentTypeDto": {

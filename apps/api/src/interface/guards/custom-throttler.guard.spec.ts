@@ -735,6 +735,18 @@ describe('CustomThrottlerGuard', () => {
         10,
       ),
       route(
+        'POST /documents/upload-urls',
+        ChapterDocumentController,
+        CD.requestUploadUrls,
+        10,
+      ),
+      route(
+        'POST /documents/batch',
+        ChapterDocumentController,
+        CD.confirmUploads,
+        10,
+      ),
+      route(
         'POST /backwork/upload-url',
         BackworkController,
         BW.requestUploadUrl,
