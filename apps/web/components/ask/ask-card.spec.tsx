@@ -393,6 +393,43 @@ describe("AskCard", () => {
       expect(state.ask).toHaveBeenCalledTimes(1);
     });
 
+    it("keeps a question from the field in its own field while another is being answered", () => {
+      // One asked from a channel goes on with this closed (#4713).
+      state.exchanges = [
+        {
+          ...DONE,
+          phase: "working",
+          answer: null,
+          origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
+        },
+      ];
+      const onAsked = vi.fn();
+      render(<Card asking="Who is treasurer?" onAsked={onAsked} />);
+      expect(state.ask).not.toHaveBeenCalled();
+      expect(onAsked).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+      ).toHaveValue("Who is treasurer?");
+    });
+
+    it("does not close on a click outside while its own question is being answered", async () => {
+      state.exchanges = [{ ...DONE, phase: "working", answer: null }];
+      const onOpenChange = vi.fn();
+      render(
+        <>
+          <button>page</button>
+          <Card onOpenChange={onOpenChange} />
+        </>,
+      );
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      await user.click(
+        screen.getByRole("button", { name: "page", hidden: true }),
+      );
+      expect(onOpenChange).not.toHaveBeenCalled();
+      await user.keyboard("{Escape}");
+      expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    });
+
     it("holds a question from the field while it is closed", () => {
       render(<Card open={false} asking="When is the budget vote?" />);
       expect(state.ask).not.toHaveBeenCalled();

@@ -182,7 +182,14 @@ export function AskCard({
   useEffect(() => {
     if (!open || !asking) return;
     onAsked?.();
-    if (working) return;
+    // One question at a time. While another is being answered (one asked
+    // from a channel goes on with this closed), the words wait in the field
+    // rather than being lost.
+    if (working) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the handed question is consumed above (onAsked), so this is its one landing place
+      setDraft(asking);
+      return;
+    }
     void ask(asking, {
       savedNoticeShown: saving,
       actions: mayAct,
@@ -273,6 +280,12 @@ export function AskCard({
           <DialogOverlay className="motion-reduce:animate-none" />
           <DialogPrimitive.Content
             aria-describedby={undefined}
+            // Closing drops a question still being answered (above), so a
+            // stray click on the page behind does not close it mid-answer.
+            // Escape and the close button still do.
+            onInteractOutside={(event) => {
+              if (askedHere) event.preventDefault();
+            }}
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               field.current?.focus({ preventScroll: true });
@@ -291,132 +304,135 @@ export function AskCard({
             // a floor so a first answer does not open in a sliver.
             className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] min-h-[min(22rem,76vh)] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
           >
-          <div className="flex min-h-12 shrink-0 items-center gap-1 py-1.5 pl-4 pr-2">
-            <FrappCrest className="h-[18px] w-[15px] shrink-0 text-primary" />
-            <DialogPrimitive.Title className="ml-1.5 min-w-0 flex-1 text-base font-bold leading-6">
-              {ASK_COPY.name}
-            </DialogPrimitive.Title>
-            {exchanges.length > 0 ? (
+            <div className="flex min-h-12 shrink-0 items-center gap-1 py-1.5 pl-4 pr-2">
+              <FrappCrest className="h-[18px] w-[15px] shrink-0 text-primary" />
+              <DialogPrimitive.Title className="ml-1.5 min-w-0 flex-1 text-base font-bold leading-6">
+                {ASK_COPY.name}
+              </DialogPrimitive.Title>
+              {exchanges.length > 0 ? (
+                <IconButton
+                  label={ASK_COPY.new_conversation}
+                  onClick={() => {
+                    reset();
+                    cardEdits.clear();
+                    field.current?.focus({ preventScroll: true });
+                  }}
+                  className="shrink-0 text-muted-foreground"
+                >
+                  <SquarePen className="h-4 w-4" aria-hidden="true" />
+                </IconButton>
+              ) : null}
               <IconButton
-                label={ASK_COPY.new_conversation}
-                onClick={() => {
-                  reset();
-                  cardEdits.clear();
-                  field.current?.focus({ preventScroll: true });
-                }}
+                label={ASK_COPY.close}
+                onClick={close}
                 className="shrink-0 text-muted-foreground"
               >
-                <SquarePen className="h-4 w-4" aria-hidden="true" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </IconButton>
-            ) : null}
-            <IconButton
-              label={ASK_COPY.close}
-              onClick={close}
-              className="shrink-0 text-muted-foreground"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </IconButton>
-          </div>
-          <div
-            ref={scroller}
-            onScroll={(event) => {
-              const element = event.currentTarget;
-              following.current =
-                element.scrollHeight -
-                  element.scrollTop -
-                  element.clientHeight <
-                FOLLOW_SLACK_PX;
-            }}
-            className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1"
-          >
-            <AskCardEditsContext.Provider value={cardEdits}>
-              <div
-                ref={thread}
-                className="flex flex-col gap-6"
-                // Whatever a link in the thread opens, it opens under this
-                // dialog. A click that opens a new tab leaves it as it was.
-                onClick={(event) => {
-                  if (
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey
-                  )
-                    return;
-                  if ((event.target as HTMLElement).closest("a[href]")) close();
-                }}
-              >
-                {exchanges.length > 0 ? (
-                  exchanges.map((exchange) => (
-                    <AskTurn
-                      key={exchange.id}
-                      exchange={exchange}
-                      busy={working && exchange.phase !== "working"}
-                      onRetry={() => void retry(exchange.id, options())}
-                      onAnswerConsent={() => void retry(exchange.id, options())}
-                      onProposal={(proposal) =>
-                        setProposal(exchange.id, proposal)
-                      }
-                      onResolved={(resolution) =>
-                        resolveProposal(exchange.id, resolution)
-                      }
-                    />
-                  ))
-                ) : (
-                  <AskEmpty
-                    canAct={canAct}
-                    suggestions={suggestions}
-                    onPick={pick}
-                  />
-                )}
-              </div>
-            </AskCardEditsContext.Provider>
-          </div>
-          <form
-            className="shrink-0 border-t border-border px-4 py-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit(draft);
-            }}
-          >
-            {saving && savedUntil ? (
-              <p className="mb-2 text-caption text-muted-foreground">
-                {askSavedLine(formatAiAnswerDate(savedUntil))}
-              </p>
-            ) : null}
-            <div className="flex items-end gap-2">
-              <Textarea
-                ref={field}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    submit(draft);
-                  }
-                }}
-                rows={1}
-                maxLength={ASK_QUESTION_MAX_LENGTH}
-                placeholder={ASK_COPY.placeholder}
-                aria-label={ASK_COPY.placeholder}
-                className="max-h-40 min-h-10 resize-none [field-sizing:content]"
-              />
-              <Button
-                type="submit"
-                size="icon"
-                className="shrink-0"
-                aria-label={ASK_COPY.send}
-                title={ASK_COPY.send}
-                disabled={working || draft.trim().length === 0}
-              >
-                <ArrowUp className="h-4 w-4" aria-hidden="true" />
-              </Button>
             </div>
-          </form>
+            <div
+              ref={scroller}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                following.current =
+                  element.scrollHeight -
+                    element.scrollTop -
+                    element.clientHeight <
+                  FOLLOW_SLACK_PX;
+              }}
+              className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1"
+            >
+              <AskCardEditsContext.Provider value={cardEdits}>
+                <div
+                  ref={thread}
+                  className="flex flex-col gap-6"
+                  // Whatever a link in the thread opens, it opens under this
+                  // dialog. A click that opens a new tab leaves it as it was.
+                  onClick={(event) => {
+                    if (
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    )
+                      return;
+                    if ((event.target as HTMLElement).closest("a[href]"))
+                      close();
+                  }}
+                >
+                  {exchanges.length > 0 ? (
+                    exchanges.map((exchange) => (
+                      <AskTurn
+                        key={exchange.id}
+                        exchange={exchange}
+                        busy={working && exchange.phase !== "working"}
+                        onRetry={() => void retry(exchange.id, options())}
+                        onAnswerConsent={() =>
+                          void retry(exchange.id, options())
+                        }
+                        onProposal={(proposal) =>
+                          setProposal(exchange.id, proposal)
+                        }
+                        onResolved={(resolution) =>
+                          resolveProposal(exchange.id, resolution)
+                        }
+                      />
+                    ))
+                  ) : (
+                    <AskEmpty
+                      canAct={canAct}
+                      suggestions={suggestions}
+                      onPick={pick}
+                    />
+                  )}
+                </div>
+              </AskCardEditsContext.Provider>
+            </div>
+            <form
+              className="shrink-0 border-t border-border px-4 py-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submit(draft);
+              }}
+            >
+              {saving && savedUntil ? (
+                <p className="mb-2 text-caption text-muted-foreground">
+                  {askSavedLine(formatAiAnswerDate(savedUntil))}
+                </p>
+              ) : null}
+              <div className="flex items-end gap-2">
+                <Textarea
+                  ref={field}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      submit(draft);
+                    }
+                  }}
+                  rows={1}
+                  maxLength={ASK_QUESTION_MAX_LENGTH}
+                  placeholder={ASK_COPY.placeholder}
+                  aria-label={ASK_COPY.placeholder}
+                  className="max-h-40 min-h-10 resize-none [field-sizing:content]"
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="shrink-0"
+                  aria-label={ASK_COPY.send}
+                  title={ASK_COPY.send}
+                  disabled={working || draft.trim().length === 0}
+                >
+                  <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </form>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

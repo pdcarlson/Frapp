@@ -52,9 +52,15 @@ const OPENERS = new Set([
 const QUESTION_WORDS = 4;
 
 export function asksFirst(query: string): boolean {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const words = query
+    .trim()
+    .toLowerCase()
+    // A phone or a Mac types a curly apostrophe; some keyboards a wide "?".
+    .replace(/\u2019/g, "'")
+    .split(/\s+/)
+    .filter(Boolean);
   if (words.length === 0) return false;
-  if (words.at(-1)!.endsWith("?")) return true;
+  if (/[?\uFF1F]$/.test(words.at(-1)!)) return true;
   if (words.length >= QUESTION_WORDS) return true;
   // One word is a search, whatever the word: "which" finds messages too.
   return words.length > 1 && OPENERS.has(words[0]!);

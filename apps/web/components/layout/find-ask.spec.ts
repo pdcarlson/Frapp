@@ -8,6 +8,8 @@ describe("asksFirst", () => {
     "dues?",
     "who has the van keys",
     "what's due",
+    "what\u2019s due",
+    "\u4f1a\u8cbb\uff1f",
     "is rush open",
     "which venue did we pick for formal",
     "budget vote last spring meeting",
