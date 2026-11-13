@@ -4,10 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 import { isChannelHeldUnread, trackActivityStamping } from "./read-cursor";
-import {
-  CHANNEL_LATEST_MESSAGES_KEY,
-  CHANNEL_UNREAD_COUNTS_KEY,
-} from "./use-chat";
+import { invalidateChannelSummaries } from "./use-chat";
 
 /**
  * What the chat realtime manager reports about traffic outside the open
@@ -127,14 +124,7 @@ export function createChatActivityHandler(
     // answer, which is better than a badge left stale.
     await Promise.allSettled(toStamp.map((id) => options.markRead(id)));
     if (disposed || !shouldRefresh) return;
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-      exact: true,
-    });
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-      exact: true,
-    });
+    invalidateChannelSummaries(options.queryClient);
   };
 
   const flush = () => {

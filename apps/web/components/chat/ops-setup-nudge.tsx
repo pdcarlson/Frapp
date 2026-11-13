@@ -5,9 +5,9 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import {
   useAccessibleChapters,
+  useCurrentChapter,
   useDismissOpsNudge,
   useMyPermissions,
-  useOrgConfig,
   type ChapterMembershipSummary,
 } from "@repo/hooks";
 import { getModuleCatalogEntry } from "@repo/org-archetypes";
@@ -35,24 +35,35 @@ import { asArray, cn } from "@/lib/utils";
  * from which it computes its own `can(...)` — so this is not "the shell has none
  * of them". It is that threading four values through a file already past 1,100
  * lines, for a card that renders `null` in the common case, grows the file that
- * most needs not to grow. Those two duplicate reads are free: they resolve from
- * the cache the shell has warmed. `useOrgConfig` is not one of them any more:
- * the shell moved its slash gate and recruitment word to the member view
- * (#2957, #2993), so this card is the chat surface's only caller of the
- * officer-only config read, which errors for every member below President.
+ * most needs not to grow. Those duplicate reads are free: they resolve from
+ * the cache the shell has warmed. That includes the chapter's
+ * `enabled_modules`, which come from the member view
+ * (`GET /v1/chapters/current`) like the shell's module gate, not from the
+ * officer-only config read (`GET /v1/chapters/:id/config`). That read answered
+ * 403 for every member below the Exec board on every chat open, and was one
+ * more request in the open burst (#4709).
  *
  * The cost is that the two surfaces could disagree about the viewer if one of
  * them later moves off `useMyPermissions` — see the note on the permission gate
  * below.
  *
- * The order of the guards below is deliberate — permission first, then config,
- * then selection — so a member without `chapter-config:manage` never causes the
- * chapter-config query to be the thing that decides whether they see a card.
+ * The order of the guards below is deliberate — permission first, then the
+ * chapter's modules, then selection — so a member without
+ * `chapter-config:manage` never has the module read decide whether they see a
+ * card.
  */
 export function OpsSetupNudge() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chaptersQuery = useAccessibleChapters();
-  const orgConfig = useOrgConfig();
+  const currentChapter = useCurrentChapter({
+    chapterId: activeChapterId,
+    enabled: !!activeChapterId,
+  });
+  const enabledModules = (
+    currentChapter.data as
+      | { enabled_modules?: Record<string, boolean> | null }
+      | undefined
+  )?.enabled_modules ?? undefined;
   // No `chapterId` argument: the hook reads the active chapter itself and
   // already disables the query until one resolves.
   const { data: permissionsPayload } = useMyPermissions();
@@ -112,14 +123,14 @@ export function OpsSetupNudge() {
 
   const nudge = useMemo(() => {
     if (!canDismiss || !activeMembership) return null;
-    return selectOpsNudge(orgConfig.data?.enabled_modules, [
+    return selectOpsNudge(enabledModules, [
       ...(activeMembership.dismissed_ops_nudges ?? []),
       ...dismissedHere,
     ]);
   }, [
     canDismiss,
     activeMembership,
-    orgConfig.data?.enabled_modules,
+    enabledModules,
     dismissedHere,
   ]);
 
