@@ -43,6 +43,7 @@ describe('agentToolFromAskTool', () => {
     permission: SystemPermissions.MEMBERS_VIEW,
     module: null,
     effect: 'read',
+    reach: 'chapter',
     run: jest.fn(async () => ({
       chapterId: CHAPTER,
       text: 'Dana Reyes: Treasurer',
