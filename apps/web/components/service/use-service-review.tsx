@@ -2,6 +2,7 @@
 
 import { useReviewServiceEntry } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -37,13 +38,12 @@ export function useServiceReview() {
       });
       return true;
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't approve entry",
-        description: getErrorMessage(
-          error,
+        error,
+        fallback:
           "Only a pending entry someone else submitted can be approved.",
-        ),
-        variant: "destructive",
+        retry: () => approve(entry),
       });
       return false;
     }

@@ -160,12 +160,10 @@ describe("createQueryErrorReporter", () => {
       ]);
     });
 
-    it("keeps a member-caused or uncoded 4xx at warning", () => {
+    it("keeps an uncoded 4xx, or one with an unlisted code, at warning", () => {
       const h = harness();
       h.query(apiBody(404), ["channels"]);
-      h.query(apiBody(400, { code: "service_entry.receipt_required" }), [
-        "service",
-      ]);
+      h.query(apiBody(400, { code: "something.new" }), ["service"]);
       h.query(apiBody(400), ["events"]);
       h.query(apiBody(410), ["invites"]);
 
@@ -180,6 +178,33 @@ describe("createQueryErrorReporter", () => {
         expect(report.tags.api_error_class).toBeUndefined();
         expect(report.fingerprint).not.toContain("client-contract");
       }
+    });
+
+    it("leaves out a 4xx whose code is member-caused: normal use, nothing to fix", () => {
+      const h = harness();
+      h.mutation(apiBody(400, { code: "study.outside_zone" }), [
+        "study-sessions",
+        "start-study-session",
+      ]);
+      h.mutation(apiBody(400, { code: "attendance.check_in.window_closed" }), [
+        "attendance",
+        "check-in",
+      ]);
+      h.mutation(apiBody(409, { code: "attendance.already_checked_in" }), [
+        "attendance",
+        "check-in",
+      ]);
+      h.query(apiBody(400, { code: "service_entry.receipt_required" }), [
+        "service",
+      ]);
+      expect(h.reports).toHaveLength(0);
+    });
+
+    it("still reports a 5xx that carries a member-caused code", () => {
+      const h = harness();
+      h.query(apiBody(503, { code: "chapter.module.disabled" }));
+      expect(h.reports).toHaveLength(1);
+      expect(h.reports[0]!.level).toBe("warning");
     });
 
     it("keeps a 5xx at warning even when its code is a client-contract one", () => {

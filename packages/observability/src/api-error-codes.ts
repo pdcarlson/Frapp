@@ -15,10 +15,13 @@
  * **Member-caused** codes are the API refusing something a member did or a
  * state the chapter is in: a module turned off, a lapsed subscription, a
  * chapter they left, a form missing its receipt, a cursor whose message was
- * deleted. A correct client meets these in normal use, so they stay at the
- * level their status class gets.
+ * deleted. A correct client meets these in normal use, so the reporter
+ * leaves a 4xx carrying one out of Sentry altogether: the screen words it,
+ * and there is nothing to fix. Usage questions about them belong in
+ * analytics, not error tracking.
  *
- * A code in neither list is treated as member-caused. The API's
+ * A code in neither list is reported at `warning`, the level its status
+ * class gets. The API's
  * `api-error-codes.spec.ts` fails when a code the API throws is missing from
  * both, so a new code is classified on purpose, never by default. Codes on a
  * 5xx (`DEGRADED`) are not listed: a 5xx is reported as a server fault
@@ -145,6 +148,14 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.report.not_found",
   "ai.report.too_old",
   "ai.report.receipt_invalid",
+  // Start pressed away from the study zone, or on a zone an officer turned
+  // off. The study screen says which.
+  "study.outside_zone",
+  "study.zone_inactive",
+  // A check-in before the doors open or after they close, and a second scan
+  // of one already counted.
+  "attendance.check_in.window_closed",
+  "attendance.already_checked_in",
 ] as const;
 
 export type ClientContractErrorCode =
@@ -153,6 +164,17 @@ export type ClientContractErrorCode =
 const CLIENT_CONTRACT: ReadonlySet<string> = new Set(
   CLIENT_CONTRACT_ERROR_CODES,
 );
+
+export type MemberCausedErrorCode = (typeof MEMBER_CAUSED_ERROR_CODES)[number];
+
+const MEMBER_CAUSED: ReadonlySet<string> = new Set(MEMBER_CAUSED_ERROR_CODES);
+
+/** Whether `code` is a refusal a member meets in normal use. */
+export function isMemberCausedErrorCode(
+  code: string | null | undefined,
+): code is MemberCausedErrorCode {
+  return typeof code === "string" && MEMBER_CAUSED.has(code);
+}
 
 /** Whether `code` is one a correct client never sees: a bug when it does. */
 export function isClientContractErrorCode(

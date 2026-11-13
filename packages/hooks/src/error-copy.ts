@@ -1,4 +1,9 @@
-import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  codeOf,
+  isDefinitiveClientError,
+  serverMessageOf,
+  statusOf,
+} from "@repo/api-sdk";
 import {
   OFFLINE_COPY,
   refusalCopy,
@@ -151,6 +156,30 @@ function isNetworkFailure(error: unknown): boolean {
 }
 
 export { TRY_AGAIN };
+
+/**
+ * Whether a failed write earns a **Try again** button beside its message: the
+ * same call, sent again, may go through. True for a failure with no response
+ * (a dropped connection, a timeout), a 5xx, and an intermediary's 408, 460 or
+ * 499; false for a refusal the API decided (any other 4xx, the throttler's 429
+ * included), which would only be refused again, and for an error the client
+ * wrote for members. It is the API retry policy's one predicate
+ * (`isDefinitiveClientError`, `spec/ui/resilience/api-retry.md`), read through
+ * chat-core's wrapped status too.
+ *
+ * The client's own retries have already run by the time a write reaches its
+ * failure message, so this is the member's retry, not another automatic one.
+ */
+export function canTryAgain(error: unknown): boolean {
+  if (
+    error instanceof MemberFacingError ||
+    error instanceof SignedUploadError
+  ) {
+    return false;
+  }
+  const status = statusOf(error) ?? wrappedStatusOf(error);
+  return status === undefined || !isDefinitiveClientError(status);
+}
 
 /** writing.md § copy rules: the server failed, and nothing more is known. */
 export const LOAD_FAILURE_SERVER_COPY =

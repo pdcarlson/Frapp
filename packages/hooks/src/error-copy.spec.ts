@@ -5,6 +5,7 @@ import {
   STATUS_ERROR_COPY,
 } from "@repo/validation";
 import {
+  canTryAgain,
   describeLoadFailure,
   errorCopy,
   LOAD_FAILURE_SERVER_COPY,
@@ -177,5 +178,40 @@ describe("describeLoadFailure", () => {
     expect(describeLoadFailure(nest(401, "Unauthorized"))).toBe(
       LOAD_FAILURE_SIGN_IN_COPY,
     );
+  });
+});
+
+describe("canTryAgain", () => {
+  it("offers Try again when no response came back, or the server failed", () => {
+    expect(canTryAgain(new TypeError("Failed to fetch"))).toBe(true);
+    expect(canTryAgain(nest(500, "Internal server error"))).toBe(true);
+    expect(canTryAgain(nest(503, "Service unavailable"))).toBe(true);
+    expect(canTryAgain(nest(504, "Gateway timeout"))).toBe(true);
+    // A proxy's timeout: the write may not have landed, so asking again helps.
+    expect(canTryAgain(nest(408, "Request timeout"))).toBe(true);
+  });
+
+  it("reads the status chat-core wraps a refusal in", () => {
+    const wrapped = Object.assign(new Error("x"), {
+      response: { status: 502 },
+    });
+    expect(canTryAgain(wrapped)).toBe(true);
+    const refused = Object.assign(new Error("x"), { context: { status: 403 } });
+    expect(canTryAgain(refused)).toBe(false);
+  });
+
+  it("offers nothing for a refusal the API decided, which would only repeat", () => {
+    expect(canTryAgain(nest(400, "Location is outside the geofence"))).toBe(
+      false,
+    );
+    expect(canTryAgain(nest(403, "Forbidden resource"))).toBe(false);
+    expect(canTryAgain(nest(409, "Already checked in for this event"))).toBe(
+      false,
+    );
+    expect(canTryAgain(nest(429, "Too many requests"))).toBe(false);
+  });
+
+  it("offers nothing for a failure the client already explained", () => {
+    expect(canTryAgain(new MemberFacingError("Pick a day first."))).toBe(false);
   });
 });

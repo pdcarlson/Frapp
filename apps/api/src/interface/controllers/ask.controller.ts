@@ -220,7 +220,16 @@ export class AskController {
         const retryable =
           error instanceof LanguageModelError ? error.retryable : true;
         reportCaughtFailure(this.logger, {
-          level: 'error',
+          // A provider that is overloaded, rate limited, slow or unreachable
+          // is not our bug: the gateway already retried, and the member is
+          // offered Try again (`retryable` below). It goes at `warning`, so
+          // provider weather stays out of the API error-spike monitor, which
+          // counts `error` only. Anything else here is ours, and stays
+          // `error`.
+          level:
+            error instanceof LanguageModelError && error.retryable
+              ? 'warning'
+              : 'error',
           site: 'ask-stream',
           message: 'Ask: the answer failed after the stream began',
           // A `LanguageModelError` carries no provider text; anything else

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, AppState } from "react-native";
+import { AccessibilityInfo, AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
 import {
   activityRowAction,
@@ -10,6 +10,7 @@ import {
   type ActivityRowAction,
 } from "@repo/hooks";
 import { useConnection } from "@/lib/connection/use-connection";
+import { alertFailure } from "@/lib/failure-alert";
 import {
   rowActionFailure,
   type ActivityRowActionState,
@@ -134,7 +135,14 @@ export function useActivityRowActions({
       setState(key, "idle");
       const failure = rowActionFailure(action, error);
       if (failure.gate) setRefused(true);
-      Alert.alert(row.title, failure.text);
+      alertFailure({
+        title: row.title,
+        error,
+        message: failure.text,
+        retry: () => {
+          void run(row, action);
+        },
+      });
       return;
     }
     inFlight.current.delete(key);

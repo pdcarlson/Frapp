@@ -54,6 +54,7 @@ import {
   type SubscriptionGate,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
@@ -346,13 +347,12 @@ export function TasksBoard() {
         });
       }
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't update task",
-        description: getErrorMessage(
-          error,
+        error,
+        fallback:
           "Only the person it's assigned to, or an officer, can move this task.",
-        ),
-        variant: "destructive",
+        retry: () => changeStatus(task, next, proof),
       });
       return false;
     }
@@ -369,10 +369,11 @@ export function TasksBoard() {
           : "Completion confirmed.",
       });
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't confirm task",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
+        error,
+        fallback: "Try again in a moment.",
+        retry: () => confirmCompletion(task),
       });
     }
   }
@@ -402,6 +403,11 @@ export function TasksBoard() {
       tone: "destructive",
     });
     if (!confirmed) return;
+    await deleteConfirmed(task);
+  }
+
+  /** The delete itself, after the member said yes: what Try again repeats. */
+  async function deleteConfirmed(task: Task) {
     try {
       await deleteTask.mutateAsync(task.id);
       toast({
@@ -409,10 +415,11 @@ export function TasksBoard() {
         description: `${task.title} was removed.`,
       });
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't delete task",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
+        error,
+        fallback: "Try again in a moment.",
+        retry: () => deleteConfirmed(task),
       });
     }
   }

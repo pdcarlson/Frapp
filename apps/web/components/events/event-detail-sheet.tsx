@@ -29,6 +29,7 @@ import { statusOf } from "@repo/api-sdk";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EVENT_ATTENDANCE_LABELS,
@@ -55,7 +56,7 @@ import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { cn, getErrorMessage } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { editTargetOf } from "@/components/events/edit-target";
@@ -289,17 +290,20 @@ export function EventDetailSheet({
     );
     if (!confirmed) return;
     const scope = asksScope && !confirmed.alternative ? "series" : "instance";
+    await deleteConfirmed(scope);
+  }
 
+  /** The delete itself, after the member said yes: what Try again repeats. */
+  async function deleteConfirmed(scope: "series" | "instance") {
+    if (!eventId) return;
     try {
       await deleteEventMutation.mutateAsync({ id: eventId, scope });
     } catch (error) {
-      toast({
-        title: "Could not delete event",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
-        variant: "destructive",
+      toastFailure({
+        title: "Couldn't delete the event",
+        error,
+        fallback: "Nothing changed. Try again in a moment.",
+        retry: () => deleteConfirmed(scope),
       });
       return;
     }

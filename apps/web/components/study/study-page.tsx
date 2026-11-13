@@ -44,6 +44,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
@@ -471,13 +472,11 @@ export function StudyPage() {
           "Heartbeats fire every five minutes. Keep this tab open. Closing it ends the session.",
       });
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't start study session",
-        description: getErrorMessage(
-          error,
-          "Allow location access and try again.",
-        ),
-        variant: "destructive",
+        error,
+        fallback: "Allow location access and try again.",
+        retry: handleStart,
       });
     }
   }

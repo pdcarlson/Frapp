@@ -18,6 +18,8 @@ vi.mock("@repo/hooks", () => ({
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
+  // `toastFailure` (`@/lib/failure-toast`) calls the module's `toast`.
+  toast: mockToast,
 }));
 
 const { useServiceReview } = await import("./use-service-review");
@@ -69,6 +71,38 @@ describe("useServiceReview", () => {
       }),
     );
     expect(recorded).toBe(false);
+  });
+
+  it("offers Try again when the approval died on the server, not when it was refused", async () => {
+    const { result } = renderHook(() => useServiceReview());
+
+    mockMutateAsync.mockRejectedValueOnce({ statusCode: 503, message: "x" });
+    await act(async () => {
+      await result.current.approve(entry);
+    });
+    const failed = mockToast.mock.calls.at(-1)?.[0] as {
+      action?: { props: { onClick: () => void } };
+    };
+    expect(failed.action).toBeDefined();
+
+    // Try again sends the same approval.
+    mockMutateAsync.mockResolvedValueOnce({});
+    await act(async () => {
+      failed.action!.props.onClick();
+    });
+    expect(mockMutateAsync).toHaveBeenLastCalledWith({
+      id: "entry-1",
+      body: { status: "APPROVED" },
+    });
+    expect(mockToast).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Entry approved" }),
+    );
+
+    mockMutateAsync.mockRejectedValueOnce({ statusCode: 400, message: "x" });
+    await act(async () => {
+      await result.current.approve(entry);
+    });
+    expect(mockToast.mock.calls.at(-1)?.[0]).not.toHaveProperty("action");
   });
 
   function Harness({ onDone }: { onDone: (recorded: boolean) => void }) {
