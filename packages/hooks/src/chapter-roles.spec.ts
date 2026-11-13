@@ -79,7 +79,6 @@ describe("parseChapterRoles", () => {
         { id: "no-name" },
         { name: "no-id" },
         { id: 7, name: "numeric id" },
-        { id: "blank", name: "  " },
         { id: "ok", name: "Ok", permissions: ["events:create", 3, null] },
       ]),
     ).toEqual([
@@ -90,6 +89,23 @@ describe("parseChapterRoles", () => {
         is_system: false,
       }),
     ]);
+  });
+
+  it("keeps a role with a blank name, so no editor hides a role a member holds", () => {
+    expect(parseChapterRoles([{ id: "blank", name: "  " }])).toEqual([
+      expect.objectContaining({ id: "blank", name: "  " }),
+    ]);
+  });
+
+  it("drops locked roles from a picker that assigns, and only then", () => {
+    expect(toRoleOptions([PRESIDENT, LEGACY_WILDCARD, DISCORD])).toHaveLength(
+      3,
+    );
+    expect(
+      toRoleOptions([PRESIDENT, LEGACY_WILDCARD, DISCORD], "drop", {
+        dropLocked: true,
+      }),
+    ).toEqual([{ id: "r-discord", name: "Rush" }]);
   });
 
   it("paints palette colors only, in any case", () => {

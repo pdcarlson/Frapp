@@ -1,16 +1,17 @@
 import {
+  can,
   isEveryoneRole,
-  memberAccessRoleIds,
   roleColorOrNull,
   WILDCARD_PERMISSION,
 } from "@repo/validation";
 
 /*
- * The one reading of `useRoles()` (`GET /v1/roles`) that web and the phone
- * share (#4164). The endpoint declares no response schema (#1049), so the
- * payload is read defensively here, once, and every role picker, filter and
- * editor reads the same rows and the same `locked` rule. The Roles pages read
- * the tier fields through `normalizeTieredRoles` (`./role-tiers`).
+ * The shared reading of `useRoles()` (`GET /v1/roles`) for web and the phone
+ * (#4164): the role pickers, filters and member role editors outside the
+ * Roles pages read their rows here, with one `locked` rule. The endpoint
+ * declares no response schema (#1049), so the payload is read defensively.
+ * The Roles pages read the tier fields through `normalizeTieredRoles`
+ * (`./role-tiers`).
  */
 
 /** A chapter role as every surface outside the Roles pages reads it. */
@@ -53,19 +54,16 @@ export function isLockedRole(permissions: readonly string[]): boolean {
 
 /**
  * `GET /v1/roles` as {@link ChapterRole} rows, in the order the API returns
- * them. A row without a string `id` and a non-blank `name` is dropped, so no
- * surface offers a role it can't name.
+ * them. A row without a string `id` and `name` is dropped. A blank name is
+ * kept, as the Roles pages keep it: the API accepts one, and hiding the role
+ * would leave a member holding a role no editor can untick.
  */
 export function parseChapterRoles(data: unknown): ChapterRole[] {
   if (!Array.isArray(data)) return [];
   return data.flatMap((row: unknown): ChapterRole[] => {
     if (!row || typeof row !== "object") return [];
     const role = row as Record<string, unknown>;
-    if (
-      typeof role.id !== "string" ||
-      typeof role.name !== "string" ||
-      !role.name.trim()
-    ) {
+    if (typeof role.id !== "string" || typeof role.name !== "string") {
       return [];
     }
     const permissions = Array.isArray(role.permissions)
@@ -82,9 +80,7 @@ export function parseChapterRoles(data: unknown): ChapterRole[] {
           typeof role.system_key === "string" ? role.system_key : null,
         locked: isLockedRole(permissions),
         everyone: isEveryoneRole(role),
-        grantsBase: memberAccessRoleIds([{ id: role.id, permissions }]).has(
-          role.id,
-        ),
+        grantsBase: can("members:view", permissions),
       },
     ];
   });
@@ -110,12 +106,19 @@ export type RoleOption = {
  */
 export type EveryoneRoleUse = "drop" | "keep" | "hide";
 
-/** The roles payload as `{ id, name }` options, Everyone per `everyone`. */
+/**
+ * The roles payload as `{ id, name }` options, Everyone per `everyone`. A
+ * picker that assigns a role (an invite's role, the default invite role)
+ * passes `{ dropLocked: true }`, since the API refuses a {@link isLockedRole}
+ * role there; a list that only names or filters roles keeps it.
+ */
 export function toRoleOptions(
   data: unknown,
   everyone: EveryoneRoleUse = "drop",
+  { dropLocked = false }: { dropLocked?: boolean } = {},
 ): RoleOption[] {
   return parseChapterRoles(data).flatMap((role): RoleOption[] => {
+    if (dropLocked && role.locked) return [];
     if (role.everyone) {
       if (everyone === "drop") return [];
       if (everyone === "hide") {

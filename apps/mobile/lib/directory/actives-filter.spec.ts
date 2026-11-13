@@ -66,7 +66,7 @@ describe("the filter's options", () => {
           { id: "r-1", name: "Member", color: "#f2994a" },
           { id: "r-2", name: "Off palette", color: "#123456" },
           { id: "r-al", name: "Alumni", system_key: "ALUMNI" },
-          { id: "r-x", name: "" },
+          { id: "r-x" },
           "junk",
         ]),
       ),
