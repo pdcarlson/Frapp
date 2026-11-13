@@ -68,6 +68,7 @@ function setup(read: CorpusSourceRead = okRead('Dues are $225.')) {
     writeChunks: jest.fn().mockResolvedValue(true),
     finishSource: jest.fn().mockResolvedValue(true),
     match: jest.fn(),
+    readSourceChunks: jest.fn(),
     readChatWindow: jest.fn(),
     chatWindowChannels: jest.fn(),
     requeueChatByAuthors: jest.fn(),

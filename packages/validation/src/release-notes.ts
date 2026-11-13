@@ -150,6 +150,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A forwarded message shows up as a card marked Forwarded, with who wrote it and when.",
       "Ask Frapp now knows who is asking, so \"me\" and \"my\" mean you, and its answers are shorter and in its own words.",
       "An answer from @Frapp in a channel can be posted for everyone there with Post for everyone here, after Frapp tells you which of its sources not everyone can open.",
+      "A forward you saved with no comment now shows what was forwarded in Saved messages.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",

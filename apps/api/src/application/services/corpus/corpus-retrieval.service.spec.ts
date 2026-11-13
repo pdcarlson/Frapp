@@ -394,4 +394,135 @@ describe('CorpusRetrievalService — chat (#4314)', () => {
     if (result.status !== 'ok') throw new Error('expected passages');
     expect(result.leftOutMessages).toBe(0);
   });
+
+  // Ask's agent tools narrow a search and read one source in order (#4900).
+  describe('a narrowed search', () => {
+    it('hands the narrowing to the database, and still checks every source', async () => {
+      const { service, corpus, documents } = setup([
+        candidate({ chunk_id: 'a', dense_rank: 1 }),
+      ]);
+      const filter = {
+        sourceTypes: ['chapter_document'],
+        since: '2026-09-01T04:00:00.000Z',
+      };
+      const result = await service.retrieve(
+        { chapterId: CHAPTER, actingUserId: ASKER, query: 'dues', filter },
+        NOW,
+      );
+      expect(corpus.match).toHaveBeenCalledWith(
+        expect.objectContaining({ chapterId: CHAPTER, userId: ASKER, filter }),
+      );
+      expect(documents.readableBy).toHaveBeenCalledWith(CHAPTER, ASKER, [
+        'doc-1',
+      ]);
+      expect(ids(result)).toEqual(['a']);
+    });
+
+    it('still drops a source the member cannot open, whatever was asked for', async () => {
+      const { service } = setup([
+        candidate({
+          chunk_id: 'exec',
+          source_type: 'meeting_minutes',
+          source_id: 'meeting-exec',
+          dense_rank: 1,
+        }),
+      ]);
+      const result = await service.retrieve(
+        {
+          chapterId: CHAPTER,
+          actingUserId: ASKER,
+          query: 'budget',
+          filter: { sourceTypes: ['meeting_minutes'] },
+        },
+        NOW,
+      );
+      expect(ids(result)).toEqual([]);
+    });
+
+    it('sends no filter when none is asked for', async () => {
+      const { retrieve, corpus } = setup();
+      await retrieve();
+      expect(corpus.match.mock.calls[0][0]).not.toHaveProperty('filter');
+    });
+  });
+
+  describe('readSource', () => {
+    const chunks = {
+      title: 'Bylaws',
+      source_at: '2026-01-01T00:00:00.000Z',
+      total: 12,
+      chunks: [
+        {
+          id: 'chunk-6',
+          chunk_index: 5,
+          heading: 'Article IV',
+          content: 'Dues are $225.',
+          page_start: 4,
+          page_end: 4,
+        },
+      ],
+    };
+    const request = {
+      chapterId: CHAPTER,
+      actingUserId: ASKER,
+      sourceType: 'chapter_document',
+      sourceId: 'doc-1',
+      offset: 5,
+      limit: 5,
+    };
+    const withChunks = () => {
+      const made = setup();
+      (made.corpus as unknown as Record<string, jest.Mock>).readSourceChunks =
+        jest.fn().mockResolvedValue(chunks);
+      return made;
+    };
+
+    it('reads the passages for a member who may open the source, with no model call', async () => {
+      const { service, corpus, documents, embed } = withChunks();
+      await expect(service.readSource(request)).resolves.toEqual(chunks);
+      expect(documents.readableBy).toHaveBeenCalledWith(CHAPTER, ASKER, [
+        'doc-1',
+      ]);
+      expect(corpus.readSourceChunks).toHaveBeenCalledWith({
+        chapterId: CHAPTER,
+        userId: ASKER,
+        sourceType: 'chapter_document',
+        sourceId: 'doc-1',
+        offset: 5,
+        limit: 5,
+      });
+      expect(embed).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing for a source the member cannot open', async () => {
+      const { service, corpus } = withChunks();
+      await expect(
+        service.readSource({
+          ...request,
+          sourceType: 'meeting_minutes',
+          sourceId: 'meeting-exec',
+        }),
+      ).resolves.toBeNull();
+      expect(corpus.readSourceChunks).not.toHaveBeenCalled();
+    });
+
+    it.each(['chat_message', 'vault_file'])(
+      'never reads a %s source this way',
+      async (sourceType) => {
+        const { service, corpus } = withChunks();
+        await expect(
+          service.readSource({ ...request, sourceType }),
+        ).resolves.toBeNull();
+        expect(corpus.readSourceChunks).not.toHaveBeenCalled();
+      },
+    );
+
+    it('holds a read to twenty passages', async () => {
+      const { service, corpus } = withChunks();
+      await service.readSource({ ...request, limit: 500 });
+      expect(corpus.readSourceChunks).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 20 }),
+      );
+    });
+  });
 });

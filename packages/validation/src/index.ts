@@ -25,6 +25,8 @@ export * from "./analytics-opt-out";
 export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
+// Thumbs on an Ask answer and the taps under it (#4902).
+export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-post";
 export * from "./backwork";
