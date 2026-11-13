@@ -51,7 +51,12 @@ import {
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
-import { formatTaskDue, joinFacts } from './push-copy';
+import {
+  formatTaskDue,
+  joinFacts,
+  TASK_REVIEW_PUSH_THREAD,
+  taskSubmittedCopy,
+} from './push-copy';
 import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -1227,7 +1232,10 @@ export class TaskService {
       );
     }
 
-    await this.notifyTaskCompleted(updated, userId, chapterId);
+    await this.notifyTaskCompleted(updated, userId, chapterId, {
+      photoCount: photos.length,
+      resubmitted: !!task.sent_back_at,
+    });
     return this.viewWithPhotos(chapterId, updated);
   }
 
@@ -1291,6 +1299,7 @@ export class TaskService {
     task: Task,
     actorUserId: string,
     chapterId: string,
+    submitted: { photoCount: number; resubmitted: boolean },
   ): Promise<void> {
     if (task.created_by === actorUserId) return;
 
@@ -1313,21 +1322,23 @@ export class TaskService {
     }
     if (!creatorMembership) return;
 
+    const name = (await this.displayNameOf(task.assignee_id)) ?? 'A member';
     await this.safeNotifyUser(
       task.created_by,
       chapterId,
       {
-        title: task.title,
-        body: `${
-          (await this.displayNameOf(task.assignee_id)) ?? 'The assignee'
-        } marked it done.${
-          // A task that needed no sign-off is already Done (#4635); the
-          // officer still hears, and can send it back.
-          taskNeedsSignOff(task) ? ' Confirm it to award the points.' : ''
-        }`,
+        ...taskSubmittedCopy(name, task, submitted),
         priority: 'NORMAL',
         category: 'tasks',
-        data: { target: { screen: 'tasks', taskId: task.id } },
+        // Every review stacks in one group on iOS, so a Sunday night of
+        // chores is one pile on the lock screen, not twenty-five banners.
+        threadId: TASK_REVIEW_PUSH_THREAD,
+        // `view: 'review'` opens the review itself (Activity, with this
+        // task's sheet up). A build that predates it reads only `screen`
+        // and opens the task board, as it always has.
+        data: {
+          target: { screen: 'tasks', taskId: task.id, view: 'review' },
+        },
       },
       task.id,
       'completion',
@@ -1396,14 +1407,13 @@ export class TaskService {
       );
     }
 
+    const confirmer = (await this.displayNameOf(callerUserId)) ?? 'An officer';
     await this.safeNotifyUser(
       task.assignee_id,
       chapterId,
       {
-        title: task.title,
-        body: updated.point_reward
-          ? `Confirmed · +${updated.point_reward} points`
-          : 'Confirmed',
+        title: `${confirmer} confirmed: ${task.title}`,
+        body: updated.point_reward ? `+${updated.point_reward} points` : 'Done',
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -1419,7 +1429,7 @@ export class TaskService {
     id: string,
     chapterId: string,
     comment: string | null | undefined,
-    options: { requirePhoto?: boolean } = {},
+    options: { requirePhoto?: boolean; actorUserId?: string } = {},
   ): Promise<TaskView> {
     // A send-back says why (#4635): the reason stays on the task for the
     // assignee, and the push carries it.
@@ -1467,12 +1477,16 @@ export class TaskService {
     }
     await this.dropPhotos(chapterId, id, proof);
 
+    const sender =
+      (options.actorUserId &&
+        (await this.displayNameOf(options.actorUserId))) ||
+      'An officer';
     await this.safeNotifyUser(
       task.assignee_id,
       chapterId,
       {
-        title: task.title,
-        body: `Sent back: ${reason}`,
+        title: `${sender} sent back: ${task.title}`,
+        body: `"${reason}"`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },

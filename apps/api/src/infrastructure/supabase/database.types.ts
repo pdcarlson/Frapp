@@ -33,6 +33,7 @@ import type {
   ChapterWorkflow,
   ChatChannel,
   ChatChannelCategory,
+  ChatFormResponse,
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
@@ -174,6 +175,7 @@ export interface Database {
       chapters: TableDefinition<Chapter>;
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
+      chat_form_responses: TableDefinition<ChatFormResponse>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
@@ -471,6 +473,21 @@ export interface Database {
       delete_empty_discord_import_channels: {
         Args: { p_import_id: string; p_chapter_id: string };
         Returns: string[];
+      };
+      /**
+       * `20261113040010` (#4620) — delete the upcoming occurrences a series
+       * edit rebuilt, carrying each matched pair's excuses (and an approved
+       * one's EXCUSED attendance) to the new meeting in the same transaction.
+       * Returns the pending and approved excuses no new meeting took.
+       */
+      delete_replaced_occurrences: {
+        Args: {
+          p_chapter_id: string;
+          p_old_ids: string[];
+          p_from_ids: string[];
+          p_to_ids: string[];
+        };
+        Returns: EventExcuse[];
       };
       /**
        * `20261106170000`. An import's rows being imported, added up per
@@ -906,6 +923,15 @@ export interface Database {
           p_member_role_id: string;
         };
         Returns: SemesterArchive;
+      };
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
+      save_chat_form_response: {
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_answers: Json;
+        };
+        Returns: ChatFormResponse;
       };
       /**
        * `20261106190000` (#585). Backwork search over title, course,

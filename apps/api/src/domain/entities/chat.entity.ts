@@ -24,6 +24,7 @@ export const CHAT_MESSAGE_KINDS = [
   'loading',
   'announcement',
   'signup',
+  'form',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -561,6 +562,19 @@ export interface ChatMessageAction {
   action_type: string;
   payload: Record<string, any>;
   created_at: string;
+}
+
+/**
+ * A member's answers to a form card (`chat_form_responses`, #3926 step 3),
+ * keyed by question id. Private to the member and the form's creator, so it
+ * is never a `chat_message_actions` row, which the whole channel reads.
+ */
+export interface ChatFormResponse {
+  message_id: string;
+  user_id: string;
+  answers: Record<string, string | string[]>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MessageReaction {

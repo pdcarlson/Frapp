@@ -205,4 +205,28 @@ describe('SupabaseEventRepository — tenant scope', () => {
 
     expect(harness.ops).toEqual([]);
   });
+
+  // The carry and the delete are one RPC, so they commit together (#4620).
+  it('deleteReplacedOccurrences passes the chapter and the pairs to the RPC', async () => {
+    const dropped = await repo.deleteReplacedOccurrences([EVENT_B], CHAPTER_B, [
+      { from: EVENT_B, to: EVENT_A },
+    ]);
+
+    expect(harness.rpcCalls).toHaveLength(1);
+    expect(harness.rpcCalls[0].args).toEqual({
+      p_chapter_id: CHAPTER_B,
+      p_old_ids: [EVENT_B],
+      p_from_ids: [EVENT_B],
+      p_to_ids: [EVENT_A],
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('deleteReplacedOccurrences calls nothing for an empty list', async () => {
+    await expect(
+      repo.deleteReplacedOccurrences([], CHAPTER_B, []),
+    ).resolves.toEqual([]);
+
+    expect(harness.rpcCalls).toEqual([]);
+  });
 });

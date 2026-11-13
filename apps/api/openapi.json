@@ -4480,7 +4480,7 @@
     },
     "/v1/channels/messages/{messageId}/close": {
       "post": {
-        "operationId": "ChatController_closeSignup_v1",
+        "operationId": "ChatController_closeCard_v1",
         "parameters": [
           {
             "name": "messageId",
@@ -4518,7 +4518,7 @@
             "bearer": []
           }
         ],
-        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "summary": "Close a sign-up or form card early (its creator, or channels:manage); answers already made stay",
         "tags": [
           "Chat"
         ]
@@ -5030,6 +5030,106 @@
           }
         ],
         "summary": "Set the caller's notification level for a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/form-response": {
+      "get": {
+        "operationId": "ChatFormController_getOwnResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnFormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own answers to a form card, or null before they answer",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatFormController_saveResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFormResponseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the caller's answers to a form card, replacing their last ones (until the form closes)",
         "tags": [
           "Chat"
         ]
@@ -19277,7 +19377,8 @@
               "rush",
               "system_audit",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -19332,7 +19433,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -19757,7 +19859,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -19996,7 +20099,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ]
           },
           "gif": {
@@ -20171,6 +20275,74 @@
         },
         "required": [
           "level"
+        ]
+      },
+      "FormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "answers",
+          "updated_at"
+        ]
+      },
+      "OwnFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormResponseDto"
+              }
+            ]
+          }
+        }
+      },
+      "SaveFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "description": "Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed."
+          }
+        },
+        "required": [
+          "answers"
         ]
       },
       "BookmarkedMessageDto": {

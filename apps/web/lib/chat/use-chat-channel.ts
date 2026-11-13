@@ -67,7 +67,7 @@ import {
 import {
   actOnCard,
   closePoll as closePollAction,
-  closeSignup as closeSignupAction,
+  closeCard as closeCardAction,
   setMessageFlag as setMessageFlagAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
@@ -667,7 +667,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const closeSignupCb = useCallback(
     async (messageId: string, threadRootId?: string | null) => {
       if (!channelId) return;
-      await closeSignupAction(ctx, { channelId, messageId, threadRootId });
+      await closeCardAction(ctx, { channelId, messageId, threadRootId });
     },
     [channelId, ctx],
   );

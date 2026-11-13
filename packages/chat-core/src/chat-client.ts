@@ -1271,22 +1271,29 @@ export async function closePoll(
   );
 }
 
-export interface CloseSignupArgs extends RowTarget {
+export interface CloseCardArgs extends RowTarget {
   messageId: string;
+  /** Which card, for the failure toast's words. A sign-up when absent. */
+  kind?: "signup" | "form";
 }
 
 /**
- * Close a sign-up card early (#3926): its creator or a `channels:manage`
- * holder, refused on a card already closed or past its end time
- * (`ChatService.closeSignup`); the card offers it only when it should work
- * (`canCloseSignup` in `./signups`). Not optimistic, as {@link closePoll}
- * isn't: the stamped row the server returns is merged as the confirmation.
+ * Close a sign-up card (#3926 step 2) or a form card (step 3) early: its
+ * creator or a `channels:manage` holder, refused on a card already closed or
+ * past its end time (`ChatService.closeCard`); the card offers it only when it
+ * should work (`canCloseSignup` in `./signups`, `canCloseForm` in `./forms`).
+ * Not optimistic, as {@link closePoll} isn't: the stamped row the server
+ * returns is merged as the confirmation.
  */
-export async function closeSignup(
+export async function closeCard(
   ctx: ChatActionContext,
-  args: CloseSignupArgs,
+  args: CloseCardArgs,
 ): Promise<void> {
-  await writeHeldRow(ctx, args, "Couldn't close sign-ups", () =>
+  const title =
+    args.kind === "form"
+      ? "Couldn't close the form"
+      : "Couldn't close sign-ups";
+  await writeHeldRow(ctx, args, title, () =>
     ctx.apiClient.POST("/v1/channels/messages/{messageId}/close", {
       params: { path: { messageId: args.messageId } },
     }),

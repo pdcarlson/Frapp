@@ -41,7 +41,7 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   editMessage: dispatcher("edit"),
   deleteMessage: dispatcher("delete"),
   closePoll: dispatcher("closePoll"),
-  closeSignup: dispatcher("closeSignup"),
+  closeCard: dispatcher("closeSignup"),
 }));
 vi.mock("./use-chat-channel", async () => {
   const { MemberFacingError } = await import("@repo/hooks/error-copy");

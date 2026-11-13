@@ -21,6 +21,9 @@ const SCREENS_BY_ROUTE: readonly (readonly [string, readonly string[]])[] = [
   ["/tasks", ["tasks", "ai_suggestions"]],
   // And under the minutes they came from, where the push for them opens.
   ["/meetings", ["ai_suggestions"]],
+  // A submitted task's review opens here (`?review=`), as do the tasks
+  // waiting on the member, so a visit reads task rows too.
+  ["/activity", ["tasks"]],
   ["/points", ["points"]],
   ["/service", ["service"]],
   ["/members", ["members"]],

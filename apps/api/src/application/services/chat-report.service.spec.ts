@@ -1993,6 +1993,29 @@ describe('reportedContentSnapshot', () => {
     ).toBe('Rides\nRides Friday\n- 10pm to 2am\n- Driver 1\n- Driver 2');
   });
 
+  it("keeps a form's title, description, questions and options, and no answers (#3926 step 3)", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'Rooms',
+        kind: 'form',
+        payload: {
+          title: 'Room picks',
+          description: 'By Friday',
+          questions: [
+            { id: 'q1', type: 'short_answer', title: 'Name' },
+            {
+              id: 'q2',
+              type: 'dropdown',
+              title: 'Room',
+              options: [{ id: 'a', label: 'Room A' }],
+            },
+          ],
+        },
+      }),
+    ).toBe('Rooms\nRoom picks\n- By Friday\n- Name\n- Room\n- Room A');
+  });
+
   it("adds the card's question when it differs from content, since the card shows the question", () => {
     expect(
       reportedContentSnapshot({

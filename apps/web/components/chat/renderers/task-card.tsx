@@ -437,7 +437,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
  * assigned to now for the line under Assignee: an edit may have handed it on
  * since the card was posted, so the snapshot's name won't do.
  */
-function CardTaskEdit({
+export function CardTaskEdit({
   task,
   gate,
   onClose,

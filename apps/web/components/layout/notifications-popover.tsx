@@ -79,6 +79,8 @@ type Notification = {
       /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
       meetingId?: string;
       taskId?: string;
+      /** "review": a task submitted to the reader for sign-off. */
+      view?: string;
       invoiceId?: string;
       /** "Suggested tasks to review" names what they were drawn from. */
       sourceType?: string;
@@ -107,7 +109,7 @@ type Notification = {
  * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
  * only ever forwards `channelId` through `chatDeepLink`.
  */
-function deepLinkFor(notification: Notification): string {
+export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {
@@ -119,8 +121,13 @@ function deepLinkFor(notification: Notification): string {
       return "/points";
     case "billing":
       return "/billing";
+    // "Shawn Klein submitted: Clean his room" opens that review in
+    // Activity's panel; the board lists the viewer's own tasks, and an
+    // officer's review was never one of them.
     case "tasks":
-      return "/tasks";
+      return target.view === "review" && target.taskId
+        ? `/activity?review=${encodeURIComponent(target.taskId)}`
+        : "/tasks";
     // Suggested tasks to review (#4313): on the minutes they came from, where
     // the action items are; from any other source, the board's Suggested list.
     // One drawn from last year's event (#3930) is reviewed on Events.

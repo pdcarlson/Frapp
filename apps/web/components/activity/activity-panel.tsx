@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import {
   activityEventMessage,
   activityHoursMessage,
@@ -16,6 +16,7 @@ import { EventCard } from "@/components/chat/renderers/event-card";
 import { HoursCard } from "@/components/chat/renderers/hours-card";
 import { PollCard } from "@/components/chat/renderers/poll-card";
 import { TaskCard } from "@/components/chat/renderers/task-card";
+import { TaskReview } from "@/components/tasks/task-review";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
 import {
@@ -33,6 +34,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { eventDeepLink } from "@/lib/events/event-links";
 import type { ActivityRow } from "@repo/hooks";
+import { ActivityFaces } from "./activity-row-lead";
 import { useActivityPoll } from "./use-activity-poll";
 
 const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
@@ -60,14 +62,25 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
  * `onActed` runs after an action that changes what the page lists, so the row
  * can leave "Needs you".
  */
+/**
+ * The tasks waiting on the viewer's sign-off, for stepping from one review to
+ * the next (#4693): those after a row, and how to open one.
+ */
+export interface ReviewQueue {
+  after: (key: string) => ActivityRow[];
+  open: (row: ActivityRow) => void;
+}
+
 export function ActivityPanel({
   row,
   viewerId,
   onClose,
   onActed,
+  reviewQueue,
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
+  reviewQueue?: ReviewQueue;
   /**
    * Close the panel. With a row key, only if that row is still the open one:
    * an action's answer can arrive after the member has moved to another row.
@@ -84,7 +97,11 @@ export function ActivityPanel({
     >
       {row ? (
         <PanelContent aria-describedby={undefined}>
-          <PanelHeader>{PANEL_TITLES[row.kind]}</PanelHeader>
+          <PanelHeader>
+            {row.kind === "task" && row.glyph === "confirm"
+              ? "Review task"
+              : PANEL_TITLES[row.kind]}
+          </PanelHeader>
           <PanelBody>
             {viewerId ? (
               <PanelCard
@@ -94,6 +111,7 @@ export function ActivityPanel({
                 viewerId={viewerId}
                 onClose={onClose}
                 onActed={onActed}
+                reviewQueue={reviewQueue}
               />
             ) : (
               // The cards decide whose controls to show from the viewer's id;
@@ -112,15 +130,25 @@ function PanelCard({
   viewerId,
   onClose,
   onActed,
+  reviewQueue,
 }: {
   row: ActivityRow;
   viewerId: string;
   onClose: (key?: string) => void;
   onActed: () => void;
+  reviewQueue?: ReviewQueue;
 }) {
   switch (row.kind) {
     case "task":
-      return <TaskPanel row={row} viewerId={viewerId} />;
+      return (
+        <TaskPanel
+          row={row}
+          viewerId={viewerId}
+          onClose={onClose}
+          onActed={onActed}
+          reviewQueue={reviewQueue}
+        />
+      );
     case "event":
       return <EventPanel row={row} />;
     case "poll":
@@ -140,14 +168,46 @@ function PanelCard({
   }
 }
 
+/**
+ * A task waiting on the viewer's sign-off opens as its review (#4693); any
+ * other task opens as chat's card.
+ */
 function TaskPanel({
   row,
   viewerId,
+  onClose,
+  onActed,
+  reviewQueue,
 }: {
   row: Extract<ActivityRow, { kind: "task" }>;
   viewerId: string;
+  onClose: (key?: string) => void;
+  onActed: () => void;
+  reviewQueue?: ReviewQueue;
 }) {
   const message = useMemo(() => activityTaskMessage(row.task), [row.task]);
+  const faceFor = useContext(ActivityFaces);
+  if (row.glyph === "confirm") {
+    const rest = reviewQueue?.after(row.key) ?? [];
+    const next = rest[0];
+    return (
+      <TaskReview
+        taskId={row.task.id}
+        assigneeName={row.task.assignee_name}
+        face={faceFor(row.task.assignee_id)}
+        waitingAfter={rest.length}
+        onSkip={next && reviewQueue ? () => reviewQueue.open(next) : undefined}
+        onDone={() => {
+          // The list re-reads. With more waiting, the next one opens (the
+          // grader's "next student"); otherwise only this row's panel
+          // closes, in case the officer has already moved on.
+          onActed();
+          if (next && reviewQueue) reviewQueue.open(next);
+          else onClose(row.key);
+        }}
+      />
+    );
+  }
   return <TaskCard message={message} viewerId={viewerId} isConfirmed />;
 }
 

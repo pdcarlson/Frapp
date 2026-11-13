@@ -29,7 +29,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 - **Mark all read.** One `POST /v1/notifications/read` with no body reads every unread row the member has in the active chapter, rows past the 50 a client lists included (#3929). Until then each client sent the per-row `PATCH` once per row.
 - **Reading its channel.** `POST /v1/channels/{id}/read` stamps the caller's receipt, then sets `read_at` on their unread rows in that chapter whose `data.target` is that chat channel and that were created at or before the receipt's instant. Hiding a 1:1 DM marks it read the same way and clears the same rows. A row created after the read is about a message it did not cover, so it stays unread. The clear is best-effort: if it fails, the receipt still succeeds and the row keeps its dot. Members mostly read chat by opening the channel rather than the row, so without this the inbox kept every chat push unread after the messages were seen.
 
-- **Opening the screen it points at** (#3929). A non-chat row is read once the member opens the screen its `data.target.screen` names, on either client: the client sends `POST /v1/notifications/read` with `screens` (for example `["events"]`), and the API reads the member's unread rows in the chapter that point at one of them. Web maps a dashboard page to its screens (`apps/web/lib/notifications/seen-screens.ts`): Events, Tasks and Meetings (all three read `ai_suggestions`, #4313 and #3930), Points, Billing, Service, Members, Chat Admin for `chat_reports` and Discord import for `discord_import`. Mobile maps its routes the same way (`apps/mobile/lib/notifications/seen-screens.ts`); `chat_reports` and `discord_import` have no mobile screen, so there they are read by a tap. The screen is the grain, not the item: opening Events reads every event notice, not only the one for the event on show. A client sends it only while the page or app is in front and its list shows an unread row for that screen, once per set of such rows, so the write budget is spent only when there is something to clear.
+- **Opening the screen it points at** (#3929). A non-chat row is read once the member opens the screen its `data.target.screen` names, on either client: the client sends `POST /v1/notifications/read` with `screens` (for example `["events"]`), and the API reads the member's unread rows in the chapter that point at one of them. Web maps a dashboard page to its screens (`apps/web/lib/notifications/seen-screens.ts`): Events, Tasks and Meetings (all three read `ai_suggestions`, #4313 and #3930), Activity (task rows: a submitted task's review opens there, 2026-11-13), Points, Billing, Service, Members, Chat Admin for `chat_reports` and Discord import for `discord_import`. Mobile maps its routes the same way (`apps/mobile/lib/notifications/seen-screens.ts`); `chat_reports` and `discord_import` have no mobile screen, so there they are read by a tap. The screen is the grain, not the item: opening Events reads every event notice, not only the one for the event on show. A client sends it only while the page or app is in front and its list shows an unread row for that screen, once per set of such rows, so the write budget is spent only when there is something to clear.
 
 Both writes stamp `read_at` with the instant the request began and leave a row created after it unread. `read_at` lives on the server, so a read on one device is a read on the other: the update fires the `notif:<users.id>` ping below, and both clients refetch on it.
 
@@ -59,7 +59,7 @@ a tap mark the row read without a lookup. The `target` itself carries **only** t
 its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread reply
 (mobile opens that as the thread over its channel; web's drawer opens the channel,
 [`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId` (and `meetingId` for "Minutes posted", which web opens at `/meetings/<id>`; mobile opens the event until it shows minutes. "Meeting recording uploaded" sends the event alone: the minutes are still a draft its readers cannot open), `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
+`taskId`, plus `view: 'review'` on "submitted a task" to the officer who assigned it: both clients open that review in Activity (mobile `/activity?review=<taskId>`, web `/activity?review=<taskId>`, the task's sheet or panel up), because the task board lists only the reader's own tasks. Any other task push opens the reader's own task (mobile `/tasks?task=<taskId>`; web the board). A build from before 2026-11-13 reads only `screen` and opens the board. `billing` / `points` / `service` / `members` / `chat_reports` /
 `discord_import` send a bare `screen`. `ai_suggestions` sends `batchId`, `sourceType`
 and `sourceId`, for the review of suggested tasks (#4309, #4313): web opens the minutes they
 came from (`/meetings/<sourceId>` when `sourceType` is `meeting`), where they are listed under
@@ -184,6 +184,10 @@ itself rides on the bundle row as `mentioned: true`.
   Notification Center stacks one channel's pushes together. A DM or group DM is
   its own channel, so a DM stacks per person. Android has no equivalent through
   Expo's push service and keeps the system's own per-app bundling.
+- Every "submitted a task" push to the officer who assigned it carries
+  `threadId` `tasks:review` (2026-11-13), so a night of submissions is one
+  stack on the lock screen rather than a banner each. Nothing takes them out
+  of the tray on review yet.
 - Mobile takes a channel's chat pushes out of the tray once the server counts
   the channel as fully read (`GET /v1/channels/unread` reads `unread_count: 0`):
   `useBadgeSyncRuntime` passes those channels to `clearReadChatNotifications`,
@@ -397,6 +401,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 A push is read on a lock screen, in a glance, next to iOS Calendar and Google Calendar invites. So it names its subject and says what the reader needs to act on, never a category ("New Event", "Task Assigned") over a sentence that restates it. Chat pushes name their sender (above); event, task and member pushes follow the same rule (2026-11-06, from Paul's lock screen reading "New Event / Chapter has been scheduled").
 
 - **The title is the thing**: the event's or task's own name. A change says what changed after it: `Chapter rescheduled`, `Chapter moved`.
+- **When another member's action is the news, the title names them and it**: `Shawn Klein submitted: Clean his room`, `Paul Carlson sent back: Clean his room` (2026-11-13, from Paul's lock screen reading only `Clean his room` when a task came in for review). It is the task review loop: submitted, resubmitted, finished, confirmed and sent back. The body says what came with it and what is asked: `1 photo · Confirm to award 10 points`.
 - **The body is the facts, most important first, joined by ` · `**: for an event, whether it is required _of the reader_, when, and where: `Required · Mon, Nov 9, 8–9 PM · The Lodge`. A series is announced once, as its pattern (`Every Mon, 8–9 PM, from Nov 9`), never once per occurrence.
 - **Times are in the reader's zone.** The server renders the text, so it needs each recipient's zone: both clients send their device's or browser's zone on every request as `x-time-zone` (`@repo/api-sdk`), and the API records it in `user_settings.time_zone` when it changes (`TimeZoneSyncService`). A member with none falls back to `quiet_hours_tz`, then to the zone of whoever scheduled or moved the event (the actor of that push), then to `America/New_York`; a fallback zone is always labelled (`8–9 PM EST`) so a guess never reads as the member's own clock. Task due dates are calendar dates with no zone and are written as stored.
 - **Required means what attendance enforces.** `memberAttendance` (`event-role-targeting.ts`) reads the member's answer from attendance by role ([`events.md`](events.md#event-creation) § Event Creation): required, optional, or not invited, and a member not invited is not sent the push. An alumnus required only by the event's default, not by a role that names them, reads as optional, because the auto-absent sweep never holds them to it.
@@ -410,9 +415,11 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
 | Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
 | Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
-| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` (A task with no points and no proof is Done when marked, so its push ends at `marked it done.`, #4635.) |
-| Task confirmed | `Book the venue` | `Confirmed · +10 points` |
-| Task sent back | `Book the venue` | `Sent back: <officer's comment>` |
+| Task marked done (to its creator) | `Alex Smith submitted: Book the venue` | `1 photo · Confirm to award 10 points`: their note quoted when they left one (`"Booked it"`, cut at 60 characters), the photo count or `Link attached`, then the ask (`Check it and confirm` with no points). Opens the review itself (`target.view: 'review'`), and every one stacks in the iOS group `tasks:review`. |
+| Task resubmitted after a send-back | `Alex Smith resubmitted: Book the venue` | `Replied "<their note>" · 2 photos · Confirm to award 10 points` |
+| Task done with nothing to sign off (no points, no proof, #4635) | `Alex Smith finished: Book the venue` | `Done · send it back if something's off` |
+| Task confirmed | `Paul Carlson confirmed: Book the venue` | `+10 points`, or `Done` for a task with proof and no points |
+| Task sent back | `Paul Carlson sent back: Book the venue` | `"<officer's reason>"` |
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
 | Member joined | `Alex Smith joined` | `New member of the chapter` |
 
@@ -431,6 +438,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Events        | New event created                                                  | SILENT                      |
 | Events        | Event updated (time/location change)                               | NORMAL                      |
 | Events        | Excuse sent for an event (to its creator, or the `events:update` holders when it has none; never the sender), its decision (to the member), and one reminder when excuses are still pending as check-in closes (to the receivers). Category `events`; target `events` with `eventId` ([`events.md` § Excuses](events.md#excuses), #3735) | NORMAL |
+| Events        | A series edit dropped an excuse: the meeting it was for has no rebuilt meeting to carry to (to the excuse's sender, while still a member). "Send your excuse again" when the series was rescheduled, "Your excuse was removed" when it no longer repeats. Category `events`; target `events` with the series head's `eventId` ([`events.md` § Excuses](events.md#excuses), #4620) | NORMAL |
 | Points        | Points awarded                                                     | NORMAL                      |
 | Points        | Points deducted (fine)                                             | NORMAL                      |
 | Points        | Leaderboard position change                                        | SILENT (weekly digest)      |
