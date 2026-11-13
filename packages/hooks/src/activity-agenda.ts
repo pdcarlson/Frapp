@@ -54,8 +54,9 @@ export interface ActivityWeekSummary {
   /** The card's headline: "3 left this week", "All done this week". */
   headline: string;
   /**
-   * Which part couldn't load, as a sentence: "Couldn't load tasks. Pull down
-   * to try again." `null` when everything was read.
+   * Which part couldn't load, as a sentence: "Couldn't load tasks." The
+   * client says how to try again after it (a pull on the phone, a moment on
+   * web). `null` when everything was read.
    */
   warning: string | null;
   /** For a screen reader: the ring in one sentence. */
@@ -162,7 +163,7 @@ export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
     incomplete,
     headline,
     warning: incomplete
-      ? `Couldn't load ${joinNames(week.unavailable.map((part) => WEEK_PART_NAMES[part]))}. Pull down to try again.`
+      ? `Couldn't load ${joinNames(week.unavailable.map((part) => WEEK_PART_NAMES[part]))}.`
       : null,
     spokenLabel:
       total === 0

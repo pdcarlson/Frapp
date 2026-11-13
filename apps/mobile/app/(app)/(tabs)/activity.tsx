@@ -63,9 +63,6 @@ import { openMessageLink } from "@/lib/chat/open-link";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** The groups under To do, in the order they are drawn. */
-const BELOW_ORDER: ActivityGroup["id"][] = ["made-by-you", "links"];
-
 /** What the To do list says it is narrowed to, under a week line. */
 const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
   events: "events",
@@ -95,8 +92,8 @@ const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
  *
  * It is drawn and checked for four people (`principles.md` § Three people):
  * a member with nothing due, an average member, a committee chair and the
- * president. The count tiles, the filter chips and the Now and Later split
- * are gone; web's `/activity` follows in its own change.
+ * president. Web's `/activity` is the same page from the same model
+ * (`apps/web/components/activity/activity-page.tsx`).
  *
  * A row opens the record in a sheet drawn with chat's own card, where the
  * member acts on it (`components/activity/activity-sheet.tsx`). The read is
@@ -185,21 +182,19 @@ export default function ActivityScreen() {
     [activity.data, permissions, moduleOn, now],
   );
   // What the member made, and the links posted for them, as the shared
-  // groups build them. Narrowed to a kind, the page is the To do list alone.
+  // groups build them, in order. Narrowed to a kind, the page is the To do
+  // list alone.
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, "all", now) : []),
+    () => (activity.data ? activityGroups(activity.data, now) : []),
     [activity.data, now],
   );
   const below =
     filter === "all"
-      ? BELOW_ORDER.flatMap((id) =>
-          groups.filter(
-            (group) =>
-              group.id === id &&
-              (group.rows.length > 0 ||
-                group.archive !== null ||
-                group.unavailable.length > 0),
-          ),
+      ? groups.filter(
+          (group) =>
+            group.rows.length > 0 ||
+            group.archive !== null ||
+            group.unavailable.length > 0,
         )
       : [];
   // The open row as the latest read has it. A row that has left the list (a
@@ -622,12 +617,6 @@ function DaySection({
   );
 }
 
-/** The phone's name for a group the shared model still calls by web's. */
-const GROUP_LABEL: Partial<Record<ActivityGroup["id"], string>> = {
-  // What the member made is listed for what it still waits on (#4766).
-  "made-by-you": "Waiting on others",
-};
-
 /**
  * A group under the To do list: Waiting on others (the polls the member
  * posted, the events they made, the tasks they assigned), or Links. The
@@ -647,7 +636,7 @@ function GroupSection({
   return (
     <View style={styles.group}>
       <SectionHeader count={group.rows.length || null}>
-        {GROUP_LABEL[group.id] ?? group.label}
+        {group.label}
       </SectionHeader>
       {group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
@@ -674,7 +663,7 @@ function GroupSection({
 
 /**
  * The rows a group keeps behind one control (#4258): the member's closed
- * polls, under Made by you, closed until pressed, as web draws them. Each
+ * polls, under Waiting on others, closed until pressed, as web draws them. Each
  * row opens the poll's card with its final result.
  */
 function ArchivePart({

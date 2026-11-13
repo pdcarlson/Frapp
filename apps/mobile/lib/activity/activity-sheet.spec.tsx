@@ -5,7 +5,12 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityGroups, type Activity } from "@repo/hooks";
+import {
+  activityGroups,
+  activityReviewRows,
+  activityToDos,
+  type Activity,
+} from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { moduleDisabledMessage } from "@repo/validation";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
@@ -153,9 +158,11 @@ const READ = {
 
 /** The real row the screen would hand the sheet for one kind. */
 function rowOf(kind: ActivityRow["kind"]): ActivityRow {
-  return activityGroups(READ, "all")
-    .flatMap((group) => group.rows)
-    .find((row) => row.kind === kind) as ActivityRow;
+  return [
+    ...activityReviewRows(READ),
+    ...activityToDos(READ).map((todo) => todo.dated),
+    ...activityGroups(READ).flatMap((group) => group.rows),
+  ].find((row) => row.kind === kind) as ActivityRow;
 }
 
 const mounted: ReactTestRenderer[] = [];

@@ -202,7 +202,7 @@ describe("activityWeekSummary (#4766)", () => {
       state: "open",
       incomplete: true,
       headline: "At least 1 left this week",
-      warning: "Couldn't load tasks. Pull down to try again.",
+      warning: "Couldn't load tasks.",
     });
     expect(summary.lines.find((line) => line.id === "tasks")).toMatchObject({
       done: null,
@@ -225,8 +225,7 @@ describe("activityWeekSummary (#4766)", () => {
     expect(done).toMatchObject({
       state: "open",
       headline: "Some of your week couldn't load",
-      warning:
-        "Couldn't load polls and sign-ups and forms. Pull down to try again.",
+      warning: "Couldn't load polls and sign-ups and forms.",
     });
     // Half of a shared line read: its numbers stand, and the line stays.
     const half = activityWeekSummary(

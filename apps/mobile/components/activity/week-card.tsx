@@ -120,7 +120,9 @@ export function WeekCard({
         </View>
       ) : null}
       {known && summary.warning ? (
-        <Text style={styles.warning}>{summary.warning}</Text>
+        <Text style={styles.warning}>
+          {`${summary.warning} Pull down to try again.`}
+        </Text>
       ) : null}
       {next ? (
         <View style={known ? styles.next : null}>
