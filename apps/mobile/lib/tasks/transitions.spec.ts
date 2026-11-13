@@ -87,3 +87,28 @@ describe("checkboxSequence", () => {
     expect(checkboxSequence(at("COMPLETED", true))).toEqual([]);
   });
 });
+
+describe("checkboxSequence — Done without sign-off (#4635)", () => {
+  const done = {
+    storedStatus: "COMPLETED",
+    displayStatus: "COMPLETED",
+    pointsAwarded: true,
+  };
+
+  it("still unchecks a Done that needed no sign-off: nothing was paid", () => {
+    expect(
+      checkboxSequence({ ...done, pointReward: null, proofKind: "none" }),
+    ).toEqual(["IN_PROGRESS"]);
+  });
+
+  it("leaves a confirmed task with points or proof alone", () => {
+    expect(
+      checkboxSequence({ ...done, pointReward: 5, proofKind: "none" }),
+    ).toEqual([]);
+    expect(
+      checkboxSequence({ ...done, pointReward: null, proofKind: "photo" }),
+    ).toEqual([]);
+    // Without the fields, the safe side: as needing sign-off.
+    expect(checkboxSequence(done)).toEqual([]);
+  });
+});

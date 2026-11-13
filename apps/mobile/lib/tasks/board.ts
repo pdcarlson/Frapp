@@ -10,6 +10,13 @@
  */
 
 import { dayDelta } from "@repo/formatting";
+import {
+  isSentBack,
+  isTaskStatus,
+  readLiveTaskPhotos,
+  type LiveTaskPhoto,
+} from "@repo/hooks";
+import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
 import { num, records, str } from "@/lib/more/narrow";
 import { daysSinceCompletion, parseTaskDate } from "./format";
 import { isOpenTask } from "./transitions";
@@ -55,6 +62,41 @@ export interface TaskRowModel {
   isOverdue: boolean;
   /** Its checklist, in order (#4003); empty for none. */
   subtasks: TaskRowSubtask[];
+  /** What Mark done needs (#4635): nothing, photos or a link. */
+  proofKind: TaskProofKind;
+  /** The assignee's link proof, while the completion stands. */
+  proofLink: string | null;
+  /** When and why an officer last sent it back (#4635). */
+  sentBackAt: string | null;
+  sentBackReason: string | null;
+  /** The assignee's reply sent with Mark done. */
+  completionNote: string | null;
+  /** Reference photos, then proof photos, each in order (#4635). */
+  photos: LiveTaskPhoto[];
+}
+
+/**
+ * Whether an officer sent the task back and it waits on its assignee
+ * (Needs changes, #4635), by the shared rule (`isSentBack`).
+ */
+export function rowIsSentBack(row: TaskRowModel): boolean {
+  const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  const status = isTaskStatus(row.displayStatus)
+    ? row.displayStatus
+    : (stored ?? "TODO");
+  return isSentBack({
+    status,
+    stored_status: stored,
+    sent_back_at: row.sentBackAt,
+  });
+}
+
+/** Whether a completion of this task waits on an officer (#4635, decision C). */
+export function rowNeedsSignOff(row: TaskRowModel): boolean {
+  return taskNeedsSignOff({
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  });
 }
 
 export interface TaskRowSubtask {
@@ -119,6 +161,15 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     isDone: !isOpenTask(storedStatus ?? displayStatus),
     isOverdue: displayStatus === "OVERDUE",
     subtasks: toSubtasks(row.subtasks),
+    proofKind:
+      row.proof_kind === "photo" || row.proof_kind === "link"
+        ? row.proof_kind
+        : "none",
+    proofLink: str(row, "proof_link"),
+    sentBackAt: str(row, "sent_back_at"),
+    sentBackReason: str(row, "sent_back_reason"),
+    completionNote: str(row, "completion_note"),
+    photos: readLiveTaskPhotos(row.photos),
   };
 }
 

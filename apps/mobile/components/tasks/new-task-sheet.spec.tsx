@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
@@ -63,6 +64,7 @@ const FAILED = {
 
 const TRY_AGAIN = "That didn't save. Your task is still here — try again.";
 
+const mintPhoto = vi.hoisted(() => vi.fn());
 let failure: unknown = REFUSED;
 let createPending = false;
 const mutate = vi.fn(
@@ -76,6 +78,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useChapterRoster: () => ({ data: [] }),
   useCreateTask: () => ({ mutate, isPending: createPending }),
   useUpdateTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: mintPhoto }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -763,7 +766,8 @@ describe("Accepting a suggested task through the form (#4313)", () => {
   }
   const acceptButton = (tree: ReactTestRenderer) =>
     tree.root.find(
-      (node) => node.props.label === "Accept" && typeof node.type === "function",
+      (node) =>
+        node.props.label === "Accept" && typeof node.type === "function",
     );
 
   beforeEach(() => {
@@ -816,6 +820,80 @@ describe("Accepting a suggested task through the form (#4313)", () => {
       "Another officer already decided this one.",
     );
     expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    act(() => tree.unmount());
+  });
+
+  it("leaves photos and the proof control off a suggestion's form", () => {
+    const tree = renderSuggestion("user-2");
+    expect(screenText(tree)).not.toContain("Proof");
+    act(() => tree.unmount());
+  });
+});
+
+describe("New task photos and proof (#4635)", () => {
+  it("sends the proof kind the officer picked", () => {
+    failure = FAILED;
+    const tree = render();
+    const photo = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === "Photo" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => photo.props.onPress());
+    expect(screenText(tree)).toContain(
+      "Marking it done needs a photo of the finished job.",
+    );
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ proof_kind: "photo" });
+    act(() => tree.unmount());
+  });
+
+  it("uploads the picked photos on Create, then sends their paths", async () => {
+    failure = FAILED;
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///mess.png",
+          fileName: "mess.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mintPhoto.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/mess.png",
+    });
+    const tree = render();
+    await act(async () => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      reference_photo_paths: ["chapters/c/tasks/p1/mess.png"],
+    });
+    // A retry after the failed save doesn't upload the photo again.
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledTimes(2);
     act(() => tree.unmount());
   });
 });

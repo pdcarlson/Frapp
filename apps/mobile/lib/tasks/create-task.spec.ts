@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { LiveTaskPhoto } from "@repo/hooks";
+import type { TaskProofKind } from "@repo/validation";
 import {
   duePresets,
   editDraftOf,
+  editTargetOfCardTask,
   formatDueFieldLabel,
   taskEditBody,
   parsePointReward,
@@ -157,6 +160,8 @@ describe("editing a task (#4296)", () => {
     dueAt: null as string | null,
     pointReward: 5 as number | null,
     storedStatus: "TODO",
+    referencePhotos: [] as LiveTaskPhoto[],
+    proofKind: "none" as TaskProofKind,
   };
 
   it("opens a timed task on its local day and time", () => {
@@ -210,5 +215,97 @@ describe("editing a task (#4296)", () => {
         },
       ),
     ).toEqual({ due_date: "2026-09-29", due_at: null });
+  });
+
+  const same = {
+    title: "Sweep",
+    assignee_id: "u1",
+    due_date: "2026-09-29",
+    point_reward: 5,
+  };
+  const photo = (id: string): LiveTaskPhoto => ({
+    id,
+    kind: "reference",
+    storage_path: `chapters/c/tasks/${id}/p.jpg`,
+  });
+
+  it("sends a changed proof kind, and None when it goes back to none (#4635)", () => {
+    expect(taskEditBody(task, { ...same, proof_kind: "photo" })).toEqual({
+      proof_kind: "photo",
+    });
+    expect(taskEditBody({ ...task, proofKind: "link" }, { ...same })).toEqual({
+      proof_kind: "none",
+    });
+  });
+
+  it("sends the reference photos as the whole set, only when it changed", () => {
+    const held = { ...task, referencePhotos: [photo("a"), photo("b")] };
+    expect(
+      taskEditBody(held, {
+        ...same,
+        reference_photo_paths: [
+          photo("a").storage_path,
+          photo("b").storage_path,
+        ],
+      }),
+    ).toEqual({});
+    expect(
+      taskEditBody(held, {
+        ...same,
+        reference_photo_paths: [photo("b").storage_path],
+      }),
+    ).toEqual({ reference_photo_paths: [photo("b").storage_path] });
+    expect(taskEditBody(held, { ...same, reference_photo_paths: [] })).toEqual({
+      reference_photo_paths: [],
+    });
+  });
+
+  it("opens an edit on a card's task with its photos and proof kind", () => {
+    expect(
+      editTargetOfCardTask({
+        id: "t",
+        title: "Sweep",
+        description: null,
+        assignee_id: "u1",
+        due_date: "2026-09-29",
+        due_at: null,
+        point_reward: null,
+        status: "TODO",
+        stored_status: undefined,
+        subtasks: [],
+        reference_photos: [photo("a")],
+        proof_kind: "link",
+      }),
+    ).toEqual({
+      id: "t",
+      title: "Sweep",
+      assigneeId: "u1",
+      dueDay: "2026-09-29",
+      dueAt: null,
+      pointReward: null,
+      storedStatus: null,
+      referencePhotos: [photo("a")],
+      proofKind: "link",
+    });
+  });
+});
+
+describe("validateNewTask proof kind (#4635)", () => {
+  const base = {
+    title: "Sweep",
+    dueDate: "2026-09-29",
+    assigneeId: "u1",
+    pointsInput: "",
+  };
+  it("sends a proof kind only when it asks for something", () => {
+    const now = new Date(2026, 8, 27, 12);
+    expect(
+      validateNewTask({ ...base, proofKind: "none" }, now),
+    ).not.toHaveProperty("proof_kind");
+    expect(validateNewTask({ ...base, proofKind: "photo" }, now)).toMatchObject(
+      {
+        proof_kind: "photo",
+      },
+    );
   });
 });

@@ -36,6 +36,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useCreateTask: () => ({ mutate: create_, isPending: false }),
   useUpdateTask: () => ({ mutate: update, isPending: false }),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -56,6 +58,8 @@ const TASK: TaskEditTarget = {
   dueAt: null,
   pointReward: 5,
   storedStatus: "IN_PROGRESS",
+  referencePhotos: [],
+  proofKind: "none",
 };
 
 function render(task: TaskEditTarget = TASK, onSaved = vi.fn()) {
@@ -146,5 +150,48 @@ describe("Edit task (#4296)", () => {
       "That didn't save. Your changes are still here. Try again.",
     );
     expect(byLabel(tree, "Task title").props.value).toBe("Porch");
+  });
+});
+
+describe("Edit task photos and proof (#4635)", () => {
+  const segment = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+
+  it("opens on the task's proof kind and sends a change to it", () => {
+    const tree = render({ ...TASK, proofKind: "link" });
+    expect(segment(tree, "Link").props.accessibilityState.checked).toBe(true);
+    act(() => segment(tree, "Photo").props.onPress());
+    act(() => saveButton(tree).props.onPress());
+    expect(update).toHaveBeenCalledWith(
+      { id: "task-1", body: { proof_kind: "photo" } },
+      expect.anything(),
+    );
+  });
+
+  it("sends the photos as they should stand once one is removed", () => {
+    const photos = [
+      { id: "a", kind: "reference" as const, storage_path: "p/a.jpg" },
+      { id: "b", kind: "reference" as const, storage_path: "p/b.jpg" },
+    ];
+    const tree = render({ ...TASK, referencePhotos: photos });
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Remove photo 1" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress(),
+    );
+    act(() => saveButton(tree).props.onPress());
+    expect(update).toHaveBeenCalledWith(
+      { id: "task-1", body: { reference_photo_paths: ["p/b.jpg"] } },
+      expect.anything(),
+    );
   });
 });

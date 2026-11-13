@@ -58,6 +58,7 @@ import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import {
+  rowIsSentBack,
   selectTaskRows,
   toTaskRow,
   type TaskRowModel,
@@ -65,9 +66,14 @@ import {
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { checkboxSequence } from "@/lib/tasks/transitions";
 import {
-  taskProofRequiredRefusal,
+  taskProofRefusal,
   taskStatusGateRefusal,
 } from "@/lib/tasks/status-refusal";
+import { markDoneAsks } from "@/lib/tasks/task-photos";
+import {
+  MarkDoneSheet,
+  type CompletionProof,
+} from "@/components/tasks/mark-done-sheet";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -97,6 +103,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the tab bar for a few seconds, and the box itself unchecks until an officer
  * confirms: the API lets the assignee move their own unconfirmed completion
  * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions).
+ *
+ * ## Proof first, where the task asks for it
+ *
+ * On a task that asks for a photo or a link, or one an officer sent back,
+ * the box and the sheet's Mark done open Mark done's sheet instead
+ * (`components/tasks/mark-done-sheet.tsx`, #4635), which takes the proof or
+ * a reply and sends it with the `COMPLETED` write. A direct Mark done the
+ * server refuses for want of proof (the task changed since it was read)
+ * opens the same sheet with the reason in it.
  *
  * ## The checkbox is two writes, not one
  *
@@ -286,17 +301,25 @@ export default function TasksScreen() {
     async (
       id: string,
       sequence: readonly TaskStatus[],
-    ): Promise<"ok" | "gate" | "failed" | "skipped"> => {
-      if (sequence.length === 0) return "skipped";
-      if (inFlight.current.has(id)) return "skipped";
+      /** Proof and a reply, sent with the `COMPLETED` write (#4635). */
+      proof?: CompletionProof,
+    ): Promise<{
+      outcome: "ok" | "gate" | "failed" | "skipped";
+      error?: unknown;
+    }> => {
+      if (sequence.length === 0) return { outcome: "skipped" };
+      if (inFlight.current.has(id)) return { outcome: "skipped" };
 
       inFlight.current.add(id);
       setPendingId(id);
       try {
         for (const status of sequence) {
-          await updateStatus.mutateAsync({ id, body: { status } });
+          await updateStatus.mutateAsync({
+            id,
+            body: status === "COMPLETED" ? { status, ...proof } : { status },
+          });
         }
-        return "ok";
+        return { outcome: "ok" };
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal
@@ -305,10 +328,7 @@ export default function TasksScreen() {
         // revert it always was.
         const gate = taskStatusGateRefusal(error);
         if (gate) setRefusal(gate);
-        // A task that needs a proof photo the phone can't attach yet (#4565).
-        const proof = taskProofRequiredRefusal(error);
-        if (proof) setNotice(proof);
-        return gate ? "gate" : "failed";
+        return { outcome: gate ? "gate" : "failed", error };
       } finally {
         inFlight.current.delete(id);
         setPendingId(null);
@@ -316,6 +336,29 @@ export default function TasksScreen() {
     },
     [updateStatus],
   );
+
+  /**
+   * Mark done's sheet (#4635), for the task it is open on: a task that asks
+   * for a photo or a link, or was sent back, takes it there before it is
+   * marked done. `problem` is the line it opens with when a direct Mark done
+   * was refused for want of proof (the task changed since it was read).
+   */
+  const [marking, setMarking] = useState<{
+    id: string;
+    problem: string | null;
+  } | null>(null);
+
+  /** Felt and offered once a completion lands: the haptic and the undo. */
+  const completed = useCallback((id: string) => {
+    successHaptic();
+    setUndo((open) => ({
+      id,
+      message: "Marked done",
+      // A new key per completion, so a second one inside the window is
+      // announced again even though the words are the same.
+      key: (open?.key ?? 0) + 1,
+    }));
+  }, []);
 
   const toggle = useCallback(
     async (row: TaskRowModel) => {
@@ -325,23 +368,44 @@ export default function TasksScreen() {
       // Unchecking is its own undo: the bar for this task has nothing left to
       // offer. Cleared before the write so it never sits over the change.
       if (!completes) setUndo((open) => (open?.id === row.id ? null : open));
-      const outcome = await run(row.id, sequence);
+      // A task that asks for proof, or was sent back, takes it in Mark
+      // done's sheet first (#4635); any other is marked done at once.
+      if (
+        completes &&
+        markDoneAsks({ proofKind: row.proofKind, sentBack: rowIsSentBack(row) })
+      ) {
+        setMarking({ id: row.id, problem: null });
+        return;
+      }
+      const { outcome, error } = await run(row.id, sequence);
       // The confirming action (`spec/ui/mobile/README.md` § Native-feel
       // rules), felt once the server holds the task done. Only a sequence
       // that completes the task earns it, and offers the undo.
-      if (outcome === "ok" && completes) {
-        successHaptic();
-        setUndo((open) => ({
-          id: row.id,
-          message: "Marked done",
-          // A new key per completion, so a second one inside the window is
-          // announced again even though the words are the same.
-          key: (open?.key ?? 0) + 1,
-        }));
-      }
+      if (outcome === "ok" && completes) completed(row.id);
+      // The task asks for proof the board didn't know of (an officer changed
+      // it since it was read): its sheet asks for it rather than the box
+      // reverting with no word.
+      const proofProblem = taskProofRefusal(error);
+      if (proofProblem) setMarking({ id: row.id, problem: proofProblem });
       if (outcome === "failed" && !completes) setNotice(TAKE_BACK_FAILED);
     },
-    [run],
+    [run, completed],
+  );
+
+  /** Mark done from its sheet, proof attached. Rejects for the sheet to say why. */
+  const completeWithProof = useCallback(
+    async (row: TaskRowModel, proof: CompletionProof) => {
+      const sequence = checkboxSequence(row);
+      // Already done (on another device, say): nothing left to send.
+      if (sequence[sequence.length - 1] !== "COMPLETED") return;
+      const { outcome, error } = await run(row.id, sequence, proof);
+      if (outcome === "ok") {
+        completed(row.id);
+        return;
+      }
+      if (outcome !== "skipped") throw error;
+    },
+    [run, completed],
   );
 
   const takeBack = useCallback(
@@ -350,7 +414,7 @@ export default function TasksScreen() {
       setNotice(null);
       // Most often refused because an officer confirmed it inside the
       // window: the bar has gone, so say so rather than leave it done.
-      if ((await run(id, ["IN_PROGRESS"])) === "failed") {
+      if ((await run(id, ["IN_PROGRESS"])).outcome === "failed") {
         setNotice(TAKE_BACK_FAILED);
       }
     },
@@ -361,25 +425,35 @@ export default function TasksScreen() {
   // board as a write lands.
   const sheetRef = useRef<BottomSheetModal>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const openRow = useMemo(() => {
-    if (openId === null) return null;
-    const onBoard = [...board.dueThisWeek, ...board.later].find(
-      (row) => row.id === openId,
-    );
-    if (onBoard) return onBoard;
-    // Opened from the Events calendar (#4144), which also shows a task the
-    // board has let go of (finished more than a week ago): read it off the
-    // same query rather than open an empty sheet.
-    const raw = Array.isArray(tasksQuery.data)
-      ? (tasksQuery.data as unknown[]).find(
-          (row) =>
-            !!row &&
-            typeof row === "object" &&
-            (row as { id?: unknown }).id === openId,
-        )
-      : undefined;
-    return raw ? toTaskRow(raw as Record<string, unknown>) : null;
-  }, [board, openId, tasksQuery.data]);
+  const findRow = useCallback(
+    (id: string | null): TaskRowModel | null => {
+      if (id === null) return null;
+      const onBoard = [...board.dueThisWeek, ...board.later].find(
+        (row) => row.id === id,
+      );
+      if (onBoard) return onBoard;
+      // Opened from the Events calendar (#4144), which also shows a task the
+      // board has let go of (finished more than a week ago): read it off the
+      // same query rather than open an empty sheet.
+      const raw = Array.isArray(tasksQuery.data)
+        ? (tasksQuery.data as unknown[]).find(
+            (row) =>
+              !!row &&
+              typeof row === "object" &&
+              (row as { id?: unknown }).id === id,
+          )
+        : undefined;
+      return raw ? toTaskRow(raw as Record<string, unknown>) : null;
+    },
+    [board, tasksQuery.data],
+  );
+  const openRow = useMemo(() => findRow(openId), [findRow, openId]);
+  // Mark done's sheet reads its task off the board too, so a refetch that
+  // finds the task now asks for a photo redraws the sheet asking for one.
+  const markingRow = useMemo(
+    () => findRow(marking?.id ?? null),
+    [findRow, marking],
+  );
 
   // `/tasks?task=<id>`: the Events calendar's way in. Opens that task's
   // sheet once its row is readable, then clears the param so coming back to
@@ -461,6 +535,10 @@ export default function TasksScreen() {
             dueAt: openRow.dueAt,
             pointReward: openRow.pointReward,
             storedStatus: openRow.storedStatus,
+            referencePhotos: openRow.photos.filter(
+              (photo) => photo.kind === "reference",
+            ),
+            proofKind: openRow.proofKind,
           });
         }
       : undefined;
@@ -525,7 +603,7 @@ export default function TasksScreen() {
     // leaves the board shimmering forever with no retry, a screen dead until a
     // force-quit. A pull refetches it too (#3385), but nothing on screen says
     // so, which is why `ErrorState` keeps its button (`state-block.tsx`).
-    if ((viewerQuery.isError && viewerQuery.data === undefined)) {
+    if (viewerQuery.isError && viewerQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your account"
@@ -555,7 +633,7 @@ export default function TasksScreen() {
       );
     }
 
-    if ((tasksQuery.isError && tasksQuery.data === undefined)) {
+    if (tasksQuery.isError && tasksQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your tasks"
@@ -606,9 +684,7 @@ export default function TasksScreen() {
         title="Tasks"
         refresh={refresh}
         createAction={
-          canCreate
-            ? { label: "New task", onPress: openCreate }
-            : undefined
+          canCreate ? { label: "New task", onPress: openCreate } : undefined
         }
         headerAction={
           chapterId ? <ListLayoutToggle screen="tasks" /> : undefined
@@ -673,6 +749,22 @@ export default function TasksScreen() {
             }}
           />
         </SheetBoundary>
+      ) : null}
+
+      {marking && markingRow ? (
+        <MarkDoneSheet
+          key={marking.id}
+          task={{
+            id: markingRow.id,
+            title: markingRow.title,
+            proofKind: markingRow.proofKind,
+            sentBack: rowIsSentBack(markingRow),
+            sentBackReason: markingRow.sentBackReason,
+          }}
+          initialProblem={marking.problem}
+          onComplete={(proof) => completeWithProof(markingRow, proof)}
+          onClosed={() => setMarking(null)}
+        />
       ) : null}
 
       {editing ? (

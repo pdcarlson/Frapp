@@ -52,6 +52,12 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     isDone: false,
     isOverdue: false,
     subtasks: [],
+    proofKind: "none",
+    proofLink: null,
+    sentBackAt: null,
+    sentBackReason: null,
+    completionNote: null,
+    photos: [],
     ...overrides,
   };
 }
@@ -397,5 +403,77 @@ describe("TaskRow — two targets and the shared words", () => {
       }),
     );
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TaskRow — status words and photos (#4635)", () => {
+  const status = (tree: ReactTestRenderer) =>
+    texts(tree).find(
+      (text) => text.includes(" · ") || /Due|Done|Waiting|Confirmed/.test(text),
+    );
+
+  it("says Needs changes ahead of the due line on a sent-back task", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          storedStatus: "IN_PROGRESS",
+          displayStatus: "IN_PROGRESS",
+          sentBackAt: "2026-08-16T12:00:00Z",
+          sentBackReason: "Floor is still sticky",
+        })}
+        now={NOW}
+      />,
+    );
+    expect(status(tree)).toMatch(/^Needs changes · Due/);
+  });
+
+  it("says Done for a completion that needed no sign-off", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          storedStatus: "COMPLETED",
+          displayStatus: "COMPLETED",
+          isDone: true,
+          pointsAwarded: true,
+          pointReward: null,
+        })}
+        now={NOW}
+      />,
+    );
+    expect(texts(tree)).toContain("Done");
+    expect(texts(tree)).not.toContain("Confirmed");
+  });
+
+  it("counts its reference photos beside the due", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          photos: [
+            { id: "a", kind: "reference", storage_path: "a" },
+            { id: "b", kind: "reference", storage_path: "b" },
+            { id: "c", kind: "proof", storage_path: "c" },
+          ],
+        })}
+        now={NOW}
+      />,
+    );
+    expect(status(tree)).toMatch(/· 2 photos$/);
+  });
+
+  it("names the box's move for a task that asks for a photo", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ proofKind: "photo" })}
+        now={NOW}
+        onOpen={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+    const rowPress = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(rowPress.props.accessibilityActions).toEqual([
+      { name: "toggle", label: "Mark done with a photo" },
+    ]);
   });
 });
