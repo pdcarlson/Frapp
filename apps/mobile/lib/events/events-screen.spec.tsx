@@ -1146,18 +1146,14 @@ describe("Calendar 3 days and Day", () => {
   });
 
   it("names both years when three days cross New Year", () => {
-    const tree = openRange("3 days");
-    // Mounted Sep 25 2026 (local): 32 steps of three days is Dec 30.
+    // Day by day to Dec 30 in any zone, then three days from there.
+    const tree = openRange("Day");
     const now = today();
-    const steps = Math.round(
-      (new Date(now.getFullYear(), 11, 30).getTime() - now.getTime()) /
-        (3 * 86_400_000),
-    );
-    for (let i = 0; i < steps; i += 1) {
-      act(() => pressable(tree, "Next 3 days").props.onPress());
+    const first = new Date(now.getFullYear(), 11, 30);
+    while (dayColumns(tree)[0] !== localIsoDate(first)) {
+      act(() => pressable(tree, "Next day").props.onPress());
     }
-    const first = plusDays(now, steps * 3);
-    expect(localIsoDate(first)).toBe(`${now.getFullYear()}-12-30`);
+    act(() => radio(tree, "3 days").props.onPress());
     const short = (day: Date) =>
       day.toLocaleDateString(undefined, { month: "short" });
     expect(screenText(tree)).toContain(
