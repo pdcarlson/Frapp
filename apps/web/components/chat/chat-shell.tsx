@@ -659,6 +659,8 @@ export function ChatShell({
   const onThreadEntry = useRef(false);
   const backPending = useRef(false);
   const openAfterBack = useRef(false);
+  // The URL of the entry `onThreadEntry` stands for (#3836).
+  const threadEntryHref = useRef<string | null>(null);
 
   // Seeded from the `?channel=` query param a caller (e.g. the member
   // directory's Message action, a chat notification, a command-palette
@@ -858,8 +860,12 @@ export function ChatShell({
     restores the same route for the same URL.
 
     From `lg` up the list is on screen beside the thread, so a pick pushes
-    nothing and `Esc` does nothing. An entry pushed below `lg` that outlives a widening past it
-    costs one Back press that changes nothing on screen.
+    nothing and `Esc` does nothing. An entry pushed below `lg` can outlive a
+    widening past it (a tablet turned to landscape, a resized window), and
+    there the Back that pops it would change nothing on screen. So when the
+    browser's own Back leaves our entry from `lg` up, the same press goes back
+    one more entry and leaves Chat, as a desktop Back always does (#3836). The
+    entry stays until then, so narrowing again keeps its Back step.
   */
   const openThreadPane = useCallback(() => {
     setNarrowPane("thread");
@@ -873,10 +879,12 @@ export function ChatShell({
     if (onThreadEntry.current) return;
     if (isThreadPaneEntry(window.history.state)) {
       onThreadEntry.current = true;
+      threadEntryHref.current = window.location.href;
       return;
     }
     pushThreadPaneEntry();
     onThreadEntry.current = true;
+    threadEntryHref.current = window.location.href;
   }, [isDesktopShell]);
   const backToChannels = useCallback(() => {
     setNarrowPane("channels");
@@ -887,18 +895,42 @@ export function ChatShell({
       window.history.back();
     }
   }, []);
+  // Read by the `popstate` listener, which subscribes once.
+  const isDesktopShellRef = useRef(isDesktopShell);
+  useEffect(() => {
+    isDesktopShellRef.current = isDesktopShell;
+  }, [isDesktopShell]);
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      const ownBack = backPending.current;
+      const leftOwnEntry = onThreadEntry.current;
       backPending.current = false;
       if (openAfterBack.current) {
         openAfterBack.current = false;
         pushThreadPaneEntry();
         onThreadEntry.current = true;
+        threadEntryHref.current = window.location.href;
         setNarrowPane("thread");
         return;
       }
       const thread = isThreadPaneEntry(event.state);
       onThreadEntry.current = thread;
+      if (thread) threadEntryHref.current = window.location.href;
+      if (
+        !thread &&
+        leftOwnEntry &&
+        !ownBack &&
+        isDesktopShellRef.current &&
+        // The same-URL entry under ours, not a Forward to another page.
+        window.location.href === threadEntryHref.current
+      ) {
+        // A below-`lg` pick's entry, popped from `lg` up: the list is already
+        // on screen, so finish the press by leaving the entry under it too
+        // (#3836).
+        setNarrowPane("channels");
+        window.history.back();
+        return;
+      }
       setNarrowPane(thread ? "thread" : "channels");
     };
     window.addEventListener("popstate", onPopState);

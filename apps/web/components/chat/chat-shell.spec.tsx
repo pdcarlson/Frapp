@@ -4282,6 +4282,84 @@ describe("ChatShell narrow viewports (#2142)", () => {
       window.history.replaceState(null, "");
     }
   });
+
+  describe("after widening past lg (#3836)", () => {
+    const realMatchMedia = window.matchMedia;
+    let width = 800;
+    const listeners = new Set<() => void>();
+
+    function resize(px: number) {
+      width = px;
+      act(() => listeners.forEach((listener) => listener()));
+    }
+
+    beforeEach(() => {
+      width = 800;
+      listeners.clear();
+      window.matchMedia = ((query: string) => ({
+        get matches() {
+          return width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0);
+        },
+        media: query,
+        onchange: null,
+        addEventListener: (_: string, listener: () => void) =>
+          listeners.add(listener),
+        removeEventListener: (_: string, listener: () => void) =>
+          listeners.delete(listener),
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      window.history.replaceState(null, "");
+    });
+
+    async function pickBelowLg() {
+      window.history.replaceState(null, "");
+      render(<ChatShell />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => {
+        expect(columns().channels.className).not.toContain("max-lg:hidden");
+      });
+      fireEvent.click(screen.getByTestId("pick-random"));
+      expect(window.history.state).toMatchObject({
+        frappChatThreadPane: expect.any(String),
+      });
+    }
+
+    it("leaves Chat on the first Back, not after one press that changes nothing", async () => {
+      await pickBelowLg();
+      resize(1440);
+      const back = vi.spyOn(window.history, "back");
+      try {
+        // The member's own Back pops the pick's entry; the list is already on
+        // screen, so the same press carries on past the entry under it.
+        window.history.back();
+        await waitFor(() => expect(back).toHaveBeenCalledTimes(2));
+      } finally {
+        back.mockRestore();
+      }
+    });
+
+    it("keeps the Back step when the window narrows again first", async () => {
+      await pickBelowLg();
+      resize(1440);
+      resize(800);
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(columns().channels.className).not.toContain("max-lg:hidden");
+        });
+        expect(back).toHaveBeenCalledTimes(1);
+      } finally {
+        back.mockRestore();
+      }
+    });
+  });
 });
 
 /**
