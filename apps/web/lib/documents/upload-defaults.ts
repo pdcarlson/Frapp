@@ -11,7 +11,7 @@ import { documentTypeKey } from "@repo/validation";
 
 /**
  * The types every chapter starts with, the seed in
- * `20261113040011_chapter_document_types.sql`. The upload panel offers the
+ * `20261113053718_chapter_document_types.sql`. The upload panel offers the
  * chapter's own list (`GET /v1/documents/types`, #3642); these, with the types
  * the library already uses ({@link documentTypeOptions}), stand in only until
  * that list has loaded or when it can't be read.

@@ -53,7 +53,7 @@ as $$
 $$;
 
 comment on function public.document_type_key(text) is
-  'A document type name lowercased with all but letters and digits removed: the key two spellings of one type share. Same rule as documentTypeKey in @repo/validation. See 20261113040011_chapter_document_types.sql.';
+  'A document type name lowercased with all but letters and digits removed: the key two spellings of one type share. Same rule as documentTypeKey in @repo/validation. See 20261113053718_chapter_document_types.sql.';
 
 create table if not exists public.chapter_document_types (
   id uuid primary key default gen_random_uuid(),
@@ -88,7 +88,7 @@ create index if not exists idx_chapter_documents_type_key
 alter table public.chapter_document_types enable row level security;
 
 comment on table public.chapter_document_types is
-  'A chapter''s own list of document types. chapter_documents.document_type holds a type''s name, matched by document_type_key. See 20261113040011_chapter_document_types.sql.';
+  'A chapter''s own list of document types. chapter_documents.document_type holds a type''s name, matched by document_type_key. See 20261113053718_chapter_document_types.sql.';
 
 -- ── Seeding ───────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ as $$
 $$;
 
 comment on function public.seed_default_document_types(uuid) is
-  'Adds the seven default document types to one chapter, skipping any it already has under any spelling. Run by trg_chapters_seed_document_types on every new chapter. See 20261113040011_chapter_document_types.sql.';
+  'Adds the seven default document types to one chapter, skipping any it already has under any spelling. Run by trg_chapters_seed_document_types on every new chapter. See 20261113053718_chapter_document_types.sql.';
 
 create or replace function public.chapters_seed_document_types()
 returns trigger

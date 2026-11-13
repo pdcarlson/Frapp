@@ -125,7 +125,7 @@ export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
  * Document types (#3642, piece 4). The name bound mirrors the CHECK
- * constraint in `20261113040011_chapter_document_types.sql` (and the old
+ * constraint in `20261113053718_chapter_document_types.sql` (and the old
  * free-text `document_type` limit, so every stored value fits); the count is
  * an API-side cap on one chapter's list, which the upload form shows whole.
  */
@@ -136,7 +136,7 @@ export const DOCUMENT_TYPES_MAX = 50;
  * The key two spellings of one document type share: lowercased, with
  * everything but letters and digits removed, so "By-Laws", "bylaws" and
  * " BYLAWS " are one type. The same rule as the database's
- * `document_type_key` (`20261113040011_chapter_document_types.sql`), which the
+ * `document_type_key` (`20261113053718_chapter_document_types.sql`), which the
  * unique index, rename and delete match on; "" for a name with no letter or
  * digit, which no type may have.
  */
