@@ -10,6 +10,7 @@
 | Landing        | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                   |
 | Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
 | Mobile App     | Expo (React Native), Expo Router             | `apps/mobile`. Signet StyleSheet tokens; NativeWind removed. iOS + Android.                                           |
+| Desktop App    | Electron                                     | `apps/desktop`. A thin shell that opens app.frapp.live; macOS + Windows ([ADR-29](adr/adr-29.md)).                   |
 | Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST only; realtime is Supabase Realtime.                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
@@ -32,6 +33,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
+    desktop/        # Electron shell around app.frapp.live (macOS + Windows, ADR-29)
   packages/         # 13 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
@@ -95,6 +97,13 @@ Frapp/
 - **Role:** Marketing, pricing, CTA. No auth state. Links to app.frapp.live for sign-up/log-in.
 - **Observability:** Anonymous Sentry errors and PostHog page/CTA analytics when credentials are set. No identity call, no alias onto an authenticated distinct id, no chapter group ([`observability.md`](../behavior/observability.md#provider-ownership)). Replay stays off in every environment until #2038.
 - **Deployment:** Vercel, independent from the web app.
+
+### 3.4a Desktop (`apps/desktop`)
+
+- **Framework:** Electron ([ADR-29](adr/adr-29.md)). The window loads the hosted web app at `https://app.frapp.live`; nothing of the web app is bundled, so UI changes ship as web deploys.
+- **Boundary:** The renderer is sandboxed with no Node access. The web app reaches the OS only through `window.frappDesktop` (`apps/desktop/src/shared/bridge.ts`), and links off the app's origin open in the default browser (`src/shared/navigation.ts`).
+- **Running it:** `npm start -w apps/desktop` opens production; `npm start -w apps/desktop -- --app-url=https://app.staging.frapp.live` opens staging, and an unpackaged run also accepts `http://localhost:3000`. Those three origins are the whole allow-list (`src/shared/app-url.ts`). The script is `start`, not `dev`, so the root `npm run dev` (Turbo, web and landing) doesn't open a desktop window. `npm run dist -w apps/desktop` packages for the current OS; the `Desktop build` workflow packages macOS, Windows and Linux on every change and keeps the installers on the run for 14 days. Linux is built only to keep packaging honest: it isn't offered to members, and it has no Open at Login.
+- **Not yet built:** sign-in through the system browser (#4841), notifications and the unread badge (#4842), signing and auto-update (#4843).
 
 ### 3.5 Documentation (no `apps/docs` web app)
 
