@@ -85,6 +85,27 @@ describe('the scripted Ask replies', () => {
     expect(planned.tools).toEqual([]);
   });
 
+  it('gives a follow-up that leans on the question before it that question’s tools', () => {
+    const follow = (question: string, earlier: string[]) =>
+      (
+        scriptedAskPlan({
+          kind: 'structured',
+          messages: [
+            {
+              role: 'user',
+              content: askPlanMessage(question, tools, earlier),
+            },
+          ],
+        } as unknown as LanguageModelRequest) as Said
+      ).object as { tools: string[] };
+    // Only the one before it, never the ones before that.
+    expect(
+      follow('And where is it?', ['Who is the treasurer?', 'When is formal?'])
+        .tools,
+    ).toEqual(['events']);
+    expect(follow('And where is it?', []).tools).toEqual([]);
+  });
+
   it('never plans a tool that was not offered', () => {
     const only = (
       scriptedAskPlan({

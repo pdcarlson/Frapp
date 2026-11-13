@@ -74,9 +74,6 @@ function setup(account: Account = {}) {
       async () => account.permissions ?? ['members:view', 'ai:use'],
     ),
   };
-  const members = {
-    findByUserAndChapter: jest.fn(async () => ({ role_ids: ['role-brother'] })),
-  };
   const events = { findByChapter: jest.fn(async () => account.events ?? []) };
   const tasks = { list: jest.fn(async () => account.tasks ?? []) };
   const invoices = {
@@ -88,7 +85,9 @@ function setup(account: Account = {}) {
       transactions: account.transactions ?? [],
     })),
   };
-  const meetings = { list: jest.fn(async () => account.meetings ?? []) };
+  const meetings = {
+    listPostedSince: jest.fn(async () => account.meetings ?? []),
+  };
   const corpus = {
     indexedAmong: jest.fn(async () => new Set(account.indexed ?? [])),
   };
@@ -102,7 +101,6 @@ function setup(account: Account = {}) {
   };
   const service = new AskSuggestionsService(
     rbac as never,
-    members as never,
     events as never,
     tasks as never,
     invoices as never,
@@ -112,20 +110,20 @@ function setup(account: Account = {}) {
     act as never,
     account.tools ?? TOOLS,
   );
-  const suggest = () =>
+  const suggest = (now: Date = NOW) =>
     service.suggest(
       {
         chapterId: 'chapter-a',
         userId: 'user-1',
+        roleIds: ['role-brother'],
         enabledModules: account.modules ?? null,
         timeZone: ZONE,
       },
-      NOW,
+      now,
     );
   return {
     suggest,
     rbac,
-    members,
     events,
     tasks,
     invoices,
@@ -261,24 +259,18 @@ describe('AskSuggestionsService', () => {
       });
       await expect(kit.suggest()).resolves.toEqual([]);
       expect(kit.events.findByChapter).not.toHaveBeenCalled();
-      expect(kit.meetings.list).not.toHaveBeenCalled();
+      expect(kit.meetings.listPostedSince).not.toHaveBeenCalled();
     });
 
     it('offers minutes only once they are in the search index, newest first', async () => {
       const kit = setup({
         meetings: [
-          meeting({ id: 'draft', status: 'draft' }),
-          meeting({
-            id: 'old',
-            event_name: 'Retreat',
-            event_start_time: '2026-08-01T00:00:00.000Z',
-          }),
-          meeting({ id: 'meeting-1' }),
           meeting({
             id: 'not-indexed',
             event_name: 'Executive board',
             event_start_time: '2026-11-11T00:00:00.000Z',
           }),
+          meeting({ id: 'meeting-1' }),
         ],
         indexed: ['meeting-1'],
       });
@@ -290,7 +282,14 @@ describe('AskSuggestionsService', () => {
           request: false,
         },
       ]);
-      // A draft and minutes two months old are never checked.
+      // Only the newest five posted minutes of the last sixty days are read,
+      // as the member, never the chapter's whole history.
+      expect(kit.meetings.listPostedSince).toHaveBeenCalledWith(
+        'chapter-a',
+        'user-1',
+        new Date('2026-09-13T18:00:00.000Z'),
+        5,
+      );
       expect(kit.corpus.indexedAmong).toHaveBeenCalledWith(
         'chapter-a',
         'meeting_minutes',
@@ -305,7 +304,38 @@ describe('AskSuggestionsService', () => {
         indexed: ['meeting-1'],
       });
       await expect(kit.suggest()).resolves.toEqual([]);
-      expect(kit.meetings.list).not.toHaveBeenCalled();
+      expect(kit.meetings.listPostedSince).not.toHaveBeenCalled();
+    });
+
+    it('offers minutes to a president, who holds every permission as one wildcard', async () => {
+      const { suggest } = setup({
+        permissions: ['*'],
+        meetings: [meeting()],
+        indexed: ['meeting-1'],
+      });
+      expect((await suggest()).map((item) => item.kind)).toEqual(['minutes']);
+    });
+
+    it('asks about dues only for an invoice the dues tool will read', async () => {
+      const { suggest } = setup({
+        tools: [
+          ...TOOLS.filter((item) => item.name !== 'my_dues'),
+          tool('my_dues', null),
+        ],
+        invoices: [
+          // The oldest unpaid one is the twenty-first, which the tool cuts.
+          { title: 'Fall 2024 dues', status: 'OPEN', due_date: '2024-09-01' },
+          { title: 'Fall dues', status: 'OPEN', due_date: '2026-09-01' },
+          ...Array.from({ length: 19 }, (_, index) => ({
+            title: `Fine ${index}`,
+            status: 'PAID',
+            due_date: `2026-10-${String(index + 1).padStart(2, '0')}`,
+          })),
+        ],
+      });
+      expect((await suggest()).map((item) => item.text)).toEqual([
+        'How much do I owe for Fall dues?',
+      ]);
     });
 
     it('asks about points only when the member’s points have moved this semester', async () => {
@@ -405,6 +435,36 @@ describe('AskSuggestionsService', () => {
     });
   });
 
+  describe('a name someone else wrote', () => {
+    const long = 'x'.repeat(61);
+
+    it('is never put in a row when it is too long for one: a task', async () => {
+      const { suggest } = setup({ tasks: [task({ title: long })] });
+      await expect(suggest()).resolves.toEqual([]);
+    });
+
+    it('is never put in a row when it is too long for one: minutes, where the next that fits is offered', async () => {
+      const { suggest } = setup({
+        meetings: [
+          meeting({ id: 'long', event_name: long }),
+          meeting({ id: 'meeting-1' }),
+        ],
+        indexed: ['long', 'meeting-1'],
+      });
+      expect((await suggest()).map((item) => item.text)).toEqual([
+        'What was decided at Chapter meeting on November 8?',
+      ]);
+    });
+
+    it('is never put in a row when it is too long for one: an invoice', async () => {
+      const { suggest } = setup({
+        tools: [tool('my_dues', null)],
+        invoices: [{ title: long, status: 'OPEN', due_date: '2026-12-01' }],
+      });
+      await expect(suggest()).resolves.toEqual([]);
+    });
+  });
+
   describe('the one request', () => {
     const president = { actions: ['give_points', 'create_task'] };
 
@@ -455,6 +515,39 @@ describe('AskSuggestionsService', () => {
       });
       expect((await suggest()).map((item) => item.kind)).toEqual(['event']);
     });
+
+    it.each([
+      // 11:30 PM on the Sunday the clocks go back: 24 hours earlier is still
+      // that Sunday.
+      [
+        'the day the clocks go back',
+        '2026-10-29T16:00:00.000Z',
+        '2026-11-02T04:30:00.000Z',
+        "Make a task for me to get ready for Sunday's event, due Saturday",
+      ],
+      // 12:30 AM on the Monday after the clocks go forward: 24 hours earlier
+      // is Saturday night.
+      [
+        'the day after the clocks go forward',
+        '2027-03-11T17:00:00.000Z',
+        '2027-03-15T04:30:00.000Z',
+        "Make a task for me to get ready for Monday's event, due Sunday",
+      ],
+    ])(
+      'is due the calendar day before the event, on %s',
+      async (_when, now, start, text) => {
+        const { suggest } = setup({
+          ...president,
+          events: [
+            event({
+              start_time: start,
+              end_time: new Date(Date.parse(start) + 3_600_000).toISOString(),
+            }),
+          ],
+        });
+        expect((await suggest(new Date(now))).at(-1)?.text).toBe(text);
+      },
+    );
 
     it('is not offered to a member who cannot take actions', async () => {
       const { suggest } = setup({ events: [event()] });

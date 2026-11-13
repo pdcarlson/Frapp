@@ -139,6 +139,10 @@ describe('MeetingService', () => {
       findByChapter: jest.fn(async (_chapterId: string, _limit: number) => [
         ...rows.values(),
       ]),
+      findPostedSince: jest.fn(
+        async (_chapterId: string, _since: string, _limit: number) =>
+          [...rows.values()].filter((row) => row.status === 'posted'),
+      ),
       create: jest.fn(async (data) => {
         const row = meeting({ ...data, id: `mtg-${rows.size + 1}` });
         rows.set(row.id, row);
@@ -419,6 +423,21 @@ describe('MeetingService', () => {
         false,
       );
       expect(await service.list(CHAPTER, JAKE)).toEqual([]);
+      // The narrow read of recent posted minutes holds the same rule.
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      expect(await service.listPostedSince(CHAPTER, JAKE, since, 5)).toEqual(
+        [],
+      );
+      expect(
+        (await service.listPostedSince(CHAPTER, PRESIDENT, since, 5)).map(
+          (row) => row.id,
+        ),
+      ).toEqual(['mtg-exec']);
+      expect(repo.findPostedSince).toHaveBeenLastCalledWith(
+        CHAPTER,
+        since.toISOString(),
+        5,
+      );
       // Nor can he learn it exists by trying to change or delete it.
       await expect(
         service.update(CHAPTER, 'mtg-exec', JAKE, {

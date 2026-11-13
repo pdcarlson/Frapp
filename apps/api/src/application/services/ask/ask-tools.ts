@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { eventAttendanceFor } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TaskStatus } from '#domain/entities/task.entity';
+import { localDateIn } from '#domain/utils/zoned-time';
 import { EventService } from '../event.service';
 import { FinancialInvoiceService } from '../financial-invoice.service';
 import { MemberService } from '../member.service';
@@ -27,6 +28,7 @@ const ROSTER_LIMIT = 400;
 const EVENTS_BACK_DAYS = 30;
 const EVENTS_AHEAD_DAYS = 120;
 const EVENTS_LIMIT = 60;
+const DUES_LIMIT = 20;
 const FREE_TEXT_LIMIT = 300;
 const TRANSACTIONS_LIMIT = 10;
 const LEADERBOARD_LIMIT = 25;
@@ -365,21 +367,28 @@ export class MyDuesAskTool implements AskTool {
     timeZone,
   }: AskToolContext): Promise<AskToolResult | null> {
     const invoices = await this.invoices.findByUser(userId, chapterId);
-    const lines = invoices
-      // A draft is the treasurer's unfinished work, and a void one was
-      // withdrawn; the member's own Dues page shows neither.
-      .filter(
-        (invoice) => invoice.status === 'OPEN' || invoice.status === 'PAID',
-      )
-      .sort((a, b) => b.due_date.localeCompare(a.due_date))
-      .slice(0, 20)
-      .map((invoice) =>
-        invoice.status === 'PAID'
-          ? `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, paid${invoice.paid_at ? ` on ${longDate(invoice.paid_at, timeZone)}` : ''}.`
-          : `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, not paid, due ${longDate(invoice.due_date, timeZone)}.`,
-      );
+    const lines = duesInvoicesForAsk(invoices).map((invoice) =>
+      invoice.status === 'PAID'
+        ? `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, paid${invoice.paid_at ? ` on ${longDate(invoice.paid_at, timeZone)}` : ''}.`
+        : `${oneLine(invoice.title)}: ${dollars(invoice.amount)}, not paid, due ${longDate(invoice.due_date, timeZone)}.`,
+    );
     return result(chapterId, lines);
   }
+}
+
+/**
+ * The invoices Ask reads for a member: what their own Dues page shows, the
+ * latest twenty. A draft is the treasurer's unfinished work, and a void one
+ * was withdrawn; the page shows neither. The opening suggestion picks from
+ * this same list, so it never names an invoice the answer cannot see.
+ */
+export function duesInvoicesForAsk<
+  T extends { status: string; due_date: string },
+>(invoices: readonly T[]): T[] {
+  return invoices
+    .filter((invoice) => invoice.status === 'OPEN' || invoice.status === 'PAID')
+    .sort((a, b) => b.due_date.localeCompare(a.due_date))
+    .slice(0, DUES_LIMIT);
 }
 
 /** The asker's own tasks that are not finished: what is open and when each is due. */
@@ -410,10 +419,28 @@ export class MyTasksAskTool implements AskTool {
       confirmed: false,
       limit: MY_TASKS_READ,
     });
-    const due = (task: (typeof mine)[number]) => task.due_at ?? task.due_date;
+    // By the day the asker sees, then by the time on that day, with a task
+    // that has no time after the timed ones (it is due by the end of the
+    // day). `due_at` is an instant and `due_date` a calendar day, so the two
+    // are never compared as strings: 8 PM Saturday in New York is already
+    // Sunday in UTC.
+    type Mine = (typeof mine)[number];
+    const dueDay = (task: Mine) =>
+      task.due_at
+        ? localDateIn(new Date(task.due_at), timeZone)
+        : task.due_date;
+    const dueFirst = (a: Mine, b: Mine) =>
+      dueDay(a).localeCompare(dueDay(b)) ||
+      (a.due_at && b.due_at
+        ? Date.parse(a.due_at) - Date.parse(b.due_at)
+        : a.due_at
+          ? -1
+          : b.due_at
+            ? 1
+            : 0);
     const open = mine
       .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
-      .sort((a, b) => due(a).localeCompare(due(b)));
+      .sort(dueFirst);
     const waiting = mine.filter(
       (task) => task.stored_status === TaskStatus.COMPLETED,
     );

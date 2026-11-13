@@ -190,17 +190,21 @@ export function AskPanel({
 
   // A card fills in after it lands (who it covers, the event it means), so
   // the thread's own height is followed too, not only the turn changing.
+  // Only once there is a turn: the opening's rows arriving in a short window
+  // must not scroll the opening's own first lines out of view.
   const thread = useRef<HTMLDivElement>(null);
+  const hasTurn = last !== undefined;
   useEffect(() => {
     const element = thread.current;
-    if (!open || !element || typeof ResizeObserver === "undefined") return;
+    if (!open || !hasTurn || !element || typeof ResizeObserver === "undefined")
+      return;
     const observer = new ResizeObserver(() => {
       const view = scroller.current;
       if (view && following.current) view.scrollTop = view.scrollHeight;
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [open]);
+  }, [open, hasTurn]);
 
   function close() {
     onOpenChange(false);

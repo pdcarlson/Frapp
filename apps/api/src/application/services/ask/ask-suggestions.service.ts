@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_SUGGESTED_QUESTIONS_MAX,
   askSuggestionName,
@@ -11,16 +11,17 @@ import {
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import { TaskStatus } from '#domain/entities/task.entity';
 import { localDateIn } from '#domain/utils/zoned-time';
+import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { ActService } from '../act/act.service';
 import { CorpusRetrievalService } from '../corpus/corpus-retrieval.service';
 import { EventService } from '../event.service';
 import { FinancialInvoiceService } from '../financial-invoice.service';
 import { MeetingService } from '../meeting.service';
-import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
 import { TaskService } from '../task.service';
 import { ASK_TOOLS, toolsMemberMayUse, type AskTool } from './ask-tool';
+import { duesInvoicesForAsk } from './ask-tools';
 
 /**
  * What Ask opens with (#4700): up to three questions and one request, each
@@ -84,6 +85,8 @@ export interface AskSuggestionsInput {
   chapterId: string;
   /** The member, from the auth guard. */
   userId: string;
+  /** The member's roles in this chapter, as `ChapterGuard` read them. */
+  roleIds: readonly string[];
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The member's IANA time zone. */
@@ -138,7 +141,6 @@ export class AskSuggestionsService {
 
   constructor(
     private readonly rbac: RbacService,
-    private readonly members: MemberService,
     private readonly events: EventService,
     private readonly tasks: TaskService,
     private readonly invoices: FinancialInvoiceService,
@@ -220,7 +222,8 @@ export class AskSuggestionsService {
   /**
    * One read, or nothing. A member who may not take actions is refused by
    * `ActService` in the ordinary way, and that too is nothing to suggest.
-   * Only the kind is logged, never a record's text.
+   * Any other failure is reported with the kind and the error, never a
+   * record's text.
    */
   private async read<T>(
     kind: AskSuggestionKind,
@@ -229,16 +232,26 @@ export class AskSuggestionsService {
     try {
       return await run();
     } catch (error) {
-      if ((error as { status?: number } | null)?.status !== 403) {
-        this.logger.warn(`an opening suggestion could not be read: ${kind}`);
-      }
+      if (error instanceof ForbiddenException) return null;
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: `ask-suggestion-read:${kind}`,
+        message: `an opening suggestion could not be read: ${kind}`,
+        // A database or programming error. Neither carries a record's text.
+        error,
+      });
       return null;
     }
   }
 
-  /** The unpaid invoice due soonest, as the member's Dues page shows it. */
+  /**
+   * The unpaid invoice due soonest, among the ones the dues tool reads
+   * (`duesInvoicesForAsk`), so the answer always has it.
+   */
   private async dues(input: AskSuggestionsInput): Promise<string | null> {
-    const open = (await this.invoices.findByUser(input.userId, input.chapterId))
+    const open = duesInvoicesForAsk(
+      await this.invoices.findByUser(input.userId, input.chapterId),
+    )
       .filter((invoice) => invoice.status === 'OPEN')
       .sort((a, b) => a.due_date.localeCompare(b.due_date));
     const title = askSuggestionName(open[0]?.title);
@@ -266,16 +279,17 @@ export class AskSuggestionsService {
     input: AskSuggestionsInput,
     now: Date,
   ): Promise<UpcomingEvent[]> {
-    const [events, member] = await Promise.all([
-      this.events.findByChapter(input.chapterId, input.userId, {
+    const events = await this.events.findByChapter(
+      input.chapterId,
+      input.userId,
+      {
         endsAfter: now.toISOString(),
         startsBefore: new Date(
           now.getTime() + EVENT_AHEAD_DAYS * DAY_MS,
         ).toISOString(),
-      }),
-      this.members.findByUserAndChapter(input.userId, input.chapterId),
-    ]);
-    const roles = member.role_ids ?? [];
+      },
+    );
+    const roles = [...input.roleIds];
     return events
       .filter((event) => Date.parse(event.start_time) > now.getTime())
       .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
@@ -318,18 +332,14 @@ export class AskSuggestionsService {
     input: AskSuggestionsInput,
     now: Date,
   ): Promise<string | null> {
-    const since = now.getTime() - MINUTES_BACK_DAYS * DAY_MS;
-    const recent = (await this.meetings.list(input.chapterId, input.userId))
-      .filter(
-        (meeting) =>
-          meeting.status === 'posted' &&
-          Date.parse(meeting.event_start_time) >= since,
-      )
-      .sort(
-        (a, b) =>
-          Date.parse(b.event_start_time) - Date.parse(a.event_start_time),
-      )
-      .slice(0, MINUTES_CHECKED);
+    // A narrow read: the newest few posted minutes in the window, not the
+    // chapter's whole history with every body, on each open of Ask.
+    const recent = await this.meetings.listPostedSince(
+      input.chapterId,
+      input.userId,
+      new Date(now.getTime() - MINUTES_BACK_DAYS * DAY_MS),
+      MINUTES_CHECKED,
+    );
     if (recent.length === 0) return null;
     const indexed = await this.corpus.indexedAmong(
       input.chapterId,
@@ -359,10 +369,11 @@ export class AskSuggestionsService {
   }
 
   /**
-   * The one request: a task to get ready for the event the member is asked
-   * about, or the next one after it that fits, due the day before it. Only the two weekday names come from the record. It
-   * is offered for an event two to six days out, so both days are still
-   * ahead and neither weekday can mean two dates.
+   * The one request: a task to get ready for the first coming event that is
+   * two to six days out (the one asked about, when it fits), due the day
+   * before it. Only the two weekday names come from the record. Two to six
+   * days out, both days are still ahead and neither weekday can mean two
+   * dates.
    */
   private request(
     upcoming: readonly UpcomingEvent[],
@@ -374,9 +385,14 @@ export class AskSuggestionsService {
       return days >= 2 && days <= 6;
     });
     if (!event) return null;
+    // The calendar day before, in the member's zone. Not 24 hours before:
+    // around a clock change that lands on the same day or skips one.
+    const eventDay = Date.parse(
+      `${localDateIn(event.start, timeZone)}T12:00:00.000Z`,
+    );
     return askSuggestionText.request(
-      weekday(event.start, timeZone),
-      weekday(new Date(event.start.getTime() - DAY_MS), timeZone),
+      weekday(new Date(eventDay), 'UTC'),
+      weekday(new Date(eventDay - DAY_MS), 'UTC'),
     );
   }
 }

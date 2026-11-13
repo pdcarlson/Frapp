@@ -382,6 +382,38 @@ describe('Ask tools', () => {
       });
     });
 
+    it('puts a task due Saturday evening before one due Sunday, though the evening is already Sunday in UTC', async () => {
+      const tasks = {
+        list: jest.fn(async () => [
+          task({ title: 'Sunday, no time', due_date: '2026-11-15' }),
+          task({ title: 'Saturday, no time', due_date: '2026-11-14' }),
+          task({
+            title: 'Saturday at 8',
+            due_date: '2026-11-14',
+            // 8:00 PM Saturday in New York.
+            due_at: '2026-11-15T01:00:00.000Z',
+          }),
+          task({
+            title: 'Saturday at noon',
+            due_date: '2026-11-14',
+            due_at: '2026-11-14T17:00:00.000Z',
+          }),
+        ]),
+      };
+      const result = await new MyTasksAskTool(tasks as never).run(context);
+      const lines = result?.text.split('\n') ?? [];
+      expect(lines[2]).toBe(
+        'The one due first is Saturday at noon, due Saturday, November 14, 2026 at 12:00 PM.',
+      );
+      // A timed task before an untimed one on the same day, then the next day.
+      expect(lines.slice(3).map((line) => line.split(':')[0])).toEqual([
+        'Saturday at noon',
+        'Saturday at 8',
+        'Saturday, no time',
+        'Sunday, no time',
+      ]);
+    });
+
     it('says how many were left out when the list is too long', async () => {
       const tasks = {
         list: jest.fn(async () =>

@@ -278,6 +278,7 @@ describe('AskController', () => {
       controller.openingSuggestions(
         'chapter-a',
         'user-1',
+        { id: 'member-1', role_ids: ['role-brother'] },
         { events: true },
         'America/Chicago',
       ),
@@ -293,12 +294,14 @@ describe('AskController', () => {
     expect(suggestions.suggest).toHaveBeenCalledWith({
       chapterId: 'chapter-a',
       userId: 'user-1',
+      roleIds: ['role-brother'],
       enabledModules: { events: true },
       timeZone: 'America/Chicago',
     });
     await controller.openingSuggestions(
       'chapter-a',
       'user-1',
+      { id: 'member-1', role_ids: [] },
       null,
       'Not/A_Zone',
     );

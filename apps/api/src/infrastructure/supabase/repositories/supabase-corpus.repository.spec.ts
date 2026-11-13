@@ -97,6 +97,8 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
         ...source({
           source_type: 'meeting_minutes',
           source_id: 'meeting-1',
+          status: 'indexed',
+          revision: 2,
           indexed_revision: 2,
         }),
       },
@@ -108,7 +110,43 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
       // The same id as another kind of record is another record.
       {
         id: 'document',
-        ...source({ source_id: 'meeting-3', indexed_revision: 1 }),
+        ...source({
+          source_id: 'meeting-3',
+          status: 'indexed',
+          indexed_revision: 1,
+        }),
+      },
+      // Skipped by the indexer (no text): it carries an indexed revision
+      // and has nothing to find.
+      {
+        id: 'skipped',
+        ...source({
+          source_type: 'meeting_minutes',
+          source_id: 'meeting-4',
+          status: 'skipped',
+          indexed_revision: 1,
+        }),
+      },
+      // Edited since it was indexed: pending again, its passages gone.
+      {
+        id: 'edited',
+        ...source({
+          source_type: 'meeting_minutes',
+          source_id: 'meeting-5',
+          revision: 2,
+          indexed_revision: 1,
+        }),
+      },
+      // Marked indexed at an older revision than it is at now.
+      {
+        id: 'behind',
+        ...source({
+          source_type: 'meeting_minutes',
+          source_id: 'meeting-6',
+          status: 'indexed',
+          revision: 3,
+          indexed_revision: 2,
+        }),
       },
     ];
     harness = createTenantHarness({
@@ -120,13 +158,16 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
       },
     });
     repo = new SupabaseCorpusRepository(harness.client);
-    // The other chapter holds the same three; one row comes back, not two.
+    // The other chapter holds the same rows; one comes back, not two.
     await expect(
       harness.expectTenantScoped(CHAPTER_A, () =>
         repo.indexedSourceIds(CHAPTER_A, 'meeting_minutes', [
           'meeting-1',
           'meeting-2',
           'meeting-3',
+          'meeting-4',
+          'meeting-5',
+          'meeting-6',
         ]),
       ),
     ).resolves.toEqual(['meeting-1']);

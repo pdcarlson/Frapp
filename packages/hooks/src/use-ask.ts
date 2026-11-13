@@ -71,9 +71,11 @@ const askSuggestionsKey = (chapterId: string | null | undefined) =>
  * until it arrives and whenever it cannot be read, so a screen shows its
  * plain opening and nothing waits on this.
  *
- * Read when Ask opens. A minute is long enough that closing and reopening
- * does not reshuffle the list, and short enough that a task finished since
- * is not still suggested.
+ * Read when Ask opens, and never again while it is open: a list on screen
+ * does not change under a thumb. Reopened within a minute it is the same
+ * list. Reopened later it is read again, and it is empty until the new one
+ * arrives, so a row for a task finished since is never shown and then
+ * swapped for another.
  */
 export function useAskSuggestions(options?: { enabled?: boolean }): {
   suggestions: AskSuggestion[];
@@ -90,9 +92,11 @@ export function useAskSuggestions(options?: { enabled?: boolean }): {
     },
     staleTime: 60_000,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
-  return { suggestions: query.data ?? [] };
+  return { suggestions: query.isFetching ? [] : (query.data ?? []) };
 }
 
 /**

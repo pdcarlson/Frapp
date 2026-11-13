@@ -122,6 +122,7 @@ export class AskController {
   async openingSuggestions(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @CurrentMember() member: MemberContext,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
   ): Promise<AskSuggestionsDto> {
@@ -129,6 +130,7 @@ export class AskController {
       suggestions: await this.suggestions.suggest({
         chapterId,
         userId,
+        roleIds: member.role_ids,
         enabledModules,
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader

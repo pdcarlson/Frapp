@@ -509,6 +509,33 @@ describe("the Ask hooks", () => {
       expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions");
     });
 
+    it("shows nothing while a reopened screen reads again, so rows never swap in place", async () => {
+      const first = [
+        { kind: "tasks", text: 'When is my task "Book the hall" due?', request: false },
+        { kind: "points", text: "How many points do I have this semester?", request: false },
+      ];
+      const second = [first[1]];
+      let release: (value: unknown) => void = () => {};
+      const GET = vi
+        .fn()
+        .mockResolvedValueOnce(ok({ suggestions: first }))
+        .mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useAskSuggestions({ enabled }),
+        { wrapper: wrapper({ GET }), initialProps: { enabled: true } },
+      );
+      await waitFor(() => expect(result.current.suggestions).toEqual(first));
+      // Closed, and the list has gone stale by the time it is opened again.
+      rerender({ enabled: false });
+      queryClient.invalidateQueries({ refetchType: "none" });
+      rerender({ enabled: true });
+      await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+      // The old rows are not shown while the new ones are on their way.
+      expect(result.current.suggestions).toEqual([]);
+      release(ok({ suggestions: second }));
+      await waitFor(() => expect(result.current.suggestions).toEqual(second));
+    });
+
     it("does not read until the screen is open", () => {
       const GET = vi.fn();
       renderHook(() => useAskSuggestions({ enabled: false }), {
