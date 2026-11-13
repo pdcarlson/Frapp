@@ -1247,7 +1247,7 @@ describe("MessageItem edit and delete", () => {
     await user.type(textbox, "hello, edited");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited");
+    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited", []);
     // The editor closes once the save resolves.
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
@@ -1400,7 +1400,7 @@ describe("MessageItem edit and delete", () => {
     await user.type(screen.getByRole("textbox"), " world");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world");
+    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world", []);
     expect(screen.getByRole("textbox")).toHaveValue("hello world");
   });
 
@@ -2120,7 +2120,7 @@ describe("MessageItem inline editor keyboard", () => {
 
     await user.keyboard("{Enter}");
 
-    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo");
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo", []);
   });
 });
 

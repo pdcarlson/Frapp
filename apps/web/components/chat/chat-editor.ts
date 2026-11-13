@@ -6,7 +6,12 @@ import StarterKit from "@tiptap/starter-kit";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { useChapterRoster, useMentionRoles } from "@repo/hooks";
-import { findMentionSpans, type MentionChipTest } from "@repo/validation";
+import {
+  findMentionSpans,
+  mentionPicksIn,
+  type MentionChipTest,
+  type MentionPick,
+} from "@repo/validation";
 import { MENTION_CHIP } from "./chip";
 import {
   createMentionSuggestion,
@@ -131,10 +136,53 @@ export function chatMentionExtension(
       return typed;
     };
   }
-  return Mention.configure({
+  return PickedMention.configure({
     HTMLAttributes: { class: MENTION_CHIP },
     suggestion,
   });
+}
+
+/**
+ * The mention node, plus the picked member's id (#3835). A pick from the `@`
+ * list spreads its row onto the node's attributes, so a member row's
+ * `memberId` lands here and a role row's `null` does; a chip loaded for an
+ * edit (`buildEditDoc`) carries none. Kept in the DOM as `data-member-id` so
+ * copying a chip within the editor keeps it.
+ */
+const PickedMention = Mention.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      memberId: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-member-id"),
+        renderHTML: (attributes: { memberId?: string | null }) =>
+          attributes.memberId ? { "data-member-id": attributes.memberId } : {},
+      },
+    };
+  },
+});
+
+/**
+ * The members picked into the editor's text (#3835): each mention node that
+ * carries a member's id, as the send's `mention_picks`, keeping only those
+ * the text still writes. The body stays `@Name`; the id beside it is what
+ * stops a stale name from reaching a different member.
+ */
+export function editorMentionPicks(
+  editor: Pick<Editor, "getText"> & Partial<Pick<Editor, "state">>,
+): MentionPick[] {
+  const picks: MentionPick[] = [];
+  editor.state?.doc.descendants((node) => {
+    if (node.type.name !== "mention") return;
+    const memberId: unknown = node.attrs.memberId;
+    const label: unknown = node.attrs.label;
+    if (typeof memberId === "string" && memberId && typeof label === "string") {
+      picks.push({ user_id: memberId, label });
+    }
+  });
+  return mentionPicksIn(chatText(editor), picks);
 }
 
 /**

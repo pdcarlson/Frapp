@@ -11,7 +11,11 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
-import { SYSTEM_SENDER_ID, type ChatMessageFlag } from "@repo/validation";
+import {
+  SYSTEM_SENDER_ID,
+  type ChatMessageFlag,
+  type MentionPick,
+} from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import {
@@ -243,7 +247,12 @@ export interface MessageItemProps {
    * edit mode so the draft isn't lost (the rejection itself already raised
    * a toast, from inside the action this callback wraps).
    */
-  onEdit?: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: the members the `@` list put in the edit (#3835). */
+  onEdit?: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /** Own message, or any message when the viewer holds `channels:manage`. */
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
@@ -614,6 +623,9 @@ export function MessageItem({
   }
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editFieldRef = useRef<InlineMessageEditorHandle | null>(null);
+  // The members the `@` list put in the open edit (#3835); the ones the
+  // message was sent with are kept by the server.
+  const editPicks = useRef<MentionPick[]>([]);
   const restoreFocusOnExit = useRef(false);
   const restoreFocusOnFailedSave = useRef(false);
   useEffect(() => {
@@ -656,6 +668,7 @@ export function MessageItem({
   }
 
   function startEdit() {
+    editPicks.current = [];
     setEditValue(message.content);
     setEditDirty(false);
     setIsEditing(true);
@@ -672,7 +685,7 @@ export function MessageItem({
     if (trimmed.length === 0 || !onEdit) return;
     setIsSavingEdit(true);
     try {
-      await onEdit(message.id, trimmed);
+      await onEdit(message.id, trimmed, editPicks.current);
       restoreFocusOnExit.current = fromKeyboard;
       setIsEditing(false);
     } catch {
@@ -1169,8 +1182,9 @@ export function MessageItem({
         chips={mentionChips}
         resetKey={editResetKey}
         disabled={isSavingEdit}
-        onChange={(text) => {
+        onChange={(text, picks) => {
           setEditValue(text);
+          editPicks.current = picks ?? [];
           setEditDirty(true);
         }}
         onSave={() => void saveEdit(true)}

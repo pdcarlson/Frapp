@@ -28,6 +28,7 @@ import {
   mentionRoleHint,
   reservedMentionName,
   type MentionCandidate,
+  type MentionPick,
   type MentionPickerEntry,
   withoutObjectReplacement,
 } from "@repo/validation";
@@ -166,6 +167,12 @@ export interface ChatComposerProps {
    * which offers members only.
    */
   mentionRoles?: readonly MentionRoleRow[];
+  /**
+   * A member picked from the `@` list (#3835): who, and the label written
+   * for them. The parent sends it beside the body, so the pick reaches that
+   * member or nobody even if the roster changes before it lands.
+   */
+  onPickMember?: (pick: MentionPick) => void;
 }
 
 /** A role as the picker offers it: a subset of `MentionRoleDto`. */
@@ -198,6 +205,7 @@ export function ChatComposer({
   avatarFor,
   avatarTintFor,
   mentionRoles,
+  onPickMember,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -343,7 +351,15 @@ export function ChatComposer({
           avatarFor={avatarFor}
           avatarTintFor={avatarTintFor}
           suggestions={mention.suggestions}
-          onPick={mention.pick}
+          onPick={(entry) => {
+            mention.pick(entry.label);
+            if (entry.kind === "member") {
+              onPickMember?.({
+                user_id: entry.member.user_id,
+                label: entry.label,
+              });
+            }
+          }}
           styles={styles}
         />
       ) : null}
@@ -663,7 +679,7 @@ function MentionPicker({
   suggestions: readonly PickerEntry[];
   avatarFor?: (userId: string) => string | null;
   avatarTintFor?: (userId: string) => MemberAvatarTint;
-  onPick: (label: string) => void;
+  onPick: (entry: PickerEntry) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
   if (suggestions.length === 0) {
@@ -697,7 +713,7 @@ function MentionPicker({
                   ? `Mention @${name}. ${mentionRoleHint(name)}`
                   : `Mention everyone in the ${name} ${mentionRoleHint(name, entry.role.kind).toLowerCase()}`
             }
-            onPress={() => onPick(entry.label)}
+            onPress={() => onPick(entry)}
             style={({ pressed }) => [
               styles.mentionRow,
               pressed ? styles.mentionRowPressed : null,

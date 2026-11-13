@@ -49,6 +49,7 @@ import {
 } from "@repo/chat-core/reply-preview";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
+import { mentionPicksIn, type MentionPick } from "@repo/validation";
 import type { ComposerContext } from "@/components/chat/chat-composer";
 import type { SendOptions } from "./use-chat-channel";
 
@@ -124,7 +125,12 @@ export interface ComposerStagingInput {
    * in flight (`UseChatChannelResult.sendInFlight`), read on the tap.
    */
   sendInFlight: () => boolean;
-  edit: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: the members picked into the edit (#3835). */
+  edit: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /**
    * Runs on the tap, synchronously, once `submit` has decided a message goes
    * out and just before it hands that message to `send`: not for an edit, a
@@ -150,6 +156,12 @@ export interface ComposerStaging {
   editError: string | null;
   startReply: (messageId: string) => void;
   startEdit: (messageId: string) => void;
+  /**
+   * A member the `@` picker (or the message menu's Mention) wrote into the
+   * text (#3835). The next send or save carries each one its text still
+   * writes, so a picked name reaches that member or nobody.
+   */
+  addMentionPick: (pick: MentionPick) => void;
 }
 
 /** The reply strip for a staged parent: its author and one line of it. */
@@ -216,6 +228,17 @@ export function useComposerStaging({
    * put back a reply the first tap already sent.
    */
   const replyInFlightRef = useRef<StagedTarget | null>(null);
+  // The members picked since the last send or save (#3835). Shared by the
+  // draft and an open edit: each takes only the picks its own text writes.
+  const picksRef = useRef<MentionPick[]>([]);
+  const addMentionPick = useCallback((pick: MentionPick) => {
+    picksRef.current = [...picksRef.current, pick];
+  }, []);
+  const takePicks = useCallback((text: string) => {
+    const picks = mentionPicksIn(text, picksRef.current);
+    picksRef.current = [];
+    return picks;
+  }, []);
 
   const activeReply = (channelId && replies[channelId]) || null;
   const editing = (channelId && edits[channelId]) || null;
@@ -342,7 +365,7 @@ export function useComposerStaging({
       );
       savingRef.current.add(messageId);
       setSavingIds(new Set(savingRef.current));
-      void edit(messageId, content)
+      void edit(messageId, content, takePicks(content))
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
           // and opened another while the request was out.
@@ -389,20 +412,20 @@ export function useComposerStaging({
       setReplies((current) => withoutKey(current, staged.channelId));
     }
     onSending?.();
-    void send(draft, { replyToId: staged?.messageId ?? null }).then(
-      (dispatched) => {
-        if (!staged) return;
-        if (replyInFlightRef.current === staged)
-          replyInFlightRef.current = null;
-        if (!dispatched) {
-          setReplies((current) =>
-            current[staged.channelId]
-              ? current
-              : { ...current, [staged.channelId]: staged },
-          );
-        }
-      },
-    );
+    void send(draft, {
+      replyToId: staged?.messageId ?? null,
+      mentionPicks: takePicks(draft),
+    }).then((dispatched) => {
+      if (!staged) return;
+      if (replyInFlightRef.current === staged) replyInFlightRef.current = null;
+      if (!dispatched) {
+        setReplies((current) =>
+          current[staged.channelId]
+            ? current
+            : { ...current, [staged.channelId]: staged },
+        );
+      }
+    });
   }, [
     activeEdit,
     activeReply,
@@ -414,6 +437,7 @@ export function useComposerStaging({
     onSending,
     send,
     sendInFlight,
+    takePicks,
   ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys
@@ -439,5 +463,6 @@ export function useComposerStaging({
     editError: shownEditError,
     startReply,
     startEdit,
+    addMentionPick,
   };
 }

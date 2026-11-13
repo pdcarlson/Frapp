@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { MentionPick } from "@repo/validation";
 import { useFrappClient } from "@repo/hooks";
 import {
   chatRealtime,
@@ -265,7 +266,11 @@ export function useMessageThread(
   );
 
   const send = useCallback(
-    async (content: string, clientMessageId?: string) => {
+    async (
+      content: string,
+      clientMessageId?: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       if (!viewerId) return { error: "You're signed out." };
       const result = await sendThreadReply(queryClient, api, {
         channelId,
@@ -273,6 +278,7 @@ export function useMessageThread(
         senderId: viewerId,
         content,
         clientMessageId,
+        mentionPicks,
       });
       // Replying follows the thread (the server's rule); show it now.
       if (!result.error && !meta.data?.follow_state) patchFollow("following");

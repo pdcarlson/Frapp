@@ -794,7 +794,7 @@ describe("Composer send failure (#1728)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => toastSaying(BACK));
-    expect(onSend).toHaveBeenCalledWith("hello", []);
+    expect(onSend).toHaveBeenCalledWith("hello", [], []);
     expect(editor.getText()).toBe("hello");
     // Reported to the draft too, so it survives a reload like any other text.
     expect(props.onChangeDraft).toHaveBeenLastCalledWith("hello");
@@ -821,9 +821,11 @@ describe("Composer send failure (#1728)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => toastSaying(BACK));
-    expect(onSend).toHaveBeenCalledWith("hello", [
-      expect.objectContaining({ filename: "notes.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "hello",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      [],
+    );
     expect(chip()).toBeInTheDocument();
   });
 
@@ -999,9 +1001,11 @@ describe("Composer send failure (#1728)", () => {
     await act(async () => finish());
     expect(await stageFileChip("photo.pdf")).toBeInTheDocument();
     fireEvent.click(sendButton());
-    expect(onSend).toHaveBeenCalledWith("hello", [
-      expect.objectContaining({ filename: "photo.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "hello",
+      [expect.objectContaining({ filename: "photo.pdf" })],
+      [],
+    );
   });
 
   it("never stages an upload cancelled before it finished", async () => {
@@ -1409,15 +1413,19 @@ describe("Composer attachment ticket contract", () => {
     await sendOnceUploaded();
 
     await waitFor(() =>
-      expect(onSend).toHaveBeenCalledWith("look", [
-        expect.objectContaining({
-          storagePath: "chapters/c/chat/ch/m/beach.jpg",
-          width: 4032,
-          height: 3024,
-          thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
-          previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
-        }),
-      ]),
+      expect(onSend).toHaveBeenCalledWith(
+        "look",
+        [
+          expect.objectContaining({
+            storagePath: "chapters/c/chat/ch/m/beach.jpg",
+            width: 4032,
+            height: 3024,
+            thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+            previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
+          }),
+        ],
+        [],
+      ),
     );
   });
 
@@ -2765,9 +2773,11 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
 
     fireEvent.click(sendButton());
 
-    expect(onSend).toHaveBeenCalledWith("", [
-      expect.objectContaining({ filename: "notes.pdf" }),
-    ]);
+    expect(onSend).toHaveBeenCalledWith(
+      "",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      [],
+    );
     expect(editor.getText()).toBe("");
   });
 
@@ -2775,7 +2785,7 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
     const { onSend } = mount("/ shrug");
     expect(sendButton()).toBeEnabled();
     fireEvent.click(sendButton());
-    expect(onSend).toHaveBeenCalledWith("/ shrug", []);
+    expect(onSend).toHaveBeenCalledWith("/ shrug", [], []);
   });
 
   it("takes the `/` back when the palette is closed with Escape", async () => {
