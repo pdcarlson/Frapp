@@ -130,6 +130,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // The folder import's batch routes (#2242); its own spec covers them.
+  useRequestDocumentUploadUrls: () => ({ mutateAsync: vi.fn() }),
+  useConfirmDocumentUploads: () => ({ mutateAsync: vi.fn() }),
+  useInvalidateDocuments: () => vi.fn(),
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),

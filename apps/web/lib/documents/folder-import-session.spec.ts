@@ -3,7 +3,9 @@ import {
   FolderImport,
   duplicateReasons,
   isIncluded,
+  type ConfirmRequest,
   type ImportDeps,
+  type MintRequest,
 } from "./folder-import-session";
 
 const flush = async () => {
@@ -36,7 +38,7 @@ const CONTEXT = {
 function harness(overrides: Partial<ImportDeps> = {}) {
   let n = 0;
   const deps: ImportDeps = {
-    mint: vi.fn(async (files) =>
+    mint: vi.fn(async (files: MintRequest[]) =>
       files.map((f) => {
         n += 1;
         return {
@@ -46,7 +48,7 @@ function harness(overrides: Partial<ImportDeps> = {}) {
       }),
     ),
     put: vi.fn(async () => undefined),
-    confirm: vi.fn(async (docs) =>
+    confirm: vi.fn(async (docs: ConfirmRequest[]) =>
       docs.map((d) => ({ storage_path: d.storage_path })),
     ),
     assertChapter: vi.fn(),
@@ -134,7 +136,7 @@ describe("FolderImport", () => {
   it("marks a file the server refused, with its reason, and retries it", async () => {
     let refuse = true;
     const { run } = harness({
-      confirm: vi.fn(async (docs) =>
+      confirm: vi.fn(async (docs: ConfirmRequest[]) =>
         docs.map((d) =>
           refuse
             ? { storage_path: d.storage_path, error: "Type list is full" }
@@ -161,7 +163,7 @@ describe("FolderImport", () => {
   it("waits and retries a batch the API rate-limits", async () => {
     let calls = 0;
     const { run, deps } = harness({
-      mint: vi.fn(async (files) => {
+      mint: vi.fn(async (files: MintRequest[]) => {
         calls += 1;
         if (calls === 1) throw { statusCode: 429 };
         return files.map((f, i) => ({
