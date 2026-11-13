@@ -8,7 +8,8 @@ import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Platform } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider, tint } from "@/lib/theme";
+import { FrappThemeProvider, fontFamilyFor, tint } from "@/lib/theme";
+import { mixHex } from "@/components/tinted-control";
 import { flatStyle } from "@/test/flat-style";
 import { drawnText } from "@/test/screen-text";
 
@@ -345,6 +346,44 @@ describe("chapter picker, opened from You", () => {
     expect(drawnText(tree.root)).not.toContain("FIJI Tau Nu");
     expect(drawnText(tree.root)).toContain("Sigma Phi Epsilon");
     expect(drawnText(tree.root)).toContain(REFUSED);
+  });
+
+  it("draws Join as the tinted control in house gold, at 44pt (#4811)", async () => {
+    chapters = [TAU_NU];
+    refusedSwitch();
+    refetchChapters.mockImplementationOnce(() => {
+      chapters = [];
+    });
+    const tree = render();
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+
+    const gold = signetDarkTokens.color.gold;
+    const join = rowFor(tree.root, "Join or start a chapter");
+    const held = mixHex(gold.askBorder, 0.15, gold.askFill);
+    expect(flatStyle(join.props.style)).toMatchObject({
+      backgroundColor: gold.askFill,
+      borderColor: gold.askBorder,
+      borderWidth: 1,
+      borderRadius: signetDarkTokens.radius.control,
+      minHeight: signetDarkTokens.touch.button,
+    });
+    // Pressed steps the fill up one: held on iOS, the ripple on Android.
+    expect(flatStyle(join.props.style, true).backgroundColor).toBe(held);
+    expect(held).not.toBe(gold.askFill);
+    expect(join.props.android_ripple).toEqual({ color: held });
+
+    const label = join.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        drawnText(node) === "Join or start a chapter",
+    );
+    expect(flatStyle(label.props.style)).toMatchObject({
+      color: gold.house,
+      fontSize: signetDarkTokens.typography.role.label.size,
+      fontFamily: fontFamilyFor(signetDarkTokens.typography.weight.bold),
+    });
   });
 
   it("offers Join once a refused chapter was the member's only one", async () => {

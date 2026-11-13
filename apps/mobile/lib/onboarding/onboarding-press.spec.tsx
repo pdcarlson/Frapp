@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappClientProvider, type ChapterDirectoryResult } from "@repo/hooks";
 import { FrappThemeProvider, tint } from "@/lib/theme";
+import { mixHex } from "@/components/tinted-control";
 import { flatStyle } from "@/test/flat-style";
 
 /**
@@ -260,10 +261,13 @@ const PRIMARY: Kind = {
   held: { opacity: 0.85 },
   androidHeld: { opacity: undefined },
 };
+// The tinted control's pressed step (`components/tinted-control.ts`) in
+// house gold, the picker's (#4811).
+const TINTED_HELD = mixHex(color.gold.askBorder, 0.15, color.gold.askFill);
 const TINTED: Kind = {
-  ripple: tint(color.gold.house, 0.2),
-  held: { backgroundColor: tint(color.gold.house, 0.2) },
-  androidHeld: { backgroundColor: tint(color.gold.house) },
+  ripple: TINTED_HELD,
+  held: { backgroundColor: TINTED_HELD },
+  androidHeld: { backgroundColor: color.gold.askFill },
 };
 
 const ROWS: [string, Kind, () => Promise<Node>][] = [
