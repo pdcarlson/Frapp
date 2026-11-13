@@ -97,6 +97,19 @@ const CALLS = new Set([
   'suggestions.suggest',
   'people.resolve',
   'tools.filter',
+  // The agent's chapter tools (#4901, `agent/tools-chapter/`): reads of
+  // people, tasks, events, attendance, points, hours and dues, each through
+  // the service its own page's route calls. The ones above that these tools
+  // also make are not repeated.
+  'attendance.getMyAttendance',
+  'attendance.getMyAttendanceForEvents',
+  'excuses.getMine',
+  'groups.list',
+  'members.searchByChapterAndName',
+  'rbac.getAlumniRoleId',
+  'service.findByChapterFiltered',
+  'service.leaderboard',
+  'standing.getStanding',
   // The model.
   'gateway.generateObject',
   'gateway.streamCited',
@@ -129,6 +142,7 @@ function sourcesIn(dir: string): string[] {
 describe('Asking never posts to a channel or notifies (#4713)', () => {
   const sources = [
     ...sourcesIn(join(SERVICES, 'ask')),
+    ...sourcesIn(join(SERVICES, 'ask', 'agent', 'tools-chapter')),
     ...sourcesIn(join(SERVICES, 'act')),
     join(CONTROLLERS, 'ask.controller.ts'),
   ];

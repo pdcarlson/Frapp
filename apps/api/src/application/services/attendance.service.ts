@@ -21,6 +21,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
 import type { IEventExcuseRepository } from '#domain/repositories/event-excuse.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
+import type { Event } from '#domain/entities/event.entity';
 import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
@@ -613,6 +614,27 @@ export class AttendanceService {
     }
 
     return this.attendanceRepo.findByEventAndUser(eventId, userId);
+  }
+
+  /**
+   * The member's own attendance rows across `events` (#4901): what
+   * {@link getMyAttendance} answers for one event, in one read for many.
+   *
+   * `events` must already be the caller's own visible list
+   * (`EventService.findByChapter` with the viewer), which is where the
+   * visibility rule is applied; an event of another chapter is dropped here
+   * rather than trusted.
+   */
+  async getMyAttendanceForEvents(
+    userId: string,
+    chapterId: string,
+    events: readonly Pick<Event, 'id' | 'chapter_id'>[],
+  ): Promise<EventAttendance[]> {
+    const ids = events
+      .filter((event) => event.chapter_id === chapterId)
+      .map((event) => event.id);
+    if (ids.length === 0) return [];
+    return this.attendanceRepo.findByUserForEvents(userId, ids);
   }
 
   async getAttendance(

@@ -1842,6 +1842,36 @@ describe('MemberService', () => {
       expect(result).toEqual([]);
     });
 
+    it('leaves the email out of the match when asked to (#4901)', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          chapter_id: 'chapter-1',
+          has_completed_onboarding: true,
+        }),
+      ]);
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({
+          email: 'jdoe@example.com',
+          display_name: 'John Doe',
+        }),
+      ]);
+
+      await expect(
+        service.searchByChapterAndName('chapter-1', 'jdoe', 'viewer-user-1', {
+          matchEmail: false,
+        }),
+      ).resolves.toEqual([]);
+      const byName = await service.searchByChapterAndName(
+        'chapter-1',
+        'john',
+        'viewer-user-1',
+        { matchEmail: false },
+      );
+      expect(byName.map((profile) => profile.display_name)).toEqual([
+        'John Doe',
+      ]);
+    });
+
     it('should match on email as well as display name (#588)', async () => {
       const members = [
         memberFixture({
