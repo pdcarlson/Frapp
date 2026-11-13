@@ -9,7 +9,8 @@ const shared = JSON.parse(
 
 describe("signUpLinkKind (#4215)", () => {
   // The same URLs the PGlite `activity-links` tier runs through
-  // `activity_action_links`, so the two copies of the list can't drift.
+  // `activity_action_links`, so the two copies agree on every URL listed. They
+  // can still differ on a URL no fixture covers: a change to the list adds one.
   it.each(shared.fixtures.map((f) => [f.url, f.kind] as const))(
     "%s is %s",
     (url, kind) => {

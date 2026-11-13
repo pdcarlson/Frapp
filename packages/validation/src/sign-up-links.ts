@@ -9,8 +9,11 @@
  * `apps/api`) both call it. SQL can't share code, so
  * `sign-up-link-fixtures.json` holds the URLs both must agree on: this
  * package's spec runs them through the matcher, and the PGlite
- * `activity-links` tier runs them through the database function. A widening
- * changes both copies and adds a fixture.
+ * `activity-links` tier runs them through the database function. That holds
+ * the copies together only on the URLs listed, so a widening changes both
+ * copies and adds a fixture. One known difference: a caller passes
+ * `URL.pathname`, whose dot segments are resolved, where the database reads
+ * the path as written (#4928).
  */
 
 export type SignUpLinkKind =

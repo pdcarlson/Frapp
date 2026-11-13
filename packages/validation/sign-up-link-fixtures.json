@@ -17,6 +17,7 @@
     { "url": "https://calendly.com/olive/rush", "kind": "Calendly" },
     { "url": "https://www.calendly.com/olive/rush", "kind": "Calendly" },
     { "url": "https://sub.calendly.com/olive", "kind": null },
+    { "url": "https://www.www.forms.gle/abc", "kind": null },
     { "url": "https://calendly.com.evil.example/x", "kind": null },
     { "url": "https://docs.google.com/presentation/d/abc", "kind": null },
     { "url": "https://docs.google.com/", "kind": null },

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
@@ -635,6 +637,22 @@ describe("Waiting on others by kind (#4173)", () => {
 });
 
 describe("activityLinkKind", () => {
+  // The kind label follows the shared matcher on every fixture, falling back
+  // to the bare host when it names none (#4215).
+  const { fixtures } = JSON.parse(
+    readFileSync(
+      join(__dirname, "../../validation/sign-up-link-fixtures.json"),
+      "utf8",
+    ),
+  ) as { fixtures: { url: string; kind: string | null }[] };
+  it.each(fixtures.map((f) => [f.url, f.kind] as const))(
+    "labels %s as the shared matcher does (%s)",
+    (url, kind) => {
+      const host = new URL(url).hostname;
+      expect(activityLinkKind({ host, url })).toBe(kind ?? host);
+    },
+  );
+
   it.each([
     [
       "docs.google.com",

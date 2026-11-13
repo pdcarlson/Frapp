@@ -8,23 +8,19 @@ import { signUpLinkKind } from '@repo/validation';
  */
 
 /**
- * Whether a host and path is a sign-up page Activity gathers:
- * `signUpLinkKind` in `@repo/validation`, the TypeScript copy of
- * `activity_action_links` (`20261111030000_activity_links.sql`), which a
- * fixture set holds to agreement (#4215). The database list decides what is
- * indexed; this decides what may be opened, so a redirect is held to it too.
- */
-export function isSignUpHost(host: string, path: string): boolean {
-  return signUpLinkKind(host, path) !== null;
-}
-
-/**
  * The URL to request for a posted link or a redirect's `Location`, or null
  * when it may not be opened. Refused: anything but http(s); a user name or
  * password (`https://calendly.com:1@evil.example/` opens `evil.example`); a
  * port other than the scheme's own; an IP literal; and any host and path off
  * the sign-up list. An `http` link is upgraded to `https` on the same host,
  * so nothing is ever sent in the clear.
+ *
+ * The sign-up list is `signUpLinkKind` in `@repo/validation`, the TypeScript
+ * copy of the database's `activity_action_links`, held to it by
+ * `sign-up-link-fixtures.json` (#4215). The database list decides what is
+ * gathered; this decides what may be opened, so a redirect is held to it too.
+ * The matcher does its own host normalising (lowercase, one leading `www.`
+ * dropped, as the database does), so it gets the hostname as it is.
  */
 export function fetchableUrl(raw: string, base?: URL): URL | null {
   let url: URL;
@@ -44,8 +40,7 @@ export function fetchableUrl(raw: string, base?: URL): URL | null {
   const hostname = url.hostname.toLowerCase();
   // An IPv6 literal keeps its brackets in `hostname`.
   if (isIP(hostname) !== 0 || hostname.startsWith('[')) return null;
-  const host = hostname.replace(/^www\./, '');
-  if (!isSignUpHost(host, url.pathname)) return null;
+  if (signUpLinkKind(hostname, url.pathname) === null) return null;
   url.hash = '';
   return url;
 }
