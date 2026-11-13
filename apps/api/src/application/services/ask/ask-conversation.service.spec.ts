@@ -98,6 +98,12 @@ function build(options: {
   return { run, askService, actService, reached, ended: () => ended };
 }
 
+/** A request lane that answers after the answer lane has had time to move. */
+const slowly = (outcome: ActOutcome) => async () => {
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  return outcome;
+};
+
 const shown = (events: AskConversationEvent[]) =>
   events.map((event) => (event.type === 'status' ? event.step : event.type));
 
@@ -120,12 +126,39 @@ describe('AskConversationService', () => {
   });
 
   describe('words that ask for something to be done', () => {
-    it('end in the card, and the answer lane is stopped before it reads or writes', async () => {
-      const { run, reached, ended } = build({});
+    it('end in the card the moment the request lane has it', async () => {
+      const { run, ended } = build({});
+      const events = await run();
+      expect(shown(events)).toEqual(['start', 'act']);
+      expect(events.at(-1)).toEqual({ type: 'act', outcome: PROPOSED });
+      expect(ended()).toBe(true);
+    });
+
+    it('stop the calls the answer lane has in flight', async () => {
+      const { run, askService } = build({});
+      let stopped = false;
+      askService.ask.mockImplementationOnce(async function* (
+        given: AskConversationInput,
+      ) {
+        yield START;
+        // A search that only ends when the lane is told to stop.
+        await new Promise<void>((_resolve, reject) => {
+          given.signal?.addEventListener('abort', () => {
+            stopped = true;
+            reject(new LanguageModelError('aborted', 'anthropic'));
+          });
+        });
+      } as never);
+      expect(shown(await run())).toEqual(['start', 'act']);
+      expect(stopped).toBe(true);
+    });
+
+    it('hold the answer lane at its first step past searching until the request lane has spoken', async () => {
+      const { run, reached, ended } = build({ act: slowly(PROPOSED) });
       const events = await run();
       expect(shown(events)).toEqual(['start', 'searching', 'act']);
-      expect(events.at(-1)).toEqual({ type: 'act', outcome: PROPOSED });
-      // The answer lane was asked for its next step and went no further.
+      // The answer lane was asked for its next step and went no further: no
+      // tool ran and no word was written.
       expect(reached).toEqual(['start', 'searching', 'reading']);
       expect(ended()).toBe(true);
     });
@@ -147,7 +180,10 @@ describe('AskConversationService', () => {
     });
 
     it('still end in the card when the answer lane had nothing to say', async () => {
-      const { run } = build({ events: [START, SEARCHING, DONE] });
+      const { run } = build({
+        act: slowly(PROPOSED),
+        events: [START, SEARCHING, DONE],
+      });
       expect(shown(await run())).toEqual(['start', 'searching', 'act']);
     });
   });
@@ -200,6 +236,13 @@ describe('AskConversationService', () => {
 
   describe('words that are a question', () => {
     const answered = ['start', 'searching', 'reading', 'writing', 'done'];
+
+    it('are answered in full when the request lane says so late', async () => {
+      const { run } = build({
+        act: slowly({ status: 'no_action', available: [] }),
+      });
+      expect(shown(await run())).toEqual(answered);
+    });
 
     it.each([
       ['no action fits', { status: 'no_action', available: ['create_task'] }],

@@ -67,26 +67,36 @@ export function useAiSurfaces(): AiSurfaces {
 }
 
 /**
- * The things this member can ask Frapp to do (#718), or an empty list: the
- * Ask sheet asks for proposal cards only for a member the server lists
- * actions for, which takes Ask itself, `ai:act` and a permission to do at
- * least one of them. The server is asked only for a member who holds `ai:act`, and only
- * while `enabled` (the sheet is open), so a member without Ask never sends
- * the request.
+ * Whether the Ask sheet asks for proposal cards (#718): Ask is on here and
+ * the member holds `ai:act`. Both are already loaded, so a request typed the
+ * moment the sheet opens still comes back as a card. The server decides
+ * whether there is anything this member can have done.
+ */
+export function useMayAct(): boolean {
+  const { ask } = useAiSurfaces();
+  const permissionsQuery = useMyPermissions();
+  return (
+    ask &&
+    Array.isArray(permissionsQuery.data?.permissions) &&
+    can("ai:act", permissionsQuery.data.permissions)
+  );
+}
+
+/**
+ * The things this member can ask Frapp to do (#718), or an empty list. It
+ * picks the request shown among the sheet's opening examples and nothing
+ * else: whether a card is asked for is `useMayAct`. The server is asked only
+ * for a member who holds `ai:act`, and only while `enabled` (the sheet is
+ * open), so a member without Ask never sends the request.
  */
 const NO_ACTIONS: readonly string[] = [];
 export function useActActions(options?: {
   enabled?: boolean;
 }): readonly string[] {
-  const { ask } = useAiSurfaces();
-  const permissionsQuery = useMyPermissions();
   // No request for a member without `ai:act`: the server would answer 403,
   // and every Ask sheet a member opened would count as a denied request.
   // Web's panel checks the same way first.
-  const mayAct =
-    ask &&
-    Array.isArray(permissionsQuery.data?.permissions) &&
-    can("ai:act", permissionsQuery.data.permissions);
+  const mayAct = useMayAct();
   const status = useActStatus({
     enabled: mayAct && (options?.enabled ?? true),
   });

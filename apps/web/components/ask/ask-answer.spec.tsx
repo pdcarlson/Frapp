@@ -282,6 +282,48 @@ describe("AskTurn", () => {
     expect(consent).toHaveBeenCalled();
   });
 
+  it("holds both ways of asking a turn again while another turn is being answered", () => {
+    const view = render(
+      <AskTurn
+        busy
+        exchange={exchange({
+          phase: "failed",
+          answer: null,
+          failure: { message: ASK_COPY.failed, retryable: true },
+        })}
+        onRetry={() => undefined}
+        onAnswerConsent={() => undefined}
+        onProposal={() => undefined}
+        onResolved={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: ASK_COPY.try_again }),
+    ).toBeDisabled();
+    view.rerender(
+      <AskTurn
+        busy
+        exchange={exchange({
+          answer: {
+            ...ANSWER,
+            status: "unavailable",
+            reason: "consent_required",
+            text: "",
+            citations: [],
+            sources: [],
+          },
+        })}
+        onRetry={() => undefined}
+        onAnswerConsent={() => undefined}
+        onProposal={() => undefined}
+        onResolved={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: ASK_COPY.consent_action }),
+    ).toBeDisabled();
+  });
+
   it("offers Try again after a failure that may not repeat, and not after one that will", async () => {
     const retry = vi.fn();
     const { unmount } = show(

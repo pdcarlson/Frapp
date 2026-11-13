@@ -7,6 +7,7 @@ import type { AnalyticsService } from '../analytics.service';
 import type { RbacService } from '../rbac.service';
 import { ActService } from './act.service';
 import type { ActDraft, ActTool } from './act-tool';
+import { GivePointsActTool } from './act-tools';
 import { CHAPTER, JORDAN, NOW, OFFICER, ZONE, plan } from './act-test-kit';
 
 function tool(
@@ -421,6 +422,56 @@ describe('ActService', () => {
           NOW,
         ),
       ).toEqual({ status: 'no_action', available: ['create_task'] });
+    });
+
+    /** The points action with its own reading of the event stubbed. */
+    function pointsTool() {
+      const draftFromEvent = jest.fn().mockResolvedValue({
+        status: 'draft',
+        payload: { amount: 5, target_user_ids: [JORDAN] },
+        notes: [],
+      });
+      const points = new GivePointsActTool(
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      points.draftFromEvent = draftFromEvent;
+      return { points, draftFromEvent };
+    }
+
+    const pick = { eventId: JORDAN, amount: 5, reason: null };
+
+    it('replaces what the member asked before, outside a conversation', async () => {
+      const { points } = pointsTool();
+      const { service, suggestions } = build({
+        permissions: OFFICER_HOLDS,
+        tools: [points],
+      });
+      expect(
+        await service.proposePointsForEvent({ ...input(''), ...pick }, NOW),
+      ).toMatchObject({ status: 'proposed' });
+      expect(suggestions.withdrawSource).toHaveBeenCalledWith(CHAPTER, {
+        type: 'request',
+        id: OFFICER,
+      });
+    });
+
+    it('leaves the other cards in the thread waiting when the pick was made in a conversation', async () => {
+      const { points, draftFromEvent } = pointsTool();
+      const { service, suggestions } = build({
+        permissions: OFFICER_HOLDS,
+        tools: [points],
+      });
+      expect(
+        await service.proposePointsForEvent(
+          { ...input(''), ...pick, keepEarlier: true },
+          NOW,
+        ),
+      ).toMatchObject({ status: 'proposed' });
+      expect(draftFromEvent).toHaveBeenCalledWith(pick, expect.anything());
+      expect(suggestions.withdrawSource).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).toHaveBeenCalledTimes(1);
     });
   });
 

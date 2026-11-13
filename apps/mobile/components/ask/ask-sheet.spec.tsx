@@ -37,8 +37,10 @@ const hooks = vi.hoisted(() => ({
   download: vi.fn(),
   actions: [] as string[],
   actEnabled: [] as boolean[],
+  mayAct: false,
 }));
 vi.mock("@/lib/ai/availability", () => ({
+  useMayAct: () => hooks.mayAct,
   useActActions: (options: { enabled: boolean }) => {
     hooks.actEnabled.push(options.enabled);
     return hooks.actions;
@@ -128,9 +130,7 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
 const open = (tree: ReactTestRenderer) =>
   act(() => sheet(tree).props.onAnimate(-1, 0));
 async function askExample(tree: ReactTestRenderer) {
-  await act(async () =>
-    byLabel(tree, ASK_COPY.examples[0])[0].props.onPress(),
-  );
+  await act(async () => byLabel(tree, ASK_COPY.examples[0])[0].props.onPress());
 }
 
 const DOCUMENT = {
@@ -236,6 +236,7 @@ beforeEach(() => {
   hooks.savedUntil = null;
   hooks.actions = [];
   hooks.actEnabled = [];
+  hooks.mayAct = false;
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -441,7 +442,35 @@ describe("AskSheet", () => {
       ).toHaveLength(0);
     });
 
+    it("asks for a card on the permission alone: a request typed before the list of actions has loaded is still read as one", () => {
+      hooks.mayAct = true;
+      const tree = render();
+      // The list only picks the opening example.
+      expect(screenText(tree)).not.toContain(ASK_COPY.empty_body_act);
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      act(() => field(tree).props.onSubmitEditing());
+      expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
+        ...ASKING,
+        actions: true,
+      });
+    });
+
+    it("holds Try again on an earlier turn while another is being answered: asking again would drop it", () => {
+      hooks.exchanges = [
+        {
+          ...working(),
+          id: "turn-1",
+          phase: "failed",
+          failure: { message: "Couldn't reach Frapp.", retryable: true },
+        },
+        working(),
+      ];
+      const tree = render();
+      expect(byLabel(tree, ASK_COPY.try_again)[0].props.disabled).toBe(true);
+    });
+
     it("tells a member Frapp can act for, offers one request, and says so with each question", async () => {
+      hooks.mayAct = true;
       hooks.actions = ["give_points", "create_task"];
       const tree = render();
       const text = screenText(tree);
@@ -462,6 +491,7 @@ describe("AskSheet", () => {
     });
 
     it("shows a proposal as a card in the thread, and records how it ended on its turn", async () => {
+      hooks.mayAct = true;
       hooks.actions = ["give_points"];
       hooks.exchanges = [answered(), proposed()];
       const tree = render();

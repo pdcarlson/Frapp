@@ -105,7 +105,9 @@ export type AskProposalResolution =
       /** The page the change can be seen on, or null for none. Open. */
       page: string | null;
     }
-  | { kind: "cancelled" };
+  | { kind: "cancelled" }
+  /** It stopped waiting before the member decided: a day passed, or it was decided elsewhere. */
+  | { kind: "gone" };
 
 /** One turn: what the member typed and what has come back for it so far. */
 export interface AskExchange {
@@ -443,8 +445,15 @@ export function useAsk(): {
 
   const retry = useCallback(
     (id: string, options?: AskOptions) => {
+      // An older turn's Try again never abandons the turn being answered:
+      // the member asked that one last, and it would vanish from the thread.
+      const busy = latest.current.some(
+        (exchange) => exchange.phase === "working" && exchange.id !== id,
+      );
       const again = latest.current.find((exchange) => exchange.id === id);
-      return again ? run(again.question, options, id) : Promise.resolve();
+      return again && !busy
+        ? run(again.question, options, id)
+        : Promise.resolve();
     },
     [run],
   );

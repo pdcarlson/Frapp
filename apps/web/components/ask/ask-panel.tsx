@@ -20,6 +20,10 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import { AskTurn } from "@/components/ask/ask-answer";
+import {
+  AskCardEditsContext,
+  type AskCardEditsStore,
+} from "@/components/ask/ask-proposal";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
@@ -115,6 +119,8 @@ export function AskPanel({
   const mayAct = !!permissions && can("ai:act", permissions);
   const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
   const canAct = actions !== null && actions.length > 0;
+  // What was changed on waiting cards, kept while the panel is closed.
+  const [cardEdits] = useState<AskCardEditsStore>(() => new Map());
   const [draft, setDraft] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -170,6 +176,20 @@ export function AskPanel({
     element.scrollTop = element.scrollHeight;
   }, [last?.preview, last?.phase, last?.proposal, last?.resolution]);
 
+  // A card fills in after it lands (who it covers, the event it means), so
+  // the thread's own height is followed too, not only the turn changing.
+  const thread = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = thread.current;
+    if (!open || !element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const view = scroller.current;
+      if (view && following.current) view.scrollTop = view.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [open]);
+
   function close() {
     onOpenChange(false);
   }
@@ -180,7 +200,10 @@ export function AskPanel({
 
   const options = (): AskOptions => ({
     savedNoticeShown: saving,
-    actions: canAct,
+    // Asked for on the permission alone, which is already loaded. The list
+    // of actions only picks the opening example: a request typed before it
+    // arrives, or after it failed to load, must still come back as a card.
+    actions: mayAct,
     gate: ensureConsent,
   });
 
@@ -215,6 +238,7 @@ export function AskPanel({
                 label={ASK_COPY.new_conversation}
                 onClick={() => {
                   reset();
+                  cardEdits.clear();
                   field.current?.focus({ preventScroll: true });
                 }}
                 className="shrink-0 text-muted-foreground"
@@ -240,28 +264,35 @@ export function AskPanel({
                   element.clientHeight <
                 FOLLOW_SLACK_PX;
             }}
-            className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pb-5 pt-3"
+            className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3"
           >
-            {exchanges.length > 0 ? (
-              exchanges.map((exchange) => (
-                <AskTurn
-                  key={exchange.id}
-                  exchange={exchange}
-                  onRetry={() => void retry(exchange.id, options())}
-                  onAnswerConsent={() => void retry(exchange.id, options())}
-                  onFollowSource={leave}
-                  onProposal={(proposal) => setProposal(exchange.id, proposal)}
-                  onResolved={(resolution) =>
-                    resolveProposal(exchange.id, resolution)
-                  }
-                />
-              ))
-            ) : (
-              <AskEmpty
-                actions={canAct ? actions : null}
-                onPick={(example) => submit(example)}
-              />
-            )}
+            <AskCardEditsContext.Provider value={cardEdits}>
+              <div ref={thread} className="flex flex-col gap-6">
+                {exchanges.length > 0 ? (
+                  exchanges.map((exchange) => (
+                    <AskTurn
+                      key={exchange.id}
+                      exchange={exchange}
+                      busy={working && exchange.phase !== "working"}
+                      onRetry={() => void retry(exchange.id, options())}
+                      onAnswerConsent={() => void retry(exchange.id, options())}
+                      onFollowSource={leave}
+                      onProposal={(proposal) =>
+                        setProposal(exchange.id, proposal)
+                      }
+                      onResolved={(resolution) =>
+                        resolveProposal(exchange.id, resolution)
+                      }
+                    />
+                  ))
+                ) : (
+                  <AskEmpty
+                    actions={canAct ? actions : null}
+                    onPick={(example) => submit(example)}
+                  />
+                )}
+              </div>
+            </AskCardEditsContext.Provider>
           </div>
           <form
             className="shrink-0 border-t border-border px-5 py-4"

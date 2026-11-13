@@ -181,7 +181,7 @@ function AskBar({ onPress, styles }: { onPress: () => void; styles: Styles }) {
     >
       <Text style={styles.askName}>{ASK_COPY.name}</Text>
       <Text style={styles.askHint} numberOfLines={1}>
-        {ASK_COPY.placeholder}
+        {ASK_COPY.empty_title}
       </Text>
     </Pressable>
   );

@@ -300,6 +300,27 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[1]![1].body).toEqual({ question: "What is quorum?" });
     });
 
+    it("does not ask an earlier turn again while another is being answered: it would take that turn's place", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
+        .mockImplementationOnce(() => new Promise(() => undefined));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      act(() => {
+        void result.current.ask("And to expel a member?");
+      });
+      await waitFor(() => expect(POST).toHaveBeenCalledTimes(2));
+      await act(() => result.current.retry(result.current.exchanges[0]!.id));
+      expect(POST).toHaveBeenCalledTimes(2);
+      expect(
+        result.current.exchanges.map((turn) => [turn.question, turn.phase]),
+      ).toEqual([
+        ["What is quorum?", "failed"],
+        ["And to expel a member?", "working"],
+      ]);
+    });
+
     it("shows the question at once, then ends the turn without a request when the gate says no", async () => {
       const POST = answering();
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });

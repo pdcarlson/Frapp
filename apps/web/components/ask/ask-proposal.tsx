@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import {
   errorCopy,
@@ -29,7 +29,6 @@ import {
   actConfirmRefusalLine,
   actPointsHeadline,
   actPointsTotalLine,
-  actUnavailableLine,
   actWhenLine,
 } from "@repo/validation";
 import { ReportAiButton } from "@/components/ai/report-ai";
@@ -83,12 +82,30 @@ const RESULT_LINKS: Record<string, { href: string; label: string }> = {
 
 const CARD_FRAME = "rounded-[14px] border border-border bg-card p-3";
 
+/** What an officer changed on a waiting card, by the proposal's id. */
+interface CardEdits {
+  targets: string[];
+  assigneeId: string;
+  due: string;
+}
+
+/**
+ * Where a waiting card's edits are kept while the panel is closed. The panel
+ * takes its thread off the page when it closes, and a card drawn again from
+ * the proposal alone would put back the member an officer took off, and
+ * Confirm would then give them the points. The panel holds one of these for
+ * the life of the conversation; a card outside a panel keeps its own.
+ */
+export type AskCardEditsStore = Map<string, CardEdits>;
+export const AskCardEditsContext = createContext<AskCardEditsStore | null>(
+  null,
+);
+
 export function AskProposal({
   proposal,
   resolution,
   onProposal,
   onResolved,
-  onAnswerConsent,
   onLeave,
 }: {
   /** What the server answered the member's words with. */
@@ -98,8 +115,6 @@ export function AskProposal({
   /** The event pick answered with a new proposal for this turn. */
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
-  /** Opens the AI sheet, for a pick refused because it is unanswered. */
-  onAnswerConsent: () => void;
   /** A link out of the panel was followed. */
   onLeave?: () => void;
 }) {
@@ -140,10 +155,10 @@ export function AskProposal({
       <ActAnswer
         response={proposal}
         busy={audience.isPending}
-        onAnswerConsent={onAnswerConsent}
         onPickEvent={(eventId) => void pickEvent(eventId)}
         onDone={(line, page) => onResolved({ kind: "done", line, page })}
         onCancelled={() => onResolved({ kind: "cancelled" })}
+        onGone={() => onResolved({ kind: "gone" })}
       />
       {problem ? (
         <p role="alert" className="text-sm text-destructive-text">
@@ -161,6 +176,12 @@ function proposalHeadline(proposal: ActResponse): string | null {
   if (suggestion.task) return suggestion.task.title;
   if (suggestion.new_event) return suggestion.new_event.name;
   return suggestion.points?.reason ?? null;
+}
+
+/** What a card that ended says in its place. */
+function resolutionLine(resolution: AskProposalResolution): string {
+  if (resolution.kind === "done") return resolution.line;
+  return resolution.kind === "gone" ? ACT_COPY.gone : ACT_COPY.cancelled;
 }
 
 /** A card that ended: what happened, in the frame the card had. */
@@ -185,7 +206,7 @@ function ProposalReceipt({
       ) : null}
       <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="text-sm text-muted-foreground">
-          {resolution.kind === "done" ? resolution.line : ACT_COPY.cancelled}
+          {resolutionLine(resolution)}
         </p>
         {link ? (
           <Button asChild variant="ghost" size="sm" className="-mr-2">
@@ -202,18 +223,19 @@ function ProposalReceipt({
 function ActAnswer({
   response,
   busy,
-  onAnswerConsent,
   onPickEvent,
   onDone,
   onCancelled,
+  onGone,
 }: {
   response: ActResponse;
   /** An event pick is on its way: the choices wait. */
   busy: boolean;
-  onAnswerConsent: () => void;
   onPickEvent: (eventId: string) => void;
   onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
 }) {
   if (response.status === "proposed" && response.suggestion) {
     return (
@@ -222,6 +244,7 @@ function ActAnswer({
         notes={response.notes}
         onDone={onDone}
         onCancelled={onCancelled}
+        onGone={onGone}
       />
     );
   }
@@ -262,28 +285,6 @@ function ActAnswer({
       </div>
     );
   }
-  if (response.status === "unavailable") {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-foreground">
-          {actUnavailableLine(response.reason)}
-        </p>
-        {response.reason === "consent_required" ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={onAnswerConsent}
-          >
-            {ACT_COPY.consent_action}
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-  if (response.status === "refused") {
-    return <p className="text-sm text-foreground">{ACT_COPY.refused}</p>;
-  }
   if (response.status === "no_action") {
     const labels = response.available_actions.flatMap((action) => {
       const label = actActionLabel(action);
@@ -305,7 +306,8 @@ function ActAnswer({
       </div>
     );
   }
-  // `unclear`, and any status a newer server sends.
+  // `unclear`. A card is never `unavailable` or `refused`: those end a turn
+  // as an answer, and an event pick that may not run is an error, not a card.
   return (
     <p className="text-sm text-foreground">
       {actMissingLine(response.missing)}
@@ -313,19 +315,21 @@ function ActAnswer({
   );
 }
 
+/** The proposal is no longer waiting: a day passed, or it was decided elsewhere. */
+function isGone(error: unknown): boolean {
+  return [
+    "ai.suggestion.decided",
+    "ai.suggestion.expired",
+    "ai.suggestion.not_found",
+  ].includes(codeOf(error) ?? "");
+}
+
 /** Why a Confirm or Cancel was refused, in words an officer can act on. */
 function refusalLine(error: unknown): string {
-  switch (codeOf(error)) {
-    case "ai.suggestion.decided":
-    case "ai.suggestion.expired":
-    case "ai.suggestion.not_found":
-      return ACT_COPY.gone;
-    default:
-      return (
-        actConfirmRefusalLine(codeOf(error) ?? null) ??
-        errorCopy(error, ACT_COPY.failed)
-      );
-  }
+  return (
+    actConfirmRefusalLine(codeOf(error) ?? null) ??
+    errorCopy(error, ACT_COPY.failed)
+  );
 }
 
 function CardRow({
@@ -348,11 +352,14 @@ function ActCard({
   notes,
   onDone,
   onCancelled,
+  onGone,
 }: {
   suggestion: AiSuggestion;
   notes: ActResponse["notes"];
   onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
 }) {
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
@@ -372,15 +379,22 @@ function ActCard({
   };
 
   const { points, task, new_event: event } = suggestion;
+  const store = useContext(AskCardEditsContext);
+  const kept = store?.get(suggestion.id);
   const [targets, setTargets] = useState<string[]>(
-    points?.target_user_ids ?? [],
+    kept?.targets ?? points?.target_user_ids ?? [],
   );
-  const [assigneeId, setAssigneeId] = useState(task?.assignee_id ?? "");
+  const [assigneeId, setAssigneeId] = useState(
+    kept?.assigneeId ?? task?.assignee_id ?? "",
+  );
   // The suggestion's own due: kept even once its time has passed (#4512).
   const suggestedDue = task?.due_date
     ? dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at })
     : "";
-  const [due, setDue] = useState(suggestedDue);
+  const [due, setDue] = useState(kept?.due ?? suggestedDue);
+  useEffect(() => {
+    store?.set(suggestion.id, { targets, assigneeId, due });
+  }, [store, suggestion.id, targets, assigneeId, due]);
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with something still missing: say which, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -451,7 +465,9 @@ function ActCard({
         onDone(ACT_COPY.done_event, "events");
       }
     } catch (error) {
-      setProblem(refusalLine(error));
+      // A card that stopped waiting says so in its place, with no buttons.
+      if (isGone(error)) onGone();
+      else setProblem(refusalLine(error));
     }
   }
 
@@ -460,12 +476,14 @@ function ActCard({
     try {
       await dismiss.mutateAsync(suggestion.id);
     } catch (error) {
+      // Already decided elsewhere: it may have been confirmed, so the card
+      // does not say cancelled.
+      if (codeOf(error) === "ai.suggestion.decided") {
+        onGone();
+        return;
+      }
       // Already gone is what Cancel wanted.
-      if (
-        !["ai.suggestion.not_found", "ai.suggestion.expired"].includes(
-          codeOf(error) ?? "",
-        )
-      ) {
+      if (!isGone(error)) {
         setProblem(refusalLine(error));
         return;
       }

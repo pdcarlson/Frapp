@@ -448,6 +448,10 @@ export class AskService {
       left_out_messages: leftOut,
       unverified_citations: result.droppedCitations,
       truncated: result.truncated,
+      // Said whether or not a chat source is cited: a sentence can draw on a
+      // message whose quote was dropped, and the client must not send it
+      // back as history either way.
+      read_chat: entries.some((entry) => entry.chat),
     });
   }
 

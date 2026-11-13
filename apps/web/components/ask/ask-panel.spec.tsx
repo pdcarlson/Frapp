@@ -111,7 +111,7 @@ describe("AskPanel", () => {
     state.consent.mockReset().mockResolvedValue(true);
     state.exchanges = [];
     state.savedUntil = null;
-    state.permissions = ["ai:use", "ai:act"];
+    state.permissions = ["ai:use"];
     state.actions = null;
   });
 
@@ -134,7 +134,9 @@ describe("AskPanel", () => {
   });
 
   it("reads whether answers are being saved again each time it opens", () => {
-    const { rerender } = render(<AskPanel open={false} onOpenChange={vi.fn()} />);
+    const { rerender } = render(
+      <AskPanel open={false} onOpenChange={vi.fn()} />,
+    );
     expect(state.refetchStatus).not.toHaveBeenCalled();
     rerender(<AskPanel open onOpenChange={vi.fn()} />);
     expect(state.refetchStatus).toHaveBeenCalledTimes(1);
@@ -213,9 +215,7 @@ describe("AskPanel", () => {
       open();
       await userEvent
         .setup()
-        .click(
-          screen.getByRole("button", { name: ASK_COPY.new_conversation }),
-        );
+        .click(screen.getByRole("button", { name: ASK_COPY.new_conversation }));
       expect(state.reset).toHaveBeenCalledTimes(1);
     });
 
@@ -233,6 +233,24 @@ describe("AskPanel", () => {
         .setup()
         .click(screen.getByRole("button", { name: ASK_COPY.try_again }));
       expect(state.retry).toHaveBeenCalledWith("turn-1", sent());
+    });
+
+    it("holds Try again on an earlier turn while another is being answered: asking again would drop it", () => {
+      state.exchanges = [
+        {
+          ...DONE,
+          phase: "failed",
+          answer: null,
+          failure: { message: ASK_COPY.failed, retryable: true },
+        },
+        { ...DONE, id: "turn-2", phase: "working", answer: null },
+      ];
+      open();
+      expect(
+        screen
+          .getByRole("button", { name: ASK_COPY.try_again })
+          .hasAttribute("disabled"),
+      ).toBe(true);
     });
 
     it("opens the AI sheet again from a turn that was refused for it", async () => {
@@ -308,7 +326,10 @@ describe("AskPanel", () => {
     });
 
     it("drops a question still being answered when it closes, however it was closed, and keeps the turns before it", () => {
-      state.exchanges = [DONE, { ...DONE, id: "turn-2", phase: "working", answer: null }];
+      state.exchanges = [
+        DONE,
+        { ...DONE, id: "turn-2", phase: "working", answer: null },
+      ];
       const view = render(<AskPanel open onOpenChange={() => undefined} />);
       expect(state.stop).not.toHaveBeenCalled();
       // Closed from outside, as the pill does.
@@ -398,12 +419,31 @@ describe("a member Frapp can act for (#718)", () => {
     ).toBeNull();
   });
 
-  it.each([
-    ["holds the permission but no action", ["ai:use", "ai:act"], [] as string[]],
-    ["does not hold the permission", ["ai:use"], null],
-  ])("answers only, for a member who %s", async (_name, permissions, actions) => {
-    state.permissions = permissions;
-    state.actions = actions;
+  it("asks for a card on the permission alone: a request typed before the list of actions has loaded, or with none to list, is still read as one", async () => {
+    for (const actions of [null, [] as string[]]) {
+      state.ask.mockClear();
+      state.actions = actions;
+      const view = open();
+      // The list only picks the opening example.
+      expect(
+        screen.queryByText(new RegExp(ASK_COPY.empty_body_act)),
+      ).toBeNull();
+      await userEvent
+        .setup()
+        .type(
+          screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+          "Give Jordan 5 points{Enter}",
+        );
+      expect(state.ask).toHaveBeenCalledWith(
+        "Give Jordan 5 points",
+        sent({ actions: true }),
+      );
+      view.unmount();
+    }
+  });
+
+  it("answers only, for a member who does not hold the permission", async () => {
+    state.permissions = ["ai:use"];
     open();
     expect(screen.queryByText(new RegExp(ASK_COPY.empty_body_act))).toBeNull();
     await userEvent

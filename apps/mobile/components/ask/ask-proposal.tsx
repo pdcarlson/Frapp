@@ -38,7 +38,6 @@ import {
   actPointsDoneLine,
   actPointsHeadline,
   actPointsTotalLine,
-  actUnavailableLine,
   actWhenLine,
   meetingDueLabel,
 } from "@repo/validation";
@@ -129,7 +128,6 @@ export function AskProposal({
   report,
   onProposal,
   onResolved,
-  onAnswerConsent,
   onOpen,
 }: {
   /** What the server answered the member's words with. */
@@ -142,8 +140,6 @@ export function AskProposal({
   /** The event pick answered with a new proposal for this turn. */
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
-  /** Opens the AI sheet, for a pick refused because it is unanswered. */
-  onAnswerConsent: () => void;
   /** Leaves the sheet for the screen a finished change shows on. */
   onOpen: (link: ActLink) => void;
 }) {
@@ -163,7 +159,7 @@ export function AskProposal({
       <View style={styles.card}>
         {headline ? <Text style={styles.headline}>{headline}</Text> : null}
         <Text style={styles.muted}>
-          {resolution.kind === "done" ? resolution.line : ACT_COPY.cancelled}
+          {resolutionLine(resolution)}
         </Text>
         {link ? (
           <QuietButton
@@ -206,10 +202,10 @@ export function AskProposal({
         kept={kept}
         onKeep={onKeep}
         report={report}
-        onAnswerConsent={onAnswerConsent}
         onPickEvent={(eventId) => void pickEvent(eventId)}
         onDone={(line, page) => onResolved({ kind: "done", line, page })}
         onCancelled={() => onResolved({ kind: "cancelled" })}
+        onGone={() => onResolved({ kind: "gone" })}
         styles={styles}
       />
       {problem ? (
@@ -269,10 +265,10 @@ function ActAnswer({
   kept,
   onKeep,
   report,
-  onAnswerConsent,
   onPickEvent,
   onDone,
   onCancelled,
+  onGone,
   styles,
 }: {
   response: ActResponse;
@@ -281,10 +277,11 @@ function ActAnswer({
   kept: KeptTargets;
   onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
-  onAnswerConsent: () => void;
   onPickEvent: (eventId: string) => void;
   onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
   styles: Styles;
 }) {
   if (response.status === "proposed" && response.suggestion) {
@@ -299,6 +296,7 @@ function ActAnswer({
         report={report}
         onDone={onDone}
         onCancelled={onCancelled}
+        onGone={onGone}
         styles={styles}
       />
     );
@@ -335,23 +333,6 @@ function ActAnswer({
       </>
     );
   }
-  if (response.status === "unavailable") {
-    return (
-      <>
-        <Text style={styles.body}>{actUnavailableLine(response.reason)}</Text>
-        {response.reason === "consent_required" ? (
-          <QuietButton
-            label={ACT_COPY.consent_action}
-            onPress={onAnswerConsent}
-            styles={styles}
-          />
-        ) : null}
-      </>
-    );
-  }
-  if (response.status === "refused") {
-    return <Text style={styles.body}>{ACT_COPY.refused}</Text>;
-  }
   if (response.status === "no_action") {
     const labels = response.available_actions.flatMap((action) => {
       const label = actActionLabel(action);
@@ -373,23 +354,32 @@ function ActAnswer({
       </>
     );
   }
-  // `unclear`, and any status a newer server sends.
+  // `unclear`. A card is never `unavailable` or `refused`: those end a turn
+  // as an answer, and an event pick that may not run is an error, not a card.
   return <Text style={styles.body}>{actMissingLine(response.missing)}</Text>;
+}
+
+/** The proposal is no longer waiting: a day passed, or it was decided elsewhere. */
+function isGone(error: unknown): boolean {
+  return [
+    "ai.suggestion.decided",
+    "ai.suggestion.expired",
+    "ai.suggestion.not_found",
+  ].includes(codeOf(error) ?? "");
+}
+
+/** What a card that ended says in its place. */
+function resolutionLine(resolution: AskProposalResolution): string {
+  if (resolution.kind === "done") return resolution.line;
+  return resolution.kind === "gone" ? ACT_COPY.gone : ACT_COPY.cancelled;
 }
 
 /** Why a Confirm or Cancel was refused, in words an officer can act on. */
 function refusalLine(error: unknown): string {
-  switch (codeOf(error)) {
-    case "ai.suggestion.decided":
-    case "ai.suggestion.expired":
-    case "ai.suggestion.not_found":
-      return ACT_COPY.gone;
-    default:
-      return (
-        actConfirmRefusalLine(codeOf(error) ?? null) ??
-        errorCopy(error, ACT_COPY.failed)
-      );
-  }
+  return (
+    actConfirmRefusalLine(codeOf(error) ?? null) ??
+    errorCopy(error, ACT_COPY.failed)
+  );
 }
 
 function CardRow({
@@ -429,6 +419,7 @@ function ActCard({
   report,
   onDone,
   onCancelled,
+  onGone,
   styles,
 }: {
   suggestion: AiSuggestion;
@@ -439,6 +430,8 @@ function ActCard({
   report: Reporting;
   onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
   styles: Styles;
 }) {
   const { tokens } = useFrappTheme();
@@ -530,7 +523,9 @@ function ActCard({
         onDone(ACT_COPY.done_event, "events");
       }
     } catch (error) {
-      setProblem(refusalLine(error));
+      // A card that stopped waiting says so in its place, with no buttons.
+      if (isGone(error)) onGone();
+      else setProblem(refusalLine(error));
     } finally {
       setDeciding(false);
     }
@@ -542,12 +537,14 @@ function ActCard({
     try {
       await dismiss.mutateAsync(suggestion.id);
     } catch (error) {
+      // Already decided elsewhere: it may have been confirmed, so the card
+      // does not say cancelled.
+      if (codeOf(error) === "ai.suggestion.decided") {
+        onGone();
+        return;
+      }
       // Already gone is what Cancel wanted.
-      if (
-        !["ai.suggestion.not_found", "ai.suggestion.expired"].includes(
-          codeOf(error) ?? "",
-        )
-      ) {
+      if (!isGone(error)) {
         setProblem(refusalLine(error));
         return;
       }

@@ -286,9 +286,19 @@ officer's typed request into a proposal they confirm
 - **The answer call sees earlier answers, the planner never does.** The same `history` gives the
   answer call the earlier turns as conversation, so a follow-up reads in context. They are context,
   not sources: every claim must still quote a source retrieved for this question, and the server
-  checks each quote (C6). An earlier answer that cited chat is not sent again at all (the client
-  sends that turn's question only), which keeps members' chat out of a second request (§ chat as a
-  source, above).
+  checks each quote (C6). An earlier answer that drew on chat is not sent again at all: the server
+  marks an answer whose sources included chat (`read_chat`, whether or not a chat source was
+  cited), and the client sends that turn's question only, which keeps members' chat out of a second
+  request (§ chat as a source, above). The answer call is told the earlier answer is withheld, in a
+  fixed line the server writes. This is the client's own rule about its own earlier answers: a
+  member who sends an answer back anyway is sending text they were already shown.
+- **A turn that ends in a card has already searched.** The two lanes start together, so by the time
+  the request lane has a card the answer lane may have embedded the question, searched the index
+  and made its own planning call. It is stopped there: its first step past searching is held until
+  the request lane has spoken, so no tool runs and no answer is written for that turn, and nothing
+  it found reaches the request lane.
+- **Cards are asked for on `ai:act` alone.** The client sets `actions` for any member who holds the
+  permission, without waiting for the list of actions; the server decides whether anything fits.
 - **Details are resolved by the server, as the officer, in their chapter.** The model writes names;
   the server looks them up in this chapter's roster and nowhere else (C4). Attendance is read only
   for an officer who holds the attendance route's permission (C2).

@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -69,6 +70,9 @@ export class AskRequestDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(ASK_HISTORY_MAX_TURNS)
+  // An array is an object to the nested check, and one inside this list
+  // would pass with no question or answer on it.
+  @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => AskHistoryTurnDto)
   history?: AskHistoryTurnDto[];

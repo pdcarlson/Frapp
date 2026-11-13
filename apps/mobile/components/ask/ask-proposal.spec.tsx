@@ -11,7 +11,6 @@ import {
   actNoteLine,
   actPointsDoneLine,
   actPointsHeadline,
-  actUnavailableLine,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -62,11 +61,7 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
-import {
-  AskProposal,
-  type ActLink,
-  type KeptTargets,
-} from "./ask-proposal";
+import { AskProposal, type ActLink, type KeptTargets } from "./ask-proposal";
 
 const reporting = {
   offered: true,
@@ -75,7 +70,6 @@ const reporting = {
   reportSheet: null,
 };
 const onOpen = vi.fn<(link: ActLink) => void>();
-const onAnswerConsent = vi.fn();
 
 /**
  * The turn around the card, as the sheet holds it: the proposal, how it
@@ -100,7 +94,6 @@ function Turn({ first, shown = true }: { first: unknown; shown?: boolean }) {
       report={reporting as never}
       onProposal={setProposal}
       onResolved={setResolution}
-      onAnswerConsent={onAnswerConsent}
       onOpen={onOpen}
     />
   );
@@ -257,14 +250,23 @@ describe("a proposal in the Ask conversation", () => {
     expect(screenText(tree)).toContain(actPointsDoneLine(5, 1, 1));
   });
 
-  it("keeps the card, and says why, when Confirm is refused", async () => {
-    hooks.accept.mockRejectedValue({ code: "ai.suggestion.decided" });
-    const tree = show(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
-    const text = screenText(tree);
-    expect(text).toContain(ACT_COPY.gone);
-    expect(text).toContain(actPointsHeadline(5, 2));
-  });
+  it.each([
+    "ai.suggestion.decided",
+    "ai.suggestion.expired",
+    "ai.suggestion.not_found",
+  ])(
+    "says a card is no longer waiting when Confirm finds it gone (%s), with no buttons left",
+    async (code) => {
+      hooks.accept.mockRejectedValue({ code });
+      const tree = show(POINTS);
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      const text = screenText(tree);
+      expect(text).toContain(ACT_COPY.gone);
+      expect(text).not.toContain(ACT_COPY.cancelled);
+      expect(byLabel(tree, ACT_COPY.confirm)).toBeUndefined();
+      expect(byLabel(tree, ACT_COPY.cancel)).toBeUndefined();
+    },
+  );
 
   it("uses the shared words for a refusal the server names", async () => {
     const code = "ai.act.partial";
@@ -286,6 +288,15 @@ describe("a proposal in the Ask conversation", () => {
     const again = show(POINTS);
     await act(async () => byLabel(again, ACT_COPY.cancel).props.onPress());
     expect(screenText(again)).toContain(ACT_COPY.cancelled);
+  });
+
+  it("does not say cancelled for a card decided somewhere else: it may have been confirmed", async () => {
+    hooks.dismiss.mockRejectedValue({ code: "ai.suggestion.decided" });
+    const tree = show(POINTS);
+    await act(async () => byLabel(tree, ACT_COPY.cancel).props.onPress());
+    const text = screenText(tree);
+    expect(text).toContain(ACT_COPY.gone);
+    expect(text).not.toContain(ACT_COPY.cancelled);
   });
 
   it("confirms a complete task, and links to Tasks", async () => {
@@ -355,8 +366,12 @@ describe("a proposal in the Ask conversation", () => {
       ],
     });
     const text = screenText(tree);
-    expect(text).toContain(actNoteLine({ type: "unmatched_name", name: "Jordy" }));
-    expect(text).toContain(actNoteLine({ type: "ambiguous_name", name: "Sam" }));
+    expect(text).toContain(
+      actNoteLine({ type: "unmatched_name", name: "Jordy" }),
+    );
+    expect(text).toContain(
+      actNoteLine({ type: "ambiguous_name", name: "Sam" }),
+    );
     expect(byLabel(tree, ACT_COPY.add_member)).toBeDefined();
   });
 
@@ -479,17 +494,6 @@ describe("a proposal in the Ask conversation", () => {
   it("says what it still needs for a request it couldn't place", () => {
     const tree = show({ ...BASE, status: "unclear", missing: "members" });
     expect(screenText(tree)).toContain(actMissingLine("members" as never));
-  });
-
-  it("offers the AI sheet for a pick refused because it is unanswered", () => {
-    const tree = show({
-      ...BASE,
-      status: "unavailable",
-      reason: "consent_required",
-    });
-    expect(screenText(tree)).toContain(actUnavailableLine("consent_required"));
-    act(() => byLabel(tree, ACT_COPY.consent_action).props.onPress());
-    expect(onAnswerConsent).toHaveBeenCalledTimes(1);
   });
 
   it("reports a proposal by its suggestion id", () => {

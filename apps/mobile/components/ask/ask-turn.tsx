@@ -56,11 +56,17 @@ export function AskTurn({
   canOpen,
   openingSourceId,
   onOpenSource,
+  busy = false,
   onRetry,
   onAnswerConsent,
   report,
 }: {
   exchange: AskExchange;
+  /**
+   * Another turn is being answered. Asking this one again would abandon it,
+   * so this turn's Try again and consent buttons wait.
+   */
+  busy?: boolean;
   /** The card for a turn that asked for something to be done, in the answer's place. */
   proposal?: ReactNode;
   /** Whether this build has a screen for the source; a chip without one is plain. */
@@ -106,7 +112,11 @@ export function AskTurn({
           <>
             <Text style={styles.answer}>{exchange.failure.message}</Text>
             {exchange.failure.retryable ? (
-              <CardAction label={ASK_COPY.try_again} onPress={onRetry} />
+              <CardAction
+                label={ASK_COPY.try_again}
+                onPress={onRetry}
+                disabled={busy}
+              />
             ) : null}
           </>
         ) : null}
@@ -119,6 +129,7 @@ export function AskTurn({
             canOpen={canOpen}
             openingSourceId={openingSourceId ?? null}
             onOpenSource={onOpenSource}
+            busy={busy}
             onAnswerConsent={onAnswerConsent}
           />
         ) : null}
@@ -160,12 +171,14 @@ function AnswerBody({
   canOpen,
   openingSourceId,
   onOpenSource,
+  busy,
   onAnswerConsent,
 }: {
   answer: AskAnswer;
   canOpen: (source: AskSource) => boolean;
   openingSourceId: string | null;
   onOpenSource: (source: AskSource) => void;
+  busy: boolean;
   onAnswerConsent: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -179,6 +192,7 @@ function AnswerBody({
           <CardAction
             label={ASK_COPY.consent_action}
             onPress={onAnswerConsent}
+            disabled={busy}
           />
         ) : null}
       </>

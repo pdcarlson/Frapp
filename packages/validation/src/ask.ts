@@ -121,7 +121,12 @@ export const ASK_SOURCE_KINDS = [
 export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
 
 /** The live-data pages a source can open. */
-export const ASK_SOURCE_PAGES = ["members", "events", "points", "dues"] as const;
+export const ASK_SOURCE_PAGES = [
+  "members",
+  "events",
+  "points",
+  "dues",
+] as const;
 export type AskSourcePage = (typeof ASK_SOURCE_PAGES)[number];
 
 /**
@@ -182,6 +187,13 @@ export const AskAnswerSchema = z.object({
   truncated: z.boolean(),
   /** This exchange was kept by the beta diagnostics window. */
   saved: z.boolean(),
+  /**
+   * Channel messages were among what the model was given for this answer,
+   * whether or not the answer cites one. A client never sends such an answer
+   * back as `history` (`askHistory`). Absent from servers before
+   * conversations existed.
+   */
+  read_chat: z.boolean().nullish(),
   /**
    * What "Report this" sends back (#4315): the exchange as the model saw it
    * and as the member was shown it, sealed by the server so only the server
@@ -279,11 +291,24 @@ export function createAskStreamReader(): {
 }
 
 /**
+ * `text` cut to `max` UTF-16 units without leaving half of a two-unit
+ * character at the end. A lone half is not valid text to a provider, and a
+ * turn carrying one would fail every question after it.
+ */
+function cutWhole(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+/**
  * What a client sends as `history`: the last few finished turns, oldest
- * first. An answer that drew on channel messages is sent as its question
- * only. Chat is checked against each author's AI choice at the moment it is
- * shown to a model (`ai.md` § Chat as a source), and an answer already on
- * screen cannot be checked again, so its words are not sent a second time.
+ * first. An answer the model wrote with channel messages in front of it is
+ * sent as its question only, cited or not (`read_chat`; a cited chat source
+ * says the same for a server that sends no flag). Chat is checked against
+ * each author's AI choice at the moment it is shown to a model (`ai.md`
+ * § Chat as a source), and an answer already on screen cannot be checked
+ * again, so its words are not sent a second time.
  */
 export function askHistory(
   turns: readonly { question: string; answer: AskAnswer | null }[],
@@ -292,10 +317,13 @@ export function askHistory(
     const carried =
       answer !== null &&
       answer.status === "answered" &&
+      answer.read_chat !== true &&
       !answer.sources.some((source) => source.kind === "chat");
     return {
-      question: question.trim().slice(0, ASK_QUESTION_MAX_LENGTH),
-      answer: carried ? answer.text.slice(0, ASK_HISTORY_ANSWER_MAX_LENGTH) : "",
+      question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
+      answer: carried
+        ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
+        : "",
     };
   });
 }
@@ -355,7 +383,8 @@ export const ASK_COPY = {
     reading: "Reading what it found",
     writing: "Writing",
   } satisfies Record<AskStep, string>,
-  not_found: "I couldn't find that in your chapter's documents, minutes or records.",
+  not_found:
+    "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
     "Ask can only answer from what your chapter has uploaded or posted in Frapp.",
   refused: "Ask can't help with that question.",

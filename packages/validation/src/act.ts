@@ -103,7 +103,6 @@ export const ACT_COPY = {
     "ai.suggestion.incomplete":
       "Something on this card is missing. Fill it in, then confirm.",
   },
-  refused: "Ask can't help with that request.",
   no_action: "That isn't something Ask can do for you here.",
   no_action_can: "It can:",
   action_labels: {
@@ -126,15 +125,6 @@ export const ACT_COPY = {
     request:
       "I couldn't work out what to do from that. Try saying it another way.",
   } satisfies Record<ActMissing, string>,
-  unavailable: {
-    consent_required: "Answer the AI question in Settings to use Ask.",
-    chapter_off: "Your chapter's president has turned Ask off.",
-    chapter_limit:
-      "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
-    member_limit: "You've reached today's limit. Ask comes back tomorrow.",
-    not_available: "Ask isn't available right now. Try again later.",
-  },
-  consent_action: "Answer the AI question",
   /** The card. */
   card_points_title_give: "Give points",
   card_points_title_take: "Take away points",
@@ -296,14 +286,6 @@ export function actMissingLine(missing: string | null): string {
   return (
     (ACT_COPY.missing as Record<string, string>)[missing ?? ""] ??
     ACT_COPY.missing.request
-  );
-}
-
-/** What an unavailable request says, with a fallback for an unknown reason. */
-export function actUnavailableLine(reason: string | null): string {
-  return (
-    (ACT_COPY.unavailable as Record<string, string>)[reason ?? ""] ??
-    ACT_COPY.unavailable.not_available
   );
 }
 

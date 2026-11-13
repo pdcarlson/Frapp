@@ -58,7 +58,7 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import { useActActions } from "@/lib/ai/availability";
+import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { askSourceOpening } from "@/lib/ask/source-route";
 import { asRoute, openHref } from "@/lib/href";
 import { selectDownloadUrl } from "@/lib/more/documents";
@@ -90,9 +90,8 @@ import {
  * question and a request in the same field and keep the thread on screen so
  * a follow-up can lean on what came before. So the sheet is a thread: each
  * turn stays, the turns before a question are sent with it, and a member who
- * may have Frapp act (`useActActions`: Ask itself, `ai:act`, and a
- * permission to do at least one thing) gets a card to confirm when what they
- * typed asks for something to be done. Everyone else gets answers only, from
+ * may have Frapp act (`useMayAct`: Ask itself and `ai:act`) gets a card to
+ * confirm when what they typed asks for something to be done. Everyone else gets answers only, from
  * the same field. The header's New conversation button clears the thread.
  *
  * The thread is this sitting's: it survives a close and reopen, and is gone
@@ -174,6 +173,7 @@ export const AskSheet = forwardRef<
   // What this member can ask to have done (#718), or nothing.
   const actions = useActActions({ enabled: shownOpen });
   const canAct = actions.length > 0;
+  const mayAct = useMayAct();
   const [kept, setKept] = useState<KeptTargets>({});
 
   const [draft, setDraft] = useState("");
@@ -218,10 +218,13 @@ export const AskSheet = forwardRef<
   const options = useCallback(
     (): AskOptions => ({
       savedNoticeShown: savedUntil !== null,
-      actions: canAct,
+      // Asked for on the permission alone. The list of actions only picks
+      // the opening example: a request typed before it arrives, or after it
+      // failed to load, must still come back as a card.
+      actions: mayAct,
       gate: ensureConsent,
     }),
-    [canAct, ensureConsent, savedUntil],
+    [mayAct, ensureConsent, savedUntil],
   );
 
   const submit = useCallback(
@@ -371,6 +374,7 @@ export const AskSheet = forwardRef<
                   onOpenSource={(source) =>
                     void openSource(exchange.id, source)
                   }
+                  busy={working && exchange.phase !== "working"}
                   onRetry={() => void retry(exchange.id, options())}
                   onAnswerConsent={() => void retry(exchange.id, options())}
                   report={reportFor(exchange, reporting)}
@@ -387,9 +391,6 @@ export const AskSheet = forwardRef<
                         onProposal={(next) => setProposal(exchange.id, next)}
                         onResolved={(resolution) =>
                           resolveProposal(exchange.id, resolution)
-                        }
-                        onAnswerConsent={() =>
-                          void retry(exchange.id, options())
                         }
                         onOpen={openActLink}
                       />

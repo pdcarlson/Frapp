@@ -85,7 +85,7 @@ export class ActController {
   @ApiOperation({
     summary: 'The actions the caller can ask for',
     description:
-      'The actions whose own route the caller could call now (its permission held, its module on). A client asks for proposal cards in the Ask conversation only when this lists at least one action.',
+      'The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.',
   })
   @ApiOkResponse({ type: ActStatusDto })
   @ApiForbiddenResponse(NOT_ALLOWED)

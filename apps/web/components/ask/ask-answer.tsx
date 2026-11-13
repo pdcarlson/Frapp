@@ -49,6 +49,7 @@ import { ReportAiButton } from "@/components/ai/report-ai";
  */
 export function AskTurn({
   exchange,
+  busy = false,
   onRetry,
   onAnswerConsent,
   onFollowSource,
@@ -56,6 +57,11 @@ export function AskTurn({
   onResolved,
 }: {
   exchange: AskExchange;
+  /**
+   * Another turn is being answered. Asking this one again would abandon it,
+   * so this turn's Try again and consent buttons wait.
+   */
+  busy?: boolean;
   /** A link out of the panel was followed, for a panel that then gets out of the way. */
   onFollowSource?: () => void;
   /** Asks the same thing again, after a failure that may not repeat. */
@@ -81,16 +87,25 @@ export function AskTurn({
               </p>
             ) : null}
             <p className="text-caption text-muted-foreground">
-              {(ASK_COPY.steps as Record<string, string>)[exchange.step ?? ""] ??
-                ASK_COPY.steps.searching}
+              {(ASK_COPY.steps as Record<string, string>)[
+                exchange.step ?? ""
+              ] ?? ASK_COPY.steps.searching}
             </p>
           </>
         ) : null}
         {exchange.phase === "failed" && exchange.failure ? (
           <div className="space-y-2">
-            <p className="text-sm text-foreground">{exchange.failure.message}</p>
+            <p className="text-sm text-foreground">
+              {exchange.failure.message}
+            </p>
             {exchange.failure.retryable ? (
-              <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={onRetry}
+              >
                 {ASK_COPY.try_again}
               </Button>
             ) : null}
@@ -102,7 +117,6 @@ export function AskTurn({
             resolution={exchange.resolution}
             onProposal={onProposal}
             onResolved={onResolved}
-            onAnswerConsent={onAnswerConsent}
             onLeave={onFollowSource}
           />
         ) : null}
@@ -110,6 +124,7 @@ export function AskTurn({
           <>
             <AskAnswerBody
               answer={exchange.answer}
+              busy={busy}
               onAnswerConsent={onAnswerConsent}
               onFollowSource={onFollowSource}
             />
@@ -136,10 +151,12 @@ export function AskTurn({
 
 function AskAnswerBody({
   answer,
+  busy,
   onAnswerConsent,
   onFollowSource,
 }: {
   answer: AskAnswer;
+  busy: boolean;
   onFollowSource?: () => void;
   onAnswerConsent: () => void;
 }) {
@@ -154,6 +171,7 @@ function AskAnswerBody({
             type="button"
             variant="secondary"
             size="sm"
+            disabled={busy}
             onClick={onAnswerConsent}
           >
             {ASK_COPY.consent_action}

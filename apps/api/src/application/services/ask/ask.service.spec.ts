@@ -9,6 +9,7 @@ import type { CorpusPassage } from '../corpus/corpus-retrieval.service';
 import { openAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { AskService, type AskInput } from './ask.service';
+import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
 
 const CHAPTER = 'chapter-a';
@@ -193,6 +194,7 @@ describe('AskService', () => {
         unverified_citations: 0,
         truncated: false,
         saved: false,
+        read_chat: false,
         report_receipt: null,
       });
     });
@@ -320,7 +322,7 @@ describe('AskService', () => {
       expect(request.messages[0].content).not.toContain('two thirds');
     });
 
-    it('gives the answer call the earlier turns as turns, ending on the question, and skips a turn with no answer', async () => {
+    it('gives the answer call the earlier turns as turns, ending on the question, and keeps the question of a turn whose answer is not carried', async () => {
       const { service, gateway } = build({ passages: [passage()] });
       await run(service, { question: 'And for a vote to expel?', history });
       const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
@@ -328,12 +330,32 @@ describe('AskService', () => {
         { messages: Array<{ role: string; content: string }> },
       ];
       expect(request.messages).toEqual([
+        { role: 'user', content: 'When is the next chapter meeting?' },
+        { role: 'assistant', content: ASK_ANSWER_NOT_CARRIED },
         { role: 'user', content: 'What is quorum?' },
         {
           role: 'assistant',
           content: 'Quorum is two thirds of active members.',
         },
         { role: 'user', content: 'And for a vote to expel?' },
+      ]);
+    });
+
+    it('drops half a character a cut left in an earlier turn, which a provider would refuse', async () => {
+      const { service, gateway } = build({ passages: [passage()] });
+      await run(service, {
+        question: 'And after that?',
+        history: [
+          { question: 'Formal \ud83c', answer: 'At the Hilton.\ud83c' },
+        ],
+      });
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages.slice(0, 2)).toEqual([
+        { role: 'user', content: 'Formal ' },
+        { role: 'assistant', content: 'At the Hilton.' },
       ]);
     });
 
@@ -660,6 +682,7 @@ describe('AskService', () => {
       });
       const { answer } = await run(service);
       expect(answer.left_out_messages).toBe(3);
+      expect(answer.read_chat).toBe(true);
       expect(answer.sources[0]).toEqual(
         expect.objectContaining({
           kind: 'chat',
@@ -671,6 +694,31 @@ describe('AskService', () => {
           },
         }),
       );
+    });
+
+    it('says the model read chat even when the answer cites none of it, so the client never sends the answer back', async () => {
+      const { service } = build({
+        passages: [chat(), passage()],
+        answer: ok({
+          text: 'Quorum is two thirds of active members. Formal is at the Hilton.',
+          citations: [
+            {
+              sourceId: 'p1',
+              quote: 'Quorum is two thirds of active members.',
+            },
+          ],
+        }),
+      });
+      const { answer } = await run(service);
+      expect(answer.sources.map((source) => source.kind)).not.toContain('chat');
+      expect(answer.read_chat).toBe(true);
+    });
+
+    it('says the model read no chat when it was given none', async () => {
+      const { service } = build({ passages: [passage()] });
+      const { answer } = await run(service);
+      expect(answer.status).toBe('answered');
+      expect(answer.read_chat).toBe(false);
     });
 
     it('drops a passage whose author said No since the search, before the model sees it, and counts its messages', async () => {

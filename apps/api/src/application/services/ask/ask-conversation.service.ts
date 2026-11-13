@@ -4,7 +4,6 @@ import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { ActService, type ActOutcome } from '../act/act.service';
 import { AskService, type AskInput } from './ask.service';
-import { earlierQuestions } from './ask-prompt';
 
 export interface AskConversationInput extends AskInput {
   /**
@@ -56,9 +55,12 @@ function beforeReading(event: AskStreamEvent): boolean {
  *
  * The lanes start together so a question waits on nothing. When the request
  * lane reads the member's words as something to do (a proposal, a choice of
- * event, or an action with a detail left unsaid), its card is the turn and
- * the answer lane is stopped before it reads or writes anything. Otherwise
- * the answer goes on as if the request lane had not run. A request lane that
+ * event, or an action with a detail left unsaid), its card is the turn. It is
+ * sent the moment the request lane has it, and the answer lane is stopped
+ * where it stands: it may have searched the index and picked its tools by
+ * then, but it has run no tool and written no word, because its first step
+ * past searching is held until the request lane has spoken. Otherwise the
+ * answer goes on as if the request lane had not run. A request lane that
  * fails, is refused or is unavailable is the same as one that found nothing
  * to do: the member still gets their answer.
  */
@@ -75,19 +77,62 @@ export class AskConversationService {
     input: AskConversationInput,
     now: Date = new Date(),
   ): AsyncGenerator<AskConversationEvent, void, void> {
+    if (!input.actions) {
+      yield* this.askService.ask(input, now);
+      return;
+    }
+    // The answer lane gets a signal of its own, so a card can stop the calls
+    // it has in flight. The member leaving still stops both lanes.
+    const stop = new AbortController();
+    const left = () => stop.abort();
+    if (input.signal?.aborted) stop.abort();
+    input.signal?.addEventListener('abort', left, { once: true });
     // Started before the answer lane's first await, so both run side by side.
-    let request = input.actions ? this.proposal(input, now) : null;
-    // Returning from inside the loop ends the answer lane where it stands.
-    for await (const event of this.askService.ask(input, now)) {
-      if (request !== null && !beforeReading(event)) {
-        const outcome = await request;
-        request = null;
-        if (outcome !== null) {
-          yield { type: 'act', outcome };
-          return;
+    let request: Promise<AskProposal | null> | null = this.proposal(input, now);
+    const answer = this.askService.ask({ ...input, signal: stop.signal }, now);
+    try {
+      let next = answer.next();
+      // `start` names the turn, so it goes out first whichever lane is ahead.
+      let started = false;
+      for (;;) {
+        if (request !== null && started) {
+          const first = await Promise.race([
+            request.then((outcome) => ({ lane: 'request', outcome }) as const),
+            next.then((result) => ({ lane: 'answer', result }) as const),
+          ]);
+          if (first.lane === 'request') {
+            request = null;
+            if (first.outcome === null) continue;
+            // The step still being waited on ends with the lane.
+            next.catch(() => undefined);
+            yield { type: 'act', outcome: first.outcome };
+            return;
+          }
+          if (!first.result.done && !beforeReading(first.result.value)) {
+            // Nothing past searching is shown, or run, before the request
+            // lane has said whether this turn is a card.
+            const outcome = await request;
+            request = null;
+            if (outcome !== null) {
+              yield { type: 'act', outcome };
+              return;
+            }
+          }
+          if (first.result.done) return;
+          yield first.result.value;
+        } else {
+          const result = await next;
+          if (result.done) return;
+          started = true;
+          yield result.value;
         }
+        next = answer.next();
       }
-      yield event;
+    } finally {
+      input.signal?.removeEventListener('abort', left);
+      // Ends the answer lane where it stands, and the calls it is waiting on.
+      stop.abort();
+      void answer.return(undefined).catch(() => undefined);
     }
   }
 
@@ -108,8 +153,9 @@ export class AskConversationService {
           enabledModules: input.enabledModules,
           timeZone: input.timeZone,
           request: input.question,
-          // The member's own earlier messages, never an answer.
-          earlier: earlierQuestions(input.history),
+          // The member's own earlier messages, never an answer. How many of
+          // them the planner reads is the request lane's own rule.
+          earlier: (input.history ?? []).map((turn) => turn.question),
           keepEarlier: true,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
