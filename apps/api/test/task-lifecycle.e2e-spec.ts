@@ -126,8 +126,9 @@ describe('Task lifecycle (e2e)', () => {
       'task-1',
       'chapter-1',
       'Missing details',
-      // No "Ask for a photo next time" (#4635).
-      { requirePhoto: undefined },
+      // No "Ask for a photo next time" (#4635); the caller, whom the
+      // send-back push names (#4693).
+      { requirePhoto: undefined, actorUserId: 'user-1' },
     );
   });
 });
