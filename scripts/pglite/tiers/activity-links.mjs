@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
 
 // ─── Links on Activity (#3897) ──────────────────────────────────────────────
@@ -6,6 +8,9 @@ import { db, miss } from "../harness.mjs";
 // `anonymize_user` purge are reached from the API only through mocked
 // repositories, so this is the one place their SQL runs. What each check
 // pins, and the edit it catches:
+// - the host list agrees with the TypeScript matcher (`signUpLinkKind` in
+//   `@repo/validation`) on every URL in `sign-up-link-fixtures.json`, which
+//   that package's spec runs through the matcher (#4215);
 // - the host list: a sign-up host counts, another Google file type does not,
 //   and a URL with userinfo never does (its real host is after the `@`);
 // - trailing punctuation is not part of the URL;
@@ -81,6 +86,22 @@ try {
       "a URL with userinfo never counts, whatever host it names first",
     ],
   );
+
+  // The fixtures the TypeScript matcher is held to: gathered exactly when it
+  // names a kind (#4215).
+  const { fixtures } = JSON.parse(
+    readFileSync(
+      join(process.cwd(), "packages/validation/sign-up-link-fixtures.json"),
+      "utf8",
+    ),
+  );
+  for (const { url, kind } of fixtures) {
+    const gathered = (await extracted(url)) !== "";
+    checks.push([
+      gathered === (kind !== null),
+      `the database and signUpLinkKind agree on ${url} (#4215: ${kind ?? "not gathered"})`,
+    ]);
+  }
 
   await db.exec(`
     insert into chat_messages (id, channel_id, sender_id, content) values

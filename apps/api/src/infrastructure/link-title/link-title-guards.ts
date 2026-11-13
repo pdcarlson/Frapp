@@ -1,4 +1,5 @@
 import { BlockList, isIP } from 'node:net';
+import { signUpLinkKind } from '@repo/validation';
 
 /**
  * The SSRF guards on the link title fetch (#4187). Pure functions, so each
@@ -6,32 +7,15 @@ import { BlockList, isIP } from 'node:net';
  * hop, the first request and each redirect alike.
  */
 
-/** The `docs.google.com` paths Activity gathers, with a Workspace `/a/<domain>` prefix or not. */
-const GOOGLE_DOCS_PATH = /^(\/a\/[^/]+)?\/(forms|spreadsheets|document)\//i;
-
 /**
- * Whether a host and path is a sign-up page Activity gathers. The same list
- * as `activity_action_links` in the database
- * (`20261111030000_activity_links.sql`), which decides what is indexed; this
- * copy decides what may be opened, so a redirect is held to it too. A host
- * the database list later widens to is gathered, but its read is refused
- * until it is added here, which fails closed. A refusal is a definite
- * answer, so a link posted before then never gets a name: widen both lists
- * in the same change.
+ * Whether a host and path is a sign-up page Activity gathers:
+ * `signUpLinkKind` in `@repo/validation`, the TypeScript copy of
+ * `activity_action_links` (`20261111030000_activity_links.sql`), which a
+ * fixture set holds to agreement (#4215). The database list decides what is
+ * indexed; this decides what may be opened, so a redirect is held to it too.
  */
 export function isSignUpHost(host: string, path: string): boolean {
-  if (host === 'docs.google.com') return GOOGLE_DOCS_PATH.test(path);
-  return (
-    host === 'forms.gle' ||
-    host === 'forms.office.com' ||
-    host === 'forms.microsoft.com' ||
-    host === 'forms.cloud.microsoft' ||
-    host === 'typeform.com' ||
-    host.endsWith('.typeform.com') ||
-    host === 'signupgenius.com' ||
-    host.endsWith('.signupgenius.com') ||
-    host === 'calendly.com'
-  );
+  return signUpLinkKind(host, path) !== null;
 }
 
 /**

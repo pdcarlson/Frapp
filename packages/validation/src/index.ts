@@ -189,6 +189,8 @@ export * from "./study-zone-shape";
 export * from "./subscription";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+// The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).
+export * from "./sign-up-links";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";
