@@ -46,7 +46,6 @@ type EventsTimeGridProps = {
   events: EventRow[];
   tasksByDay: Map<string, CalendarTask[]>;
   nameOf: (userId: string) => string;
-  todayKey: string;
   factsOf: (event: EventRow) => CalendarEventFacts;
   onSelectEvent: (event: EventRow) => void;
   /** A column's heading opens that day in the Day view (Week only). */
@@ -88,7 +87,6 @@ export function EventsTimeGrid({
   events,
   tasksByDay,
   nameOf,
-  todayKey,
   factsOf,
   onSelectEvent,
   onOpenDay,
@@ -98,8 +96,14 @@ export function EventsTimeGrid({
   createDescribedBy,
   createTitle,
 }: EventsTimeGridProps) {
+  // Today from the same clock as the now line, so a page left open past
+  // midnight moves both to the new day.
   const now = useNow();
+  const todayKey = localIsoDate(now);
   const isDayView = days.length === 1;
+  // The labels never change; build them once rather than per hour per
+  // column on every minute's render.
+  const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
   const columns = useMemo(() => {
     const parsed = events.flatMap((event) => {
@@ -112,12 +116,12 @@ export function EventsTimeGrid({
       const allDay: EventRow[] = [];
       const timed: TimedSpan<EventRow>[] = [];
       for (const { event, start, end } of parsed) {
-        if (isAllDaySpan(start, end)) {
-          if (localIsoDate(start) === key) allDay.push(event);
-          continue;
-        }
         const span = spanWithinDay(start, end, day);
-        if (span) timed.push({ item: event, ...span });
+        if (!span) continue;
+        // A day-long or longer event sits in the strip on every day it
+        // covers, as calendar apps draw a multi-day event.
+        if (isAllDaySpan(start, end)) allDay.push(event);
+        else timed.push({ item: event, ...span });
       }
       return {
         day,
@@ -258,7 +262,7 @@ export function EventsTimeGrid({
                 className="absolute right-1.5 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
                 style={{ top: hour * HOUR_PX }}
               >
-                {hourLabel(hour)}
+                {hourLabels[hour]}
               </span>
             ))}
           </div>
@@ -304,7 +308,7 @@ export function EventsTimeGrid({
                       disabled={createDisabled}
                       title={createTitle}
                       aria-describedby={createDescribedBy}
-                      aria-label={`Create event on ${dayLabel} at ${hourLabel(hour)}`}
+                      aria-label={`Create event on ${dayLabel} at ${hourLabels[hour]}`}
                       className={cn(
                         lineClass,
                         "transition-colors hover:bg-card-hover disabled:pointer-events-none",

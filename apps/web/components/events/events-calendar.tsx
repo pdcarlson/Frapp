@@ -26,11 +26,8 @@ import {
   EventChip,
   EventsTimeGrid,
 } from "@/components/events/events-time-grid";
-import {
-  consecutiveDays,
-  startOfDay,
-  startOfWeek,
-} from "@repo/hooks/calendar-time-grid";
+import { consecutiveDays, startOfDay } from "@repo/hooks/calendar-time-grid";
+import { localWeekStart } from "@repo/hooks/activity-standing";
 import type { CalendarView } from "@/lib/events/events-view";
 
 type EventRow = Record<string, unknown>;
@@ -218,9 +215,6 @@ export function EventsCalendar({
   // window is wide. Unmeasured (the server, tests) draws the full month.
   const [sectionRef, narrow] = useIsNarrow<HTMLElement>(COMPACT_BELOW_WIDTH);
   const compact = narrow === true;
-  // The compact month's picked day. Kept even when the month changes; a key
-  // outside the shown month falls back below, so it needs no reset.
-  const [pickedKey, setPickedKey] = useState<string | null>(null);
 
   const anchorTime = startOfDay(anchor).getTime();
   const monthAnchor = useMemo(
@@ -235,7 +229,7 @@ export function EventsCalendar({
     if (view === "day") return [day];
     return compact
       ? consecutiveDays(day, COMPACT_WEEK_DAYS)
-      : consecutiveDays(startOfWeek(day), 7);
+      : consecutiveDays(localWeekStart(day), 7);
   }, [anchorTime, view, compact]);
   const requiredOf = useRequiredOfViewer();
 
@@ -296,14 +290,21 @@ export function EventsCalendar({
           : "week";
 
   // Prev and Next turn a month, a week (three days when compact) or a day.
+  // A month opens on today when today is in it, else on its 1st, as the
+  // compact month always has.
   function step(direction: 1 | -1) {
     if (view === "month") {
+      const month = new Date(
+        monthAnchor.getFullYear(),
+        monthAnchor.getMonth() + direction,
+        1,
+      );
+      const today = startOfDay(new Date());
       onAnchorChange(
-        new Date(
-          monthAnchor.getFullYear(),
-          monthAnchor.getMonth() + direction,
-          1,
-        ),
+        today.getFullYear() === month.getFullYear() &&
+          today.getMonth() === month.getMonth()
+          ? today
+          : month,
       );
       return;
     }
@@ -314,38 +315,22 @@ export function EventsCalendar({
   }
   function goToToday() {
     onAnchorChange(startOfDay(new Date()));
-    setPickedKey(todayKey);
   }
-  // A day from the month before or after (the grid's leading and trailing
-  // days carry their dots too) opens its own month, as a phone calendar does.
-  // The picked day is the anchor too, so Week and Day open on it.
+  // The anchor is the compact month's picked day, so Week and Day open on it
+  // and come back to it, as Google Calendar keeps its selected day across
+  // views. A day from the month before or after (the grid's leading and
+  // trailing days carry their dots too) opens its own month, as a phone
+  // calendar does.
   function pickDay(day: Date) {
     onAnchorChange(startOfDay(day));
-    setPickedKey(localDayKey(day));
-  }
-  // Leaving the month for Week or Day lands on the day in view there: the
-  // compact month's picked day, else today when it is in the month shown,
-  // as Google Calendar keeps its selected day across views.
-  function changeView(next: CalendarView) {
-    if (view === "month" && next !== "month") {
-      const shown = days.find((day) => localDayKey(day) === shownDayKey);
-      if (shown) onAnchorChange(startOfDay(shown));
-    }
-    onViewChange(next);
   }
   function openDay(day: Date) {
     onAnchorChange(startOfDay(day));
     onViewChange("day");
   }
 
-  // The compact month's day: the one picked if it is in this month, else
-  // today when this is the current month, else the 1st.
-  const monthKeyPrefix = localDayKey(startOfMonth(monthAnchor)).slice(0, 7);
-  const shownDayKey = pickedKey?.startsWith(monthKeyPrefix)
-    ? pickedKey
-    : todayKey.startsWith(monthKeyPrefix)
-      ? todayKey
-      : localDayKey(startOfMonth(monthAnchor));
+  // The compact month's picked day: the anchor itself.
+  const shownDayKey = localDayKey(new Date(anchorTime));
 
   return (
     <section
@@ -366,7 +351,7 @@ export function EventsCalendar({
               { value: "day", label: "Day" },
             ]}
             value={view}
-            onChange={changeView}
+            onChange={onViewChange}
             className="mr-1"
           />
           <Button variant="secondary" size="toolbar" onClick={goToToday}>
@@ -403,9 +388,11 @@ export function EventsCalendar({
             above the toolbar says why the days are off.
           */}
           {canCreate && !createDisabled
-            ? compact
-              ? stateMicrocopy.events.calendarFirstEventCompact
-              : stateMicrocopy.events.calendarFirstEvent
+            ? view !== "month"
+              ? stateMicrocopy.events.calendarFirstEventHours
+              : compact
+                ? stateMicrocopy.events.calendarFirstEventCompact
+                : stateMicrocopy.events.calendarFirstEvent
             : stateMicrocopy.events.calendarNothingYet}
         </InlineNote>
       )}
@@ -416,7 +403,6 @@ export function EventsCalendar({
           events={events}
           tasksByDay={tasksByDay}
           nameOf={nameOf}
-          todayKey={todayKey}
           factsOf={(event) => calendarEventFacts(event, requiredOf)}
           onSelectEvent={onSelectEvent}
           onOpenDay={openDay}

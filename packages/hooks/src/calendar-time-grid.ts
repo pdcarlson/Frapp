@@ -138,15 +138,6 @@ export function consecutiveDays(first: Date, count: number): Date[] {
   return days;
 }
 
-/** The Sunday on or before `date`, at local midnight: where a week starts. */
-export function startOfWeek(date: Date): Date {
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate() - date.getDay(),
-  );
-}
-
 /** `date` at local midnight. */
 export function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());

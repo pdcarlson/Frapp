@@ -6,7 +6,24 @@ import {
   calendarTasksByDay,
   selectCalendarTasks,
 } from "@repo/hooks/calendar-tasks";
+import { useState, type ComponentProps } from "react";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
+
+// The page owns the anchor (the compact month's picked day is the anchor,
+// #4818); this holds it the way the page does, so a picked day sticks.
+function ControlledCalendar(props: ComponentProps<typeof EventsCalendar>) {
+  const [anchorDay, setAnchorDay] = useState(props.anchor);
+  return (
+    <EventsCalendar
+      {...props}
+      anchor={anchorDay}
+      onAnchorChange={(next) => {
+        props.onAnchorChange(next);
+        setAnchorDay(next);
+      }}
+    />
+  );
+}
 
 // The rule itself is the hook's own spec; the calendar follows its answer
 // (#4132). By default, a viewer with no roles: the event's default decides.
@@ -228,7 +245,7 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     const onSelectEvent = vi.fn();
     const onCreateOnDay = vi.fn();
     render(
-      <EventsCalendar
+      <ControlledCalendar
         events={[
           {
             id: "evt-1",
@@ -287,7 +304,7 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     render(
       <EventsCalendar
         events={[]}
-        anchor={startOfMonth(now)}
+        anchor={now}
         onAnchorChange={vi.fn()}
         view="month"
         onViewChange={vi.fn()}
@@ -414,7 +431,7 @@ describe("EventsCalendar with tasks (#4144)", () => {
 
   function renderWithTasks() {
     return render(
-      <EventsCalendar
+      <ControlledCalendar
         events={[
           {
             id: "evt-1",

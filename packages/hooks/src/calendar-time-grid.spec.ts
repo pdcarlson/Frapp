@@ -4,7 +4,6 @@ import {
   isAllDaySpan,
   layoutDay,
   spanWithinDay,
-  startOfWeek,
   type TimedSpan,
 } from "./calendar-time-grid";
 
@@ -107,12 +106,6 @@ describe("spanWithinDay", () => {
 });
 
 describe("week helpers", () => {
-  it("starts a week on the Sunday on or before the day", () => {
-    expect(startOfWeek(new Date(2026, 10, 13, 15))).toEqual(
-      new Date(2026, 10, 8),
-    );
-  });
-
   it("counts days across a month end", () => {
     expect(consecutiveDays(new Date(2026, 10, 29), 3)).toEqual([
       new Date(2026, 10, 29),

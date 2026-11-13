@@ -132,9 +132,12 @@ describe("EventsCalendar Week and Day (#4818)", () => {
   it("puts a day-long event and the day's tasks in the all-day strip", () => {
     renderViews({ view: "week" });
     expect(screen.getByText("All day")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /View Retreat/ }).style.top).toBe(
-      "",
-    );
+    // In the strip, not placed on the hours.
+    for (const chip of screen.getAllByRole("button", {
+      name: /View Retreat/,
+    })) {
+      expect(chip.style.top).toBe("");
+    }
     expect(screen.getByText("Dues form")).toBeInTheDocument();
   });
 
@@ -189,5 +192,81 @@ describe("EventsCalendar Week and Day (#4818)", () => {
     expect(screen.queryByTestId("time-grid-day-2026-11-12")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Next 3 days" }));
     expect(onAnchorChange).toHaveBeenCalledWith(new Date(2026, 10, 16));
+  });
+});
+
+describe("Week and Day details (#4818)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows a multi-day event on every day it covers", () => {
+    renderViews({ view: "week" });
+    // Retreat runs Tue Nov 10, 9 AM to Wed Nov 11, noon.
+    expect(
+      screen.getAllByRole("button", { name: /View Retreat/ }),
+    ).toHaveLength(2);
+  });
+
+  it("disables the hours while creating is off", () => {
+    render(
+      <EventsCalendar
+        events={[]}
+        anchor={friday}
+        onAnchorChange={vi.fn()}
+        view="day"
+        onViewChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled
+      />,
+    );
+    for (const slot of screen.getAllByRole("button", {
+      name: /Create event on/,
+    })) {
+      expect(slot).toBeDisabled();
+    }
+  });
+
+  it("tells a creator with no events to press an hour", () => {
+    render(
+      <EventsCalendar
+        events={[]}
+        anchor={friday}
+        onAnchorChange={vi.fn()}
+        view="week"
+        onViewChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents={false}
+        createDisabled={false}
+      />,
+    );
+    expect(
+      screen.getByText("Press an hour to schedule the first event."),
+    ).toBeInTheDocument();
+  });
+
+  it("draws the now line at the time in today's column", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 13, 16, 30));
+    renderViews({ view: "week" });
+    const today = screen.getByTestId("time-grid-day-2026-11-13");
+    const line = within(today).getByTestId("time-grid-now");
+    expect(line.style.top).toBe(`${16.5 * 48 - 1}px`);
+    expect(screen.getAllByTestId("time-grid-now")).toHaveLength(1);
+  });
+
+  it("keeps the week it was on across Month and back", () => {
+    // Week → Month → Week: switching views never moves the anchor.
+    const { onAnchorChange, onViewChange } = renderViews({ view: "week" });
+    const control = screen.getByRole("radiogroup", { name: "Calendar view" });
+    fireEvent.click(within(control).getByRole("radio", { name: "Month" }));
+    expect(onViewChange).toHaveBeenCalledWith("month");
+    expect(onAnchorChange).not.toHaveBeenCalled();
   });
 });

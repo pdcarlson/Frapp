@@ -30,6 +30,7 @@ import {
   calendarTasksByDay,
   type CalendarLayer,
 } from "@repo/hooks/calendar-tasks";
+import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import { memberLabel } from "@repo/hooks/display-names";
 import { CalendarLayerToggles } from "@/components/events/calendar-tasks";
 // A subpath, like `error-copy`: pure functions a test's `@repo/hooks` mock
@@ -108,6 +109,7 @@ import { checkInClosesAt } from "@/components/events/check-in-close";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import {
+  calendarCreateStart,
   readCalendarLayers,
   readCalendarView,
   readEventsView,
@@ -123,10 +125,6 @@ import { EventsPageSkeleton } from "@/components/events/events-skeleton";
 
 type EventRow = Record<string, unknown>;
 type Entry = EventListEntry<EventRow>;
-
-// A day click carries no time of day, so the create form opens with a
-// reasonable default slot (6-7pm) rather than midnight-to-midnight.
-const CALENDAR_DEFAULT_START_HOUR = 18;
 
 type TimeFilter = "upcoming" | "past" | "all";
 type AttendanceFilter = "all" | "mandatory" | "optional";
@@ -259,10 +257,9 @@ export function EventsPage() {
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
   // Lifted here (not local to EventsCalendar) because the calendar unmounts
   // when the list is showing — see EventsCalendar's own comment.
-  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  });
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() =>
+    startOfDay(new Date()),
+  );
   // Month, Week or Day (#4818); `null` until read from this browser.
   const [storedCalendarView, setStoredCalendarView] =
     useState<CalendarView | null>(null);
@@ -714,18 +711,11 @@ export function EventsPage() {
 
   // A day from the month starts at the default hour; an hour from the Week
   // or Day view starts then.
-  function openCreate(
-    day: Date | null,
-    startHour: number = CALENDAR_DEFAULT_START_HOUR,
-  ) {
+  function openCreate(day: Date | null, startHour?: number) {
     setEditorMode("create");
     setActiveEvent(null);
     setActiveSeriesKey(null);
-    setCalendarCreateDay(
-      day
-        ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), startHour)
-        : null,
-    );
+    setCalendarCreateDay(day ? calendarCreateStart(day, startHour) : null);
     setEventPlan(null);
     editorDialog.setOpen(true);
   }

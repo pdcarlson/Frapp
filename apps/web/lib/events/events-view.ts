@@ -46,6 +46,21 @@ export function writeEventsView(
   }
 }
 
+/** Where a calendar-made event starts when the month's day number made it. */
+export const CALENDAR_DEFAULT_START_HOUR = 18;
+
+/**
+ * The start a calendar press hands the editor: the day at `startHour`, which
+ * an hour of the Week or Day view passes, else 6 PM for the month's day
+ * number (most chapter events are evening ones).
+ */
+export function calendarCreateStart(
+  day: Date,
+  startHour: number = CALENDAR_DEFAULT_START_HOUR,
+): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), startHour);
+}
+
 /**
  * The calendar's last Month / Week / Day choice on this browser, per user
  * (#4818), kept the same way and for the same reason as the view.
