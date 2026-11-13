@@ -472,7 +472,7 @@ describe("AskSheet", () => {
       },
     ];
     const tree = render();
-    act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
+    act(() => byLabel(tree, AI_REPORT_COPY.titles.ask_answer)[0]!.props.onPress());
     expect(reporting.report).toHaveBeenCalledWith({
       subject: "ask_answer",
       subjectId: "ask-1",
@@ -482,10 +482,10 @@ describe("AskSheet", () => {
 
   it("offers no report to a member who can't send one, or before the ask has an id", () => {
     hooks.exchanges = [answered()];
-    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
     hooks.exchanges = [{ ...answered(), askId: "ask-1" }];
     reporting.offered = false;
-    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
   });
 
   it("can't send an empty question or a second one while the first is answered", () => {
