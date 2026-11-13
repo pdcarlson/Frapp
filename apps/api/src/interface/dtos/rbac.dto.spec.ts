@@ -66,6 +66,15 @@ describe('role and tier name', () => {
     });
   });
 
+  it.each<ClassConstructor<UpdateRoleDto | UpdateRoleTierDto>>([
+    UpdateRoleDto,
+    UpdateRoleTierDto,
+  ])('%p refuses a null name rather than passing it on', async (cls) => {
+    const dto = plainToInstance(cls, { name: null });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toContain('name');
+  });
+
   it('still lets an update leave the name out', async () => {
     const dto = plainToInstance(UpdateRoleDto, { color: null });
     expect(await validate(dto)).toEqual([]);

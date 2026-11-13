@@ -9,8 +9,8 @@ Adds a check that a role's name is not empty or only whitespace, matching the AP
 
 ## Promotion
 
-- **Purpose**: Renames any role whose name is blank after trimming to `Unnamed role <first 8 characters of its id>`, then adds `roles_name_not_blank check (btrim(name) <> '')` on `public.roles`. Only an API call made outside the apps could have stored such a name, so the update is expected to touch no rows.
-- **Checks**: After `db push`, `select count(*) from public.roles where btrim(name) = '';` returns `0`, and `select count(*) from pg_constraint where conname = 'roles_name_not_blank';` returns `1`.
+- **Purpose**: Renames any role whose name has no character but whitespace (spaces, tabs, newlines) to `Unnamed role <first 8 characters of its id>`, then adds `roles_name_not_blank check (name ~ '[^[:space:]]')` on `public.roles`. A regex rather than `btrim(name) <> ''`, because one-argument `btrim` strips only spaces. Only an API call made outside the apps could have stored such a name, so the update is expected to touch no rows.
+- **Checks**: After `db push`, `select count(*) from public.roles where name !~ '[^[:space:]]';` returns `0`, and `select count(*) from pg_constraint where conname = 'roles_name_not_blank';` returns `1`.
 - **Promoter notes**: Order against the API doesn't matter: the older API never sends a blank name from the apps, and a direct call with one now fails at the database instead of being stored. It writes data only for blank-named rows (expected none). `drop constraint if exists` makes re-applying idempotent. Nothing by hand.
 
 ## Rollback

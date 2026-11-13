@@ -103,7 +103,8 @@ export class UpdateRoleDto {
     maxLength: ROLE_NAME_MAX_LENGTH,
     description: 'Must contain something besides whitespace.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a 500.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
   @Matches(/\S/, { message: 'name must not be blank' })
@@ -253,7 +254,8 @@ export class CreateRoleTierDto {
 
 export class UpdateRoleTierDto {
   @ApiPropertyOptional({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a 500.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
   @Matches(/\S/, { message: 'name must not be blank' })
