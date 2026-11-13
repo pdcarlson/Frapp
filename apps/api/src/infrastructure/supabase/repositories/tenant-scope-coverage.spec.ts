@@ -53,6 +53,8 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
     'chat_push_dispatches is a global idempotency ledger keyed by chat message id (#2846), like stripe_webhook_events; it has no chapter column.',
   'supabase-chat-thread.repository.ts':
     'thread replies and chat_thread_follows are message-scoped like reactions (#3785); ChatThreadService authorizes the channel inside the chapter, then resolves the root in that channel, before any call. Backlog.',
+  'supabase-chat-form-response.repository.ts':
+    'form answers are message-scoped and per-member like a sign-up claim (#3926 step 3); every query filters on the member, and ChatFormService authorizes the card in the chapter (assertMessageAccess) before any call.',
   'supabase-activation-milestone.repository.ts':
     'chapter-scoped and upsert-only; low blast radius, and no hook call site in the query-key migration. Backlog.',
 };
