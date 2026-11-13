@@ -238,6 +238,8 @@ describe("plusMenuForms", () => {
       { command: "poll", roleAllows: true },
       // A sign-up sheet needs no grant (#3926).
       { command: "signup", roleAllows: true },
+      // Nor does a form (#3926 step 3).
+      { command: "form", roleAllows: true },
       { command: "event", roleAllows: false },
       // `tasks:manage` alone isn't enough: the route also needs `members:view`.
       { command: "task", roleAllows: false },

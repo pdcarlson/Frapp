@@ -2,10 +2,12 @@
 
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import type { NameResolver } from "@repo/hooks";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { EventCard } from "./event-card";
+import { FormCard } from "./form-card";
 import { HoursCard } from "./hours-card";
 import { RushCard } from "./rush-card";
 import { LoadingCard } from "./loading-card";
@@ -60,8 +62,11 @@ export interface MessageRendererProps {
   ) => void;
   /** A poll card's Close poll: the creator's, or a `channels:manage` holder's (#3794, #4046). */
   onClosePoll?: (messageId: string) => void;
-  /** A sign-up card's Close sign-ups: the creator's, or a `channels:manage` holder's (#3926). */
-  onCloseSignup?: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups or a form card's Close form: the
+   * creator's, or a `channels:manage` holder's (#3926).
+   */
+  onCloseCard?: (messageId: string, kind: ClosableCardKind) => void;
 }
 
 /**
@@ -81,7 +86,7 @@ export function MessageRenderer({
   isConfirmed,
   onAct,
   onClosePoll,
-  onCloseSignup,
+  onCloseCard,
   trailing,
   muted,
 }: MessageRendererProps) {
@@ -111,7 +116,16 @@ export function MessageRenderer({
           nameFor={nameFor}
           isConfirmed={isConfirmed}
           onClaim={onAct}
-          onCloseSignup={onCloseSignup}
+          onCloseCard={onCloseCard}
+        />
+      );
+    case "form":
+      return (
+        <FormCard
+          message={message}
+          viewerId={viewerId}
+          isConfirmed={isConfirmed}
+          onCloseCard={onCloseCard}
         />
       );
     case "announcement":

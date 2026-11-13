@@ -180,6 +180,23 @@ export function SignupGlyph({ className, active }: ChatGlyphProps) {
   );
 }
 
+/** A form card (#3926): a page of questions, each a choice dot and a line. */
+export function FormGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M6.6 3.5h10.8a1.6 1.6 0 011.6 1.6v13.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 18.9V5.1a1.6 1.6 0 011.6-1.6z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path
+        d="M8.4 8.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 8.6h3.6M8.4 12.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 12.6h3.6M8.6 16.6h6.8"
+        {...detail}
+      />
+    </Svg>
+  );
+}
+
 /** `#chapter-audit` — a shield, distinct from the shell's shield-and-check Roles intent. */
 export function AuditGlyph({ className, active }: ChatGlyphProps) {
   return (

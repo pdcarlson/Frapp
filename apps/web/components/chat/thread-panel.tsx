@@ -20,6 +20,7 @@ import {
 import { typingLabel } from "@repo/chat-core/typing-label";
 import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { resolveAuthorAvatar, useRosterCatchUp } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,9 +75,10 @@ export interface ThreadRowWrites {
   /** Settles once the member has answered the confirm and the write is done. */
   delete: (messageId: string, threadRootId: string | null) => Promise<void>;
   closePoll: (messageId: string, threadRootId: string | null) => Promise<void>;
-  closeSignup: (
+  closeCard: (
     messageId: string,
     threadRootId: string | null,
+    kind: ClosableCardKind,
   ) => Promise<void>;
   act: (
     messageId: string,
@@ -388,11 +390,11 @@ export function ThreadPanel({
     },
     [writes, targetOf, settle],
   );
-  const onCloseSignup = useCallback(
-    (messageId: string) => {
+  const onCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) => {
       void settle(
         messageId,
-        writes.closeSignup(messageId, targetOf(messageId)),
+        writes.closeCard(messageId, targetOf(messageId), kind),
       );
     },
     [writes, targetOf, settle],
@@ -467,7 +469,7 @@ export function ThreadPanel({
                 onEdit={canPost ? editRow : undefined}
                 onDelete={onDelete}
                 onClosePoll={onClosePoll}
-                onCloseSignup={onCloseSignup}
+                onCloseCard={onCloseCard}
                 isBookmarked={bookmarkedMessageIds?.has(root.id)}
                 onToggleBookmark={onToggleBookmark}
                 canManageChannel={canManageChannel}
@@ -610,7 +612,7 @@ export function ThreadPanel({
           onEdit={canReply ? editRow : undefined}
           onDelete={onDelete}
           onClosePoll={onClosePoll}
-          onCloseSignup={onCloseSignup}
+          onCloseCard={onCloseCard}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={onToggleBookmark}
           canManageChannel={canManageChannel}

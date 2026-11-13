@@ -1375,7 +1375,7 @@ vi.mock("./message-timeline", async () => {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
       onClosePoll?: (messageId: string) => void;
-      onCloseSignup?: (messageId: string) => void;
+      onCloseCard?: (messageId: string, kind: "signup" | "form") => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
@@ -1391,7 +1391,7 @@ vi.mock("./message-timeline", async () => {
       messages,
       onDelete,
       onClosePoll,
-      onCloseSignup,
+      onCloseCard,
       onReply,
       onEdit,
       canManageChannel,
@@ -1431,8 +1431,11 @@ vi.mock("./message-timeline", async () => {
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
         </button>
-        <button onClick={() => onCloseSignup?.("signup-1")}>
+        <button onClick={() => onCloseCard?.("signup-1", "signup")}>
           trigger-close-signup
+        </button>
+        <button onClick={() => onCloseCard?.("form-1", "form")}>
+          trigger-close-form
         </button>
         <button onClick={() => onOpenProfile?.("u-author")}>
           open-author-profile
@@ -1563,7 +1566,7 @@ function chatChannelResult(
     edit: vi.fn(),
     delete: vi.fn(),
     closePoll: vi.fn(),
-    closeSignup: vi.fn(),
+    closeCard: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],
@@ -3017,7 +3020,7 @@ describe("ChatShell Close sign-ups wiring (#3926)", () => {
     await waitFor(() => {
       expect(screen.queryByText("Close sign-ups?")).not.toBeInTheDocument();
     });
-    expect(channel.closeSignup).not.toHaveBeenCalled();
+    expect(channel.closeCard).not.toHaveBeenCalled();
   });
 
   it("closes the card once the dialog is confirmed", async () => {
@@ -3032,7 +3035,34 @@ describe("ChatShell Close sign-ups wiring (#3926)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close sign-ups" }));
 
     await waitFor(() => {
-      expect(channel.closeSignup).toHaveBeenCalledWith("signup-1", undefined);
+      expect(channel.closeCard).toHaveBeenCalledWith(
+        "signup-1",
+        undefined,
+        "signup",
+      );
+    });
+  });
+});
+
+describe("ChatShell Close form wiring (#3926 step 3)", () => {
+  it("asks in the form's own words, then closes it as a form", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-form"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this form?")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Close sign-ups?")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close form" }));
+
+    await waitFor(() => {
+      expect(channel.closeCard).toHaveBeenCalledWith(
+        "form-1",
+        undefined,
+        "form",
+      );
     });
   });
 });
@@ -5902,16 +5932,16 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,signup:true,event:false,task:false,hours:false,points:false",
+      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
     ).toBe(
-      "poll:false,signup:true,event:true,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false",
     );
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,signup:true,event:false,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false",
     );
   });
 
@@ -5928,7 +5958,7 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         },
       }),
     ).toBe(
-      "poll:false,signup:true,event:false,task:true,hours:true,points:true",
+      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true",
     );
     // Without `members:view` the task and points forms can't list anyone;
     // logging your own hours needs no roster.
@@ -5937,20 +5967,20 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
       }),
     ).toBe(
-      "poll:false,signup:true,event:false,task:false,hours:true,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false",
     );
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe(
-      "poll:loading,signup:true,event:loading,task:loading,hours:loading,points:loading",
+      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading",
     );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,signup:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,signup:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
   });
 });
@@ -6220,7 +6250,10 @@ describe("ChatShell's two lists (#3774)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Find someone to message" }),
     );
-    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
   });
 
@@ -6270,7 +6303,10 @@ describe("ChatShell's two lists (#3774)", () => {
     // The pencil opens the search, as iMessage's opens a "To:" field, rather
     // than sending the member to the Directory.
     fireEvent.click(screen.getByRole("button", { name: "New message" }));
-    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
   });
 
   it("opens a conversation picked in the people search as a row click would (#4668)", () => {

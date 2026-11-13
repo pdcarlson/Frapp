@@ -33,6 +33,7 @@ import {
   PollsGlyph,
   ServiceGlyph,
   SignupGlyph,
+  FormGlyph,
   TasksGlyph,
   type ChatGlyphProps,
 } from "./chat-glyphs";
@@ -59,6 +60,7 @@ import {
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
   poll: PollsGlyph,
   signup: SignupGlyph,
+  form: FormGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceGlyph,
@@ -69,6 +71,7 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
 const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   poll: "New poll",
   signup: "New sign-up sheet",
+  form: "New form",
   event: "New event",
   task: "New task",
   hours: "Log service hours",
