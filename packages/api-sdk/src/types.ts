@@ -559,7 +559,7 @@ export interface paths {
         get?: never;
         /**
          * Reorder the role tiers
-         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.
+         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them; 400 when a tier holding the New Member or Alumni role would go above the Everyone role's tier.
          */
         put: operations["RoleTierController_reorder_v1"];
         post?: never;

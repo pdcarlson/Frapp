@@ -20,13 +20,15 @@ export interface IRoleTierRepository {
   /**
    * Every tier of the chapter, in `ids` order, positions 1 to n. `'stale'`
    * when `ids` is not exactly the chapter's tiers or its order no longer
-   * starts with `fixedIds` (`reorder_role_tiers`).
+   * starts with `fixedIds` (`reorder_role_tiers`). `'below_everyone'` when
+   * the order puts a tier holding the New Member or Alumni role above the
+   * Everyone role's tier (#4548).
    */
   reorder(
     chapterId: string,
     ids: string[],
     fixedIds: string[],
-  ): Promise<RoleTier[] | 'stale'>;
+  ): Promise<RoleTier[] | 'stale' | 'below_everyone'>;
   /**
    * `'has_roles'` when a role still sits in the tier, and `'missing'` when no
    * row matched (a concurrent delete got there first).

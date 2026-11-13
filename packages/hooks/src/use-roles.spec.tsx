@@ -272,7 +272,10 @@ describe("role edits refresh the roster's role colors", () => {
     });
   });
 
-  it("invalidates the roster after a role delete", async () => {
+  // A delete strips the role off its holders (#4547), so every members query
+  // refreshes: the prefix covers the roster, the channel list and the
+  // Members list, which would otherwise send the deleted id back.
+  it("invalidates every members query after a role delete", async () => {
     const mockDelete = vi.fn().mockResolvedValue({ data: {}, error: null });
     const { result } = renderHook(() => useDeleteRole(), {
       wrapper: createWrapper(queryClient, { DELETE: mockDelete }),
@@ -282,7 +285,7 @@ describe("role edits refresh the roster's role colors", () => {
 
     await waitFor(() => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["members", CHAPTER_ID, "roster"],
+        queryKey: ["members", CHAPTER_ID],
       });
     });
   });

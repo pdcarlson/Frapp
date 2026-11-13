@@ -20,5 +20,19 @@ export interface IRoleRepository {
   create(data: Partial<Role>): Promise<Role>;
   createMany(data: Partial<Role>[]): Promise<Role[]>;
   update(id: string, data: Partial<Role>): Promise<Role>;
-  delete(id: string): Promise<void>;
+  /**
+   * Delete a non-system role of the chapter and take it off its holders, in
+   * one transaction (`delete_role`, #4547): a holder it leaves with no
+   * member-access role gets Everyone. `null` when the chapter has no such
+   * role.
+   */
+  delete(chapterId: string, id: string): Promise<RoleDeletion | null>;
+}
+
+/** What {@link IRoleRepository.delete} changed, for the audit row. */
+export interface RoleDeletion {
+  /** Members whose `role_ids` held the role. */
+  strippedMemberIds: string[];
+  /** Of those, the ones given Everyone because nothing else gave access. */
+  givenEveryoneMemberIds: string[];
 }
