@@ -1,5 +1,6 @@
 "use client";
 
+import { formatPoints } from "@repo/formatting";
 import type { MemberAvatarTint, MemberProfile } from "@repo/hooks";
 import type { PresenceStatus } from "@repo/hooks/presence-status";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -135,7 +136,7 @@ export function MemberGrid({
                 ) : null}
               </span>
               <span className="text-caption tabular-nums text-muted">
-                {facts.points} pts
+                {formatPoints(facts.points)}
                 {facts.joined ? ` · joined ${facts.joined}` : null}
               </span>
             </button>

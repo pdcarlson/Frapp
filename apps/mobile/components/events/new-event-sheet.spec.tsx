@@ -198,7 +198,7 @@ describe("New event", () => {
     // The options start closed, and say what they hold.
     expect(screenText(tree)).not.toContain("Points for attending");
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+      "More options: 10 points · Optional for everyone · Doesn't repeat",
     );
     act(() => byLabel(tree, "More options").props.onPress());
     type(tree, "Points for attending", "25");
@@ -261,7 +261,7 @@ describe("New event", () => {
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(byLabel(tree, "Event name").props.value).toBe("");
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+      "More options: 10 points · Optional for everyone · Doesn't repeat",
     );
     act(() => tree.unmount());
   });
@@ -310,7 +310,7 @@ describe("New event", () => {
     act(() => chip(tree, "Chapter meeting").props.onPress());
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Required for everyone · Doesn't repeat",
+      "More options: 10 points · Required for everyone · Doesn't repeat",
     );
     // Another type replaces the name the first wrote.
     act(() => chip(tree, "Social").props.onPress());
@@ -630,7 +630,7 @@ describe("Edit event", () => {
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter");
     expect(byLabel(tree, "Location").props.value).toBe("Sanctuary");
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Required for everyone · Doesn't repeat",
+      "More options: 10 points · Required for everyone · Doesn't repeat",
     );
   });
 

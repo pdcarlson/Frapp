@@ -1,3 +1,5 @@
+import { DIRECTORY_COPY, EVENTS_COPY } from "@repo/validation";
+
 export const stateMicrocopy = {
   // Rewritten by the greenfield Directory lane (#2146). The board's state rule
   // is "Empty = accent tile + tinted CTA. No results = neutral tile, names the
@@ -18,12 +20,12 @@ export const stateMicrocopy = {
     // shipped mobile Directory renders for the same state
     // (`apps/mobile/app/(app)/directory.tsx`). The two surfaces are meant to
     // read as one product, and this is the cheapest place to stop them drifting.
-    empty: "No actives yet.",
-    noFilterMatches: "No actives match these filters.",
+    empty: DIRECTORY_COPY.activesEmpty,
+    noFilterMatches: DIRECTORY_COPY.activesNoFilterMatches,
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
-    // The page is Directory in the nav, and the phone says the same (#4135).
-    errorTitle: "Couldn't load the directory",
+    // One string with the phone's (#4135): `@repo/validation` screen-copy.
+    errorTitle: DIRECTORY_COPY.loadError,
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },
@@ -33,13 +35,14 @@ export const stateMicrocopy = {
     loading: "Loading chapter events...",
     // Inline lines, not card titles (`components.md` §10). A chapter with no
     // events opens on the calendar, so `empty` is what the List tab says if
-    // someone switches to it; the calendar carries its own line.
-    empty: "No events yet.",
+    // someone switches to it; the calendar carries its own line. The phone
+    // says the same line (#4135).
+    empty: EVENTS_COPY.empty,
     noUpcoming: "No upcoming events.",
     noPast: "No past events.",
     // Upcoming holds the next two weeks (#3707); what's after them waits
     // behind Later, right under this line.
-    noneSoon: "Nothing in the next two weeks.",
+    noneSoon: EVENTS_COPY.noneSoon,
     noSearchMatches: "No events match that search.",
     noFilterMatches: "No events match these filters.",
     // On the calendar of a chapter with no events. Officers who can create
@@ -55,7 +58,7 @@ export const stateMicrocopy = {
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",
-    errorTitle: "Couldn't load chapter events",
+    errorTitle: EVENTS_COPY.loadError,
   },
   points: {
     loading: "Loading points ledger...",

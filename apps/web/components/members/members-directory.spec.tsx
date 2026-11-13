@@ -93,27 +93,30 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   // The fraternal-order sort is the real one: it is what this screen promises.
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-  fraternalOrderComparator: actual.fraternalOrderComparator,
-  usesFraternalOrder: actual.usesFraternalOrder,
-  usePledgeClasses: () => classesRead,
-  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  // The List/Grid pick is kept per viewer (#4175).
-  useViewerUserId: () => "viewer-1",
-  useMembers: () => membersRead,
-  useMemberSearch: (q: string) => (q ? searchRead : membersRead),
-  useRoles: () => rolesRead,
-  useLeaderboard: () => leaderboardRead,
-  // The member view, which every member can read. The config read refuses
-  // every seeded role below President (#2957), so the directory must not
-  // depend on it; it reports that refusal here rather than being left out.
-  useCurrentChapter: () => ({
-    data: {
-      org_archetype: "ifc",
-      vocabulary: { class: "Line", order: "Roll number" },
-    },
-  }),
-  useOrgConfig: () => ({ data: undefined, isError: true }),
-  useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
+    fraternalOrderComparator: actual.fraternalOrderComparator,
+    usesFraternalOrder: actual.usesFraternalOrder,
+    usePledgeClasses: () => classesRead,
+    useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+    // The List/Grid pick is kept per viewer (#4175).
+    useViewerUserId: () => "viewer-1",
+    useMembers: () => membersRead,
+    useMemberSearch: (q: string) => (q ? searchRead : membersRead),
+    useRoles: () => rolesRead,
+    useLeaderboard: () => leaderboardRead,
+    // The member view, which every member can read. The config read refuses
+    // every seeded role below President (#2957), so the directory must not
+    // depend on it; it reports that refusal here rather than being left out.
+    useCurrentChapter: () => ({
+      data: {
+        org_archetype: "ifc",
+        vocabulary: { class: "Line", order: "Roll number" },
+      },
+    }),
+    useOrgConfig: () => ({ data: undefined, isError: true }),
+    useUpdateMemberRoles: () => ({
+      mutateAsync: mutateRoles,
+      isPending: false,
+    }),
   };
 });
 
@@ -128,7 +131,9 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   }),
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 /**
  * Stubbed because it fires six invite hooks this file's `@repo/hooks` mock has
@@ -430,7 +435,6 @@ describe("Directory on the greenfield shell", () => {
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
     await pick(user, /^Sort:/, "Role Z to A");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-
   });
 
   describe("pledge class and order number (#3939)", () => {
@@ -457,8 +461,12 @@ describe("Directory on the greenfield shell", () => {
       const user = userEvent.setup();
       render(<MembersDirectory />);
       await user.click(screen.getByRole("button", { name: /^Sort:/ }));
-      expect(screen.queryByRole("menuitem", { name: "Newest first" })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: "Oldest first" })).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Newest first" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Oldest first" }),
+      ).toBeNull();
     });
 
     it("shows no pledge class or order control to a chapter that uses neither", async () => {
@@ -509,7 +517,9 @@ describe("Directory on the greenfield shell", () => {
       // The mocked chapter calls a class a "Line".
       await user.click(screen.getByRole("button", { name: /^Line/ }));
       expect(
-        (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+        (await screen.findAllByRole("menuitem")).map(
+          (item) => item.textContent,
+        ),
       ).toEqual(["Any", "Beta", "Alpha"]);
       await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
       expect(names()).toEqual(["Ada Lovelace"]);
@@ -545,7 +555,9 @@ describe("Directory on the greenfield shell", () => {
       render(<MembersDirectory />);
       expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
       await user.click(screen.getByRole("button", { name: /^Sort:/ }));
-      expect(screen.queryByRole("menuitem", { name: "Roll number" })).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Roll number" }),
+      ).toBeNull();
     });
 
     it("falls back to the default sort and no class filter when the chapter's last class goes", async () => {
@@ -696,7 +708,7 @@ describe("Directory as a grid (#4175)", () => {
     expect(tile).toHaveTextContent("Ada Lovelace");
     expect(tile).toHaveTextContent("Treasurer");
     expect(tile).toHaveTextContent("ada@example.test");
-    expect(tile).toHaveTextContent("42 pts");
+    expect(tile).toHaveTextContent("42 points");
     expect(tile).toHaveTextContent(/joined/);
   });
 
@@ -704,11 +716,15 @@ describe("Directory as a grid (#4175)", () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
 
-    await user.click(screen.getByRole("checkbox", { name: "Select Ada Lovelace" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
     expect(screen.getByText("1 selected")).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("checkbox", { name: /select all members on this page/i }),
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
     );
     expect(screen.getByText("2 selected")).toBeInTheDocument();
   });
