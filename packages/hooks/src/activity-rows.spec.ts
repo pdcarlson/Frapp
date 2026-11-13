@@ -1002,6 +1002,13 @@ describe("activityRowAction (#4402)", () => {
         tasks: [task({ id: "mine", title: "Mine" })],
         task_confirmations: [
           task({ id: "done", title: "Done", status: "COMPLETED" }),
+          // Proof to look at first: it opens rather than confirming (#4635).
+          task({
+            id: "proof",
+            title: "Proof",
+            status: "COMPLETED",
+            proof_kind: "photo",
+          }),
         ],
         hours_approvals: [
           {
@@ -1036,6 +1043,7 @@ describe("activityRowAction (#4402)", () => {
       Open: null,
       Mine: null,
       Done: "confirm",
+      Proof: null,
       "Food bank": "approve",
       "Formal venue?": null,
       Later: null,

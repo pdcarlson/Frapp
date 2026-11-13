@@ -2127,7 +2127,9 @@ describe('TaskService', () => {
         ]);
         expect(
           mockTaskRepo.createPhotos.mock.invocationCallOrder[0],
-        ).toBeLessThan(mockTaskRepo.updateIfMatches.mock.invocationCallOrder[0]);
+        ).toBeLessThan(
+          mockTaskRepo.updateIfMatches.mock.invocationCallOrder[0],
+        );
         expect(result.photos).toEqual([proofRow]);
       });
 
@@ -2229,8 +2231,8 @@ describe('TaskService', () => {
       it('signs off at once a task with no points and no proof, and the push asks nothing', async () => {
         const free = inProgress({ point_reward: null });
         mockTaskRepo.findById.mockResolvedValue(free);
-        mockTaskRepo.updateIfMatches.mockImplementation((_id, _ch, _match, patch) =>
-          Promise.resolve({ ...free, ...patch }),
+        mockTaskRepo.updateIfMatches.mockImplementation(
+          (_id, _ch, _match, patch) => Promise.resolve({ ...free, ...patch }),
         );
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
 

@@ -188,7 +188,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       query =
         value === null || value === undefined
           ? query.is(column, null)
-          : query.eq(column, value as string | number | boolean);
+          : query.eq(column, value);
     }
     const { data: updated, error } = await query.select().maybeSingle();
     if (error) throw new SupabaseQueryError(error);

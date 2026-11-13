@@ -194,7 +194,11 @@ export type ActivityRowAction = "confirm" | "approve";
 
 export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
   if (!activityBadgeIsAsk(row)) return null;
-  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  // A task that asks for proof opens instead: the officer sees the photos or
+  // link before confirming it (#4635), which a one-press row can't show.
+  if (row.kind === "task" && row.glyph === "confirm") {
+    return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
+  }
   if (row.kind === "hours") return "approve";
   return null;
 }
