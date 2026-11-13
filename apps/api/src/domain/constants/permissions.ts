@@ -30,6 +30,10 @@ export const SystemPermissions = {
 
   ROLES_MANAGE: 'roles:manage',
 
+  // Groups (#4076): named sets of members with no permissions. Lighter than
+  // `roles:manage`, so a chair can keep a group current without granting.
+  GROUPS_MANAGE: 'groups:manage',
+
   CHANNELS_CREATE: 'channels:create',
   CHANNELS_MANAGE: 'channels:manage',
 
@@ -161,6 +165,9 @@ const OFFICER_DEFAULT_PERMISSIONS = [
   SystemPermissions.TASKS_MANAGE,
   SystemPermissions.CHANNELS_CREATE,
   SystemPermissions.CHANNELS_MANAGE,
+  // Groups (#4076); migration `20261113040007_chapter_groups.sql` gives it
+  // to every existing tier and role that manages roles or channels.
+  SystemPermissions.GROUPS_MANAGE,
 ] as const;
 
 /**
@@ -195,7 +202,7 @@ const MEMBER_DEFAULT_PERMISSIONS = [
  *
  * The top two carry the officer defaults Paul decided on 2026-11-10 (#4068
  * decision 9): both approve service hours, post announcements, and manage
- * tasks and channels; the top one also manages roles and chapter settings.
+ * tasks, channels and groups (#4076); the top one also manages roles and chapter settings.
  * `roles:manage` on a tier is safe because of the rank rules (#4071): nobody
  * edits a role or tier ranked at or above their own, so the Vice President
  * cannot edit the President's role or the Exec board itself.

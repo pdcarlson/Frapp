@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+import { GifService } from '../../application/services/gif.service';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ExecutionContext, InternalServerErrorException } from '@nestjs/common';
@@ -21,7 +23,7 @@ describe('ChatController', () => {
     Pick<
       ChatService,
       | 'deleteMessage'
-      | 'closeSignup'
+      | 'closeCard'
       | 'editMessage'
       | 'pinMessage'
       | 'unpinMessage'
@@ -47,16 +49,18 @@ describe('ChatController', () => {
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
   let mentions: jest.Mocked<Pick<ChatMentionService, 'listMentionRoles'>>;
   let accessLists: jest.Mocked<Pick<ChannelAccessListService, 'listOptions'>>;
+  let gifs: jest.Mocked<Pick<GifService, 'messageGif' | 'recordShare'>>;
 
   beforeEach(async () => {
     accessLists = { listOptions: jest.fn() };
+    gifs = { messageGif: jest.fn(), recordShare: jest.fn() };
     rbacService = { memberHasAnyPermission: jest.fn() };
     attachments = { requestChatUploadUrl: jest.fn() };
     categories = { updateCategory: jest.fn(), deleteCategory: jest.fn() };
     reactions = { recordMessageAction: jest.fn() };
     service = {
       deleteMessage: jest.fn(),
-      closeSignup: jest.fn(),
+      closeCard: jest.fn(),
       setDisplayLock: jest.fn(),
       editMessage: jest.fn(),
       pinMessage: jest.fn(),
@@ -96,6 +100,7 @@ describe('ChatController', () => {
         { provide: RbacService, useValue: rbacService },
         { provide: ChatMentionService, useValue: mentions },
         { provide: ChannelAccessListService, useValue: accessLists },
+        { provide: GifService, useValue: gifs },
       ],
     }).compile();
 
@@ -138,13 +143,13 @@ describe('ChatController', () => {
 
   // The card's creator needs no permission, so the moderator check is a lazy
   // closure the service asks only for someone else's card (#3926).
-  describe('closeSignup', () => {
+  describe('closeCard', () => {
     it("asks for channels:manage in the caller's chapter", async () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(true);
-      await controller.closeSignup('msg-1', 'ch-1', 'user-1');
+      await controller.closeCard('msg-1', 'ch-1', 'user-1');
 
       const [messageId, chapterId, userId, canModerate] =
-        service.closeSignup.mock.calls[0];
+        service.closeCard.mock.calls[0];
       expect([messageId, chapterId, userId]).toEqual([
         'msg-1',
         'ch-1',
@@ -161,8 +166,8 @@ describe('ChatController', () => {
 
     it('answers false for a member without it', async () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
-      await controller.closeSignup('msg-1', 'ch-1', 'user-1');
-      const canModerate = service.closeSignup.mock.calls[0][3];
+      await controller.closeCard('msg-1', 'ch-1', 'user-1');
+      const canModerate = service.closeCard.mock.calls[0][3];
       await expect(canModerate!()).resolves.toBe(false);
     });
   });
@@ -454,6 +459,56 @@ describe('ChatController', () => {
           enabled_modules: enabledModules,
         }),
       );
+    });
+
+    describe('a GIF send (#4631)', () => {
+      const dtoGif = {
+        id: 'dance',
+        url: 'https://static.klipy.com/h.webp',
+        width: 498,
+        height: 280,
+        token: 'tok',
+      };
+      const checked = {
+        provider: 'klipy',
+        id: 'dance',
+        title: '',
+        url: dtoGif.url,
+        width: 498,
+        height: 280,
+      };
+      const send = () =>
+        controller.sendMessage('chan-1', 'ch-1', 'user-1', null, {
+          content: '',
+          client_message_id: '22222222-2222-2222-2222-222222222222',
+          gif: dtoGif,
+        });
+
+      it('sends only the GIF the check returned, then records the share', async () => {
+        gifs.messageGif.mockReturnValue(checked);
+        service.sendMessage.mockResolvedValue({ deduplicated: false } as never);
+        await send();
+        expect(gifs.messageGif).toHaveBeenCalledWith(dtoGif);
+        expect(service.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ gif: checked }),
+        );
+        expect(gifs.recordShare).toHaveBeenCalledWith('dance');
+      });
+
+      it('writes nothing when the check refuses the GIF', async () => {
+        gifs.messageGif.mockImplementation(() => {
+          throw new BadRequestException('nope');
+        });
+        await expect(send()).rejects.toThrow(BadRequestException);
+        expect(service.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('records no second share for a deduplicated retry', async () => {
+        gifs.messageGif.mockReturnValue(checked);
+        service.sendMessage.mockResolvedValue({ deduplicated: true } as never);
+        await send();
+        expect(gifs.recordShare).not.toHaveBeenCalled();
+      });
     });
 
     it('hands enabled_modules to recordMessageAction', async () => {

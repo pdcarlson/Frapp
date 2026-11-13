@@ -1012,7 +1012,8 @@ export class ChatReportService {
  *
  * A sign-up sheet card (`kind: 'signup'`, #3926) is read the same way: its
  * title on its own line if it differs from `content`, then its details and
- * each slot's name as `- ` lines.
+ * each slot's name as `- ` lines. A form card (`kind: 'form'`, step 3) is
+ * too: its description, then each question followed by its options.
  *
  * Polls come in two shapes, and both are read: web's `/poll` and New poll
  * dialog and mobile's New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
@@ -1028,6 +1029,8 @@ export function reportedContentSnapshot(
     'content' | 'type' | 'kind' | 'payload' | 'metadata'
   >,
 ): string {
+  const gif = gifText(message.metadata);
+  if (gif) return gif;
   const poll = pollText(message);
   if (!poll || poll.labels.length === 0) return message.content;
   const lines = [message.content];
@@ -1038,6 +1041,21 @@ export function reportedContentSnapshot(
   return lines.join('\n');
 }
 
+/**
+ * A GIF message (#4631) has no text and no attachments: its GIF is the
+ * evidence, so the report keeps its address and title, which outlive the
+ * sender deleting the message.
+ */
+function gifText(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const gif = (metadata as { gif?: unknown }).gif;
+  if (!gif || typeof gif !== 'object') return null;
+  const { url, title } = gif as { url?: unknown; title?: unknown };
+  if (typeof url !== 'string') return null;
+  const name = typeof title === 'string' && title.trim() ? title.trim() : '';
+  return name ? `GIF: ${name}\n${url}` : `GIF: ${url}`;
+}
+
 function pollText(
   message: Pick<ChatMessage, 'type' | 'kind' | 'payload' | 'metadata'>,
 ): { question: string | null; labels: string[] } | null {
@@ -1045,6 +1063,10 @@ function pollText(
   // shows instead of `content`, optional details, and slot names. Its details
   // go first, then one line per slot, so a harassing slot name is kept.
   if (message.kind === 'signup') return signupText(message.payload);
+  // A form (#3926 step 3) likewise: its title, then its description, each
+  // question and each option. Members' answers are private and never on the
+  // card, so a report of the card carries none of them.
+  if (message.kind === 'form') return formText(message.payload);
   let card: unknown;
   if (message.kind === 'poll') card = message.payload;
   else if (message.type === 'POLL') card = message.metadata;
@@ -1085,6 +1107,39 @@ function signupText(
         ? (slot as { label?: unknown }).label
         : null;
     if (typeof label === 'string') labels.push(label);
+  }
+  return { question: typeof title === 'string' ? title : null, labels };
+}
+
+function formText(
+  card: unknown,
+): { question: string | null; labels: string[] } | null {
+  if (!card || typeof card !== 'object') return null;
+  const { title, description, questions } = card as {
+    title?: unknown;
+    description?: unknown;
+    questions?: unknown;
+  };
+  if (!Array.isArray(questions)) return null;
+  const labels: string[] = [];
+  if (typeof description === 'string' && description.trim() !== '') {
+    labels.push(description);
+  }
+  for (const question of questions) {
+    if (!question || typeof question !== 'object') continue;
+    const { title: text, options } = question as {
+      title?: unknown;
+      options?: unknown;
+    };
+    if (typeof text === 'string') labels.push(text);
+    if (!Array.isArray(options)) continue;
+    for (const option of options) {
+      const label: unknown =
+        option && typeof option === 'object'
+          ? (option as { label?: unknown }).label
+          : null;
+      if (typeof label === 'string') labels.push(label);
+    }
   }
   return { question: typeof title === 'string' ? title : null, labels };
 }

@@ -1084,7 +1084,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        /** The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each */
         get: operations["ChatController_getMentionRoles_v1"];
         put?: never;
         post?: never;
@@ -1417,8 +1417,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Close a sign-up card early (its creator, or channels:manage); claims already made stay */
-        post: operations["ChatController_closeSignup_v1"];
+        /** Close a sign-up or form card early (its creator, or channels:manage); answers already made stay */
+        post: operations["ChatController_closeCard_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1557,6 +1557,24 @@ export interface paths {
         get?: never;
         /** Set the caller's notification level for a channel */
         put: operations["ChatController_setChannelNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/form-response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own answers to a form card, or null before they answer */
+        get: operations["ChatFormController_getOwnResponse_v1"];
+        /** Save the caller's answers to a form card, replacing their last ones (until the form closes) */
+        put: operations["ChatFormController_saveResponse_v1"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1991,6 +2009,57 @@ export interface paths {
         put?: never;
         /** Dismiss a channel's Important strip: mark every one seen */
         post: operations["ChatImportantController_dismissAll_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether GIF search is set up, and its provider */
+        get: operations["GifController_availability_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/trending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trending GIFs, for the picker before a search */
+        get: operations["GifController_trending_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search GIFs (rated PG-13 at most) */
+        get: operations["GifController_search_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2982,7 +3051,7 @@ export interface paths {
         put?: never;
         /**
          * Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)
-         * @description PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
+         * @description PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
          */
         post: operations["TaskController_requestPhotoUploadUrl_v1"];
         delete?: never;
@@ -2991,14 +3060,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/tasks/{id}/photo-url": {
+    "/v1/tasks/{id}/photos/{photoId}/url": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565) */
+        /** A short-lived link to one of a task's photos (assignee or tasks:manage, #4635) */
         get: operations["TaskController_getPhotoUrl_v1"];
         put?: never;
         post?: never;
@@ -3320,6 +3389,59 @@ export interface paths {
         patch: operations["PledgeClassController_rename_v1"];
         trace?: never;
     };
+    "/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        get: operations["ChapterGroupController_list_v1"];
+        put?: never;
+        /** Make a group and, optionally, pick its members */
+        post: operations["ChapterGroupController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a manual group; channel lists that named it lose the entry */
+        delete: operations["ChapterGroupController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a group, recolor it, or switch whether anyone can ping it. An automatic group's name can't change. */
+        patch: operations["ChapterGroupController_update_v1"];
+        trace?: never;
+    };
+    "/v1/groups/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a manual group's whole member list */
+        put: operations["ChapterGroupController_setMembers_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/rush/candidates": {
         parameters: {
             query?: never;
@@ -3562,6 +3684,23 @@ export interface paths {
         put?: never;
         /** Confirm upload with metadata */
         post: operations["ChapterDocumentController_confirmUpload_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inline preview links for up to 100 documents at once */
+        get: operations["ChapterDocumentController_previewUrls_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4788,6 +4927,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Calendar is offered here, and the caller's connection. */
+        get: operations["GoogleCalendarController_status_v1"];
+        put?: never;
+        post?: never;
+        /** Disconnect Google Calendar: removes Frapp's calendar from the member's Google account and revokes Frapp's access. */
+        delete: operations["GoogleCalendarController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start connecting Google Calendar: a single-use sign-in, and Google’s consent page to send the member to. */
+        post: operations["GoogleCalendarController_connect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish connecting with the code Google returned. Only the member who started the sign-in, in the same chapter, can finish it. */
+        post: operations["GoogleCalendarController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -5346,6 +5537,8 @@ export interface components {
             name: string;
             /** @description What every role in the tier gets before its own overrides. */
             permissions: string[];
+            /** @description Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
             created_at: string;
             updated_at: string;
         };
@@ -5360,6 +5553,8 @@ export interface components {
         };
         UpdateRoleTierDto: {
             name?: string;
+            /** @description Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
             /** @description The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`. */
             permissions?: string[];
         };
@@ -5658,13 +5853,13 @@ export interface components {
             created_at: string;
         };
         ChannelAccessOptionDto: {
-            /** @description The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`. */
+            /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
             entry: string;
             /**
-             * @description What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.
+             * @description What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading.
              * @enum {string}
              */
-            kind: "tier" | "role";
+            kind: "tier" | "role" | "group";
             /** Format: uuid */
             id: string;
             name: string;
@@ -5681,13 +5876,21 @@ export interface components {
             hidden: boolean;
         };
         MentionRoleDto: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The role's id, or the tier's or group's (`kind`).
+             */
             role_id: string;
-            /** @description The role name; the picker inserts it folded. */
+            /**
+             * @description What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them.
+             * @enum {string}
+             */
+            kind: "role" | "tier" | "group";
+            /** @description The name; the picker inserts it folded. */
             name: string;
             /** @description The role’s palette color, or null. */
             color: string | null;
-            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
+            /** @description Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody. */
             mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
@@ -5703,7 +5906,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup" | "form";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -5722,7 +5925,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -5748,9 +5951,9 @@ export interface components {
              * @enum {string}
              */
             type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /**
              * @deprecated
@@ -5769,9 +5972,9 @@ export interface components {
         UpdateChannelDto: {
             name?: string;
             description?: string;
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /** @description Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category. */
             match_category_access?: boolean;
@@ -5833,17 +6036,17 @@ export interface components {
             name: string;
             /** @default 0 */
             display_order: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
         };
         UpdateCategoryDto: {
             name?: string;
             display_order?: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
         };
         ChatThreadLastReplyDto: {
@@ -5879,7 +6082,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -5934,13 +6137,23 @@ export interface components {
             /** @description The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded. */
             preview_storage_path?: string;
         };
+        MessageGifDto: {
+            id: string;
+            title?: string;
+            url: string;
+            width: number;
+            height: number;
+            /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
+            token: string;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
+            gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
@@ -6000,6 +6213,22 @@ export interface components {
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
+        };
+        FormResponseDto: {
+            answers: {
+                [key: string]: string | string[];
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OwnFormResponseDto: {
+            response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        SaveFormResponseDto: {
+            /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
+            answers: {
+                [key: string]: string | string[];
+            };
         };
         BookmarkedMessageDto: {
             /** Format: uuid */
@@ -6299,6 +6528,33 @@ export interface components {
         MarkImportantSeenDto: {
             /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
             message_ids: string[];
+        };
+        GifAvailabilityDto: {
+            /** @description Whether GIF search is set up on this server. Clients hide the GIF button when it is not. */
+            available: boolean;
+            /** @description The provider's name, shown in the picker's search field as its attribution. */
+            provider: string;
+        };
+        GifRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
+        };
+        GifResultDto: {
+            /** @description The provider's id for this GIF. */
+            id: string;
+            /** @description Short words for screen readers; may be empty. */
+            title: string;
+            /** @description Small, for a grid tile. */
+            preview: components["schemas"]["GifRenditionDto"];
+            /** @description What a message shows; send this one. */
+            full: components["schemas"]["GifRenditionDto"];
+            /** @description Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search. */
+            token: string;
+        };
+        GifPageDto: {
+            results: components["schemas"]["GifResultDto"][];
+            next_page: number | null;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -7015,7 +7271,7 @@ export interface components {
         TaskPhotoUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
             upload_url: string;
-            /** @description Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done). */
+            /** @description Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done). */
             storage_path: string;
         };
         TaskPhotoUrlResponseDto: {
@@ -7038,14 +7294,35 @@ export interface components {
             subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
-            /** @description A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565). */
-            reference_photo_path?: string;
-            /** @description When true, the task can only be marked done with a proof photo (#4565). Default false. */
-            photo_required?: boolean;
+            /** @description Reference photos, in order: each a `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4635). At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
             client_message_id?: string;
+        };
+        TaskPhotoDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @enum {string} */
+            kind: "reference" | "proof";
+            /** @description Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`. */
+            storage_path: string;
+            /** @description Order within its kind, 0 first. */
+            position: number;
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         CreateTaskResponseDto: {
             /** Format: uuid */
@@ -7075,16 +7352,23 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
              */
             sent_back_at: string | null;
-            /** @description Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`. */
-            reference_photo_path: string | null;
-            /** @description Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`. */
-            proof_photo_path: string | null;
-            /** @description When true, Mark done is refused without a proof photo. */
-            photo_required: boolean;
+            /**
+             * @description What Mark done needs: nothing, a proof photo, or a link.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
+            /** @description The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server. */
+            proof_link: string | null;
+            /** @description Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else. */
+            sent_back_reason: string | null;
+            /** @description The assignee's reply sent with Mark done, or null. Cleared with the completion. */
+            completion_note: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
+            /** @description The reference photos added with the task, in order. Task reads and status writes carry `photos` too. */
+            photos: components["schemas"]["TaskPhotoDto"][];
         };
         UpdateTaskDto: {
             title?: string;
@@ -7099,20 +7383,29 @@ export interface components {
              */
             due_at?: string | null;
             point_reward?: number | null;
-            /** @description A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565). */
-            reference_photo_path?: string | null;
-            /** @description Turn "Photo required" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer. */
-            photo_required?: boolean;
+            /** @description The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new `storage_path`s from `POST /v1/tasks/photo-upload-url` are added, and any it held that aren't listed are removed. `[]` removes them all. At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
-            /** @description With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`. */
-            proof_photo_path?: string;
+            /** @description With `status: COMPLETED` only: proof photos, each a `storage_path` from `POST /v1/tasks/photo-upload-url` (#4635), 1 to 6. Required when the task's `proof_kind` is `photo`; a completion without it is a 400 with the code `task.proof_required`. */
+            proof_photo_paths?: string[];
+            /** @description With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it). */
+            proof_link?: string;
+            /** @description With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`. */
+            completion_note?: string;
         };
         RejectTaskCompletionDto: {
-            /** @description Optional comment for rejection */
+            /** @description Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again. */
             comment?: string;
+            /** @description "Ask for a photo next time": raises the task's `proof_kind` to `photo`, so the next Mark done needs one. */
+            require_photo?: boolean;
         };
         CreateTaskSubtaskDto: {
             title: string;
@@ -7494,6 +7787,64 @@ export interface components {
             pledge_class_id: string | null;
             order_number: number | null;
         };
+        ChapterGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * @description `manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.
+             * @enum {string}
+             */
+            kind: "manual" | "pledge_class" | "class_year";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, or "Class of" and the year. */
+            name: string;
+            /** @description One of the role palette colors, or null. */
+            color: string | null;
+            /** @description Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
+            /**
+             * Format: uuid
+             * @description The pledge class a `pledge_class` group follows.
+             */
+            pledge_class_id: string | null;
+            /** @description The graduation year a `class_year` group follows. */
+            class_year: number | null;
+            /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
+            member_ids: string[];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateChapterGroupDto: {
+            /** @description The name, as the chapter writes it ("Third floor", "Live-ins"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here. */
+            name: string;
+            /**
+             * @description One of the role palette colors, in any letter case.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` it. Defaults to true. */
+            mentionable?: boolean;
+            /** @description Its first members, as `users.id`s of members of the chapter. Defaults to none. */
+            member_ids?: string[];
+        };
+        UpdateChapterGroupDto: {
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here. */
+            name?: string;
+            /**
+             * @description One of the role palette colors, in any letter case. Null clears it.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` it. */
+            mentionable?: boolean;
+        };
+        SetChapterGroupMembersDto: {
+            /** @description The group's whole member list, as `users.id`s of members of the chapter. Replaces the list, all or none. */
+            member_ids: string[];
+        };
         RushCandidateViewDto: {
             /** Format: uuid */
             id: string;
@@ -7647,6 +7998,11 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+        };
+        DocumentPreviewUrlDto: {
+            id: string;
+            /** @description Inline signed URL, valid for an hour */
+            url: string;
         };
         DocumentFolderDto: {
             id: string;
@@ -7849,6 +8205,11 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never.
              */
             sent_back_at: string | null;
+            /**
+             * @description What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
@@ -8759,6 +9120,49 @@ export interface components {
              * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
              */
             webcal_url: string;
+        };
+        GoogleCalendarStatusDto: {
+            /** @description Whether this server offers Google Calendar. False until its Google settings are set; clients then hide the option. */
+            available: boolean;
+            /** @description Whether the caller has connected Google. */
+            connected: boolean;
+            /**
+             * @description `needs_reconnect` once Google refused the sign-in (access removed in Google, or a password change); nothing syncs until the member connects again. Null when not connected.
+             * @enum {string|null}
+             */
+            status: "active" | "needs_reconnect" | null;
+            /**
+             * @description The Google account connected, when Google shared it.
+             * @example member@gmail.com
+             */
+            google_email: string | null;
+            /**
+             * Format: date-time
+             * @description When the calendar last finished syncing. Null before the first.
+             */
+            last_synced_at: string | null;
+        };
+        StartGoogleCalendarConnectDto: {
+            /**
+             * @description Where the sign-in finishes: the web Events page, or the phone app at `return_url`.
+             * @enum {string}
+             */
+            client: "web" | "mobile";
+            /**
+             * @description For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.
+             * @example frapp://google-calendar
+             */
+            return_url?: string;
+        };
+        GoogleCalendarConnectDto: {
+            /** @description Google’s consent page for this sign-in. Good for ten minutes. */
+            authorize_url: string;
+        };
+        ConfirmGoogleCalendarConnectDto: {
+            /** @description The `gcal_state` the sign-in returned with. */
+            state: string;
+            /** @description The `gcal_code` the sign-in returned with. */
+            code: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -11967,7 +12371,7 @@ export interface operations {
             };
         };
     };
-    ChatController_closeSignup_v1: {
+    ChatController_closeCard_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -12322,6 +12726,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getOwnResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnFormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_saveResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFormResponseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponseDto"];
                 };
             };
             /** @description Error */
@@ -13346,6 +13814,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportantMessagesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_availability_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifAvailabilityDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_trending_v1: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_search_v1: {
+        parameters: {
+            query: {
+                page?: number;
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
                 };
             };
             /** @description Error */
@@ -15737,13 +16294,11 @@ export interface operations {
     };
     TaskController_getPhotoUrl_v1: {
         parameters: {
-            query: {
-                /** @description Which photo: the reference photo or the proof photo. */
-                photo: "reference" | "proof";
-            };
+            query?: never;
             header?: never;
             path: {
                 id: string;
+                photoId: string;
             };
             cookie?: never;
         };
@@ -16515,6 +17070,162 @@ export interface operations {
             };
         };
     };
+    ChapterGroupController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterGroupDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChapterGroupDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_setMembers_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterGroupMembersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     RushController_lookup_v1: {
         parameters: {
             query: {
@@ -17034,6 +17745,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_previewUrls_v1: {
+        parameters: {
+            query: {
+                /** @description Document ids, at most 100: the parameter repeated, or one comma-separated value */
+                ids: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPreviewUrlDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -19777,6 +20519,124 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarConnectDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
             };
             /** @description Error */
             default: {

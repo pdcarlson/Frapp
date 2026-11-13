@@ -566,7 +566,10 @@ describe("useRejectTask", () => {
     });
 
     act(() => {
-      result.current.mutate({ id: TASK });
+      result.current.mutate({
+        id: TASK,
+        body: { comment: "Floor is still sticky" },
+      });
     });
 
     await waitFor(() => {
@@ -588,7 +591,10 @@ describe("useRejectTask", () => {
     });
 
     act(() => {
-      result.current.mutate({ id: TASK });
+      result.current.mutate({
+        id: TASK,
+        body: { comment: "Floor is still sticky" },
+      });
     });
 
     await waitFor(() => {

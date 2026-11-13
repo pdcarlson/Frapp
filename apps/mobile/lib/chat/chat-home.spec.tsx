@@ -150,6 +150,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      data?: unknown;
       error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
@@ -367,6 +368,10 @@ import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
+import { HeaderButton } from "@/components/header-button";
+import { NavGlyph } from "@/components/nav-glyph";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
@@ -1309,7 +1314,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(updateMutateAsync).not.toHaveBeenCalled();
     expect(
       form.findByProps({ accessibilityLiveRegion: "polite" }).props.children,
-    ).toBe("Add a tier or role to each chosen list, or pick Everyone.");
+    ).toBe("Add a tier, role or group to each chosen list, or pick Everyone.");
 
     act(() => access().props.onChange(["tier:exec"]));
     updateMutateAsync.mockResolvedValue(undefined);
@@ -1516,6 +1521,41 @@ describe("Chat home's title (#2485)", () => {
  * B) and the inbox's bell (#3362), back since #3839 in place of the member's
  * avatar and its menu, which became the You tab.
  */
+/**
+ * #4610 step 3: Chat home teaches the swipe to Messages. The area decides
+ * when (`components/chat/messages-swipe-area.spec.tsx`); Chat home tells it
+ * whose record to read, when the screen is at rest, and how many
+ * conversations are unread, which is what earns the one reminder.
+ */
+describe("Chat home hands the swipe area its hint (#4610)", () => {
+  const hint = (tree: ReactTestRenderer) =>
+    tree.root.findByType(MessagesSwipeArea).props.hint;
+
+  it("names the viewer, says the loaded list is at rest, and counts unread conversations", () => {
+    channelsData.value = [general, dmAlice, group];
+    unreadData.value = [
+      { channel_id: dmAlice.id, unread_count: 4, mention_count: 0 },
+      { channel_id: group.id, unread_count: 1, mention_count: 0 },
+      { channel_id: general.id, unread_count: 9, mention_count: 2 },
+    ];
+    channelsState.value = { ...channelsState.value, isSuccess: true };
+    expect(hint(render())).toEqual({
+      viewerId: VIEWER,
+      ready: true,
+      unreadConversations: 2,
+    });
+  });
+
+  it("is not at rest while the channel list is still loading", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isPending: true,
+      isSuccess: false,
+    };
+    expect(hint(render())).toMatchObject({ ready: false });
+  });
+});
+
 describe("Chat home header: Messages and the bell (#3839)", () => {
   const push = () => vi.mocked(useRouter)().push;
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
@@ -1545,6 +1585,16 @@ describe("Chat home header: Messages and the bell (#3839)", () => {
       act(() => pressableLabelled(tree, "Messages").props.onPress());
 
       expect(push()).toHaveBeenCalledWith("/messages");
+    });
+
+    // #4610 step 3: it was a speech bubble, the Chat tab's own glyph, right
+    // above the Chat tab. Web's rail draws direct messages as this plane.
+    it("is a round header button with the paper plane web uses for direct messages", () => {
+      const tree = render();
+      const door = tree.root
+        .findAllByType(HeaderButton)
+        .find((node) => node.props.label === "Messages")!;
+      expect(door.findByType(NavGlyph).props.paths).toBe(NAV_GLYPHS.direct);
     });
 
     it("draws no badge while no conversation is unread", () => {
@@ -1714,7 +1764,12 @@ describe("Chat home loading and error states", () => {
 
   it("fails on the shared error state, whose retry refetches the channels", () => {
     const refetch = vi.fn();
-    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+      refetch,
+    };
     const tree = render();
 
     const error = tree.root.findByType(ErrorState);
@@ -1729,9 +1784,21 @@ describe("Chat home loading and error states", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the channels it has when a refresh fails", () => {
+    // Back from the background, the focus refetch can fail (a lapsed token,
+    // FRAPP-API-E). The rows it already had stay; the error card is for a
+    // list that never loaded (components.md §10).
+    channelsState.value = { ...channelsState.value, isError: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ErrorState)).toHaveLength(0);
+    expect(rows(tree).length).toBeGreaterThan(0);
+  });
+
   it("says a refused list is about the member's role, not the network", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1748,6 +1815,7 @@ describe("Chat home loading and error states", () => {
     vi.mocked(Sentry.captureMessage).mockClear();
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1762,6 +1830,7 @@ describe("Chat home loading and error states", () => {
   it("says Retrying… and holds the control while a retry is in flight", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       isFetching: true,
     };
@@ -1827,7 +1896,7 @@ describe("Chat home press feedback", () => {
       // The suite's react-native stub runs as iOS.
       const held = control.props.style({ pressed: true });
       expect(held).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.card,
+        backgroundColor: signetDarkTokens.color.surface.surface1,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
     }
@@ -2013,7 +2082,11 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
 
   it("draws nothing over the channels' error", () => {
     setupChecklist.value = ONE_LINE;
-    channelsState.value = { ...channelsState.value, isError: true };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+    };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });

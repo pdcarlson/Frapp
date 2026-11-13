@@ -5,8 +5,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
-import type { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type {
+  IEventRepository,
+  OccurrenceCarry,
+} from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
+import type { EventExcuse } from '#domain/entities/event-excuse.entity';
 import {
   advanceRepeatRule,
   shiftRepeatRule,
@@ -20,6 +26,7 @@ import {
 } from './event-announcement.service';
 import type { EventChange } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
+import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type { UpdateEventInput } from './event-input';
 
@@ -59,6 +66,70 @@ function propagatableFields(
 }
 
 /**
+ * How far a rebuilt meeting may sit from where an old one was expected to land
+ * and still count as the same meeting, moved (#4620). Covers a structured
+ * rule keeping its wall-clock time across a DST change, which moves an
+ * instant by an hour, and stays well under the gap between two meetings of
+ * any rule (a day, at the closest).
+ */
+const CARRY_TOLERANCE_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Pair each upcoming occurrence a series edit is about to delete with the
+ * rebuilt one that replaces it, so its excuses can move there (#4620).
+ *
+ * An old meeting is expected to land where it was plus the shift the edit
+ * moved the series by (`shiftMs`, zero when the start did not move), which is
+ * what rescheduling a recurring meeting means (see `splitStartedHead`). It
+ * pairs with the rebuilt meeting nearest that instant, within
+ * `CARRY_TOLERANCE_MS`, each rebuilt meeting taken once. So a series moved an
+ * hour later carries every excuse an hour later; weekly made every two weeks
+ * carries the excuses on the meetings that stay; and a meeting with no
+ * rebuilt one near it (its day left the rule, or it was individually moved)
+ * carries nothing rather than a guess. Its members are told instead
+ * (`tellDroppedExcuses`).
+ *
+ * A meeting the shifted pass leaves unpaired then tries its own instant, with
+ * no shift. That is what a retried edit needs: when the parent write after a
+ * committed swap fails, the old rows are already at the new times while the
+ * parent still reads the old start, so the shift is counted again, and
+ * without this pass a retried move of a day would carry nothing.
+ */
+export function pairReplacedOccurrences(
+  old: readonly Event[],
+  rebuilt: readonly Event[],
+  shiftMs: number,
+): OccurrenceCarry[] {
+  const startOf = (row: Event) => new Date(row.start_time).getTime();
+  const open = [...rebuilt];
+  const pairs: OccurrenceCarry[] = [];
+  let unpaired = [...old].sort((a, b) => startOf(a) - startOf(b));
+  for (const shift of shiftMs === 0 ? [0] : [shiftMs, 0]) {
+    const left: Event[] = [];
+    for (const from of unpaired) {
+      const expected = startOf(from) + shift;
+      let best = -1;
+      let bestGap = Infinity;
+      open.forEach((row, i) => {
+        const gap = Math.abs(startOf(row) - expected);
+        if (gap <= CARRY_TOLERANCE_MS && gap < bestGap) {
+          best = i;
+          bestGap = gap;
+        }
+      });
+      if (best === -1) {
+        left.push(from);
+        continue;
+      }
+      pairs.push({ from: from.id, to: open[best].id });
+      open.splice(best, 1);
+    }
+    unpaired = left;
+  }
+  return pairs;
+}
+
+/**
  * Recurring events: materializing a parent's generated occurrences, and every
  * write that addresses a whole series (`scope:'series'` updates and deletes,
  * plus handing a series on when its head is canceled as a single instance).
@@ -72,6 +143,8 @@ export class EventSeriesService {
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     private readonly announcements: EventAnnouncementService,
+    private readonly notifications: NotificationService,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
   ) {}
 
   /**
@@ -103,19 +176,37 @@ export class EventSeriesService {
    *
    * `existingIds` are all of the head's occurrences before the swap, so rows
    * the insert added can be told apart from ones it did not touch.
+   *
+   * The old rows' excuses move to the rebuilt meetings that replace them
+   * (`pairReplacedOccurrences`) in the same transaction as the delete, so a
+   * failed delete leaves them on the old rows, where the recovery below keeps
+   * them (#4620). The pending and approved excuses that had nowhere to go
+   * are deleted with the rows, and their members are told as soon as that
+   * commits (`tellDroppedExcuses`), not after the caller's later writes: those
+   * can fail and leave the swap standing. A swap that only reads back as
+   * committed tells nobody, since which excuses it dropped went with the lost
+   * response; that is the one case an excuse goes without a word.
    */
   private async replaceOccurrences(swap: {
     headId: string;
     chapterId: string;
     existingIds: string[];
-    oldIds: string[];
+    old: Event[];
     replacements: Partial<Event>[];
+    shiftMs: number;
+    /** The series' name, for the push to members whose excuse was dropped. */
+    name: string;
   }): Promise<void> {
-    const { headId, chapterId, existingIds, oldIds, replacements } = swap;
+    const { headId, chapterId, existingIds, old, replacements, shiftMs } = swap;
+    const oldIds = old.map((row) => row.id);
+    let dropped: EventExcuse[];
     try {
-      await this.eventRepo.createMany(replacements);
-      await this.eventRepo.deleteMany(oldIds, chapterId);
-      return;
+      const rebuilt = await this.eventRepo.createMany(replacements);
+      dropped = await this.eventRepo.deleteReplacedOccurrences(
+        oldIds,
+        chapterId,
+        pairReplacedOccurrences(old, rebuilt, shiftMs),
+      );
     } catch (error) {
       let landedIds: string[] = [];
       try {
@@ -148,6 +239,12 @@ export class EventSeriesService {
       }
       throw error;
     }
+    await this.tellDroppedExcuses(chapterId, {
+      headId,
+      name: swap.name,
+      ended: replacements.length === 0,
+      dropped,
+    });
   }
 
   /**
@@ -447,8 +544,10 @@ export class EventSeriesService {
         headId: parent.id,
         chapterId,
         existingIds: children.map((child) => child.id),
-        oldIds: future.map((child) => child.id),
+        old: future,
         replacements: this.buildOccurrencePayloads(template, now),
+        shiftMs: startShiftMs,
+        name: template.name,
       });
       updatedParent = await this.eventRepo.update(
         parent.id,
@@ -671,11 +770,13 @@ export class EventSeriesService {
         headId: newHead.id,
         chapterId,
         existingIds: rest.map((child) => child.id),
-        oldIds: rest.map((child) => child.id),
+        old: rest,
         replacements: this.buildOccurrencePayloads(
           { ...newHead, recurrence_rule: seriesRule },
           now,
         ),
+        shiftMs: startShiftMs,
+        name: newHead.name,
       });
       if (newHead.recurrence_rule !== seriesRule) {
         newHead = await this.eventRepo.update(newHead.id, chapterId, {
@@ -692,6 +793,64 @@ export class EventSeriesService {
     );
 
     return newHead;
+  }
+
+  /**
+   * Tell each member whose pending or approved excuse went with a deleted
+   * occurrence (no rebuilt meeting replaced it) that it's gone (#4620): to
+   * send one again when the series was rescheduled, and that there is nothing
+   * to do when it ended. Only current members: an excuse outlives its
+   * sender's membership (it cascades with the user), and a push naming the
+   * chapter's event must not reach someone who left. Best-effort, like every
+   * push here: the swap has already landed.
+   */
+  private async tellDroppedExcuses(
+    chapterId: string,
+    swap: {
+      headId: string;
+      name: string;
+      ended: boolean;
+      dropped: readonly EventExcuse[];
+    },
+  ): Promise<void> {
+    if (swap.dropped.length === 0) return;
+    try {
+      const current = new Set(
+        (await this.memberRepo.findByChapter(chapterId)).map(
+          (member) => member.user_id,
+        ),
+      );
+      const members = [
+        ...new Set(swap.dropped.map((excuse) => excuse.user_id)),
+      ].filter((userId) => current.has(userId));
+      if (members.length === 0) return;
+      await this.notifications.notifyMembers(
+        chapterId,
+        members,
+        swap.ended
+          ? {
+              title: 'Your excuse was removed',
+              body: `${swap.name} no longer repeats, so the meeting your excuse was for is off the calendar. There's nothing more to do.`,
+              priority: 'NORMAL',
+              category: 'events',
+              data: { target: { screen: 'events', eventId: swap.headId } },
+            }
+          : {
+              title: 'Send your excuse again',
+              body: `${swap.name} was rescheduled, and the meeting your excuse was for is no longer on the calendar. Send one again for any meeting you can't make.`,
+              priority: 'NORMAL',
+              category: 'events',
+              data: { target: { screen: 'events', eventId: swap.headId } },
+            },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'event-series-dropped-excuses-notify',
+        message: `Could not tell members their excuse for ${swap.headId} was dropped`,
+        error,
+      });
+    }
   }
 
   /**

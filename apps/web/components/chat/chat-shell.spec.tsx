@@ -526,6 +526,9 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
     ) : null,
 }));
 
+const gifState = vi.hoisted(() => ({
+  value: { available: false, provider: "" },
+}));
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -573,6 +576,8 @@ vi.mock("@repo/hooks", async () => ({
   // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
   useChatBackground: () => ({ data: undefined }),
   useChapterChatBackground: () => ({ data: undefined }),
+  // GIFs (#4631): off here, so the composer shows no GIF button.
+  useGifAvailability: () => gifState.value,
   useSetChannelBackground: () => ({
     mutate: vi.fn(),
     reset: vi.fn(),
@@ -819,6 +824,25 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
 }));
+// The people search has its own spec; here it only reports whether the shell
+// opened it (#4668).
+vi.mock("./dm-search-dialog", () => ({
+  DmSearch: ({
+    open,
+    onOpenChannel,
+  }: {
+    open: boolean;
+    onOpenChannel: (channelId: string) => void;
+  }) => (
+    <div data-testid="dm-search" data-open={String(open)}>
+      <button
+        type="button"
+        data-testid="dm-search-pick"
+        onClick={() => onOpenChannel("chan-dm")}
+      />
+    </div>
+  ),
+}));
 vi.mock("./channel-list", () => ({
   REORDER_SAVE_FAILED_TITLE: "Couldn't save the channel order",
   REORDER_SAVE_FAILED_BODY:
@@ -1038,8 +1062,10 @@ vi.mock("./composer", () => ({
     plusDrafts,
     isAuditLog,
     dropAttachRef,
+    onSendGif,
   }: {
     channelId: string;
+    onSendGif?: unknown;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
@@ -1101,6 +1127,7 @@ vi.mock("./composer", () => ({
       <div
         data-testid="composer"
         data-audit-log={String(isAuditLog ?? false)}
+        data-gif={onSendGif ? "on" : "off"}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
@@ -2600,6 +2627,23 @@ describe("ChatShell audit log (#3909)", () => {
   });
 });
 
+describe("ChatShell GIF button (#4631)", () => {
+  afterEach(() => {
+    gifState.value = { available: false, provider: "" };
+  });
+
+  it("offers the composer no GIF send while GIFs aren't set up", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.gif).toBe("off");
+  });
+
+  it("offers it once the server says GIFs are set up", async () => {
+    gifState.value = { available: true, provider: "KLIPY" };
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect((await screen.findByTestId("composer")).dataset.gif).toBe("on");
+  });
+});
+
 describe("ChatShell Always formal (#3787)", () => {
   afterEach(() => {
     displayLockState.canSet = false;
@@ -3200,8 +3244,8 @@ describe("ChatShell hide conversation (#2303)", () => {
     });
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Find someone in the Directory" }),
-    ).toHaveAttribute("href", "/members");
+      screen.getByRole("button", { name: "Find someone to message" }),
+    ).toBeInTheDocument();
   });
 
   it("still moves off the open DM when a second hide starts before the first lands", async () => {
@@ -6172,9 +6216,11 @@ describe("ChatShell's two lists (#3774)", () => {
     channelsQueryState.value = { data: CHANNELS };
     render(<ChatShell view="direct" />);
     expect(screen.getByText(/No direct messages yet/)).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Find someone in the Directory" }),
-    ).toHaveAttribute("href", "/members");
+    // The way in is the people search (#4668), not the Directory.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find someone to message" }),
+    );
+    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
   });
 
@@ -6208,17 +6254,41 @@ describe("ChatShell's two lists (#3774)", () => {
     latestReads.rows = [];
   });
 
-  it("offers New message in Direct messages, which opens the Directory", () => {
+  it("offers New message and the people search in Direct messages only (#4668)", () => {
     channelsQueryState.value = { data: [...CHANNELS, DM] };
     const { unmount } = render(<ChatShell />);
     expect(
-      screen.queryByRole("link", { name: "New message" }),
+      screen.queryByRole("button", { name: "New message" }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dm-search")).not.toBeInTheDocument();
     unmount();
     render(<ChatShell view="direct" />);
-    expect(screen.getByRole("link", { name: "New message" })).toHaveAttribute(
-      "href",
-      "/members",
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "false",
+    );
+    // The pencil opens the search, as iMessage's opens a "To:" field, rather
+    // than sending the member to the Directory.
+    fireEvent.click(screen.getByRole("button", { name: "New message" }));
+    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+  });
+
+  it("opens a conversation picked in the people search as a row click would (#4668)", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    render(<ChatShell view="direct" />);
+    fireEvent.click(screen.getByTestId("dm-search-pick"));
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-dm");
+  });
+
+  it("doesn't reopen the people search by itself after leaving Direct messages with it open", () => {
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const { rerender } = render(<ChatShell view="direct" />);
+    fireEvent.click(screen.getByRole("button", { name: "New message" }));
+    rerender(<ChatShell view="channels" />);
+    rerender(<ChatShell view="direct" />);
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "false",
     );
   });
 

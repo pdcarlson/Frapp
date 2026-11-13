@@ -21,7 +21,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { SearchGlyph } from "@/components/control-glyphs";
-import { FilterChips, SearchField } from "./filter-chips";
+import { Chip, FilterChips, SearchField } from "./filter-chips";
 
 /**
  * The chip row s12 and s13 draw (the owner's design review, 2026-11-04): one
@@ -49,6 +49,31 @@ const FOLDERS = [
   { value: "Minutes", label: "Minutes" },
   { value: "Bylaws", label: "Bylaws" },
 ];
+
+describe("Chip on a card", () => {
+  // #4682: a screen's card is `surface1`, the chip's own idle fill, so a chip
+  // on one (the study session card's switches) takes the step above the card
+  // and lifts one more.
+  it("takes the step above the card, and lifts to the one above that", () => {
+    const tree = render(
+      <Chip
+        onCard
+        label="Focus timer"
+        on={false}
+        onPress={vi.fn()}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: false }}
+      />,
+    );
+    const [chip] = chips(tree);
+    expect(flatten(chip!.props.style({ pressed: false })).backgroundColor).toBe(
+      signetDarkTokens.color.surface.card,
+    );
+    expect(flatten(chip!.props.style({ pressed: true })).backgroundColor).toBe(
+      signetDarkTokens.color.surface.popover,
+    );
+  });
+});
 
 describe("FilterChips", () => {
   it("offers a chip's long press as a named screen-reader action (#3934)", () => {

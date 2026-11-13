@@ -69,6 +69,7 @@ import { AlumniController } from '../controllers/alumni.controller';
 import { SemesterRolloverController } from '../controllers/semester-rollover.controller';
 import { DiscordAuthorLinkController } from '../controllers/discord-author-link.controller';
 import { CalendarFeedController } from '../controllers/calendar-feed.controller';
+import { GoogleCalendarController } from '../controllers/google-calendar.controller';
 
 /** A route-level marker: its label, its handler, and the class it lives on. */
 type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
@@ -101,6 +102,8 @@ describe('subscription decorator wiring', () => {
     PledgeClassController,
     // #3322: a member's own calendar subscription link.
     CalendarFeedController,
+    // #3322 step 2: a member's own Google Calendar connection.
+    GoogleCalendarController,
   ];
 
   /**
@@ -182,6 +185,12 @@ describe('subscription decorator wiring', () => {
       'CalendarFeedController.reset',
       CalendarFeedController.prototype.reset,
       CalendarFeedController,
+    ],
+    // #3322 step 2: member safety, stopping the Google Calendar sync.
+    [
+      'GoogleCalendarController.disconnect',
+      GoogleCalendarController.prototype.disconnect,
+      GoogleCalendarController,
     ],
   ];
 

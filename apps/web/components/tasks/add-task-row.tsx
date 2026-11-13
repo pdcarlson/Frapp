@@ -25,11 +25,12 @@ import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import {
   EMPTY_TASK_PHOTO_DRAFT,
   TaskPhotoFields,
-  taskPhotoProblem,
+  taskPhotosProblem,
   uploadFailureMessage,
-  useUploadTaskPhoto,
+  useUploadTaskPhotos,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
+import type { TaskProofKind } from "@repo/validation";
 
 /** What `POST /v1/tasks` takes from the board. */
 export type TaskDraft = {
@@ -42,9 +43,10 @@ export type TaskDraft = {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number;
-  /** A reference photo already uploaded (#4565). */
-  reference_photo_path?: string;
-  photo_required?: boolean;
+  /** Reference photos already uploaded, in order (#4635). */
+  reference_photo_paths?: string[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
 };
 
 type Member = { user_id?: string | null; display_name?: string | null };
@@ -99,7 +101,7 @@ export function AddTaskRow({
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
-  const uploadPhoto = useUploadTaskPhoto();
+  const uploadPhotos = useUploadTaskPhotos();
   const [uploading, setUploading] = useState(false);
   const busy = pending || uploading;
 
@@ -132,16 +134,16 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
-    let referencePhotoPath: string | undefined;
-    if (draft.photoFile) {
-      const problem = taskPhotoProblem(draft.photoFile);
+    let referencePhotoPaths: string[] | undefined;
+    if (draft.photoFiles.length > 0) {
+      const problem = taskPhotosProblem(draft.photoFiles);
       if (problem) {
         setMissing((prev) => ({ ...prev, photo: problem }));
         return;
       }
       setUploading(true);
       try {
-        referencePhotoPath = await uploadPhoto(draft.photoFile);
+        referencePhotoPaths = await uploadPhotos(draft.photoFiles);
       } catch (error) {
         setMissing((prev) => ({
           ...prev,
@@ -159,8 +161,8 @@ export function AddTaskRow({
       ...dueEntryFields(draft.due_date),
       point_reward: parseGuardedInt(draft.point_reward),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-      reference_photo_path: referencePhotoPath,
-      photo_required: draft.photoRequired || undefined,
+      reference_photo_paths: referencePhotoPaths,
+      proof_kind: draft.proofKind === "none" ? undefined : draft.proofKind,
     });
     if (!created) return;
     setDraft(EMPTY);
@@ -308,17 +310,18 @@ export function AddTaskRow({
         problem={missing.photo}
         onChange={(patch: Partial<TaskPhotoDraft>) => {
           setDraft((prev) => ({ ...prev, ...patch }));
-          if ("photoFile" in patch) {
+          if (patch.photoFiles) {
+            const files = patch.photoFiles;
             setMissing((prev) => ({
               ...prev,
-              photo: patch.photoFile ? taskPhotoProblem(patch.photoFile) : null,
+              photo: taskPhotosProblem(files),
             }));
           }
         }}
       />
       <div className="flex items-center gap-2">
         <Button size="toolbar" type="submit" {...gate.controlProps(busy)}>
-          {uploading ? "Adding photo…" : "Add task"}
+          {uploading ? "Adding photos…" : "Add task"}
         </Button>
         {/*
           Not gated: it only closes the row, and a lapsed chapter still needs

@@ -8,6 +8,7 @@ import {
   describeLoadFailure,
   errorCopy,
   LOAD_FAILURE_SERVER_COPY,
+  LOAD_FAILURE_SIGN_IN_COPY,
   MemberFacingError,
   TRY_AGAIN,
 } from "./error-copy";
@@ -169,6 +170,12 @@ describe("describeLoadFailure", () => {
   it("falls back to the server-side line for other statuses", () => {
     expect(describeLoadFailure(nest(500, "Internal server error"))).toBe(
       LOAD_FAILURE_SERVER_COPY,
+    );
+  });
+
+  it("says the sign-in is refreshing for a 401, never that the member was signed out", () => {
+    expect(describeLoadFailure(nest(401, "Unauthorized"))).toBe(
+      LOAD_FAILURE_SIGN_IN_COPY,
     );
   });
 });

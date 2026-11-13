@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   can,
   checkInZoneLine,
@@ -25,7 +26,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import {
   NewEventSheet,
   useEventEditGrants,
@@ -62,6 +63,7 @@ import {
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 
@@ -184,12 +186,12 @@ export default function EventDetailsScreen() {
     );
   }
 
-  if (eventQuery.isError || !event) {
+  if (!event) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <ErrorState
           title="Couldn't load this event"
-          body="It may have been cancelled, or the server is unreachable."
+          body={describeLoadFailure(eventQuery.error)}
           onRetry={() => void eventQuery.refetch()}
           isRetrying={eventQuery.isFetching}
         />
@@ -212,14 +214,14 @@ export default function EventDetailsScreen() {
         backAction={
           grants.edit ? (
             // A pencil, as Profile's edit: the same back-row slot.
-            <IconButton
+            <HeaderButton
               label="Edit event"
               hint="Opens a sheet to change this event."
               disabled={!parentSettled}
               onPress={() => editSheetRef.current?.present()}
             >
               <PencilGlyph color={accent} />
-            </IconButton>
+            </HeaderButton>
           ) : undefined
         }
         title={event.name}
@@ -620,6 +622,7 @@ function DetailSection({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
     skeletonStack: {
@@ -635,7 +638,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.sm,
     },

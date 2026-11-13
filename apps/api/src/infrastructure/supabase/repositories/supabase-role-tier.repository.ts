@@ -54,7 +54,7 @@ export class SupabaseRoleTierRepository implements IRoleTierRepository {
   async update(
     id: string,
     chapterId: string,
-    changes: Pick<Partial<RoleTier>, 'name' | 'permissions'>,
+    changes: Pick<Partial<RoleTier>, 'name' | 'permissions' | 'mentionable'>,
   ): Promise<RoleTier | null | undefined> {
     const { data, error } = await this.supabase
       .from('role_tiers')

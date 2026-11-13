@@ -229,6 +229,7 @@ describe("Settings shows each viewer what they can use", () => {
       "Privacy",
       "Plan and billing",
       "Roles",
+      "Groups",
       "Pledge class",
       "Member fields",
       ...MODULE_ROWS,
@@ -416,7 +417,9 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toEqual([]);
     expect(tools()).toEqual([]);
     expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing in Chapter settings/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing in Chapter settings/),
+    ).not.toBeInTheDocument();
   });
 
   it("says it is offline, and retries the permission read, when only that read is missing (#3854)", () => {
@@ -424,7 +427,9 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.offline = true;
     render(<SettingsPage />);
     expect(tabNames()).toEqual([]);
-    expect(screen.getByText("Chapter settings unavailable offline")).toBeInTheDocument();
+    expect(
+      screen.getByText("Chapter settings unavailable offline"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
     expect(permissions.refetch).toHaveBeenCalled();
   });
@@ -433,6 +438,8 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.failed = true;
     render(<SettingsPage />);
     expect(tabNames()).toEqual([]);
-    expect(screen.getByText("Couldn't load chapter settings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load chapter settings"),
+    ).toBeInTheDocument();
   });
 });

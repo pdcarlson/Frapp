@@ -178,7 +178,8 @@ export default function ArrangeChannelsScreen() {
         <InlineNote>
           Only officers who manage channels can arrange them.
         </InlineNote>
-      ) : loading ? null : channelsQuery.isError ? (
+      ) : loading ? null : channelsQuery.isError &&
+        channelsQuery.data === undefined ? (
         <InlineNote
           action={{
             label: "Try again",

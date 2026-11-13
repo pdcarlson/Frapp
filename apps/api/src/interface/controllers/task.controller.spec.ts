@@ -169,8 +169,9 @@ describe('TaskController', () => {
     });
   });
 
-  describe('getPhotoUrl (#4565)', () => {
+  describe('getPhotoUrl (#4635)', () => {
     const task = { id: 'task-1', assignee_id: 'user-1' } as any;
+    const PHOTO_ID = '0c000000-0000-4000-8000-000000000001';
 
     it('signs a photo for the assignee', async () => {
       taskService.findById.mockResolvedValue(task);
@@ -178,14 +179,12 @@ describe('TaskController', () => {
       taskService.getPhotoDownloadUrl.mockResolvedValue({ url: 'https://v' });
 
       await expect(
-        controller.getPhotoUrl('chapter-1', 'user-1', 'task-1', {
-          photo: 'proof',
-        }),
+        controller.getPhotoUrl('chapter-1', 'user-1', 'task-1', PHOTO_ID),
       ).resolves.toEqual({ url: 'https://v' });
       expect(taskService.getPhotoDownloadUrl).toHaveBeenCalledWith(
-        task,
+        'task-1',
         'chapter-1',
-        'proof',
+        PHOTO_ID,
       );
     });
 
@@ -194,9 +193,7 @@ describe('TaskController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
 
       await expect(
-        controller.getPhotoUrl('chapter-1', 'user-2', 'task-1', {
-          photo: 'reference',
-        }),
+        controller.getPhotoUrl('chapter-1', 'user-2', 'task-1', PHOTO_ID),
       ).rejects.toThrow(ForbiddenException);
       expect(taskService.getPhotoDownloadUrl).not.toHaveBeenCalled();
     });
@@ -286,9 +283,39 @@ describe('TaskController', () => {
         userId,
         false,
         dto.status,
-        undefined,
+        {
+          proof_photo_paths: undefined,
+          proof_link: undefined,
+          completion_note: undefined,
+        },
       );
       expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
+    });
+
+    it('passes Mark done’s proof and reply through (#4635)', async () => {
+      const dto: UpdateTaskStatusDto = {
+        status: TaskStatus.COMPLETED,
+        proof_photo_paths: ['chapters/c/tasks/p/x.jpg'],
+        proof_link: 'https://example.com',
+        completion_note: 'Done',
+      };
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+      taskService.updateStatus.mockResolvedValue({ id: 'task-1' } as any);
+
+      await controller.updateStatus('chapter-1', 'user-1', 'task-1', dto);
+
+      expect(taskService.updateStatus).toHaveBeenCalledWith(
+        'task-1',
+        'chapter-1',
+        'user-1',
+        false,
+        TaskStatus.COMPLETED,
+        {
+          proof_photo_paths: ['chapters/c/tasks/p/x.jpg'],
+          proof_link: 'https://example.com',
+          completion_note: 'Done',
+        },
+      );
     });
   });
 
@@ -328,31 +355,41 @@ describe('TaskController', () => {
         status: TaskStatus.IN_PROGRESS,
       } as any);
 
-      const result = await controller.rejectCompletion(chapterId, taskId, dto);
+      const result = await controller.rejectCompletion(
+        chapterId,
+        'admin-1',
+        taskId,
+        dto,
+      );
 
       expect(taskService.rejectCompletion).toHaveBeenCalledWith(
         taskId,
         chapterId,
         dto.comment,
+        { requirePhoto: undefined, actorUserId: 'admin-1' },
       );
       expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });
 
-    it('should reject task completion without a comment', async () => {
+    it('passes "ask for a photo next time" through (#4635)', async () => {
       const chapterId = 'chapter-1';
       const taskId = 'task-1';
-      const dto: RejectTaskCompletionDto = {};
+      const dto: RejectTaskCompletionDto = {
+        comment: 'Blurry',
+        require_photo: true,
+      };
       taskService.rejectCompletion.mockResolvedValue({
         id: taskId,
         status: TaskStatus.IN_PROGRESS,
       } as any);
 
-      await controller.rejectCompletion(chapterId, taskId, dto);
+      await controller.rejectCompletion(chapterId, 'admin-1', taskId, dto);
 
       expect(taskService.rejectCompletion).toHaveBeenCalledWith(
         taskId,
         chapterId,
-        null,
+        'Blurry',
+        { requirePhoto: true, actorUserId: 'admin-1' },
       );
     });
   });

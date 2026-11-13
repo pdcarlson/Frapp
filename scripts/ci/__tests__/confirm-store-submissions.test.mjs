@@ -5,10 +5,13 @@ import {
   GRAPHQL_URL,
   MAX_FAILED_READS,
   MAX_RETRIES,
+  LOG_TAIL_LINES,
   confirmStoreSubmissions,
   nextStep,
   pollSubmissions,
   readSubmission,
+  readSubmissionLog,
+  redactLogLine,
   summary,
 } from "../confirm-store-submissions.mjs";
 
@@ -21,12 +24,27 @@ const BUILD = "0b1c2d3e-3333-4c4d-8e5f-0123456789ab";
  * replies, in order. `retries` maps a failed submission's id to the id its
  * retry gets (or to a reply: an Error, a status number or `{ errors }`).
  */
-function fakeEas(replies, retries = {}) {
+function fakeEas(replies, retries = {}, files = {}, logFiles = {}) {
   const calls = [];
   const retried = [];
+  const fetched = [];
+  const logQueries = [];
   const left = Object.fromEntries(Object.entries(replies).map(([id, list]) => [id, [...list]]));
   const fetchImpl = async (url, init) => {
-    const { variables } = JSON.parse(init.body);
+    if (init.method === "GET") {
+      fetched.push(url);
+      const file = files[url];
+      if (file instanceof Error) throw file;
+      if (typeof file === "number") return { ok: false, status: file, text: async () => "" };
+      return { ok: true, status: 200, text: async () => file };
+    }
+    const { query, variables } = JSON.parse(init.body);
+    if (/\blogFiles\b/.test(query)) {
+      logQueries.push(variables.id);
+      const answer = logFiles[variables.id];
+      if (answer?.errors) return { ok: true, status: 200, json: async () => ({ errors: answer.errors }) };
+      return { ok: true, status: 200, json: async () => ({ data: { submissions: { byId: { logFiles: answer ?? [] } } } }) };
+    }
     if (variables.parentSubmissionId) {
       retried.push(variables.parentSubmissionId);
       const next = retries[variables.parentSubmissionId];
@@ -47,7 +65,7 @@ function fakeEas(replies, retries = {}) {
       json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, canRetry: next.canRetry ?? false, error: next.error ?? null } } } }),
     };
   };
-  return { fetchImpl, calls, retried };
+  return { fetchImpl, calls, retried, fetched, logQueries };
 }
 
 /** A clock that only moves when the poll sleeps. */
@@ -334,5 +352,78 @@ describe("confirmStoreSubmissions", () => {
       assert.equal(calls.length, 0);
       assert.match(written, /^## Store uploads/);
     }
+  });
+});
+
+describe("a failed submission's log", () => {
+  const LOG = "https://storage.example/logs/submission.txt";
+  const bunyan = (msg, level = 30) => JSON.stringify({ level, msg });
+  const run = (eas, submissions, logged) => {
+    const c = clock();
+    return pollSubmissions({ submissions, token: "t", fetchImpl: eas.fetchImpl, deadlineMs: 10 * 60_000, pollMs: 60_000, now: c.now, sleep: c.sleep, log: (line) => logged.push(line) });
+  };
+
+  it("removes links and email addresses, and breaks up anything a runner could read as a workflow command", () => {
+    assert.equal(redactLogLine("Downloading https://storage.example/a.ipa?X-Goog-Signature=abc now"), "  | Downloading [link removed] now");
+    assert.equal(redactLogLine("Apple ID: someone@example.com"), "  | Apple ID: [email removed]");
+    assert.equal(redactLogLine("::error::x then ##[stop-commands]tok\nnext"), "  | : :error: :x then # #[stop-commands]tok next");
+  });
+
+  it("reads EAS's JSON-per-line log as plain lines, keeping a line that isn't JSON", async () => {
+    const text = [bunyan("Uploading build to App Store Connect"), "", "not json", bunyan("Apple said\nno", 50)].join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text });
+    assert.deepEqual(await readSubmissionLog({ urls: [LOG], fetchImpl: eas.fetchImpl, sleep: async () => {} }), {
+      lines: ["  | Uploading build to App Store Connect", "  | not json", "  | Apple said", "  | no"],
+      failures: [],
+    });
+  });
+
+  it("keeps only the last LOG_TAIL_LINES lines, and a file it can't read doesn't hide the others", async () => {
+    const text = Array.from({ length: LOG_TAIL_LINES + 5 }, (_, i) => bunyan(`line ${i}`)).join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text, [`${LOG}?gone`]: 403, [`${LOG}?down`]: new Error("socket hang up") });
+    const got = await readSubmissionLog({ urls: [`${LOG}?gone`, LOG, `${LOG}?down`], fetchImpl: eas.fetchImpl, sleep: async () => {} });
+    assert.equal(got.lines.length, LOG_TAIL_LINES);
+    assert.equal(got.lines.at(-1), `  | line ${LOG_TAIL_LINES + 4}`);
+    assert.equal(got.failures.length, 2);
+    assert.equal(got.failures[0], "HTTP 403");
+    assert.match(got.failures[1], /^request failed: /);
+  });
+
+  it("asks for the log files apart from the status, and prints each failed try's log once, after asking for its retry", async () => {
+    const RETRY = "4a5b6c7d-4444-4d5e-9f60-0123456789ab";
+    const failed = { status: "ERRORED", canRetry: true, error: { errorCode: "SERVER_ERROR", message: "unexpected" } };
+    const eas = fakeEas(
+      { [IOS]: [failed], [RETRY]: [{ status: "IN_QUEUE" }, failed] },
+      { [IOS]: RETRY },
+      { [LOG]: bunyan("ASC: 500 UNEXPECTED_ERROR", 50), [`${LOG}?retry`]: new Error("socket hang up") },
+      { [IOS]: [LOG], [RETRY]: [`${LOG}?retry`] },
+    );
+    const logged = [];
+    const rows = await run(eas, [{ store: "ios", id: IOS }], logged);
+    assert.equal(rows[0].status, "ERRORED");
+    assert.deepEqual(eas.logQueries, [IOS, RETRY]);
+    assert.ok(logged.includes("  | ASC: 500 UNEXPECTED_ERROR"), logged.join("\n"));
+    const retriedAt = logged.findIndex((l) => l.includes(`retried it as ${RETRY}`));
+    const printedAt = logged.indexOf("  | ASC: 500 UNEXPECTED_ERROR");
+    assert.ok(retriedAt >= 0 && retriedAt < printedAt, logged.join("\n"));
+    assert.ok(logged.some((l) => l.includes(`submission ${RETRY}: its log had nothing to show`) && l.includes("request failed")), logged.join("\n"));
+  });
+
+  it("reads no log for a finished upload, and says where to look when there is none or it can't be found", async () => {
+    const eas = fakeEas(
+      { [IOS]: [{ status: "FINISHED" }], [ANDROID]: [{ status: "CANCELED" }] },
+      {},
+      {},
+      { [IOS]: [LOG], [ANDROID]: { errors: [{ message: "nope" }] } },
+    );
+    const logged = [];
+    await run(eas, [{ store: "ios", id: IOS }, { store: "android", id: ANDROID }], logged);
+    assert.deepEqual(eas.logQueries, [ANDROID]);
+    assert.deepEqual(eas.fetched, []);
+    assert.ok(logged.some((l) => l.includes(`submission ${ANDROID}: couldn't find its log (nope)`)), logged.join("\n"));
+    const none = fakeEas({ [ANDROID]: [{ status: "CANCELED" }] });
+    const quiet = [];
+    await run(none, [{ store: "android", id: ANDROID }], quiet);
+    assert.ok(quiet.some((l) => l.includes("EAS gave no log for it")), quiet.join("\n"));
   });
 });

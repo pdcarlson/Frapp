@@ -158,7 +158,8 @@ describe("SkeletonText", () => {
     expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
     expect(bar(tree).height).toBe(13);
     expect(bar(tree).width).toBe("100%");
-    expect(bar(tree).backgroundColor).toBe(tokens.color.surface.popover);
+    // The step above a card on a screen (`lib/surfaces.ts`).
+    expect(bar(tree).backgroundColor).toBe(tokens.color.surface.card);
   });
 });
 
@@ -212,7 +213,7 @@ describe("SkeletonRegion", () => {
     const style = flatten(
       tree.root.findByType("Animated.View" as never).props.style,
     );
-    expect(style.backgroundColor).toBe(tokens.color.surface.popover);
+    expect(style.backgroundColor).toBe(tokens.color.surface.card);
     expect(style.borderRadius).toBe(tokens.radius.chip);
     expect(style.opacity).not.toBe(0.1);
   });
@@ -256,7 +257,7 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
       .filter(
         (view) =>
           flatten(view.props.style).backgroundColor ===
-          tokens.color.surface.popover,
+          tokens.color.surface.card,
       );
     expect(handDrawn).toHaveLength(0);
     expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
@@ -289,7 +290,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
       gap: tokens.spacing.md,
       padding: tokens.spacing.lg,
       borderWidth: 1,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: tokens.color.surface.surface1,
     });
     // No date column: the day is the caption over the rows (#3707).
     expect(views(tree).filter((style) => style.width === 52)).toHaveLength(0);
@@ -360,7 +361,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
       views(tree).filter(
         (style) =>
           style.flex === 1 &&
-          style.backgroundColor === tokens.color.surface.card,
+          style.backgroundColor === tokens.color.surface.surface1,
       ),
     ).toHaveLength(2);
     expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(0);
@@ -434,6 +435,12 @@ describe("Placeholder rows sit on their real row's frame", () => {
           createdBy: null,
           isOverdue: false,
           subtasks: [],
+          proofKind: "none",
+          proofLink: null,
+          sentBackAt: null,
+          sentBackReason: null,
+          completionNote: null,
+          photos: [],
         }}
         now={new Date("2026-11-05T12:00:00Z")}
       />,

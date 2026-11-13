@@ -29,7 +29,12 @@ const {
   suggestionsPending,
   suggestionsFailures,
   updateTaskMutate,
+  updateStatusMutate,
+  rejectTaskMutate,
 } = vi.hoisted(() => ({
+  // The lifecycle writes Mark done and Send back make (#4635).
+  updateStatusMutate: vi.fn(),
+  rejectTaskMutate: vi.fn(),
   // The suggested-tasks read still in flight (#4313).
   suggestionsPending: { current: false },
   // Failed tries on that read so far (#4504).
@@ -160,9 +165,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The List / Grid pick is kept under the viewer's id (`lib/list-layout.ts`).
   useViewerUserId: () => "viewer-1",
   useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
-  useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateTaskStatus: () => ({
+    mutateAsync: updateStatusMutate,
+    isPending: false,
+  }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRejectTask: () => ({ mutateAsync: rejectTaskMutate, isPending: false }),
   useDeleteTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutateAsync: updateTaskMutate, isPending: false }),
   useAddSubtask: () => ({ mutate: vi.fn(), isPending: false }),
@@ -226,7 +234,9 @@ const addForm = () => screen.getByRole("form", { name: /add a task/i });
 const startButton = () => screen.getByRole("button", { name: /^start$/i });
 const completeButton = () => screen.getByRole("button", { name: /mark done/i });
 const confirmButton = () => screen.getByRole("button", { name: /^confirm$/i });
-const rejectButton = () => screen.getByRole("button", { name: /^reject$/i });
+// Reject reads "Send back" since #4635.
+const sendBackButton = () =>
+  screen.getByRole("button", { name: /^send back$/i });
 // An icon on each tile, named for its task ("Delete Draft rush schedule").
 const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete /i });
@@ -334,14 +344,14 @@ describe("TasksBoard subscription gating", () => {
     expect(startButton()).toBeEnabled();
     expect(completeButton()).toBeEnabled();
     expect(confirmButton()).toBeEnabled();
-    expect(rejectButton()).toBeEnabled();
+    expect(sendBackButton()).toBeEnabled();
     for (const button of deleteButtons()) expect(button).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("hides Confirm on your own completed task but keeps Reject (#1056)", () => {
+  it("hides Confirm on your own completed task but keeps Send back (#1056)", () => {
     // The API refuses a self-confirmation, so offering the control would be a
-    // guaranteed 403 plus an optimistic flip-and-revert. Reject is untouched:
+    // guaranteed 403 plus an optimistic flip-and-revert. Send back is untouched:
     // it withholds points rather than awarding them.
     chapter.active();
     tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
@@ -350,7 +360,7 @@ describe("TasksBoard subscription gating", () => {
     expect(
       screen.queryByRole("button", { name: /^confirm$/i }),
     ).not.toBeInTheDocument();
-    expect(rejectButton()).toBeEnabled();
+    expect(sendBackButton()).toBeEnabled();
     // The missing control is explained on the tile it is missing from.
     expect(
       screen.getByText("You can't confirm your own task."),
@@ -381,7 +391,7 @@ describe("TasksBoard subscription gating", () => {
     const confirmed = screen.getByRole("region", { name: "Confirmed" });
     expect(within(confirmed).getByText(TASKS[2]!.title)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /reject/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /send back/i })).toBeNull();
   });
 
   it("lets the assignee take back their own unconfirmed completion", () => {
@@ -457,7 +467,7 @@ describe("TasksBoard subscription gating", () => {
     expect(startButton()).toBeDisabled();
     expect(completeButton()).toBeDisabled();
     expect(confirmButton()).toBeDisabled();
-    expect(rejectButton()).toBeDisabled();
+    expect(sendBackButton()).toBeDisabled();
     for (const button of deleteButtons()) expect(button).toBeDisabled();
   });
 
@@ -1263,5 +1273,180 @@ describe("TasksBoard editing a task (#4296)", () => {
     expect(
       screen.queryByRole("button", { name: /^edit /i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Proof kinds, send-back and decision C (#4635): Send back asks for a reason,
+ * Mark done asks for what the task needs, and a task with no points and no
+ * proof is Done as marked, with nothing for an officer to confirm.
+ */
+describe("TasksBoard proof and send back (#4635)", () => {
+  const base = {
+    chapter_id: "chap-1",
+    description: null,
+    created_by: "u-admin",
+    due_date: "2026-09-03",
+    completed_at: null,
+    confirmed_at: null,
+    created_at: "2026-08-01T00:00:00Z",
+  };
+  const inProgress = (overrides: Record<string, unknown>) => ({
+    ...base,
+    id: "task-proof",
+    title: "Clean the kitchen",
+    assignee_id: ME,
+    status: "IN_PROGRESS" as const,
+    stored_status: "IN_PROGRESS" as const,
+    point_reward: null,
+    points_awarded: false,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    currentUserRef.current = { id: ME };
+    updateStatusMutate.mockResolvedValue({});
+    rejectTaskMutate.mockResolvedValue({});
+  });
+
+  it("sends back only with a reason, and posts it with Ask for a photo", async () => {
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    fireEvent.click(sendBackButton());
+    const dialog = await screen.findByRole("dialog", { name: "Send back" });
+    // A blank reason is refused, and nothing is written.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
+    expect(
+      await within(dialog).findByText("Say what needs to change."),
+    ).toBeInTheDocument();
+    expect(rejectTaskMutate).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText("What needs to change"), {
+      target: { value: "  The floor is still sticky  " },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("switch", { name: "Ask for a photo next time" }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
+    await waitFor(() =>
+      expect(rejectTaskMutate).toHaveBeenCalledWith({
+        id: "task-completed",
+        body: {
+          comment: "The floor is still sticky",
+          require_photo: true,
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Send back" })).toBeNull(),
+    );
+  });
+
+  it("leaves require_photo off when the switch is not turned on", async () => {
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    fireEvent.click(sendBackButton());
+    const dialog = await screen.findByRole("dialog", { name: "Send back" });
+    fireEvent.change(within(dialog).getByLabelText("What needs to change"), {
+      target: { value: "Wrong venue" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
+    await waitFor(() =>
+      expect(rejectTaskMutate).toHaveBeenCalledWith({
+        id: "task-completed",
+        body: { comment: "Wrong venue" },
+      }),
+    );
+  });
+
+  it("opens Mark done's sheet on a Photo task and refuses it without a photo", async () => {
+    tasksRef.current = [inProgress({ proof_kind: "photo" })];
+    render(<TasksBoard />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mark done with a photo" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Mark done" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark done" }));
+    expect(
+      await within(dialog).findByText(
+        "Add at least one photo of the finished job.",
+      ),
+    ).toBeInTheDocument();
+    expect(updateStatusMutate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a sent-back None task with nothing new, and posts the reply", async () => {
+    tasksRef.current = [
+      inProgress({
+        proof_kind: "none",
+        sent_back_at: "2026-08-12T00:00:00Z",
+        sent_back_reason: "The floor is still sticky",
+      }),
+    ];
+    render(<TasksBoard />);
+
+    // Needs changes, with the officer's reason on the tile.
+    expect(screen.getByText("Needs changes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    const dialog = await screen.findByRole("dialog", { name: "Mark done" });
+    expect(
+      within(dialog).getByText("The floor is still sticky"),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark done" }));
+    expect(
+      await within(dialog).findByText(
+        "Add proof or reply to the officer before marking it done.",
+      ),
+    ).toBeInTheDocument();
+    expect(updateStatusMutate).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText("Reply to the officer"), {
+      target: { value: "  Mopped it twice  " },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark done" }));
+    await waitFor(() =>
+      expect(updateStatusMutate).toHaveBeenCalledWith({
+        id: "task-proof",
+        body: { status: "COMPLETED", completion_note: "Mopped it twice" },
+      }),
+    );
+  });
+
+  it("marks a None task done at once, with no sheet", async () => {
+    tasksRef.current = [inProgress({ proof_kind: "none" })];
+    render(<TasksBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    await waitFor(() =>
+      expect(updateStatusMutate).toHaveBeenCalledWith({
+        id: "task-proof",
+        body: { status: "COMPLETED" },
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Mark done" })).toBeNull();
+  });
+
+  it("shows a no-points, no-proof completion as Done, with only Send back to an officer", () => {
+    tasksRef.current = [
+      {
+        ...TASKS[2],
+        id: "task-done",
+        point_reward: null,
+        proof_kind: "none",
+        // The server confirmed it as it was marked done (decision C).
+        points_awarded: true,
+        confirmed_at: "2026-08-10T00:00:00Z",
+      },
+    ];
+    render(<TasksBoard />);
+
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^confirm/i })).toBeNull();
+    expect(sendBackButton()).toBeEnabled();
   });
 });

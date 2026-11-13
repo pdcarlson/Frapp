@@ -3308,7 +3308,7 @@
             "bearer": []
           }
         ],
-        "summary": "The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each",
+        "summary": "The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each",
         "tags": [
           "Chat"
         ]
@@ -4480,7 +4480,7 @@
     },
     "/v1/channels/messages/{messageId}/close": {
       "post": {
-        "operationId": "ChatController_closeSignup_v1",
+        "operationId": "ChatController_closeCard_v1",
         "parameters": [
           {
             "name": "messageId",
@@ -4518,7 +4518,7 @@
             "bearer": []
           }
         ],
-        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "summary": "Close a sign-up or form card early (its creator, or channels:manage); answers already made stay",
         "tags": [
           "Chat"
         ]
@@ -5030,6 +5030,106 @@
           }
         ],
         "summary": "Set the caller's notification level for a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/form-response": {
+      "get": {
+        "operationId": "ChatFormController_getOwnResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnFormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own answers to a form card, or null before they answer",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatFormController_saveResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFormResponseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the caller's answers to a form card, replacing their last ones (until the form closes)",
         "tags": [
           "Chat"
         ]
@@ -6629,6 +6729,150 @@
           }
         ],
         "summary": "Dismiss a channel's Important strip: mark every one seen",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/availability": {
+      "get": {
+        "operationId": "GifController_availability_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifAvailabilityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether GIF search is set up, and its provider",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/trending": {
+      "get": {
+        "operationId": "GifController_trending_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trending GIFs, for the picker before a search",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/search": {
+      "get": {
+        "operationId": "GifController_search_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search GIFs (rated PG-13 at most)",
         "tags": [
           "Chat"
         ]
@@ -10216,7 +10460,7 @@
     },
     "/v1/tasks/photo-upload-url": {
       "post": {
-        "description": "PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
+        "description": "PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
         "operationId": "TaskController_requestPhotoUploadUrl_v1",
         "parameters": [],
         "requestBody": {
@@ -10262,7 +10506,7 @@
         ]
       }
     },
-    "/v1/tasks/{id}/photo-url": {
+    "/v1/tasks/{id}/photos/{photoId}/url": {
       "get": {
         "operationId": "TaskController_getPhotoUrl_v1",
         "parameters": [
@@ -10275,16 +10519,11 @@
             }
           },
           {
-            "name": "photo",
+            "name": "photoId",
             "required": true,
-            "in": "query",
-            "description": "Which photo: the reference photo or the proof photo.",
+            "in": "path",
             "schema": {
-              "type": "string",
-              "enum": [
-                "reference",
-                "proof"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -10315,7 +10554,7 @@
             "bearer": []
           }
         ],
-        "summary": "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+        "summary": "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635)",
         "tags": [
           "Tasks"
         ]
@@ -11427,6 +11666,240 @@
         ]
       }
     },
+    "/v1/groups": {
+      "get": {
+        "operationId": "ChapterGroupController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterGroupDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",
+        "tags": [
+          "Groups"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterGroupController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChapterGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Make a group and, optionally, pick its members",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
+    "/v1/groups/{id}": {
+      "patch": {
+        "operationId": "ChapterGroupController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChapterGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a group, recolor it, or switch whether anyone can ping it. An automatic group's name can't change.",
+        "tags": [
+          "Groups"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterGroupController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a manual group; channel lists that named it lose the entry",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
+    "/v1/groups/{id}/members": {
+      "put": {
+        "operationId": "ChapterGroupController_setMembers_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterGroupMembersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set a manual group's whole member list",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
     "/v1/rush/candidates": {
       "get": {
         "operationId": "RushController_lookup_v1",
@@ -12161,6 +12634,59 @@
           }
         ],
         "summary": "List documents (optional folder and title search)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/previews": {
+      "get": {
+        "operationId": "ChapterDocumentController_previewUrls_v1",
+        "parameters": [
+          {
+            "name": "ids",
+            "required": true,
+            "in": "query",
+            "description": "Document ids, at most 100: the parameter repeated, or one comma-separated value",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentPreviewUrlDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Inline preview links for up to 100 documents at once",
         "tags": [
           "Documents"
         ]
@@ -16089,6 +16615,165 @@
         ]
       }
     },
+    "/v1/google-calendar": {
+      "get": {
+        "operationId": "GoogleCalendarController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether Google Calendar is offered here, and the caller's connection.",
+        "tags": [
+          "Google Calendar"
+        ]
+      },
+      "delete": {
+        "operationId": "GoogleCalendarController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disconnect Google Calendar: removes Frapp's calendar from the member's Google account and revokes Frapp's access.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
+    "/v1/google-calendar/connect": {
+      "post": {
+        "operationId": "GoogleCalendarController_connect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartGoogleCalendarConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarConnectDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start connecting Google Calendar: a single-use sign-in, and Google’s consent page to send the member to.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
+    "/v1/google-calendar/confirm": {
+      "post": {
+        "operationId": "GoogleCalendarController_confirm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmGoogleCalendarConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Finish connecting with the code Google returned. Only the member who started the sign-in, in the same chapter, can finish it.",
+        "tags": [
+          "Google Calendar"
+        ]
+      }
+    },
     "/v1/meetings/{id}/recording": {
       "get": {
         "operationId": "MeetingRecordingController_get_v1",
@@ -17688,6 +18373,10 @@
               "type": "string"
             }
           },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it."
+          },
           "created_at": {
             "type": "string"
           },
@@ -17701,6 +18390,7 @@
           "position",
           "name",
           "permissions",
+          "mentionable",
           "created_at",
           "updated_at"
         ]
@@ -17746,6 +18436,10 @@
           "name": {
             "type": "string",
             "maxLength": 80
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           },
           "permissions": {
             "description": "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
@@ -18551,15 +19245,16 @@
         "properties": {
           "entry": {
             "type": "string",
-            "description": "The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`."
+            "description": "The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`."
           },
           "kind": {
             "type": "string",
             "enum": [
               "tier",
-              "role"
+              "role",
+              "group"
             ],
-            "description": "What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading."
+            "description": "What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading."
           },
           "id": {
             "type": "string",
@@ -18607,11 +19302,21 @@
         "properties": {
           "role_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The role's id, or the tier's or group's (`kind`)."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "role",
+              "tier",
+              "group"
+            ],
+            "description": "What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them."
           },
           "name": {
             "type": "string",
-            "description": "The role name; the picker inserts it folded."
+            "description": "The name; the picker inserts it folded."
           },
           "color": {
             "type": "string",
@@ -18620,11 +19325,12 @@
           },
           "mentionable": {
             "type": "boolean",
-            "description": "Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody."
+            "description": "Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody."
           }
         },
         "required": [
           "role_id",
+          "kind",
           "name",
           "color",
           "mentionable"
@@ -18671,7 +19377,8 @@
               "rush",
               "system_audit",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -18726,7 +19433,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -18798,7 +19506,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
             "type": "array",
             "items": {
               "type": "string"
@@ -18807,7 +19515,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
             "type": "array",
             "items": {
               "type": "string"
@@ -18851,7 +19559,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
             "type": "array",
             "items": {
               "type": "string"
@@ -18860,7 +19568,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19007,7 +19715,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.",
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19016,7 +19724,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19040,7 +19748,7 @@
           "who_can_see": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19049,7 +19757,7 @@
           "who_can_post": {
             "nullable": true,
             "maxItems": 500,
-            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.",
             "type": "array",
             "items": {
               "type": "string"
@@ -19151,7 +19859,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -19318,6 +20027,45 @@
           "content_type"
         ]
       },
+      "MessageGifDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused."
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "width",
+          "height",
+          "token"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -19351,8 +20099,12 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ]
+          },
+          "gif": {
+            "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
             "type": "object"
@@ -19523,6 +20275,74 @@
         },
         "required": [
           "level"
+        ]
+      },
+      "FormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "answers",
+          "updated_at"
+        ]
+      },
+      "OwnFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormResponseDto"
+              }
+            ]
+          }
+        }
+      },
+      "SaveFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "description": "Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed."
+          }
+        },
+        "required": [
+          "answers"
         ]
       },
       "BookmarkedMessageDto": {
@@ -20405,6 +21225,101 @@
         },
         "required": [
           "message_ids"
+        ]
+      },
+      "GifAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether GIF search is set up on this server. Clients hide the GIF button when it is not."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider's name, shown in the picker's search field as its attribution."
+          }
+        },
+        "required": [
+          "available",
+          "provider"
+        ]
+      },
+      "GifRenditionDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "GifResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The provider's id for this GIF."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short words for screen readers; may be empty."
+          },
+          "preview": {
+            "description": "Small, for a grid tile.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "full": {
+            "description": "What a message shows; send this one.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifRenditionDto"
+              }
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "preview",
+          "full",
+          "token"
+        ]
+      },
+      "GifPageDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GifResultDto"
+            }
+          },
+          "next_page": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "results",
+          "next_page"
         ]
       },
       "GeofenceCoordinateDto": {
@@ -22543,7 +23458,7 @@
           },
           "storage_path": {
             "type": "string",
-            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+            "description": "Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done)."
           }
         },
         "required": [
@@ -22597,13 +23512,22 @@
             "type": "number",
             "description": "Points to award on completion"
           },
-          "reference_photo_path": {
-            "type": "string",
-            "description": "A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565)."
+          "reference_photo_paths": {
+            "description": "Reference photos, in order: each a `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4635). At most 6.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "When true, the task can only be marked done with a proof photo (#4565). Default false."
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`."
           },
           "channel_id": {
             "type": "string",
@@ -22618,6 +23542,57 @@
           "title",
           "assignee_id",
           "due_date"
+        ]
+      },
+      "TaskPhotoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "proof"
+            ]
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`."
+          },
+          "position": {
+            "type": "number",
+            "description": "Order within its kind, 0 first."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "chapter_id",
+          "kind",
+          "storage_path",
+          "position",
+          "created_by",
+          "created_at"
         ]
       },
       "CreateTaskResponseDto": {
@@ -22687,19 +23662,29 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
           },
-          "reference_photo_path": {
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs: nothing, a proof photo, or a link."
+          },
+          "proof_link": {
             "type": "string",
             "nullable": true,
-            "description": "Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`."
+            "description": "The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server."
           },
-          "proof_photo_path": {
+          "sent_back_reason": {
             "type": "string",
             "nullable": true,
-            "description": "Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`."
+            "description": "Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else."
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "When true, Mark done is refused without a proof photo."
+          "completion_note": {
+            "type": "string",
+            "nullable": true,
+            "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
           "created_at": {
             "type": "string",
@@ -22708,6 +23693,13 @@
           "card_posted": {
             "type": "boolean",
             "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          },
+          "photos": {
+            "description": "The reference photos added with the task, in order. Task reads and status writes carry `photos` too.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskPhotoDto"
+            }
           }
         },
         "required": [
@@ -22725,10 +23717,12 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
-          "reference_photo_path",
-          "proof_photo_path",
-          "photo_required",
-          "created_at"
+          "proof_kind",
+          "proof_link",
+          "sent_back_reason",
+          "completion_note",
+          "created_at",
+          "photos"
         ]
       },
       "UpdateTaskDto": {
@@ -22760,14 +23754,22 @@
             "type": "number",
             "nullable": true
           },
-          "reference_photo_path": {
-            "type": "string",
-            "nullable": true,
-            "description": "A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565)."
+          "reference_photo_paths": {
+            "description": "The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new `storage_path`s from `POST /v1/tasks/photo-upload-url` are added, and any it held that aren't listed are removed. `[]` removes them all. At most 6.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "Turn \"Photo required\" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer."
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer."
           }
         }
       },
@@ -22783,9 +23785,23 @@
               "OVERDUE"
             ]
           },
-          "proof_photo_path": {
+          "proof_photo_paths": {
+            "description": "With `status: COMPLETED` only: proof photos, each a `storage_path` from `POST /v1/tasks/photo-upload-url` (#4635), 1 to 6. Required when the task's `proof_kind` is `photo`; a completion without it is a 400 with the code `task.proof_required`.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proof_link": {
             "type": "string",
-            "description": "With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`."
+            "description": "With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it).",
+            "maxLength": 2048
+          },
+          "completion_note": {
+            "type": "string",
+            "description": "With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`.",
+            "maxLength": 500
           }
         },
         "required": [
@@ -22797,7 +23813,12 @@
         "properties": {
           "comment": {
             "type": "string",
-            "description": "Optional comment for rejection"
+            "description": "Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again.",
+            "maxLength": 200
+          },
+          "require_photo": {
+            "type": "boolean",
+            "description": "\"Ask for a photo next time\": raises the task's `proof_kind` to `photo`, so the next Mark done needs one."
           }
         }
       },
@@ -23865,6 +24886,172 @@
           "order_number"
         ]
       },
+      "ChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "pledge_class",
+              "class_year"
+            ],
+            "description": "`manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change."
+          },
+          "name": {
+            "type": "string",
+            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, or \"Class of\" and the year."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "One of the role palette colors, or null."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it."
+          },
+          "pledge_class_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The pledge class a `pledge_class` group follows."
+          },
+          "class_year": {
+            "type": "number",
+            "nullable": true,
+            "description": "The graduation year a `class_year` group follows."
+          },
+          "member_ids": {
+            "description": "The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "kind",
+          "name",
+          "color",
+          "mentionable",
+          "pledge_class_id",
+          "class_year",
+          "member_ids",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The name, as the chapter writes it (\"Third floor\", \"Live-ins\"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors, in any letter case."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` it. Defaults to true."
+          },
+          "member_ids": {
+            "maxItems": 2000,
+            "description": "Its first members, as `users.id`s of members of the chapter. Defaults to none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateChapterGroupDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors, in any letter case. Null clears it."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` it."
+          }
+        }
+      },
+      "SetChapterGroupMembersDto": {
+        "type": "object",
+        "properties": {
+          "member_ids": {
+            "maxItems": 2000,
+            "description": "The group's whole member list, as `users.id`s of members of the chapter. Replaces the list, all or none.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "member_ids"
+        ]
+      },
       "RushCandidateViewDto": {
         "type": "object",
         "properties": {
@@ -24332,6 +25519,22 @@
           "pinned_at"
         ]
       },
+      "DocumentPreviewUrlDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Inline signed URL, valid for an hour"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ]
+      },
       "DocumentFolderDto": {
         "type": "object",
         "properties": {
@@ -24767,6 +25970,15 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never."
           },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -24791,6 +26003,7 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
+          "proof_kind",
           "created_at",
           "unread"
         ]
@@ -27282,6 +28495,97 @@
         "required": [
           "url",
           "webcal_url"
+        ]
+      },
+      "GoogleCalendarStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether this server offers Google Calendar. False until its Google settings are set; clients then hide the option."
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Whether the caller has connected Google."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "needs_reconnect"
+            ],
+            "nullable": true,
+            "description": "`needs_reconnect` once Google refused the sign-in (access removed in Google, or a password change); nothing syncs until the member connects again. Null when not connected."
+          },
+          "google_email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Google account connected, when Google shared it.",
+            "example": "member@gmail.com"
+          },
+          "last_synced_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the calendar last finished syncing. Null before the first."
+          }
+        },
+        "required": [
+          "available",
+          "connected",
+          "status",
+          "google_email",
+          "last_synced_at"
+        ]
+      },
+      "StartGoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "string",
+            "enum": [
+              "web",
+              "mobile"
+            ],
+            "description": "Where the sign-in finishes: the web Events page, or the phone app at `return_url`."
+          },
+          "return_url": {
+            "type": "string",
+            "description": "For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.",
+            "example": "frapp://google-calendar"
+          }
+        },
+        "required": [
+          "client"
+        ]
+      },
+      "GoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Google’s consent page for this sign-in. Good for ten minutes."
+          }
+        },
+        "required": [
+          "authorize_url"
+        ]
+      },
+      "ConfirmGoogleCalendarConnectDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "The `gcal_state` the sign-in returned with."
+          },
+          "code": {
+            "type": "string",
+            "description": "The `gcal_code` the sign-in returned with."
+          }
+        },
+        "required": [
+          "state",
+          "code"
         ]
       },
       "MeetingRecordingUploadDto": {

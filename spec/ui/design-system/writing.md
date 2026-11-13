@@ -78,7 +78,7 @@ Example:
 
 **One map for failures (2026-11-06).** A failed call reaches the member through one shared map, never as the server's own text: `errorCopy` in `@repo/hooks` (web's `getErrorMessage` and mobile both call it), over the strings in [`packages/validation/src/error-copy.ts`](../../../packages/validation/src/error-copy.ts), which `@repo/chat-core` uses for chat refusals too. The screen's toast title says what failed; the map says why and what next. A server sentence shows only when the map rewrites it (`Role name already exists in this chapter` becomes `A role with that name already exists. Pick another name.`); anything else falls back to what the status means (`403`: `Your role can't do this. Ask an officer if you need it.`) or the screen's own sentence. A message client code wrote for members is thrown as `MemberFacingError`; a plain `Error`'s message is never shown. The one exception is a screen whose routes already write for the officer (the Discord import): it opts in with `serverWritesForMembers`, and an unmapped 400, 403, 409 or 503 sentence then shows when it names no permission key or route. A new API refusal a member can act on gets a line in the map in the same change.
 
-Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error names the cause it can see, never a guess: the **load-failure line** (`describeLoadFailure` in `packages/hooks/src/error-copy.ts`, imported from `@repo/hooks/error-copy`, shared by web and mobile, 2026-11-07) reads the same map as `errorCopy` above, so a load and an action say the same words for the same cause: the offline line when no response came back, the status line for a 401, 403 or 404 (module off and subscription lapsed get their own lines), and `Something went wrong on our side. Retry in a moment.` for any other failure. A session the API refuses signs the member out with one notice (§ Sign in, `Session ended`), a lost active chapter shows the switcher's `Chapter unavailable` card, and a one-chapter member whose roles grant nothing lands on `/no-access` (2026-11-06); [#3637](https://github.com/pdcarlson/Frapp/issues/3637) tracks routing a revoked membership to one state instead of each screen's 403 line; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in the permission registry, [`permission-registry.ts`](../../../packages/validation/src/permission-registry.ts) (2026-11-05; shared with the API and mobile since 2026-11-10, #4069).
+Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error names the cause it can see, never a guess: the **load-failure line** (`describeLoadFailure` in `packages/hooks/src/error-copy.ts`, imported from `@repo/hooks/error-copy`, shared by web and mobile, 2026-11-07) reads the same map as `errorCopy` above, so a load and an action say the same words for the same cause: the offline line when no response came back, the status line for a 403 or 404 (module off and subscription lapsed get their own lines), `Refreshing your sign-in. This reloads in a moment.` for a 401, which on mobile is a token that lapsed in the background and is retried when the new one lands (2026-11-12; a 401 used to read `You've been signed out`, which was never true on a screen the member was still on), and `Something went wrong on our side. Retry in a moment.` for any other failure. A screen shows its load failure only when it has nothing loaded: a failed background read keeps what is on screen (components.md §10). A session the API refuses signs the member out with one notice (§ Sign in, `Session ended`), a lost active chapter shows the switcher's `Chapter unavailable` card, and a one-chapter member whose roles grant nothing lands on `/no-access` (2026-11-06); [#3637](https://github.com/pdcarlson/Frapp/issues/3637) tracks routing a revoked membership to one state instead of each screen's 403 line; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in the permission registry, [`permission-registry.ts`](../../../packages/validation/src/permission-registry.ts) (2026-11-05; shared with the API and mobile since 2026-11-10, #4069).
 
 ## 3a. Form copy
 
@@ -486,7 +486,7 @@ bind every one of them, and both are the point rather than style:
 |---|---|
 | New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
-| Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark done, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
+| Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark done, Confirm and Send back (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Review service hours (Activity sheet, #3897) | `Your chapter's subscription isn't active, so hours can't be reviewed. An officer can sort this out for the chapter.` |
@@ -838,19 +838,27 @@ Strings in `@repo/chat-core/density`.
 
 ### First-run tour (mobile)
 
-The three stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
+The four stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
 One line each, in a popover card beside the lit spot, with the count and the
 action under it. No title: the lit control is the subject.
 
 | Stop | Line |
 |---|---|
 | Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
+| The Messages door | `Direct messages are here. Swiping left opens them too.` (#4610 step 3) |
 | The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
 | The You tab | `Your profile, the directory and settings are under You.` (the More tab's line until #3839) |
 
-Under each line: the count, `1 of 3`, muted, and `Next` in the chapter accent
+Under each line: the count, `1 of 4`, muted, and `Next` in the chapter accent
 (`Done` on the last stop). `Skip` in the top corner, white on the dim, read
 out as `Skip the tour`.
+
+### Swipe hint (mobile)
+
+The label Chat home shows while it teaches the swipe to Messages
+([`../mobile/navigation.md`](../mobile/navigation.md) § Global entries, Swipe to
+Messages): `Swipe left for Messages`, after a drawn back chevron that points
+the way the finger goes. One line, no title, no button: any touch ends it.
 
 ### Push opt-in (mobile)
 

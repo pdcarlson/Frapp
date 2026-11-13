@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import type { HouseRank, PointsSummary } from "@/lib/tasks/points-card";
 
 /**
@@ -65,6 +66,7 @@ export function PointsSummaryCard({ summary, rank }: PointsSummaryCardProps) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -73,7 +75,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     balanceColumn: {

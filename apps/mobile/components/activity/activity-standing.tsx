@@ -10,6 +10,7 @@ import { meterStyles } from "@/components/meter";
 import { SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Where each row goes: the screen that owns the number. Points and rank
@@ -135,6 +136,7 @@ export function ActivityStandingSkeleton() {
 const ROW_MIN_HEIGHT = 44;
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     block: {
       gap: tokens.spacing.sm,
@@ -143,7 +145,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       overflow: "hidden",
     },
     row: {

@@ -4,11 +4,11 @@ import {
   SIGNUP_TITLE_MAX_LENGTH,
 } from '@repo/validation';
 import {
-  isSignupCardClosed,
   normalizeSignupCard,
   signupClaimNote,
   signupClaimSlotIds,
 } from './signup-card-rules';
+import { isCardClosed } from './card-closing';
 
 describe('normalizeSignupCard (#3926)', () => {
   const slot = (id: string, capacity: unknown = 2) => ({
@@ -175,17 +175,13 @@ describe('headcount and end time (#3926 step 2)', () => {
   });
 
   it('reads a card closed early or past its end time as closed', () => {
-    expect(isSignupCardClosed({ closed_at: '2026-11-12T00:00:00Z' }, NOW)).toBe(
-      true,
-    );
-    expect(isSignupCardClosed({ closes_at: '2026-11-12T11:59:59Z' }, NOW)).toBe(
-      true,
-    );
-    expect(isSignupCardClosed({ closes_at: '2026-11-12T12:00:01Z' }, NOW)).toBe(
+    expect(isCardClosed({ closed_at: '2026-11-12T00:00:00Z' }, NOW)).toBe(true);
+    expect(isCardClosed({ closes_at: '2026-11-12T11:59:59Z' }, NOW)).toBe(true);
+    expect(isCardClosed({ closes_at: '2026-11-12T12:00:01Z' }, NOW)).toBe(
       false,
     );
-    expect(isSignupCardClosed({ closes_at: 'garbage' }, NOW)).toBe(false);
-    expect(isSignupCardClosed({}, NOW)).toBe(false);
+    expect(isCardClosed({ closes_at: 'garbage' }, NOW)).toBe(false);
+    expect(isCardClosed({}, NOW)).toBe(false);
   });
 
   it('takes a note only on a headcount answer, and only short', () => {

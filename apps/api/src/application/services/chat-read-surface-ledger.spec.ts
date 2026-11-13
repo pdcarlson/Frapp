@@ -114,6 +114,10 @@ const CHANNEL_METADATA: Entry = {
   status: 'no-foreign-content',
   why: 'Channel or category metadata; no message content. Membership is not hidden by a block (the Directory row), and refusing a DM because of one would be an oracle.',
 };
+const OWN_FORM_ANSWERS: Entry = {
+  status: 'no-foreign-content',
+  why: "The caller's own answers to a form card (#3926 step 3); nobody else's are reachable.",
+};
 const OFFICER_MODERATION: Entry = {
   status: 'not-hidden',
   why: '`channels:manage` moderation. "A personal block must not blind an officer acting in their role."',
@@ -125,6 +129,7 @@ const OFFICER_MODERATION: Entry = {
  */
 const CHAT_CONTROLLERS = [
   'ChatController',
+  'ChatFormController',
   'ChatBookmarkController',
   'ChatReportController',
   'ChatBlockController',
@@ -255,7 +260,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   // #3926: its creator's own sign-up card, or a `channels:manage` holder
   // closing anyone's, as Close poll is.
-  ChatController_closeSignup_v1: OFFICER_MODERATION,
+  ChatController_closeCard_v1: OFFICER_MODERATION,
+  ChatFormController_getOwnResponse_v1: OWN_FORM_ANSWERS,
+  ChatFormController_saveResponse_v1: OWN_FORM_ANSWERS,
   ChatController_deleteMessage_v1: {
     status: 'no-foreign-content',
     why: 'Returns the soft-deleted row, whose content is already `[message deleted]`.',
@@ -627,8 +634,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 5,
     entries: [MEMBER_TEXT],
   },
+  // Two hand a written row to the announcement emitters; the third (#4620)
+  // asks members whose excuse a series edit dropped to send it again, naming
+  // the event.
   'application/services/event-series.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [MEMBER_TEXT],
   },
   'application/services/event.service.ts': {

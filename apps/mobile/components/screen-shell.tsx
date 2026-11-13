@@ -92,6 +92,12 @@ type ScreenShellProps = {
    * something inside it (Arrange channels' drag handles, #3838).
    */
   scrollEnabled?: boolean;
+  /**
+   * "handled" for a screen with a search field over tappable rows (Messages,
+   * #4668), so a tap on a result while the keyboard is up opens it instead of
+   * only closing the keyboard, as the Directory's list does.
+   */
+  keyboardShouldPersistTaps?: "handled";
   children: ReactNode;
 };
 
@@ -131,6 +137,7 @@ export function ScreenShell({
   refresh,
   overlay,
   scrollEnabled = true,
+  keyboardShouldPersistTaps,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -163,6 +170,7 @@ export function ScreenShell({
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
               scrollEnabled={scrollEnabled}
+              keyboardShouldPersistTaps={keyboardShouldPersistTaps}
               stickyHeaderIndices={
                 stickyHeaderIndices.length > 0 ? stickyHeaderIndices : undefined
               }

@@ -258,7 +258,8 @@ describe('SearchService', () => {
 
       expect(mockRbacService.getChannelAccessHolder).toHaveBeenCalledWith(
         'ch-1',
-        [CALLER_ROLE],
+        expect.objectContaining({ role_ids: [CALLER_ROLE] }),
+        false,
       );
       expect(repo.findChannelsForAccess).toHaveBeenCalledWith(
         'ch-1',

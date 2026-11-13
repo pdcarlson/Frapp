@@ -4,9 +4,11 @@ import {
   channelAllowsThreads,
   EMPTY_ACCESS_HOLDER,
   isAlumniPostableChannel,
+  listsNameGroups,
   needsAccessHolder,
   type ChannelAccessHolder,
   type ChannelAccessRecord,
+  type ChannelOperation,
 } from './channel-access';
 
 const EXEC_TIER = '00000000-0000-4000-8000-0000000000e1';
@@ -66,7 +68,7 @@ const channel = (
 const check = (
   record: ChannelAccessRecord,
   holder: ChannelAccessHolder,
-  operation?: 'read' | 'post' | 'vote' | 'thread' | 'close',
+  operation?: ChannelOperation,
   extra: { userId?: string; isChapterMember?: boolean } = {},
 ) =>
   canAccessChannel({
@@ -115,6 +117,20 @@ describe('accessHolderFromRoles', () => {
         'post',
       ),
     ).toBe(true);
+  });
+});
+
+describe('canAccessChannel — groups (#4076)', () => {
+  const FLOOR = '00000000-0000-4000-8000-0000000000f1';
+  it("admits a listed group's member to read and post, and nobody else", () => {
+    const listed = channel({
+      type: 'ROLE_GATED',
+      who_can_see: [`group:${FLOOR}`],
+    });
+    const inGroup = accessHolderFromRoles([roles.brother], [FLOOR]);
+    expect(check(listed, inGroup)).toBe(true);
+    expect(check(listed, inGroup, 'post')).toBe(true);
+    expect(check(listed, holding(roles.brother))).toBe(false);
   });
 });
 
@@ -261,6 +277,12 @@ describe('canAccessChannel', () => {
       expect(needsAccessHolder(channel(), 'close')).toBe(false);
     });
 
+    // #3926: a form posted in an announcement channel is for every reader.
+    it('lets any reader answer a form, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'answer')).toBe(true);
+      expect(needsAccessHolder(announcements, 'answer')).toBe(false);
+    });
+
     it('still refuses a close to someone who cannot see the channel', () => {
       const hidden = channel({
         type: 'ROLE_GATED',
@@ -281,7 +303,7 @@ describe('canAccessChannel', () => {
       expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread', 'close'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s even from the wildcard and with no post list',
       (operation) => {
         expect(
@@ -306,7 +328,7 @@ describe('canAccessChannel', () => {
       expect(check(archived, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread', 'close'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s from anyone',
       (operation) => {
         expect(check(archived, holding(roles.president), operation)).toBe(
@@ -412,6 +434,17 @@ describe('isAlumniPostableChannel', () => {
       ),
     ).toBe(true);
     expect(isAlumniPostableChannel(channel(), alumni)).toBe(false);
+  });
+});
+
+describe('listsNameGroups (#4076)', () => {
+  it.each([
+    [['group:g1'], null, true],
+    [null, ['role:r', 'group:g1'], true],
+    [['role:r', 'tier:t'], ['role:r'], false],
+    [null, null, false],
+  ])('see %j, post %j: %s', (who_can_see, who_can_post, named) => {
+    expect(listsNameGroups({ who_can_see, who_can_post })).toBe(named);
   });
 });
 

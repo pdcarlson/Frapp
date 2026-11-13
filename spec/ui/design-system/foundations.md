@@ -33,6 +33,18 @@ Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on
 
 What moved with it: the accent engine takes its tint (`accent-subtle-bg`) from scale step 4 instead of 3, so a chapter's active row stays visible on the lighter rail, and is at version 3 ([`accent-engine.md`](accent-engine.md) §1, §2, §4); `--muted`, `--success`, `--destructive` and the two lifted text tones went up a notch (§4, §5); `--card-hover`, the skeleton highlight and `--gold-ask-fill` were re-pitched to keep their step above what they sit on. Before and after, with the measured ratios: <https://claude.ai/artifact/BYanPXmU7zSW7kPNX1VwrJ>.
 
+**On the phone a card is one step above the page (2026-11-13, [#4682](https://github.com/pdcarlson/Frapp/issues/4682)).** The table above gives `--card` to "cards and list rows", and on web that is one step up, because a card there sits on a `--surface-1` panel. A phone screen has no panel: a card sits straight on `--background`, so `--card` put it two steps up (1.35:1), and once the steps were spread apart every card on the phone jumped off the page. The owner's read of the real screens on 2026-11-12, about the Up next card and then "this surface color across mobile": "it's almost too much contrast to me". So on a phone screen:
+
+- **A card, a grouped list, a state card and a header's round button take `--surface-1`**, one step above the page (1.17:1), with the same hairline. The page stays `--background`.
+- **What needs its own edge inside a card takes `--card`**: a neutral lead tile, a document's preview, a skeleton's bars, a chip or a text field or a button drawn on the card, and a row while it is held. A chip or a field on the page itself stays `--surface-1`, the input step.
+- **A row on the page lifts to `--surface-1` while held**, one step, where it lifted two.
+- **A sheet did not change.** Its own fill is `--popover`, a grouped list in it is `--card`, one step under, and what lifts on that list takes `--popover`. This passage records that as what a sheet draws, not as a rule: [`components.md`](components.md) §10 "Nested inside a card" says a state inside a `--popover` container drops its fill, the phone's error and skeleton cards in a sheet still paint `--card`, and that disagreement is [#4690](https://github.com/pdcarlson/Frapp/issues/4690)'s to settle.
+- **Chat's own surfaces did not change**: a message's bubble, the cards a message carries and the composer are as they were. The team's read on 2026-11-12 was that chat is fine, and a card in a thread is `--card` by [`components.md`](components.md) §2's rule for both apps. A thread's loading and error states are state cards, so they follow the first two rules.
+- **The glass chrome shares the card's step.** The tab bar, the back capsule and the floating create button are glass over `--surface-1` ([`../mobile/patterns.md`](../mobile/patterns.md)). Blurred, on iOS, the content behind tints them. On Android, and with Reduce Transparency on, they paint `--surface-1` nearly or fully opaque, so over a card they are the card's own grey and their edge and top sheen alone mark them. The proposal the owner chose from on 2026-11-13 named that cost ("a card and the tab bar become the same grey"); it is worth a look on a real Android phone.
+- **A Secondary button keeps `--card`** ([`components.md`](components.md) §3). It is a control, not a card, and on a screen it now sits a step above the cards beside it, which helps it read as something to press.
+
+One module decides the step, `apps/mobile/lib/surfaces.ts`: `pageSurfaces` for what only a screen draws, and `useRaisedSurfaces` for a component both a screen and a sheet draw (`ListSection`, `LeadTile`, the state cards, `usePressFeedback`), which reads whether it is inside a sheet. The token values did not move, so web and the landing are untouched. Mobile's lists were on `--surface-1` once before, until 2026-11-05, when they moved to `--card` to match web's grouped lists; on that day's ladder the two were 1.05:1 apart, so it was the spread of 2026-11-12 that made the difference visible.
+
 *Was, for the history below:* rationale for the 2026-11-05 ladder: "Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235)", with `--card-hover` `#2C2C2C` and the skeleton highlight `#2B2B2B`.
 
 **The ladder went dark and neutral on 2026-11-05, at the owner's request.** The owner found the warm yellowish surfaces did not fit the darker, simpler look the app had moved to. The old ladder was `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621`, and it was uneven twice over: the base and `--surface-1` were neutral while `--card` and `--popover` leaned brown, and `--card` sat barely above `--surface-1`. The owner picked the neutral option over a faintly blue "ink" ladder at the same lightness. Before and after: <https://claude.ai/artifact/7hhDN6nptq1B5EmzGWDdUV>. What moved with it:
@@ -171,7 +183,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
-- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's You tab rows and Up next strip), `--foreground` on hover.
+- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground`, `--foreground` on hover. The one exception is a place's hue, below. (Until 2026-11-12 mobile's You tab rows and Up next strip drew theirs a step dimmer, in `--muted`; both sit in a lead tile now, [`../mobile/patterns.md` § Rows](../mobile/patterns.md#rows).)
 - Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
 - Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
@@ -180,6 +192,30 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 - People's avatars, borders, dividers and decorative frames.
 
 Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
+
+### A place's hue (2026-11-12)
+
+> **Owner decision, 2026-11-12 (Paul, mobile hierarchy pass, [#4610](https://github.com/pdcarlson/Frapp/issues/4610) step 3).** Asked to choose between neutral tiles everywhere, tinted tiles on the You tab only, and tinted tiles on every tab, on a page of the real screens, he chose tinted tiles on the You tab only.
+
+On mobile's You tab, a row that opens a place leads with a tile in that place's own fixed hue (`apps/mobile/lib/more/destination-hue.ts`). The tile is painted the way an initials avatar is (`memberAvatarTint`, [`components.md`](components.md): the hue at 14% over `--card`, with the glyph in the hue at full strength), so every hued tile on the phone sits at one strength. It joins the one earlier case of an icon that labels a row and is not neutral: a Notifications row that no person is behind, whose tile wears its kind's hue (`NOTIFICATION_TILE_HUE` in `@repo/hooks`; [`../mobile/screens.md`](../mobile/screens.md) s14).
+
+**A hue names a place, never a state.** That is the whole rule, and it is what keeps this from being the decoration the accent rule above removed:
+
+- It is the same every day for every member, so it carries no news. It only makes a list of up to ten places findable without reading, as iOS Settings and Telegram's settings list are.
+- **A place keeps its hue wherever a tile draws it.** The You tab reads the hue of a place the Notifications rows already tile from their map, so a service notice and the Service hours row are both teal, a dues notice and the Dues row both sand, an event notice and Host check-in both sky. The palette has ten hues and the app has more places than that, so a hue can stand for another place on another screen (green is a task in Notifications and Switch chapter on You), but never for two places on one screen; the two Settings rows share slate because they are one kind of place.
+- A row that shows a state stays neutral: the Activity rows, Chat home's Up next, the Calendar. On those screens colour already means something, the accent asks the member to act and red is overdue, and a tint would read as one more status.
+- The hues are the role palette's ([`components.md`](components.md), `ROLE_COLOR_PALETTE` in `@repo/validation`). The glyph on its tile is the pair `packages/hooks/src/member-avatar-color.spec.ts` holds at AA for every hue in the palette. That palette leaves out gold and red on purpose, so no tile can be taken for the accent, a mention or an error. Never the chapter accent.
+- A row that can't be opened now (Host check-in with nothing to host) goes grey with its label.
+
+| Place | Hue | | Place | Hue |
+|---|---|---|---|---|
+| Study hours | Periwinkle | | Directory | Orange |
+| Service hours | Teal (the service notice's) | | Settings, Chapter settings | Slate |
+| Dues | Sand (the dues notice's) | | Switch chapter | Green |
+| Documents | Violet | | Invite members | Lime |
+| Minutes | Rose | | Host check-in | Sky (the event notice's) |
+
+Web's sidebar is unchanged: its rows are navigation, where the accent marks the active one (rule 6 above), and a second colour per row would fight it.
 
 ### A signature moment's accent (2026-11-06)
 

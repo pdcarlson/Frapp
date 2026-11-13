@@ -161,6 +161,12 @@ const JSON_BODY_LIMIT = '100kb';
  * - Discord imports. The web client confirms uploaded export files 500 paths
  *   at a time (`CONFIRM_BATCH`), each path around 200 bytes, and the channel
  *   map can list up to 1,000 channels: both pass 100 KB on a large server.
+ * - A form card in chat, and a member's answers to one (#3926). A form within
+ *   the `FORM_*` limits can carry 40 questions of 30 options at 200
+ *   characters each, and its answers 40 paragraphs of 4,000, where a
+ *   character can take three bytes. Only the send route and the answers
+ *   route, not the rest of `/v1/channels`; `:id` matches one path segment,
+ *   so a send's attachment routes under it share the ceiling.
  *
  * Every route under these prefixes needs a signed-in member. The parser runs
  * before the guards, so a caller with no token can still send these
@@ -173,6 +179,8 @@ export const LARGE_JSON_BODY_PATHS = [
   '/v1/meetings',
   '/v1/ai/reports',
   '/v1/discord-imports',
+  '/v1/channels/:id/messages',
+  '/v1/channels/messages/:messageId/form-response',
 ];
 
 /**

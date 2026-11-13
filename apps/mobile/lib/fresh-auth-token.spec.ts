@@ -150,6 +150,63 @@ describe("createFreshAuthTokenReader (#3907)", () => {
     expect(supabase.auth.getSession).toHaveBeenCalledTimes(2);
   });
 
+  it("never learns an offset from the same token handed back after a failed refresh", async () => {
+    // Right clock. The token is inside the margin, the proactive refresh
+    // fails, and supabase-js returns the stored session unrefreshed with no
+    // error. Learning from that token's hour-old iat used to shift the clock
+    // back an hour, so a token that later expired went out as if it were
+    // fresh and every request came back 401 (FRAPP-API-E, 2026-11-12).
+    const ISSUED = NOW - 60 * 60_000 + 30_000;
+    const nearlyExpired = tokenExpiringAt(NOW + 30_000, ISSUED);
+    const supabase = fakeSupabase(async () => ({
+      data: { session: { access_token: nearlyExpired } },
+      error: null,
+    }));
+    let clock = NOW;
+    const read = createFreshAuthTokenReader({
+      readToken: async () => nearlyExpired,
+      getSupabase: () => supabase as never,
+      now: () => clock,
+    });
+
+    await expect(read()).resolves.toBe(nearlyExpired);
+    // Half an hour later, back from the background: the token is long
+    // expired, so the reader must still ask Auth for a fresh one.
+    clock = NOW + 30 * 60_000;
+    await read();
+    expect(supabase.auth.getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgets a learned offset once the API refuses a token", async () => {
+    // Device two hours fast: the reader learns the offset from one refresh.
+    // Later the OS corrects the clock, so that offset now makes an expired
+    // token look current. A 401 drops it, and the next lapsed token refreshes.
+    const SKEW = 2 * 60 * 60_000;
+    const authNow = NOW - SKEW;
+    const issued = tokenExpiringAt(authNow + 60 * 60_000, authNow);
+    let mirror = tokenExpiringAt(authNow - 1_000, authNow - 60 * 60_000);
+    const supabase = fakeSupabase(async () => ({
+      data: { session: { access_token: issued } },
+      error: null,
+    }));
+    let clock = NOW;
+    const read = createFreshAuthTokenReader({
+      readToken: async () => mirror,
+      getSupabase: () => supabase as never,
+      now: () => clock,
+    });
+
+    await read();
+    clock = authNow + 30 * 60_000;
+    mirror = tokenExpiringAt(clock - 1_000, clock - 60 * 60_000);
+    await read();
+    expect(supabase.auth.getSession).toHaveBeenCalledTimes(1);
+
+    read.forgetClockOffset();
+    await read();
+    expect(supabase.auth.getSession).toHaveBeenCalledTimes(2);
+  });
+
   it("passes through no token, an opaque token, and a missing client", async () => {
     const supabase = fakeSupabase(async () => ({
       data: { session: { access_token: "fresh" } },

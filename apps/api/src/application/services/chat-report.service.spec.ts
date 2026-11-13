@@ -1942,6 +1942,27 @@ describe('reportedContentSnapshot', () => {
     metadata: {},
   };
 
+  it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
+    const gif = {
+      provider: 'klipy',
+      id: 'dance',
+      title: 'Happy dance',
+      url: 'https://static.klipy.com/ii/a/dance.webp',
+      width: 498,
+      height: 280,
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', metadata: { gif } }),
+    ).toBe('GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        metadata: { gif: { ...gif, title: '' } },
+      }),
+    ).toBe('GIF: https://static.klipy.com/ii/a/dance.webp');
+  });
+
   it('is the content for anything that is not a poll', () => {
     expect(reportedContentSnapshot(text)).toBe('hello');
     // A card of another kind carries no member-written options.
@@ -1970,6 +1991,29 @@ describe('reportedContentSnapshot', () => {
         },
       }),
     ).toBe('Rides\nRides Friday\n- 10pm to 2am\n- Driver 1\n- Driver 2');
+  });
+
+  it("keeps a form's title, description, questions and options, and no answers (#3926 step 3)", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'Rooms',
+        kind: 'form',
+        payload: {
+          title: 'Room picks',
+          description: 'By Friday',
+          questions: [
+            { id: 'q1', type: 'short_answer', title: 'Name' },
+            {
+              id: 'q2',
+              type: 'dropdown',
+              title: 'Room',
+              options: [{ id: 'a', label: 'Room A' }],
+            },
+          ],
+        },
+      }),
+    ).toBe('Rooms\nRoom picks\n- By Friday\n- Name\n- Room\n- Room A');
   });
 
   it("adds the card's question when it differs from content, since the card shows the question", () => {

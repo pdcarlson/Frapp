@@ -88,7 +88,7 @@ export default function ChapterRolesScreen() {
     router.push({ pathname: "/role", params: { roleId: role.id } });
 
   let body: React.ReactNode;
-  if (rolesQuery.isError || tiersQuery.isError) {
+  if ((rolesQuery.isError && rolesQuery.data === undefined) || (tiersQuery.isError && tiersQuery.data === undefined)) {
     body = (
       <ErrorState
         title="Couldn't load roles"

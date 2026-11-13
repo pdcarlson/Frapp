@@ -97,13 +97,18 @@ export function withHereMention<R extends HereMentionSource>(
 
 /**
  * What a mention picker's role row says at its end: `@everyone` and `@here`
- * say who they reach, as Slack's and Discord's pickers do, and any other role
- * says "Role".
+ * say who they reach, as Slack's and Discord's pickers do, and anything else
+ * says what it is: "Role", "Tier" or "Group" (#4076), so a tier and a role
+ * that share a name read apart. `kind` is the row's `kind` from
+ * `GET /v1/channels/mention-roles`; an API from before tiers and groups were
+ * pingable sends none, and every row it sends is a role.
  */
-export function mentionRoleHint(name: string): string {
+export function mentionRoleHint(name: string, kind?: string | null): string {
   const reserved = reservedMentionName(name);
   if (reserved === EVERYONE_MENTION_NAME) return "Notifies the whole channel";
   if (reserved === HERE_MENTION_NAME) return "Notifies who's online";
+  if (kind === "tier") return "Tier";
+  if (kind === "group") return "Group";
   return "Role";
 }
 

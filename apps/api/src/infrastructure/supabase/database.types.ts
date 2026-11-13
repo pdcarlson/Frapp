@@ -25,11 +25,15 @@ import type {
   ChapterDocumentStar,
   ChapterDuesConfig,
   ChapterGoalRow,
+  ChapterGroup,
+  ChapterGroupMember,
+  ChapterGroupMembership,
   ChapterPointsConfig,
   ChapterServiceConfig,
   ChapterWorkflow,
   ChatChannel,
   ChatChannelCategory,
+  ChatFormResponse,
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
@@ -62,6 +66,8 @@ import type {
   FinancialInvoice,
   FinancialTransaction,
   FollowedThreadUnread,
+  GoogleCalendarConnection,
+  GoogleCalendarOAuthState,
   Invite,
   Meeting,
   MeetingDraft,
@@ -89,6 +95,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskPhoto,
   TaskSubtask,
   User,
   UserAiConsent,
@@ -159,6 +166,8 @@ export interface Database {
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
+      chapter_group_members: TableDefinition<ChapterGroupMember>;
+      chapter_groups: TableDefinition<ChapterGroup>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       chapter_points_config: TableDefinition<ChapterPointsConfig>;
       chapter_service_config: TableDefinition<ChapterServiceConfig>;
@@ -166,6 +175,7 @@ export interface Database {
       chapters: TableDefinition<Chapter>;
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
+      chat_form_responses: TableDefinition<ChatFormResponse>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
@@ -196,6 +206,8 @@ export interface Database {
       events: TableDefinition<Event>;
       financial_invoices: TableDefinition<FinancialInvoice>;
       financial_transactions: TableDefinition<FinancialTransaction>;
+      google_calendar_connections: TableDefinition<GoogleCalendarConnection>;
+      google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
       meeting_drafts: TableDefinition<MeetingDraft>;
       meeting_recordings: TableDefinition<MeetingRecording>;
@@ -219,13 +231,20 @@ export interface Database {
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       study_geofences: TableDefinition<StudyGeofence>;
       study_sessions: TableDefinition<StudySession>;
+      task_photos: TableDefinition<TaskPhoto>;
       task_subtasks: TableDefinition<TaskSubtask>;
       tasks: TableDefinition<Task>;
       user_ai_consents: TableDefinition<UserAiConsent>;
       user_settings: TableDefinition<UserSettings>;
       users: TableDefinition<User>;
     };
-    Views: Record<string, never>;
+    Views: {
+      /** `20261113040007` (#4076): one row per (group, member), every kind. */
+      chapter_group_memberships: {
+        Row: TableRow<ChapterGroupMembership>;
+        Relationships: [];
+      };
+    };
     Functions: {
       /**
        * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
@@ -372,6 +391,14 @@ export interface Database {
         Returns: CorpusSource[];
       };
       /**
+       * `20261113040008` (#3322) — Google Calendar connections to sync or
+       * clean up next, each leased; `returns setof google_calendar_connections`.
+       */
+      claim_google_calendar_syncs: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: GoogleCalendarConnection[];
+      };
+      /**
        * `20260901183000` — `returns boolean`. `true` on a successful claim,
        * `false` when the chapter's `needs_president` flag was already clear
        * (race lost to another claimant).
@@ -446,6 +473,21 @@ export interface Database {
       delete_empty_discord_import_channels: {
         Args: { p_import_id: string; p_chapter_id: string };
         Returns: string[];
+      };
+      /**
+       * `20261113040010` (#4620) — delete the upcoming occurrences a series
+       * edit rebuilt, carrying each matched pair's excuses (and an approved
+       * one's EXCUSED attendance) to the new meeting in the same transaction.
+       * Returns the pending and approved excuses no new meeting took.
+       */
+      delete_replaced_occurrences: {
+        Args: {
+          p_chapter_id: string;
+          p_old_ids: string[];
+          p_from_ids: string[];
+          p_to_ids: string[];
+        };
+        Returns: EventExcuse[];
       };
       /**
        * `20261106170000`. An import's rows being imported, added up per
@@ -882,6 +924,15 @@ export interface Database {
         };
         Returns: SemesterArchive;
       };
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
+      save_chat_form_response: {
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_answers: Json;
+        };
+        Returns: ChatFormResponse;
+      };
       /**
        * `20261106190000` (#585). Backwork search over title, course,
        * department, professor and tags, with trigram typo tolerance, ranked
@@ -920,6 +971,18 @@ export interface Database {
           p_limit: number;
         };
         Returns: ChatMessage[];
+      };
+      /**
+       * `20261113040007` (#4076): a manual group's members set to exactly
+       * `p_user_ids`, all or none. Returns the `users.id`s after.
+       */
+      set_chapter_group_members: {
+        Args: {
+          p_chapter_id: string;
+          p_group_id: string;
+          p_user_ids: string[];
+        };
+        Returns: string[];
       };
       /**
        * `20261111233000` (#3722). Sets a category's who-can-see and

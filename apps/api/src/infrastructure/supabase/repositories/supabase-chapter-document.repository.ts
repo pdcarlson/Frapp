@@ -35,6 +35,20 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
+  async findByIds(
+    ids: string[],
+    chapterId: string,
+  ): Promise<ChapterDocument[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .in('id', ids)
+      .eq('chapter_id', chapterId);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async findByChapter(
     chapterId: string,
     filter?: ChapterDocumentFilter,

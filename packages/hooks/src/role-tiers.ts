@@ -1,7 +1,4 @@
-import {
-  PERMISSION_REGISTRY,
-  permissionLabel,
-} from "@repo/validation";
+import { PERMISSION_REGISTRY, permissionLabel } from "@repo/validation";
 
 /*
  * Role tiers as web and the phone both read them (#3990, #4072, #4074): the
@@ -40,6 +37,8 @@ export type TierRow = {
   /** 1 is highest. */
   position: number;
   permissions: string[];
+  /** Whether any member may `@` the tier (#4076); on unless switched off. */
+  mentionable: boolean;
 };
 
 export function normalizeTieredRoles(data: unknown): TieredRole[] {
@@ -82,6 +81,8 @@ export function normalizeTiers(data: unknown): TierRow[] {
       permissions: Array.isArray(tier.permissions)
         ? tier.permissions.map(String)
         : [],
+      // A tier read from an API before #4076 has no switch: on, its default.
+      mentionable: tier.mentionable !== false,
     }))
     .sort((a, b) => a.position - b.position);
 }

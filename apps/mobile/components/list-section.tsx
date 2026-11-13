@@ -15,6 +15,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useRaisedSurfaces } from "@/lib/surfaces";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { guardedBySwipe, useSwipeClaim } from "@/lib/swipe-claim";
 
@@ -151,12 +153,13 @@ export function ListRowSkeleton({
 /** A rounded container whose children are separated by inset hairlines. */
 export function ListSection({ children }: { children: ReactNode }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
   const items = Array.isArray(children) ? children.flat() : [children];
   const visible = items.filter(Boolean);
 
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, { backgroundColor: surfaces.card }]}>
       {/* Keyed by position: these rows are a fixed, ordered list declared per
           screen, never reordered at runtime, and carry no id of their own. */}
       {visible.map((child, index) => (
@@ -211,11 +214,15 @@ export function listRowHint(
  * which adds that parent; `ListRow` gets it from `ListSection`. A square row
  * can take the hook directly.
  *
- * The default lift is `surface.card`: a row on the screen background rises to
- * it. A row that sits on a `surface.card` fill (a `ListRow` in its
- * `ListSection`, the More profile card, or an event card) passes `onCard` and
- * lifts to `surface.popover` instead: a card lifted to its
- * own colour shows nothing.
+ * The lift is one step above what the row sits on (`lib/surfaces.ts`). A row
+ * on the screen background rises to the card step. A row that sits on a card
+ * (a `ListRow` in its `ListSection`, the You profile card, or an event card)
+ * passes `onCard` and lifts to the step above the card instead: a card lifted
+ * to its own colour shows nothing. A control that is filled with the input
+ * step wherever it is drawn (a filter chip) passes `onControl` and lifts to
+ * `surface.card`, the step above that fill, for the same reason. A chip drawn
+ * on a card passes both: its fill is the step above the card, so it lifts to
+ * `surface.popover`, the one above that.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
@@ -224,22 +231,28 @@ export type PressFeedback = {
 
 export function usePressFeedback({
   onCard = false,
-}: { onCard?: boolean } = {}): PressFeedback {
+  onControl = false,
+}: { onCard?: boolean; onControl?: boolean } = {}): PressFeedback {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   return useMemo(() => {
     const lifted: ViewStyle | null =
       Platform.OS === "android"
         ? null
         : {
-            backgroundColor: onCard
-              ? tokens.color.surface.popover
-              : tokens.color.surface.card,
+            backgroundColor: onControl
+              ? onCard
+                ? tokens.color.surface.popover
+                : tokens.color.surface.card
+              : onCard
+                ? surfaces.raised
+                : surfaces.card,
           };
     return {
       ripple: { color: tint(tokens.color.text.foreground, 0.12) },
       lift: (pressed: boolean) => (pressed ? lifted : null),
     };
-  }, [tokens, onCard]);
+  }, [tokens, surfaces, onCard, onControl]);
 }
 
 /**
@@ -248,8 +261,8 @@ export function usePressFeedback({
  * stays on the gutter line while its press feedback (ripple or lift) clears
  * the content on both sides instead of stopping flush with it. One value for
  * every such row, because the alignment holds only while they all bleed the
- * same: Chat home's section header and Hidden toggle, its channel rows and UP
- * NEXT rows line their captions, sigils and glyphs up on that line, and the
+ * same: Chat home's section header and Hidden toggle and its channel rows
+ * line their captions, sigils and glyphs up on that line, and the
  * Directory's member rows keep the gutter Chat home does.
  *
  * `rounded` adds the control radius a rounded row's lift and clip take; a
@@ -273,6 +286,8 @@ export type PressableRowProps = Omit<
   style?: StyleProp<ViewStyle>;
   /** The row is itself a card: see {@link usePressFeedback}'s `onCard`. */
   onCard?: boolean;
+  /** The row is a control on the input step: see `onControl` there. */
+  onControl?: boolean;
   /**
    * `false` keeps the iOS lift off, for a control whose fill is its state (an
    * on chip): the lift would paint over it. The Android ripple still answers.
@@ -301,11 +316,12 @@ export type PressableRowProps = Omit<
 export function PressableRow({
   style,
   onCard = false,
+  onControl = false,
   lifts = true,
   children,
   ...pressable
 }: PressableRowProps) {
-  const feedback = usePressFeedback({ onCard });
+  const feedback = usePressFeedback({ onCard, onControl });
   const claim = useSwipeClaim();
   const { clip, row } = splitRowStyle(style);
   return (
@@ -489,7 +505,7 @@ export function ListRow({
           style={styles.trailingSlot}
         />
       ) : onPress && !disabled && !action ? (
-        <Text style={styles.chevron}>›</Text>
+        <ForwardGlyph color={tokens.color.text.muted} />
       ) : null}
     </View>
   );
@@ -565,14 +581,15 @@ function createStyles(tokens: SignetTokens) {
       marginTop: sectionHeaderMarginTop,
     },
     section: {
-      // `card` at radius 14, the fill and radius web's grouped lists take
-      // (`rounded-[14px] border bg-card`), and foundations §2's step for
-      // "cards and list rows". It was `surface1` at 16 until 2026-11-05;
-      // `surface1` is the nav and input step.
+      // Radius 14, the radius web's grouped lists take (`rounded-[14px]`).
+      // The fill is not here: it is the card step for where the section sits
+      // (`useRaisedSurfaces`), one step above the page on a screen and
+      // `surface.card` in a sheet. On a screen it was `surface.card` from
+      // 2026-11-05 until #4682, two steps above the page once the ladder was
+      // spread on 2026-11-12.
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
       overflow: "hidden",
     },
     divider: {
@@ -643,11 +660,6 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flex: 1,
       textAlign: "right",
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
     },
     trailingSlot: {
       flexShrink: 0,

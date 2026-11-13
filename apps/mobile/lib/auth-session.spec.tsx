@@ -764,6 +764,167 @@ describe("AuthSessionProvider — chapter context", () => {
     expect(result.current.userId).toBe("user-1");
     expect(result.current.chapterId).toBe("chapter-uuid-1");
   });
+
+  it("retries what the API refused for the lapsed token once a refreshed one arrives", async () => {
+    // FRAPP-API-E, 2026-11-12: back from the background, every query went
+    // out with a lapsed token and each screen stayed on its error state.
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    let calls = 0;
+    const refused = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const notFound = Object.assign(new Error("Not found"), { status: 404 });
+    const refusedFn = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) throw refused;
+      return ["channels"];
+    });
+    const missingFn = vi.fn(async () => {
+      throw notFound;
+    });
+    await queryClient
+      .fetchQuery({ queryKey: ["channels", "refused"], queryFn: refusedFn, retry: false })
+      .catch(() => undefined);
+    await queryClient
+      .fetchQuery({ queryKey: ["channels", "missing"], queryFn: missingFn, retry: false })
+      .catch(() => undefined);
+    expect(queryClient.getQueryState(["channels", "refused"])?.status).toBe("error");
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["channels", "refused"])).toEqual([
+        "channels",
+      ]),
+    );
+    // A failure that wasn't about the token is left alone.
+    expect(missingFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a 401 that lands after the refreshed token arrived, once", async () => {
+    // The request went out with the lapsed token and its 401 came back after
+    // the refresh had landed, so the sweep on the token change missed it.
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    let release: () => void = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const refused = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const lateFn = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        await inFlight;
+        throw refused;
+      }
+      return ["tasks"];
+    });
+    const pending = queryClient
+      .fetchQuery({ queryKey: ["tasks", "late"], queryFn: lateFn, retry: false })
+      .catch(() => undefined);
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+    release();
+    await pending;
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["tasks", "late"])).toEqual(["tasks"]),
+    );
+    expect(lateFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a 401 alone when the same token is emitted again", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    const refused = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const refusedFn = vi.fn(async () => {
+      throw refused;
+    });
+    await queryClient
+      .fetchQuery({ queryKey: ["events", "refused"], queryFn: refusedFn, retry: false })
+      .catch(() => undefined);
+
+    await act(async () => {
+      emitAuthChange({
+        ...SESSION,
+        user: { ...SESSION.user, id: "user-1" },
+      });
+    });
+
+    // The API already refused this token; sending it again would only 401.
+    expect(refusedFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a 401 to the chapter switch when the new token names another chapter", async () => {
+    const jwt = (claims: Record<string, unknown>) =>
+      `e30.${btoa(JSON.stringify(claims)).replace(/=+$/, "")}.sig`;
+    mockState.initialSession = {
+      ...SESSION,
+      access_token: jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1" }),
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    const refused = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const refusedFn = vi.fn(async () => {
+      throw refused;
+    });
+    await queryClient
+      .fetchQuery({ queryKey: ["dues", "refused"], queryFn: refusedFn, retry: false })
+      .catch(() => undefined);
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-2" }),
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+
+    // Sent now, it would carry the old chapter's header with the new claim.
+    expect(refusedFn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("AuthSessionProvider — sign-in", () => {

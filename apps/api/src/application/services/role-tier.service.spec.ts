@@ -229,6 +229,29 @@ describe('RoleTierService', () => {
     );
   });
 
+  it("switches a tier's ping off and records it (#4076)", async () => {
+    const tier = tiers.find((t) => t.id === TIER.pledges)!;
+    tier.mentionable = true;
+
+    const updated = await service.update(
+      TIER.pledges,
+      CHAPTER_ID,
+      USER.president,
+      { mentionable: false },
+    );
+
+    expect(repo.update).toHaveBeenCalledWith(TIER.pledges, CHAPTER_ID, {
+      mentionable: false,
+    });
+    expect(updated.mentionable).toBe(false);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role_tier_updated',
+        diff: { mentionable: { from: true, to: false } },
+      }),
+    );
+  });
+
   it('answers a taken name with 409', async () => {
     repo.update.mockResolvedValueOnce(null);
     await expect(

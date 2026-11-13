@@ -27,6 +27,7 @@ import { ServiceEntryModule } from './modules/service-entry/service-entry.module
 import { TaskModule } from './modules/task/task.module';
 import { AiSuggestionModule } from './modules/ai-suggestion/ai-suggestion.module';
 import { PledgeClassModule } from './modules/pledge-class/pledge-class.module';
+import { ChapterGroupModule } from './modules/chapter-group/chapter-group.module';
 import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
@@ -56,6 +57,7 @@ import { ActModule } from './modules/act/act.module';
 import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { CalendarFeedModule } from './modules/calendar-feed/calendar-feed.module';
+import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -96,6 +98,7 @@ import { validateEnv } from './config/env.validation';
     TaskModule,
     AiSuggestionModule,
     PledgeClassModule,
+    ChapterGroupModule,
     RushModule,
     NotificationModule,
     StudyModule,
@@ -125,6 +128,7 @@ import { validateEnv } from './config/env.validation';
     ChatCatchUpModule,
     AiReportModule,
     CalendarFeedModule,
+    GoogleCalendarModule,
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
     MeetingDraftModule,

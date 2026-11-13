@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -46,7 +47,7 @@ import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
 import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
 import { CalendarPlusGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import {
   selectAllEventRows,
   selectEventList,
@@ -274,7 +275,7 @@ export default function EventsScreen() {
 
     if (eventsQuery.isPending) return <EventListSkeleton />;
 
-    if (eventsQuery.isError) {
+    if (eventsQuery.isError && eventsQuery.data === undefined) {
       // An explicit retry as well as the pull (#3385): a button is the
       // recovery a member sees without knowing the gesture. C8 (#998) wired
       // `onlineManager`, so a connectivity blip recovers on its own; a server
@@ -282,7 +283,7 @@ export default function EventsScreen() {
       return (
         <ErrorState
           title="Couldn't load events"
-          body="The server couldn't be reached."
+          body={describeLoadFailure(eventsQuery.error)}
           onRetry={() => void eventsQuery.refetch()}
           isRetrying={eventsQuery.isFetching}
         />
@@ -351,7 +352,7 @@ export default function EventsScreen() {
       refresh={refresh}
       headerAction={
         chapterId ? (
-          <IconButton
+          <HeaderButton
             label="Subscribe to events in your calendar"
             onPress={() => {
               setSubscribeOpen(true);
@@ -359,7 +360,7 @@ export default function EventsScreen() {
             }}
           >
             <CalendarPlusGlyph color={tokens.color.text.foreground} />
-          </IconButton>
+          </HeaderButton>
         ) : null
       }
     >

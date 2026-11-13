@@ -36,9 +36,10 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   completed_at: null,
   confirmed_at: null,
   sent_back_at: null,
-  reference_photo_path: null,
-  proof_photo_path: null,
-  photo_required: false,
+  proof_kind: 'none',
+  proof_link: null,
+  sent_back_reason: null,
+  completion_note: null,
   created_at: iso(-48 * HOUR),
   ...overrides,
 });

@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { SkeletonText } from "@/components/state-block";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * One large answer on a pre-chapter screen: s02's "I have an invite" and
@@ -57,7 +59,7 @@ export function ChoiceRow({
         <Text style={styles.title}>{title}</Text>
         {body ? <Text style={styles.body}>{body}</Text> : null}
       </View>
-      {trailing ?? <Text style={styles.chevron}>›</Text>}
+      {trailing ?? <ForwardGlyph color={tokens.color.text.muted} size={20} />}
     </Pressable>
   );
 }
@@ -89,6 +91,7 @@ export function ChoiceRowSkeleton({ index = 0 }: { index?: number }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     row: {
       minHeight: 64,
@@ -100,10 +103,10 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     pressed: {
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     // A row that can't respond dims as a whole, so it looks it.
     dimmed: {
@@ -121,11 +124,6 @@ function createStyles(tokens: SignetTokens) {
     body: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    chevron: {
-      fontSize: 26,
-      lineHeight: 28,
-      color: tokens.color.text.muted,
     },
   });
 }

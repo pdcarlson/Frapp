@@ -275,6 +275,25 @@ function matchesLike(value: unknown, pattern: string, ci: boolean): boolean {
 }
 
 function containsValue(actual: unknown, expected: unknown): boolean {
+  // Against a text[] column, `{a,b}` is a Postgres array literal, as
+  // `.or('who_can_see.cs.{group:…}')` spells it, not JSON; one that opens
+  // like a JSON object (`{"key":`) is JSON. A NULL column contains nothing.
+  const text = typeof expected === 'string' ? expected.trim() : null;
+  if (
+    text !== null &&
+    (Array.isArray(actual) || actual == null) &&
+    text.startsWith('{') &&
+    text.endsWith('}') &&
+    !/^\{\s*"[^"]*"\s*:/.test(text)
+  ) {
+    if (actual == null) return false;
+    const inner = text.slice(1, -1);
+    const items = inner === '' ? [] : inner.split(',');
+    return containsValue(
+      actual,
+      items.map((item) => item.trim().replace(/^"(.*)"$/, '$1')),
+    );
+  }
   // `.not('metadata', 'cs', '{"flagged":true}')` passes the operand as a raw
   // PostgREST JSON string rather than an object.
   if (typeof expected === 'string' && /^[[{]/.test(expected.trim())) {

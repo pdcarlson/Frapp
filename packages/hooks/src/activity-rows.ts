@@ -1,6 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
+import { taskStatusLabel } from "./task-card";
 import {
   dayDelta,
   formatDueLabel,
@@ -194,7 +194,11 @@ export type ActivityRowAction = "confirm" | "approve";
 
 export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
   if (!activityBadgeIsAsk(row)) return null;
-  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  // A task that asks for proof opens instead: the officer sees the photos or
+  // link before confirming it (#4635), which a one-press row can't show.
+  if (row.kind === "task" && row.glyph === "confirm") {
+    return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
+  }
   if (row.kind === "hours") return "approve";
   return null;
 }
@@ -391,10 +395,14 @@ function taskRow(
       ? { label: "Confirm", variant: "warning" }
       : {
           // The shared words every task surface uses (`@repo/hooks`).
-          label:
-            task.status === "COMPLETED" && task.confirmed_at
-              ? TASK_CONFIRMED_LABEL
-              : TASK_STATUS_LABELS[task.status],
+          label: taskStatusLabel({
+            status: task.status,
+            stored_status: task.stored_status,
+            points_awarded: !!task.confirmed_at,
+            sent_back_at: task.sent_back_at,
+            point_reward: task.point_reward,
+            proof_kind: task.proof_kind,
+          }),
           variant:
             task.status === "OVERDUE"
               ? "destructive"
@@ -966,4 +974,42 @@ export function activityNeedsYouHeadline(
   const words =
     needsYou === 1 ? "1 thing needs you" : `${needsYou} things need you`;
   return incomplete ? `At least ${words}` : words;
+}
+
+/**
+ * The row a task's review push opens (`target.view === "review"`): the task
+ * wherever the feed has it, read with every chip off so the one the member
+ * last picked can't hide it. Needs you comes first, so a task waiting on the
+ * viewer opens as the thing to act on. Null when the feed no longer has it,
+ * such as a completion confirmed from another device.
+ */
+export function findActivityTaskRow(
+  activity: Activity,
+  taskId: string,
+  now: Date = new Date(),
+): ActivityRow | null {
+  for (const group of activityGroups(activity, "all", now)) {
+    for (const row of [...group.rows, ...(group.archive?.rows ?? [])]) {
+      if (row.kind === "task" && row.task.id === taskId) return row;
+    }
+  }
+  return null;
+}
+
+/**
+ * The tasks waiting on the viewer's sign-off, longest waiting first, as the
+ * To confirm tile lists them: the queue a review steps through (#4693).
+ * Confirm or Send back on one opens the next, the way Classroom's grader
+ * moves to the next student's work, so twenty-five Sunday-night chores are
+ * one sitting rather than twenty-five trips back to the list.
+ */
+export function activityReviewQueue(
+  activity: Activity,
+  now: Date = new Date(),
+): ActivityRow[] {
+  return activityGroups(activity, "confirm", now).flatMap((group) =>
+    [...group.rows, ...(group.archive?.rows ?? [])].filter(
+      (row) => row.kind === "task" && row.glyph === "confirm",
+    ),
+  );
 }

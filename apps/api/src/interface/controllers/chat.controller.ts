@@ -19,6 +19,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { GifService } from '../../application/services/gif.service';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
@@ -111,6 +112,7 @@ export class ChatController {
     private readonly rbacService: RbacService,
     private readonly mentions: ChatMentionService,
     private readonly accessLists: ChannelAccessListService,
+    private readonly gifs: GifService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -177,7 +179,7 @@ export class ChatController {
   @Get('mention-roles')
   @ApiOperation({
     summary:
-      'The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each',
+      'The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each',
   })
   @ApiOkResponse({ type: MentionRoleDto, isArray: true })
   async getMentionRoles(
@@ -185,8 +187,9 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<MentionRoleDto[]> {
     const roles = await this.mentions.listMentionRoles(chapterId, userId);
-    return roles.map(({ role_id, name, color, mentionable }) => ({
+    return roles.map(({ role_id, kind, name, color, mentionable }) => ({
       role_id,
+      kind,
       name,
       color,
       mentionable,
@@ -625,7 +628,10 @@ export class ChatController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chatService.sendMessage({
+    // Checked before the send, so a GIF this server's search didn't hand out
+    // is a 400 and nothing is written (#4631).
+    const gif = dto.gif ? this.gifs.messageGif(dto.gif) : null;
+    const sent = await this.chatService.sendMessage({
       chapter_id: chapterId,
       channel_id: channelId,
       sender_id: userId,
@@ -637,8 +643,13 @@ export class ChatController {
       thread_root_id: dto.thread_root_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
+      gif,
       enabled_modules: enabledModules,
     });
+    // Tells the provider what got sent, which tunes its results; never fails
+    // the send.
+    if (gif && !sent.deduplicated) this.gifs.recordShare(gif.id);
+    return sent;
   }
 
   /**
@@ -743,16 +754,16 @@ export class ChatController {
     );
   }
 
-  // ── Sign-up cards (#3926) ────────────────────────────────────────────
+  // ── Sign-up and form cards (#3926) ───────────────────────────────────
 
   @Post('messages/:messageId/close')
   @ApiOperation({
     summary:
-      'Close a sign-up card early (its creator, or channels:manage); claims already made stay',
+      'Close a sign-up or form card early (its creator, or channels:manage); answers already made stay',
   })
   // The closed row, so a client can draw the close before its Realtime echo.
   @ApiCreatedResponse({ type: ChatMessageDto })
-  async closeSignup(
+  async closeCard(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -760,7 +771,7 @@ export class ChatController {
     // Resolved here rather than by `@RequirePermissions`, as `deleteMessage`
     // does: the card's creator needs no permission. Lazy: asked only when the
     // caller isn't the creator.
-    return this.chatService.closeSignup(messageId, chapterId, userId, () =>
+    return this.chatService.closeCard(messageId, chapterId, userId, () =>
       this.rbacService.memberHasAnyPermission(chapterId, userId, [
         SystemPermissions.CHANNELS_MANAGE,
       ]),

@@ -7,9 +7,8 @@ import type { ChatMessage } from "./types";
  * mobile (#2775). They are the UX pre-filter that keeps a client from offering
  * a control that would fail. The server enforces ownership, `channels:manage`,
  * channel access and the read-only reply rule (`ChatService.editMessage` /
- * `deleteMessage` / `sendMessage`) and refuses to edit an imported row
- * (#2878), but **not** the card half of `canEditMessage`: `editMessage` never
- * checks for a card kind, so that half is client-side only until #2863. Two clients deriving these separately is how
+ * `deleteMessage` / `sendMessage`), and refuses to edit an imported row
+ * (#2878) or any card (#2863). Two clients deriving these separately is how
  * one of them came to offer Edit on every imported row for a while (see
  * `isOwnMessage`).
  *
@@ -92,13 +91,16 @@ export function canActOnMessage(
  * channel row.
  */
 export function canEditMessage(
-  message: Pick<ChatMessage, "sender_id" | "kind">,
+  message: Pick<ChatMessage, "sender_id" | "kind" | "gif">,
   viewerId: string | null,
 ): boolean {
   return (
     isOwnMessage(message, viewerId) &&
     message.kind !== "imported" &&
-    !isCardMessage(message)
+    !isCardMessage(message) &&
+    // A GIF message is the GIF, with no text to edit (#4631); the API
+    // refuses the edit too.
+    !message.gif
   );
 }
 

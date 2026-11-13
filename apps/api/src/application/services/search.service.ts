@@ -2,6 +2,7 @@ import { Logger, Inject, Injectable } from '@nestjs/common';
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
 } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
@@ -499,7 +500,10 @@ export class SearchService {
     )
       ? await this.rbacService.getChannelAccessHolder(
           chapterId,
-          member.role_ids,
+          member,
+          channels.some((channel) =>
+            listsNameGroups({ ...channel, who_can_post: null }),
+          ),
         )
       : EMPTY_ACCESS_HOLDER;
 

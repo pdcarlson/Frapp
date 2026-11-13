@@ -720,6 +720,73 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.viewerId).toBe("me");
   });
 
+  it("re-reads before opening a review push's task, so a warm cache can't miss it", async () => {
+    // "Shawn Klein submitted: …" lands here as `/activity?review=<taskId>`.
+    // The read in hand predates the submission: only the re-read has it.
+    const router = vi.mocked(useRouter)() as unknown as {
+      setParams?: (params: unknown) => void;
+    };
+    const setParams = vi.fn();
+    router.setParams = setParams;
+    const stale = read({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    const fresh = read();
+    fresh.needs_you.tasks = fresh.needs_you.tasks.map((t) => ({
+      ...t,
+      unread: true,
+    }));
+    const refetch = vi.fn(() => Promise.resolve({ data: fresh }));
+    activity.value = { ...activity.value, data: stale, refetch };
+    links.markRead.mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      review: "task-1",
+    });
+    try {
+      render();
+      await act(async () => {});
+      expect(refetch).toHaveBeenCalledTimes(1);
+      expect(sheet.props?.row?.key).toBe("needs:task:task-1");
+      // Opened from the push reads it, as a tap on the row does.
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "task", item_id: "task-1" },
+      ]);
+      expect(setParams).toHaveBeenCalledWith({ review: undefined });
+    } finally {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+      delete router.setParams;
+    }
+  });
+
+  it("opens nothing for a review the re-read doesn't hold, and still drops the param", async () => {
+    const router = vi.mocked(useRouter)() as unknown as {
+      setParams?: (params: unknown) => void;
+    };
+    const setParams = vi.fn();
+    router.setParams = setParams;
+    activity.value = {
+      ...activity.value,
+      refetch: vi.fn(() => Promise.resolve({ data: read() })),
+    };
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      review: "gone",
+    });
+    try {
+      render();
+      await act(async () => {});
+      expect(sheet.props?.row).toBeNull();
+      expect(setParams).toHaveBeenCalledWith({ review: undefined });
+    } finally {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+      delete router.setParams;
+    }
+  });
+
   it("dots an unread row, says so, and records the open (#4405)", () => {
     const data = read();
     activity.value = {

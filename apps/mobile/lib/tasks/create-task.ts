@@ -27,7 +27,8 @@ import {
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
-import { TASK_SUBTASKS_MAX } from "@repo/validation";
+import type { EditableCardTask, LiveTaskPhoto } from "@repo/hooks";
+import { TASK_SUBTASKS_MAX, type TaskProofKind } from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
 
 export interface NewTaskDraft {
@@ -44,6 +45,8 @@ export interface NewTaskDraft {
   assigneeId: string | null;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
+  /** What Mark done needs (#4635); absent reads as None. */
+  proofKind?: TaskProofKind;
 }
 
 export interface DuePreset {
@@ -206,6 +209,14 @@ export interface ValidatedNewTask {
   /** Subtask titles, in order, when the draft has any. */
   subtasks?: string[];
   point_reward?: number;
+  /** What Mark done needs, when it is more than None (#4635). */
+  proof_kind?: TaskProofKind;
+  /**
+   * Reference photos' storage paths, in order (#4635): added by the sheet
+   * once the picked photos are up, never by {@link validateNewTask}. On an
+   * edit, the set as it should stand.
+   */
+  reference_photo_paths?: string[];
 }
 
 /**
@@ -248,6 +259,9 @@ export function validateNewTask(
     .slice(0, TASK_SUBTASKS_MAX);
   if (subtasks.length > 0) body.subtasks = subtasks;
   if (points.kind === "value") body.point_reward = points.points;
+  if (draft.proofKind && draft.proofKind !== "none") {
+    body.proof_kind = draft.proofKind;
+  }
   return body;
 }
 
@@ -263,6 +277,25 @@ export interface TaskEditTarget {
   pointReward: number | null;
   /** The stored status: a new assignee starts anything past To do over. */
   storedStatus: string | null;
+  /** Its reference photos, in order (#4635). */
+  referencePhotos: LiveTaskPhoto[];
+  /** What Mark done needs (#4635). */
+  proofKind: TaskProofKind;
+}
+
+/** A chat or Activity card's live task as the edit sheet opens it (#4512). */
+export function editTargetOfCardTask(task: EditableCardTask): TaskEditTarget {
+  return {
+    id: task.id,
+    title: task.title,
+    assigneeId: task.assignee_id,
+    dueDay: task.due_date,
+    dueAt: task.due_at,
+    pointReward: task.point_reward,
+    storedStatus: task.stored_status ?? null,
+    referencePhotos: task.photos.filter((photo) => photo.kind === "reference"),
+    proofKind: task.proof_kind,
+  };
 }
 
 /**
@@ -281,6 +314,7 @@ export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
     subtasks: [],
     assigneeId: task.assigneeId,
     pointsInput: task.pointReward ? String(task.pointReward) : "",
+    proofKind: task.proofKind,
   };
 }
 
@@ -291,11 +325,16 @@ export interface TaskEditBody {
   due_date?: string;
   due_at?: string | null;
   point_reward?: number | null;
+  /** The reference photos as they should stand (#4635). */
+  reference_photo_paths?: string[];
+  proof_kind?: TaskProofKind;
 }
 
 /**
  * Only what the officer changed, the due date and time as a pair, as the
- * API reads them. Empty when nothing changed, so Save sends nothing.
+ * API reads them. Empty when nothing changed, so Save sends nothing. The
+ * reference photos go as the whole set as it should stand, and only when it
+ * differs from the task's, in content or order.
  */
 export function taskEditBody(
   task: TaskEditTarget,
@@ -318,6 +357,18 @@ export function taskEditBody(
   }
   const points = next.point_reward || null;
   if (points !== (task.pointReward || null)) body.point_reward = points;
+  const proofKind = next.proof_kind ?? "none";
+  if (proofKind !== task.proofKind) body.proof_kind = proofKind;
+  if (next.reference_photo_paths) {
+    const stored = task.referencePhotos.map((photo) => photo.storage_path);
+    const wanted = next.reference_photo_paths;
+    if (
+      wanted.length !== stored.length ||
+      wanted.some((path, i) => path !== stored[i])
+    ) {
+      body.reference_photo_paths = wanted;
+    }
+  }
   return body;
 }
 

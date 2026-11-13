@@ -14,6 +14,8 @@ import {
   activityRowIsNow,
   activitySummary,
   activityDetailParts,
+  activityReviewQueue,
+  findActivityTaskRow,
   type Activity,
   type ActivityRow,
 } from "./activity-rows";
@@ -1002,6 +1004,13 @@ describe("activityRowAction (#4402)", () => {
         tasks: [task({ id: "mine", title: "Mine" })],
         task_confirmations: [
           task({ id: "done", title: "Done", status: "COMPLETED" }),
+          // Proof to look at first: it opens rather than confirming (#4635).
+          task({
+            id: "proof",
+            title: "Proof",
+            status: "COMPLETED",
+            proof_kind: "photo",
+          }),
         ],
         hours_approvals: [
           {
@@ -1036,6 +1045,7 @@ describe("activityRowAction (#4402)", () => {
       Open: null,
       Mine: null,
       Done: "confirm",
+      Proof: null,
       "Food bank": "approve",
       "Formal venue?": null,
       Later: null,
@@ -1284,5 +1294,40 @@ describe("faces and closing soon (#4402, item 4)", () => {
     expect(
       activityDetailParts({ detail: "Due in 3 hours", soon: "Due in 3 hours" }),
     ).toEqual({ lead: "", soon: "Due in 3 hours" });
+  });
+});
+
+describe("review steps (#4693)", () => {
+  const waiting = (id: string, title: string) =>
+    task({
+      id,
+      title,
+      assignee_id: `member-${id}`,
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: 10,
+    });
+  const data = activity({
+    needs_you: {
+      tasks: [task({ id: "mine", title: "My own task" })],
+      task_confirmations: [
+        waiting("t1", "Clean his room"),
+        waiting("t2", "Kitchen trash"),
+      ],
+      hours_approvals: [],
+      polls: [],
+    },
+  });
+
+  it("queues the tasks waiting on a sign-off, in the list's order", () => {
+    expect(activityReviewQueue(data).map((row) => row.key)).toEqual([
+      "needs-confirm:task:t1",
+      "needs-confirm:task:t2",
+    ]);
+  });
+
+  it("finds a task's row for its review push, and nothing for one gone", () => {
+    expect(findActivityTaskRow(data, "t2")?.key).toBe("needs-confirm:task:t2");
+    expect(findActivityTaskRow(data, "gone")).toBeNull();
   });
 });

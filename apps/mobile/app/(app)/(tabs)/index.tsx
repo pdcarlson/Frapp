@@ -707,7 +707,7 @@ export default function ChatHomeScreen() {
       {setup.checklist &&
       !channelsQuery.isPending &&
       !holdingForLaunch &&
-      !channelsQuery.isError ? (
+      !(channelsQuery.isError && channelsQuery.data === undefined) ? (
         <SetupChecklistView
           checklist={setup.checklist}
           onHide={setup.hide}
@@ -722,7 +722,7 @@ export default function ChatHomeScreen() {
       */}
       {!channelsQuery.isPending &&
       !holdingForLaunch &&
-      !channelsQuery.isError ? (
+      !(channelsQuery.isError && channelsQuery.data === undefined) ? (
         <PushReminder />
       ) : null}
 
@@ -751,7 +751,7 @@ export default function ChatHomeScreen() {
         <NoChapterState noun="its channels" />
       ) : channelsQuery.isPending || holdingForLaunch ? (
         <ChannelListSkeleton />
-      ) : channelsQuery.isError ? (
+      ) : (channelsQuery.isError && channelsQuery.data === undefined) ? (
         // An explicit retry as well as the pull (#3385): this tab stays
         // mounted for the session, and a button is the recovery a member
         // sees without knowing the gesture. A *connectivity* blip
@@ -1035,6 +1035,14 @@ export default function ChatHomeScreen() {
   return (
     <MessagesSwipeArea
       enabled={!filterMenu.visible && !menuTarget}
+      // The hint that teaches the swipe plays only on a Chat home at rest
+      // (`lib/chat/messages-hint.ts`): in front, its list drawn, and the
+      // launch jump to the last channel settled.
+      hint={{
+        viewerId,
+        ready: isFocused && listAnswered && !holdingForLaunch,
+        unreadConversations,
+      }}
     >
       {screen}
     </MessagesSwipeArea>

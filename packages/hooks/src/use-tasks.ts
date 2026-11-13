@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { invalidatePointReads } from "./use-points";
@@ -50,6 +51,10 @@ interface CachedTask {
   completed_at?: string | null;
   confirmed_at?: string | null;
   points_awarded?: boolean;
+  point_reward?: number | null;
+  proof_kind?: string;
+  sent_back_at?: string | null;
+  sent_back_reason?: string | null;
   subtasks?: TaskSubtask[];
 }
 
@@ -64,6 +69,9 @@ type TaskPatch = Partial<
     | "completed_at"
     | "confirmed_at"
     | "points_awarded"
+    | "sent_back_at"
+    | "sent_back_reason"
+    | "proof_kind"
   >
 >;
 
@@ -450,10 +458,10 @@ export function useCreateTask() {
       /** Subtask titles, in order (#4003). */
       subtasks?: string[];
       point_reward?: number;
-      /** A reference photo's `storage_path` (#4565). */
-      reference_photo_path?: string;
-      /** Mark done needs a proof photo (#4565). */
-      photo_required?: boolean;
+      /** Reference photos' `storage_path`s, in order, up to 6 (#4635). */
+      reference_photo_paths?: string[];
+      /** What Mark done needs (#4635). */
+      proof_kind?: TaskProofKind;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
       if (error) throw error;
@@ -543,10 +551,15 @@ export function useUpdateTaskStatus() {
     }: {
       id: string;
       /**
-       * `proof_photo_path` rides with `COMPLETED` only: the `storage_path` of
-       * a proof photo already uploaded (#4565).
+       * Proof and a reply ride with `COMPLETED` only (#4635): `storage_path`s
+       * of proof photos already uploaded, a link, a note to the officer.
        */
-      body: { status: TaskStatus; proof_photo_path?: string };
+      body: {
+        status: TaskStatus;
+        proof_photo_paths?: string[];
+        proof_link?: string;
+        completion_note?: string;
+      };
     }) => {
       const { data, error } = await client.PATCH("/v1/tasks/{id}/status", {
         params: { path: { id } },
@@ -575,6 +588,12 @@ export function useUpdateTaskStatus() {
       // alone otherwise, so a "Done <weekday>" subtitle does not blank for a beat.
       if (body.status === "COMPLETED") {
         patch.completed_at = new Date().toISOString();
+        // A task with no points and no proof is Done as it is marked (#4635):
+        // the server confirms it in the same write.
+        if (row && row.proof_kind !== undefined && !taskNeedsSignOff(row)) {
+          patch.confirmed_at = patch.completed_at;
+          patch.points_awarded = true;
+        }
       }
       // The assignee taking back their own "done" (`COMPLETED → IN_PROGRESS`):
       // the server clears `completed_at` on that move, so a done row doesn't
@@ -584,6 +603,11 @@ export function useUpdateTaskStatus() {
         (row?.stored_status ?? row?.status) === "COMPLETED"
       ) {
         patch.completed_at = null;
+        // Taking back a Done that needed no sign-off unconfirms it too.
+        if (row?.points_awarded) {
+          patch.confirmed_at = null;
+          patch.points_awarded = false;
+        }
       }
       return applyTaskPatch(queryClient, chapterId, id, patch);
     },
@@ -621,38 +645,34 @@ export function useRequestTaskPhotoUploadUrl() {
   });
 }
 
-/** Which of a task's two photos (#4565). */
+/** Which of a task's photos (#4635): the officer's or the assignee's. */
 export type TaskPhotoKind = "reference" | "proof";
 
 /**
- * A short-lived link to one of a task's photos (#4565), for its assignee or a
- * `tasks:manage` holder. Keyed on the stored path, so a replaced photo is a
- * new read, and kept well inside the link's lifetime so a cached link never
- * outlives it. Pass `path: null` (no photo) to read nothing.
+ * A short-lived link to one of a task's photos (#4635), for its assignee or a
+ * `tasks:manage` holder. Keyed on the photo's id, which a replaced photo never
+ * reuses, and kept well inside the link's lifetime so a cached link never
+ * outlives it. Pass `photoId: null` to read nothing.
  */
-export function useTaskPhotoUrl(
-  taskId: string,
-  photo: TaskPhotoKind,
-  path: string | null | undefined,
-) {
+export function useTaskPhotoUrl(taskId: string, photoId: string | null) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     // Its own root, not under `["tasks"]`: a task write invalidates the
     // task keys, and a photo link refetched with them would be signed anew,
-    // change its `src` and send the browser for the whole image again. The
-    // stored path in the key is what changes when the photo does.
-    queryKey: ["task-photo-url", chapterId, taskId, photo, path],
-    enabled: Boolean(path && taskId),
+    // change its `src` and send the browser for the whole image again.
+    queryKey: ["task-photo-url", chapterId, taskId, photoId],
+    enabled: Boolean(photoId && taskId),
     // Under the link's hour (`getSignedDownloadUrl`'s default), so a cached
     // link is never handed out expired.
     staleTime: 45 * 60 * 1000,
     gcTime: 50 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data, error } = await client.GET("/v1/tasks/{id}/photo-url", {
-        params: { path: { id: taskId }, query: { photo } },
-      });
+      const { data, error } = await client.GET(
+        "/v1/tasks/{id}/photos/{photoId}/url",
+        { params: { path: { id: taskId, photoId: photoId! } } },
+      );
       if (error) throw error;
       return data.url;
     },
@@ -739,19 +759,32 @@ export function useRejectTask() {
       body,
     }: {
       id: string;
-      body?: { comment?: string };
+      /**
+       * `comment` is the reason, which the server requires (#4635): it stays
+       * on the task for the assignee. `require_photo` raises the task's proof
+       * to Photo. Both apps' Send back sheets ask for the reason before they
+       * send.
+       */
+      body: { comment: string; require_photo?: boolean };
     }) => {
       const { data, error } = await client.POST("/v1/tasks/{id}/reject", {
         params: { path: { id } },
-        body: body ?? {},
+        body,
       });
       if (error) throw error;
       return data;
     },
-    onMutate: async ({ id }) => {
+    onMutate: async ({ id, body }) => {
       await cancelTaskQueries(queryClient, chapterId, id);
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
+        sent_back_at: new Date().toISOString(),
+        sent_back_reason: body.comment.trim(),
+        ...(body.require_photo ? { proof_kind: "photo" } : {}),
+        // A Done that needed no sign-off goes back unconfirmed (#4635).
+        ...(row?.points_awarded
+          ? { points_awarded: false, confirmed_at: null }
+          : {}),
         status: deriveDisplayStatus(
           "IN_PROGRESS",
           row?.due_date,

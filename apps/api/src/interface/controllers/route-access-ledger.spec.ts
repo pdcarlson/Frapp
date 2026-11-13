@@ -68,6 +68,8 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "Discord's OAuth redirect; the signed state parameter binds it to the officer who started it.",
   'CalendarFeedFetchController.fetch':
     "A calendar app fetches a member's .ics feed; the 256-bit token in the query is the credential, checked in the service.",
+  'GoogleCalendarCallbackController.callback':
+    "Google's OAuth redirect; connects nothing, only sends the browser back to where the sign-in started, whose signed-in member finishes it.",
   'DevLogController.post':
     'Posts to the dev-log channel; guarded by DevLogTokenGuard (a shared secret), not a user session.',
 };
@@ -114,6 +116,10 @@ const USER_ROUTES: Record<string, string> = {
 const MEMBERSHIP_ONLY_ROUTES: Record<string, string> = {
   'AskDiagnosticsStopController.stopDiagnostics':
     "Ends the chapter's Ask diagnostics window; the service lets only the president stop it.",
+  'GoogleCalendarController.status':
+    "The caller's own Google Calendar connection; connecting needs members:view.",
+  'GoogleCalendarController.disconnect':
+    "Ends the caller's own Google Calendar connection, so losing members:view never traps one.",
   'AttendanceController.checkIn':
     'Any member checks themselves in; the check-in token and window are verified in the service.',
   'UserController.getMyPermissions':

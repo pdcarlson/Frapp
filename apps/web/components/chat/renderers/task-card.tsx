@@ -6,6 +6,7 @@ import { TasksGlyph } from "../chat-glyphs";
 import {
   canEditCardTask,
   canReadCardTask,
+  isSentBack,
   readEditableCardTask,
   readLiveTask,
   taskCardControls,
@@ -41,7 +42,11 @@ import {
 } from "@/components/shared/subscription-gate";
 import { OWNS_ESCAPE } from "@/components/shared/panel";
 import { TaskEditForm } from "@/components/tasks/task-edit-form";
-import { MarkDoneControl, TaskPhotos } from "@/components/tasks/task-photo";
+import {
+  MarkDoneControl,
+  SendBackDialog,
+  TaskProof,
+} from "@/components/tasks/task-photo";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -84,6 +89,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
+  // Send back asks for a reason in its own sheet (#4635).
+  const [sendingBack, setSendingBack] = useState(false);
   const { data: permissionsPayload } = useMyPermissions();
 
   /*
@@ -293,14 +300,11 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         ) : null}
       </div>
       {live ? (
-        <TaskPhotos
-          task={{
-            id: live.id,
-            reference_photo_path: live.reference_photo_path,
-            proof_photo_path: live.proof_photo_path,
-          }}
+        <TaskProof
+          task={live}
           // Whoever reads the live task is its assignee or an officer.
           showProof
+          sentBack={isSentBack(live)}
         />
       ) : null}
       {memberControls.length > 0 || managerControls.length > 0 ? (
@@ -330,18 +334,25 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               size="sm"
               title={payload.title}
               label={TASK_ACTION_LABELS.complete}
-              photoRequired={!!live?.photo_required}
+              task={live ?? {}}
+              sentBack={!!live && isSentBack(live)}
               controlProps={gate.controlProps(actionsDisabled)}
               onComplete={(proof) =>
-                updateStatus.mutate(
-                  {
+                updateStatus
+                  .mutateAsync({
                     id: payload.task_id,
-                    body: proof
-                      ? { status: "COMPLETED", proof_photo_path: proof }
-                      : { status: "COMPLETED" },
-                  },
-                  onFailure("Couldn't complete task", "Try again in a moment."),
-                )
+                    body: { status: "COMPLETED", ...proof },
+                  })
+                  .then(
+                    () => true,
+                    (error: unknown) => {
+                      onFailure(
+                        "Couldn't complete task",
+                        "Try again in a moment.",
+                      ).onError(error);
+                      return false;
+                    },
+                  )
               }
               onUploadError={(message) =>
                 toast({
@@ -384,15 +395,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   size="sm"
                   variant="secondary"
                   {...gate.controlProps(actionsDisabled)}
-                  onClick={() =>
-                    rejectTask.mutate(
-                      { id: payload.task_id },
-                      onFailure(
-                        "Couldn't reject task",
-                        "Only admins with tasks:manage can reject completions.",
-                      ),
-                    )
-                  }
+                  onClick={() => setSendingBack(true)}
                 >
                   <Undo2 className="h-4 w-4" />
                   {TASK_ACTION_LABELS.reject}
@@ -416,6 +419,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           ) : null}
         </div>
       ) : null}
+      <SendBackDialog
+        title={payload.title}
+        proofKind={live?.proof_kind}
+        open={sendingBack}
+        onClose={() => setSendingBack(false)}
+        onSubmit={async (body) => {
+          await rejectTask.mutateAsync({ id: payload.task_id, body });
+        }}
+      />
     </Card>
   );
 }
@@ -425,7 +437,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
  * assigned to now for the line under Assignee: an edit may have handed it on
  * since the card was posted, so the snapshot's name won't do.
  */
-function CardTaskEdit({
+export function CardTaskEdit({
   task,
   gate,
   onClose,

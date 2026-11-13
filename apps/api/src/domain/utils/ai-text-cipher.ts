@@ -46,13 +46,16 @@ export class AiTextCipherError extends Error {
 }
 
 /**
- * Parses `AI_STORED_TEXT_KEY`: `<key id>:<base64 of 32 bytes>`, with older
+ * Parses a key ring setting (`AI_STORED_TEXT_KEY` unless `name` says
+ * otherwise; `GOOGLE_CALENDAR_TOKEN_KEY` uses the same format and cipher):
+ * `<key id>:<base64 of 32 bytes>`, with older
  * keys after it separated by commas. Returns null when the value is unset or
  * blank, and throws (naming the fault, never the value) when it is set and
  * wrong, so a typo fails at boot instead of silently storing nothing.
  */
 export function parseAiTextKeyRing(
   value: string | null | undefined,
+  name = 'AI_STORED_TEXT_KEY',
 ): AiTextKeyRing | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -63,16 +66,16 @@ export function parseAiTextKeyRing(
     const key = Buffer.from(part.slice(separator + 1).trim(), 'base64');
     if (separator < 1 || !KEY_ID.test(id)) {
       throw new Error(
-        'AI_STORED_TEXT_KEY: each key is "<key id>:<base64 key>", the id lowercase letters, digits, "-" or "_"',
+        `${name}: each key is "<key id>:<base64 key>", the id lowercase letters, digits, "-" or "_"`,
       );
     }
     if (key.length !== KEY_BYTES) {
       throw new Error(
-        `AI_STORED_TEXT_KEY: key "${id}" must be ${KEY_BYTES} bytes, base64 encoded`,
+        `${name}: key "${id}" must be ${KEY_BYTES} bytes, base64 encoded`,
       );
     }
     if (ring.some((existing) => existing.id === id)) {
-      throw new Error(`AI_STORED_TEXT_KEY: key id "${id}" appears twice`);
+      throw new Error(`${name}: key id "${id}" appears twice`);
     }
     ring.push({ id, key });
   }

@@ -1,11 +1,5 @@
 import { errorCopy } from "@repo/hooks/error-copy";
-import {
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useState, type ComponentProps, type ReactNode, type Ref } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -26,6 +20,7 @@ import {
   useChapterDirectorySearch,
   useConfirmChapterLogo,
   useCurrentChapter,
+  useDebouncedValue,
   useOnboardChapter,
   useRequestChapterLogoUploadUrl,
   type ChapterDirectoryResult,
@@ -100,6 +95,7 @@ import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * First-officer chapter setup (`spec/behavior/onboarding.md`, #3351).
@@ -147,15 +143,6 @@ export const SETUP_TITLES = {
 
 export function liveTitle(displayName: string): string {
   return `${displayName} is live`;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
 }
 
 /** A directory archetype this app knows, else `null`: the officer picks. */
@@ -1282,6 +1269,7 @@ function Field({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: {
@@ -1368,7 +1356,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     cardCopy: {
@@ -1425,7 +1413,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       gap: 2,
@@ -1433,7 +1421,7 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     archetypeRowPressed: {
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     archetypeRowOn: {
       borderColor: tokens.color.gold.house,

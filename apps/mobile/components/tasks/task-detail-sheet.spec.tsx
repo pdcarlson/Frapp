@@ -16,6 +16,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useSetSubtaskDone: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSubtask: () => ({ mutate: addSubtask, isPending: false }),
   useDeleteSubtask: () => ({ mutate: deleteSubtask, isPending: false }),
+  useTaskPhotoUrl: (_taskId: string, photoId: string | null) => ({
+    data: photoId ? `https://signed/${photoId}` : undefined,
+  }),
 }));
 
 import { TaskDetailSheet } from "./task-detail-sheet";
@@ -40,6 +43,12 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     isDone: false,
     isOverdue: false,
     subtasks: [],
+    proofKind: "none",
+    proofLink: null,
+    sentBackAt: null,
+    sentBackReason: null,
+    completionNote: null,
+    photos: [],
     ...overrides,
   };
 }
@@ -171,6 +180,65 @@ describe("TaskDetailSheet", () => {
       { taskId: "t1", title: "Take the recycling out" },
       expect.anything(),
     );
+  });
+
+  it("names what Mark done needs and shows the task's photos (#4635)", () => {
+    const tree = render(
+      <TaskDetailSheet
+        row={row({
+          proofKind: "photo",
+          photos: [{ id: "p1", kind: "reference", storage_path: "a/1.jpg" }],
+        })}
+        assignedBy="Jordan Lee"
+        onToggle={() => {}}
+      />,
+    );
+    expect(pressByText(tree, "Mark done with a photo")).toBeDefined();
+    expect(texts(tree)).toContain("Photos");
+    const image = tree.root.findAll(
+      (node) => (node.type as unknown) === "Image",
+    );
+    expect(image[0]!.props.source).toEqual({ uri: "https://signed/p1" });
+  });
+
+  it("shows Needs changes and the officer's reason on a sent-back task", () => {
+    const tree = render(
+      <TaskDetailSheet
+        row={row({
+          storedStatus: "IN_PROGRESS",
+          displayStatus: "IN_PROGRESS",
+          sentBackAt: "2026-08-16T12:00:00Z",
+          sentBackReason: "Floor is still sticky",
+        })}
+        assignedBy="Jordan Lee"
+        onToggle={() => {}}
+      />,
+    );
+    const all = texts(tree);
+    expect(all).toContain("Needs changes");
+    expect(all).toContain("Floor is still sticky");
+  });
+
+  it("calls a no-points, no-proof completion Done, and still lets it be taken back", () => {
+    const tree = render(
+      <TaskDetailSheet
+        row={row({
+          storedStatus: "COMPLETED",
+          displayStatus: "COMPLETED",
+          isDone: true,
+          pointsAwarded: true,
+          pointReward: null,
+          completedAt: "2026-11-13T10:00:00.000Z",
+          confirmedAt: "2026-11-13T10:00:00.000Z",
+        })}
+        assignedBy="Jordan Lee"
+        onToggle={() => {}}
+      />,
+    );
+    const all = texts(tree);
+    expect(all).toContain("Done");
+    expect(all).toContain("You marked this done. Nothing waits on an officer.");
+    expect(pressByText(tree, "Mark not done")).toBeDefined();
   });
 
   it("offers a member no Edit and no step editing", () => {

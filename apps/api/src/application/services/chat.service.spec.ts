@@ -537,7 +537,7 @@ describe('ChatService', () => {
 
         await expect(
           service.updateChannel('chan-1', 'ch-1', { who_can_see: [] }),
-        ).rejects.toThrow('Pick at least one tier or role');
+        ).rejects.toThrow('Pick at least one tier, role or group');
         expect(mockChannelRepo.update).not.toHaveBeenCalled();
         expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
       });
@@ -2318,6 +2318,76 @@ describe('ChatService', () => {
       });
     });
 
+    describe('a GIF message (#4631)', () => {
+      const gif = {
+        provider: 'klipy',
+        id: 'dance',
+        title: 'Happy dance',
+        url: 'https://static.klipy.com/h.webp',
+        width: 498,
+        height: 280,
+      };
+
+      it('stores the GIF as the server-owned metadata.gif, with no text', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          gif,
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ content: '', metadata: { gif } }),
+        );
+      });
+
+      it("drops a client's own metadata.gif", async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'hi',
+          metadata: { gif: { ...gif, url: 'https://evil.test/x.webp' } },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: {} }),
+        );
+      });
+
+      it('refuses a GIF with text, or on a card', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'lol',
+            gif,
+          }),
+        ).rejects.toThrow('A GIF message has no text and no attachments');
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: '',
+            kind: 'poll',
+            gif,
+          }),
+        ).rejects.toThrow('Only a plain message can be a GIF');
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -2992,6 +3062,59 @@ describe('ChatService', () => {
       });
     });
 
+    // The answer route checks every answer against the stored questions, so
+    // a form card is checked and rebuilt on send too (#3926 step 3).
+    describe('a form card is checked on send (#3926 step 3)', () => {
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      const sendForm = (payload: Record<string, unknown>) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Room picks',
+          kind: 'form',
+          payload,
+        });
+
+      it('stores the card rebuilt from its known fields', async () => {
+        await sendForm({
+          title: ' Room picks ',
+          questions: [
+            { id: 'q1', type: 'yes_no', title: 'Staying over?', extra: 1 },
+          ],
+          closed_by: 'someone',
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: 'form',
+            payload: {
+              title: 'Room picks',
+              questions: [
+                {
+                  id: 'q1',
+                  type: 'yes_no',
+                  title: 'Staying over?',
+                  required: false,
+                },
+              ],
+            },
+          }),
+        );
+      });
+
+      it('refuses a card it cannot read, writing nothing', async () => {
+        await expect(
+          sendForm({ title: 'Room picks', questions: [] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+    });
+
     describe('module gate on card kinds (#2993)', () => {
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({
@@ -3432,6 +3555,27 @@ describe('ChatService', () => {
   });
 
   describe('editMessage', () => {
+    it('refuses to edit a GIF message, even its own sender (#4631)', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        content: '',
+        metadata: {
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: '',
+            url: 'https://static.klipy.com/h.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      });
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'now with text'),
+      ).rejects.toThrow('A GIF cannot be edited');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
     it('saves an edit with U+FFFC turned into a space, and refuses one left blank (#4346)', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.update.mockResolvedValue(baseMessage);
@@ -3546,6 +3690,20 @@ describe('ChatService', () => {
       ).rejects.toThrow('Imported messages cannot be edited');
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
+
+    // #3926: a card's `content` is the line a push and the channel preview
+    // read for it; editing it would leave the card saying something else.
+    it.each(['form', 'signup', 'poll', 'announcement'] as const)(
+      'refuses to edit a %s card, even its sender',
+      async (kind) => {
+        mockMessageRepo.findById.mockResolvedValue({ ...baseMessage, kind });
+
+        await expect(
+          service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+        ).rejects.toThrow('A card cannot be edited');
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      },
+    );
 
     it('lets the linked sender delete their imported message, keeping it purgeable with its import', async () => {
       mockMessageRepo.findById.mockResolvedValue({
@@ -4188,7 +4346,7 @@ describe('ChatService', () => {
     });
   });
 
-  describe('closeSignup (#3926 step 2)', () => {
+  describe('closeCard (#3926 steps 2 and 3)', () => {
     const card: ChatMessage = {
       ...baseMessage,
       kind: 'signup',
@@ -4208,7 +4366,7 @@ describe('ChatService', () => {
         }),
       );
 
-      const closed = await service.closeSignup('msg-1', 'ch-1', 'user-1');
+      const closed = await service.closeCard('msg-1', 'ch-1', 'user-1');
 
       expect(mockMessageRepo.updateIfLive).toHaveBeenCalledWith(card.id, {
         payload: {
@@ -4234,7 +4392,7 @@ describe('ChatService', () => {
         .spyOn(access, 'assertChannelAccess')
         .mockRejectedValue(refusal);
 
-      await expect(service.closeSignup('msg-1', 'ch-1', 'user-1')).rejects.toBe(
+      await expect(service.closeCard('msg-1', 'ch-1', 'user-1')).rejects.toBe(
         refusal,
       );
       // 'close', not 'post': a creator who lost post rights can still close.
@@ -4256,11 +4414,11 @@ describe('ChatService', () => {
       mockMessageRepo.updateIfLive.mockResolvedValue(card);
 
       await expect(
-        service.closeSignup('msg-1', 'ch-1', 'user-1', async () => false),
+        service.closeCard('msg-1', 'ch-1', 'user-1', async () => false),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
 
-      await service.closeSignup('msg-1', 'ch-1', 'user-1', async () => true);
+      await service.closeCard('msg-1', 'ch-1', 'user-1', async () => true);
       expect(mockMessageRepo.updateIfLive).toHaveBeenCalled();
     });
 
@@ -4282,7 +4440,7 @@ describe('ChatService', () => {
       });
 
       await expect(
-        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+        service.closeCard('msg-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(message);
       expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
     });
@@ -4290,12 +4448,12 @@ describe('ChatService', () => {
     it('refuses a message that is not a sign-up card, and a deleted one', async () => {
       mockMessageRepo.findById.mockResolvedValue({ ...card, kind: 'poll' });
       await expect(
-        service.closeSignup('msg-1', 'ch-1', 'user-1'),
-      ).rejects.toThrow('Message is not a sign-up card');
+        service.closeCard('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Message is not a sign-up or form card');
 
       mockMessageRepo.findById.mockResolvedValue({ ...card, is_deleted: true });
       await expect(
-        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+        service.closeCard('msg-1', 'ch-1', 'user-1'),
       ).rejects.toThrow('Cannot close a deleted sign-up');
     });
 
@@ -4304,8 +4462,45 @@ describe('ChatService', () => {
       mockMessageRepo.updateIfLive.mockResolvedValue(null);
 
       await expect(
-        service.closeSignup('msg-1', 'ch-1', 'user-1'),
+        service.closeCard('msg-1', 'ch-1', 'user-1'),
       ).rejects.toThrow('Cannot close a deleted sign-up');
+    });
+
+    it('closes a form card the same way, in a form’s words', async () => {
+      const form: ChatMessage = {
+        ...card,
+        kind: 'form',
+        payload: {
+          title: 'Room picks',
+          questions: [
+            { id: 'q1', type: 'short_answer', title: 'Name', required: true },
+          ],
+        },
+      };
+      mockMessageRepo.findById.mockResolvedValue(form);
+      mockMessageRepo.updateIfLive.mockImplementation(
+        async (_id: string, data: Partial<ChatMessage>) => ({
+          ...form,
+          ...data,
+        }),
+      );
+      const closed = await service.closeCard('msg-1', 'ch-1', 'user-1');
+      expect(closed.payload).toMatchObject({ closed_by: 'user-1' });
+
+      mockMessageRepo.findById.mockResolvedValue({
+        ...form,
+        payload: { ...form.payload, closed_at: '2026-01-01T00:00:00.000Z' },
+      });
+      await expect(
+        service.closeCard('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('This form is already closed');
+
+      mockMessageRepo.findById.mockResolvedValue({ ...form, sender_id: 'x' });
+      await expect(
+        service.closeCard('msg-1', 'ch-1', 'user-1', async () => false),
+      ).rejects.toThrow(
+        'Only the form’s creator or a member who manages channels can close it',
+      );
     });
   });
 

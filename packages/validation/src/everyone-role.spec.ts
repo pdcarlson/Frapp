@@ -83,6 +83,16 @@ describe("mentionRoleHint", () => {
     expect(mentionRoleHint("here")).toBe("Notifies who's online");
     expect(mentionRoleHint("Officers")).toBe("Role");
   });
+
+  it("names a tier and a group by kind, and reads no kind as a role", () => {
+    expect(mentionRoleHint("Exec board", "tier")).toBe("Tier");
+    expect(mentionRoleHint("Third floor", "group")).toBe("Group");
+    expect(mentionRoleHint("Officers", "role")).toBe("Role");
+    expect(mentionRoleHint("Officers", undefined)).toBe("Role");
+    expect(mentionRoleHint("everyone", "tier")).toBe(
+      "Notifies the whole channel",
+    );
+  });
 });
 
 describe("rolesAfterSave (#4191)", () => {

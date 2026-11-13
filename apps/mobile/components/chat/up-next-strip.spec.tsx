@@ -25,7 +25,9 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectRoundedRipple } from "@/test/pressable-row";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LeadTile } from "@/components/lead-tile";
+import { ListSection } from "@/components/list-section";
 import { formatDayHeading } from "@repo/formatting";
 import {
   formatDayWord,
@@ -396,60 +398,81 @@ describe("UpNextStrip rows", () => {
     return tree;
   }
 
+  /** A Text node's words, nested Text included. */
+  function textOf(node: ReactTestInstance): string {
+    return node.children
+      .map((child) => (typeof child === "string" ? child : textOf(child)))
+      .join("");
+  }
+
   function rows(tree: ReactTestRenderer) {
     return tree.root.findAll(
       (node) => (node.type as unknown as string) === "Pressable",
     );
   }
 
-  it("leads both rows with a muted glyph and never draws the accent", () => {
+  it("leads both rows with a neutral tile and never draws the accent", () => {
     const tree = renderStrip();
     const [eventRow, taskRow] = rows(tree);
 
-    // Each tab glyph is two filled Paths; the second is the full-strength
+    // Each nav glyph is two filled Paths; the second is the full-strength
     // outline, so its fill is the glyph's hue.
-    const outline = (row: ReactTestInstance) =>
-      row.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
-    expect(outline(eventRow!).props.fill).toBe(
-      signetDarkTokens.color.text.muted,
-    );
-    expect(outline(taskRow!).props.fill).toBe(
-      signetDarkTokens.color.text.muted,
-    );
+    const outline = (tile: ReactTestInstance) =>
+      tile.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
+    for (const row of [eventRow!, taskRow!]) {
+      const tile = row.findByType(LeadTile);
+      expect(tile.props.size).toBe("lead");
+      expect(tile.props.on).toBe("card");
+      // A state row's tile is never tinted (foundations.md §6, A place's hue).
+      expect(tile.props.hue).toBeUndefined();
+      expect(outline(tile).props.fill).toBe(
+        signetDarkTokens.color.text.mutedForeground,
+      );
+      expect(
+        tile.find((node) => (node.type as unknown as string) === "Svg").props
+          .width,
+      ).toBe(20);
+    }
     expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
-    for (const svg of [eventRow!, taskRow!].map((row) =>
-      row.find((node) => (node.type as unknown as string) === "Svg"),
-    )) {
-      expect(svg.props.width).toBe(20);
+  });
+
+  // #4610: on one line with its context and time, a title was cut mid word.
+  it("gives each title its own line, with when and where under it", () => {
+    const [eventRow, taskRow] = rows(renderStrip());
+    const lines = (row: ReactTestInstance) =>
+      row
+        .findAll(
+          (node) =>
+            (node.type as unknown as string) === "Text" &&
+            node.props.numberOfLines === 1,
+        )
+        .map((node) => textOf(node));
+    expect(lines(eventRow!)).toEqual([
+      "Chapter meeting",
+      "Today 6:00 PM · Great Hall",
+    ]);
+    expect(lines(taskRow!)).toEqual(["Ride-share list", "Due tomorrow"]);
+  });
+
+  it("ends each row in the drawn chevron of a row that opens something", () => {
+    for (const row of rows(renderStrip())) {
+      expect(row.findAllByType(ForwardGlyph)).toHaveLength(1);
     }
   });
 
-  it("gives both rows the shared list-row press feedback", () => {
-    for (const row of rows(renderStrip())) {
+  it("holds both rows in one card, with the card's press feedback", () => {
+    const tree = renderStrip();
+    expect(tree.root.findAllByType(ListSection)).toHaveLength(1);
+    const all = rows(tree);
+    expect(all).toHaveLength(2);
+    for (const row of all) {
       expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
-      // The suite's react-native stub runs as iOS.
+      // The suite's react-native stub runs as iOS. On a card the lift is the
+      // step above it.
       expect(row.props.style({ pressed: true })).toContainEqual({
         backgroundColor: signetDarkTokens.color.surface.card,
       });
       expect(row.props.style({ pressed: false })).toContain(null);
-    }
-  });
-
-  // Each row pads itself by `sm` and bleeds it into the screen gutter, as
-  // Chat home's channel rows do, so the glyph stays on the gutter line and the
-  // press lift clears it. The bleed sits on the clip that rounds the ripple
-  // (`PressableRow`), so the row is where it was.
-  it("bleeds each row's padding into the screen gutter, inside a rounded clip", () => {
-    const all = rows(renderStrip());
-    expect(all).toHaveLength(2);
-    for (const row of all) {
-      const { clip, resting } = expectRoundedRipple(
-        row,
-        signetDarkTokens.radius.control,
-      );
-      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
-      expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
-      expect(resting).not.toHaveProperty("marginHorizontal");
     }
   });
 });

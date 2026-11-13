@@ -14,6 +14,7 @@ import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
   useGetOrCreateDm,
+  dmChannelIdOf,
   useMemberByUserId,
   useMemberDisplayNames,
   useMyPermissions,
@@ -34,6 +35,10 @@ import {
 import { formatDay } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
+import {
+  START_DM_FAILED_FALLBACK,
+  START_DM_FAILED_TITLE,
+} from "@/lib/chat/start-dm";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +74,7 @@ import {
   DETAIL_LIST,
   DetailRow,
 } from "@/components/members/member-detail-rows";
+import { MemberGroupsSection } from "@/components/members/member-groups-section";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { MemberCorrectionDialog } from "@/components/members/member-correction-dialog";
 
@@ -539,12 +545,7 @@ export function MemberDetailSheet({
       // The sheet may have moved on to a different member while this request
       // was in flight — ignore a result that's no longer for the open member.
       if (dmTargetUserIdRef.current !== requestedUserId) return;
-      const channelId =
-        dm &&
-        typeof dm === "object" &&
-        typeof (dm as { id?: unknown }).id === "string"
-          ? (dm as { id: string }).id
-          : null;
+      const channelId = dmChannelIdOf(dm);
       if (!channelId) {
         throw new Error("No channel id returned");
       }
@@ -553,11 +554,8 @@ export function MemberDetailSheet({
     } catch (error) {
       if (dmTargetUserIdRef.current !== requestedUserId) return;
       toast({
-        title: "Could not start conversation",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
+        title: START_DM_FAILED_TITLE,
+        description: getErrorMessage(error, START_DM_FAILED_FALLBACK),
         variant: "destructive",
       });
     }
@@ -853,6 +851,8 @@ export function MemberDetailSheet({
                   can("roles:manage", myPermissions)
                 }
               />
+
+              <MemberGroupsSection userId={userId} open={open} />
 
               {customFields.length > 0 ? (
                 <section className="mt-6 space-y-2">

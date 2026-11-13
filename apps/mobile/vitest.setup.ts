@@ -85,6 +85,12 @@ vi.mock("expo-haptics", () => ({
   },
 }));
 
+// expo-keep-awake is native: s10's "Keep screen on" (lib/study/keep-screen-on.ts).
+vi.mock("expo-keep-awake", () => ({
+  activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
+  deactivateKeepAwake: vi.fn().mockResolvedValue(undefined),
+}));
+
 // expo-image is native. A host element named "ExpoImage" stands in, so a
 // spec reads the props a photo was drawn with (source, cacheKey, placeholder).
 vi.mock("expo-image", () => ({ Image: "ExpoImage" }));
@@ -424,6 +430,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   // renders its props but never invokes `renderItem` — a spec needing a row
   // should render that row's component directly.
   BottomSheetFlatList: "BottomSheetFlatList",
+  // What `useInSheet` (`lib/surfaces.ts`) reads: `null` outside a sheet. The
+  // stand-ins above provide no context, so a spec that needs "in a sheet"
+  // has this return a value (`vi.mocked(useBottomSheetInternal)`).
+  useBottomSheetInternal: vi.fn(() => null),
 }));
 
 // A native module: a string stand-in for the iOS picker, and the Android

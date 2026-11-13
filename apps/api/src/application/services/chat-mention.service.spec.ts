@@ -1,3 +1,6 @@
+import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
+import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import type { Role } from '#domain/entities/role.entity';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
@@ -55,6 +58,16 @@ const roles = [
   role('brothers', 'Brothers', { display_order: 3 }),
   role('empty', 'Rush Chair', { display_order: 2 }),
 ];
+
+/** No tiers and no groups (#4076): the role-only tests read the chapter as before. */
+function noSets(): [IRoleTierRepository, IChapterGroupRepository] {
+  return [
+    {
+      findByChapter: jest.fn().mockResolvedValue([]),
+    } as unknown as IRoleTierRepository,
+    createChapterGroupRepoMock(),
+  ];
+}
 
 describe('mentionRoleViews', () => {
   it('lists roles in role order with their holders', () => {
@@ -129,6 +142,140 @@ describe('mentionRoleViews', () => {
     expect(mentionRoleViews([], members)).toEqual([]);
   });
 
+  describe('tiers and groups (#4076)', () => {
+    const tier = (id: string, name: string, position: number) => ({
+      id,
+      chapter_id: 'ch-1',
+      name,
+      position,
+      permissions: [],
+      mentionable: true,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    });
+    const group = (
+      id: string,
+      name: string,
+      kind: 'manual' | 'pledge_class' | 'class_year' = 'manual',
+    ) => ({
+      id,
+      chapter_id: 'ch-1',
+      kind,
+      name,
+      color: null,
+      mentionable: true,
+      pledge_class_id: kind === 'pledge_class' ? 'pc-1' : null,
+      class_year: kind === 'class_year' ? 2027 : null,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    });
+    const tiered = roles.map((r) =>
+      r.id === 'officers' || r.id === 'empty'
+        ? { ...r, tier_id: 't-exec' }
+        : r.id === 'brothers'
+          ? { ...r, tier_id: 't-members' }
+          : r,
+    );
+
+    it('reaches every holder of any role in a tier, once each', () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-members', 'Members', 3), tier('t-exec', 'Exec', 1)],
+      });
+      const tiers = views.filter((view) => view.kind === 'tier');
+      expect(tiers.map((view) => [view.name, view.member_ids])).toEqual([
+        ['Exec', ['u1']],
+        ['Members', ['u3', 'u4']],
+      ]);
+    });
+
+    it("carries a tier's own switch", () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [{ ...tier('t-exec', 'Exec', 1), mentionable: false }],
+      });
+      expect(views.find((view) => view.kind === 'tier')?.open_to_all).toBe(
+        false,
+      );
+    });
+
+    it("makes a tier holding the Everyone role follow @everyone's switch (#4191)", () => {
+      const withEveryone = tiered.map((r) =>
+        r.id === 'member' ? { ...r, tier_id: 't-members' } : r,
+      );
+      const members_ = (everyoneOn: boolean) =>
+        mentionRoleViews(
+          withEveryone.map((r) =>
+            r.id === 'member' ? { ...r, mentionable: everyoneOn } : r,
+          ),
+          members,
+          { tiers: [tier('t-members', 'Members', 3)] },
+        ).find((view) => view.kind === 'tier');
+
+      // Off (the default): @Members is officers-only, as @everyone is.
+      expect(members_(false)).toMatchObject({
+        open_to_all: false,
+        member_ids: ['u1', 'u2', 'u3', 'u4'],
+      });
+      // A chapter that opened @everyone opens it too.
+      expect(members_(true)?.open_to_all).toBe(true);
+    });
+
+    it('reaches the members of a group now, before @here', () => {
+      const views = mentionRoleViews(roles, members, {
+        groups: [group('g-floor', 'Third floor')],
+        memberships: [
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u2',
+            kind: 'manual',
+          },
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u4',
+            kind: 'manual',
+          },
+        ],
+      });
+      expect(views.find((view) => view.kind === 'group')).toMatchObject({
+        role_id: 'g-floor',
+        name: 'Third floor',
+        member_ids: ['u2', 'u4'],
+        open_to_all: true,
+      });
+      expect(views.at(-1)?.name).toBe('here');
+    });
+
+    it('leaves out an automatic group nobody is in, and keeps an empty manual one', () => {
+      const views = mentionRoleViews(roles, members, {
+        groups: [
+          group('g-new', 'Live-ins'),
+          group('g-class', 'Alpha', 'pledge_class'),
+        ],
+        memberships: [],
+      });
+      expect(
+        views.filter((view) => view.kind === 'group').map((v) => v.name),
+      ).toEqual(['Live-ins']);
+    });
+
+    it('leaves out a tier or group whose name reads as @everyone or @here', () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-exec', 'Everyone', 1)],
+        groups: [group('g-here', 'here')],
+        memberships: [
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-here',
+            user_id: 'u1',
+            kind: 'manual',
+          },
+        ],
+      });
+      expect(views.filter((view) => view.kind !== 'role')).toEqual([]);
+    });
+  });
+
   it('reads a role with no stored switch as on', () => {
     const legacy = { ...roles[1], mentionable: undefined } as unknown as Role;
     expect(mentionRoleViews([legacy], members)[0].open_to_all).toBe(true);
@@ -153,7 +300,12 @@ describe('ChatMentionService.listMentionRoles', () => {
       findByChapter: jest.fn().mockResolvedValue(roles),
       getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
     } as unknown as RbacService;
-    return new ChatMentionService(memberRepo, rbac, presenceOf().reader);
+    return new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+      ...noSets(),
+    );
   }
 
   it('leaves out a role nobody holds, and gates one switched off', async () => {
@@ -191,11 +343,114 @@ describe('ChatMentionService.resolveForSend', () => {
     } as unknown as RbacService;
     const presence = presenceOf(online);
     return {
-      mentions: new ChatMentionService(memberRepo, rbac, presence.reader),
+      mentions: new ChatMentionService(
+        memberRepo,
+        rbac,
+        presence.reader,
+        ...noSets(),
+      ),
       getEffectivePermissions,
       onlineUserIds: presence.onlineUserIds,
     };
   }
+
+  describe('@tier and @group (#4076)', () => {
+    function withSets(
+      tiers: unknown[],
+      groups: unknown[],
+      memberships: unknown[],
+      permissions: string[] = [],
+    ) {
+      const memberRepo = {
+        findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+      } as unknown as IMemberRepository;
+      const rbac = {
+        findByChapter: jest
+          .fn()
+          .mockResolvedValue(
+            roles.map((r) =>
+              r.id === 'brothers' ? { ...r, tier_id: 't-1' } : r,
+            ),
+          ),
+        getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
+      } as unknown as RbacService;
+      const tierRepo = {
+        findByChapter: jest.fn().mockResolvedValue(tiers),
+      } as unknown as IRoleTierRepository;
+      const groupRepo = createChapterGroupRepoMock();
+      groupRepo.findByChapter.mockResolvedValue(groups);
+      groupRepo.findMemberships.mockResolvedValue(memberships);
+      return new ChatMentionService(
+        memberRepo,
+        rbac,
+        presenceOf().reader,
+        tierRepo,
+        groupRepo,
+      );
+    }
+    const tier = {
+      id: 't-1',
+      chapter_id: 'ch-1',
+      name: 'Members',
+      position: 3,
+      permissions: [],
+      mentionable: true,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    };
+    const floor = {
+      id: 'g-1',
+      chapter_id: 'ch-1',
+      kind: 'manual',
+      name: 'Third floor',
+      color: null,
+      mentionable: true,
+      pledge_class_id: null,
+      class_year: null,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    };
+
+    it('reaches every holder of a role in the tier', async () => {
+      await expect(
+        withSets([tier], [], []).resolveForSend('ch-1', 'u2', 'hi @Members'),
+      ).resolves.toEqual(['u3', 'u4']);
+    });
+
+    it("reaches a group's members now", async () => {
+      await expect(
+        withSets(
+          [],
+          [floor],
+          [
+            {
+              chapter_id: 'ch-1',
+              group_id: 'g-1',
+              user_id: 'u1',
+              kind: 'manual',
+            },
+          ],
+        ).resolveForSend('ch-1', 'u2', '@Third floor quiet hours'),
+      ).resolves.toEqual(['u1']);
+    });
+
+    it('reaches nobody through a group switched off, unless an officer sends', async () => {
+      const off = { ...floor, mentionable: false };
+      const rows = [
+        { chapter_id: 'ch-1', group_id: 'g-1', user_id: 'u1', kind: 'manual' },
+      ];
+      await expect(
+        withSets([], [off], rows).resolveForSend('ch-1', 'u2', '@Third floor'),
+      ).resolves.toEqual([]);
+      await expect(
+        withSets([], [off], rows, ['channels:manage']).resolveForSend(
+          'ch-1',
+          'u2',
+          '@Third floor',
+        ),
+      ).resolves.toEqual(['u1']);
+    });
+  });
 
   describe('names with spaces (#3825)', () => {
     const spaced = [
@@ -391,6 +646,7 @@ describe('ChatMentionService.resolveForSend', () => {
         memberRepo,
         rbac,
         presence.reader,
+        ...noSets(),
       );
       await expect(
         mentions.resolveForSend('ch-1', 'u1', '@Ben @here'),
@@ -412,6 +668,7 @@ describe('ChatMentionService.resolveForSend', () => {
       memberRepo,
       rbac,
       presenceOf().reader,
+      ...noSets(),
     );
 
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
@@ -443,6 +700,7 @@ describe('ChatMentionService.resolveForSend', () => {
       memberRepo,
       rbac,
       presenceOf().reader,
+      ...noSets(),
     );
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 

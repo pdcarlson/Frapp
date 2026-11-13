@@ -7,6 +7,7 @@ import { GlassSurface } from "@/components/glass-surface";
 import { useScreenBelow } from "@/lib/back-target";
 import { goBackTo } from "@/lib/href";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The capsule as drawn: 36pt tall and fully round. */
@@ -62,7 +63,10 @@ export const BACK_TO_ROLES: BackTarget = {
   href: "/chapter-roles",
 };
 /** s07, opened from an Events row (and from Chat home's Up next). */
-export const BACK_TO_EVENTS: BackTarget = { label: "Calendar", href: "/events" };
+export const BACK_TO_EVENTS: BackTarget = {
+  label: "Calendar",
+  href: "/events",
+};
 
 /** The task board's way back when nothing is under it: the Activity tab (#4610). */
 export const BACK_TO_ACTIVITY: BackTarget = {
@@ -232,9 +236,10 @@ function createStyles(tokens: SignetTokens) {
       height: BACK_CAPSULE_HEIGHT,
       borderRadius: BACK_CAPSULE_HEIGHT / 2,
     },
-    // A press lifts the glass to the popover step, as a list row lifts.
+    // A press lifts the glass one step, to what sits on a screen's card
+    // (`lib/surfaces.ts`), as the floating create button lifts.
     held: {
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: pageSurfaces(tokens).raised,
     },
     content: {
       flex: 1,

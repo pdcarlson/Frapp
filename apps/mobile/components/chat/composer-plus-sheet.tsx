@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useRef, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
-import { Circle, Path, Rect } from "react-native-svg";
+import { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
 import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -53,6 +53,13 @@ export interface ComposerPlusSheetProps {
    */
   photoDisabledReason: string | null;
   onPhoto: () => void;
+  /**
+   * Opens the GIF picker (#4631); omitted when the server has no GIF search
+   * set up, which leaves the row out.
+   */
+  onGif?: () => void;
+  /** Why GIF can't be used this second (offline, a reply staged). */
+  gifDisabledReason?: string | null;
   onOpenForm: (command: PlusMenuCommand) => void;
 }
 
@@ -69,7 +76,7 @@ export const ComposerPlusSheet = forwardRef<
   BottomSheetModal,
   ComposerPlusSheetProps
 >(function ComposerPlusSheet(
-  { model, photoDisabledReason, onPhoto, onOpenForm },
+  { model, photoDisabledReason, onPhoto, onGif, gifDisabledReason, onOpenForm },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -116,6 +123,16 @@ export const ComposerPlusSheet = forwardRef<
           muted={muted}
           styles={styles}
         />
+        {onGif ? (
+          <PlusRow
+            label="GIF"
+            glyph={GifRowGlyph}
+            reason={gifDisabledReason ?? null}
+            onPress={() => choose(onGif)}
+            muted={muted}
+            styles={styles}
+          />
+        ) : null}
         {model.rows.map((row) => (
           <PlusRow
             key={row.command}
@@ -209,6 +226,39 @@ function PhotoGlyph(props: TabGlyphProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * GIF (#4631): "GIF" lettered in a rounded frame, as Discord and Slack label
+ * it, since no pictogram reads as a GIF on its own. Text in the SVG, so it
+ * scales and takes the row's stroke color like every other row glyph.
+ */
+function GifRowGlyph(props: TabGlyphProps) {
+  const { stroke } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={2.8}
+        y={6}
+        width={18.4}
+        height={12}
+        rx={3}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <SvgText
+        x={12}
+        y={14.6}
+        fontSize={7.4}
+        fontWeight="700"
+        fill={stroke}
+        textAnchor="middle"
+      >
+        GIF
+      </SvgText>
     </GlyphFrame>
   );
 }

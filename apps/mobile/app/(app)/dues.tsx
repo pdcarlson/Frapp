@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useFocusEffect } from "expo-router";
 import { focusManager } from "@tanstack/react-query";
@@ -656,13 +657,13 @@ function ChapterDues() {
   );
 
   function renderBody() {
-    if (viewerQuery.isError) {
+    if ((viewerQuery.isError && viewerQuery.data === undefined)) {
       return (
         <>
           {standalone}
           <ErrorState
             title="Couldn't load your account"
-            body="Your dues are filtered to you, so this has to load first."
+            body={describeLoadFailure(viewerQuery.error)}
             onRetry={() => void viewerQuery.refetch()}
             isRetrying={viewerQuery.isFetching}
           />
@@ -686,13 +687,13 @@ function ChapterDues() {
       );
     }
 
-    if (invoicesQuery.isError) {
+    if ((invoicesQuery.isError && invoicesQuery.data === undefined)) {
       return (
         <>
           {standalone}
           <ErrorState
             title="Couldn't load your dues"
-            body="Your invoices are still on record — this was a problem fetching them."
+            body={describeLoadFailure(invoicesQuery.error)}
             onRetry={() => void invoicesQuery.refetch()}
             isRetrying={invoicesQuery.isFetching}
           />

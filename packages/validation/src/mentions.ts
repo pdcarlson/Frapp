@@ -436,12 +436,19 @@ export type MentionChipTest = ((token: string) => boolean) & {
  * A chapter role as `@`-resolution sees it (2026-11-06, owner direction:
  * "roles should be attable"). `@Officers` reaches every member holding the
  * role, so it overrides their mutes exactly as naming each of them would.
+ *
+ * A tier and a group are mentioned the same way (#4076, Paul 2026-11-11:
+ * "that tier name is pingable"), so they ride this shape too: `role_id` is
+ * then the tier's or group's id, and `member_ids` everyone holding a role in
+ * the tier, or in the group.
  */
 export interface MentionRole {
   role_id: string;
   name: string;
   /** `users.id` of every member holding the role. */
   member_ids: readonly string[];
+  /** `role` (the default), `tier` or `group`. */
+  kind?: "role" | "tier" | "group";
   /**
    * Whether this sender may ping it. The API decides (`spec/behavior/chat/
    * README.md` § Role mentions): `true` when the role's "anyone can @" switch
@@ -464,7 +471,10 @@ const HERE_FOLDED = "here";
  * and `@vice-president` both reach "Vice President" and `@Off` reaches no role.
  * A role named in full outranks a member's shorthand (first word, prefix), but
  * not a member's own exact name: when "Rush" is both a role and a member, the
- * token is ambiguous and, like every ambiguity here, reaches nobody.
+ * token is ambiguous and, like every ambiguity here, reaches nobody. Tiers
+ * and groups (#4076) ride the same list as roles, and when several of them
+ * share the name they are one target ({@link sharedName}), except two roles
+ * or two tiers, which stay ambiguous.
  * `@everyone` and `@here` are the exceptions below.
  */
 function matchMentionRole(
@@ -488,7 +498,6 @@ function matchMentionRole(
     (role) => role.member_ids.length > 0 && fold(role.name) === folded,
   );
   if (hits.length === 0) return undefined;
-  if (hits.length > 1) return null;
   // `@everyone` is the chapter's (#4191): only its Everyone role may carry
   // the name, and a member whose display name reads the same must not be
   // able to silence every announcement by making it ambiguous.
@@ -498,7 +507,35 @@ function matchMentionRole(
   // token that should reach nobody.
   const exact = tierPredicates<MentionCandidate>(token).slice(0, EXACT_TIERS);
   if (exact.some((pred) => candidates.some(pred))) return null;
-  return hits[0]!;
+  if (hits.length === 1) return hits[0]!;
+  // Two roles or two tiers folding to one name stay ambiguous: the picker
+  // offered one of them and the token can't say which. Two groups don't: a
+  // pledge class or class year can take a hand-made group's name (the
+  // database makes them), and each is plainly the set the sender named, so
+  // they reach together like a tier and role sharing a name.
+  const kinds = hits.map((role) => role.kind ?? "role");
+  if (kinds.some((kind, i) => kind !== "group" && kinds.indexOf(kind) !== i)) {
+    return null;
+  }
+  return sharedName(hits);
+}
+
+/**
+ * One tier, role and group sharing a name (#4076): a "Members" tier and a
+ * "Members" role, or a group named like a role. Unlike two members sharing a
+ * name, no reading of the token is the wrong set: the sender wrote the name
+ * each carries, and the picker showed every one of them, labelled by kind. So
+ * it reaches the members of each one this sender may ping; one they may not
+ * adds nobody, as it would alone.
+ */
+function sharedName(hits: readonly MentionRole[]): MentionRole {
+  const allowed = hits.filter((role) => role.mentionable);
+  return {
+    role_id: hits[0]!.role_id,
+    name: hits[0]!.name,
+    member_ids: [...new Set(allowed.flatMap((role) => role.member_ids))],
+    mentionable: allowed.length > 0,
+  };
 }
 
 /**

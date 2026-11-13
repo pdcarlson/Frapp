@@ -115,6 +115,7 @@ export const CHAT_MESSAGE_KINDS = [
   "loading",
   "announcement",
   "signup",
+  "form",
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -269,6 +270,12 @@ export interface ChatMessage {
    * the server stamped it (and on any import), which then draws as it did.
    */
   attachment_photos?: readonly AttachmentPhoto[];
+  /**
+   * The GIF this message is (#4631), from `metadata.gif`, which only the
+   * server writes, after holding its URL to the GIF provider's media host.
+   * A GIF message has no text and no files. Absent on every other message.
+   */
+  gif?: MessageGif;
   /**
    * Who the body mentions, plus a reply's quoted author, as the API resolved
    * it (`users.id`). The one
@@ -567,6 +574,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
     ...attachmentPhotosField(row.metadata),
+    ...gifField(row.metadata),
     mentions: mentionIds(row.mentions),
     thread_root_id: row.thread_root_id ?? null,
     thread: threadSummaryOf(row),
@@ -626,6 +634,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
       ...(message.attachment_photos
         ? { attachment_photos: message.attachment_photos }
         : {}),
+      ...(message.gif ? { gif: message.gif } : {}),
     },
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
@@ -726,6 +735,104 @@ function attachmentPhotosField(metadata: unknown): {
 }
 
 /**
+ * A GIF message's GIF (`metadata.gif`, #4631), as the API's
+ * `GifService.messageGif` wrote it.
+ */
+export interface MessageGif {
+  provider: string;
+  id: string;
+  /** Short words for a screen reader; may be empty. */
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/** What a client sends: the picker result's GIF and the token the API signed it with. */
+export interface OutgoingGif extends MessageGif {
+  token: string;
+}
+
+/** The API's own bound on a GIF's edges (`MAX_GIF_EDGE` in its GIF port). */
+const MAX_GIF_EDGE = 4096;
+
+/** The hosts GIF media may come from: the GIF provider's own (KLIPY). */
+const GIF_MEDIA_HOSTS: readonly string[] = ["klipy.com"];
+
+/** Whether a URL is the GIF provider's own https media, as the API requires. */
+export function isGifMediaUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port)
+    return false;
+  const host = url.hostname.toLowerCase();
+  return GIF_MEDIA_HOSTS.some(
+    (media) => host === media || host.endsWith(`.${media}`),
+  );
+}
+
+/**
+ * Reads `metadata.gif` defensively, as a spreadable field. Anything but the
+ * provider's own https media and two whole edges in range reads as no GIF, so
+ * a malformed row, or one written before the server owned the key, never
+ * draws an image from anywhere else.
+ */
+export function messageGifOf(metadata: unknown): MessageGif | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const raw = (metadata as Record<string, unknown>)["gif"];
+  if (!raw || typeof raw !== "object") return null;
+  const { provider, id, title, url, width, height } = raw as Record<
+    string,
+    unknown
+  >;
+  if (typeof url !== "string" || !isGifMediaUrl(url)) return null;
+  const edge = (value: unknown) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_GIF_EDGE;
+  if (!edge(width) || !edge(height)) return null;
+  return {
+    provider: typeof provider === "string" ? provider : "",
+    id: typeof id === "string" ? id : "",
+    title: typeof title === "string" ? title : "",
+    url,
+    width: width as number,
+    height: height as number,
+  };
+}
+
+/**
+ * A GIF's box in the thread, from its stored edges, so the row never jumps
+ * on load: as large as fits `max`, never larger than the GIF itself, and
+ * never under a pixel on a side.
+ */
+export function gifBoxSize(
+  gif: Pick<MessageGif, "width" | "height">,
+  max: { width: number; height: number },
+): { width: number; height: number } {
+  const width = Math.max(
+    1,
+    Math.round(
+      Math.min(gif.width, max.width, (max.height * gif.width) / gif.height),
+    ),
+  );
+  return {
+    width,
+    height: Math.max(1, Math.round((width * gif.height) / gif.width)),
+  };
+}
+
+function gifField(metadata: unknown): { gif?: MessageGif } {
+  const gif = messageGifOf(metadata);
+  return gif ? { gif } : {};
+}
+
+/**
  * `mentions` defensively: only an array of strings counts. A missing column
  * (an older cached row, a masked one) is no mentions, not an error.
  */
@@ -745,6 +852,8 @@ export function optimisticMessage(args: {
   replyToId?: string | null;
   /** How many files this send is carrying, so the pending row is not blank. */
   attachmentCount?: number;
+  /** The GIF this send is, drawn at once from the picker's own result. */
+  gif?: MessageGif | null;
 }): ChatMessage {
   return {
     id: args.clientMessageId,
@@ -762,6 +871,7 @@ export function optimisticMessage(args: {
     // reconnect — so a zero here renders an attachment-only message as a
     // completely blank bubble to its own sender, for as long as it is queued.
     attachment_count: args.attachmentCount ?? 0,
+    ...(args.gif ? { gif: args.gif } : {}),
     mentions: [],
     kind: args.kind ?? "text",
     payload: args.payload ?? null,

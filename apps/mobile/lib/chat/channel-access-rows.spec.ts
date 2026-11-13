@@ -61,7 +61,7 @@ describe("channelAccessSummaryLine", () => {
       "Everyone in the chapter can see it.",
     );
     expect(channelAccessSummaryLine("post", [], options, true)).toBe(
-      "Pick a tier or role. Until you do, only the President can post.",
+      "Pick a tier, role or group. Until you do, only the President can post.",
     );
     expect(
       channelAccessSummaryLine("see", ["tier:exec", "role:b"], options, true),

@@ -87,6 +87,36 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
+// Mark done's and Send back's sheets (#4635) have their own specs; here only
+// that the card opens them, on what, and what their submit sends.
+const sheets = vi.hoisted(() => ({
+  markDone: null as null | {
+    task: {
+      proofKind: string;
+      sentBack: boolean;
+      sentBackReason: string | null;
+    };
+    initialProblem: string | null;
+    onComplete: (proof: Record<string, unknown>) => Promise<void>;
+  },
+  sendBack: null as null | {
+    proofKind: string;
+    onSubmit: (input: Record<string, unknown>) => Promise<void>;
+  },
+}));
+vi.mock("@/components/tasks/mark-done-sheet", () => ({
+  MarkDoneSheet: (props: NonNullable<typeof sheets.markDone>) => {
+    sheets.markDone = props;
+    return null;
+  },
+}));
+vi.mock("@/components/tasks/send-back-sheet", () => ({
+  SendBackSheet: (props: NonNullable<typeof sheets.sendBack>) => {
+    sheets.sendBack = props;
+    return null;
+  },
+}));
+
 import { TaskCard } from "./task-card";
 import { CardMeta } from "./chat-card";
 
@@ -118,6 +148,8 @@ function liveTask(overrides: Record<string, unknown> = {}) {
     status: "TODO",
     stored_status: "TODO",
     points_awarded: false,
+    // Points, so a completion waits on an officer (#4635).
+    point_reward: 15,
     ...overrides,
   };
 }
@@ -175,7 +207,7 @@ function render(
 
 /** The card's own action buttons, by label: reactions and delivery excluded. */
 function actions(tree: ReactTestRenderer): string[] {
-  const labels = ["Start", "Mark done", "Confirm", "Confirmed", "Reject"];
+  const labels = ["Start", "Mark done", "Confirm", "Confirmed", "Send back"];
   return tree.root
     .findAll(
       (node) =>
@@ -306,21 +338,134 @@ describe("TaskCard — actions", () => {
     });
   });
 
-  it("offers a tasks:manage holder Confirm and Reject on a completion", async () => {
+  it("offers a tasks:manage holder Confirm and Send back on a completion", async () => {
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
     const tree = render("admin-2");
-    expect(actions(tree)).toEqual(["Confirm", "Reject"]);
+    expect(actions(tree)).toEqual(["Confirm", "Send back"]);
     await press(tree, "Confirm");
     expect(confirmTask).toHaveBeenCalledWith("task-1");
-    await press(tree, "Reject");
-    expect(rejectTask).toHaveBeenCalledWith({ id: "task-1" });
+    // Send back asks for its reason first (#4635), then sends it.
+    await press(tree, "Send back");
+    expect(rejectTask).not.toHaveBeenCalled();
+    expect(sheets.sendBack?.proofKind).toBe("none");
+    await act(() =>
+      sheets.sendBack!.onSubmit({
+        comment: "Floor is still sticky",
+        require_photo: true,
+      }),
+    );
+    expect(rejectTask).toHaveBeenCalledWith({
+      id: "task-1",
+      body: { comment: "Floor is still sticky", require_photo: true },
+    });
+  });
+
+  it("opens Mark done's sheet on a task that asks for a photo, and sends its proof (#4635)", async () => {
+    state.live = liveTask({
+      status: "IN_PROGRESS",
+      stored_status: "IN_PROGRESS",
+      proof_kind: "photo",
+    });
+    const tree = render(ASSIGNEE);
+    expect(actions(tree)).toEqual([]);
+    expect(screenText(tree)).toContain("Mark done with a photo");
+    await press(tree, "Mark done with a photo");
+    expect(updateStatus).not.toHaveBeenCalled();
+    expect(sheets.markDone?.task.proofKind).toBe("photo");
+    await act(() =>
+      sheets.markDone!.onComplete({ proof_photo_paths: ["p/1.jpg"] }),
+    );
+    expect(updateStatus).toHaveBeenCalledWith({
+      id: "task-1",
+      body: { status: "COMPLETED", proof_photo_paths: ["p/1.jpg"] },
+    });
+  });
+
+  it("asks a sent-back task's assignee for something new, showing the reason", async () => {
+    state.live = liveTask({
+      status: "IN_PROGRESS",
+      stored_status: "IN_PROGRESS",
+      sent_back_at: "2026-11-05T10:00:00.000Z",
+      sent_back_reason: "Floor is still sticky",
+    });
+    const tree = render(ASSIGNEE);
+    expect(screenText(tree)).toContain("Needs changes");
+    expect(screenText(tree)).toContain("Floor is still sticky");
+    await press(tree, "Mark done");
+    expect(updateStatus).not.toHaveBeenCalled();
+    expect(sheets.markDone?.task).toMatchObject({
+      sentBack: true,
+      sentBackReason: "Floor is still sticky",
+    });
+  });
+
+  it("opens Mark done's sheet when the server asks for proof the card didn't know of", async () => {
+    state.live = liveTask({
+      status: "IN_PROGRESS",
+      stored_status: "IN_PROGRESS",
+    });
+    updateStatus.mockRejectedValueOnce({
+      statusCode: 400,
+      code: "task.proof_required",
+      message: "anything",
+    });
+    const tree = render(ASSIGNEE);
+    await press(tree, "Mark done");
+    expect(sheets.markDone?.initialProblem).toMatch(/needs proof/);
+    expect(screenText(tree)).not.toContain("anything");
+  });
+
+  it("shows the proof above Confirm: the link's domain and the reply", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      proof_kind: "link",
+      proof_link: "https://www.example.com/report",
+      completion_note: "Mopped twice",
+      sent_back_reason: "Floor is still sticky",
+    });
+    const text = screenText(render("admin-2"));
+    expect(text).toContain("example.com");
+    expect(text).toContain("Mopped twice");
+    expect(text).toContain("Floor is still sticky");
+  });
+
+  it("offers a Done task's officer Send back and no Confirm (#4635)", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      points_awarded: true,
+      point_reward: null,
+      proof_kind: "none",
+      completed_at: "2026-11-13T10:00:00.000Z",
+      confirmed_at: "2026-11-13T10:00:00.000Z",
+    });
+    const tree = render("admin-2");
+    expect(actions(tree)).toEqual(["Send back"]);
+    expect(screenText(tree)).toContain("Done");
+  });
+
+  it("leaves an officer's own confirmation of a no-points task Confirmed (#4635)", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      points_awarded: true,
+      point_reward: null,
+      proof_kind: "none",
+      completed_at: "2026-11-13T10:00:00.000Z",
+      confirmed_at: "2026-11-13T11:00:00.000Z",
+    });
+    expect(actions(render("admin-2"))).toEqual(["Confirmed"]);
   });
 
   it("never offers Confirm on the admin's own task (#1056)", () => {
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
-    expect(actions(render(ASSIGNEE))).toEqual(["Reject"]);
+    expect(actions(render(ASSIGNEE))).toEqual(["Send back"]);
   });
 
   it("leaves a disabled Confirmed indicator once points are awarded", () => {
@@ -355,6 +500,29 @@ describe("TaskCard — actions", () => {
     );
   });
 
+  it("withdraws the controls when a gate refuses Send back from its sheet (#4635)", async () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
+    rejectTask.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message:
+        "Chapter subscription is not active; complete checkout to use this feature.",
+    });
+    const tree = render("admin-2");
+    await press(tree, "Send back");
+    // The sheet says why itself; the card withdraws its controls too.
+    await act(async () => {
+      await expect(
+        sheets.sendBack!.onSubmit({ comment: "Floor is still sticky" }),
+      ).rejects.toBeDefined();
+    });
+    expect(button(tree, "Confirm").props.disabled).toBe(true);
+    expect(button(tree, "Send back").props.accessibilityHint).toBe(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
+  });
+
   it("withdraws the controls on a module refusal too", async () => {
     updateStatus.mockRejectedValue({
       statusCode: 403,
@@ -382,7 +550,9 @@ describe("TaskCard — actions", () => {
     expect(button(tree, "Start").props.disabled).toBe(true);
     act(() => refocus());
     expect(button(tree, "Start").props.disabled).toBe(false);
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
 
     await press(tree, "Start");
     expect(button(tree, "Start").props.disabled).toBe(true);
@@ -481,6 +651,8 @@ describe("TaskCard — Edit (#4512)", () => {
       dueAt: "2026-11-06T22:00:00.000Z",
       pointReward: 15,
       storedStatus: "TODO",
+      referencePhotos: [],
+      proofKind: "none",
     });
     // Mounted is not shown: the sheet has to be presented.
     expect(editSheet.present).toHaveBeenCalledTimes(1);

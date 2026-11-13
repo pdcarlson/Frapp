@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityFilterAvailable,
   activityGroups,
+  findActivityTaskRow,
   activitySummary,
   useActivity,
   useActivityStanding,
@@ -65,6 +66,7 @@ import {
   storeActivityFilter,
   useStoredActivityFilter,
 } from "@/lib/activity/activity-filter";
+import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -214,6 +216,39 @@ export default function ActivityScreen() {
         reread();
       },
     });
+
+  // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
+  // The read is taken again first, because the one in hand predates the
+  // submission whenever the app was warm, then that task's sheet opens,
+  // whatever chip is picked, and the param is dropped so coming back to the
+  // tab doesn't open it again. A task the read doesn't hold (confirmed from
+  // another device, or past the read's cap) opens nothing: the officer lands
+  // on the list.
+  const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
+  const reviewTaskId =
+    typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
+  const refetchActivity = activity.refetch;
+  useEffect(() => {
+    if (reviewTaskId === null) return;
+    let live = true;
+    void refetchActivity().then((result) => {
+      if (!live) return;
+      const row = result.data
+        ? findActivityTaskRow(result.data, reviewTaskId, new Date())
+        : null;
+      if (row) {
+        if (row.unread) markRead([row.readRef]);
+        setOpened(row);
+        setOpenedKey(row.key);
+      }
+      router.setParams({ review: undefined });
+    });
+    return () => {
+      live = false;
+    };
+    // Once per review linked; `markRead` is read when the read lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewTaskId, refetchActivity, router]);
 
   function renderBody() {
     if (activity.isPending) {
@@ -604,7 +639,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: 18,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
+      // The header round's fill (`HeaderButton`), in a worded capsule.
+      backgroundColor: pageSurfaces(tokens).card,
       justifyContent: "center",
     },
     boardLinkText: {

@@ -48,7 +48,11 @@ const {
   rolesState: { isError: false, refetch: vi.fn() },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The pure reader of the DM response runs for real.
+  dmChannelIdOf: (
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
+  ).dmChannelIdOf,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (userId: string) => {
     memberByUserId(userId);
@@ -76,6 +80,10 @@ vi.mock("@repo/hooks", () => ({
   }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
+  // Groups (#4076) have their own spec (`member-groups-section.spec.tsx`);
+  // unloaded here, so the section draws nothing.
+  useGroups: () => ({ data: undefined }),
+  groupsOfMember: () => [],
   // The pledge class section (#3939) has its own spec; here it only has to
   // mount with the member's values.
   usePledgeClasses: () => ({

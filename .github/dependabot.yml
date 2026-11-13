@@ -272,6 +272,7 @@ updates:
       - dependency-name: "expo-image"
       - dependency-name: "expo-image-manipulator"
       - dependency-name: "expo-image-picker"
+      - dependency-name: "expo-keep-awake"
       - dependency-name: "expo-linking"
       - dependency-name: "expo-localization"
       - dependency-name: "expo-location"
