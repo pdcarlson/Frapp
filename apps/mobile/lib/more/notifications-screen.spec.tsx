@@ -693,3 +693,47 @@ describe("Notification rows on the real screen (#4346)", () => {
     expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 });
+
+describe("Notifications: Unread / All (#3948)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  it("hides read rows under Unread and says all caught up when none are left", () => {
+    inbox.data = [
+      {
+        id: "read-1",
+        title: "Dues reminder",
+        body: null,
+        created_at: CREATED_AT.toISOString(),
+        read_at: CREATED_AT.toISOString(),
+        data: null,
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("Dues reminder");
+
+    const unread = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === "Unread" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => unread.props.onPress());
+    expect(screenText(tree)).not.toContain("Dues reminder");
+    expect(screenText(tree)).toContain("You're all caught up.");
+  });
+
+  it("draws no switch on an empty inbox", () => {
+    inbox.data = [];
+    const tree = render();
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityRole === "radiogroup",
+      ),
+    ).toHaveLength(0);
+  });
+});

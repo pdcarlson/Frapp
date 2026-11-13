@@ -39,6 +39,16 @@ Both clients show a row read as soon as its `PATCH` is sent: `useNotifications` 
 
 Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) — **active chapter only**, per step 4 — and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows, and rows read elsewhere, appear without a manual refresh. Mobile joins the same topic app-wide (`apps/mobile/lib/notifications/use-notification-sync.ts`, #3929); before that it heard nothing, so a row read on web stayed unread on an open phone until the app next came to the foreground. Both build the topic from `@repo/chat-core/change-topics` and attach through `@repo/chat-core/topic-attach`. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`authorization-model.md`](../../docs/security/authorization-model.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
 
+### The in-app list
+
+Both clients draw the same entries, from `groupNotificationsBySource` in `@repo/hooks/notification-rows` (#3948, 2026-11-13):
+
+- **One entry per conversation.** A channel's chat rows (`data.target.channelId`) collapse into their newest, which the entry draws and opens, with how many messages it stands for under its preview ("14 messages"; a bundled burst counts its `data.count`). A thread's replies (`threadRootId`) are their own entry, since they open the thread. A row that mentions the viewer (`data.mentioned`) stands on its own, because it addresses them. Every other row is its own entry. An entry sits under Today or Earlier by its newest row, and is unread while any of its rows is. Slack's Activity, Discord's Inbox and GroupMe's chat list each show one line per conversation; until #3948 fourteen messages in `#general` were fourteen rows.
+- **Opening an entry** reads its newest row (`PATCH .../read`) and opens the conversation, and reading the channel reads the rest (§ How an in-app row is marked read). No new request.
+- **Unread / All.** All by default. Unread leaves read rows out before grouping, so an entry's count is what is still new there; with nothing unread the list says "You're all caught up." The choice lives while the list is mounted and is not stored.
+
+The rows are still the first page `GET /v1/notifications` returns (50), as § Badge Count says.
+
 **The unread count is the same number on both clients.** Web's bell and mobile's inbox both count the rows `GET /v1/notifications` returns with `read_at` null, so once a read reaches the server they agree. The app icon badge is a different number on purpose (§ Badge Count): it leaves chat rows out and adds chat mentions and direct messages from the channel counts.
 
 ## Deep Linking

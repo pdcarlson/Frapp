@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupNotificationsBySource,
   isTileKind,
+  notificationEntryCount,
   notificationLook,
   notificationPreview,
   notificationTitle,
@@ -188,5 +190,90 @@ describe("notificationWhen", () => {
 
   it("drops a timestamp that doesn't parse", () => {
     expect(notificationWhen("not a date", NOW)).toBeNull();
+  });
+});
+
+describe("groupNotificationsBySource (#3948)", () => {
+  type Row = { id: string; data: unknown; unread: boolean };
+  const row = (id: string, data: unknown, unread = true): Row => ({
+    id,
+    data,
+    unread,
+  });
+  const inChannel = (
+    channelId: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    target: { screen: "chat", channelId },
+    senderId: "ryan",
+    ...extra,
+  });
+  const isUnread = (r: Row) => r.unread;
+
+  it("collapses one channel's rows into its newest, counting bundles", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1")),
+        row("b", { target: { screen: "events" } }),
+        row("c", inChannel("c1", { bundled: true, count: 5 }), false),
+        row("d", inChannel("c2")),
+        row("e", inChannel("c1")),
+      ],
+      { isUnread },
+    );
+    expect(entries.map((e) => e.key)).toEqual(["chat:c1", "b", "chat:c2"]);
+    expect(entries[0]).toMatchObject({
+      lead: { id: "a" },
+      messageCount: 7,
+      unreadIds: ["a", "e"],
+    });
+    expect(entries[0]!.rows.map((r) => r.id)).toEqual(["a", "c", "e"]);
+    expect(notificationEntryCount(entries[0]!)).toBe("7 messages");
+    expect(notificationEntryCount(entries[1]!)).toBeNull();
+  });
+
+  it("keeps a mention on its own and a thread apart from its channel", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1", { mentioned: true })),
+        row("b", inChannel("c1")),
+        row("c", {
+          target: { screen: "chat", channelId: "c1", threadRootId: "m1" },
+        }),
+        row("d", inChannel("c1", { mentioned: true })),
+      ],
+      { isUnread },
+    );
+    expect(entries.map((e) => e.key)).toEqual([
+      "a",
+      "chat:c1",
+      "chat:c1:thread:m1",
+      "d",
+    ]);
+  });
+
+  it("never groups rows that aren't chat", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", { target: { screen: "events" } }),
+        row("b", { target: { screen: "events" } }),
+        row("c", null),
+      ],
+      { isUnread },
+    );
+    expect(entries).toHaveLength(3);
+  });
+
+  it("under unread, drops read rows before grouping", () => {
+    const entries = groupNotificationsBySource(
+      [
+        row("a", inChannel("c1"), false),
+        row("b", inChannel("c1")),
+        row("c", { target: { screen: "events" } }, false),
+      ],
+      { isUnread, filter: "unread" },
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ lead: { id: "b" }, messageCount: 1 });
   });
 });

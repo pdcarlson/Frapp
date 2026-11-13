@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, type ReactElement } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -22,12 +29,16 @@ import {
   NOTIFICATION_KIND_LABEL,
   NOTIFICATION_TILE_GLYPH,
   NOTIFICATION_TILE_HUE,
+  groupNotificationsBySource,
   isTileKind,
+  notificationEntryCount,
   notificationLook,
   notificationPreview,
   notificationTitle,
   notificationWhen,
   titleAroundName,
+  type NotificationEntry,
+  type NotificationFilter,
   type NotificationKind,
 } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
@@ -39,9 +50,13 @@ import {
 } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { ROLE_NAME_CLASS, roleNameStyle } from "@/components/roles/role-name-paint";
+import {
+  ROLE_NAME_CLASS,
+  roleNameStyle,
+} from "@/components/roles/role-name-paint";
 import {
   Popover,
   PopoverContent,
@@ -214,6 +229,10 @@ export function NotificationsPopover({
     [notificationsQuery.data],
   );
   const unreadCount = notifications.filter((n) => !n.read_at).length;
+  // Unread / All (#3948), as Slack's Activity, GitHub's notifications and
+  // Discord's Inbox switch. All by default, so nothing seems to vanish once
+  // read; the choice lasts while the tab is open.
+  const [filter, setFilter] = useState<NotificationFilter>("all");
 
   // The roster every chat surface already reads (cached, `staleTime` 60s), for
   // each row's picture, name colour and mention chips. No read of its own.
@@ -222,9 +241,18 @@ export function NotificationsPopover({
   const names = useMemberDisplayNames();
   // Ticks, so a list left open past midnight moves its rows to Earlier.
   const now = useNowDate();
+  // One entry per conversation (#3948): fourteen messages in #general are
+  // one row saying so, not fourteen rows.
   const groups = useMemo(
-    () => groupByDay(notifications, now),
-    [notifications, now],
+    () =>
+      groupByDay(
+        groupNotificationsBySource(notifications, {
+          isUnread: (n) => !n.read_at,
+          filter,
+        }),
+        now,
+      ),
+    [notifications, filter, now],
   );
 
   /*
@@ -293,9 +321,16 @@ export function NotificationsPopover({
         className="flex max-h-[min(560px,var(--radix-popover-content-available-height))] w-[min(400px,calc(100vw-16px))] flex-col p-0"
       >
         <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2">
-          <h2 id={titleId} className="text-sm font-semibold">
+          <h2 id={titleId} className="mr-auto text-sm font-semibold">
             Notifications
           </h2>
+          <SegmentedChoice
+            label="Show"
+            dense
+            options={FILTER_OPTIONS}
+            value={filter}
+            onChange={setFilter}
+          />
           {unreadCount > 0 ? (
             <Button
               variant="link"
@@ -339,6 +374,10 @@ export function NotificationsPopover({
               No notifications yet. Chapter activity, billing alerts, and point
               changes will appear here.
             </div>
+          ) : groups.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              You&apos;re all caught up.
+            </div>
           ) : (
             // A flat list: rows divided by hairlines, no card around each,
             // grouped Today / Earlier as mobile s14 is (#4346). Unread is a
@@ -356,22 +395,31 @@ export function NotificationsPopover({
                     {group.heading}
                   </h3>
                   <ul className="divide-y divide-border">
-                    {group.rows.map((notification) => (
-                      <li key={notification.id}>
-                        <NotificationRow
-                          notification={notification}
-                          members={rosterMembers}
-                          names={names}
-                          onOpen={() => {
-                            if (isReportNotification(notification)) {
-                              void invalidateReports();
-                            }
-                            void handleMarkRead(notification);
-                            onOpenChange(false);
-                          }}
-                        />
-                      </li>
-                    ))}
+                    {group.rows.map(({ entry, time }) => {
+                      const notification = entry.lead;
+                      return (
+                        <li key={entry.key}>
+                          <NotificationRow
+                            notification={notification}
+                            time={time}
+                            unread={entry.unreadIds.length > 0}
+                            count={notificationEntryCount(entry)}
+                            members={rosterMembers}
+                            names={names}
+                            onOpen={() => {
+                              if (isReportNotification(notification)) {
+                                void invalidateReports();
+                              }
+                              // The newest row; opening its channel reads the
+                              // rest on the server (notifications.md § How an
+                              // in-app row is marked read).
+                              void handleMarkRead(notification);
+                              onOpenChange(false);
+                            }}
+                          />
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               ))}
@@ -383,8 +431,13 @@ export function NotificationsPopover({
   );
 }
 
-type TimedNotification = Notification & { time: string };
-type DayGroup = { heading: string; rows: TimedNotification[] };
+const FILTER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "unread", label: "Unread" },
+] as const satisfies readonly { value: NotificationFilter; label: string }[];
+
+type TimedEntry = { entry: NotificationEntry<Notification>; time: string };
+type DayGroup = { heading: string; rows: TimedEntry[] };
 
 /**
  * Today / Earlier on the viewer's own calendar day, newest first in each, by
@@ -393,13 +446,17 @@ type DayGroup = { heading: string; rows: TimedNotification[] };
  * a Today heading over nothing, and a row whose time doesn't parse is
  * dropped as mobile drops it.
  */
-function groupByDay(rows: readonly Notification[], now: Date): DayGroup[] {
-  const today: TimedNotification[] = [];
-  const earlier: TimedNotification[] = [];
-  for (const row of rows) {
-    const when = notificationWhen(row.created_at, now);
+function groupByDay(
+  entries: readonly NotificationEntry<Notification>[],
+  now: Date,
+): DayGroup[] {
+  const today: TimedEntry[] = [];
+  const earlier: TimedEntry[] = [];
+  for (const entry of entries) {
+    // An entry sits on the day of its newest row.
+    const when = notificationWhen(entry.lead.created_at, now);
     if (!when) continue;
-    (when.isToday ? today : earlier).push({ ...row, time: when.time });
+    (when.isToday ? today : earlier).push({ entry, time: when.time });
   }
   return [
     { heading: "Today", rows: today },
@@ -415,20 +472,28 @@ type MemberNames = ReturnType<typeof useMemberDisplayNames>;
  * person's name in their colour; the preview with chat's mention chips; the
  * time. A row that mentions the viewer wears the @ badge in the chapter
  * accent, the colour chat lights a mention in, and is not tinted (Shawn's
- * pick, 2026-11-11: the list stays flat).
+ * pick, 2026-11-11: the list stays flat). A conversation's entry draws its
+ * newest row, with how many messages it stands for under the preview
+ * (#3948), and is unread while any of its rows is.
  */
 function NotificationRow({
   notification,
+  time,
+  unread,
+  count,
   members,
   names,
   onOpen,
 }: {
-  notification: TimedNotification;
+  notification: Notification;
+  time: string;
+  unread: boolean;
+  count: string | null;
   members: readonly { user_id: string; display_name: string }[] | null;
   names: MemberNames;
   onOpen: () => void;
 }) {
-  const isRead = Boolean(notification.read_at);
+  const isRead = !unread;
   const look = notificationLook(notification);
   const personName = look.personId ? names.nameFor(look.personId) : null;
   const nameColor = look.personId ? names.roleColorFor(look.personId) : null;
@@ -491,7 +556,7 @@ function NotificationRow({
             )}
           </span>{" "}
           <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
-            {notification.time}
+            {time}
           </span>
         </span>
         {preview.length > 0 ? (
@@ -510,6 +575,14 @@ function NotificationRow({
                 <span key={index}>{segment.text}</span>
               ),
             )}
+          </span>
+        ) : null}
+        {count ? (
+          <span
+            data-entry-count=""
+            className="text-caption text-muted-foreground tabular-nums"
+          >
+            {count}
           </span>
         ) : null}
       </span>

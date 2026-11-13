@@ -780,3 +780,61 @@ describe("deepLinkFor: task notifications", () => {
     expect(deepLinkFor(task({ view: "review" }))).toBe("/tasks");
   });
 });
+
+describe("NotificationsPopover: grouped by conversation, Unread / All (#3948)", () => {
+  const inGeneral = (id: string, createdAt: string, read = false) => ({
+    ...notification(id, "chat", createdAt, "Ryan in #general"),
+    body: `message ${id}`,
+    data: {
+      target: { screen: "chat", channelId: "c-general" },
+      senderId: "u-ryan",
+    },
+    read_at: read ? "2026-09-22T11:30:00Z" : null,
+  });
+
+  it("collapses a channel's rows into one entry that says how many", async () => {
+    notifications.value = [
+      inGeneral("g1", "2026-09-22T08:00:00Z", true),
+      EVENT,
+      inGeneral("g2", "2026-09-22T10:00:00Z"),
+      inGeneral("g3", "2026-09-22T11:00:00Z"),
+    ];
+    mockMarkRead.mockClear();
+    renderDrawer();
+
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    // The newest message leads, and the entry stands for all three.
+    expect(links[0]).toHaveTextContent("message g3");
+    expect(links[0]).toHaveTextContent("3 messages");
+    expect(links[0]).toHaveTextContent("Unread:");
+
+    await userEvent.click(links[0]!);
+    expect(mockMarkRead).toHaveBeenCalledWith("g3");
+  });
+
+  it("Unread hides read rows, and says so when none are left", async () => {
+    notifications.value = [
+      inGeneral("g1", "2026-09-22T08:00:00Z", true),
+      inGeneral("g2", "2026-09-22T10:00:00Z"),
+      { ...EVENT, read_at: "2026-09-22T09:30:00Z" },
+    ];
+    renderDrawer();
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole("radio", { name: "Unread" }));
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent("message g2");
+    // Only what is still new is counted.
+    expect(links[0]).not.toHaveTextContent("2 messages");
+  });
+
+  it("says all caught up when Unread leaves nothing", async () => {
+    notifications.value = [{ ...EVENT, read_at: "2026-09-22T09:30:00Z" }];
+    renderDrawer();
+    await userEvent.click(screen.getByRole("radio", { name: "Unread" }));
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+    expect(screen.getByText(/all caught up/)).toBeInTheDocument();
+  });
+});

@@ -308,3 +308,105 @@ export function notificationWhen(
         : at.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
   };
 }
+
+/** The inbox's Unread / All switch (#3948). */
+export type NotificationFilter = "all" | "unread";
+
+/** One entry in the inbox: a row on its own, or a conversation's rows. */
+export interface NotificationEntry<Row> {
+  /** Stable across refetches: the conversation's key, or the row's id. */
+  key: string;
+  /** The newest row, which the entry draws and opens. */
+  lead: Row;
+  /** Every row in the entry, newest first. */
+  rows: Row[];
+  /**
+   * How many messages the entry stands for: each row counts one, a bundled
+   * burst (`data.bundled`, "5 new messages") its `data.count`. Only chat
+   * entries go above one.
+   */
+  messageCount: number;
+  /** Ids of the entry's unread rows. */
+  unreadIds: string[];
+}
+
+/**
+ * The conversation a row collapses into, or `null` for a row that stands on
+ * its own (#3948). Chat rows from one channel are one entry, as Slack's
+ * Activity, Discord's Inbox and GroupMe's chat list show one line per
+ * conversation; a thread's replies are their own entry, since they open the
+ * thread. A row that mentions the viewer stands alone: it addresses them, the
+ * way Slack lists each mention and Discord keeps a Mentions tab.
+ */
+export function notificationSourceKey(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  const target = isRecord(data.target) ? data.target : null;
+  if (!target || stringAt(target, "screen") !== "chat") return null;
+  if (data.mentioned === true) return null;
+  const channelId = stringAt(target, "channelId");
+  if (!channelId) return null;
+  const threadRootId = stringAt(target, "threadRootId");
+  return threadRootId
+    ? `chat:${channelId}:thread:${threadRootId}`
+    : `chat:${channelId}`;
+}
+
+function messagesIn(data: unknown): number {
+  if (!isRecord(data) || data.bundled !== true) return 1;
+  const count = data.count;
+  return typeof count === "number" && Number.isInteger(count) && count > 1
+    ? count
+    : 1;
+}
+
+/**
+ * The inbox's entries (#3948), shared by the web drawer and mobile s14:
+ * `rows` (newest first) narrowed by `filter`, then one entry per conversation
+ * (`notificationSourceKey`) and one per other row, in the order of each
+ * entry's newest row. Under "unread" only unread rows count, so an entry's
+ * `messageCount` is what is still new there.
+ */
+export function groupNotificationsBySource<
+  Row extends { id: string; data?: unknown },
+>(
+  rows: readonly Row[],
+  {
+    isUnread,
+    filter = "all",
+  }: { isUnread: (row: Row) => boolean; filter?: NotificationFilter },
+): NotificationEntry<Row>[] {
+  const entries: NotificationEntry<Row>[] = [];
+  const byKey = new Map<string, NotificationEntry<Row>>();
+  for (const row of rows) {
+    const unread = isUnread(row);
+    if (filter === "unread" && !unread) continue;
+    const source = notificationSourceKey(row.data);
+    const existing = source ? byKey.get(source) : undefined;
+    if (existing) {
+      existing.rows.push(row);
+      existing.messageCount += messagesIn(row.data);
+      if (unread) existing.unreadIds.push(row.id);
+      continue;
+    }
+    const entry: NotificationEntry<Row> = {
+      key: source ?? row.id,
+      lead: row,
+      rows: [row],
+      messageCount: messagesIn(row.data),
+      unreadIds: unread ? [row.id] : [],
+    };
+    entries.push(entry);
+    if (source) byKey.set(source, entry);
+  }
+  return entries;
+}
+
+/**
+ * The words under an entry that stands for more than one message ("14
+ * messages"), or `null` for a single one.
+ */
+export function notificationEntryCount(entry: {
+  messageCount: number;
+}): string | null {
+  return entry.messageCount > 1 ? `${entry.messageCount} messages` : null;
+}

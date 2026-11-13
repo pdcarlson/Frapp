@@ -28,6 +28,7 @@ import {
   notificationPreview,
   notificationTitle,
   titleAroundName,
+  type NotificationFilter,
   type NotificationKind,
 } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
@@ -66,6 +67,7 @@ import { AnnouncementGlyph } from "@/components/chat/card-glyphs";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
+import { Segmented } from "@/components/segmented";
 import { createUnreadDotStyles, unreadDotSize } from "@/components/unread-dot";
 
 /**
@@ -130,9 +132,13 @@ export default function NotificationsScreen() {
   // sit under TODAY at 12:10 AM on a screen left up overnight.
   const now = useNowDate();
 
+  // Unread / All (#3948), as Slack's Activity and Discord's Inbox switch.
+  // All by default, so a row read elsewhere doesn't seem to vanish.
+  const [filter, setFilter] = useState<NotificationFilter>("all");
+
   const groups = useMemo(
-    () => selectNotificationGroups(notificationsQuery.data, now),
-    [notificationsQuery.data, now],
+    () => selectNotificationGroups(notificationsQuery.data, now, filter),
+    [notificationsQuery.data, now, filter],
   );
   const unreadIds = useMemo(
     () => selectUnreadIds(notificationsQuery.data),
@@ -163,30 +169,52 @@ export default function NotificationsScreen() {
         />
       );
     }
-    if (groups.length === 0) {
-      return <InlineNote>{"You're all caught up."}</InlineNote>;
+    const list =
+      groups.length === 0 ? (
+        <InlineNote>{"You're all caught up."}</InlineNote>
+      ) : (
+        groups.map((group) => (
+          <View key={group.heading} style={styles.group}>
+            <SectionHeader>{group.heading}</SectionHeader>
+            {group.rows.map((row) => (
+              <NotificationListRow
+                key={row.id}
+                row={row}
+                people={people}
+                onPress={() => {
+                  // A conversation's entry is its newest row; opening the
+                  // channel reads the rest on the server (notifications.md §
+                  // How an in-app row is marked read).
+                  if (row.isUnread) markRead.mutate(row.id);
+                  // Resolves to this screen when the target is unrecognized,
+                  // so the tap marks the row read and stays put rather than
+                  // pushing the notification list on top of itself.
+                  if (row.target.pathname !== NOTIFICATION_FALLBACK_PATHNAME) {
+                    openNotificationTarget(router, row.target);
+                  }
+                }}
+              />
+            ))}
+          </View>
+        ))
+      );
+    // Unread / All (#3948) shows once there is something to switch between.
+    if (groups.length === 0 && filter === "all") {
+      return list;
     }
-    return groups.map((group) => (
-      <View key={group.heading} style={styles.group}>
-        <SectionHeader>{group.heading}</SectionHeader>
-        {group.rows.map((row) => (
-          <NotificationListRow
-            key={row.id}
-            row={row}
-            people={people}
-            onPress={() => {
-              if (row.isUnread) markRead.mutate(row.id);
-              // Resolves to this screen when the target is unrecognized, so
-              // the tap marks the row read and stays put rather than pushing
-              // the notification list on top of itself.
-              if (row.target.pathname !== NOTIFICATION_FALLBACK_PATHNAME) {
-                openNotificationTarget(router, row.target);
-              }
-            }}
+    return (
+      <>
+        <View style={styles.filter}>
+          <Segmented
+            accessibilityLabel="Show"
+            options={FILTER_OPTIONS}
+            value={filter}
+            onChange={setFilter}
           />
-        ))}
-      </View>
-    ));
+        </View>
+        {list}
+      </>
+    );
   }
 
   return (
@@ -220,6 +248,11 @@ export default function NotificationsScreen() {
     </ScreenShell>
   );
 }
+
+const FILTER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "unread", label: "Unread" },
+] as const satisfies readonly { value: NotificationFilter; label: string }[];
 
 /**
  * Who a row's people are: the viewer, for the mention test, and the roster,
@@ -339,6 +372,7 @@ export function NotificationListRow({
               : previewText}
           </Text>
         ) : null}
+        {row.count ? <Text style={styles.rowCount}>{row.count}</Text> : null}
       </View>
     </Pressable>
   );
@@ -513,6 +547,10 @@ function createStyles(tokens: SignetTokens) {
     group: {
       gap: tokens.spacing.xs,
     },
+    filter: {
+      alignSelf: "flex-start",
+      marginBottom: tokens.spacing.sm,
+    },
     markAllNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.warning,
@@ -618,6 +656,10 @@ function createStyles(tokens: SignetTokens) {
     rowTime: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    rowCount: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     // The title's size at regular weight.
     rowBody: {
