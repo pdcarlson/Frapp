@@ -5,8 +5,12 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IEventRepository } from '#domain/repositories/event.repository.interface';
+import type {
+  IEventRepository,
+  OccurrenceCarry,
+} from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
+import type { EventExcuse } from '#domain/entities/event-excuse.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
@@ -171,5 +175,26 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteReplacedOccurrences(
+    ids: string[],
+    chapterId: string,
+    carry: readonly OccurrenceCarry[],
+  ): Promise<EventExcuse[]> {
+    if (ids.length === 0) return [];
+
+    const { data, error } = await this.supabase.rpc(
+      'delete_replaced_occurrences',
+      {
+        p_chapter_id: chapterId,
+        p_old_ids: ids,
+        p_from_ids: carry.map((pair) => pair.from),
+        p_to_ids: carry.map((pair) => pair.to),
+      },
+    );
+
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
   }
 }

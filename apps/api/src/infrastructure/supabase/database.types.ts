@@ -450,6 +450,21 @@ export interface Database {
           p_decided_by: string;
           p_mark_absent: boolean;
         };
+      /**
+       * `20261113040009` (#4620) — delete the upcoming occurrences a series
+       * edit rebuilt, carrying each matched pair's excuses (and an approved
+       * one's EXCUSED attendance) to the new meeting in the same transaction.
+       * Returns the pending and approved excuses no new meeting took.
+       */
+      delete_replaced_occurrences: {
+        Args: {
+          p_chapter_id: string;
+          p_old_ids: string[];
+          p_from_ids: string[];
+          p_to_ids: string[];
+        };
+        Returns: EventExcuse[];
+      };
         Returns: EventExcuse[];
       };
       /**

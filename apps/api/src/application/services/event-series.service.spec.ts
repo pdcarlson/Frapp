@@ -580,7 +580,7 @@ describe('EventSeriesService', () => {
           'ch-1',
           { name: 'Renamed', parent_event_id: 'child-future-1' },
         );
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       // Before #1392 this read `updateMany.mock.calls[0]` and asserted the ids
@@ -604,7 +604,7 @@ describe('EventSeriesService', () => {
           expect.anything(),
           expect.anything(),
         );
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       it('regenerates future instances when the recurrence rule changes', async () => {
@@ -622,9 +622,10 @@ describe('EventSeriesService', () => {
 
         // Before #1392 both future occurrences were deleted and rebuilt from
         // the head. `child-future-1` is now the new head, so only the rest is.
-        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
           ['child-future-2'],
           'ch-1',
+          expect.any(Array),
         );
         expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
       });
@@ -645,7 +646,7 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
         expect(mockEventRepo.createMany).not.toHaveBeenCalled();
       });
 
@@ -662,7 +663,7 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       // Found in review: `update()` validates the interval against the row the
@@ -858,7 +859,7 @@ describe('EventSeriesService', () => {
           { parent_event_id: null },
         );
         // Detached, never deleted: `event_attendance.event_id` cascades.
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       // AC 3. This is the regression #1391 hit: fields reached the children but
@@ -948,7 +949,7 @@ describe('EventSeriesService', () => {
         ).rejects.toThrow(BadRequestException);
 
         expect(mockEventRepo.update).not.toHaveBeenCalled();
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       it('refuses a series edit when no occurrence is still upcoming', async () => {
@@ -963,7 +964,7 @@ describe('EventSeriesService', () => {
 
         expect(mockEventRepo.update).not.toHaveBeenCalled();
         expect(mockEventRepo.updateMany).not.toHaveBeenCalled();
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       // The split is scoped to a head that has started. A series still in the
@@ -1411,7 +1412,7 @@ describe('EventSeriesService', () => {
           ),
         ).rejects.toThrow(BadRequestException);
 
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
         expect(mockEventRepo.update).not.toHaveBeenCalled();
       });
 
@@ -1438,7 +1439,7 @@ describe('EventSeriesService', () => {
         );
 
         // A rename must not destroy and rebuild the series...
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
         expect(mockEventRepo.createMany).not.toHaveBeenCalled();
         // ...and must not drag the anchor onto the child's date. Before #1392
         // the rename landed on `parent-1`; it now lands on the promoted
@@ -1625,13 +1626,15 @@ describe('EventSeriesService', () => {
         await changeRule();
 
         const insertAt = mockEventRepo.createMany.mock.invocationCallOrder[0];
-        const deleteAt = mockEventRepo.deleteMany.mock.invocationCallOrder[0];
+        const deleteAt =
+          mockEventRepo.deleteReplacedOccurrences.mock.invocationCallOrder[0];
         const parentAt = mockEventRepo.update.mock.invocationCallOrder[0];
         expect(insertAt).toBeLessThan(deleteAt);
         expect(deleteAt).toBeLessThan(parentAt);
-        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
           ['child-future-1', 'child-future-2'],
           'ch-1',
+          expect.any(Array),
         );
         expect(occurrenceRows(mockEventRepo)).toHaveLength(MONTHLY_COUNT);
         for (const row of occurrenceRows(mockEventRepo)) {
@@ -1648,7 +1651,7 @@ describe('EventSeriesService', () => {
 
         // The old occurrences stay, and so does the parent's old rule, so a
         // retried edit still reads as a rule change and regenerates.
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
         expect(mockEventRepo.update).not.toHaveBeenCalled();
         expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
       });
@@ -1672,9 +1675,9 @@ describe('EventSeriesService', () => {
       });
 
       it('removes the new occurrences again when deleting the old ones fails', async () => {
-        mockEventRepo.deleteMany
-          .mockRejectedValueOnce(new Error('delete failed'))
-          .mockResolvedValueOnce(undefined);
+        mockEventRepo.deleteReplacedOccurrences.mockRejectedValueOnce(
+          new Error('delete failed'),
+        );
         mockEventRepo.findChildren
           .mockResolvedValueOnce(upcomingChildren)
           .mockResolvedValueOnce([...upcomingChildren, ...landed('parent-1')]);
@@ -1689,7 +1692,7 @@ describe('EventSeriesService', () => {
       });
 
       it('carries on when the delete reported a failure but had landed', async () => {
-        mockEventRepo.deleteMany.mockRejectedValueOnce(
+        mockEventRepo.deleteReplacedOccurrences.mockRejectedValueOnce(
           new Error('response lost'),
         );
         mockEventRepo.findChildren
@@ -1699,7 +1702,10 @@ describe('EventSeriesService', () => {
         await changeRule();
 
         // Reverting here would delete the only upcoming rows left.
-        expect(mockEventRepo.deleteMany).toHaveBeenCalledTimes(1);
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
         expect(mockEventRepo.update).toHaveBeenCalledWith(
           'parent-1',
           'ch-1',
@@ -1709,9 +1715,12 @@ describe('EventSeriesService', () => {
       });
 
       it('surfaces the original error and reports the ids when the cleanup fails too', async () => {
-        mockEventRepo.deleteMany
-          .mockRejectedValueOnce(new Error('delete failed'))
-          .mockRejectedValueOnce(new Error('cleanup failed'));
+        mockEventRepo.deleteReplacedOccurrences.mockRejectedValueOnce(
+          new Error('delete failed'),
+        );
+        mockEventRepo.deleteMany.mockRejectedValueOnce(
+          new Error('cleanup failed'),
+        );
         mockEventRepo.findChildren
           .mockResolvedValueOnce(upcomingChildren)
           .mockResolvedValueOnce([...upcomingChildren, ...landed('parent-1')]);
@@ -1761,7 +1770,8 @@ describe('EventSeriesService', () => {
           const repointAt =
             mockEventRepo.updateMany.mock.invocationCallOrder.at(-1)!;
           const insertAt = mockEventRepo.createMany.mock.invocationCallOrder[0];
-          const deleteAt = mockEventRepo.deleteMany.mock.invocationCallOrder[0];
+          const deleteAt =
+            mockEventRepo.deleteReplacedOccurrences.mock.invocationCallOrder[0];
           const ruleAt = mockEventRepo.update.mock.invocationCallOrder.at(-1)!;
           expect(repointAt).toBeLessThan(insertAt);
           expect(insertAt).toBeLessThan(deleteAt);
@@ -1790,7 +1800,9 @@ describe('EventSeriesService', () => {
             'ch-1',
             { parent_event_id: 'child-future-1' },
           );
-          expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+          expect(
+            mockEventRepo.deleteReplacedOccurrences,
+          ).not.toHaveBeenCalled();
           // The new head still says WEEKLY, so repeating the MONTHLY edit
           // against it reads as a rule change.
           expect(mockEventRepo.update).not.toHaveBeenCalledWith(
@@ -1799,6 +1811,212 @@ describe('EventSeriesService', () => {
             expect.objectContaining({ recurrence_rule: 'MONTHLY' }),
           );
         });
+      });
+    });
+
+    // A regenerate deletes the old upcoming rows, and `event_excuses` cascades
+    // with them. The delete carries each excuse to the rebuilt meeting that
+    // replaces its own, and tells the member when none does (#4620).
+    describe('excuses on rebuilt occurrences (#4620)', () => {
+      const head: Event = {
+        ...parent,
+        start_time: '2026-03-20T18:00:00.000Z',
+        end_time: '2026-03-20T19:00:00.000Z',
+      };
+      const week = (id: string, day: string): Event => ({
+        ...baseEvent,
+        id,
+        parent_event_id: 'parent-1',
+        start_time: `2026-${day}T18:00:00.000Z`,
+        end_time: `2026-${day}T19:00:00.000Z`,
+      });
+      const next1 = week('next-1', '03-27');
+      const next2 = week('next-2', '04-03');
+      const next3 = week('next-3', '04-10');
+      const excuse = (
+        userId: string,
+        eventId: string,
+        status: 'PENDING' | 'APPROVED',
+      ) => ({
+        id: `excuse-${userId}`,
+        chapter_id: 'ch-1',
+        event_id: eventId,
+        user_id: userId,
+        reason: 'Away game',
+        status,
+        decided_by: status === 'APPROVED' ? OFFICER : null,
+        decided_at: status === 'APPROVED' ? '2026-03-14T00:00:00.000Z' : null,
+        created_at: '2026-03-14T00:00:00.000Z',
+        updated_at: '2026-03-14T00:00:00.000Z',
+      });
+
+      /** The rebuilt row's id that `createMany` handed back for a start. */
+      const rebuiltAt = (start: string) => {
+        const rows = occurrenceRows(mockEventRepo);
+        const i = rows.findIndex((row) => row.start_time === start);
+        expect(i).toBeGreaterThanOrEqual(0);
+        return `occ-${i + 1}`;
+      };
+
+      beforeEach(() => {
+        mockEventRepo.findById.mockResolvedValue(head);
+        mockEventRepo.findChildren.mockResolvedValue([next1, next2, next3]);
+        mergeUpdate([head, next1, next2, next3]);
+      });
+
+      it('carries every excuse an hour later when the series moves an hour', async () => {
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-20T19:00:00.000Z',
+            end_time: '2026-03-20T20:00:00.000Z',
+          },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['next-1', 'next-2', 'next-3'],
+          'ch-1',
+          [
+            { from: 'next-1', to: rebuiltAt('2026-03-27T19:00:00.000Z') },
+            { from: 'next-2', to: rebuiltAt('2026-04-03T19:00:00.000Z') },
+            { from: 'next-3', to: rebuiltAt('2026-04-10T19:00:00.000Z') },
+          ],
+        );
+        // Nothing was left behind, so nobody is asked to send one again.
+        expect(mockNotificationService.notifyMembers).not.toHaveBeenCalledWith(
+          'ch-1',
+          expect.anything(),
+          expect.objectContaining({ title: 'Send your excuse again' }),
+        );
+      });
+
+      it('still pairs every meeting when one was canceled before the move', async () => {
+        // One fewer old row than rebuilt ones: the pairing follows the
+        // meetings, not their positions.
+        mockEventRepo.findChildren.mockResolvedValue([next1, next3]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-20T19:00:00.000Z',
+            end_time: '2026-03-20T20:00:00.000Z',
+          },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['next-1', 'next-3'],
+          'ch-1',
+          [
+            { from: 'next-1', to: rebuiltAt('2026-03-27T19:00:00.000Z') },
+            { from: 'next-3', to: rebuiltAt('2026-04-10T19:00:00.000Z') },
+          ],
+        );
+      });
+
+      it('carries only the meetings that stay when the rule thins the series', async () => {
+        // Weekly to every two weeks from 03-20: 04-03 stays, 03-27 and 04-10
+        // are gone, and a pending and an approved excuse sat on 03-27.
+        mockEventRepo.deleteReplacedOccurrences.mockResolvedValueOnce([
+          excuse('user-pending', 'next-1', 'PENDING'),
+          excuse('user-approved', 'next-1', 'APPROVED'),
+        ]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['next-1', 'next-2', 'next-3'],
+          'ch-1',
+          [{ from: 'next-2', to: rebuiltAt('2026-04-03T18:00:00.000Z') }],
+        );
+        // Whoever's excuse had nowhere to go is told, once each, after the
+        // edit landed.
+        expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+          'ch-1',
+          ['user-pending', 'user-approved'],
+          expect.objectContaining({
+            title: 'Send your excuse again',
+            category: 'events',
+            data: { target: { screen: 'events', eventId: 'parent-1' } },
+          }),
+        );
+        const tellAt =
+          mockNotificationService.notifyMembers.mock.invocationCallOrder.at(
+            -1,
+          )!;
+        expect(mockEventRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
+          tellAt,
+        );
+      });
+
+      it('carries excuses over on a started head too', async () => {
+        // The split path: the head has started, `next-1` becomes the new head
+        // and keeps its own excuses, and the rest are rebuilt an hour later.
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue([
+          pastChild,
+          next1,
+          next2,
+          next3,
+        ]);
+        mergeUpdate([parent, pastChild, next1, next2, next3]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-01T19:00:00.000Z',
+            end_time: '2026-03-01T20:00:00.000Z',
+          },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteReplacedOccurrences).toHaveBeenCalledWith(
+          ['next-2', 'next-3'],
+          'ch-1',
+          [
+            { from: 'next-2', to: rebuiltAt('2026-04-03T19:00:00.000Z') },
+            { from: 'next-3', to: rebuiltAt('2026-04-10T19:00:00.000Z') },
+          ],
+        );
+      });
+
+      it('keeps the excuses on the old rows when the carrying delete fails', async () => {
+        // The carry and the delete are one transaction, so a failure leaves
+        // the excuses where they were; the recovery removes only the new rows.
+        mockEventRepo.deleteReplacedOccurrences.mockRejectedValueOnce(
+          new Error('delete failed'),
+        );
+        const landed = [0, 1, 2].map((i) => ({
+          ...next1,
+          id: `occ-${i + 1}`,
+        }));
+        mockEventRepo.findChildren
+          .mockResolvedValueOnce([next1, next2, next3])
+          .mockResolvedValueOnce([next1, next2, next3, ...landed]);
+
+        await expect(
+          service.update(
+            'parent-1',
+            'ch-1',
+            { recurrence_rule: 'BIWEEKLY' },
+            'series',
+          ),
+        ).rejects.toThrow('delete failed');
+
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          ['occ-1', 'occ-2', 'occ-3'],
+          'ch-1',
+        );
+        expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
       });
     });
 
@@ -1811,7 +2029,7 @@ describe('EventSeriesService', () => {
 
         expect(mockEventRepo.findChildren).not.toHaveBeenCalled();
         expect(mockEventRepo.updateMany).not.toHaveBeenCalled();
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteReplacedOccurrences).not.toHaveBeenCalled();
       });
 
       it('lets a save that sends the stored rule back through', async () => {

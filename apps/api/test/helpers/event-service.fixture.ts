@@ -64,6 +64,8 @@ export async function createEventServiceFixture() {
     updateMany: jest.fn().mockResolvedValue([]),
     delete: jest.fn(),
     deleteMany: jest.fn().mockResolvedValue(undefined),
+    // No excuse left behind by default (#4620).
+    deleteReplacedOccurrences: jest.fn().mockResolvedValue([]),
   };
 
   const mockNotificationService: jest.Mocked<
