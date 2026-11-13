@@ -7,6 +7,8 @@
  * is the part that needs nothing but the file name.
  */
 
+import { documentTypeKey } from "@repo/validation";
+
 /**
  * The types every chapter starts with, the seed in
  * `20261113040011_chapter_document_types.sql`. The upload panel offers the
@@ -21,6 +23,7 @@ export const DEFAULT_DOCUMENT_TYPES = [
   "Budget",
   "Policy",
   "Form",
+  "Other",
 ] as const;
 
 /**
@@ -39,10 +42,11 @@ const TYPE_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
 
 /**
  * One key per spelling family: case and punctuation dropped, so "By-Laws",
- * "bylaws" and "BYLAWS" are the same type.
+ * "bylaws" and "BYLAWS" are the same type. The API and the database match
+ * types by the same key (`documentTypeKey`).
  */
 export function typeKey(type: string): string {
-  return type.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return documentTypeKey(type);
 }
 
 /**
@@ -66,9 +70,9 @@ export function titleFromFilename(name: string): string {
 }
 
 /**
- * The type a file name points at, from `options` (so a chapter that already
- * spells it "By-Laws" gets its own spelling back), or `null` when the name
- * says nothing recognizable.
+ * The type a file name points at, always one of `options` (so a chapter that
+ * spells it "By-Laws" gets its own spelling back, and a type it deleted is
+ * never offered again), or `null` when the name says nothing recognizable.
  */
 export function guessDocumentType(
   fileName: string,
@@ -82,8 +86,10 @@ export function guessDocumentType(
   );
   for (const [type, keywords] of TYPE_KEYWORDS) {
     if (!keywords.some((keyword) => words.has(keyword))) continue;
+    // Only the chapter's own types: one it renamed or deleted is not guessed
+    // back into its list.
     const own = options.find((option) => typeKey(option) === typeKey(type));
-    return own ?? type;
+    if (own) return own;
   }
   // A chapter's own type named outright in the file name ("Rush schedule.pdf"
   // in a chapter that files "Schedule" documents).

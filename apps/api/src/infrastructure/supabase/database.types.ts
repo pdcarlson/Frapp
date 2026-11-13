@@ -537,6 +537,24 @@ export interface Database {
        * `20261112165000` (#4310) — the run for (chapter, kind, dedupe key),
        * new or existing; `returns setof ai_runs`.
        */
+      /**
+       * `20261113040011` (#3642). Clears a document type from its documents
+       * (by `document_type_key`) and deletes it, in one transaction; false
+       * when the chapter has no such type.
+       */
+      /**
+       * `20261113040011` (#3642). Renames a document type and every document
+       * of it (by `document_type_key`) in one transaction; no row when the
+       * chapter has no such type, unique_violation when the name is taken.
+       */
+      rename_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string; p_name: string };
+        Returns: ChapterDocumentType[];
+      };
+      delete_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string };
+        Returns: boolean;
+      };
       enqueue_ai_run: {
         Args: {
           p_chapter_id: string;

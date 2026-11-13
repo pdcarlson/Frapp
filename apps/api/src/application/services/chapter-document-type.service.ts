@@ -5,15 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DOCUMENT_TYPES_MAX } from '@repo/validation';
+import { DOCUMENT_TYPES_MAX, documentTypeKey } from '@repo/validation';
 import {
   CHAPTER_DOCUMENT_TYPE_REPOSITORY,
   type IChapterDocumentTypeRepository,
 } from '#domain/repositories/chapter-document-type.repository.interface';
-import {
-  CHAPTER_DOCUMENT_REPOSITORY,
-  type IChapterDocumentRepository,
-} from '#domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocumentType } from '#domain/entities/chapter-document.entity';
 
 /**
@@ -21,18 +17,17 @@ import type { ChapterDocumentType } from '#domain/entities/chapter-document.enti
  * `spec/behavior/chapter-docs.md` § Document types).
  *
  * A document stores its type's *name*, as it stores its folder's, so a rename
- * renames the type on its documents and a delete clears it from them. Names
- * are matched ignoring case: "bylaws" on an upload files as the chapter's
- * "Bylaws", which is what keeps the near-duplicates of the free-text era from
- * coming back.
+ * renames the type on its documents and a delete clears it from them, each in
+ * one transaction in the database. Names are matched by key
+ * (`documentTypeKey`: case and everything but letters and digits ignored), so
+ * "by-laws" on an upload files as the chapter's "Bylaws", which is what keeps
+ * the near-duplicates of the free-text era from coming back.
  */
 @Injectable()
 export class ChapterDocumentTypeService {
   constructor(
     @Inject(CHAPTER_DOCUMENT_TYPE_REPOSITORY)
     private readonly typeRepo: IChapterDocumentTypeRepository,
-    @Inject(CHAPTER_DOCUMENT_REPOSITORY)
-    private readonly documentRepo: IChapterDocumentRepository,
   ) {}
 
   list(chapterId: string): Promise<ChapterDocumentType[]> {
@@ -46,9 +41,7 @@ export class ChapterDocumentTypeService {
     sortOrder?: number,
   ): Promise<ChapterDocumentType> {
     const typeName = normalizeTypeName(name);
-    if (typeName === null) {
-      throw new BadRequestException('Type name must not be empty');
-    }
+    if (typeName === null) throw emptyName();
     const existing = await this.typeRepo.findByChapter(chapterId);
     if (existing.some((type) => sameType(type.name, typeName))) {
       throw this.nameTaken(typeName);
@@ -80,45 +73,44 @@ export class ChapterDocumentTypeService {
 
     const rename =
       changes.name !== undefined ? normalizeTypeName(changes.name) : undefined;
-    if (rename === null) {
-      throw new BadRequestException('Type name must not be empty');
-    }
-    const isRename = rename !== undefined && rename !== type.name;
-    if (isRename && !sameType(rename, type.name)) {
-      const conflict = await this.typeRepo.findByName(chapterId, rename);
-      if (conflict) throw this.nameTaken(rename);
-    }
+    if (rename === null) throw emptyName();
 
-    const patch = {
-      ...(isRename ? { name: rename } : {}),
-      ...(changes.sort_order !== undefined
-        ? { sort_order: changes.sort_order }
-        : {}),
-    };
-    // Every field is optional, so `{}` is a valid body; an empty update would
-    // match no row.
-    if (Object.keys(patch).length === 0) return type;
-
-    // Documents first, as a folder rename does: if the second write fails the
-    // type row still has its old name, so retrying the same rename re-runs
-    // both and converges.
-    if (isRename) {
-      await this.documentRepo.renameType(type.name, rename, chapterId);
+    let current = type;
+    if (rename !== undefined && rename !== type.name) {
+      // A friendlier answer than the unique index's, when the name is plainly
+      // another type's; the database still decides a race.
+      if (!sameType(rename, type.name)) {
+        const conflict = await this.typeRepo.findByName(chapterId, rename);
+        if (conflict) throw this.nameTaken(rename);
+      }
+      // The row and its documents change together or not at all
+      // (`rename_chapter_document_type`).
+      const renamed = await this.typeRepo.rename(chapterId, id, rename);
+      if (renamed === undefined) {
+        throw new NotFoundException('Document type not found');
+      }
+      if (renamed === null) throw this.nameTaken(rename);
+      current = renamed;
     }
-    const updated = await this.typeRepo.update(id, chapterId, patch);
-    if (updated === undefined) {
-      throw new NotFoundException('Document type not found');
+    if (
+      changes.sort_order !== undefined &&
+      changes.sort_order !== current.sort_order
+    ) {
+      const moved = await this.typeRepo.setSortOrder(
+        id,
+        chapterId,
+        changes.sort_order,
+      );
+      if (!moved) throw new NotFoundException('Document type not found');
+      current = moved;
     }
-    if (updated === null) throw this.nameTaken(rename ?? type.name);
-    return updated;
+    return current;
   }
 
   /** Deletes a type; its documents keep everything but the type. */
   async delete(id: string, chapterId: string): Promise<void> {
-    const type = await this.typeRepo.findById(id, chapterId);
-    if (!type) throw new NotFoundException('Document type not found');
-    await this.documentRepo.clearType(type.name, chapterId);
-    await this.typeRepo.delete(id, chapterId);
+    const deleted = await this.typeRepo.deleteWithDocuments(chapterId, id);
+    if (!deleted) throw new NotFoundException('Document type not found');
   }
 
   /**
@@ -162,19 +154,25 @@ export class ChapterDocumentTypeService {
 }
 
 /**
- * Trims a type name and collapses inner runs of whitespace; empty is `null`
- * (no type).
+ * Trims a type name and collapses inner runs of whitespace; a name with no
+ * letter or digit is `null` (no type), since its key would be empty.
  */
 export function normalizeTypeName(
   name: string | null | undefined,
 ): string | null {
   if (name === null || name === undefined) return null;
   const trimmed = name.trim().replace(/\s+/g, ' ');
-  return trimmed === '' ? null : trimmed;
+  return documentTypeKey(trimmed) === '' ? null : trimmed;
 }
 
 function sameType(a: string, b: string): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+  return documentTypeKey(a) === documentTypeKey(b);
+}
+
+function emptyName(): BadRequestException {
+  return new BadRequestException(
+    'A type name needs at least one letter or number',
+  );
 }
 
 function nextSortOrder(types: readonly ChapterDocumentType[]): number {

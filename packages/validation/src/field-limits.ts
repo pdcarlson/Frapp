@@ -133,6 +133,18 @@ export const DOCUMENT_TYPE_NAME_MAX_LENGTH = 100;
 export const DOCUMENT_TYPES_MAX = 50;
 
 /**
+ * The key two spellings of one document type share: lowercased, with
+ * everything but letters and digits removed, so "By-Laws", "bylaws" and
+ * " BYLAWS " are one type. The same rule as the database's
+ * `document_type_key` (`20261113040011_chapter_document_types.sql`), which the
+ * unique index, rename and delete match on; "" for a name with no letter or
+ * digit, which no type may have.
+ */
+export function documentTypeKey(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
  * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
  * one-liner and the chat composer's Task form (#3865). The API refuses a
  * longer one; the form and the one-liner say so first.

@@ -64,12 +64,31 @@ describe('SupabaseChapterDocumentTypeRepository — tenant scope', () => {
     expect(type).toBeNull();
   });
 
-  it('update and delete are scoped to the chapter', async () => {
+  it('findByName matches the key, not a pattern: `*` and punctuation are characters', async () => {
+    const byKey = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByName(CHAPTER_B, 'BY-LAWS'),
+    );
+    expect(byKey?.id).toBe(TYPE_B);
+    await expect(repo.findByName(CHAPTER_B, 'B*')).resolves.toBeNull();
+    await expect(repo.findByName(CHAPTER_B, '*')).resolves.toBeNull();
+  });
+
+  it('setSortOrder is scoped to the chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.update(TYPE_A, CHAPTER_A, { name: 'Constitution' }),
+      repo.setSortOrder(TYPE_A, CHAPTER_A, 3),
+    );
+  });
+
+  it('rename and delete pass the chapter to the database functions', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.rename(CHAPTER_A, TYPE_A, 'Constitution'),
     );
     await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.delete(TYPE_A, CHAPTER_A),
+      repo.deleteWithDocuments(CHAPTER_A, TYPE_A),
     );
+    expect(harness.rpcCalls.map((call) => call.fn)).toEqual([
+      'rename_chapter_document_type',
+      'delete_chapter_document_type',
+    ]);
   });
 });

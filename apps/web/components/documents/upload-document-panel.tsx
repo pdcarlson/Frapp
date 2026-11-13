@@ -48,6 +48,7 @@ import {
 } from "@/lib/documents/upload-defaults";
 import {
   DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  DOCUMENT_TYPES_MAX,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
@@ -348,6 +349,17 @@ export function UploadDocumentPanel({
     !typeOptions.includes(uploadDraft.documentType);
   const [customTypeOpen, setCustomTypeOpen] = useState(false);
   const showCustomType = customTypeOpen || typeIsCustom;
+  /*
+    A type picked from the chips that then left the list (renamed or deleted
+    in Edit types) is not a new type to add back: let it go. One typed under
+    New type stays, since that is the officer's own.
+  */
+  const staleType =
+    typeIsCustom && !customTypeOpen ? uploadDraft.documentType : null;
+  useEffect(() => {
+    if (staleType !== null) set("documentType", "");
+  }, [staleType, set]);
+  const atTypeCap = typeOptions.length >= DOCUMENT_TYPES_MAX;
 
   const hasDetails =
     uploadDraft.description !== "" || uploadDraft.effectiveDate !== "";
@@ -445,20 +457,22 @@ export function UploadDocumentPanel({
                     </TypeChip>
                   );
                 })}
-                <TypeChip
-                  on={showCustomType}
-                  onClick={() => {
-                    if (showCustomType) {
-                      setCustomTypeOpen(false);
-                      set("documentType", "");
-                    } else {
-                      setCustomTypeOpen(true);
-                      set("documentType", "");
-                    }
-                  }}
-                >
-                  New type
-                </TypeChip>
+                {atTypeCap && !showCustomType ? null : (
+                  <TypeChip
+                    on={showCustomType}
+                    onClick={() => {
+                      if (showCustomType) {
+                        setCustomTypeOpen(false);
+                        set("documentType", "");
+                      } else {
+                        setCustomTypeOpen(true);
+                        set("documentType", "");
+                      }
+                    }}
+                  >
+                    New type
+                  </TypeChip>
+                )}
                 {typeRows ? (
                   <DocumentTypesEditor
                     types={typeRows}

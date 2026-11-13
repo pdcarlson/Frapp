@@ -71,8 +71,6 @@ describe('ChapterDocumentService', () => {
       setPinnedAt: jest.fn(),
       moveToRoot: jest.fn(),
       renameFolder: jest.fn(),
-      renameType: jest.fn(),
-      clearType: jest.fn(),
     };
 
     mockTypeRepo = {
@@ -84,8 +82,9 @@ describe('ChapterDocumentService', () => {
         created_at: '2026-11-13T00:00:00.000Z',
         ...row,
       })),
-      update: jest.fn(),
-      delete: jest.fn(),
+      setSortOrder: jest.fn(),
+      rename: jest.fn(),
+      deleteWithDocuments: jest.fn(),
     };
 
     mockFolderRepo = {
