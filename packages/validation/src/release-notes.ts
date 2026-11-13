@@ -132,6 +132,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Mandatory now shows only on the events that need you, as a quiet label instead of a red badge.",
       "A sign-up sheet, headcount or form you haven't answered yet now shows under Needs you on Activity until you answer it or it closes, and tapping it takes you straight to it in chat.",
       "Events and the Directory now say the same thing on the web and on your phone when a list is empty, a search finds nobody, or something fails to load, and points read the same everywhere.",
+      "Chat cards are one width and check you in the same way on the web and your phone, a muted channel's mark sits right after its name, and pinned messages show a pin on both.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
