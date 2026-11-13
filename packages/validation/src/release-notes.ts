@@ -128,6 +128,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Moving a repeating event to a new time keeps the excuses members already sent, and anyone whose meeting is no longer on the calendar gets a note to send theirs again.",
       "A task with no points and nothing to prove counts as done as soon as you mark it done.",
       "When someone submits a task you gave them, the notification says who submitted what, and tapping it opens a review with their proof up front. With several waiting, Confirm moves on to the next.",
+      "Can't make it is now on a required event's chat card too, and opens the event with your excuse ready to write.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
