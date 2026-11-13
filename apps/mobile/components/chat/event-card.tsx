@@ -7,6 +7,7 @@ import {
   useCheckIn,
   useCurrentChapter,
   useEvent,
+  useEventCardExcuse,
   useMyAttendance,
   useNowDate,
   usePermissionList,
@@ -75,6 +76,14 @@ import { LocationGlyph } from "./location-glyph";
  *
  * **The checked-in count** is the attendance roster, which only an
  * `events:update` holder can read, so nobody else asks for it or sees a count.
+ *
+ * **Can't make it** (#4660). A member the event requires, by the card's own
+ * role fields (`useEventCardExcuse`), gets a secondary Can't make it beside
+ * Check in that opens Event details with the excuse line already open, the
+ * way a calendar invite in Gmail or Slack carries its RSVP on the message.
+ * Once they've sent one, the card says where it stands ("Excuse sent to
+ * Jake", "Excused") instead. Nobody else sees either, and only those cards
+ * read anything for it.
  */
 export function EventCard({
   payload,
@@ -118,6 +127,7 @@ export function EventCard({
   // another device shows once the row is re-read (a remount, or the app
   // returning to the foreground), and a tap before then gets the server's 409.
   const mine = useMyAttendance(open ? payload.event_id : "");
+  const excuse = useEventCardExcuse(payload, now);
   const own = selectMyAttendance(mine.data);
   // A row without a check-in is an officer's mark.
   const marked = own && !own.checkedInAt ? own.status : null;
@@ -185,6 +195,22 @@ export function EventCard({
   const disabled =
     !frame.isConfirmed || submitting || zoneUnknown || blockedReason !== null;
 
+  const openExcuse = () =>
+    router.push({
+      pathname: "/event-details",
+      params: { id: payload.event_id, excuse: "1" },
+    });
+  const excuseButton =
+    excuse.kind === "offer" && !eventsOff ? (
+      <CardButton
+        label="Can't make it"
+        onPress={openExcuse}
+        disabled={!frame.isConfirmed}
+        accessibilityHint="Opens the event to send an excuse."
+      />
+    ) : null;
+  const showCheckIn = open && !eventsOff && !(marked && !checkedInNow);
+
   return (
     <ChatCardShell
       {...frame}
@@ -233,13 +259,15 @@ export function EventCard({
         </>
       }
     >
-      {open && eventsOff ? <CardNote text={MODULE_REFUSAL_COPY.checkIn} /> : null}
+      {open && eventsOff ? (
+        <CardNote text={MODULE_REFUSAL_COPY.checkIn} />
+      ) : null}
       {open && !eventsOff && marked && !checkedInNow ? (
         <CardNote
           text={`Marked ${statusLabel("attendance", marked).toLowerCase()}`}
         />
       ) : null}
-      {open && !eventsOff && !(marked && !checkedInNow) ? (
+      {showCheckIn ? (
         <>
           <CardActions>
             {checkedInNow ? (
@@ -271,6 +299,7 @@ export function EventCard({
                 accessibilityHint={blockedReason ?? undefined}
               />
             )}
+            {excuseButton}
           </CardActions>
           {shownOutcome ? (
             <CardNote
@@ -288,6 +317,10 @@ export function EventCard({
           ) : null}
         </>
       ) : null}
+      {!showCheckIn && excuseButton ? (
+        <CardActions>{excuseButton}</CardActions>
+      ) : null}
+      {excuse.kind === "sent" ? <CardNote text={excuse.title} /> : null}
     </ChatCardShell>
   );
 }

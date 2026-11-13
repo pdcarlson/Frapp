@@ -25,13 +25,26 @@ describe("OpenLinkedEvent (/events?event=<id>)", () => {
 
     const loaded = [{ id: "evt-1" }, { id: "evt-2" }];
     rerender(<OpenLinkedEvent events={loaded} idOf={idOf} onOpen={onOpen} />);
-    expect(onOpen).toHaveBeenCalledWith({ id: "evt-2" });
+    expect(onOpen).toHaveBeenCalledWith({ id: "evt-2" }, { excuse: false });
 
     // A re-read of the list (a realtime refresh) does not reopen it.
     rerender(
       <OpenLinkedEvent events={[...loaded]} idOf={idOf} onOpen={onOpen} />,
     );
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes on the chat card's ask to open Can't make it (#4660)", () => {
+    search.current = new URLSearchParams({ event: "evt-1", excuse: "1" });
+    const onOpen = vi.fn();
+    render(
+      <OpenLinkedEvent
+        events={[{ id: "evt-1" }]}
+        idOf={idOf}
+        onOpen={onOpen}
+      />,
+    );
+    expect(onOpen).toHaveBeenCalledWith({ id: "evt-1" }, { excuse: true });
   });
 
   it("opens nothing for an id the list does not hold, or with no link", () => {

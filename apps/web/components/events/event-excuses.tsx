@@ -69,6 +69,7 @@ export function MyExcuse({
   start,
   end,
   opensMinutes,
+  startWriting = false,
 }: {
   eventId: string;
   /** Whether the event requires the viewer (`useRequiredOfViewer`). */
@@ -76,6 +77,8 @@ export function MyExcuse({
   start: unknown;
   end: unknown;
   opensMinutes: unknown;
+  /** Open the line on arrival: the chat card's Can't make it (#4660). */
+  startWriting?: boolean;
 }) {
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId);
@@ -84,7 +87,7 @@ export function MyExcuse({
   const gate = useSubscriptionGate();
   const { toast } = useToast();
   const now = new Date(useNow());
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(startWriting);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputId = useId();

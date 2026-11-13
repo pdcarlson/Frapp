@@ -442,6 +442,10 @@ describe('EventAnnouncementService', () => {
         point_value: 10,
         location: null,
         is_mandatory: false,
+        required_role_ids: [],
+        optional_role_ids: [],
+        excluded_role_ids: [],
+        others_invited: true,
       });
       expect(arg.content).toContain('Chapter Meeting');
     });

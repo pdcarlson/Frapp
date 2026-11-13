@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { EVENT_PARAM } from "@/lib/events/event-links";
+import { EVENT_PARAM, EXCUSE_PARAM } from "@/lib/events/event-links";
 
 /**
  * Opens the event `/events?event=<id>` names (`eventDeepLink`), once the list
@@ -10,7 +10,8 @@ import { EVENT_PARAM } from "@/lib/events/event-links";
  * list does not hold (deleted, or not visible to this member) opens nothing.
  * Draws nothing; it is its own component so the page around it never waits on
  * the URL (`useSearchParams` wants a Suspense boundary, which the page gives
- * this alone).
+ * this alone). `excuse` says the link also asked for the sheet's Can't make it
+ * line (`&excuse=1`, the chat card's button, #4660).
  */
 export function OpenLinkedEvent<T>({
   events,
@@ -19,9 +20,11 @@ export function OpenLinkedEvent<T>({
 }: {
   events: readonly T[];
   idOf: (event: T) => string;
-  onOpen: (event: T) => void;
+  onOpen: (event: T, linked: { excuse: boolean }) => void;
 }) {
-  const linkedId = useSearchParams()?.get(EVENT_PARAM) ?? null;
+  const search = useSearchParams();
+  const linkedId = search?.get(EVENT_PARAM) ?? null;
+  const excuse = search?.get(EXCUSE_PARAM) === "1";
   const opened = useRef<string | null>(null);
 
   useEffect(() => {
@@ -29,9 +32,9 @@ export function OpenLinkedEvent<T>({
     const target = events.find((event) => idOf(event) === linkedId);
     if (target === undefined) return;
     opened.current = linkedId;
-    onOpen(target);
+    onOpen(target, { excuse });
     // `onOpen` may be a new function each render; `opened` keeps it to once.
-  }, [linkedId, events, idOf, onOpen]);
+  }, [linkedId, excuse, events, idOf, onOpen]);
 
   return null;
 }

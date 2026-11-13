@@ -93,6 +93,11 @@ type EventDetailSheetProps = {
    * leaves the sheet.
    */
   docked?: boolean;
+  /**
+   * Open the member's Can't make it line when the sheet opens, for the chat
+   * card's button (`/events?event=<id>&excuse=1`, #4660).
+   */
+  startExcuse?: boolean;
 };
 
 export function EventDetailSheet({
@@ -106,6 +111,7 @@ export function EventDetailSheet({
   onRequestEdit,
   onEventDeleted,
   docked = false,
+  startExcuse = false,
 }: EventDetailSheetProps) {
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
@@ -454,6 +460,7 @@ export function EventDetailSheet({
                 start={resolvedEvent?.start_time}
                 end={resolvedEvent?.end_time}
                 opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                startWriting={startExcuse}
               />
             ) : null}
             {eventId &&

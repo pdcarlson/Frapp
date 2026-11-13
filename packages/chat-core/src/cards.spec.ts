@@ -128,6 +128,36 @@ describe("readEventPayload", () => {
   });
 });
 
+describe("readEventPayload role fields (#4660)", () => {
+  const ROLES = {
+    required_role_ids: ["role-new"],
+    optional_role_ids: [],
+    excluded_role_ids: [],
+    others_invited: true,
+  };
+
+  it("reads who the event asks for", () => {
+    expect(readEventPayload(withPayload({ ...EVENT, ...ROLES }))).toEqual({
+      ...EVENT,
+      ...ROLES,
+    });
+  });
+
+  it("reads none when a card predates them or one is malformed", () => {
+    expect(readEventPayload(withPayload(EVENT))).toEqual(EVENT);
+    expect(
+      readEventPayload(
+        withPayload({ ...EVENT, ...ROLES, required_role_ids: [7] }),
+      ),
+    ).toEqual(EVENT);
+    expect(
+      readEventPayload(
+        withPayload({ ...EVENT, ...ROLES, others_invited: undefined }),
+      ),
+    ).toEqual(EVENT);
+  });
+});
+
 describe("readTaskPayload", () => {
   it("reads the payload the server posts", () => {
     expect(readTaskPayload(withPayload(TASK))).toEqual(TASK);

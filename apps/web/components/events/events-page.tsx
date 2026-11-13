@@ -231,6 +231,8 @@ export function EventsPage() {
   // What starts past the two-week horizon waits behind "Later" (#3707).
   const [laterOpen, setLaterOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  // The chat card's Can't make it opens the sheet with the line open (#4660).
+  const [excuseOnOpen, setExcuseOnOpen] = useState(false);
   // Set by the editor when a series save rebuilt the event it was opened on.
   const leftEditedEvent = useRef(false);
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
@@ -716,7 +718,8 @@ export function EventsPage() {
   // Any meeting of a series opens with its series, from a list row, a past
   // row or the calendar: the sheet then has the head's rule (a generated
   // meeting carries none) and the series' upcoming meetings.
-  function openDetails(event: EventRow) {
+  function openDetails(event: EventRow, linked = { excuse: false }) {
+    setExcuseOnOpen(linked.excuse);
     setActiveEvent(event);
     setActiveSeriesKey(eventSeriesKey(event));
     setDetailSheetOpen(true);
@@ -1203,6 +1206,7 @@ export function EventsPage() {
         seriesRule={activeSeriesHead?.recurrence_rule}
         onSelectOccurrence={(occurrence) => setActiveEvent(occurrence)}
         usingPreviewData={false}
+        startExcuse={excuseOnOpen}
         onRequestEdit={(event) => {
           setActiveEvent(event);
           setDetailSheetOpen(false);

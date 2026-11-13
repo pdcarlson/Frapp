@@ -144,6 +144,16 @@ export interface EventPayload {
   /** Whether attendance is mandatory (always `false` for slash-created events). */
   is_mandatory: boolean;
   /**
+   * Who the event asks for by role, as `events` holds it, so the card can tell
+   * whether it requires the viewer without reading the event (#4660). Absent
+   * on a card posted before the fields existed: `readEventPayload` leaves them
+   * out, and the card then goes by `is_mandatory` alone.
+   */
+  required_role_ids?: string[];
+  optional_role_ids?: string[];
+  excluded_role_ids?: string[];
+  others_invited?: boolean;
+  /**
    * Minutes before `start_time` that check-in opens. Cards posted before the
    * field existed carry none; `readEventPayload` gives them the default
    * (`checkInOpensMinutes` in `@repo/validation`).

@@ -69,8 +69,48 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
     location: typeof r.location === "string" ? r.location : null,
     point_value: finiteNumber(r.point_value) ?? 0,
     is_mandatory: r.is_mandatory === true,
+    ...roleFieldsOf(r),
     check_in_opens_minutes: checkInOpensMinutes(r.check_in_opens_minutes),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
+  };
+}
+
+function stringList(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? (value as string[])
+    : null;
+}
+
+/**
+ * An event card's role fields (#4660), all four or none: a card posted before
+ * they existed, or one with any of them malformed, reads as having none, so
+ * the card goes by `is_mandatory` alone rather than half a rule.
+ */
+function roleFieldsOf(
+  r: Record<string, unknown>,
+): Pick<
+  EventPayload,
+  | "required_role_ids"
+  | "optional_role_ids"
+  | "excluded_role_ids"
+  | "others_invited"
+> {
+  const required = stringList(r.required_role_ids);
+  const optional = stringList(r.optional_role_ids);
+  const excluded = stringList(r.excluded_role_ids);
+  if (
+    !required ||
+    !optional ||
+    !excluded ||
+    typeof r.others_invited !== "boolean"
+  ) {
+    return {};
+  }
+  return {
+    required_role_ids: required,
+    optional_role_ids: optional,
+    excluded_role_ids: excluded,
+    others_invited: r.others_invited,
   };
 }
 
