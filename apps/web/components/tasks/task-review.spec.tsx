@@ -6,11 +6,17 @@ const state = vi.hoisted(() => ({
   task: null as Record<string, unknown> | null,
   confirm: vi.fn(),
   reject: vi.fn(),
+  refetch: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useTask: () => ({ data: state.task, isError: false }),
+  useTask: () => ({
+    data: state.task,
+    isError: false,
+    isFetching: false,
+    refetch: state.refetch,
+  }),
   useConfirmTask: () => ({ mutate: state.confirm, isPending: false }),
   useRejectTask: () => ({ mutateAsync: state.reject, isPending: false }),
   // Nov 4, 2026, noon UTC: the same calendar day as the hand-in everywhere.
@@ -128,6 +134,25 @@ describe("TaskReview (#4693)", () => {
       }),
     );
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+
+  it("reads the task again on open, since a cached read can predate the submission", () => {
+    renderReview();
+    expect(state.refetch).toHaveBeenCalled();
+  });
+
+  it("offers no actions once the task stopped waiting elsewhere", () => {
+    state.task = submittedTask({
+      points_awarded: true,
+      confirmed_at: "2026-11-04T11:00:00.000Z",
+    });
+    renderReview();
+    expect(
+      screen.getByText(
+        /isn't waiting on a review anymore\. Status: Confirmed\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Confirm/ })).toBeNull();
   });
 
   it("says plainly when the task can't be read yet", () => {

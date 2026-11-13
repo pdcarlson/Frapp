@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MoreHorizontal, Pencil, SquareArrowOutUpRight } from "lucide-react";
 import {
   canEditCardTask,
+  isAwaitingReview,
   readEditableCardTask,
   readLiveTask,
   sendBackReasonChips,
   taskDueLine,
+  taskStatusLabel,
   taskReview,
   useConfirmTask,
   useNow,
@@ -76,6 +78,12 @@ export function TaskReview({
   const now = useNow();
   const [sendingBack, setSendingBack] = useState(false);
   const [editing, setEditing] = useState(false);
+  // A cached read can predate the submission this review is for (a push
+  // opens it moments after Mark done), so it reads the task again on open.
+  const refetch = query.refetch;
+  useEffect(() => {
+    void refetch();
+  }, [taskId, refetch]);
 
   const live = readLiveTask(query.data);
   if (!live) {
@@ -98,6 +106,20 @@ export function TaskReview({
   const name = assigneeName || face?.name || "A member";
   const firstName = name.split(" ")[0] ?? name;
   const busy = confirmTask.isPending || rejectTask.isPending;
+
+  // Confirmed or sent back elsewhere since the list was read. While this
+  // review's own action is in flight its optimistic write reads the same
+  // way, so it keeps its place until `onDone` closes it.
+  if (!isAwaitingReview(live) && !busy) {
+    return query.isFetching ? (
+      <InlineNote>Loading the task…</InlineNote>
+    ) : (
+      <InlineNote>
+        {title} isn&apos;t waiting on a review anymore. Status:{" "}
+        {taskStatusLabel(live)}.
+      </InlineNote>
+    );
+  }
 
   if (editing && editable) {
     return (
