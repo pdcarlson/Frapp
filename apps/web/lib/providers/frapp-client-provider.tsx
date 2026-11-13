@@ -1,5 +1,6 @@
 "use client";
 
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
@@ -53,6 +54,8 @@ import {
  * cookie, so the clear is three lines of string handling with no dependency
  * behind it.
  *
+ * Kept form drafts (`@repo/hooks/kept-drafts`) are dropped here too.
+ *
  * Bulk backwork upload batches (`lib/backwork-bulk/session.ts`) live outside
  * React for the life of the tab. They end themselves the moment the chapter
  * store moves; the uid effect below ends the ones another account left.
@@ -69,6 +72,9 @@ function dropCacheWhenIdentityChanges(
   queryClient.clear();
   void wipeFirstChunkCache();
   clearCachedAccent();
+  // Kept form drafts carry the chapter in their keys already; this drops
+  // another account's or chapter's from memory too (#4593).
+  dropAllKeptDrafts();
 }
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
@@ -193,7 +199,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   }, [authUserId, queryClient]);
 
   return (
-    <FrappClientProvider client={client} chapterId={activeChapterId}>
+    <FrappClientProvider
+      client={client}
+      chapterId={activeChapterId}
+      userId={authUserId ?? null}
+    >
       <PermissionPreviewProvider permissions={preview?.permissions ?? null}>
         {children}
       </PermissionPreviewProvider>
