@@ -132,7 +132,11 @@ describe("ChannelMemberList", () => {
     expect(members[0]).toHaveTextContent("Bob Member");
     // A reader the roster cannot name is still listed, under the fallback.
     expect(members[1]).toHaveTextContent(/Member u-gon/);
-    expect(screen.getByText("Amy Officer")).toHaveStyle({ color: "#5865F2" });
+    // The name paints from a --role-name custom property, lifted toward white
+    // on hover so Rose/Violet clear AA on --card-hover (#4387).
+    const amy = screen.getByText("Amy Officer");
+    expect(amy).toHaveStyle({ "--role-name": "#5865F2" });
+    expect(amy.className).toMatch(/group-hover\/row:text-\[color-mix/);
   });
 
   // #3726: a row opens that member's profile, as on mobile.
@@ -275,7 +279,7 @@ describe("ChannelMemberList", () => {
     const blank = screen.getByText(/^Member u-bla/).closest("li")!;
     // A role-colored offline name keeps its full color: only the avatar fades.
     const coloredName = within(colored).getByText("Bob Member");
-    expect(coloredName).toHaveStyle({ color: "#5865F2" });
+    expect(coloredName).toHaveStyle({ "--role-name": "#5865F2" });
     expect(coloredName.className).not.toMatch(/opacity/);
     expect(colored.querySelector("[aria-hidden='true']")?.className).toMatch(
       /opacity-50/,

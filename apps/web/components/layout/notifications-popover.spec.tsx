@@ -601,7 +601,7 @@ describe("NotificationsPopover: rows that stand out (#4346)", () => {
     });
     expect(row).toHaveAttribute("data-notification-kind", "channel");
     expect(row.querySelector("[data-person-name]")).toHaveStyle({
-      color: "#8FA8FF",
+      "--role-name": "#8FA8FF",
     });
     expect(row).toHaveTextContent("RC");
     expect(row.querySelector("[data-kind-badge]")).toHaveTextContent("#");
