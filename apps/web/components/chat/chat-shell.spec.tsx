@@ -4367,6 +4367,30 @@ describe("ChatShell narrow viewports (#2142)", () => {
       }
     });
 
+    it("goes back once to an entry the arrow already returned to (#3836)", async () => {
+      await pickBelowLg();
+      // The arrow goes back through the pick's entry while still narrow.
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => {
+        expect(window.history.state).not.toMatchObject({
+          frappChatThreadPane: expect.any(String),
+        });
+      });
+      resize(1440);
+      window.history.pushState({ page: "events" }, "");
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(window.history.state).not.toMatchObject({ page: "events" });
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(back).toHaveBeenCalledTimes(1);
+      } finally {
+        back.mockRestore();
+      }
+    });
+
     it("keeps the Back step when the window narrows again first", async () => {
       await pickBelowLg();
       resize(1440);
