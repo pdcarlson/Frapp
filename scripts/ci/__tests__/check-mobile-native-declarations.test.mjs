@@ -64,6 +64,9 @@ const REMOVE = { "tools:node": "remove" };
 const RECORDER =
   "requestRecordingPermissionsAsync( requestNotificationPermissionsAsync( setAudioModeAsync( allowsBackgroundRecording";
 
+/** The calls every requester but location's makes: the scanner, the picker and the recorder. */
+const NOT_LOCATION = `useCameraPermissions( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+
 /** The app manifest `expo config --type introspect` returned when this gate landed. */
 function currentManifest() {
   return manifestOf([
@@ -72,7 +75,7 @@ function currentManifest() {
     ["android.permission.VIBRATE"],
     ["android.permission.READ_EXTERNAL_STORAGE", { "android:maxSdkVersion": "32" }],
     ["android.permission.WRITE_EXTERNAL_STORAGE", { "android:maxSdkVersion": "32" }],
-    ["android.permission.CAMERA", REMOVE],
+    ["android.permission.CAMERA"],
     ["android.permission.ACCESS_COARSE_LOCATION"],
     ["android.permission.ACCESS_FINE_LOCATION"],
     // The meeting recorder's, from expo-audio's plugin.
@@ -178,14 +181,12 @@ const LOCATION_GONE = (call) =>
   ];
 
 test("a purpose string whose feature is gone fails", () => {
-  // What the in-app QR scanner's removal (#4762) did to the camera's entries
-  // until 0.13.0 dropped them (#4763).
-  const read = (file) => (file.endsWith("location.ts") ? "export function here() {}" : `requestMediaLibraryPermissionsAsync( ${RECORDER}`);
+  const read = (file) => (file.endsWith("location.ts") ? "export function here() {}" : NOT_LOCATION);
   assert.deepEqual(requesterProblems(read), LOCATION_GONE("requestForegroundPermissionsAsync"));
 });
 
 test("a requester call that survives only in a comment fails", () => {
-  const live = `requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+  const live = NOT_LOCATION;
   for (const leftover of [
     "// was requestForegroundPermissionsAsync() before the study-zone rebuild",
     "/* requestForegroundPermissionsAsync(); */",
@@ -234,7 +235,7 @@ test("a declined linked-only purpose string fails, because App Store Connect rej
 });
 
 test("a linked-only key has no requester to check", () => {
-  const live = `requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+  const live = `requestForegroundPermissionsAsync( ${NOT_LOCATION}`;
   assert.deepEqual(requesterProblems(() => live), []);
 });
 
@@ -255,25 +256,14 @@ test("every iOS roster entry names exactly one of a requester or a linked API", 
   }
 });
 
-const PICKER_REQUESTER = { "ios/ImagePickerPermissionRequesters.swift": "AVCaptureDevice.requestAccess(for: AVMediaType.video) { _ in }" };
-
-/**
- * Temp pod trees for the linked-only keys' pods: expo-location holding `files`
- * (relative path to text), and expo-image-picker holding `pickerFiles`.
- */
-function linkedPod(files, pickerFiles = PICKER_REQUESTER) {
-  const root = mkdtempSync(join(tmpdir(), "linked-pod-"));
-  const pods = [];
-  for (const [packageName, tree] of [["expo-location", files], ["expo-image-picker", pickerFiles]]) {
-    const dir = join(root, packageName);
-    mkdirSync(dir, { recursive: true });
-    for (const [rel, text] of Object.entries(tree)) {
-      mkdirSync(dirname(join(dir, rel)), { recursive: true });
-      writeFileSync(join(dir, rel), text);
-    }
-    pods.push({ packageName, dir });
+/** A temp pod tree for expo-location holding `files` (relative path to text). */
+function linkedPod(files) {
+  const dir = mkdtempSync(join(tmpdir(), "linked-pod-"));
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), text);
   }
-  return { pods, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { pods: [{ packageName: "expo-location", dir }], cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 test("a linked-only key passes while its pod uses the symbol anywhere in its native sources", () => {
@@ -299,9 +289,8 @@ test("a linked-only key fails once its pod stops using the symbol, or stops bein
     pod.cleanup();
   }
   const unlinked = linkedApiProblems({ pods: [], sources: [] });
-  assert.equal(unlinked.length, 2);
-  assert.match(unlinked[0], /^NSCameraUsageDescription: expo-image-picker is no longer linked into the iOS build/);
-  assert.match(unlinked[1], /^NSMotionUsageDescription: expo-location is no longer linked into the iOS build/);
+  assert.equal(unlinked.length, 1);
+  assert.match(unlinked[0], /^NSMotionUsageDescription: expo-location is no longer linked into the iOS build/);
 });
 
 test("a linked-only key fails when the app makes the request its text says it never makes", () => {
@@ -313,26 +302,6 @@ test("a linked-only key fails when the app makes the request its text says it ne
     ];
     assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources }), [
       "NSMotionUsageDescription: apps/mobile/lib/steps.ts calls requestMotionActivityPermissionsAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
-    ]);
-  } finally {
-    pod.cleanup();
-  }
-});
-
-test("the camera note fails on any of the calls that would open the camera", () => {
-  // The check-in code is scanned by the phone's own camera app (#4762), so the
-  // app has no camera feature; taking a photo in the picker would be one.
-  const pod = linkedPod({ "ios/LocationModule.swift": "CMMotionActivityManager()" });
-  try {
-    const sources = [
-      { file: "apps/mobile/lib/chat/take-photo.ts", text: "await ImagePicker.launchCameraAsync({});" },
-      { file: "apps/mobile/lib/avatar.ts", text: "await ImagePicker.requestCameraPermissionsAsync();" },
-      { file: "apps/mobile/lib/scan.tsx", text: "const [status, ask] = ImagePicker.useCameraPermissions();" },
-    ];
-    assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources }), [
-      "NSCameraUsageDescription: apps/mobile/lib/chat/take-photo.ts calls launchCameraAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
-      "NSCameraUsageDescription: apps/mobile/lib/avatar.ts calls requestCameraPermissionsAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
-      "NSCameraUsageDescription: apps/mobile/lib/scan.tsx calls useCameraPermissions, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
     ]);
   } finally {
     pod.cleanup();
@@ -369,16 +338,19 @@ test("the manifest introspection returned when this gate landed passes", () => {
   assert.deepEqual(androidPermissionProblems(currentManifest()), []);
 });
 
-test("dropping the camera's removal fails, since expo-image-picker's own manifest adds it back", () => {
-  // `android.blockedPermissions` in app.json (0.13.0, #4763). Introspection
-  // never sees the picker's library manifest, so the removal is the only trace.
+test("a declined camera option on the picker fails, the #2296 defect", () => {
+  // `cameraPermission: false` on expo-image-picker (or the camera in
+  // `android.blockedPermissions`) compiles to withBlockedPermissions: the add
+  // disappears and a removal takes its place, which kills s18's Scan code.
   const manifest = currentManifest();
   manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].filter(
     (entry) => entry.$["android:name"] !== "android.permission.CAMERA",
   );
-  assert.deepEqual(androidPermissionProblems(manifest), [
-    "the Android manifest no longer removes android.permission.CAMERA. The plugin option that declined it has changed, so the permission can reach the build again",
-  ]);
+  manifest.manifest["uses-permission"].push({ $: { "android:name": "android.permission.CAMERA", ...REMOVE } });
+  const problems = androidPermissionProblems(manifest);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /doesn't declare android\.permission\.CAMERA/);
+  assert.match(problems[1], /removes android\.permission\.CAMERA.*#2296/);
 });
 
 test("a removal alongside the add still fails, since the removal wins the merge", () => {
@@ -763,14 +735,13 @@ function fixture({
     mkdirSync(dirname(join(root, rel)), { recursive: true });
     writeFileSync(join(root, rel), text);
   };
+  put("apps/mobile/components/check-in/check-in-scanner.tsx", "useCameraPermissions();");
   put("apps/mobile/lib/location.ts", location);
   put("apps/mobile/lib/minutes/recorder/device.ts", RECORDER);
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
   podDirs["expo-location"] = join(root, "node_modules/expo-location/ios");
   put("node_modules/expo-location/ios/Requesters/MotionActivityPermissionRequester.swift", motionRequester);
-  podDirs["expo-image-picker"] = join(root, "node_modules/expo-image-picker/ios");
-  for (const [rel, text] of Object.entries(PICKER_REQUESTER)) put(`node_modules/expo-image-picker/${rel}`, text);
   for (const name of MANIFESTLESS_REQUIRED_REASON_USERS.keys()) {
     podDirs[name] = join(root, "node_modules", name, "ios");
     put(`node_modules/${name}/ios/Module.swift`, podSource);
@@ -801,7 +772,7 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
   try {
     const { checked, violations } = main(f.root, f.run);
     assert.deepEqual(violations, []);
-    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size + 3, "the roster's pods, expo-location, expo-image-picker and react-native");
+    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size + 2, "the roster's pods, expo-location and react-native");
     assert.deepEqual(f.calls, [
       "cli config --type introspect --json",
       "autolinking react-native-config --platform ios --json",

@@ -45,6 +45,35 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 export const APP_LINK_PATHS = ["/join", "/check-in"] as const;
 
 /**
+ * The search parameters of `raw` when it is a link to `path` on one of
+ * `origins` (a caller's dashboard origin), or null for any other text. The one
+ * matcher behind every app-link parser (`./check-in-link`, `./message-link`),
+ * so they agree on which links are the app's own.
+ */
+export function appLinkParams(
+  raw: string,
+  origins: readonly string[],
+  path: string,
+): URLSearchParams | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const allowed = origins.map((origin) => {
+    try {
+      return new URL(origin).origin;
+    } catch {
+      return null;
+    }
+  });
+  if (!allowed.includes(url.origin)) return null;
+  if (url.pathname.replace(/\/+$/, "") !== path) return null;
+  return url.searchParams;
+}
+
+/**
  * The phone a user agent belongs to, or null for anything else.
  *
  * Phones only. An iPad's Safari reports itself as a Mac, and an Android tablet

@@ -206,9 +206,8 @@ updates:
     #
     # The set this gap covers GREW when the Expo client list below was
     # completed to every Expo client package apps/mobile declares: it also
-    # suppresses security PRs for expo-image-picker, expo-location and
-    # expo-notifications — the media, location and push surfaces (expo-camera
-    # was on this list until 0.13.0 removed it, #4763). These
+    # suppresses security PRs for expo-camera, expo-image-picker, expo-location
+    # and expo-notifications — the media, location and push surfaces. These
     # entries carry no `update-types`, so in-SDK 57.0.x patches are frozen too,
     # not just the SDK-line majors that caused the break. Whether that is still
     # the right trade for the whole list is #2331; until it is decided, the blanket
@@ -261,6 +260,7 @@ updates:
       - dependency-name: "expo-application"
       - dependency-name: "expo-audio"
       - dependency-name: "expo-blur"
+      - dependency-name: "expo-camera"
       - dependency-name: "expo-clipboard"
       - dependency-name: "expo-constants"
       - dependency-name: "expo-crypto"

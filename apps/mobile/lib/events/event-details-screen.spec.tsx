@@ -324,7 +324,7 @@ describe("Event details layout", () => {
     expect(flat(textNode(tree, "+10 pts")!).color).toBe(ACCENT);
   });
 
-  it("draws the open card in the accent, saying to point the camera at the code (2026-11-13)", () => {
+  it("draws the open card in the accent, with Scan code and the camera (2026-11-13)", () => {
     const tree = render();
 
     expect(flat(textNode(tree, "Check-in is open")!).color).toBe(ACCENT);
@@ -335,13 +335,27 @@ describe("Event details layout", () => {
     );
     expect(card).toBeDefined();
 
-    // No scanner button: the QR is a link the phone's own camera opens.
-    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    // The QR is a link the phone's own camera opens, and Scan code reads it
+    // in the app; both are said, and Scan code is a quieter link in the accent.
     expect(screenText(tree)).toContain(
-      "Point your phone's camera at the code on the officer's screen.",
+      "Scan the code on the officer's screen, here or with your phone's camera.",
     );
-    // The typed code stays a quieter link in the accent.
-    expect(flat(textNode(tree, "Enter code")!).color).toBe(ACCENT);
+    expect(flat(textNode(tree, "Scan code")!).color).toBe(ACCENT);
+  });
+
+  it("opens s18 with Scan code's viewport already up", () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
+    const tree = render();
+    const [scan] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Scan code").length > 0,
+    );
+    act(() => scan.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/check-in",
+      params: { eventId: "evt-1", scan: "1" },
+    });
   });
 
   /** The card's header row: the dot is the View drawn beside the title. */
@@ -391,7 +405,7 @@ describe("Event details layout", () => {
       textNode(tree, `Check-in opens at ${formatEventClock(opensAt)}`),
     ).toBeDefined();
     expect(screenText(tree)).not.toMatch(/hasn't opened/);
-    expect(textNode(tree, "Enter code")).toBeUndefined();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
   });
 
   it("swaps the scanner for the member's check-in once they're in (#3703)", () => {
@@ -409,7 +423,7 @@ describe("Event details layout", () => {
     const title = `Checked in at ${formatEventClock(at)}`;
     expect(textNode(tree, title)).toBeDefined();
     expect(dotColor(tree, title)).toBe(signetDarkTokens.color.semantic.success);
-    expect(textNode(tree, "Enter code")).toBeUndefined();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
     expect(screenText(tree)).not.toContain("Check-in is open");
     // The badge row's chip and the card's line both say the points.
     expect(screenText(tree).match(/\+10 pts/g)).toHaveLength(2);
@@ -421,7 +435,7 @@ describe("Event details layout", () => {
     };
     const tree = render();
     expect(textNode(tree, "Marked excused")).toBeDefined();
-    expect(textNode(tree, "Enter code")).toBeUndefined();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
     // Nothing to do before a deadline: no "closes", no live dot.
     expect(screenText(tree)).not.toMatch(/closes /);
     expect(dotColor(tree, "Marked excused")).toBe(
@@ -431,13 +445,13 @@ describe("Event details layout", () => {
 
   it("holds the scanner back while the member's own row is first read", () => {
     myAttendancePending = true;
-    expect(textNode(render(), "Enter code")).toBeUndefined();
+    expect(textNode(render(), "Scan code")).toBeUndefined();
   });
 
   it("offers the typed code when that read is paused offline", () => {
     myAttendancePending = true;
     myAttendancePaused = true;
-    expect(textNode(render(), "Enter code")).toBeDefined();
+    expect(textNode(render(), "Scan code")).toBeDefined();
   });
 
   it("says only the time before check-in opens, even with a zone", () => {
@@ -455,7 +469,7 @@ describe("Event details layout", () => {
     const tree = render();
 
     expect(textNode(tree, "Host check-in")).toBeDefined();
-    expect(textNode(tree, "Enter code")).toBeUndefined();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
     const [host] = tree.root.findAll(
       (node) =>
         typeof node.props.onPress === "function" &&
@@ -512,7 +526,7 @@ describe("Event details layout", () => {
     event = { ...EVENT, check_in_opens_minutes: 30 };
     const tree = render();
     expect(textNode(tree, "Check-in is open")).toBeDefined();
-    expect(textNode(tree, "Enter code")).toBeDefined();
+    expect(textNode(tree, "Scan code")).toBeDefined();
   });
 
   it("says when a zero lead opens, at the start itself", () => {
@@ -535,7 +549,7 @@ describe("Event details layout", () => {
 
     expect(screenText(tree)).toContain("Check-in is closed");
     expect(screenText(tree)).not.toContain("window has ended");
-    expect(textNode(tree, "Enter code")).toBeUndefined();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
   });
 });
 

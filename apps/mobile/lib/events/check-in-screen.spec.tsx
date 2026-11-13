@@ -12,7 +12,7 @@ import { stackScreen } from "@/test/stack-screen";
 import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import { moduleDisabledMessage } from "@repo/validation";
+import { checkInLinkUrl, moduleDisabledMessage } from "@repo/validation";
 import { FrappClientProvider } from "@repo/hooks";
 import {
   ALREADY_CHECKED_IN_COPY,
@@ -32,7 +32,8 @@ import {
  * phone's own camera reads; tapping its banner opens this screen with the
  * event and the token, and the check-in goes on its own once the event has
  * loaded and the phone is online. Opened from the app with no token, the
- * screen says to use the camera and offers the typed code.
+ * screen offers Scan code, whose viewport hands a code it reads to the screen
+ * as the same parameters, the phone's camera, and the typed code.
  *
  * Location is asked for in context (`lib/events/check-in-location.ts`, mocked
  * here so each spec says what the phone gives): a zoned event with no
@@ -157,6 +158,22 @@ const state = vi.hoisted(() => ({
   enableNetworkProvider: vi.fn(async () => undefined),
   /** Every `AppState` "change" listener the screen has registered. */
   appStateListeners: new Set<(next: string) => void>(),
+  /** What `useCameraPermissions` reads; null before the OS has answered. */
+  camera: { granted: true, canAskAgain: true } as null | {
+    granted: boolean;
+    canAskAgain: boolean;
+  },
+  requestCamera: vi.fn(async () => undefined),
+  getCamera: vi.fn(async () => undefined),
+}));
+
+vi.mock("expo-camera", () => ({
+  CameraView: "CameraView",
+  useCameraPermissions: () => [
+    state.camera,
+    state.requestCamera,
+    state.getCamera,
+  ],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -234,7 +251,10 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import CheckInScreen, { CODE_CHANGED_COPY } from "@/app/(app)/check-in";
+import CheckInScreen, {
+  CODE_CHANGED_COPY,
+  NOT_A_CHECK_IN_CODE,
+} from "@/app/(app)/check-in";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -259,6 +279,10 @@ beforeEach(() => {
   state.enableNetworkProvider.mockResolvedValue(undefined);
   successHaptic.mockClear();
   vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+  state.camera = { granted: true, canAskAgain: true };
+  state.requestCamera.mockClear();
+  state.getCamera.mockClear();
+  vi.mocked(vi.mocked(expoRouter.useRouter)().setParams).mockClear();
 });
 
 /**
@@ -589,7 +613,7 @@ describe("Check-in from the camera's link", () => {
     const text = screenText(tree);
     expect(text).toContain("Chapter meeting");
     expect(text).toContain("Checking you in…");
-    expect(text).not.toContain("Point your camera at the code");
+    expect(text).not.toContain("Scan the check-in code");
     act(() => tree.unmount());
   });
 });
@@ -597,14 +621,17 @@ describe("Check-in from the camera's link", () => {
 describe("Check-in opened from the app, with no token", () => {
   beforeEach(() => openedFromApp());
 
-  it("says to use the camera, and sends nothing on its own", async () => {
+  it("offers Scan code, the camera and the typed code, and sends nothing on its own", async () => {
     const tree = render();
     await settle();
 
     const text = screenText(tree);
-    expect(text).toContain("Point your camera at the code");
+    expect(text).toContain("Scan the check-in code");
     expect(text).toContain("tap the Frapp link that appears");
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(1);
     expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(1);
+    // The viewport waits for Scan code: the camera isn't asked for unprompted.
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
     expect(locate).not.toHaveBeenCalled();
     expect(checkIn).not.toHaveBeenCalled();
     act(() => tree.unmount());
@@ -627,12 +654,12 @@ describe("Check-in opened from the app, with no token", () => {
     act(() => tree.unmount());
   });
 
-  it("says to use the camera when it has no event at all", () => {
+  it("offers Scan code but no typed code when it has no event at all", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
     const tree = render();
-    expect(screenText(tree)).toContain(
-      "Point your phone's camera at the check-in code to check in.",
-    );
+    expect(screenText(tree)).toContain("tap the Frapp link that appears");
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(1);
+    expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(0);
     expect(tree.root.findAllByType("BottomSheetModal" as never)).toHaveLength(
       0,
     );
@@ -664,6 +691,231 @@ describe("Check-in opened from the app, with no token", () => {
         .props.onPress(),
     );
     expect(refetch).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in's Scan code", () => {
+  const scanned = (eventId = "evt-1", token = "tok-9") =>
+    checkInLinkUrl("https://app.frapp.live", eventId, token);
+
+  /** The viewport's camera, as the member points it at `data`. */
+  const scan = (tree: ReactTestRenderer, data: string) =>
+    act(() =>
+      tree.root.findByType("CameraView" as never).props.onBarcodeScanned({
+        data,
+      }),
+    );
+
+  it("opens the viewport when the event's Scan code opened the screen", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+      scan: "1",
+    });
+    const tree = render();
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+    expect(screenText(tree)).toContain(
+      "Point at the code on the officer's screen",
+    );
+    // Scan code itself is what is open; the typed code stays a tap away.
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
+    expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("hands a check-in code to the screen as the link's own parameters, which sends it", async () => {
+    openedFromApp();
+    const tree = render();
+    await press(tree, "Scan code");
+    scan(tree, scanned());
+
+    expect(router().setParams).toHaveBeenCalledTimes(1);
+    expect(router().setParams).toHaveBeenCalledWith({
+      event: "evt-1",
+      t: "tok-9",
+    });
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
+    expect(checkIn).not.toHaveBeenCalled();
+
+    // What expo-router does with them: the camera's link path from here on.
+    moveTo(tree, "evt-1", "tok-9");
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      token: "tok-9",
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("reads another event's code as that event's check-in, as the camera would", async () => {
+    openedFromApp();
+    const tree = render();
+    await press(tree, "Scan code");
+    scan(tree, scanned(OTHER_EVENT.id, "tok-2"));
+    expect(router().setParams).toHaveBeenCalledWith({
+      event: OTHER_EVENT.id,
+      t: "tok-2",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says once that a code isn't a check-in, and keeps reading", async () => {
+    openedFromApp();
+    const tree = render();
+    await press(tree, "Scan code");
+    for (const data of [
+      "https://example.com/menu",
+      "https://example.com/menu",
+      `https://app.staging.frapp.live/check-in?event=evt-1&t=tok-9`,
+    ]) {
+      scan(tree, data);
+    }
+    expect(router().setParams).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain(NOT_A_CHECK_IN_CODE);
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+
+    scan(tree, scanned());
+    expect(router().setParams).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("sends the same code again when the member reads it again after a refusal", async () => {
+    // Too far from the officer's screen: the member walks closer and scans
+    // the code that is still up, inside its window.
+    openedByLink("evt-1", "tok-9");
+    checkIn.mockRejectedValueOnce(FAILED);
+    const tree = render();
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    await press(tree, "Scan code");
+    scan(tree, scanned("evt-1", "tok-9"));
+    await settle();
+    expect(router().setParams).not.toHaveBeenCalled();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(screenText(tree)).toContain("You're checked in");
+    act(() => tree.unmount());
+  });
+
+  it("puts a not-a-check-in line away once a real code is read", async () => {
+    openedFromApp();
+    state.writeBlockedReason = "You're offline.";
+    const tree = render();
+    await press(tree, "Scan code");
+    scan(tree, "https://example.com/menu");
+    expect(screenText(tree)).toContain(NOT_A_CHECK_IN_CODE);
+    scan(tree, scanned());
+    expect(screenText(tree)).not.toContain(NOT_A_CHECK_IN_CODE);
+    act(() => tree.unmount());
+  });
+
+  it("acts on a code held in view once, not once per frame", async () => {
+    openedFromApp();
+    const tree = render();
+    await press(tree, "Scan code");
+    const camera = tree.root.findByType("CameraView" as never);
+    act(() => {
+      camera.props.onBarcodeScanned({ data: scanned() });
+      camera.props.onBarcodeScanned({ data: scanned() });
+    });
+    expect(router().setParams).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers Scan code again after a scanned code changed", async () => {
+    openedByLink();
+    checkIn.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message: CHECK_IN_CODE_REFUSED_MESSAGE,
+    });
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain(CODE_CHANGED_COPY);
+
+    await press(tree, "Scan code");
+    expect(screenText(tree)).not.toContain(CODE_CHANGED_COPY);
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("keeps Scan code away from a refusal only an officer can lift", async () => {
+    openedByLink();
+    checkIn.mockRejectedValue(REFUSED);
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("keeps Scan code away while a link's event is still loading", () => {
+    openedByLink();
+    state.useEvent = () => ({ data: undefined });
+    const tree = render();
+    expect(screenText(tree)).toContain("Checking you in…");
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("keeps Scan code away while a check-in is on its way", async () => {
+    openedByLink();
+    pendingCheckIn();
+    const tree = render();
+    await settle();
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("asks for the camera once, when Scan code opens, and not again after a no", async () => {
+    openedFromApp();
+    state.camera = { granted: false, canAskAgain: true };
+    const tree = render();
+    expect(state.requestCamera).not.toHaveBeenCalled();
+    await press(tree, "Scan code");
+    expect(state.requestCamera).toHaveBeenCalledTimes(1);
+
+    // The member said no; Android still lets the app ask.
+    state.camera = { granted: false, canAskAgain: true };
+    rerender(tree);
+    expect(state.requestCamera).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain("Camera is off for Frapp");
+    await press(tree, "Allow camera");
+    expect(state.requestCamera).toHaveBeenCalledTimes(2);
+    act(() => tree.unmount());
+  });
+
+  it("offers Settings once the OS won't ask, and reads the camera again on return", async () => {
+    openedFromApp();
+    state.camera = { granted: false, canAskAgain: false };
+    const tree = render();
+    await press(tree, "Scan code");
+    expect(state.requestCamera).not.toHaveBeenCalled();
+    await press(tree, "Open Settings");
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
+
+    await appState("active");
+    expect(state.getCamera).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("turns the camera off while the screen is covered or the typed code is open", async () => {
+    openedFromApp();
+    const tree = render();
+    await press(tree, "Scan code");
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+
+    act(() => blur());
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
+    act(() => refocus());
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+
+    openSheet(tree);
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });
@@ -1248,7 +1500,7 @@ describe("Check-in keeps each event's state to itself", () => {
 
     moveTo(tree, OTHER_EVENT.id);
     expect(screenText(tree)).not.toContain("You're checked in");
-    expect(screenText(tree)).toContain("Point your camera at the code");
+    expect(screenText(tree)).toContain("Scan the check-in code");
     act(() => tree.unmount());
   });
 
