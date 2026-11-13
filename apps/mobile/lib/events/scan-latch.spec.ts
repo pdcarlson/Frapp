@@ -41,8 +41,9 @@ describe("createScanLatch", () => {
 
   /**
    * The behaviour the acceptance criterion names: "one physical code MUST NOT
-   * become N redemption attempts". Simulates the real callback pattern —
-   * expo-camera firing repeatedly while the code stays in frame.
+   * become N redemption attempts". Simulates a burst of the same code: the
+   * old in-app scanner firing while it stayed in frame, or today a check-in
+   * link opened again before the first attempt is answered.
    */
   it("turns a burst of reads of one code into exactly one submission", () => {
     const latch = createScanLatch();

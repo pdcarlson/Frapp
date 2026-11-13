@@ -35,7 +35,10 @@
 //   Naming the service-hour proof photo (s20, 2026-11-05) moved only the
 //   Privacy pin as well, on that precedent. Naming the location of an
 //   officer's phone showing a check-in code (#4532) was ruled non-material by
-//   the owner on 2026-11-12, so it moved only the Privacy pin too; whether each of these is material, and
+//   the owner on 2026-11-12, so it moved only the Privacy pin too. Dropping the
+//   camera from the permissions clause when 0.13.0 removed it, and naming the
+//   meeting recorder's microphone there (#4763), moved only the Privacy pin on
+//   those precedents; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
@@ -75,7 +78,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "8a8bc715d28d18bb",
+    fingerprint: "f9303b78b5bc552e",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",
