@@ -547,8 +547,10 @@ function createStyles(tokens: SignetTokens) {
     group: {
       gap: tokens.spacing.xs,
     },
+    // Full width, as iOS's segmented filters sit: each segment is `flex: 1`,
+    // so a track hugging its labels shrank and cut "Unread" to "Un…".
     filter: {
-      alignSelf: "flex-start",
+      alignSelf: "stretch",
       marginBottom: tokens.spacing.sm,
     },
     markAllNote: {
