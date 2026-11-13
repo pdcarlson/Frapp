@@ -274,6 +274,57 @@ sentence is the model's and is checked against nothing, so a model that believes
 can still report what it says, as a line that opens that message and shows who wrote it. It cannot
 pin the claim on another member's message. `chat-catch-up.eval-spec.ts` holds the cases.
 
+### The tool loop (added 2026-11-13, epic #4898)
+
+Paul asked on 2026-11-13 for Ask to be rebuilt as an agent that reads the chapter in several steps
+("agentic harness", "not a RAG agent necessarily") and approved the rule changes that needs
+("You have my go ahead on everything", 20:29Z). This section is those changes. The loop is built
+(#4899) and off unless the server sets `ASK_AGENT=on`; until the one-shot path is deleted, what C3,
+C7 and C8 say above still describes what members get. Nothing here has been graded against a real
+provider yet (#4903).
+
+What a turn through the loop is: the model is offered read tools, asks for some with arguments it
+wrote, the server runs them as the asker and hands back what they returned, and the model asks again
+or writes. `AgentLoopService` holds every rule below in code.
+
+> **C3 and C8 "no action because a message asked", changed in #4899 by pdcarlson, 2026-11-13.**
+> Before: nothing retrieved could cause a tool call, because the call that picked tools never saw
+> retrieved text. Now what a turn read may lead it to read more. What holds instead:
+>
+> 1. **Every tool the loop can run is a read.** A tool whose `effect` is not `read` is not offered
+>    and is refused again where it runs. A planted "post this", "assign that" or "pay" has nothing
+>    to call.
+> 2. **A read runs as the asker.** A tool is offered only when the asker passes the permission and
+>    module check of the route it mirrors (C2), the chapter and the asker come from the request's
+>    guards and never from an argument (C4), and an id in an argument is checked like an id in a
+>    URL. So the most a planted message can cause is a read the asker could have made themselves,
+>    shown to the asker alone. The injector gains nothing they could not already read, unless the
+>    asker can read more than they can: then they can steer what the asker's answer is about, which
+>    they could already do by being retrieved.
+> 3. **Arguments are parsed before they run.** A call's arguments go through the tool's schema, and
+>    what fails never reaches the tool. The model is told which field failed and the schema's own
+>    word for why, never what it sent.
+> 4. **A turn is bounded:** six model calls, ten tool calls, a size cap on each result and a read
+>    budget. When one is spent the tools are taken away (`tool_choice: none`) and the model answers
+>    with what it has. Each model call is admitted against the spend caps and recorded on its own,
+>    so a planted "keep searching" costs at most one turn's limits.
+> 5. **A result is data** (C1): sources and one line the tool wrote. Nothing a tool returned reaches
+>    the system text, which is the same bytes on every round.
+>
+> **C7, changed in #4899 by pdcarlson, 2026-11-13.** Before: with nothing retrieved, no model was
+> called. The loop searches nothing ahead of time, so the model is always called; refusal on silence
+> is now the second half alone: an answer with no citation the server found word for word in
+> something a tool returned this turn is replaced by "couldn't find that".
+>
+> **C6, changed in #4899 by pdcarlson, 2026-11-13.** A fact still needs a checked quote, and an
+> answer still needs at least one. What Frapp concludes from cited facts (which of several things
+> matters most, what to do next) may now be said without a quote of its own. The prompt asks for
+> that split; the server cannot tell a fact from a conclusion, so what it enforces is unchanged.
+
+Approved the same day and not built yet, so not in force: the model that reads may also propose a
+card (C5; today the request reading is a separate call that sees only what the member typed), and
+where the member asked from (a channel, an event, a task) is given beside the question.
+
 ### The acting agent (added 2026-11-12, #718)
 
 How C1 to C5 are met by `ActService` (`apps/api/src/application/services/act/`), which turns an

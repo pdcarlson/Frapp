@@ -134,3 +134,13 @@ export function validateAiEnv(env: Env): string[] {
   }
   return problems;
 }
+
+/**
+ * Whether Ask answers through its tool loop (`AskService`, epic #4898) or
+ * through the one-shot search-and-answer it replaces. `ASK_AGENT=on` turns
+ * the loop on; anything else, unset included, leaves it off. It is a switch
+ * for the cutover and goes when the one-shot path is deleted.
+ */
+export function askAgentEnabled(env: Env = process.env): boolean {
+  return envSetting(env, 'ASK_AGENT') === 'on';
+}

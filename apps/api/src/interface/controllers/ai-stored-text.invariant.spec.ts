@@ -51,6 +51,12 @@ import type { CorpusPassage } from '../../application/services/corpus/corpus-ret
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import type { AskTool } from '../../application/services/ask/ask-tool';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AgentLoopService } from '../../application/services/ask/agent/agent-loop.service';
+import type { AgentReadTool } from '../../application/services/ask/agent/agent-tool';
+import {
+  SearchChapterAgentTool,
+  agentToolFromAskTool,
+} from '../../application/services/ask/agent/interim-tools';
 import { AskService } from '../../application/services/ask/ask.service';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
 import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
@@ -233,6 +239,37 @@ function scriptedModel(): ScriptedLanguageModel {
         citations: doc ? [{ sourceId: doc.id, quote: DOCUMENT_TEXT }] : [],
       };
     },
+    // The tool loop: it asks for both reads, with the question in a tool's
+    // arguments, then repeats everything it was handed.
+    'ask.agent': (request: LanguageModelRequest) => {
+      if (request.kind !== 'agent') return { text: '' };
+      if (request.rounds.length === 0) {
+        return {
+          text: `Let me look for the ${CANARY.answer} formal.`,
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'search_chapter',
+              input: { query: QUESTION },
+            },
+            { id: 'call-2', name: 'roster', input: {} },
+          ],
+        };
+      }
+      const sources = request.rounds.flatMap((round) =>
+        round.results.flatMap((result) => result.sources),
+      );
+      const doc = sources.find((source) => source.text === DOCUMENT_TEXT);
+      return {
+        text: `The ${CANARY.answer} formal is on March 3. ${[
+          ...request.context,
+          ...sources,
+        ]
+          .map((source) => source.text)
+          .join(' ')}`,
+        citations: doc ? [{ sourceId: doc.id, quote: DOCUMENT_TEXT }] : [],
+      };
+    },
   });
 }
 
@@ -327,7 +364,10 @@ function build(model: ILanguageModel, captured: Captured) {
     consent as never,
     {
       getEffectivePermissions: () =>
-        Promise.resolve([SystemPermissions.MEMBERS_VIEW]),
+        Promise.resolve([
+          SystemPermissions.AI_USE,
+          SystemPermissions.MEMBERS_VIEW,
+        ]),
       // Who is asking reaches the model too (#4890), under its own canary.
       findByChapter: () =>
         Promise.resolve([
@@ -343,6 +383,13 @@ function build(model: ILanguageModel, captured: Captured) {
     } as never,
     diagnostics,
     [roster],
+    // The tool loop reads the same sources through its tools, and is on
+    // only for the case that sets `ASK_AGENT`.
+    new AgentLoopService(gateway),
+    [
+      new SearchChapterAgentTool(retrieval as never, consent as never),
+      agentToolFromAskTool(roster),
+    ],
   );
   return new AskController(
     ask,
@@ -466,6 +513,26 @@ describe('Stored AI text: an AI call with no report made keeps no text (#4315)',
     ).toBe(true);
     expect(captured.analytics.length).toBeGreaterThan(0);
     expect(captured.sentry.some((call) => call[0] === 'startSpan')).toBe(true);
+
+    expect(leaks(captured)).toEqual([]);
+  });
+
+  it('an answer through the tool loop leaves none either', async () => {
+    process.env.ASK_AGENT = 'on';
+    const { captured, body } = await askThrough(scriptedModel());
+
+    // Both reads ran and what they returned reached the model and the
+    // member: the document, the chat message, the roster and the asker.
+    expect(body).toContain(CANARY.answer);
+    expect(body).toContain(CANARY.document);
+    expect(body).toContain(CANARY.chat);
+    expect(body).toContain(CANARY.tool);
+    expect(body).toContain(CANARY.asker);
+    expect(body).toContain('"status":"answered"');
+    // One ledger row for each of the two rounds.
+    expect(
+      captured.database.filter((call) => call[1] === 'settle_ai_spend'),
+    ).toHaveLength(2);
 
     expect(leaks(captured)).toEqual([]);
   });

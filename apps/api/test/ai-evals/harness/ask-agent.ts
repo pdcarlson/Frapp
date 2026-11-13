@@ -47,6 +47,7 @@ import type {
   LanguageModelRequest,
 } from '#domain/adapters/language-model.interface';
 import type { AiGatewayService } from '../../../src/application/services/ai/ai-gateway.service';
+import { AgentLoopService } from '../../../src/application/services/ask/agent/agent-loop.service';
 import { AskService } from '../../../src/application/services/ask/ask.service';
 import type { AskTool } from '../../../src/application/services/ask/ask-tool';
 import {
@@ -217,6 +218,9 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         { findDisplayIdentitiesByIds: () => Promise.resolve([]) } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
+        // The tool loop is off here (`ASK_AGENT`); #4903 grades it.
+        new AgentLoopService(gateway),
+        [],
       );
 
       let answer: AskAnswer | null = null;

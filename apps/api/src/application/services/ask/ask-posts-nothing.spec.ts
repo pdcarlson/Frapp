@@ -23,7 +23,10 @@ import { join } from 'node:path';
  *    does and lists it.
  *
  * What this does not see: a call made through a local alias of a service,
- * and what a listed method does inside. The one listed method that can
+ * and what a listed method does inside. The tool loop runs a tool through
+ * such an alias (`tool.run`), so what keeps a tool from writing is the tool's
+ * own file, which is read here like every other: an agent tool is a class
+ * under `agent/`, and each call it makes on what it holds must be listed. The one listed method that can
  * notify is `suggestions.proposeBatch`, and `act.service.spec.ts` ("pushes
  * nobody") pins that Act calls it with nobody to notify.
  */
@@ -92,8 +95,13 @@ const CALLS = new Set([
   'suggestions.suggest',
   'people.resolve',
   'tools.filter',
+  // The tool loop (epic #4898): which reads to offer, and the loop itself,
+  // which runs only what it was offered (`agent/agent-loop.service.ts`).
+  'agentTools.filter',
+  'loop.run',
   // The model.
   'gateway.generateObject',
+  'gateway.streamAgentRound',
   'gateway.streamCited',
   // What asking writes: a proposal card for the asker (nobody is notified),
   // the diagnostics window's own rows, its audit entries, and the count.
@@ -115,10 +123,15 @@ const CALLS = new Set([
   'logger.warn',
 ]);
 
+/** Every source under `dir`, its folders included: the agent's tools live in them. */
 function sourcesIn(dir: string): string[] {
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.ts') && !name.includes('.spec.'))
-    .map((name) => join(dir, name));
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? sourcesIn(join(dir, entry.name))
+      : entry.name.endsWith('.ts') && !entry.name.includes('.spec.')
+        ? [join(dir, entry.name)]
+        : [],
+  );
 }
 
 describe('Asking never posts to a channel or notifies (#4713)', () => {
@@ -132,6 +145,8 @@ describe('Asking never posts to a channel or notifies (#4713)', () => {
   it('has sources to read', () => {
     expect(named).toContain('ask.service.ts');
     expect(named).toContain('ask-conversation.service.ts');
+    expect(named).toContain('agent-loop.service.ts');
+    expect(named).toContain('interim-tools.ts');
     expect(named).toContain('act.service.ts');
     expect(named).toContain('ask.controller.ts');
   });

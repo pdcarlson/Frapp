@@ -13,7 +13,11 @@ import {
   LanguageModelError,
   type LanguageModelSource,
 } from '#domain/adapters/language-model.interface';
-import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import {
+  aiCatalogEntry,
+  type AiAgentTaskName,
+  type AiCitedTaskName,
+} from '#domain/constants/ai-model-catalog';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import {
   USER_REPOSITORY,
@@ -21,25 +25,37 @@ import {
 } from '#domain/repositories/user.repository.interface';
 import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
+import { askAgentEnabled } from '../../../config/ai-config';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import {
   AiGatewayService,
+  type AiAgentRoundResult,
   type AiCitedResult,
   type AiUnavailable,
 } from '../ai/ai-gateway.service';
 import { aiConsentRefusal } from '../ai/ai-consent-refusal';
 import { AiConsentService } from '../ai/ai-consent.service';
-import {
-  CHAT_SOURCE_TYPE,
-  chatPassagesStillAllowed,
-} from '../corpus/chat-message-corpus-source';
+import { chatPassagesStillAllowed } from '../corpus/chat-message-corpus-source';
 import {
   CorpusRetrievalService,
   type CorpusPassage,
 } from '../corpus/corpus-retrieval.service';
 import { MemberService } from '../member.service';
 import { RbacService } from '../rbac.service';
+import {
+  AgentLoopService,
+  type AgentLoopOutcome,
+} from './agent/agent-loop.service';
+import {
+  AGENT_READ_TOOLS,
+  type AgentReadTool,
+  type AgentSource,
+} from './agent/agent-tool';
+import {
+  ASK_AGENT_PROMPT_VERSION,
+  askAgentSystem,
+} from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
@@ -63,12 +79,33 @@ import {
   type AskToolContext,
 } from './ask-tool';
 import { nameInLine } from './ask-lines';
+import {
+  passageDetail,
+  passageIsChat,
+  passageKind,
+  passageTarget,
+} from './ask-passage';
 
 /** The id of the source that says who is asking. */
 const ASKER_SOURCE_ID = 'asker';
 
 /** The role a chapter's alumni hold (`RbacService.getAlumniRoleId`). */
 const ALUMNI_SYSTEM_KEY = 'ALUMNI';
+
+/**
+ * A round's words are held until this many are written, or the round ends:
+ * a model sometimes says a line before it calls a tool, and that line is not
+ * the answer. Past this it is taken to be writing the answer, and streams.
+ */
+const AGENT_TEXT_HOLD_CHARS = 160;
+
+/** Which model call wrote an answer, and what it read with. */
+interface AskRun {
+  task: AiCitedTaskName | AiAgentTaskName;
+  promptVersion: string;
+  /** The reads that ran, by name. */
+  tools: readonly string[];
+}
 
 /**
  * What the model is handed: who is asking first, when that is known, then
@@ -89,12 +126,6 @@ function sourcesForModel(
 
 /** Passages asked of retrieval for one question. */
 const PASSAGE_LIMIT = 8;
-
-const SOURCE_KIND: Readonly<Record<string, string>> = {
-  chapter_document: 'document',
-  meeting_minutes: 'minutes',
-  [CHAT_SOURCE_TYPE]: 'chat',
-};
 
 export interface AskInput {
   /** From `ChapterGuard`. Never from the request body or a model. */
@@ -197,38 +228,13 @@ function sourceDay(iso: string | null, timeZone: string): string {
   return Number.isNaN(at.getTime()) ? '' : longDate(at, timeZone);
 }
 
-function passageDetail(passage: CorpusPassage): string | null {
-  const page =
-    passage.pageStart === null
-      ? null
-      : passage.pageEnd !== null && passage.pageEnd !== passage.pageStart
-        ? `pages ${passage.pageStart} to ${passage.pageEnd}`
-        : `page ${passage.pageStart}`;
-  return [passage.heading, page].filter(Boolean).join(', ') || null;
-}
-
 function passageEntry(
   passage: CorpusPassage,
   timeZone: string,
 ): AskSourceEntry {
-  const chat = passage.sourceType === CHAT_SOURCE_TYPE;
+  const chat = passageIsChat(passage);
   const detail = passageDetail(passage);
-  const target: AskSource['target'] =
-    passage.sourceType === 'chapter_document'
-      ? {
-          type: 'document',
-          document_id: passage.sourceId,
-          page: passage.pageStart,
-        }
-      : passage.sourceType === 'meeting_minutes'
-        ? { type: 'meeting', meeting_id: passage.sourceId }
-        : chat && passage.channelId && passage.messageId
-          ? {
-              type: 'message',
-              channel_id: passage.channelId,
-              message_id: passage.messageId,
-            }
-          : null;
+  const target = passageTarget(passage);
   return {
     chat,
     authorIds: chat ? passage.authorIds : [],
@@ -246,12 +252,45 @@ function passageEntry(
     },
     view: {
       id: passage.id,
-      kind: SOURCE_KIND[passage.sourceType] ?? passage.sourceType,
+      kind: passageKind(passage),
       title: passage.title,
       // A chat passage's heading is its day, which `date` already says.
       detail: chat ? null : detail,
       date: passage.sourceAt,
       target,
+    },
+  };
+}
+
+/**
+ * What the model reads as the name of something a tool returned. Chat is
+ * labelled as chat, with its channel and day, and live data as read just
+ * now, as in the one-shot path (C8). Only the asker block may carry its
+ * title.
+ */
+function agentSourceTitle(source: AgentSource, timeZone: string): string {
+  const title = source.chat
+    ? `Chat message in ${source.title}, ${sourceDay(source.date, timeZone)}`
+    : source.date === null
+      ? `${source.title} (live data, read just now)`
+      : [source.title, source.detail, sourceDay(source.date, timeZone)]
+          .filter(Boolean)
+          .join(', ');
+  return looksLikeAskerSourceTitle(title) ? `Chapter source: ${title}` : title;
+}
+
+function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
+  return {
+    chat: source.chat,
+    authorIds: source.chat ? source.authorIds : [],
+    model: { id: source.id, title, text: source.text },
+    view: {
+      id: source.id,
+      kind: source.kind,
+      title: source.title,
+      detail: source.detail,
+      date: source.date,
+      target: source.target,
     },
   };
 }
@@ -318,6 +357,9 @@ export class AskService {
     @Inject(USER_REPOSITORY) private readonly users: IUserRepository,
     private readonly diagnostics: AskDiagnosticsService,
     @Inject(ASK_TOOLS) private readonly tools: readonly AskTool[],
+    private readonly loop: AgentLoopService,
+    @Inject(AGENT_READ_TOOLS)
+    private readonly agentTools: readonly AgentReadTool[],
   ) {}
 
   /**
@@ -353,6 +395,10 @@ export class AskService {
     const held = new Set(
       await this.rbac.getEffectivePermissions(input.chapterId, input.userId),
     );
+    if (askAgentEnabled()) {
+      yield* this.askWithTools(input, askId, held, now);
+      return;
+    }
     const offered = this.offeredTools(input, held);
     // Read beside the search and the plan, which do not wait for it. It
     // never rejects.
@@ -424,17 +470,22 @@ export class AskService {
       ...passages.filter((entry) => !entry.chat),
       ...passages.filter((entry) => entry.chat),
     ];
+    const run: AskRun = {
+      task: 'ask.answer',
+      promptVersion: ASK_ANSWER_PROMPT_VERSION,
+      tools: planned.map((tool) => tool.name),
+    };
 
     if (entries.length === 0) {
       const answer = emptyAnswer('not_found', { left_out_messages: leftOut });
-      answer.saved = await this.keep(input, answer, '', entries, planned, now);
+      answer.saved = await this.keep(input, answer, '', entries, run, now);
       answer.report_receipt = this.receipt(
         askId,
         input,
         answer,
         '',
         entries,
-        planned,
+        run,
         now,
       );
       yield this.done(answer);
@@ -473,30 +524,143 @@ export class AskService {
 
     const answer = this.answerFrom(result, entries, leftOut);
     const written = result?.status === 'ok' ? result.text : '';
-    answer.saved = await this.keep(
-      input,
-      answer,
-      written,
-      entries,
-      planned,
-      now,
-    );
+    answer.saved = await this.keep(input, answer, written, entries, run, now);
     answer.report_receipt = this.receipt(
       askId,
       input,
       answer,
       written,
       entries,
-      planned,
+      run,
       now,
       given,
     );
     yield this.done(answer);
   }
 
+  /**
+   * The same question, answered by the tool loop (epic #4898). The model is
+   * offered the reads this member may use and decides what to read; what it
+   * reads may lead it to read more, as the asker and nothing else
+   * (`AgentLoopService` has the rules). Nothing is searched for it ahead of
+   * time, so there is no "nothing found, no model call" here: a miss is the
+   * model saying so, or an answer left with no checked source.
+   *
+   * What does not change from the one-shot path: who is asking goes beside
+   * the question and is never a source; an answer stands only with a
+   * citation the gateway found word for word in something a tool returned;
+   * and the answer, the kept exchange and the report receipt are made the
+   * same way.
+   */
+  private async *askWithTools(
+    input: AskInput,
+    askId: string,
+    held: ReadonlySet<string>,
+    now: Date,
+  ): AsyncGenerator<AskStreamEvent, void, void> {
+    const offered = toolsMemberMayUse(
+      this.agentTools.filter((tool) => tool.effect === 'read'),
+      held,
+      input.enabledModules,
+    );
+    const asker = await this.asker(input, held);
+    // No tool has run and no model has been asked for a turn that became a
+    // card, or whose member has left.
+    if (input.mayGoOn && !(await input.mayGoOn())) return;
+    if (input.signal?.aborted) return;
+
+    const context = asker ? [asker] : [];
+    const titleOf = (source: AgentSource) =>
+      agentSourceTitle(source, input.timeZone);
+    const reads: string[] = [];
+    let pending = '';
+    let writing = false;
+    let outcome: AgentLoopOutcome | null = null;
+    for await (const part of this.loop.run({
+      task: 'ask.agent',
+      promptVersion: ASK_AGENT_PROMPT_VERSION,
+      system: askAgentSystem(longDate(now, input.timeZone), asker !== null),
+      messages: askAnswerMessages(input.question, input.history),
+      context,
+      tools: offered,
+      toolContext: {
+        chapterId: input.chapterId,
+        userId: input.userId,
+        now,
+        timeZone: input.timeZone,
+        permissions: held,
+        enabledModules: input.enabledModules,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      },
+      call: { chapterId: input.chapterId, actingUserId: input.userId },
+      titleOf,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    })) {
+      if (part.type === 'text') {
+        pending += part.delta;
+        if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
+          if (!writing) {
+            writing = true;
+            yield this.step('writing');
+          }
+          yield event({ type: 'text', delta: pending });
+          pending = '';
+        }
+      } else if (part.type === 'discard') {
+        // Words before a call were not the answer. Any that already went out
+        // are replaced by the final answer, as every streamed word is.
+        pending = '';
+        writing = false;
+      } else if (part.type === 'tool') {
+        if (!reads.includes(part.name)) reads.push(part.name);
+        yield event({ type: 'status', step: 'reading', reads: [...reads] });
+      } else outcome = part.outcome;
+    }
+    // The loop ends with nothing for a member who left.
+    if (outcome === null) return;
+    if (pending && outcome.result.status === 'ok') {
+      if (!writing) yield this.step('writing');
+      yield event({ type: 'text', delta: pending });
+    }
+
+    const entries = outcome.sources.map((source) =>
+      agentSourceEntry(source, titleOf(source)),
+    );
+    const ran = new Set(
+      outcome.rounds.flatMap((round) =>
+        round.calls.flatMap((call) =>
+          call.outcome === 'ok' ? [call.tool] : [],
+        ),
+      ),
+    );
+    const run: AskRun = {
+      task: 'ask.agent',
+      promptVersion: ASK_AGENT_PROMPT_VERSION,
+      tools: [...ran],
+    };
+    const answer = this.answerFrom(
+      outcome.result,
+      entries,
+      outcome.leftOutMessages,
+    );
+    const written = outcome.result.status === 'ok' ? outcome.result.text : '';
+    answer.saved = await this.keep(input, answer, written, entries, run, now);
+    answer.report_receipt = this.receipt(
+      askId,
+      input,
+      answer,
+      written,
+      entries,
+      run,
+      now,
+      [...context, ...entries.map((entry) => entry.model)],
+    );
+    yield this.done(answer);
+  }
+
   /** Step 5 and 6: what the member is finally shown. */
   private answerFrom(
-    result: AiCitedResult | null,
+    result: AiCitedResult | AiAgentRoundResult | null,
     entries: readonly AskSourceEntry[],
     leftOut: number,
   ): AskAnswer {
@@ -730,13 +894,13 @@ export class AskService {
     answer: AskAnswer,
     written: string,
     entries: readonly AskSourceEntry[],
-    planned: readonly AskTool[],
+    run: AskRun,
     now: Date,
   ): Promise<boolean> {
     if (!input.savedNoticeShown) return false;
     if (answer.status === 'unavailable') return false;
     if (entries.some((entry) => entry.chat)) return false;
-    const entry = aiCatalogEntry('ask.answer');
+    const entry = aiCatalogEntry(run.task);
     return this.diagnostics.keep(
       input.chapterId,
       input.userId,
@@ -749,9 +913,9 @@ export class AskService {
           title: view.title,
           detail: view.detail,
         })),
-        tools: planned.map((tool) => tool.name),
+        tools: [...run.tools],
         model: entry.model,
-        prompt_version: ASK_ANSWER_PROMPT_VERSION,
+        prompt_version: run.promptVersion,
         unverified_citations: answer.unverified_citations,
       },
       now,
@@ -771,14 +935,14 @@ export class AskService {
     answer: AskAnswer,
     written: string,
     entries: readonly AskSourceEntry[],
-    planned: readonly AskTool[],
+    run: AskRun,
     now: Date,
     /** What the model was handed, when it was handed anything. */
     given: readonly LanguageModelSource[] = [],
   ): string | null {
     if (answer.status === 'unavailable') return null;
     try {
-      const entry = aiCatalogEntry('ask.answer');
+      const entry = aiCatalogEntry(run.task);
       const quoted = new Set(entries.flatMap((source) => source.authorIds));
       quoted.delete(input.userId);
       return sealAskReportReceipt(
@@ -805,9 +969,9 @@ export class AskService {
             truncated: answer.truncated,
           },
           given: given.map(({ title, text }) => ({ title, text })),
-          tools: planned.map((tool) => tool.name),
+          tools: [...run.tools],
           model: entry.model,
-          prompt_version: ASK_ANSWER_PROMPT_VERSION,
+          prompt_version: run.promptVersion,
           quoted_user_ids: [...quoted],
         },
         { chapterId: input.chapterId, userId: input.userId },
