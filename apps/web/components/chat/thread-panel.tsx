@@ -147,6 +147,14 @@ export interface ThreadPanelProps extends Pick<
    */
   jumpTo?: { messageId: string; nonce: number } | null;
   /**
+   * Why a reply's text can't be sent because it names `@Frapp` (#4713), or
+   * `null`: Frapp answers in the channel and a thread has nowhere to draw
+   * it, so a member with Ask is told to ask there, and one whose Ask is not
+   * yet known is told to wait (`replyAskRefusal`). Absent for a member
+   * without Ask.
+   */
+  askRefusal?: (text: string) => string | null;
+  /**
    * Drawn beside the chat on a wide window (#4297) rather than over it: the
    * channel stays in view, so the header closes the thread (X) rather than
    * going back to it.
@@ -224,6 +232,7 @@ export function ThreadPanel({
   onClosePanel,
   onCatchUp,
   jumpTo,
+  askRefusal,
   beside = false,
   className,
 }: ThreadPanelProps) {
@@ -299,6 +308,15 @@ export function ThreadPanel({
   async function submit() {
     const content = draft.trim();
     if (!content) return;
+    // `@Frapp` in a reply (#4713). Frapp answers in the channel, for the
+    // asker alone, and a thread has no place to draw that. Refused, not
+    // posted: a member who expects a private answer must not find their
+    // question in the thread for everyone. The words stay to be moved.
+    const refusal = askRefusal?.(content) ?? null;
+    if (refusal !== null) {
+      toast({ title: refusal });
+      return;
+    }
     setDraft("");
     const { error } = await thread.send(content);
     notSent(error);

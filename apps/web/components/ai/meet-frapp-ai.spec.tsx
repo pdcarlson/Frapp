@@ -82,6 +82,20 @@ describe("Meet Frapp AI at an AI entry point", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("answers no when its host goes away with the screen up", async () => {
+    // Nothing else would settle the promise for a caller that outlives the
+    // host, and an Ask turn waiting on it would never end.
+    const user = userEvent.setup();
+    state.consent = consent({ answer: "no" });
+    const onResult = vi.fn();
+    const view = render(<Entry onResult={onResult} />);
+    await user.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByRole("dialog");
+    expect(onResult).not.toHaveBeenCalled();
+    view.unmount();
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith(false));
+  });
+
   it("says what it does in three lines and names the companies in one", async () => {
     const user = userEvent.setup();
     state.consent = consent({ answer: "no" });

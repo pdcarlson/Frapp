@@ -2877,3 +2877,227 @@ describe("Composer never posts the bare `/` the palette opened on (#3781)", () =
     expect(editor.getText()).toBe("/not a command, just text");
   });
 });
+
+/**
+ * #4713: a message that names `@Frapp` is a question for Frapp, from a member
+ * with Ask. It is never posted. Without Ask the same text is an ordinary
+ * message, and the handle is not offered.
+ */
+describe("Composer asks Frapp instead of posting (#4713)", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send message" });
+  const HINT = "Only you will see this question and Frapp's answer.";
+
+  let editor: ReturnType<typeof fakeEditor>;
+  beforeEach(() => {
+    mockToast.mockClear();
+  });
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  function typeAndSend(
+    text: string,
+    overrides: Partial<ComposerProps> = {},
+    ask: { busy: boolean } | null = { busy: false },
+  ) {
+    editor = fakeEditor(text);
+    editorDouble.current = editor;
+    const onSend = vi.fn();
+    const send = vi.fn();
+    const view = render(
+      <Composer
+        {...baseProps({
+          draft: text,
+          onSend,
+          ask: ask ? { busy: ask.busy, send } : null,
+          ...overrides,
+        })}
+      />,
+    );
+    fireEvent.click(sendButton());
+    return { onSend, send, ...view };
+  }
+
+  it("sends the question to Frapp, posts nothing and clears the box", () => {
+    const { onSend, send } = typeAndSend("@Frapp when is formal?");
+    expect(send).toHaveBeenCalledWith("when is formal?");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.commands.clearContent).toHaveBeenCalled();
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("takes the handle from anywhere in the message", () => {
+    const { send } = typeAndSend("hey @Frapp, who owes dues?");
+    expect(send).toHaveBeenCalledWith("hey who owes dues?");
+  });
+
+  it("says before sending that only the member will see it, and only while the draft names Frapp", () => {
+    editorDouble.current = fakeEditor("@Frapp when is formal?");
+    const ask = { busy: false, send: vi.fn() };
+    const { rerender } = render(
+      <Composer {...baseProps({ draft: "@Frapp when is formal?", ask })} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(HINT);
+    // A narrow row shows the private mark and two words in its place; a
+    // screen reader skips those for the sentence itself.
+    expect(screen.getByText("Only you")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText(HINT)).not.toHaveAttribute("aria-hidden");
+
+    rerender(<Composer {...baseProps({ draft: "when is formal?", ask })} />);
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("posts the same text as an ordinary message for a member without Ask, with no hint", async () => {
+    const { onSend, send } = typeAndSend("@Frapp when is formal?", {}, null);
+    expect(screen.queryByText(HINT)).toBeNull();
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("holds the message while it is not yet known whether the member has Ask", async () => {
+    // Posting it could put a question meant for Frapp in front of the
+    // channel, and that can't be taken back.
+    const { onSend, send } = typeAndSend(
+      "@Frapp what do I owe?",
+      { askUnknown: true },
+      null,
+    );
+    expect(mockToast).toHaveBeenCalledWith({
+      title:
+        "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(editor.commands.clearContent).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("@Frapp what do I owe?");
+    // No promise it will be private: that is not known either.
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("posts a message that names nobody's handle as ever while Ask is not yet known", async () => {
+    const { onSend } = typeAndSend("see you there", { askUnknown: true }, null);
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("drops a staged reply, which was context for a message that is not sent", () => {
+    const onCancelReply = vi.fn();
+    const { send } = typeAndSend("@Frapp what did he mean?", {
+      replyTo: { id: "msg-1", author: "Alice Chen", preview: "the original" },
+      onCancelReply,
+    });
+    expect(send).toHaveBeenCalledWith("what did he mean?");
+    expect(onCancelReply).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      "nothing but the handle",
+      "@Frapp",
+      false,
+      "Type your question after @Frapp.",
+    ],
+    [
+      "a question over the limit",
+      `@Frapp ${"a".repeat(1001)}`,
+      false,
+      "That's too long for a question. Keep it under 1,000 characters.",
+    ],
+    [
+      "a second question while the first is being answered",
+      "@Frapp and the one after?",
+      true,
+      "Frapp is still answering your last question.",
+    ],
+  ])("refuses %s, and keeps the member's text", (_, text, busy, title) => {
+    const { onSend, send } = typeAndSend(text, {}, { busy });
+    expect(mockToast).toHaveBeenCalledWith({ title });
+    expect(send).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.commands.clearContent).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(text);
+  });
+
+  it("refuses a question with a file attached, since Frapp can't read it", async () => {
+    editor = fakeEditor("@Frapp what is this?");
+    editorDouble.current = editor;
+    const onSend = vi.fn();
+    const send = vi.fn();
+    const { container } = render(
+      <Composer
+        {...baseProps({
+          draft: "@Frapp what is this?",
+          onSend,
+          ask: { busy: false, send },
+        })}
+      />,
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await waitFor(() => expect(sendButton()).not.toBeDisabled());
+    fireEvent.click(sendButton());
+
+    expect(mockToast).toHaveBeenCalledWith({
+      title:
+        "Frapp can't read attachments. Remove them, or take @Frapp out to post this.",
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("@Frapp what is this?");
+  });
+
+  it("tells nobody the member is typing while the draft is a question for Frapp", () => {
+    const update = (text: string) =>
+      capturedOnUpdate.at(-1)!({ editor: { getText: () => text } });
+
+    const asking = baseProps({ ask: { busy: false, send: vi.fn() } });
+    render(<Composer {...asking} />);
+    update("@Frapp when is");
+    expect(asking.onTyping).not.toHaveBeenCalled();
+    // The draft still follows the box, and an ordinary message still pings.
+    expect(asking.onChangeDraft).toHaveBeenLastCalledWith("@Frapp when is");
+    update("see you at formal");
+    expect(asking.onTyping).toHaveBeenCalledTimes(1);
+
+    // Without Ask the same text is a message being typed.
+    const plain = baseProps();
+    render(<Composer {...plain} />);
+    update("@Frapp when is");
+    expect(plain.onTyping).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Frapp in the @ list only to a member with Ask", async () => {
+    const items = (ask: ComposerProps["ask"]) => {
+      capturedExtensions.length = 0;
+      const view = render(<Composer {...baseProps({ ask })} />);
+      const mention = capturedExtensions
+        .at(-1)!
+        .find(
+          (extension) =>
+            (extension as { name?: string } | null)?.name === "mention",
+        ) as {
+        options: {
+          suggestion: {
+            items: (args: { query: string }) => { kind: string }[];
+          };
+        };
+      };
+      const rows = mention.options.suggestion.items({ query: "fr" });
+      view.unmount();
+      return rows;
+    };
+    expect(items({ busy: false, send: vi.fn() })).toEqual([
+      expect.objectContaining({ kind: "ask" }),
+    ]);
+    expect(items(null)).toEqual([]);
+  });
+});

@@ -120,6 +120,28 @@ export function CheckGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * Private to the viewer, beside "Only you can see this" on a turn asked of
+ * Frapp from a channel (#4713): web draws Lucide's `EyeOff` there.
+ */
+export function EyeOffGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M10.733 5.076a10.744 10.744 0 0111.205 6.575 1 1 0 010 .696 10.747 10.747 0 01-1.444 2.49"
+        {...detail}
+      />
+      <Path d="M14.084 14.158a3 3 0 01-4.242-4.242" {...detail} />
+      <Path
+        d="M17.479 17.499a10.75 10.75 0 01-15.417-5.151 1 1 0 010-.696 10.75 10.75 0 014.446-5.143"
+        {...detail}
+      />
+      <Path d="M2 2l20 20" {...detail} />
+    </Frame>
+  );
+}
+
 /** Report: web draws Lucide's `Flag` for the same intent. */
 export function FlagGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });

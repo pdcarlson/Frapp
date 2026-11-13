@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import { useEffect, useMemo, useRef } from "react";
+import { AskConversationHost } from "./ask/ask-conversation";
 import { readAuthToken } from "./auth-token";
 import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
@@ -112,7 +113,8 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <FrappClientProvider client={client} chapterId={chapterId}>
-        {children}
+        {/* The one Ask conversation, above every place that shows it. */}
+        <AskConversationHost>{children}</AskConversationHost>
       </FrappClientProvider>
     </QueryClientProvider>
   );

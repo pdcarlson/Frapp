@@ -24,6 +24,8 @@ import {
   createAskStreamReader,
   encodeAskStreamEvent,
   parseAskStreamEvent,
+  readChannelAsk,
+  replyAskRefusal,
   type AskAnswer,
   type AskStreamEvent,
 } from "./ask";
@@ -468,5 +470,105 @@ describe("the opening suggestions", () => {
         request: false,
       }).kind,
     ).toBe("something_new");
+  });
+});
+
+describe("what Send does with a channel message that names @Frapp (#4713)", () => {
+  const read = (
+    text: string,
+    over: Partial<Parameters<typeof readChannelAsk>[0]> = {},
+  ) =>
+    readChannelAsk({
+      text,
+      names: [],
+      access: "yes",
+      attachments: 0,
+      busy: false,
+      ...over,
+    });
+
+  it("asks, with the handle taken out", () => {
+    expect(read("@Frapp when is formal?")).toEqual({
+      kind: "ask",
+      question: "when is formal?",
+    });
+  });
+
+  it("posts a message that does not name the handle, whatever else is so", () => {
+    for (const access of ["yes", "no", "unknown"] as const) {
+      expect(
+        read("see you there", { access, attachments: 2, busy: true }),
+      ).toEqual({ kind: "post" });
+    }
+  });
+
+  it("posts it as ordinary text for a member without Ask", () => {
+    expect(read("@Frapp when is formal?", { access: "no" })).toEqual({
+      kind: "post",
+    });
+  });
+
+  it("holds it while it is not yet known whether the member has Ask, before any other refusal", () => {
+    // Posting is the one mistake that can't be taken back.
+    for (const text of ["@Frapp when is formal?", "@Frapp"]) {
+      expect(
+        read(text, { access: "unknown", attachments: 1, busy: true }),
+      ).toEqual({ kind: "refused", reason: ASK_COPY.ask_unknown });
+    }
+  });
+
+  it("refuses in one order: attachments, no question, too long, still answering", () => {
+    const long = `@Frapp ${"a".repeat(ASK_QUESTION_MAX_LENGTH + 1)}`;
+    expect(read("@Frapp", { attachments: 1, busy: true })).toEqual({
+      kind: "refused",
+      reason: ASK_COPY.no_attachments,
+    });
+    expect(read("@Frapp", { busy: true })).toEqual({
+      kind: "refused",
+      reason: ASK_COPY.no_question,
+    });
+    expect(read(long, { busy: true })).toEqual({
+      kind: "refused",
+      reason: ASK_COPY.too_long,
+    });
+    expect(read("@Frapp and then?", { busy: true })).toEqual({
+      kind: "refused",
+      reason: ASK_COPY.still_answering,
+    });
+    expect(
+      read(`@Frapp ${"a".repeat(ASK_QUESTION_MAX_LENGTH)}`).kind,
+    ).toBe("ask");
+  });
+
+  it("reads the chapter's spaced names, and lets none of them capture the handle", () => {
+    const names = ["Jordan Frapp", "Frapp What"];
+    expect(read("@Jordan Frapp are you in?", { names })).toEqual({
+      kind: "post",
+    });
+    expect(read("@Frapp what do I owe", { names })).toEqual({
+      kind: "ask",
+      question: "what do I owe",
+    });
+  });
+});
+
+describe("a thread reply that names @Frapp (#4713)", () => {
+  it("is refused for a member with Ask, held while that is unknown, and sent without it", () => {
+    expect(replyAskRefusal("@Frapp who is driving", [], "yes")).toBe(
+      ASK_COPY.not_in_reply,
+    );
+    expect(replyAskRefusal("@Frapp who is driving", [], "unknown")).toBe(
+      ASK_COPY.ask_unknown,
+    );
+    expect(replyAskRefusal("@Frapp who is driving", [], "no")).toBeNull();
+  });
+
+  it("sends a reply that does not name it", () => {
+    for (const access of ["yes", "no", "unknown"] as const) {
+      expect(replyAskRefusal("see you there", [], access)).toBeNull();
+    }
+    expect(
+      replyAskRefusal("@Jordan Frapp you in?", ["Jordan Frapp"], "yes"),
+    ).toBeNull();
   });
 });

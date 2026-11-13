@@ -250,3 +250,24 @@ describe("MentionList — selectedIndex clamped synchronously, not only via effe
     expect(command).toHaveBeenCalledWith(ITEMS[2]);
   });
 });
+
+describe("MentionList — Frapp's own row (#4713)", () => {
+  const FRAPP: MentionSuggestionItem = {
+    kind: "ask",
+    id: "ask-frapp",
+    label: "Frapp",
+    displayName: "Frapp",
+    avatarUrl: null,
+  };
+
+  it("draws the crest and says the answer is private, not that it is a role", () => {
+    const { command } = renderList([...ITEMS.slice(0, 1), FRAPP]);
+    const row = screen.getByRole("option", { name: /Frapp/ });
+    expect(row).toHaveTextContent("Only you see the answer");
+    expect(row).not.toHaveTextContent("Role");
+    expect(row.querySelector("[data-mention-ask-glyph]")).not.toBeNull();
+    expect(row.querySelector("[data-mention-role-glyph]")).toBeNull();
+    act(() => row.click());
+    expect(command).toHaveBeenCalledWith(FRAPP);
+  });
+});

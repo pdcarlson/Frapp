@@ -38,7 +38,16 @@ import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import type { MemberLookup } from "@repo/chat-core/message-actions";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import { resolveAuthorAvatar, useAuthorAvatars } from "@repo/hooks";
+import {
+  ASK_TURNS_ABOVE_ALL,
+  placeAskTurns,
+  resolveAuthorAvatar,
+  useAuthorAvatars,
+} from "@repo/hooks";
+import {
+  AskChannelTurn,
+  type AskChannelPlace,
+} from "@/components/ask/ask-in-channel";
 import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
 
 /**
@@ -581,6 +590,13 @@ export interface MessageTimelineProps {
    * timeline keeps its own.
    */
   tapRevealed?: ReturnType<typeof useTapRevealedMessage>;
+  /**
+   * The turns this member asked Frapp from this channel's composer (#4713),
+   * oldest first. Each is drawn under the message that was newest when it
+   * was asked (`placeAskTurns`), for this member alone: it is not one of
+   * `messages` and never becomes one. Omitted, nothing is drawn.
+   */
+  askTurns?: readonly AskChannelPlace[];
 }
 
 /**
@@ -639,6 +655,7 @@ export const MessageTimeline = forwardRef<
     channelStart,
     header,
     tapRevealed: sharedTapRevealed,
+    askTurns,
   },
   ref,
 ) {
@@ -767,6 +784,19 @@ export const MessageTimeline = forwardRef<
       ),
     [decorated],
   );
+  // Where each turn asked of Frapp here sits: by the row's key, so the row
+  // count and the keys the list is virtualized on are the messages' alone.
+  const askTurnsByRow = useMemo(
+    () =>
+      placeAskTurns(
+        decorated.map((entry) => ({
+          key: entry.message.client_message_id ?? entry.message.id,
+          at: entry.message.created_at,
+        })),
+        askTurns ?? [],
+      ),
+    [decorated, askTurns],
+  );
   const { firstItemIndex, prepended } = usePrependAwareFirstIndex(rowKeys);
   const stickToBottom = useStickToBottom({
     virtuoso,
@@ -808,6 +838,27 @@ export const MessageTimeline = forwardRef<
     pinToBottom();
     markNewest();
   }, [markNewest, pinToBottom]);
+
+  /*
+    A question the member just asked Frapp brings the list to it, as their
+    own send does below: the turn is drawn under the newest message, which
+    may be below the fold. Only a turn that sits there; one asked again from
+    further up the channel stays where it is and moves nothing.
+  */
+  const newestTurn = askTurns?.at(-1) ?? null;
+  const newestTurnId = newestTurn?.id ?? null;
+  const newestTurnIsLast =
+    newestTurn !== null &&
+    (askTurnsByRow
+      .get(rowKeys.at(-1) ?? ASK_TURNS_ABOVE_ALL)
+      ?.includes(newestTurn) ??
+      false);
+  const seenTurnId = useRef(newestTurnId);
+  useEffect(() => {
+    if (seenTurnId.current === newestTurnId) return;
+    seenTurnId.current = newestTurnId;
+    if (newestTurnId !== null && newestTurnIsLast) jumpToLatest();
+  }, [newestTurnId, newestTurnIsLast, jumpToLatest]);
 
   /*
     The member's own send brings the list to it, wherever they were reading,
@@ -1157,6 +1208,12 @@ export const MessageTimeline = forwardRef<
     );
   }
 
+  // Turns older than every row, or asked in a channel with none: above the
+  // first message, and in an empty channel under its start.
+  const askTurnsAbove = askTurnsByRow
+    .get(ASK_TURNS_ABOVE_ALL)
+    ?.map((turn) => <AskChannelTurn key={turn.id} id={turn.id} />);
+
   if (isLoading || viewerUnresolved) {
     return (
       <>
@@ -1190,7 +1247,14 @@ export const MessageTimeline = forwardRef<
     // Counted after the block list, held rows included: a channel whose only
     // messages are being held is not an empty channel, so it gets no channel
     // start either. `BlockListNotice` above the timeline says they are held.
-    if (thread.heldCount > 0) return <div className="h-full">{header}</div>;
+    if (thread.heldCount > 0) {
+      return (
+        <div className="h-full overflow-y-auto">
+          {header}
+          {askTurnsAbove}
+        </div>
+      );
+    }
     // Not an empty-state card: the channel's start, at the bottom where its
     // first message will land (`writing.md` § Chat (dashboard), Channel start).
     // The box scrolls and the inner column is at least its height, so a start
@@ -1200,6 +1264,7 @@ export const MessageTimeline = forwardRef<
         <div className="flex min-h-full flex-col justify-end">
           {header}
           {channelStart}
+          {askTurnsAbove}
         </div>
       </div>
     );
@@ -1232,6 +1297,7 @@ export const MessageTimeline = forwardRef<
           }}
           itemContent={(_, entry) => (
             <>
+              {entry === decorated[0] ? askTurnsAbove : null}
               {entry.startsDay ? (
                 // components.md §11 § Grouping: a hairline either side of a
                 // centred 12.5 / 600 caption, and the only date in the thread.
@@ -1329,6 +1395,11 @@ export const MessageTimeline = forwardRef<
                   onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
                 />
               )}
+              {askTurnsByRow
+                .get(entry.message.client_message_id ?? entry.message.id)
+                ?.map((turn) => (
+                  <AskChannelTurn key={turn.id} id={turn.id} />
+                ))}
             </>
           )}
           computeItemKey={(_, entry) =>
