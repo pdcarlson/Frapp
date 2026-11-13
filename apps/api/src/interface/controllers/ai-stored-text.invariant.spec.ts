@@ -480,6 +480,8 @@ function build(model: ILanguageModel, captured: Captured) {
         },
       } as never,
     ),
+    // Asked from nowhere.
+    { read: () => Promise.resolve([]) } as never,
   );
   return new AskController(
     ask,

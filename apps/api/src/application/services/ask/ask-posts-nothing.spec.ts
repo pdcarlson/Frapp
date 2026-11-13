@@ -81,6 +81,7 @@ const CALLS = new Set([
   'rbac.getEffectivePermissions',
   'retrieval.retrieve',
   'roles.findByChapterAndSystemKey',
+  'tasks.findById',
   'tasks.list',
   'users.findDisplayIdentitiesByIds',
   // Consent, permission and the lanes' own plumbing.
@@ -88,6 +89,8 @@ const CALLS = new Set([
   'actService.act',
   'askService.ask',
   'askService.assertMayAsk',
+  // What the member had open, looked up as them (`AskFromService`).
+  'from.read',
   'consent.check',
   'consent.getConsentState',
   'consent.onConsentWithdrawn',

@@ -113,8 +113,8 @@ export const AskRequestSchema = z.object({
   door: z.enum(ASK_DOORS).optional(),
   /**
    * What the member had open ({@link AskFromSchema}), so "this channel" and
-   * "this event" mean something. Unlike `door` it is meant to be read; the
-   * server takes it and does not read it yet (#4899). Left out by
+   * "this event" mean something. Unlike `door` it is read, by a server that
+   * answers through the tool loop (#4899, `AskFromService`). Left out by
    * builds before the tool loop (epic #4898), and by Ask's own screen.
    */
   from: AskFromSchema.nullish(),
@@ -657,7 +657,6 @@ export const ASK_COPY = {
   /** Under a finished answer: copies its words, without the markers. */
   copy_answer: "Copy answer",
   copied_answer: "Copied",
-  entry_label: "Ask a question about your chapter",
   /** Under Frapp's name in a composer's mention list (#4713). */
   mention_hint: "Only you see the answer",
   /**

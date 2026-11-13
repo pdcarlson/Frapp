@@ -320,9 +320,17 @@ or writes. `AgentLoopService` holds every rule below in code.
 > matters most, what to do next) may now be said without a quote of its own. The prompt asks for
 > that split; the server cannot tell a fact from a conclusion, so what it enforces is unchanged.
 
+**Where the member asked from (built in #4899, 2026-11-13).** The app may send the id of the
+channel, event or task the member had open. An id proves nothing, so `AskFromService` looks each up
+as the asker through the read its own screen uses (their channel list, `GET /v1/events/:id`,
+`GET /v1/tasks/:id`'s assignee-or-`tasks:manage` rule) and drops one they cannot open, saying
+nothing of whether it exists (C2). What reaches the model is a block beside the question holding a
+name and, for an event or a task, when it is: member-written text, on one line, read as data like
+who is asking (C1), never cited, and no tool result may carry its title. Anything more about the
+channel, event or task is read with a tool, as the asker.
+
 Approved the same day and not built yet, so not in force: the model that reads may also propose a
-card (C5; today the request reading is a separate call that sees only what the member typed), and
-where the member asked from (a channel, an event, a task) is given beside the question.
+card (C5; today the request reading is a separate call that sees only what the member typed).
 
 ### The acting agent (added 2026-11-12, #718)
 

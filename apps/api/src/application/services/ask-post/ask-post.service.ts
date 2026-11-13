@@ -132,6 +132,7 @@ export class AskPostService {
     ).filter((reader) => reader.user_id !== input.userId);
     const restricted = await this.restrictedFor(
       input.chapterId,
+      channel.id,
       receipt,
       others,
     );
@@ -256,6 +257,7 @@ export class AskPostService {
    */
   private async restrictedFor(
     chapterId: string,
+    channelId: string,
     receipt: AskReportReceipt,
     others: readonly ChapterMemberAccess[],
   ): Promise<AskPostRestricted[]> {
@@ -300,6 +302,10 @@ export class AskPostService {
       switch (ref.type) {
         case 'document':
           return allViewMembers;
+        case 'channel':
+          // Where the question was asked from, which is only its name:
+          // known to everyone who reads that channel and to nobody else.
+          return ref.id === channelId;
         case 'meeting':
           // The minutes routes ask for `members:view` before the meeting's
           // own rule (`MeetingController`).
@@ -336,6 +342,7 @@ function givenKey(ref: AskGivenRef, index: number): string {
   switch (ref.type) {
     case 'document':
     case 'meeting':
+    case 'channel':
       return `${ref.type}:${ref.id}`;
     case 'tool':
       return `tool:${ref.name}`;

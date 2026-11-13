@@ -14,6 +14,7 @@ import {
 import { ASK_TOOL_CLASSES } from '../../application/services/ask/ask-tools';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
+import { AskFromService } from '../../application/services/ask/agent/ask-from.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
@@ -88,6 +89,7 @@ import { TaskModule } from '../task/task.module';
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
     AskService,
+    AskFromService,
     AskConversationService,
     AskSuggestionsService,
     AskDiagnosticsService,

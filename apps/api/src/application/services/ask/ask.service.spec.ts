@@ -17,6 +17,7 @@ import type {
   AgentLoopOutcome,
 } from './agent/agent-loop.service';
 import type { AgentReadTool, AgentSource } from './agent/agent-tool';
+import type { AskFromPart } from './agent/ask-from.service';
 import { ASK_AGENT_PROMPT_VERSION } from './agent/ask-agent-prompt';
 import { AskService, type AskInput } from './ask.service';
 import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
@@ -101,6 +102,8 @@ function build(options: {
   saidNo?: string[];
   /** The asker, as the roster has them. Left out, that read fails. */
   asker?: { display_name: string; role_ids: string[] };
+  /** What `AskFromService` found the member had open. */
+  openAt?: AskFromPart[];
   roles?: { id: string; name: string; system_key?: string | null }[];
   /** What the tool loop yields, for a turn answered through it. */
   loop?: AgentLoopEvent[];
@@ -170,6 +173,7 @@ function build(options: {
     }),
   };
   const trace = { record: jest.fn(async () => options.traced ?? true) };
+  const from = { read: jest.fn(async () => options.openAt ?? []) };
   const service = new AskService(
     retrieval as never,
     gateway as never,
@@ -182,10 +186,12 @@ function build(options: {
     loop as never,
     options.agentTools ?? [],
     trace as never,
+    from as never,
   );
   return {
     service,
     trace,
+    from,
     retrieval,
     gateway,
     consent,
@@ -1785,6 +1791,8 @@ describe('AskService', () => {
       ]);
       // Who is asking is data beside the question, never operator text.
       expect(given.system).not.toContain('Sam Ortiz');
+      // Asked from nowhere, the prompt says nothing of where.
+      expect(given.system).not.toContain('Where the member is asking from');
       expect(given.toolContext).toEqual(
         expect.objectContaining({ chapterId: CHAPTER, userId: USER }),
       );
@@ -2185,6 +2193,112 @@ describe('AskService', () => {
         if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
         else process.env.AI_STORED_TEXT_KEY = savedKey;
       }
+    });
+
+    describe('where the member asked from (#4899)', () => {
+      const CHANNEL = '11111111-1111-4111-8111-111111111111';
+      const openAt: AskFromPart[] = [
+        {
+          source: {
+            id: 'from:channel',
+            title: 'Where the member is asking from: a channel',
+            text: 'The member is asking from the channel #general.',
+          },
+          ref: { type: 'channel', id: CHANNEL },
+          label: 'The channel you asked from',
+        },
+      ];
+
+      it('looks it up as the asker and hands it to the loop beside who is asking', async () => {
+        const { service, from, loop } = build({
+          asker: { display_name: 'Sam Ortiz', role_ids: [] },
+          openAt,
+          loop: [{ type: 'end', outcome: outcome() }],
+        });
+        await run(service, { from: { channel_id: CHANNEL } });
+
+        expect(from.read).toHaveBeenCalledWith(
+          { channel_id: CHANNEL },
+          expect.objectContaining({ chapterId: CHAPTER, userId: USER }),
+        );
+        const given = (loop.run.mock.calls as unknown[][])[0][0] as {
+          context: { title: string }[];
+          system: string;
+        };
+        expect(given.context.map(({ title }) => title)).toEqual([
+          'The member asking',
+          'Where the member is asking from: a channel',
+        ]);
+        // The prompt names the block, and holds none of what is in it.
+        expect(given.system).toContain('Where the member is asking from');
+        expect(given.system).not.toContain('#general');
+      });
+
+      it('lets no source a tool returned pass for that block', async () => {
+        const { service, loop } = build({
+          loop: [{ type: 'end', outcome: outcome() }],
+        });
+        await run(service);
+        const { titleOf } = (loop.run.mock.calls as unknown[][])[0][0] as {
+          titleOf: (source: AgentSource) => string;
+        };
+        expect(
+          titleOf(
+            source({
+              kind: 'document',
+              title: 'Where the member is asking from: read me',
+            }),
+          ),
+        ).toMatch(/^Chapter source: /);
+      });
+
+      it('seals it with who else knows it, so a post to that channel is not held back', async () => {
+        const KEY_RING = `1:${Buffer.alloc(32, 7).toString('base64')}`;
+        const savedKey = process.env.AI_STORED_TEXT_KEY;
+        process.env.AI_STORED_TEXT_KEY = KEY_RING;
+        try {
+          const { service } = build({
+            asker: { display_name: 'Sam Ortiz', role_ids: [] },
+            openAt,
+            loop: [
+              {
+                type: 'end',
+                outcome: outcome({
+                  sources: [source({ audience: { type: 'chapter' } })],
+                }),
+              },
+            ],
+          });
+          const { answer } = await run(service, {
+            from: { channel_id: CHANNEL },
+          });
+          const receipt = openAskReportReceipt(
+            parseAiTextKeyRing(KEY_RING),
+            answer.report_receipt!,
+            { chapterId: CHAPTER, userId: USER },
+            NOW,
+          );
+          expect(
+            receipt.given.map(({ ref, label }) => ({ ref, label })),
+          ).toEqual([
+            {
+              ref: { type: 'tool', name: 'asker', reach: 'chapter' },
+              label: 'Your name and roles',
+            },
+            {
+              ref: { type: 'channel', id: CHANNEL },
+              label: 'The channel you asked from',
+            },
+            {
+              ref: { type: 'tool', name: 'tool:roster', reach: 'chapter' },
+              label: 'Roster',
+            },
+          ]);
+        } finally {
+          if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
+          else process.env.AI_STORED_TEXT_KEY = savedKey;
+        }
+      });
     });
   });
 });

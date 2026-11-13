@@ -45,6 +45,8 @@ import { SearchModule } from '../search/search.module';
     ...CONVERSATION_AGENT_TOOL_HELPERS,
     ...CONVERSATION_AGENT_TOOLS,
   ],
-  exports: [...CONVERSATION_AGENT_TOOLS],
+  // `ConversationScope` is exported for `AskFromService`, which looks up
+  // the channel a question was asked from in the asker's own channel list.
+  exports: [...CONVERSATION_AGENT_TOOL_HELPERS, ...CONVERSATION_AGENT_TOOLS],
 })
 export class AskConversationToolsModule {}
