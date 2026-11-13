@@ -3615,6 +3615,7 @@
         ]
       },
       "patch": {
+        "description": "Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).",
         "operationId": "ChatController_updateChannel_v1",
         "parameters": [
           {
@@ -3662,6 +3663,7 @@
         ]
       },
       "delete": {
+        "description": "Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.",
         "operationId": "ChatController_deleteChannel_v1",
         "parameters": [
           {
@@ -19980,15 +19982,15 @@
               "off"
             ],
             "nullable": true,
-            "description": "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`."
+            "description": "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`."
           },
           "is_default": {
             "type": "boolean",
-            "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM."
+            "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none."
           },
           "activity_excluded": {
             "type": "boolean",
-            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM."
+            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business."
           }
         }
       },

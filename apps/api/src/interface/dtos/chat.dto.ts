@@ -248,7 +248,7 @@ export class UpdateChannelDto {
     type: String,
     nullable: true,
     description:
-      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.",
+      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.",
   })
   @IsOptional()
   @IsIn(CHAT_NOTIFICATION_LEVELS)
@@ -256,7 +256,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM.",
+      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none.",
   })
   // Not `@IsOptional()`, which lets `null` through to a not-null column (a
   // 500): absent skips validation, `null` is refused as not a boolean.
@@ -266,7 +266,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM.",
+      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business.",
   })
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()

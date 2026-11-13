@@ -910,6 +910,9 @@ describe("ChatAdminPage — the live channel moving under the editor", () => {
     ]);
     rerender(<ChatAdminPage initialChannelId="ch-1" />);
     expect(screen.getByLabelText("Name")).toHaveValue("everyone");
+    expect(document.getElementById("ca-default-level")).toHaveTextContent(
+      "Every message",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
 
@@ -917,6 +920,65 @@ describe("ChatAdminPage — the live channel moving under the editor", () => {
     const body = bodyOf(spy);
     expect(body).not.toHaveProperty("name");
     expect(body).not.toHaveProperty("default_notification_level");
+  });
+
+  it("sends the old name when the officer types it back after a rename elsewhere", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "gen" },
+    });
+    reads.channels = settled([
+      { ...CHANNELS[0], name: "everyone" },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "general" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ name: "general" });
+  });
+
+  it("doesn't send its own saved name back over a later rename elsewhere", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "town-hall" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ name: "town-hall" });
+
+    // The save's refetch, then a rename in the chat header and its refetch.
+    reads.channels = settled([
+      { ...CHANNELS[0], name: "town-hall" },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    reads.channels = settled([
+      { ...CHANNELS[0], name: "plaza" },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    expect(screen.getByLabelText("Name")).toHaveValue("plaza");
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "The whole chapter." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(
+      (spy.mock.calls[1] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("name");
   });
 
   it("keeps the officer's own edit of the name when the live name moves too", async () => {

@@ -490,14 +490,11 @@ function ChatAdminBody({
   const [postSeed, setPostSeed] = useState<string[] | null>(null);
   // Name, category and default level are seeded the same way (#4542): a rail
   // drag, a rename in the chat header or another officer's change moves the
-  // live row under an untouched draft, and a save of the description must not
-  // send the old value back. `seenLive` is the live row's values as the editor
-  // last took them in, so a refetch can be told apart from this page's save.
-  const [nameSeed, setNameSeed] = useState("");
-  const [categorySeed, setCategorySeed] = useState(NO_CATEGORY);
-  const [defaultLevelSeed, setDefaultLevelSeed] = useState<string>(
-    BUILT_IN_DEFAULT_LEVEL,
-  );
+  // live row under the editor, and a save of the description must not send
+  // the old value back. `seenLive` is the live row's values as the editor last
+  // took them in, and is their seed: a field goes out only when its draft
+  // differs from it, and it follows the live row even under an edited draft,
+  // so an officer who types back the old value still has it sent.
   const [seenLive, setSeenLive] = useState<LiveChannelFields | null>(null);
 
   // `?channel=` from the channel start. Applied once, during render rather
@@ -525,9 +522,6 @@ function ChatAdminBody({
     const live = liveChannelFields(channel);
     setSeenLive(live);
     setNameDraft(live.name);
-    setNameSeed(live.name);
-    setCategorySeed(live.category);
-    setDefaultLevelSeed(live.level);
     setDescriptionDraft(channel.description ?? "");
     setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(live.category);
@@ -555,23 +549,10 @@ function ChatAdminBody({
       live.level !== seenLive.level
     ) {
       setSeenLive(live);
-      if (live.name !== seenLive.name && nameDraft === nameSeed) {
-        setNameDraft(live.name);
-        setNameSeed(live.name);
-      }
-      if (
-        live.category !== seenLive.category &&
-        categoryDraft === categorySeed
-      ) {
-        setCategoryDraft(live.category);
-        setCategorySeed(live.category);
-      }
-      if (
-        live.level !== seenLive.level &&
-        defaultLevelDraft === defaultLevelSeed
-      ) {
+      if (nameDraft === seenLive.name) setNameDraft(live.name);
+      if (categoryDraft === seenLive.category) setCategoryDraft(live.category);
+      if (defaultLevelDraft === seenLive.level) {
         setDefaultLevelDraft(live.level);
-        setDefaultLevelSeed(live.level);
       }
     }
   }
@@ -623,11 +604,13 @@ function ChatAdminBody({
     // this draft sits untouched must not send the stale draft over it.
     const description = descriptionDraft.trim();
     const descriptionChanged = description !== descriptionSeed;
-    // Name, category and default level likewise go out only when the officer
-    // changed them from what they were seeded with (#4542).
-    const nameChanged = name !== nameSeed;
-    const categoryChanged = categoryDraft !== categorySeed;
-    const defaultLevelChanged = defaultLevelDraft !== defaultLevelSeed;
+    // Name, category and default level likewise go out only when they differ
+    // from the live row the editor last took in (#4542). Nothing is re-seeded
+    // after the save: the refetch it triggers moves `seenLive`, and a write
+    // here could land in another channel's editor picked while it was pending.
+    const nameChanged = name !== seenLive?.name;
+    const categoryChanged = categoryDraft !== seenLive?.category;
+    const defaultLevelChanged = defaultLevelDraft !== seenLive?.level;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
@@ -679,10 +662,6 @@ function ChatAdminBody({
       setSeeSeed(seeDraft);
       setPostSeed(postDraft);
       if (descriptionChanged) setDescriptionSeed(description);
-      setNameDraft(name);
-      setNameSeed(name);
-      setCategorySeed(categoryDraft);
-      setDefaultLevelSeed(defaultLevelDraft);
       setIsDefaultSeed(isDefaultDraft);
       setActivityExcludedSeed(activityExcludedDraft);
       toast({ description: `#${name} saved.` });

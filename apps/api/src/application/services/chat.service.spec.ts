@@ -698,14 +698,21 @@ describe('ChatService', () => {
     // holder with its id can't rename it, describe it or file it in a
     // category, and the refusal returns no row (with its `member_ids`).
     describe('a DM or group DM (#3633)', () => {
-      it.each([
-        ['DM', { name: 'renamed' }],
-        ['DM', { description: 'Ours now' }],
-        ['DM', { category_id: 'cat-1' }],
-        ['GROUP_DM', { name: 'renamed' }],
-        ['GROUP_DM', { description: 'Ours now' }],
-        ['GROUP_DM', { category_id: 'cat-1' }],
-      ] as const)('refuses a %s change of %o', async (type, input) => {
+      const fields = [
+        { name: 'renamed' },
+        { description: 'Ours now' },
+        { category_id: 'cat-1' },
+        { is_default: false },
+        { activity_excluded: false },
+        { default_notification_level: null },
+        { match_category_access: true },
+        { who_can_post: null },
+      ];
+      it.each(
+        (['DM', 'GROUP_DM'] as const).flatMap((type) =>
+          fields.map((input) => [type, input] as const),
+        ),
+      )('refuses a %s change of %o', async (type, input) => {
         mockChannelRepo.findById.mockResolvedValue({
           ...baseChannel,
           type,
