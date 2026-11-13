@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
 const verifyOtp = vi.fn();
-const { captureException, isNewEmailAccount } = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  isNewEmailAccount: vi.fn(async () => false),
-}));
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+// The new-account check's chapters read (`GET /v1/chapters`). The check itself
+// runs for real, so these specs drive it end to end.
+const fetchMock = vi.fn();
 
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
@@ -15,9 +15,7 @@ vi.mock("@/lib/supabase/server", () => ({
   })),
 }));
 
-// The API read is unit-tested in `new-account-detection.spec.ts`; here it is
-// mocked so the route's routing can be driven directly.
-vi.mock("@/lib/auth/new-account-detection", () => ({ isNewEmailAccount }));
+
 
 import { GET } from "./route";
 
@@ -35,8 +33,14 @@ describe("GET /auth/callback", () => {
     exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
     captureException.mockReset();
-    isNewEmailAccount.mockReset();
-    isNewEmailAccount.mockResolvedValue(false);
+    fetchMock.mockReset();
+    // Unexpected reads fail loudly in the assertions below, not silently.
+    fetchMock.mockRejectedValue(new Error("unexpected chapters read"));
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("exchanges the PKCE code and sends the member on to `next`, signed in", async () => {
@@ -231,45 +235,75 @@ describe("GET /auth/callback", () => {
   });
 
   describe("a magic link that created a new account (intent=sign-in-link, #3801)", () => {
-    const emailSession = {
-      user: { email: "new@school.edu", identities: [{ provider: "email" }] },
-      session: { access_token: "member-token" },
+    // As GoTrue hands it back on the sign-in that opened the account's first
+    // link: created when the link was asked for, confirmed when it was opened.
+    const newEmailUser = {
+      email: "new@school.edu",
+      identities: [{ provider: "email" }],
+      app_metadata: { provider: "email" },
+      created_at: "2026-11-13T09:00:00.000Z",
+      email_confirmed_at: "2026-11-13T09:40:00.000Z",
+      last_sign_in_at: "2026-11-13T09:40:00.300Z",
     };
+    const session = { access_token: "member-token" };
+    const chapters = (list: unknown[]) =>
+      fetchMock.mockResolvedValue({ ok: true, json: async () => list });
 
     it("sends a brand-new, chapterless account from a token_hash link to the notice", async () => {
-      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
-      isNewEmailAccount.mockResolvedValue(true);
+      verifyOtp.mockResolvedValue({ data: { user: newEmailUser, session }, error: null });
+      chapters([]);
       const { url } = await callback(
         "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fevents",
       );
-      expect(isNewEmailAccount).toHaveBeenCalledWith(emailSession.user, "member-token");
+      expect(new Headers(fetchMock.mock.calls[0]![1].headers).get("Authorization")).toBe(
+        "Bearer member-token",
+      );
       expect(url.pathname).toBe("/new-account");
       expect(url.searchParams.get("next")).toBe("/events");
     });
 
-    it("signs an existing email member in and sends them on to `next`", async () => {
-      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
-      isNewEmailAccount.mockResolvedValue(false);
+    it("sends a member who just joined a chapter on to `next`", async () => {
+      verifyOtp.mockResolvedValue({ data: { user: newEmailUser, session }, error: null });
+      chapters([{ chapter_id: "c1" }]);
       const { url } = await callback(
         "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fevents",
       );
       expect(url.pathname).toBe("/events");
     });
 
-    it("falls open to sign-in when the chapters read can't be made", async () => {
-      // `isNewEmailAccount` returns false on an API outage, so a member is
-      // signed in rather than stranded — the fail-open Paul asked for.
-      verifyOtp.mockResolvedValue({ data: emailSession, error: null });
-      isNewEmailAccount.mockResolvedValue(false);
+    it("sends a returning chapterless account on to `next`, without reading the API", async () => {
+      // Confirmed weeks ago, no chapter yet (waiting on an invite): not new.
+      verifyOtp.mockResolvedValue({
+        data: {
+          user: {
+            ...newEmailUser,
+            created_at: "2026-10-01T12:00:00.000Z",
+            email_confirmed_at: "2026-10-01T12:03:00.000Z",
+          },
+          session,
+        },
+        error: null,
+      });
+      const { url } = await callback(
+        "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fjoin%3Ftoken%3Dinv-1",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(url.pathname).toBe("/join");
+    });
+
+    it("signs the member in and sends them on when the chapters read fails", async () => {
+      verifyOtp.mockResolvedValue({ data: { user: newEmailUser, session }, error: null });
+      fetchMock.mockRejectedValue(new TypeError("fetch failed"));
       const { url } = await callback(
         "token_hash=pkce_hash&type=magiclink&intent=sign-in-link&next=%2Fchat",
       );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(url.pathname).toBe("/chat");
     });
 
     it("catches a new account on the Confirm-signup code path too", async () => {
-      exchangeCodeForSession.mockResolvedValue({ data: emailSession, error: null });
-      isNewEmailAccount.mockResolvedValue(true);
+      exchangeCodeForSession.mockResolvedValue({ data: { user: newEmailUser, session }, error: null });
+      chapters([]);
       const { url } = await callback("code=abc123&intent=sign-in-link&next=%2Fchat");
       expect(url.pathname).toBe("/new-account");
     });
@@ -285,13 +319,25 @@ describe("GET /auth/callback", () => {
       expect(url.searchParams.get("authError")).toBe("email_confirmed");
     });
 
-    it("does not flag an OAuth account that only has an email identity by mistake", async () => {
-      // OAuth uses intent=sign-in, not sign-in-link; a provider code that won't
-      // exchange stays a real failure, never email_confirmed.
+    it("keeps a Google or Apple code that won't exchange a real failure", async () => {
       exchangeCodeForSession.mockResolvedValue({ error: { message: "invalid code" } });
       const { url } = await callback("code=stale&intent=sign-in&next=%2Fchat");
       expect(url.searchParams.get("authError")).toBe("exchange_failed");
     });
+
+    it.each([
+      ["a code", () => exchangeCodeForSession, "code=abc123&intent=confirm&next=%2Fjoin%3Ftoken%3Dinv-1"],
+      ["a token_hash", () => verifyOtp, "token_hash=h&type=email&intent=confirm&next=%2Fjoin%3Ftoken%3Dinv-1"],
+    ])(
+      "never stops a sign-up confirmation (%s) for a brand-new account, which is the point of sign-up",
+      async (_path, auth, query) => {
+        auth().mockResolvedValue({ data: { user: newEmailUser, session }, error: null });
+        chapters([]);
+        const { url } = await callback(query);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(url.pathname).toBe("/join");
+      },
+    );
   });
 
   describe("reporting what failed (#3832)", () => {

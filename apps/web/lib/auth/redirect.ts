@@ -210,7 +210,10 @@ export function isSignInIntent(intent: string | null): boolean {
  */
 export const EMAIL_CONFIRMED_AUTH_ERROR = "email_confirmed";
 
-/** The notice a brand-new OAuth account sees after choosing sign-in (#3786). */
+/**
+ * The notice a brand-new account sees after choosing sign-in: a Google or Apple
+ * account (#3786) or a magic-link email account (#3801).
+ */
 export const NEW_ACCOUNT_PATH = "/new-account";
 
 /**

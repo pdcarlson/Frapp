@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Session, User } from "@supabase/supabase-js";
-import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
-import { isNewEmailAccount } from "@/lib/auth/new-account-detection";
+import { isNewAccount } from "@/lib/auth/new-account-detection";
 import {
   AUTH_CALLBACK_INTENT_PARAM,
   EMAIL_CONFIRMED_AUTH_ERROR,
@@ -15,18 +14,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reportServerAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
- * A session that a sign-in just created where none should have been: an OAuth
- * provider made a fresh account (#3786, timestamp-based) or a magic link made a
- * chapterless email account (#3801, identity + chapters read). Either way the
- * member asked to sign in, so they go to `/new-account` first. Returns the
- * destination for a new account, or `null` to carry on to `next`.
- *
- * The two checks are mutually exclusive by identity — `isFirstOAuthSignIn`
- * needs a Google or Apple provider, `isNewEmailAccount` an email-only one — so
- * running both on either path is safe: the OAuth code path catches a new
- * provider account, the magic link's `token_hash` and Confirm-signup `code`
- * paths catch a new email account. The email read falls open to "not new" on an
- * API outage, so it never blocks a sign-in.
+ * Where a sign-in from the sign-in screen goes when it just created a brand-new
+ * account: `/new-account?next=…`, or `null` to carry on to `next`. Only the
+ * sign-in screen's intents ask (`sign-in` for Google and Apple, `sign-in-link`
+ * for the magic link); a sign-up confirmation (`confirm`) never does, since
+ * creating an account there is the point. The decision is `isNewAccount`
+ * (`lib/auth/new-account-detection.ts`), the same one `/new-account` makes, and
+ * it falls open to `next` on any doubt, so it never blocks a sign-in.
  */
 async function newAccountDestination(
   url: URL,
@@ -36,11 +30,7 @@ async function newAccountDestination(
   if (!isSignInIntent(url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM))) {
     return null;
   }
-  const user = data?.user ?? null;
-  const isNew =
-    isFirstOAuthSignIn(user) ||
-    (await isNewEmailAccount(user, data?.session?.access_token));
-  if (!isNew) return null;
+  if (!(await isNewAccount(data?.user, data?.session?.access_token))) return null;
   const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
   notice.searchParams.set("next", next);
   return notice;
@@ -80,22 +70,27 @@ function reportCallbackFailure(failure: { error?: unknown; code?: string }): voi
  * a bad hash, a code whose verifier cookie is gone, a replay — lands on
  * `/sign-in` with `next` preserved as `redirectTo` and `authError` set so
  * the page can say what happened. Nothing is signed in on failure. The one
- * failure that is good news is an email link (`intent=confirm`) whose code
- * won't exchange: GoTrue verified it before handing out the code, which
- * confirms the address, so it lands with `authError=email_confirmed` and the
- * page says to sign in.
+ * failure that is good news is an email link (`intent=confirm` from sign-up
+ * and Resend, or `intent=sign-in-link` from the sign-in magic link:
+ * `isEmailLinkIntent`) whose code won't exchange: GoTrue verified it before
+ * handing out the code, which confirms the address, so it lands with
+ * `authError=email_confirmed` and the page says to sign in. A Google or Apple
+ * code (`intent=sign-in`) that won't exchange is a real failure.
  *
  * `next` is re-validated with the same open-redirect guard the proxy applies
  * (a same-origin path or `/chat`), so tampering with the link cannot send a
  * freshly signed-in session to another host.
  *
- * **A sign-in that created an account.** When the sign-in screen started an
- * OAuth round trip (`intent=sign-in`) and the exchange returns a user that
- * Google or Apple created just now, the member asked to sign in and got a new,
- * empty account instead: GoTrue links nothing it can't verify, so a member who
- * joined on the phone with Apple and picks Google here is split (#3786). They
- * go to `/new-account` first, which names the account and offers sign-out in
- * one step, before onboarding treats them as new. Nothing is linked or merged.
+ * **A sign-in that created an account.** When the sign-in screen started the
+ * round trip and it returns a brand-new account, the member asked to sign in
+ * and got a new, empty one instead. With Google or Apple (`intent=sign-in`),
+ * GoTrue links nothing it can't verify, so a member who joined on the phone
+ * with Apple and picks Google here is split (#3786). With the magic link
+ * (`intent=sign-in-link`, on the `token_hash` or the Confirm-signup `code`
+ * path), `signInWithOtp` creates an account for an email the member never
+ * joined with (#3801). Either way they go to `/new-account` first, which names
+ * the account and offers sign-out in one step, before onboarding treats them
+ * as new. Nothing is linked or merged.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
