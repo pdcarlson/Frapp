@@ -8,10 +8,12 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import {
+  APP_CONFIG,
   APP_JSON,
   EAS_JSON,
   LOCKFILE,
   SHIPPED_BUILDS,
+  STAGING_RUNTIME_ENV,
   UPDATE_GIT_SHA_ENV,
   UPDATE_PROFILE_ENV,
   isNativePackage,
@@ -23,6 +25,7 @@ import {
   productionChecks,
   profileForChannel,
   staleInstall,
+  stagingRuntimeVersion,
   updateEnv,
   uploadSourceMaps,
 } from "../../eas-update.mjs";
@@ -179,6 +182,76 @@ test("adds the channel's environment, and skips the store-build checks off produ
   assert.equal(r.env.EXPO_PUBLIC_SUPABASE_URL, "https://staging.supabase.co", "the EAS environment's values reach every evaluation");
   assert.equal(r.profileName, "preview");
   assert.ok(r.notes.some((n) => /native-compatibility check is skipped/.test(n)));
+});
+
+const STAGING_EAS = {
+  build: {
+    ...EAS.build,
+    staging: {
+      channel: "staging",
+      environment: "preview",
+      env: { EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live", FRAPP_APP_VARIANT: "staging" },
+    },
+  },
+};
+const stagingFiles = (over = {}) =>
+  files({ [EAS_JSON]: JSON.stringify(STAGING_EAS), [APP_CONFIG]: "module.exports = (c) => c;\n", ...over });
+
+test("the staging runtime is the version plus a hash that moves with each native input and nothing else", () => {
+  const base = stagingRuntimeVersion({ readFile: stagingFiles(), isNative });
+  assert.match(base.runtime, /^0\.9\.1-[0-9a-f]{12}$/);
+  assert.deepEqual(stagingRuntimeVersion({ readFile: stagingFiles(), isNative }), base, "stable for one tree");
+  const withLock = (versions) => ({
+    [LOCKFILE]: JSON.stringify(lock(versions)),
+    "node_modules/.package-lock.json": JSON.stringify(lock(versions)),
+  });
+  // A JS-only package moving is not a native change.
+  const jsOnly = stagingRuntimeVersion({
+    readFile: stagingFiles(withLock({ "expo-haptics": "57.0.3", react: "19.2.4" })),
+    isNative,
+  });
+  assert.equal(jsOnly.runtime, base.runtime);
+  for (const [label, over] of [
+    ["a native package's version", withLock({ "expo-haptics": "57.0.4", react: "19.2.3" })],
+    ["a new native package", withLock({ "expo-haptics": "57.0.3", "@sentry/react-native": "8.0.0", react: "19.2.3" })],
+    ["app.json", { [APP_JSON]: JSON.stringify({ expo: { version: "0.9.1", name: "x" } }) }],
+    ["app.config.js", { [APP_CONFIG]: "module.exports = (c) => ({ ...c });\n" }],
+  ]) {
+    const moved = stagingRuntimeVersion({ readFile: stagingFiles(over), isNative });
+    assert.match(moved.runtime, /^0\.9\.1-[0-9a-f]{12}$/, label);
+    assert.notEqual(moved.runtime, base.runtime, label);
+  }
+});
+
+test("the staging runtime refuses a tree it can't read natives from", () => {
+  const stale = stagingRuntimeVersion({
+    readFile: stagingFiles({ "node_modules/.package-lock.json": JSON.stringify(lock({ "expo-haptics": "57.0.2", react: "19.2.3" })) }),
+    isNative,
+  });
+  assert.match(stale.error, /npm ci/);
+  const noVersion = stagingRuntimeVersion({ readFile: stagingFiles({ [APP_JSON]: JSON.stringify({ expo: {} }) }), isNative });
+  assert.match(noVersion.error, /expo\.version/);
+});
+
+test("a staging update carries the computed runtime, whatever the shell held", () => {
+  const { git } = fakeGit({ "rev-parse HEAD": { stdout: `${SHA}\n` } });
+  const opts = { readFile: stagingFiles(), git, production: noProduction, pullEnv: () => ({ vars: {} }) };
+  const r = prepareUpdate(["--channel", "staging", "--message", "x"], {
+    ...opts,
+    env: { [STAGING_RUNTIME_ENV]: "0.9.1-ffffffffffff" },
+    stagingRuntime: () => ({ runtime: "0.9.1-0123456789ab" }),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.env[STAGING_RUNTIME_ENV], "0.9.1-0123456789ab");
+  assert.equal(r.env.FRAPP_APP_VARIANT, "staging");
+  assert.equal(r.env[UPDATE_PROFILE_ENV], "staging");
+  assert.ok(r.notes.some((n) => /Runtime 0\.9\.1-0123456789ab/.test(n)));
+  const refused = prepareUpdate(["--channel", "staging"], { ...opts, env: {}, stagingRuntime: () => ({ error: "no natives" }) });
+  assert.deepEqual(refused, { ok: false, errors: ["no natives"] });
+  // Another channel never inherits one.
+  const preview = prepareUpdate(["--channel", "preview"], { ...opts, env: { [STAGING_RUNTIME_ENV]: "0.9.1-ffffffffffff" } });
+  assert.equal(preview.ok, true);
+  assert.equal(STAGING_RUNTIME_ENV in preview.env, false);
 });
 
 test("production runs the store-build checks, and any error refuses the publish", () => {

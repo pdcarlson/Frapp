@@ -99,6 +99,14 @@
 // Supabase redirect allow list for `frapp-staging://`, the Apple and Google
 // sign-in providers); #4917 lists them.
 //
+// The variant's **runtime version** is not app.json's `appVersion` policy. It
+// follows `main`, where native inputs move between version bumps, so a staging
+// build and a staging update both take `FRAPP_STAGING_RUNTIME`: the version
+// plus a hash of the native inputs, computed by scripts/eas-update.mjs
+// (`stagingRuntimeVersion`). An update from newer native code then has a
+// runtime no older staging binary asks for. The staging profile refuses to
+// build or publish without it; a run with no profile keeps app.json's policy.
+//
 // Source of truth for the credential inventory:
 // docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
 const fs = require("node:fs");
@@ -480,6 +488,28 @@ const STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR = [
   "be a second, unreviewed app holding members' real chapters.",
 ].join(" ");
 
+const STAGING_RUNTIME_ENV = "FRAPP_STAGING_RUNTIME";
+
+const STAGING_RUNTIME_ERROR = [
+  `The staging profile requires ${STAGING_RUNTIME_ENV}: this app's version, a dash,`,
+  "and twelve hex digits (the hash of its native inputs). Without it a staging",
+  "update would reach staging binaries built from other native code and could",
+  "crash them at launch. `npm run eas -- update --channel staging` sets it; a",
+  "build sets it from `node scripts/staging-runtime.mjs`.",
+].join(" ");
+
+/**
+ * The staging variant's runtime version, or undefined to keep app.json's
+ * policy (a run with no profile and no value). A profile makes it required.
+ */
+function stagingRuntimeVersion({ env, profile, version }) {
+  const raw = String(env[STAGING_RUNTIME_ENV] || "");
+  if (!raw && !profile) return undefined;
+  const match = /^(\d+\.\d+\.\d+)-[0-9a-f]{12}$/.exec(raw);
+  if (!match || match[1] !== version) throw new Error(STAGING_RUNTIME_ERROR);
+  return raw;
+}
+
 /** `"staging"`, or undefined for the production app. Anything else throws. */
 function appVariant(env) {
   const raw = String(env[APP_VARIANT_ENV] || "").trim();
@@ -508,7 +538,7 @@ function assertStagingVariantOrigins({ variant, apiUrl, supabaseUrl } = {}) {
 }
 
 /** app.json's config as the staging variant: its own identity, no link claims. */
-function withStagingVariant(config) {
+function withStagingVariant(config, runtimeVersion) {
   const ios = { ...config.ios };
   delete ios.associatedDomains;
   const android = { ...config.android };
@@ -517,6 +547,7 @@ function withStagingVariant(config) {
     ...config,
     name: STAGING_IDENTITY.name,
     scheme: STAGING_IDENTITY.scheme,
+    ...(runtimeVersion ? { runtimeVersion } : {}),
     ios: { ...ios, bundleIdentifier: STAGING_IDENTITY.applicationId },
     android: { ...android, package: STAGING_IDENTITY.applicationId },
   };
@@ -562,7 +593,14 @@ function applyMobileConfig(
   });
   const config =
     variant === STAGING_VARIANT
-      ? withStagingVariant(appJsonConfig)
+      ? withStagingVariant(
+          appJsonConfig,
+          stagingRuntimeVersion({
+            env,
+            profile,
+            version: appJsonConfig.version,
+          }),
+        )
       : appJsonConfig;
   // Native-only: an update never carries google-services.json, so this one
   // keys on the build profile alone.
@@ -640,6 +678,8 @@ applyExpoConfig.appVariant = appVariant;
 applyExpoConfig.assertVariantMatchesProfile = assertVariantMatchesProfile;
 applyExpoConfig.assertStagingVariantOrigins = assertStagingVariantOrigins;
 applyExpoConfig.APP_VARIANT_ENV = APP_VARIANT_ENV;
+applyExpoConfig.STAGING_RUNTIME_ENV = STAGING_RUNTIME_ENV;
+applyExpoConfig.STAGING_RUNTIME_ERROR = STAGING_RUNTIME_ERROR;
 applyExpoConfig.STAGING_PROFILE = STAGING_PROFILE;
 applyExpoConfig.STAGING_IDENTITY = STAGING_IDENTITY;
 applyExpoConfig.APP_VARIANT_VALUE_ERROR = APP_VARIANT_VALUE_ERROR;
