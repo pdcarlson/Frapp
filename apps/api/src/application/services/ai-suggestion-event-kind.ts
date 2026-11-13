@@ -75,7 +75,19 @@ export function readEventPayload(
 @Injectable()
 export class EventSuggestionKind implements AiSuggestionKindHandler {
   readonly kind = 'event' as const;
-  readonly requiredPermission = SystemPermissions.EVENTS_CREATE;
+  /**
+   * Who plans the chapter's calendar, not who can add an event to it (#4549,
+   * Paul 2026-11-13: not every member). `events:create` is a member default
+   * since #3709, so gating on it put these in front of the whole chapter and
+   * let any member dismiss one for good. `events:update` stays with the
+   * officers a chapter trusts with its calendar (by default the Exec board
+   * tier and the Treasurer) and with any role it grants "Edit events", such
+   * as a social chair's. It gates seeing, accepting and dismissing alike,
+   * since the permission is stored on the row (the
+   * `last_year_event_suggestions_planners` migration moved the rows written
+   * before this).
+   */
+  readonly requiredPermission = SystemPermissions.EVENTS_UPDATE;
   readonly module = 'events';
   readonly expiresAfterDays = EVENT_SUGGESTION_EXPIRY_DAYS;
   readonly pushCategory = 'events';

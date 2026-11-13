@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import type {
   AiSuggestionClaim,
@@ -191,6 +195,17 @@ const aTask = (
   stored_status: TaskStatus.COMPLETED,
   ...extra,
 });
+
+/**
+ * Who plans the calendar (#4549): a chair the chapter gave "Edit events", and
+ * a member as #3709 starts one, who can add an event but doesn't plan the
+ * chapter's.
+ */
+const CALENDAR_PERMISSIONS: Record<string, string[]> = {
+  [PRESIDENT]: ['*'],
+  [SOCIAL_CHAIR]: ['members:view', 'events:create', 'events:update'],
+  [MEMBER]: ['members:view', 'events:create'],
+};
 
 function build(
   options: {
@@ -417,7 +432,7 @@ describe('LastYearSuggestionsService', () => {
         source_id: LAST_PHIL,
         run_id: RUN,
         requested_for: PRESIDENT,
-        required_permission: 'events:create',
+        required_permission: 'events:update',
         quote: 'Philanthropy Week',
         payload: {
           name: 'Philanthropy Week',
@@ -691,8 +706,11 @@ describe('LastYearSuggestionsService', () => {
   });
 
   describe('who sees and decides one', () => {
-    it('lists an event suggestion for an officer who can add events, and not for a member', async () => {
-      const { run, suggestions } = build({ events: LAST_YEAR.slice(0, 1) });
+    it('lists an event suggestion for an officer who can edit events, and not for a member who can only add one (#4549)', async () => {
+      const { run, suggestions } = build({
+        permissions: CALENDAR_PERMISSIONS,
+        events: LAST_YEAR.slice(0, 1),
+      });
       await run();
       const chair = await suggestions.listForUser(CHAPTER, SOCIAL_CHAIR, {
         enabledModules: {},
@@ -704,8 +722,28 @@ describe('LastYearSuggestionsService', () => {
       expect(member.items).toEqual([]);
     });
 
+    it('refuses a member who can only add events, so the planners’ list is theirs to clear (#4549)', async () => {
+      const { run, rows, suggestions } = build({
+        permissions: CALENDAR_PERMISSIONS,
+        events: LAST_YEAR.slice(0, 1),
+      });
+      await run();
+      const id = rows.rows[0].id;
+      await expect(
+        suggestions.dismiss(CHAPTER, MEMBER, id, 'already_doing'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        suggestions.accept(CHAPTER, MEMBER, id, { enabledModules: {} }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(rows.rows[0].status).toBe('pending');
+
+      await suggestions.dismiss(CHAPTER, SOCIAL_CHAIR, id, 'already_doing');
+      expect(rows.rows[0].status).toBe('dismissed');
+    });
+
     it('accepting an event records the event the officer added, and makes none', async () => {
       const { run, rows, suggestions, state, tasks } = build({
+        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -738,6 +776,7 @@ describe('LastYearSuggestionsService', () => {
 
     it('refuses to record an event someone else added, and leaves the suggestion waiting', async () => {
       const { run, rows, suggestions, state } = build({
+        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -759,6 +798,7 @@ describe('LastYearSuggestionsService', () => {
 
     it('accepting a task makes it through the task service, with who and when from the officer', async () => {
       const { run, rows, suggestions, tasks } = build({
+        permissions: CALENDAR_PERMISSIONS,
         tasks: [
           aTask(LAST_CONTRACT, 'Submit the housing contract', '2026-03-20'),
         ],
