@@ -386,7 +386,8 @@ key at all**. Each of those three is load-bearing:
   `permissions[key] || infoPlist[key] || default`, so an undefined option falls
   through to whatever a plugin already wrote before it ever reaches the vendor
   default, and `expo-camera` writes NSCameraUsageDescription explicitly in either
-  plugin order.
+  plugin order. _(Superseded 2026-11-13 by 0.13.0, which removed `expo-camera`; see
+  below.)_
 - `microphonePermission` **is** declined, and must stay declined. Omitting it is not
   inert: `withAndroidImagePickerPermissions` adds `android.permission.RECORD_AUDIO`
   whenever the option is anything other than `false`, and the iOS half would write a
@@ -421,6 +422,27 @@ scan doesn't flag every linked API: the same upload named only the motion key, t
 declined at the time. So a linked-only entry is added when Apple names its key, and a
 decline stands until it does. _(Changed 2026-11-12: the microphone key is no longer
 declined, because the meeting recorder requests it; Face ID's decline stands.)_
+
+_Changed 2026-11-13 (0.13.0, [#4763](https://github.com/pdcarlson/Frapp/issues/4763)):_
+the in-app QR scanner went with [#4762](https://github.com/pdcarlson/Frapp/issues/4762),
+when the check-in code became a link the phone's own camera app opens, so 0.13.0 removes
+`expo-camera` and its plugin entry. Two of its jobs move:
+
+- **The camera key on iOS.** With `expo-camera` gone, `expo-image-picker` would write its
+  default camera purpose string. Its `cameraPermission` now carries a linked-only note
+  instead ("Frapp never uses the camera..."), pinned with `linkedBy` on the picker's
+  `AVCaptureDevice` use and both of its camera calls (`requestCameraPermissionsAsync`,
+  `launchCameraAsync`). This is the one linked-only key added before Apple named it:
+  every build until 0.13.0 carried a camera key, so the upload scan never had the chance,
+  and dropping it risked an ITMS-90683 rejection of the first build without it.
+- **`android.permission.CAMERA`.** `expo-image-picker`'s own library manifest declares it,
+  so it would still reach the merged manifest. `android.blockedPermissions` in `app.json`
+  removes it, and `ANDROID_REMOVED_PERMISSIONS` pins the removal. The #2296 lesson still
+  holds: the block is safe only because nothing in the app requests the camera, and the
+  gate fails if anything starts to.
+
+`microphonePermission` is now carried by `expo-image-picker` and `expo-audio`, the two
+plugins that write the key.
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the

@@ -1356,13 +1356,10 @@ describe("invite links open the app (#4002)", () => {
   // The binary's half of universal links and App Links. The web's half is
   // `/.well-known/apple-app-site-association` and `assetlinks.json` on
   // app.frapp.live, which claim `APP_LINK_PATHS` (the invite and the
-  // check-in code); the two must agree, except a path whose Android claim
-  // waits on the next native version (an intent filter is in the binary, and
-  // a change to it would stop 0.12.0 getting updates over the air).
-  // `/check-in` (2026-11-13) reaches Android with #4763; until then its web
-  // page hands off with Open in Frapp. iOS reads its paths from the web's
-  // file, so it needs no build for a new one.
-  const ANDROID_CLAIMS_LATER: readonly string[] = ["/check-in"];
+  // check-in code); the two must agree. Android's paths live in the intent
+  // filter, which is in the binary, so a new path ships with the next native
+  // version (`/check-in` did with 0.13.0, #4763); iOS reads its paths from the
+  // web's file, so it needs no build for a new one.
   it("claims exactly the web's app-link paths on app.frapp.live, on both platforms", () => {
     const appJson = JSON.parse(
       readFileSync(new URL("./app.json", import.meta.url), "utf8"),
@@ -1390,9 +1387,7 @@ describe("invite links open the app (#4002)", () => {
       category: ["BROWSABLE", "DEFAULT"],
     });
     expect(filters[0]!.data).toEqual(
-      APP_LINK_PATHS.filter(
-        (path) => !ANDROID_CLAIMS_LATER.includes(path),
-      ).map((path) => ({
+      APP_LINK_PATHS.map((path) => ({
         scheme: "https",
         host: "app.frapp.live",
         path,

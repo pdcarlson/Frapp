@@ -250,8 +250,8 @@ Two traps for whoever edits that list next:
 
   **That gap got wider when the Expo client list was completed to every `expo-*` package
   `apps/mobile` declares** (21 at the time, PR #2338). It now also
-  covers `expo-camera`, `expo-image-picker`, `expo-location` and `expo-notifications` — the media,
-  location and push surfaces, which had been receiving
+  covers `expo-camera` (removed from the app in 0.13.0, #4763), `expo-image-picker`, `expo-location`
+  and `expo-notifications` — the media, location and push surfaces, which had been receiving
   automatic patch and security PRs while they sat outside the list. None of the entries carry
   `update-types`, so in-SDK `57.0.x` patches are frozen alongside the SDK-line majors that actually
   caused the break; scoping them to `version-update:semver-major` (the shape `eslint` already uses
