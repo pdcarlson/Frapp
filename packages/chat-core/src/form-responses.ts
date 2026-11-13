@@ -1,13 +1,12 @@
-import { serverMessageOf } from "@repo/api-sdk";
+import { serverMessageOf, type components } from "@repo/api-sdk";
 import type { FrappApiClient } from "./chat-client";
 import {
-  FORM_NO,
-  FORM_YES,
+  FORM_YES_NO_OPTIONS,
   isChoiceQuestion,
-  type FormAnswers,
   type FormPayload,
   type FormQuestion,
 } from "./forms";
+import { isOwnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
 
 /**
@@ -16,30 +15,25 @@ import type { ChatMessage } from "./types";
  * Modeled on Google Forms' Responses tab: a summary per question, each
  * person's answers, and who hasn't answered yet.
  *
- * The API returns user ids only (`GET …/form-responses`, creator only); names
- * come from the roster on the client, and a responder no longer on it reads
- * as {@link FORMER_MEMBER_NAME}.
+ * The API returns user ids only (`GET …/form-responses`, creator only). Each
+ * surface turns an id into the label it shows everywhere else for a member
+ * (`actorLabel` in `@repo/hooks`), so a person reads the same on the card,
+ * in this view and in its export, and an unnamed member is never mistaken
+ * for one who left.
  */
 
-/** One member's saved answers, as the API returns them. */
-export interface FormResponseEntry {
-  user_id: string;
-  answers: FormAnswers;
-  /** When they first answered. */
-  created_at: string;
-  /** When they last changed their answers. */
-  updated_at: string;
-}
+/**
+ * One member's saved answers (`created_at` first answered, `updated_at` last
+ * changed), and the whole read: `responses` first answered first, and
+ * `not_responded`, who can read the channel now and hasn't answered, the
+ * creator left out. The generated contract types, so a change to the route
+ * is a compile error here.
+ */
+export type FormResponseEntry = components["schemas"]["FormResponseEntryDto"];
+export type FormResponses = components["schemas"]["FormResponsesDto"];
 
-export interface FormResponses {
-  /** First answered first. */
-  responses: FormResponseEntry[];
-  /** Who can read the channel now and hasn't answered, the creator left out. */
-  not_responded: string[];
-}
-
-/** A responder the roster no longer has: they left the chapter. */
-export const FORMER_MEMBER_NAME = "Former member";
+/** Turns a user id into the label a surface shows for that member. */
+export type MemberLabel = (userId: string) => string;
 
 /** The card's button for its creator, and the view's title. */
 export const VIEW_RESPONSES_LABEL = "Responses";
@@ -53,7 +47,7 @@ export function isFormCreator(
   message: Pick<ChatMessage, "sender_id">,
   viewerId: string | null,
 ): boolean {
-  return !!viewerId && message.sender_id === viewerId;
+  return isOwnMessage(message, viewerId);
 }
 
 /** The query key for a form's responses. */
@@ -76,7 +70,7 @@ export async function fetchFormResponses(
   if (error || !data) {
     throw new Error(serverMessageOf(error) ?? "Couldn't load the responses");
   }
-  return data as FormResponses;
+  return data;
 }
 
 /** "3 responses", the view's count. */
@@ -87,14 +81,6 @@ export function formResponsesCountLine(count: number): string {
 /** "Not answered yet (4)", the list of who hasn't answered. */
 export function formNotRespondedLabel(count: number): string {
   return `Not answered yet (${count})`;
-}
-
-/** A responder's name, or {@link FORMER_MEMBER_NAME} off the roster. */
-export function responderName(
-  userId: string,
-  nameOf: (userId: string) => string | null,
-): string {
-  return nameOf(userId) ?? FORMER_MEMBER_NAME;
 }
 
 /**
@@ -109,9 +95,7 @@ export function formAnswerText(
 ): string {
   if (answer === undefined) return "";
   if (question.type === "yes_no") {
-    if (answer === FORM_YES) return "Yes";
-    if (answer === FORM_NO) return "No";
-    return "";
+    return FORM_YES_NO_OPTIONS.find((o) => o.id === answer)?.label ?? "";
   }
   if (isChoiceQuestion(question.type)) {
     const ids = Array.isArray(answer) ? answer : [answer];
@@ -145,14 +129,14 @@ export interface FormQuestionSummary {
 
 /** The choices a question counts: its options, or Yes and No. */
 function countedChoices(question: FormQuestion): FormChoiceCount[] | null {
-  if (question.type === "yes_no") {
-    return [
-      { id: FORM_YES, label: "Yes", count: 0 },
-      { id: FORM_NO, label: "No", count: 0 },
-    ];
-  }
-  if (!isChoiceQuestion(question.type)) return null;
-  return (question.options ?? []).map((o) => ({
+  const options =
+    question.type === "yes_no"
+      ? FORM_YES_NO_OPTIONS
+      : isChoiceQuestion(question.type)
+        ? (question.options ?? [])
+        : null;
+  if (!options) return null;
+  return options.map((o) => ({
     id: o.id,
     label: o.label,
     count: 0,
@@ -228,7 +212,7 @@ export const FORM_EXPORT_UPDATED_COLUMN = "Last changed";
 
 /**
  * A form's responses as spreadsheet rows, one per response, first answered
- * first: the responder's name, when they answered and last changed it (ISO,
+ * first: the responder's label, when they answered and last changed it (ISO,
  * which every spreadsheet reads as a time), then one column per question.
  * Cells are plain text; the writer that turns them into a file makes
  * formula-shaped text inert (`toCsvCell` in `@repo/formatting`).
@@ -236,12 +220,12 @@ export const FORM_EXPORT_UPDATED_COLUMN = "Last changed";
 export function formResponsesExportRows(
   payload: FormPayload,
   responses: readonly FormResponseEntry[],
-  nameOf: (userId: string) => string | null,
+  labelOf: MemberLabel,
 ): Record<string, string>[] {
   const columns = payload.questions.map(formExportColumn);
   return responses.map((response) => {
     const row: Record<string, string> = {
-      [FORM_EXPORT_NAME_COLUMN]: responderName(response.user_id, nameOf),
+      [FORM_EXPORT_NAME_COLUMN]: labelOf(response.user_id),
       [FORM_EXPORT_ANSWERED_COLUMN]: response.created_at,
       [FORM_EXPORT_UPDATED_COLUMN]: response.updated_at,
     };

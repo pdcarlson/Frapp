@@ -278,7 +278,11 @@ export function SignupCard({
                 )}
                 disabled={tally.people === 0}
                 getRows={() =>
-                  signupExportRows(message, payload, (id) => nameFor(id))
+                  signupExportRows(
+                    message,
+                    payload,
+                    (id) => actorLabel(id, nameFor) ?? "A member",
+                  )
                 }
               />
             ) : null}

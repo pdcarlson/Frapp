@@ -35,7 +35,11 @@ import {
   useNow,
   type NameResolver,
 } from "@repo/hooks";
-import { FormResponsesDialog } from "../form-responses-dialog";
+import {
+  FormResponsesDialog,
+  useOpenFormResponses,
+  useSyncOpenFormResponses,
+} from "../form-responses-dialog";
 import { can } from "@repo/validation";
 
 interface FormCardProps {
@@ -83,6 +87,8 @@ export function FormCard({
   useSyncOpenForm(message);
   // Only outside the chat shell, which hosts the form for every card.
   const [openHere, setOpenHere] = useState(false);
+  const openResponsesInHost = useOpenFormResponses();
+  useSyncOpenFormResponses(message);
   const [responsesOpen, setResponsesOpen] = useState(false);
   const own = useQuery({
     queryKey: formResponseKey(message.id),
@@ -145,7 +151,10 @@ export function FormCard({
               size="sm"
               variant="secondary"
               disabled={!isConfirmed}
-              onClick={() => setResponsesOpen(true)}
+              onClick={() => {
+                if (openResponsesInHost) openResponsesInHost(message, nameFor);
+                else setResponsesOpen(true);
+              }}
             >
               {VIEW_RESPONSES_LABEL}
             </Button>
@@ -163,11 +172,13 @@ export function FormCard({
           </Button>
         ) : null}
       </div>
-      <FormResponsesDialog
-        message={responsesOpen ? message : null}
-        nameFor={nameFor}
-        onOpenChange={setResponsesOpen}
-      />
+      {openResponsesInHost ? null : (
+        <FormResponsesDialog
+          message={responsesOpen ? message : null}
+          nameFor={nameFor}
+          onOpenChange={setResponsesOpen}
+        />
+      )}
       {openInHost ? null : (
         <FormFillDialog
           message={openHere ? message : null}

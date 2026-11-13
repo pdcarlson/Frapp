@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import {
@@ -30,12 +37,86 @@ import {
   formResponsesCountLine,
   formResponsesExportRows,
   formResponsesKey,
-  responderName,
   summarizeFormResponses,
   type FormResponses,
+  type MemberLabel,
 } from "@repo/chat-core/form-responses";
 import type { FormPayload } from "@repo/chat-core/forms";
-import { useFrappClient, useNow, type NameResolver } from "@repo/hooks";
+import {
+  actorLabel,
+  useFrappClient,
+  useNow,
+  type NameResolver,
+} from "@repo/hooks";
+
+interface OpenResponses {
+  message: ChatMessage;
+  nameFor: NameResolver;
+}
+
+interface FormResponsesApi {
+  open: (message: ChatMessage, nameFor: NameResolver) => void;
+  /** Swaps in a newer copy of the open form's row; ignores any other. */
+  refresh: (message: ChatMessage) => void;
+}
+
+const FormResponsesContext = createContext<FormResponsesApi | null>(null);
+
+/**
+ * How a form card opens its responses: the host's opener, or `null` outside
+ * one (a surface that draws a card without the chat shell), where the card
+ * opens its own.
+ */
+export function useOpenFormResponses(): FormResponsesApi["open"] | null {
+  return useContext(FormResponsesContext)?.open ?? null;
+}
+
+/**
+ * Keeps the host's open responses on the card's live row, so a delete that
+ * reaches the timeline reaches the open view too.
+ */
+export function useSyncOpenFormResponses(message: ChatMessage) {
+  const refresh = useContext(FormResponsesContext)?.refresh;
+  useEffect(() => {
+    refresh?.(message);
+  }, [refresh, message]);
+}
+
+/**
+ * Hosts the Responses view once for the chat shell, beside `FormFillHost`
+ * and for the same reason: the timeline is virtualized, so a card that
+ * scrolls out of its window (a new message arriving is enough) unmounts, and
+ * a dialog the card owned would close while its creator is reading.
+ */
+export function FormResponsesHost({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<OpenResponses | null>(null);
+  const api = useMemo<FormResponsesApi>(
+    () => ({
+      open: (message, nameFor) => setOpen({ message, nameFor }),
+      refresh: (next) =>
+        setOpen((current) =>
+          current && current.message.id === next.id
+            ? { ...current, message: next }
+            : current,
+        ),
+    }),
+    [],
+  );
+  return (
+    <FormResponsesContext.Provider value={api}>
+      {children}
+      <FormResponsesDialog
+        message={open?.message ?? null}
+        nameFor={open?.nameFor ?? noNames}
+        onOpenChange={(next) => {
+          if (!next) setOpen(null);
+        }}
+      />
+    </FormResponsesContext.Provider>
+  );
+}
+
+const noNames: NameResolver = () => null;
 
 /**
  * A form's responses, for the member who posted it (#3926 step 4), as Google
@@ -45,6 +126,10 @@ import { useFrappClient, useNow, type NameResolver } from "@repo/hooks";
  * Excel or Copy for Google Sheets, through the dashboard's `ExportMenu`).
  * Only the creator gets here: the card offers it to them alone
  * (`isFormCreator`), and the API refuses anyone else.
+ *
+ * Names are the label each member has everywhere else (`actorLabel`): the
+ * roster name, or the shared "Member 2f4a1c" fallback for someone it can't
+ * name, so an unnamed member is never shown as one who left.
  *
  * Read fresh on every open (no `staleTime`), since answers keep arriving and
  * nothing pushes them: the table isn't in the Realtime publication.
@@ -63,10 +148,12 @@ export function FormResponsesDialog({
     () => (message ? readFormPayload(message) : null),
     [message],
   );
+  // A form deleted while its responses are open has nothing left to show.
+  const live = !!message && !!payload && !message.is_deleted;
   return (
-    <Dialog open={!!message && !!payload} onOpenChange={onOpenChange}>
+    <Dialog open={live} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(100dvh,56rem)] max-h-[100dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0 max-sm:rounded-none">
-        {message && payload ? (
+        {live && message && payload ? (
           <ResponsesBody
             key={message.id}
             messageId={message.id}
@@ -98,6 +185,7 @@ function ResponsesBody({
   });
   const data = query.data;
   const count = data?.responses.length ?? 0;
+  const labelOf: MemberLabel = (id) => actorLabel(id, nameFor) ?? "A member";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -121,7 +209,7 @@ function ResponsesBody({
             disabled={count === 0}
             getRows={() =>
               data
-                ? formResponsesExportRows(payload, data.responses, nameFor)
+                ? formResponsesExportRows(payload, data.responses, labelOf)
                 : []
             }
           />
@@ -129,7 +217,7 @@ function ResponsesBody({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
         {data ? (
-          <ResponsesTabs payload={payload} data={data} nameFor={nameFor} />
+          <ResponsesTabs payload={payload} data={data} labelOf={labelOf} />
         ) : query.isPending ? (
           <NestedLoading message="Loading responses…" sole />
         ) : (
@@ -150,11 +238,11 @@ function ResponsesBody({
 function ResponsesTabs({
   payload,
   data,
-  nameFor,
+  labelOf,
 }: {
   payload: FormPayload;
   data: FormResponses;
-  nameFor: NameResolver;
+  labelOf: MemberLabel;
 }) {
   const summary = useMemo(
     () => summarizeFormResponses(payload, data.responses),
@@ -241,7 +329,7 @@ function ResponsesTabs({
                   className="rounded-lg border border-border p-4"
                 >
                   <p className="text-base font-bold">
-                    {responderName(response.user_id, nameFor)}
+                    {labelOf(response.user_id)}
                   </p>
                   <dl className="mt-2 space-y-2">
                     {payload.questions.map((question, index) => {
@@ -278,9 +366,7 @@ function ResponsesTabs({
             {formNotRespondedLabel(data.not_responded.length)}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {data.not_responded
-              .map((id) => responderName(id, nameFor))
-              .join(", ")}
+            {data.not_responded.map(labelOf).join(", ")}
           </p>
         </section>
       ) : null}

@@ -534,6 +534,10 @@ describe("sign-up export (#3926 step 4)", () => {
     expect(canExportSignup({ ...own, is_deleted: true }, "u1", false)).toBe(
       false,
     );
+    // Not until the server has the card.
+    expect(canExportSignup({ ...own, _status: "pending" }, "u1", true)).toBe(
+      false,
+    );
   });
 
   it("lists each member per slot, in slot order and then sign-up order", () => {
@@ -544,7 +548,7 @@ describe("sign-up export (#3926 step 4)", () => {
         { user: "gone", slots: ["fri"], at: "2026-11-12T10:09:00Z" },
       ]),
       card,
-      (id) => ({ ann: "Ann Lee", bo: "Bo Park" })[id] ?? null,
+      (id) => ({ ann: "Ann Lee", bo: "Bo Park" })[id] ?? `Member ${id}`,
     );
     expect(rows).toEqual([
       {
@@ -554,7 +558,7 @@ describe("sign-up export (#3926 step 4)", () => {
       },
       {
         Slot: "Friday",
-        Name: "Former member",
+        Name: "Member gone",
         "Signed up at": "2026-11-12T10:09:00Z",
       },
       {

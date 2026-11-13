@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  FORMER_MEMBER_NAME,
   cardExportFilenamePrefix,
   fetchFormResponses,
   formAnswerText,
@@ -114,7 +113,7 @@ describe("form responses (#3926 step 4)", () => {
 
   it("exports one row per response with a numbered column per question", () => {
     const rows = formResponsesExportRows(card, responses, (id) =>
-      id === "ann" ? "Ann Lee" : id === "bo" ? "Bo Park" : null,
+      id === "ann" ? "Ann Lee" : id === "bo" ? "Bo Park" : `Member ${id}`,
     );
     expect(rows).toHaveLength(3);
     // Two questions titled "Room" stay two columns, in the form's order.
@@ -135,8 +134,8 @@ describe("form responses (#3926 step 4)", () => {
       "4. Room": "Quiet",
     });
     expect(rows[1]!["Answered at"]).toBe("2026-11-13T11:00:00.000Z");
-    // Someone the roster no longer has left the chapter.
-    expect(rows[2]!.Name).toBe(FORMER_MEMBER_NAME);
+    // The label is the caller's, so a row reads as the member does on screen.
+    expect(rows[2]!.Name).toBe(`Member ${responses[2]!.user_id}`);
   });
 
   it("names the export file from the card's kind and title", () => {

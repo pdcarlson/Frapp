@@ -21,7 +21,7 @@ import {
 } from "./polls";
 import type { PendingPollPicks } from "./polls";
 import type { ChatMessage } from "./types";
-import { responderName } from "./form-responses";
+import type { MemberLabel } from "./form-responses";
 
 /**
  * Sign-up sheet cards in chat (`kind: "signup"`, #3926), shared by web's
@@ -326,13 +326,13 @@ export const SIGNUP_EXPORT_SIGNED_UP_COLUMN = "Signed up at";
  * the card's slot order and then the order members first signed up. A sheet
  * names the Slot; a headcount names the Answer and adds each member's Note.
  * `Signed up at` is when the member first claimed on the card (ISO; their
- * row keeps it, so a later change doesn't move it). `nameOf` returns `null`
- * for someone off the roster, who reads as `FORMER_MEMBER_NAME`.
+ * row keeps it, so a later change doesn't move it). `labelOf` is the label
+ * the card shows for each member, so a row matches the name under its slot.
  */
 export function signupExportRows(
   message: ChatMessage,
   payload: SignupPayload,
-  nameOf: (userId: string) => string | null,
+  labelOf: MemberLabel,
 ): Record<string, string>[] {
   const tally = tallySignups(message, payload, null);
   const headcount = isHeadcountSignup(payload);
@@ -348,7 +348,7 @@ export function signupExportRows(
       const row: Record<string, string> = {
         [headcount ? SIGNUP_EXPORT_ANSWER_COLUMN : SIGNUP_EXPORT_SLOT_COLUMN]:
           slot.label,
-        [SIGNUP_EXPORT_NAME_COLUMN]: responderName(userId, nameOf),
+        [SIGNUP_EXPORT_NAME_COLUMN]: labelOf(userId),
       };
       if (headcount) row[SIGNUP_EXPORT_NOTE_COLUMN] = tally.notes[userId] ?? "";
       row[SIGNUP_EXPORT_SIGNED_UP_COLUMN] = firstClaimed.get(userId) ?? "";

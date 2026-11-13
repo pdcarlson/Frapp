@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FormCard } from "./form-card";
 import { FormFillHost } from "../form-fill-dialog";
+import { FormResponsesHost } from "../form-responses-dialog";
+import { memberFallbackLabel } from "@repo/hooks";
 
 const api = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -18,6 +20,16 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     ...actual,
     useFrappClient: () => ({ GET: api.GET, PUT: api.PUT }),
     useMyPermissions: () => ({ data: { permissions: api.permissions } }),
+  };
+});
+const exported = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    exportRows: async (...args: unknown[]) => {
+      exported.calls.push(args);
+    },
   };
 });
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -59,12 +71,16 @@ function form(extra: Record<string, unknown> = {}): ChatMessage {
 }
 
 function wrap(node: ReactNode) {
+  // The app's own query default (`query-provider.tsx`), so a read that must
+  // be fresh on every open is tested against the cache it really meets.
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
   });
   const tree = (inner: ReactNode) => (
     <QueryClientProvider client={client}>
-      <FormFillHost>{inner}</FormFillHost>
+      <FormFillHost>
+        <FormResponsesHost>{inner}</FormResponsesHost>
+      </FormFillHost>
     </QueryClientProvider>
   );
   const result = render(tree(node));
@@ -397,13 +413,20 @@ describe("FormCard responses (#3926 step 4)", () => {
           updated_at: "2026-11-13T10:00:00Z",
         },
         {
-          user_id: "gone",
+          user_id: "gone-member-id",
           answers: { room: "double" },
           created_at: "2026-11-13T11:00:00Z",
           updated_at: "2026-11-13T11:00:00Z",
         },
+        {
+          // Skipped the optional room question's sibling: answered notes only.
+          user_id: "u2",
+          answers: { notes: "Late arrival" },
+          created_at: "2026-11-13T12:00:00Z",
+          updated_at: "2026-11-13T12:00:00Z",
+        },
       ],
-      not_responded: ["u2", "u3"],
+      not_responded: ["u3", "unnamed-member"],
     },
   };
   const routeGets = () =>
@@ -437,23 +460,129 @@ describe("FormCard responses (#3926 step 4)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Responses" }));
     const dialog = await screen.findByRole("dialog");
-    expect(await within(dialog).findByText("2 responses")).toBeInTheDocument();
+    expect(await within(dialog).findByText("3 responses")).toBeInTheDocument();
     expect(api.GET).toHaveBeenCalledWith(
       "/v1/channels/messages/{messageId}/form-responses",
       { params: { path: { messageId: "m1" } } },
     );
-    // Summary: each option's count, and the text answer.
+    // Summary: a share of those who answered the question (2 of 3), not of
+    // every response, and the text answers.
+    expect(within(dialog).getAllByText("2 of 3 answered")).toHaveLength(2);
     expect(within(dialog).getAllByText("1 · 50%")).toHaveLength(2);
     expect(within(dialog).getByText("Near the stairs")).toBeInTheDocument();
     expect(
       within(dialog).getByText("Not answered yet (2)"),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Bo Park, Cy Diaz")).toBeInTheDocument();
-    // Individual: each responder by name; one off the roster has left.
+    // Someone the roster can't name is a current member here (only current
+    // readers haven't answered), so they get the shared fallback label.
+    expect(
+      within(dialog).getByText(
+        `Cy Diaz, ${memberFallbackLabel("unnamed-member")}`,
+      ),
+    ).toBeInTheDocument();
+    // Individual: each responder as chat names them everywhere else.
     await user.click(within(dialog).getByRole("tab", { name: "Individual" }));
     expect(within(dialog).getByText("Ann Lee")).toBeInTheDocument();
-    expect(within(dialog).getByText("Former member")).toBeInTheDocument();
-    expect(within(dialog).getByText("No answer")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(memberFallbackLabel("gone-member-id")),
+    ).toBeInTheDocument();
+    expect(within(dialog).getAllByText("No answer").length).toBeGreaterThan(0);
+  });
+
+  it("exports one row per response, named as on screen", async () => {
+    routeGets();
+    exported.calls = [];
+    const user = userEvent.setup();
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText("3 responses");
+    await user.click(within(dialog).getByRole("button", { name: /Export/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /CSV/ }));
+    expect(exported.calls).toHaveLength(1);
+    const [rows, prefix] = exported.calls[0]! as [
+      Record<string, string>[],
+      string,
+    ];
+    expect(prefix).toBe("form-formal-housing");
+    expect(rows.map((row) => row.Name)).toEqual([
+      "Ann Lee",
+      memberFallbackLabel("gone-member-id"),
+      "Bo Park",
+    ]);
+    expect(rows[0]).toMatchObject({
+      "1. What room do you want?": "Single",
+      "2. Anything else?": "Near the stairs",
+    });
+  });
+
+  it("holds Export until someone has answered", async () => {
+    api.GET.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith("form-responses")
+          ? { data: { responses: [], not_responded: ["u1"] } }
+          : { data: { response: null } },
+      ),
+    );
+    const user = userEvent.setup();
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText("0 responses");
+    expect(
+      within(dialog).getByRole("button", { name: /Export/ }),
+    ).toBeDisabled();
+  });
+
+  it("reads the responses again on every open", async () => {
+    routeGets();
+    const user = userEvent.setup();
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    const reads = () =>
+      api.GET.mock.calls.filter(([path]) =>
+        String(path).endsWith("form-responses"),
+      ).length;
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    await within(await screen.findByRole("dialog")).findByText("3 responses");
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    await waitFor(() => expect(reads()).toBe(2));
+  });
+
+  it("stays open when the timeline unmounts the card", async () => {
+    routeGets();
+    const user = userEvent.setup();
+    const { rerender } = wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    await within(await screen.findByRole("dialog")).findByText("3 responses");
+    // A virtualized row scrolled out of the window.
+    rerender(null);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("3 responses")).toBeInTheDocument();
+  });
+
+  it("holds Responses until the server has the card", () => {
+    routeGets();
+    wrap(
+      <FormCard
+        nameFor={nameFor}
+        message={form()}
+        viewerId="u9"
+        isConfirmed={false}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Responses" })).toBeDisabled();
   });
 
   it("says why when the responses can't be read", async () => {
