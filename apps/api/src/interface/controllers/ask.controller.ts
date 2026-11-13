@@ -224,6 +224,7 @@ export class AskController {
         actions: dto.actions === true,
         ...(dto.from ? { from: dto.from } : {}),
         ...(dto.effort === undefined ? {} : { effort: dto.effort }),
+        ...(dto.door === undefined ? {} : { door: dto.door }),
         enabledModules,
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader

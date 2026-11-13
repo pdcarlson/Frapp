@@ -182,7 +182,7 @@ describe('scriptedAskAgent', () => {
     ({
       kind: 'agent',
       messages: [{ role: 'user', content: 'Who is the treasurer?' }],
-      tools: ['search_chapter', 'roster', 'my_dues', 'pay_dues'].map(
+      tools: ['search_records', 'roster', 'my_dues', 'pay_dues'].map(
         (name) => ({ name, description: '', inputSchema: {} }),
       ),
       context: [],
@@ -194,7 +194,7 @@ describe('scriptedAskAgent', () => {
     expect((scriptedAskAgent(request([])) as Said).toolCalls).toEqual([
       {
         id: 'scripted-call-1',
-        name: 'search_chapter',
+        name: 'search_records',
         input: { query: 'Who is the treasurer?' },
       },
       { id: 'scripted-call-2', name: 'roster', input: {} },

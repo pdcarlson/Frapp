@@ -17,6 +17,7 @@ import type {
   AgentLoopOutcome,
 } from './agent/agent-loop.service';
 import type { AgentReadTool, AgentSource } from './agent/agent-tool';
+import { ASK_AGENT_PROMPT_VERSION } from './agent/ask-agent-prompt';
 import { AskService, type AskInput } from './ask.service';
 import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
@@ -103,6 +104,8 @@ function build(options: {
   roles?: { id: string; name: string; system_key?: string | null }[];
   /** What the tool loop yields, for a turn answered through it. */
   loop?: AgentLoopEvent[];
+  /** Whether the turn's trace was kept. Left out, it was. */
+  traced?: boolean;
   agentTools?: AgentReadTool[];
 }) {
   const retrieval = {
@@ -166,6 +169,7 @@ function build(options: {
       for (const part of options.loop ?? []) yield part;
     }),
   };
+  const trace = { record: jest.fn(async () => options.traced ?? true) };
   const service = new AskService(
     retrieval as never,
     gateway as never,
@@ -177,9 +181,11 @@ function build(options: {
     options.tools ?? [],
     loop as never,
     options.agentTools ?? [],
+    trace as never,
   );
   return {
     service,
+    trace,
     retrieval,
     gateway,
     consent,
@@ -1488,6 +1494,7 @@ describe('AskService', () => {
       stop: 'answered',
       rounds: [
         {
+          outcome: 'ok',
           inputTokens: 1,
           outputTokens: 1,
           cachedInputTokens: 0,
@@ -1514,6 +1521,7 @@ describe('AskService', () => {
           ],
         },
         {
+          outcome: 'ok',
           inputTokens: 1,
           outputTokens: 1,
           cachedInputTokens: 0,
@@ -1528,6 +1536,113 @@ describe('AskService', () => {
       events.map((event) =>
         event.type === 'status' ? event.step : event.type,
       );
+
+    describe('the trace of the turn (#4902)', () => {
+      const traceOf = (trace: { record: jest.Mock }) =>
+        (trace.record.mock.calls as unknown[][])[0]?.[0] as Record<
+          string,
+          unknown
+        >;
+
+      it('records what the turn did, with no text, and names it on the answer', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool(), agentTool({ name: 'my_dues' })],
+          loop: [{ type: 'end', outcome: outcome() }],
+        });
+        const { events, answer } = await run(service, {
+          door: 'chat_private',
+          history: [{ question: 'Who is president?', answer: 'Sam Ortiz.' }],
+        });
+
+        expect(trace.record).toHaveBeenCalledTimes(1);
+        const kept = traceOf(trace);
+        const start = events.find((event) => event.type === 'start');
+        expect(kept).toMatchObject({
+          askId: start?.type === 'start' ? start.ask_id : null,
+          chapterId: CHAPTER,
+          userId: USER,
+          door: 'chat_private',
+          effort: 'default',
+          promptVersion: ASK_AGENT_PROMPT_VERSION,
+          isFollowUp: true,
+          outcome: 'answered',
+          toolsOffered: ['roster', 'my_dues'],
+          sourcesRead: 1,
+          citationsKept: 1,
+          citationsDropped: 0,
+          readChat: false,
+          truncated: false,
+        });
+        expect(
+          (kept.steps as { kind: string; outcome: string }[]).map(
+            (step) => `${step.kind}:${step.outcome}`,
+          ),
+        ).toEqual(['model:ok', 'tool:ok', 'tool:error', 'model:ok']);
+        // Nothing anyone wrote is in it.
+        const written = JSON.stringify(kept);
+        expect(written).not.toContain('Dana');
+        expect(written).not.toContain('president');
+        expect(answer.ask_id).toBe(kept.askId);
+      });
+
+      it('leaves the id off an answer whose trace was not kept', async () => {
+        const { service } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome() }],
+          traced: false,
+        });
+        const { answer } = await run(service);
+        expect(answer.status).toBe('answered');
+        expect(answer.ask_id).toBeUndefined();
+      });
+
+      it('says a limit cut the turn short even when it then answered', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome({ stop: 'call_limit' }) }],
+        });
+        const { answer } = await run(service);
+        expect(answer.status).toBe('answered');
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'limit',
+          limit: 'tool_calls',
+        });
+      });
+
+      it('records a turn the member left as stopped', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [],
+        });
+        const events: AskStreamEvent[] = [];
+        for await (const event of service.ask(input(), NOW)) events.push(event);
+        expect(events.some((event) => event.type === 'done')).toBe(false);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped', steps: [] });
+      });
+
+      it('records a turn that threw by its kind, and still throws', async () => {
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          // eslint-disable-next-line require-yield
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            await Promise.resolve();
+            throw new LanguageModelError('overloaded', 'anthropic', {});
+          },
+        );
+        await expect(run(service)).rejects.toBeInstanceOf(LanguageModelError);
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'error',
+          errorKind: 'overloaded',
+        });
+      });
+
+      it('keeps no trace of a turn answered the one-shot way', async () => {
+        delete process.env.ASK_AGENT;
+        const { service, trace } = build({ passages: [passage()] });
+        await run(service);
+        expect(trace.record).not.toHaveBeenCalled();
+      });
+    });
 
     it('stays off unless the switch says on', async () => {
       process.env.ASK_AGENT = 'true';
@@ -1868,7 +1983,7 @@ describe('AskService', () => {
           NOW,
         );
         expect(receipt.tools).toEqual(['roster']);
-        expect(receipt.prompt_version).toBe('ask.agent@v1');
+        expect(receipt.prompt_version).toBe(ASK_AGENT_PROMPT_VERSION);
         expect(receipt.given.map((given) => given.title)).toEqual([
           'The member asking',
           'Roster (live data, read just now)',

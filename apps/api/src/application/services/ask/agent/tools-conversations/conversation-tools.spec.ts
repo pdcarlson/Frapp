@@ -376,12 +376,13 @@ describe('conversation and record tools', () => {
     });
 
     it('keeps at most the contract’s number of sources', () => {
-      const many = Array.from({ length: 45 }, (_, index) =>
+      const OVER = AGENT_RESULT_MAX_SOURCES + 25;
+      const many = Array.from({ length: OVER }, (_, index) =>
         source(`s${index}`, 'short'),
       );
       const fitted = fitSources(many);
       expect(fitted.sources).toHaveLength(AGENT_RESULT_MAX_SOURCES);
-      expect(fitted.dropped).toBe(45 - AGENT_RESULT_MAX_SOURCES);
+      expect(fitted.dropped).toBe(OVER - AGENT_RESULT_MAX_SOURCES);
       expect(fitted.cut).toBe(true);
     });
 
@@ -1628,7 +1629,7 @@ describe('conversation and record tools', () => {
 
     it('holds the list to the cap and says how many there are', async () => {
       const { tool } = build(
-        Array.from({ length: 30 }, (_, index) =>
+        Array.from({ length: AGENT_RESULT_MAX_SOURCES + 10 }, (_, index) =>
           row(
             `m-${index}`,
             new Date(
@@ -1638,11 +1639,15 @@ describe('conversation and record tools', () => {
         ),
       );
       const result = await tool.run(
-        { since: '2026-09-01', until: '' },
+        { since: '2026-06-01', until: '' },
         context,
       );
       expect(result.sources).toHaveLength(AGENT_RESULT_MAX_SOURCES);
-      expect(result.note).toMatch(/^Showing the newest 20 of 30 meetings/);
+      expect(result.note).toMatch(
+        new RegExp(
+          `^Showing the newest ${AGENT_RESULT_MAX_SOURCES} of ${AGENT_RESULT_MAX_SOURCES + 10} meetings`,
+        ),
+      );
     });
 
     it('holds a stretch to a year', async () => {

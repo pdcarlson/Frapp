@@ -87,6 +87,8 @@ export interface AgentCallTrace {
 
 /** One model call and what it asked for. */
 export interface AgentRoundTrace {
+  /** `refused`: the provider declined the round, and the turn ended there. */
+  outcome: 'ok' | 'refused';
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -233,6 +235,18 @@ export class AgentLoopService {
       if (result === null) throw new Error('An agent round had no result');
 
       if (result.status !== 'ok') {
+        // A declined round was still a call to the model. One the gateway
+        // would not make was not, and leaves no step.
+        if (result.status === 'refused') {
+          traces.push({
+            outcome: 'refused',
+            inputTokens: 0,
+            outputTokens: 0,
+            cachedInputTokens: 0,
+            ms: clock() - roundStartedAt,
+            calls: [],
+          });
+        }
         yield {
           type: 'end',
           outcome: outcome(
@@ -243,6 +257,7 @@ export class AgentLoopService {
         return;
       }
       const trace: AgentRoundTrace = {
+        outcome: 'ok',
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         cachedInputTokens: result.usage.cachedInputTokens,

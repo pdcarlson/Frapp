@@ -16717,17 +16717,17 @@
         ]
       }
     },
-    "/v1/ai/ask/posts": {
+    "/v1/ai/catch-up": {
       "post": {
-        "description": "The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.",
-        "operationId": "AskPostController_post_v1",
+        "description": "Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.",
+        "operationId": "ChatCatchUpController_catchUp_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AskPostDto"
+                "$ref": "#/components/schemas/ChatCatchUpRequestDto"
               }
             }
           }
@@ -16738,19 +16738,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AskPostOutcomeDto"
+                  "$ref": "#/components/schemas/ChatCatchUpDto"
                 }
               }
             }
           },
           "400": {
-            "description": "The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`)."
+            "description": "Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`)."
           },
           "403": {
-            "description": "The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`)."
+            "description": "The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`)."
           },
           "404": {
-            "description": "AI is off on this server (`ai.not_available`), or the channel does not exist."
+            "description": "AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter."
           },
           "default": {
             "description": "Error",
@@ -16768,7 +16768,7 @@
             "bearer": []
           }
         ],
-        "summary": "Post an Ask Frapp answer to a channel, or ask what posting would warn about",
+        "summary": "Summarize a channel's new messages, or one thread",
         "tags": [
           "AI"
         ]
@@ -16931,17 +16931,17 @@
         ]
       }
     },
-    "/v1/ai/catch-up": {
+    "/v1/ai/ask/posts": {
       "post": {
-        "description": "Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.",
-        "operationId": "ChatCatchUpController_catchUp_v1",
+        "description": "The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.",
+        "operationId": "AskPostController_post_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChatCatchUpRequestDto"
+                "$ref": "#/components/schemas/AskPostDto"
               }
             }
           }
@@ -16952,19 +16952,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatCatchUpDto"
+                  "$ref": "#/components/schemas/AskPostOutcomeDto"
                 }
               }
             }
           },
           "400": {
-            "description": "Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`)."
+            "description": "The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`)."
           },
           "403": {
-            "description": "The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`)."
+            "description": "The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`)."
           },
           "404": {
-            "description": "AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter."
+            "description": "AI is off on this server (`ai.not_available`), or the channel does not exist."
           },
           "default": {
             "description": "Error",
@@ -16982,7 +16982,7 @@
             "bearer": []
           }
         ],
-        "summary": "Summarize a channel's new messages, or one thread",
+        "summary": "Post an Ask Frapp answer to a channel, or ask what posting would warn about",
         "tags": [
           "AI"
         ]
@@ -30072,160 +30072,6 @@
           "amount"
         ]
       },
-      "AskPostDto": {
-        "type": "object",
-        "properties": {
-          "channel_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The channel to post in. The caller must be able to post there."
-          },
-          "receipt": {
-            "type": "string",
-            "maxLength": 200000,
-            "description": "The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request."
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning."
-          },
-          "acknowledged": {
-            "description": "The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "channel_id",
-          "receipt",
-          "confirm"
-        ]
-      },
-      "AskPostRestrictedDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Stable for the same source, for `acknowledged`."
-          },
-          "kind": {
-            "type": "string",
-            "description": "The kind of source, as an answer names it."
-          },
-          "title": {
-            "type": "string",
-            "description": "The source’s name, or the records’ (\"Your tasks\")."
-          }
-        },
-        "required": [
-          "key",
-          "kind",
-          "title"
-        ]
-      },
-      "AskPostOutcomeDto": {
-        "type": "object",
-        "properties": {
-          "posted": {
-            "type": "boolean",
-            "description": "Whether the answer is now in the channel."
-          },
-          "restricted": {
-            "description": "What the answer drew on that not everyone who can read the channel could open, as of this call.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AskPostRestrictedDto"
-            }
-          }
-        },
-        "required": [
-          "posted",
-          "restricted"
-        ]
-      },
-      "SetAskFeedbackDto": {
-        "type": "object",
-        "properties": {
-          "rating": {
-            "type": "string",
-            "enum": [
-              "up",
-              "down"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "wrong",
-              "missed",
-              "too_long",
-              "other"
-            ],
-            "nullable": true,
-            "description": "With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before."
-          }
-        },
-        "required": [
-          "rating"
-        ]
-      },
-      "AskFeedbackDto": {
-        "type": "object",
-        "properties": {
-          "ask_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "rating": {
-            "type": "string",
-            "enum": [
-              "up",
-              "down"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "wrong",
-              "missed",
-              "too_long",
-              "other"
-            ],
-            "nullable": true
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "ask_id",
-          "rating",
-          "reason",
-          "updated_at"
-        ]
-      },
-      "AskSignalDto": {
-        "type": "object",
-        "properties": {
-          "signal": {
-            "type": "string",
-            "enum": [
-              "retried",
-              "think_harder",
-              "source_opened",
-              "card_confirmed",
-              "card_dismissed"
-            ],
-            "description": "What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`."
-          }
-        },
-        "required": [
-          "signal"
-        ]
-      },
       "ChatCatchUpUnreadDto": {
         "type": "object",
         "properties": {
@@ -30392,6 +30238,160 @@
           "unverified_points",
           "covers_from",
           "covers_to"
+        ]
+      },
+      "SetAskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true,
+            "description": "With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before."
+          }
+        },
+        "required": [
+          "rating"
+        ]
+      },
+      "AskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "ask_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "ask_id",
+          "rating",
+          "reason",
+          "updated_at"
+        ]
+      },
+      "AskSignalDto": {
+        "type": "object",
+        "properties": {
+          "signal": {
+            "type": "string",
+            "enum": [
+              "retried",
+              "think_harder",
+              "source_opened",
+              "card_confirmed",
+              "card_dismissed"
+            ],
+            "description": "What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`."
+          }
+        },
+        "required": [
+          "signal"
+        ]
+      },
+      "AskPostDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to post in. The caller must be able to post there."
+          },
+          "receipt": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning."
+          },
+          "acknowledged": {
+            "description": "The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "channel_id",
+          "receipt",
+          "confirm"
+        ]
+      },
+      "AskPostRestrictedDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Stable for the same source, for `acknowledged`."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The kind of source, as an answer names it."
+          },
+          "title": {
+            "type": "string",
+            "description": "The source’s name, or the records’ (\"Your tasks\")."
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "title"
+        ]
+      },
+      "AskPostOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "posted": {
+            "type": "boolean",
+            "description": "Whether the answer is now in the channel."
+          },
+          "restricted": {
+            "description": "What the answer drew on that not everyone who can read the channel could open, as of this call.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskPostRestrictedDto"
+            }
+          }
+        },
+        "required": [
+          "posted",
+          "restricted"
         ]
       },
       "MemberNudgeDto": {

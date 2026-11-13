@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_STREAM_VERSION,
   type AskAnswer,
+  type AskDoor,
   type AskEffort,
   type AskEntity,
   type AskFrom,
@@ -51,8 +52,10 @@ import { MemberService } from '../member.service';
 import { RbacService } from '../rbac.service';
 import {
   AgentLoopService,
+  type AgentLoopEvent,
   type AgentLoopOutcome,
 } from './agent/agent-loop.service';
+import { agentTurnTrace, type AgentTurnEnd } from './agent/agent-turn-trace';
 import {
   AGENT_READ_TOOLS,
   type AgentEntity,
@@ -64,6 +67,7 @@ import {
   askAgentSystem,
 } from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
+import { AskTraceService } from './observe/ask-trace.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
   ASK_ASKER_SOURCE_TITLE,
@@ -161,6 +165,8 @@ export interface AskInput {
   from?: AskFrom;
   /** How hard to work on it. Carried to here and not read yet (#4899). */
   effort?: AskEffort;
+  /** Where the member asked from. Counted in the turn's trace, never read. */
+  door?: AskDoor;
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The asker's IANA time zone. */
@@ -422,6 +428,7 @@ export class AskService {
     private readonly loop: AgentLoopService,
     @Inject(AGENT_READ_TOOLS)
     private readonly agentTools: readonly AgentReadTool[],
+    private readonly trace: AskTraceService,
   ) {}
 
   /**
@@ -634,11 +641,33 @@ export class AskService {
     const context = asker ? [asker] : [];
     const titleOf = (source: AgentSource) =>
       agentSourceTitle(source, input.timeZone);
+    // What the turn's trace says of it beside what the loop did (#4902).
+    // Every way out below this line records one, and none holds any text.
+    const began = Date.now();
+    const traced = (end: AgentTurnEnd): Promise<boolean> =>
+      this.trace.record(
+        agentTurnTrace(
+          {
+            askId,
+            chapterId: input.chapterId,
+            userId: input.userId,
+            door: input.door ?? 'ask',
+            effort: input.effort ?? 'default',
+            task: 'ask.agent',
+            promptVersion: ASK_AGENT_PROMPT_VERSION,
+            startedAt: now,
+            durationMs: Date.now() - began,
+            isFollowUp: (input.history?.length ?? 0) > 0,
+            toolsOffered: offered.map((tool) => tool.name),
+          },
+          end,
+        ),
+      );
     const reads: string[] = [];
     let pending = '';
     let writing = false;
     let outcome: AgentLoopOutcome | null = null;
-    for await (const part of this.loop.run({
+    const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
       system: askAgentSystem(longDate(now, input.timeZone), asker !== null),
@@ -657,7 +686,21 @@ export class AskService {
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
-    })) {
+    });
+    for (;;) {
+      let next: IteratorResult<AgentLoopEvent, void>;
+      try {
+        next = await turn.next();
+      } catch (error) {
+        await traced({
+          kind: 'error',
+          errorKind:
+            error instanceof LanguageModelError ? error.kind : 'unknown',
+        });
+        throw error;
+      }
+      if (next.done) break;
+      const part = next.value;
       if (part.type === 'text') {
         pending += part.delta;
         if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
@@ -685,7 +728,10 @@ export class AskService {
       } else outcome = part.outcome;
     }
     // The loop ends with nothing for a member who left.
-    if (outcome === null) return;
+    if (outcome === null) {
+      await traced({ kind: 'stopped' });
+      return;
+    }
     if (pending && outcome.result.status === 'ok') {
       if (!writing) yield this.step('writing');
       yield event({ type: 'text', delta: pending });
@@ -735,6 +781,17 @@ export class AskService {
       now,
       [...context, ...entries.map((entry) => entry.model)],
     );
+    // An answer can be rated only when its trace was kept, so the id the
+    // thumbs name goes out only then (`AskFeedbackService`).
+    const kept = await traced({
+      kind: 'ended',
+      outcome,
+      status: answer.status,
+      citationsKept: answer.citations.length,
+      readChat: answer.read_chat === true,
+      truncated: answer.truncated,
+    });
+    if (kept) answer.ask_id = askId;
     yield this.done(answer);
   }
 

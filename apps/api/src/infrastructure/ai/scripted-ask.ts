@@ -162,7 +162,7 @@ export function scriptedAskAgent(request: LanguageModelRequest): ScriptedReply {
     .map((tool) => tool.name)
     .filter(
       (name) =>
-        name === 'search_chapter' ||
+        name === 'search_records' ||
         (TOOL_KEYWORDS[name] ?? []).some((keyword) => asked.has(keyword)),
     );
   return {
@@ -170,7 +170,7 @@ export function scriptedAskAgent(request: LanguageModelRequest): ScriptedReply {
     toolCalls: names.map((name, index) => ({
       id: `scripted-call-${index + 1}`,
       name,
-      input: name === 'search_chapter' ? { query: question.slice(0, 300) } : {},
+      input: name === 'search_records' ? { query: question.slice(0, 200) } : {},
     })),
   };
 }

@@ -104,6 +104,8 @@ const CALLS = new Set([
   // which runs only what it was offered (`agent/agent-loop.service.ts`).
   'agentTools.filter',
   'loop.run',
+  // The turn's trace (#4902): names, sizes and counts, and no text.
+  'trace.record',
   // The agent's chapter tools (#4901, `agent/tools-chapter/`): reads of
   // people, tasks, events, attendance, points, hours and dues, each through
   // the service its own page's route calls. The ones above that these tools
@@ -178,7 +180,6 @@ function sourcesIn(dir: string): string[] {
 describe('Asking never posts to a channel or notifies (#4713)', () => {
   const sources = [
     ...sourcesIn(join(SERVICES, 'ask')),
-    ...sourcesIn(join(SERVICES, 'ask', 'agent', 'tools-chapter')),
     ...sourcesIn(join(SERVICES, 'act')),
     join(CONTROLLERS, 'ask.controller.ts'),
   ];
@@ -188,7 +189,7 @@ describe('Asking never posts to a channel or notifies (#4713)', () => {
     expect(named).toContain('ask.service.ts');
     expect(named).toContain('ask-conversation.service.ts');
     expect(named).toContain('agent-loop.service.ts');
-    expect(named).toContain('interim-tools.ts');
+    expect(named).toContain('agent-turn-trace.ts');
     expect(named).toContain('act.service.ts');
     expect(named).toContain('ask.controller.ts');
   });

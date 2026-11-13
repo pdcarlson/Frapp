@@ -4,10 +4,8 @@ import {
   AGENT_READ_TOOLS,
   type AgentReadTool,
 } from '../../application/services/ask/agent/agent-tool';
-import {
-  SearchChapterAgentTool,
-  agentToolFromAskTool,
-} from '../../application/services/ask/agent/interim-tools';
+import { CHAPTER_AGENT_TOOLS } from '../../application/services/ask/agent/tools-chapter';
+import { CONVERSATION_AGENT_TOOLS } from '../../application/services/ask/agent/tools-conversations';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import {
   ASK_TOOLS,
@@ -38,6 +36,9 @@ import { ActModule } from '../act/act.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { AiModule } from '../ai/ai.module';
+import { AskConversationToolsModule } from '../ask-conversation-tools/ask-conversation-tools.module';
+import { AskObserveModule } from '../ask-observe/ask-observe.module';
+import { ChapterAgentToolsModule } from './chapter-agent-tools.module';
 import { CorpusModule } from '../corpus/corpus.module';
 import { EventModule } from '../event/event.module';
 import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
@@ -79,6 +80,10 @@ import { TaskModule } from '../task/task.module';
     MeetingModule,
     ActModule,
     AnalyticsModule,
+    // The tool loop's reads, and the trace it leaves of each turn.
+    AskConversationToolsModule,
+    ChapterAgentToolsModule,
+    AskObserveModule,
   ],
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
@@ -94,22 +99,15 @@ import { TaskModule } from '../task/task.module';
       useFactory: (...tools: AskTool[]) => tools,
       inject: [...ASK_TOOL_CLASSES],
     },
-    // The tool loop (epic #4898), off unless `ASK_AGENT=on`. Until the tool
-    // slices land it reads with the search and the same six live reads.
+    // The tool loop (epic #4898), off unless `ASK_AGENT=on`. What it may
+    // read is these two lists and nothing else, in the order a model is
+    // shown them: conversations and records, then people, tasks, events and
+    // standing. `AskService` offers a member only the ones they may use.
     AgentLoopService,
-    SearchChapterAgentTool,
     {
       provide: AGENT_READ_TOOLS,
-      useFactory: (
-        search: SearchChapterAgentTool,
-        tools: AskTool[],
-      ): AgentReadTool[] => [
-        search,
-        ...tools
-          .filter((tool) => tool.effect === 'read')
-          .map((tool) => agentToolFromAskTool(tool) as AgentReadTool),
-      ],
-      inject: [SearchChapterAgentTool, ASK_TOOLS],
+      useFactory: (...tools: AgentReadTool[]) => tools,
+      inject: [...CONVERSATION_AGENT_TOOLS, ...CHAPTER_AGENT_TOOLS],
     },
     {
       provide: ASK_DIAGNOSTICS_REPOSITORY,
