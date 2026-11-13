@@ -79,6 +79,13 @@ export interface ChannelSummary {
    */
   who_can_see?: string[] | null;
   who_can_post?: string[] | null;
+  /**
+   * Whether the caller may post here (`ChatChannel.can_post`, which folds in
+   * read-only, the Alumni rule and the audit log). Present only when the row
+   * says a boolean, so an older API's row reads as before; the Forward picker
+   * (#4864) offers a row unless this is `false`.
+   */
+  can_post?: boolean;
 }
 
 /**
@@ -155,6 +162,9 @@ export function selectChannels(data: unknown): ChannelSummary[] {
           ? { display_order: row.display_order }
           : {}),
         ...(row.is_audit_log === true ? { is_audit_log: true } : {}),
+        ...(typeof row.can_post === "boolean"
+          ? { can_post: row.can_post }
+          : {}),
         ...accessLists(row),
       },
     ];

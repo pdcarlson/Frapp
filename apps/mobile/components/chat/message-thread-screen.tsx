@@ -19,9 +19,11 @@ import {
   applyBlockList,
   isBlockableSender,
   visibleTypingUsers,
+  withForwardedMasked,
   type BlockState,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { forwardTargetOf } from "@/lib/chat/forward";
 import {
   channelAllowsThreadReplies,
   copyableText,
@@ -265,6 +267,7 @@ export function MessageThreadScreen({
     viewerId,
     nameFor,
     channelTitle,
+    blockState,
   });
   const rows = useMemo(
     () => applyBlockList(thread.messages, blockState, viewerId).rows,
@@ -629,9 +632,18 @@ export function MessageThreadScreen({
       }
       setActionTarget({
         messageId: message.id,
-        copyText: copyableText(message),
+        // As the channel's: a forward's copy only where the list clears it.
+        copyText: copyableText(
+          withForwardedMasked(message, blockState, viewerId),
+        ),
         canReply: false,
         canStartThread: false,
+        forward: forwardTargetOf(
+          message,
+          actions.canForward,
+          blockState,
+          viewerId,
+        ),
         canEdit: actions.canEdit,
         canMention: false,
         canDelete: actions.canDelete,
@@ -647,6 +659,7 @@ export function MessageThreadScreen({
     },
     [
       viewerId,
+      blockState,
       isMember,
       rootId,
       postCapability.canPost,
@@ -1004,6 +1017,8 @@ export function MessageThreadScreen({
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        nameFor={nameFor}
+        viewerId={viewerId}
         onSenderDeparted={markDeparted}
         onEdit={staging.startEdit}
         onDelete={onDelete}

@@ -178,6 +178,8 @@ export interface RawChatMessage {
   thread_recent_sender_ids?: string[] | null;
   /** The parent's newest reply not deleted (#4297); see `ThreadSummary.last_reply`. */
   thread_last_reply?: RawThreadLastReply | null;
+  /** The copy of the message this row forwards (#4864); see `ChatMessage.forwarded_from`. */
+  forwarded_from?: RawForwardedFrom | null;
   /**
    * Whether the server evaluated the viewer's block list and found this row's
    * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
@@ -315,6 +317,15 @@ export interface ChatMessage {
    * carries it.
    */
   thread?: ThreadSummary | null;
+  /**
+   * When this message forwards another (#4864), the server's copy of the
+   * original as it was at forward time; `null` on every other message. A
+   * copy, not a live reference: an edit to the original leaves it alone,
+   * and a delete blanks it (`ForwardedFrom.deleted`). The row's own
+   * `content` is the forwarder's comment, and may be empty. Optional so a
+   * hand-built message need not name it; `normalizeRow` always sets it.
+   */
+  forwarded_from?: ForwardedFrom | null;
   /**
    * Whether the **server** masked this row for the viewer, set on every row
    * rather than only the masked ones (#2257).
@@ -504,6 +515,89 @@ export interface ThreadLastReply {
   sender_blocked: boolean;
 }
 
+/** A forward's copy of its original, as the API serves it (#4864). */
+export interface RawForwardedFrom {
+  message_id?: unknown;
+  channel_id?: unknown;
+  sender_id?: unknown;
+  author_name?: unknown;
+  content?: unknown;
+  gif?: unknown;
+  attachment_count?: unknown;
+  created_at?: unknown;
+  deleted?: unknown;
+  sender_blocked?: unknown;
+}
+
+/**
+ * A forward's copy of its original, read defensively (#4864,
+ * `spec/behavior/chat/README.md` § Forward).
+ */
+export interface ForwardedFrom {
+  /** The original message's id. */
+  message_id: string;
+  /**
+   * The channel the original lives in. Never a name: a reader names it only
+   * when its own channel list holds this id, so a private channel's name
+   * never reaches someone outside it.
+   */
+  channel_id: string | null;
+  /** The original's author, or `null` (the system actor, an unlinked import, a blanked copy). */
+  sender_id: string | null;
+  /** The author's display name at forward time; "Deleted User" after their account is gone. */
+  author_name: string | null;
+  /** The original's text as written (markdown and `@handles` included); may be empty. */
+  content: string;
+  /** The original's GIF, under the same checks as `metadata.gif`. */
+  gif: MessageGif | null;
+  /** How many files the original carried. The files themselves stay with it. */
+  attachment_count: number;
+  /** The original's `created_at`. */
+  created_at: string;
+  /**
+   * The original was deleted, so the server blanked this copy: no author,
+   * text, GIF or files. Readers say so (`FORWARDED_ORIGINAL_DELETED`), and no
+   * block list applies to it, since nothing is left to hide.
+   */
+  deleted: boolean;
+  /**
+   * The server's verdict that it withheld this copy because the viewer
+   * blocked its author (`content` and `gif` then empty), as
+   * `ThreadLastReply.sender_blocked` is for a thread preview. Only a REST
+   * read sets it; `mergeServerRow` carries it onto the row's next Realtime
+   * echo. A client applies its own list too (`forwardedSnapshotVisible`).
+   */
+  sender_blocked: boolean;
+}
+
+/**
+ * A forward's copy of its original, or `null` when the row carries none or
+ * one this client can't read: without the original's id there is no copy.
+ */
+export function forwardedFromOf(raw: unknown): ForwardedFrom | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as RawForwardedFrom;
+  if (typeof r.message_id !== "string" || r.message_id.length === 0) {
+    return null;
+  }
+  const deleted = r.deleted === true;
+  return {
+    message_id: r.message_id,
+    channel_id: typeof r.channel_id === "string" ? r.channel_id : null,
+    sender_id: !deleted && typeof r.sender_id === "string" ? r.sender_id : null,
+    author_name:
+      !deleted && typeof r.author_name === "string" ? r.author_name : null,
+    content: !deleted && typeof r.content === "string" ? r.content : "",
+    gif: deleted ? null : messageGifOf({ gif: r.gif }),
+    attachment_count: deleted
+      ? 0
+      : attachmentCount({ attachment_count: r.attachment_count }),
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+    deleted,
+    sender_blocked: !deleted && r.sender_blocked === true,
+  };
+}
+
 /**
  * The parent's newest reply, or `null` when the row carries none or one this
  * client can't read: without its id there is no reply to classify.
@@ -595,6 +689,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     mentions: mentionIds(row.mentions),
     thread_root_id: row.thread_root_id ?? null,
     thread: threadSummaryOf(row),
+    forwarded_from: forwardedFromOf(row.forwarded_from),
     // Absent means the row reached us by a path with no viewer to mask against
     // (the Postgres Changes echo), never "the sender is fine" — see
     // `RawChatMessage.sender_blocked`.
@@ -667,6 +762,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     thread_last_reply_at: message.thread?.last_reply_at ?? null,
     thread_recent_sender_ids: message.thread?.recent_sender_ids ?? [],
     thread_last_reply: message.thread?.last_reply ?? null,
+    forwarded_from: message.forwarded_from ?? null,
     ...(message._blockEvaluated
       ? { sender_blocked: message.sender_blocked }
       : {}),
@@ -893,6 +989,9 @@ export function optimisticMessage(args: {
     kind: args.kind ?? "text",
     payload: args.payload ?? null,
     reply_to_id: args.replyToId ?? null,
+    // A forward is sent by its own route, which answers with the server's
+    // row; nothing optimistic carries a copy.
+    forwarded_from: null,
     is_pinned: false,
     pinned_at: null,
     flag: null,

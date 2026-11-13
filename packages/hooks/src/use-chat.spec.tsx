@@ -13,6 +13,9 @@ import {
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
   useUploadSignedUrl,
+  useForwardMessage,
+  CHANNEL_LATEST_MESSAGES_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
 } from "./use-chat";
@@ -837,5 +840,99 @@ describe("useUploadSignedUrl", () => {
       body: file,
       headers: { "content-type": "application/msword" },
     });
+  });
+});
+
+describe("useForwardMessage (#4864)", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  const created = { id: "m2", channel_id: "chan-dest", content: "" };
+
+  it("posts the destination, the comment and the caller's key, then re-reads the two summaries exactly", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    const row = await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "look",
+      clientMessageId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(row).toEqual(created);
+    expect(mockPost).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}/forward",
+      {
+        params: { path: { messageId: "m1" } },
+        body: {
+          channel_id: "chan-dest",
+          content: "look",
+          client_message_id: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+    // Never the prefix, which would re-read the list and every channel.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["channels"] });
+  });
+
+  it("sends no content for a blank comment and draws a key when none is given", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "   ",
+    });
+
+    const body = mockPost.mock.calls[0]![1].body;
+    expect(body).not.toHaveProperty("content");
+    expect(body.client_message_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("throws with the status on a refusal and re-reads nothing", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Not allowed" },
+      response: { ok: false, status: 403 },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    await expect(
+      result.current.mutateAsync({ messageId: "m1", channelId: "chan-dest" }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });

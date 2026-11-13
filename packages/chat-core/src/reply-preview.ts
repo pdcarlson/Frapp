@@ -1,4 +1,5 @@
-import type { ChatMessageKind, MessageGif } from "./types";
+import { FORWARDED_LABEL } from "./forwarded";
+import type { ChatMessageKind, ForwardedFrom, MessageGif } from "./types";
 
 /**
  * Tombstone a deleted message shows in a quote and in the bubble that
@@ -138,15 +139,47 @@ export type MessagePreviewSource = {
   kind?: ChatMessageKind | null;
   /** A GIF message (#4631) has no text, and quotes as "GIF". */
   gif?: MessageGif | null;
+  /**
+   * A forward's copy of its original (#4864). With no comment of its own the
+   * message previews as the copy: "Forwarded: <text>", "Forwarded a GIF", or
+   * "Forwarded a message" (a file-only original, a deleted one, or one the
+   * viewer's block list masks; see `forwardedSnapshotVisible`).
+   */
+  forwarded_from?: Pick<
+    ForwardedFrom,
+    "content" | "gif" | "deleted" | "sender_blocked"
+  > | null;
 };
+
+/** One flattened line of a body, or `""`. */
+function previewLine(content: string | null | undefined): string {
+  return flattenMarkdown(content ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** What an empty-comment forward previews as. */
+function forwardedPreviewText(
+  forwarded: NonNullable<MessagePreviewSource["forwarded_from"]>,
+): string {
+  const hidden = forwarded.deleted || forwarded.sender_blocked;
+  if (!hidden) {
+    const text = previewLine(forwarded.content);
+    if (text.length > 0) return `${FORWARDED_LABEL}: ${text}`;
+    if (forwarded.gif) return `${FORWARDED_LABEL} a GIF`;
+  }
+  return `${FORWARDED_LABEL} a message`;
+}
 
 export function replyPreviewText(message: MessagePreviewSource): string {
   if (message.is_deleted) return DELETED_MESSAGE_PLACEHOLDER;
 
-  const text = flattenMarkdown(message.content ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = previewLine(message.content);
   if (text.length > 0) return text;
+
+  if (message.forwarded_from) {
+    return forwardedPreviewText(message.forwarded_from);
+  }
 
   if (message.gif) return "GIF";
 

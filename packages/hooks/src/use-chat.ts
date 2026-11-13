@@ -1,6 +1,6 @@
 "use client";
 
-import { throwUnlessOk } from "@repo/api-sdk";
+import { randomClientId, throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
   isDirectChannel,
@@ -1346,6 +1346,76 @@ export function useUnbookmarkMessage() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: bookmarkKeys.lists(chapterId!),
+      });
+    },
+  });
+}
+
+/** What {@link useForwardMessage} sends (#4864). */
+export interface ForwardMessageInput {
+  /** The original message's server id. */
+  messageId: string;
+  /** The channel or DM it goes to; may be the channel it is in. */
+  channelId: string;
+  /** The forwarder's optional comment, posted as the new message's text. */
+  content?: string;
+  /**
+   * The idempotency key. Keep one per draft (the same destination and
+   * comment) so a retry after a lost response answers the forward already
+   * made instead of posting a second; a fresh one is drawn when omitted.
+   */
+  clientMessageId?: string;
+}
+
+/**
+ * Forward a message to a channel or DM, with an optional comment (#4864,
+ * `spec/behavior/chat/README.md` § Forward). The server posts it as an
+ * ordinary message from the forwarder, so it arrives in the destination's
+ * timeline over Realtime like any post; the caller may also merge the
+ * returned row into that channel's cache (this package doesn't know chat-core's
+ * cache shape).
+ *
+ * A failure throws with the HTTP status on it (`throwUnlessOk`), so the
+ * caller can tell a refusal (403 / 404) from one worth retrying.
+ *
+ * On success it re-reads the two per-channel summaries exactly, the Messages
+ * order and preview and the unread counts, as a message arriving does
+ * (`createChatActivityHandler`), never the `["channels"]` prefix.
+ */
+export function useForwardMessage() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "forward-message"],
+    mutationFn: async ({
+      messageId,
+      channelId,
+      content,
+      clientMessageId,
+    }: ForwardMessageInput) => {
+      const comment = content?.trim() ? content : undefined;
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/forward",
+        {
+          params: { path: { messageId } },
+          body: {
+            channel_id: channelId,
+            ...(comment !== undefined ? { content: comment } : {}),
+            client_message_id: clientMessageId ?? randomClientId(),
+          },
+        },
+      );
+      throwUnlessOk(result);
+      return result.data!;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+        exact: true,
       });
     },
   });

@@ -31,7 +31,10 @@ import {
 } from '#domain/repositories/chat-thread.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { decidePush } from '../services/push-rules';
-import { chatPushPreview } from '../services/chat-push-preview';
+import {
+  chatPushPreview,
+  type ChatPushForwardedCopy,
+} from '../services/chat-push-preview';
 import {
   isAnnouncementChannel,
   isDirectChannel,
@@ -85,6 +88,11 @@ interface ChatMessageRow {
   client_message_id?: string | null;
   /** The parent when this row is a thread reply (#3785); pushes only its followers. */
   thread_root_id?: string | null;
+  /**
+   * The forwarded copy when this row is a forward (#4864): a forward with no
+   * comment previews it, withheld from a recipient who blocked its author.
+   */
+  forwarded_from?: (ChatPushForwardedCopy & { sender_id?: unknown }) | null;
   created_at: string;
 }
 
@@ -542,6 +550,24 @@ export class ChatPushWorkerService
 
     const presenceMap = this.readPresence(channel.id);
     const senderPreview = chatPushPreview(row);
+    // A forward with no comment previews the copy (#4864), whose author is
+    // not the sender: a recipient who blocked that author gets the preview
+    // without their words. Fails closed like the block read above.
+    const withheldPreview = chatPushPreview(row, { withholdForwarded: true });
+    const forwardedAuthor =
+      senderPreview !== withheldPreview &&
+      typeof row.forwarded_from?.sender_id === 'string'
+        ? row.forwarded_from.sender_id
+        : null;
+    const copyReaders = forwardedAuthor
+      ? new Set(
+          await this.chatBlocks.filterOutBlockers(
+            channel.chapter_id,
+            forwardedAuthor,
+            recipientIds,
+          ),
+        )
+      : null;
     // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
     // time. Until C1 this read went through a structural cast over a column
     // that had never existed and was typed as a map, so it resolved to `{}`
@@ -609,7 +635,9 @@ export class ChatPushWorkerService
       const payload = this.buildPayload(
         channel,
         row.sender_id,
-        senderPreview,
+        !copyReaders || copyReaders.has(recipientId)
+          ? senderPreview
+          : withheldPreview,
         burst,
         await senderName,
         threadRootId,

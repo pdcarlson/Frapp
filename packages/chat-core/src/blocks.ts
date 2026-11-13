@@ -51,6 +51,7 @@ import {
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
+  type ForwardedFrom,
   type RawChatMessage,
   type ReactionState,
 } from "./types";
@@ -181,6 +182,94 @@ export function threadPreviewVisible(
 }
 
 /**
+ * The placeholder a forward's card draws for a copy the viewer's block list
+ * hides (#4864), or `null` when the copy may be drawn.
+ *
+ * The copy is its original author's words riding on the forwarder's row, so
+ * it is classified as the author's own message would be, with the row's
+ * provenance and the server's verdict on the copy itself, the way
+ * `threadPreviewVisible` classifies a thread card's preview: a REST read
+ * withholds a blocked author's copy (`sender_blocked: true`, carried onto
+ * later echoes by `mergeServerRow`), and the row's Realtime echo carries it
+ * raw. The words match `hiddenQuoteText`: the tombstone's for a blocked
+ * author, "Message hidden" while the list can't be read. A copy whose
+ * original was deleted holds nothing to hide, so it is never masked.
+ */
+export function hiddenForwardedText(
+  forwarded: Pick<
+    ForwardedFrom,
+    "message_id" | "sender_id" | "sender_blocked" | "deleted"
+  >,
+  message: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): string | null {
+  if (forwarded.deleted) return null;
+  const author = { sender_id: forwarded.sender_id };
+  switch (
+    classifyMessage(
+      {
+        id: forwarded.message_id,
+        sender_id: forwarded.sender_id,
+        sender_blocked: forwarded.sender_blocked,
+        _blockEvaluated: message._blockEvaluated,
+      },
+      blockState,
+      viewerId,
+    )
+  ) {
+    case "visible":
+      return null;
+    case "held":
+      return HELD_QUOTE_TEXT;
+    case "tombstone":
+      return tombstoneCanUnblock(author, blockState)
+        ? TOMBSTONE_TEXT
+        : TOMBSTONE_STALE_TEXT;
+  }
+}
+
+/** Whether a forward's copy may be drawn: `hiddenForwardedText` is `null`. */
+export function forwardedSnapshotVisible(
+  forwarded: Pick<
+    ForwardedFrom,
+    "message_id" | "sender_id" | "sender_blocked" | "deleted"
+  >,
+  message: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): boolean {
+  return hiddenForwardedText(forwarded, message, blockState, viewerId) === null;
+}
+
+/**
+ * The message with its forward's copy emptied when the viewer's list hides
+ * it (#4864): no text, GIF or files, and `sender_blocked: true`, the shape
+ * the server masks it to. Anything that reads the copy without drawing the
+ * card (a reply quote's `replyPreviewText`, "Copy text"'s `copyableText`)
+ * goes through this, so it can't print what the card hides. Returns the same
+ * object when there is nothing to mask.
+ */
+export function withForwardedMasked<
+  M extends Pick<ChatMessage, "forwarded_from" | "_blockEvaluated">,
+>(message: M, blockState: BlockState, viewerId: string | null): M {
+  const copy = message.forwarded_from;
+  if (!copy || forwardedSnapshotVisible(copy, message, blockState, viewerId)) {
+    return message;
+  }
+  return {
+    ...message,
+    forwarded_from: {
+      ...copy,
+      content: "",
+      gif: null,
+      attachment_count: 0,
+      sender_blocked: true,
+    },
+  };
+}
+
+/**
  * Whether a tombstone should offer Unblock.
  *
  * The one case with nothing to undo is a server-masked copy left over from
@@ -295,6 +384,10 @@ export function contradictingRows(
       message.sender_blocked ? message.sender_id : null,
       message.thread?.last_reply?.sender_blocked
         ? message.thread.last_reply.sender_id
+        : null,
+      // A forward's copy of a blocked author's message (#4864).
+      message.forwarded_from?.sender_blocked
+        ? message.forwarded_from.sender_id
         : null,
     ];
     if (
@@ -449,9 +542,31 @@ export function replaceMaskedCopies(
       fresh.sender_blocked === false
     ) {
       next = mergeServerRow(next, row);
+      continue;
+    }
+    // A forward whose copy of this sender's message the server withheld
+    // (#4864), now served clear.
+    const copy = row.forwarded_from;
+    if (
+      typeof row.sender_blocked === "boolean" &&
+      maskedForwardFrom(cached, senderId) &&
+      copy?.sender_id === senderId &&
+      copy.sender_blocked === false
+    ) {
+      next = mergeServerRow(next, row);
     }
   }
   return next;
+}
+
+/** A REST-evaluated forward whose copy the server withheld for `senderId`. */
+function maskedForwardFrom(message: ChatMessage, senderId: string): boolean {
+  const copy = message.forwarded_from;
+  return (
+    message._blockEvaluated &&
+    copy?.sender_blocked === true &&
+    copy.sender_id === senderId
+  );
 }
 
 /** A REST-evaluated parent whose preview the server withheld for `senderId`. */
@@ -480,7 +595,8 @@ export function hasMaskedCopyFrom(
       (message.sender_id === senderId &&
         message._blockEvaluated &&
         message.sender_blocked) ||
-      maskedPreviewFrom(message, senderId),
+      maskedPreviewFrom(message, senderId) ||
+      maskedForwardFrom(message, senderId),
   );
 }
 
@@ -703,7 +819,13 @@ function oldestMaskedCopyTime(
       message.sender_blocked;
     // A parent holding this sender's withheld preview is read back to by its
     // own place in the thread (#4297).
-    if (!ownMasked && !maskedPreviewFrom(message, senderId)) continue;
+    if (
+      !ownMasked &&
+      !maskedPreviewFrom(message, senderId) &&
+      !maskedForwardFrom(message, senderId)
+    ) {
+      continue;
+    }
     const time = Date.parse(message.created_at);
     if (oldest === null || time < oldest) oldest = time;
   }

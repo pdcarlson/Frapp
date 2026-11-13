@@ -4567,6 +4567,62 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/forward": {
+      "post": {
+        "operationId": "ChatController_forwardMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForwardMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}/close": {
       "post": {
         "operationId": "ChatController_closeCard_v1",
@@ -19985,6 +20041,102 @@
           "mention_count"
         ]
       },
+      "ForwardedGifDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "provider",
+          "id",
+          "title",
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "ForwardedMessageDto": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The original message."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks."
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The original’s author; null for an imported archive message, and once the original is deleted."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked."
+          },
+          "content": {
+            "type": "string",
+            "description": "The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview."
+          },
+          "gif": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedGifDto"
+              }
+            ]
+          },
+          "attachment_count": {
+            "type": "number",
+            "description": "How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the original was sent."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise."
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list."
+          }
+        },
+        "required": [
+          "message_id",
+          "channel_id",
+          "sender_id",
+          "author_name",
+          "content",
+          "gif",
+          "attachment_count",
+          "created_at"
+        ]
+      },
       "ChannelLatestMessageDto": {
         "type": "object",
         "properties": {
@@ -20026,6 +20178,16 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
           }
         },
         "required": [
@@ -20037,7 +20199,8 @@
           "kind",
           "payload",
           "attachment_count",
-          "created_at"
+          "created_at",
+          "forwarded_from"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -20759,6 +20922,16 @@
               }
             ]
           },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
+          },
           "created_at": {
             "type": "string"
           },
@@ -20982,6 +21155,36 @@
         },
         "required": [
           "content"
+        ]
+      },
+      "ForwardMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel or DM to forward to. It may be the channel the message is in."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 10000,
+            "description": "The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do."
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made."
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        },
+        "required": [
+          "channel_id"
         ]
       },
       "SetMessageFlagDto": {

@@ -258,6 +258,15 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Returns the caller's own message.",
   },
+  // #4864: the caller's own forward, carrying a copy of someone else's
+  // message, which is withheld when the caller blocked its author.
+  ChatController_forwardMessage_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_SERVICE_SPEC,
+      test: 'withholds the copy in its answer when the caller blocked the author',
+    },
+  },
   ChatController_editMessage_v1: {
     status: 'no-foreign-content',
     why: "Sender-only; returns the edited message, which is the caller's own.",

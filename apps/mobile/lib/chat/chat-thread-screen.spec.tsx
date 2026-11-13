@@ -2745,6 +2745,34 @@ describe("message threads (#3785)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers Forward with the copy it will carry, and wires the picker (#4864)", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { content: "pizza at eight" }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      forward: {
+        messageId: "m2",
+        preview: { message_id: "m2", content: "pizza at eight" },
+        hidden: null,
+      },
+    });
+    expect(sheet.props.nameFor).toBeTypeOf("function");
+    // A card can't be forwarded.
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { kind: "poll" }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target.forward,
+    ).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
   it("starts no second thread on a parent that has one", () => {
     const tree = render();
     act(() =>
