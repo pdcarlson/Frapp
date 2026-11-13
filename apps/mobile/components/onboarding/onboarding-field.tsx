@@ -55,7 +55,8 @@ export function OnboardingTextInput({
 
 /**
  * The label over an onboarding field: uppercase in the muted ink, the style
- * sign-in, join and the accent picker's groups already shared.
+ * sign-in and join already shared. It is a field's label, not a section
+ * eyebrow (`components/eyebrow.ts`).
  */
 export function OnboardingFieldLabel({ children }: { children: string }) {
   const { tokens } = useFrappTheme();
