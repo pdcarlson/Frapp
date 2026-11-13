@@ -43,7 +43,7 @@ import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
@@ -57,6 +57,7 @@ import {
   useChapterRoster,
   useMentionRoles,
   useChannelNotificationPreferences,
+  useChannelUnreadCounts,
   useCurrentUser,
   claimViewedChannel,
   useMarkChannelRead,
@@ -828,9 +829,11 @@ function ChannelThreadScreen() {
   }
   // The counts can land after the channel does: a cold launch opens the last
   // channel while Chat home's read is still out. Taken once, as web does;
-  // never asked for from here.
+  // never asked for from here. Observed through the shared hook, disabled,
+  // so the query keeps its fetch function: a bare observer with none
+  // replaced it, and the next refetch failed with "No queryFn" (#4885).
   const liveUnread = arrivalUnread(
-    useQuery({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, enabled: false }).data,
+    useChannelUnreadCounts({ enabled: false }).data,
     channelId,
   );
   if (

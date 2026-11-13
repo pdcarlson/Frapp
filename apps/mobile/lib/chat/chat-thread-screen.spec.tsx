@@ -497,64 +497,79 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  // The roster catch-up has its own spec in `@repo/hooks`.
-  useRosterCatchUp: rosterCatchUp,
-  // GIFs (#4631): off here, so the + sheet offers no GIF row.
-  useGifAvailability: () => ({ available: false, provider: "" }),
-  useActiveChapterId: () => "chapter-1",
-  // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
-  useBookmarkedMessageIds: () => SAVED,
-  useBookmarkMessage: () => bookmarkWrites.save,
-  useUnbookmarkMessage: () => bookmarkWrites.unsave,
-  useBookmarks: () => ({ data: [], isPending: false, isError: false }),
-  usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
-  useChannel: (id: string) =>
-    channelRow === "found"
-      ? {
-          data: {
-            id,
-            name: "general",
-            type: channelType,
-            description: "The whole chapter.",
-            can_post: !channelIsAuditLog && !channelIsReadOnly,
-            is_read_only: channelIsAuditLog || channelIsReadOnly,
-            is_audit_log: channelIsAuditLog,
-            display_locked: channelLocked,
-          },
-          dataUpdatedAt: channelReadAt,
-          isFetching: false,
-        }
-      : // No row and no cached list: a blank title while it is read, then the
-        // `Thread` fallback (`threadTitleFor`).
-        { data: undefined, isFetching: channelRow === "reading" },
-  useCurrentUser: () => viewerQuery,
-  useMemberDisplayNames: () => ROSTER,
-  useChapterRoster: () => ({ data: MENTION_ROSTER }),
-  useMentionRoles: () => ({ data: MENTION_ROLES }),
-  // No imported authors with avatars in these fixtures.
-  useAuthorAvatars: () => ({ data: undefined }),
-  usePermissionList: () => permissionList,
-  useMyPermissions: () => ({
-    data: { permissions: permissionList },
-    isError: false,
-    fetchStatus: "idle",
-  }),
-  useCurrentChapter: () =>
-    chapterUnread
-      ? { data: undefined, fetchStatus: "fetching" }
-      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
-  useMarkChannelRead: () => markRead,
-  useMarkMessageUnread: () => markUnread,
-  useRequestChatUploadUrl: () => requestUploadUrl,
-  useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
-  useSetChannelNotificationLevel: () => setNotificationLevel,
-  useImportantMessages: () => importantState,
-  useBlockedUserIds: () => BLOCK_LIST,
-  // The viewer reads the message's images through the row's query.
-  useMessageAttachments: () => ({ data: [IMAGE] }),
-}));
+/** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
+const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  const { useQuery } = await import("@tanstack/react-query");
+  return {
+    ...actual,
+    // The real hook's shape, minus the API client this spec doesn't provide:
+    // one query under the shared key, always with its fetch (#4885).
+    useChannelUnreadCounts: (options?: { enabled?: boolean }) =>
+      useQuery({
+        queryKey: actual.CHANNEL_UNREAD_COUNTS_KEY,
+        queryFn: unreadCountsFetch,
+        enabled: options?.enabled ?? true,
+      }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+    // GIFs (#4631): off here, so the + sheet offers no GIF row.
+    useGifAvailability: () => ({ available: false, provider: "" }),
+    useActiveChapterId: () => "chapter-1",
+    // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
+    useBookmarkedMessageIds: () => SAVED,
+    useBookmarkMessage: () => bookmarkWrites.save,
+    useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    useBookmarks: () => ({ data: [], isPending: false, isError: false }),
+    usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    useChannel: (id: string) =>
+      channelRow === "found"
+        ? {
+            data: {
+              id,
+              name: "general",
+              type: channelType,
+              description: "The whole chapter.",
+              can_post: !channelIsAuditLog && !channelIsReadOnly,
+              is_read_only: channelIsAuditLog || channelIsReadOnly,
+              is_audit_log: channelIsAuditLog,
+              display_locked: channelLocked,
+            },
+            dataUpdatedAt: channelReadAt,
+            isFetching: false,
+          }
+        : // No row and no cached list: a blank title while it is read, then the
+          // `Thread` fallback (`threadTitleFor`).
+          { data: undefined, isFetching: channelRow === "reading" },
+    useCurrentUser: () => viewerQuery,
+    useMemberDisplayNames: () => ROSTER,
+    useChapterRoster: () => ({ data: MENTION_ROSTER }),
+    useMentionRoles: () => ({ data: MENTION_ROLES }),
+    // No imported authors with avatars in these fixtures.
+    useAuthorAvatars: () => ({ data: undefined }),
+    usePermissionList: () => permissionList,
+    useMyPermissions: () => ({
+      data: { permissions: permissionList },
+      isError: false,
+      fetchStatus: "idle",
+    }),
+    useCurrentChapter: () =>
+      chapterUnread
+        ? { data: undefined, fetchStatus: "fetching" }
+        : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
+    useMarkChannelRead: () => markRead,
+    useMarkMessageUnread: () => markUnread,
+    useRequestChatUploadUrl: () => requestUploadUrl,
+    useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
+    useSetChannelNotificationLevel: () => setNotificationLevel,
+    useImportantMessages: () => importantState,
+    useBlockedUserIds: () => BLOCK_LIST,
+    // The viewer reads the message's images through the row's query.
+    useMessageAttachments: () => ({ data: [IMAGE] }),
+  };
+});
 
 /** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
@@ -3532,6 +3547,26 @@ describe("chat thread asks Frapp instead of posting (#4713)", () => {
         ?.findAllByType("ThreadMessageRow" as never)
         .map((node) => node.props.row.message.client_message_id),
     ).toEqual(["c-m1"]);
+    act(() => tree.unmount());
+  });
+});
+
+describe("The unread counts the screen observes (#4885)", () => {
+  it("passes their fetch, so no render logs TanStack's no-queryFn error", () => {
+    // In a development build TanStack console.errors on every render of a
+    // query with no `queryFn`, and Expo shows each one as a red toast.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: 3 },
+    ]);
+    const tree = render();
+    const noQueryFn = errors.mock.calls.filter((args) =>
+      String(args[0]).includes("No queryFn was passed"),
+    );
+    errors.mockRestore();
+    expect(noQueryFn).toEqual([]);
+    // Observed, never asked for from here.
+    expect(unreadCountsFetch).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
