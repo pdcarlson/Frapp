@@ -147,14 +147,15 @@ function RowProgress({ progress }: { progress: ActivityRowProgress }) {
     <span className="mt-1 flex items-center gap-2">
       <span
         aria-hidden="true"
-        className="h-1 w-full max-w-40 overflow-hidden rounded-full bg-card"
+        className="h-1 w-40 min-w-0 shrink overflow-hidden rounded-full bg-card"
       >
         <span
           className={cn("block", meterFillClassName, share === 1 && "bg-success")}
           style={{ width: `${Math.round(share * 100)}%` }}
         />
       </span>
-      <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
+      {/* A fixed column, as the week card's counts, so every bar ends on one edge. */}
+      <span className="min-w-14 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
         <span aria-hidden="true">{progress.label}</span>
         <span className="sr-only">{progress.spoken}</span>
       </span>

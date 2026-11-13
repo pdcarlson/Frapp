@@ -533,8 +533,8 @@ function createActivityRowStyles(tokens: SignetTokens) {
     progressTrack: {
       ...meter.track,
       backgroundColor: tokens.color.surface.card,
-      flex: 1,
-      maxWidth: 160,
+      width: 160,
+      flexShrink: 1,
     },
     progressFill: meter.fill,
     progressCount: {
@@ -544,6 +544,10 @@ function createActivityRowStyles(tokens: SignetTokens) {
       }),
       fontVariant: ["tabular-nums"],
       color: tokens.color.text.mutedForeground,
+      // A fixed column, as the week card's counts, so every bar ends on one
+      // edge whatever its count says.
+      minWidth: 54,
+      textAlign: "right",
     },
     // The caption's size, at semibold: a weight is its own Figtree family.
     soon: {
