@@ -25,6 +25,7 @@ import {
   removeQuickAction,
   resolveQuickActions,
   writeSavedQuickActions,
+  type QuickActionKey,
 } from "./quick-actions";
 
 const OFFICER = ["*"];
@@ -207,6 +208,10 @@ describe("editing", () => {
     expect(addQuickAction(nine.slice(0, 8), "newEvent")).toHaveLength(
       QUICK_ACTION_LIMIT,
     );
+    // A tenth, were there one, is refused.
+    expect(
+      addQuickAction([...nine], "polls" as unknown as QuickActionKey),
+    ).toEqual([...nine]);
     expect(addQuickAction(["message"], "message")).toEqual(["message"]);
   });
 
@@ -264,7 +269,10 @@ describe("editing", () => {
         const cell = quickActionCellWidth(panel, 10, hairline);
         const inner = panel - 2 * hairline - 20;
         expect(cell * QUICK_ACTION_COLUMNS).toBeLessThanOrEqual(inner);
-        // And it uses the row: under a point each side is left over.
+        // Whole points: an exact third can overrun the row by a rounding
+        // error, which is the wrap all over again.
+        expect(Number.isInteger(cell)).toBe(true);
+        // And it uses the row: under a point per cell is left over.
         expect(inner - cell * QUICK_ACTION_COLUMNS).toBeLessThan(3);
       }
     }

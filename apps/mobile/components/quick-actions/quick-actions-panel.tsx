@@ -13,7 +13,7 @@ import Svg, { Path } from "react-native-svg";
 import { NAV_GLYPHS, type DuotoneGlyphPaths } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ASK_COPY } from "@repo/validation";
-import { GlassSurface } from "@/components/glass-surface";
+import { GLASS_EDGE, GlassSurface } from "@/components/glass-surface";
 import { NavGlyph } from "@/components/nav-glyph";
 import { selectionHaptic } from "@/lib/haptics";
 import {
@@ -62,11 +62,6 @@ const ROW_PITCH = CELL_HEIGHT + ROW_GAP;
 /** The panel's inner padding. */
 const PAD_X = 10;
 const PAD_Y = 18;
-/**
- * The glass surface's border, inside the width the panel is given
- * (`GlassSurface`'s frame), so the cells are measured from inside it.
- */
-const FRAME_EDGE = StyleSheet.hairlineWidth;
 /** A label's breathing room inside its cell, so neighbours never touch. */
 const LABEL_INSET = 4;
 
@@ -126,7 +121,7 @@ export function QuickActionsPanel({
     onEditingChange(true);
   };
 
-  const cellWidth = quickActionCellWidth(width, PAD_X, FRAME_EDGE);
+  const cellWidth = quickActionCellWidth(width, PAD_X, GLASS_EDGE);
 
   return (
     <GlassSurface style={[styles.panel, { width }]}>
@@ -367,6 +362,9 @@ function EditGrid({
   const dragY = useSharedValue(0);
 
   const addable = addableQuickActions(order, available);
+  // Nine is every action today, so a full panel has nothing left to add and
+  // the Add row is gone. This holds the row only once there are more actions
+  // than the cap.
   const full = order.length >= QUICK_ACTION_LIMIT;
   const rows = Math.max(1, Math.ceil(order.length / QUICK_ACTION_COLUMNS));
 

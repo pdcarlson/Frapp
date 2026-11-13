@@ -92,6 +92,20 @@ describe("the panel at rest", () => {
       widthOf(byLabel(resting.root, QUICK_ACTION_LABELS[key])!),
     );
     const cell = cells[0]!;
+    // Rows fill from the left, as the edit grid's slots do: a centred short
+    // row would jump sideways when a hold starts editing.
+    const rows = resting.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        [node.props.style].flat(Infinity).some((st) => st?.flexWrap === "wrap"),
+    );
+    const justify = [rows.props.style]
+      .flat(Infinity)
+      .reduce<string | undefined>(
+        (j, st) => st?.justifyContent ?? j,
+        undefined,
+      );
+    expect(justify ?? "flex-start").toBe("flex-start");
     expect(new Set(cells)).toEqual(new Set([cell]));
     // Three fit inside the 374pt panel less its border and 10pt padding.
     expect(cell * 3).toBeLessThanOrEqual(374 - 20 - 2);
@@ -242,6 +256,39 @@ describe("editing in place", () => {
       "message",
     ]);
     expect(haptic).toHaveBeenCalled();
+  });
+
+  it("drags into and out of the third row at nine", () => {
+    const tree = render(OFFICER, true);
+    const detectors = tree.root.findAll(
+      (node) => (node.type as unknown) === "GestureDetector",
+    );
+    expect(detectors).toHaveLength(9);
+    const handlers = (i: number) =>
+      detectors[i].props.gesture.handlers as Record<
+        string,
+        (event?: object) => void
+      >;
+
+    // The first action, two rows down and two cells right: the last slot.
+    const first = handlers(0);
+    act(() => first.onStart());
+    act(() => first.onUpdate({ translationX: 240, translationY: 200 }));
+    act(() => first.onFinalize());
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      ...OFFICER.slice(1),
+      OFFICER[0],
+    ]);
+
+    // The last action, two rows up and two cells left: the first slot.
+    const last = handlers(8);
+    act(() => last.onStart());
+    act(() => last.onUpdate({ translationX: -240, translationY: -200 }));
+    act(() => last.onFinalize());
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      OFFICER[8],
+      ...OFFICER.slice(0, 8),
+    ]);
   });
 
   it("saves nothing for a drag that ends where it started", () => {
