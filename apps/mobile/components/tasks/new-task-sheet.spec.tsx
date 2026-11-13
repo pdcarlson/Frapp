@@ -92,17 +92,24 @@ vi.mock("@/lib/haptics", () => ({
 
 import { NewTaskSheet } from "./new-task-sheet";
 
-function render(): ReactTestRenderer {
+function render({ keptDraft }: { keptDraft?: string } = {}): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} />
+        <NewTaskSheet
+          now={new Date("2026-09-27T12:00:00Z")}
+          keptDraft={keptDraft}
+        />
       </FrappThemeProvider>,
     );
   });
   return tree;
 }
+
+const titleValueOf = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => node.props.accessibilityLabel === "Task title").props
+    .value;
 
 const createButton = (tree: ReactTestRenderer) =>
   tree.root.find(
@@ -285,18 +292,19 @@ describe("New task draft across visits", () => {
   /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
   const dismiss = vi.fn();
   const ref = React.createRef<never>();
-  const sheetAt = (now: Date) => (
+  const sheetAt = (now: Date, keptDraft?: string) => (
     <FrappThemeProvider>
-      <NewTaskSheet ref={ref} now={now} />
+      <NewTaskSheet ref={ref} now={now} keptDraft={keptDraft} />
     </FrappThemeProvider>
   );
 
   function renderWithRef(
     now = new Date("2026-09-27T12:00:00Z"),
+    keptDraft?: string,
   ): ReactTestRenderer {
     let tree!: ReactTestRenderer;
     act(() => {
-      tree = create(sheetAt(now), {
+      tree = create(sheetAt(now, keptDraft), {
         // The create sheet is the modal with `onDismiss`; the assignee
         // picker's own modal gets a stand-in of its own, so its Done is
         // never counted as the sheet closing.
@@ -337,6 +345,66 @@ describe("New task draft across visits", () => {
 
     expect(titleValue(tree)).toBe("Sweep the porch");
     act(() => tree.unmount());
+  });
+
+  it("keeps the draft past its screen, for the Tasks screen's next visit (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("Sweep the porch");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once Cancel gave the draft up (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => pressCancel(first));
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once the task saved, and keeps the next one (#4593)", () => {
+    const saves = () =>
+      mutate.mockImplementationOnce((_body, options) =>
+        (options as unknown as { onSuccess: () => void }).onSuccess(),
+      );
+    saves();
+    const first = renderWithRef(undefined, "tasks-create");
+    submitTask(first);
+    act(() => first.unmount());
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+
+    // The same visit, a second task: the first one's hold is over, so what
+    // is typed next is kept again.
+    saves();
+    submitTask(second);
+    act(() =>
+      second.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Mop the hall"),
+    );
+    act(() => second.unmount());
+    const third = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(third)).toBe("Mop the hall");
+    act(() => third.unmount());
+  });
+
+  it("keeps a draft whose save failed past its screen (#4593)", () => {
+    failure = FAILED;
+    const first = renderWithRef(undefined, "tasks-create");
+    submitTask(first);
+    expect(screenText(first)).toContain(TRY_AGAIN);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("Sweep the porch");
+    act(() => second.unmount());
   });
 
   it("gives the draft up on Cancel", () => {
@@ -773,6 +841,45 @@ describe("Accepting a suggested task through the form (#4313)", () => {
   beforeEach(() => {
     accept.mockReset();
     accept.mockResolvedValue(undefined);
+  });
+
+  it("opens on the suggestion, not a new task's kept draft (#4593)", () => {
+    // A new task's draft kept from the Tasks screen's last visit.
+    const draft = render({ keptDraft: "tasks-create" });
+    act(() =>
+      draft.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Sweep the porch"),
+    );
+    act(() => draft.unmount());
+    expect(titleValueOf(render({ keptDraft: "tasks-create" }))).toBe(
+      "Sweep the porch",
+    );
+
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            keptDraft="tasks-create"
+            suggestion={{
+              title: "Book the hall",
+              assigneeId: null,
+              dueDay: "2026-10-02",
+              dueAt: null,
+              subtasks: [],
+              accept,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    expect(title.props.value).toBe("Book the hall");
+    act(() => tree.unmount());
   });
 
   it("starts from what the minutes said, under its own title and button", () => {

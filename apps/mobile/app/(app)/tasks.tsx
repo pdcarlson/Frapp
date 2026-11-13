@@ -778,6 +778,9 @@ export default function TasksScreen() {
           <NewTaskSheet
             ref={createRef}
             now={now}
+            // Kept past this screen (#4593): going back and coming here again
+            // opens New task on the draft left in it.
+            keptDraft="tasks-create"
             onCreated={(assigneeName, wasSelf) => {
               // Someone else's task is on no board here, so say where it went.
               const text = taskCreatedLine(assigneeName, wasSelf);

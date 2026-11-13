@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
@@ -11,6 +11,13 @@ import {
   useRequestBackworkUploadUrl,
   putSignedUpload,
 } from "@repo/hooks";
+import {
+  readKeptDraft,
+  useKeptDraftKeys,
+  useKeptFormDraft,
+  useKeptPanel,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -84,8 +91,41 @@ import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 
 const STUDENT_COPY = "Student Copy";
 
+type BackworkDraft = BulkFields & { file: File | null };
+
+/** Blank, variant included: here the variant is a choice the member makes. */
+const EMPTY_BACKWORK_DRAFT: BackworkDraft = {
+  title: "",
+  department_code: "",
+  course_number: "",
+  professor_name: "",
+  year: "",
+  semester: "",
+  assignment_type: "",
+  assignment_number: "",
+  document_variant: "",
+  tags: "",
+  file: null,
+};
+
+/** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
+const BACKWORK_DRAFT = "backwork-upload";
+
+/** What is kept: the fields, the file, and a new course's name. */
+type KeptBackworkDraft = { fields: BackworkDraft; courseName: string };
+
+/** What decides "changed" for a kept draft: a `File` is opaque to JSON. */
+function backworkSignature({ fields, courseName }: KeptBackworkDraft): string {
+  const { file, ...rest } = fields;
+  return JSON.stringify({
+    ...rest,
+    courseName,
+    file: file ? [file.name, file.size, file.lastModified] : null,
+  });
+}
+
 /** The draft's metadata, in the shape bulk upload and `confirmFields` read. */
-function draftFields(draft: BulkFields & { file: File | null }): BulkFields {
+function draftFields(draft: BackworkDraft): BulkFields {
   const { file, ...fields } = draft;
   void file;
   return fields;
@@ -115,31 +155,19 @@ export function BackworkUploadSheet({
   const { toast } = useToast();
   const router = useRouter();
   const uploadDialog = useGatedDialog(gate);
-  const [uploadDraft, setUploadDraft] = useState<{
-    title: string;
-    department_code: string;
-    course_number: string;
-    professor_name: string;
-    year: string;
-    semester: string;
-    assignment_type: string;
-    assignment_number: string;
-    document_variant: string;
-    tags: string;
-    file: File | null;
-  }>({
-    title: "",
-    department_code: "",
-    course_number: "",
-    professor_name: "",
-    year: "",
-    semester: "",
-    assignment_type: "",
-    assignment_number: "",
-    document_variant: "",
-    tags: "",
-    file: null,
-  });
+  const keptKeys = useKeptDraftKeys();
+  /*
+    Kept when the member goes back or leaves the page mid-upload (#4593), file
+    and all, in memory for the tab: coming back opens the panel on it if the
+    page was left with the panel open, and Upload opens on it otherwise.
+    Cancel and uploading give it up.
+  */
+  const [opening] = useState(() =>
+    readKeptDraft<KeptBackworkDraft>(keptKeys.draft(BACKWORK_DRAFT)),
+  );
+  const [uploadDraft, setUploadDraft] = useState<BackworkDraft>(
+    () => opening?.fields ?? EMPTY_BACKWORK_DRAFT,
+  );
   const [uploading, setUploading] = useState(false);
   /*
     The upload sheet's one inline error. Held here rather than inside
@@ -154,7 +182,17 @@ export function BackworkUploadSheet({
   const departmentsQuery = useDepartments();
   const coursesQuery = useBackworkCourses();
   const resourcesQuery = useBackworkResources();
-  const [courseName, setCourseName] = useState("");
+  const [courseName, setCourseName] = useState(
+    () => opening?.courseName ?? "",
+  );
+  const panelOpen = uploadDialog.dialogProps.open;
+  const keptValue = { fields: uploadDraft, courseName };
+  const kept = useKeptFormDraft<KeptBackworkDraft>(
+    BACKWORK_DRAFT,
+    panelOpen,
+    keptValue,
+    { signature: backworkSignature(keptValue) },
+  );
   const courseState = useMemo(
     () =>
       describeCourse(
@@ -216,6 +254,8 @@ export function BackworkUploadSheet({
         skipped: 0,
         fields: draftFields(uploadDraft),
       });
+      // Bulk upload has it now.
+      kept.drop();
       uploadDialog.setOpen(false);
       router.push("/backwork/upload");
       return;
@@ -243,6 +283,7 @@ export function BackworkUploadSheet({
     }
 
     setUploading(true);
+    kept.hold();
     try {
       const hash = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
       const signed = await requestUpload.mutateAsync({
@@ -276,22 +317,12 @@ export function BackworkUploadSheet({
         title: "Upload complete",
         description: `${file.name} is now in the backwork library.`,
       });
+      kept.drop();
       uploadDialog.setOpen(false);
-      setUploadDraft({
-        title: "",
-        department_code: "",
-        course_number: "",
-        professor_name: "",
-        year: "",
-        semester: "",
-        assignment_type: "",
-        assignment_number: "",
-        document_variant: "",
-        tags: "",
-        file: null,
-      });
+      setUploadDraft(EMPTY_BACKWORK_DRAFT);
       setCourseName("");
     } catch (error) {
+      kept.release();
       toast({
         title: "Couldn't upload backwork",
         description: getErrorMessage(error, "Try the upload again."),
@@ -302,9 +333,46 @@ export function BackworkUploadSheet({
     }
   }
 
-  function openPanel() {
+  const openPanel = useCallback(() => {
     setUploadError(null);
+    // What the member left here, said so in the footer (#4593).
+    const restored = kept.take();
+    if (restored) {
+      setUploadDraft(restored.fields);
+      setCourseName(restored.courseName);
+    }
     uploadDialog.setOpen(true);
+  }, [kept, uploadDialog]);
+
+  // Back to the panel the page was left with open, through the same door as
+  // Upload, so it says the draft was restored.
+  const reopenPanel = useCallback(
+    (next: boolean) => (next ? openPanel() : uploadDialog.setOpen(false)),
+    [openPanel, uploadDialog],
+  );
+  useKeptPanel({
+    page: "backwork",
+    form: BACKWORK_DRAFT,
+    open: panelOpen,
+    setOpen: reopenPanel,
+    ready: gate.allowed,
+  });
+
+  /** Cancel: give the draft up and close. */
+  function cancelDraft() {
+    kept.drop();
+    setUploadDraft(EMPTY_BACKWORK_DRAFT);
+    setCourseName("");
+    setUploadError(null);
+    uploadDialog.setOpen(false);
+  }
+
+  /** Discard: start over in place. */
+  function discardDraft() {
+    kept.discard();
+    setUploadDraft(EMPTY_BACKWORK_DRAFT);
+    setCourseName("");
+    setUploadError(null);
   }
 
   return (
@@ -312,7 +380,8 @@ export function BackworkUploadSheet({
       {/*
         Every open goes through `openPanel`, which clears a spent rejection:
         a half-typed course number is worth keeping, a spent error is not.
-        Cancel, the back arrow, Escape and the gate's revoke only close.
+        The back arrow, Escape and the gate's revoke only close, and keep the
+        draft; Cancel gives it up (#4593).
       */}
       <Slot onClick={openPanel}>{children}</Slot>
       <Panel
@@ -606,6 +675,7 @@ export function BackworkUploadSheet({
             </UploadField>
           </PanelBody>
           <PanelFooter>
+            {kept.restored ? <KeptDraftNote onDiscard={discardDraft} /> : null}
             {/*
                   Cancel is not gated: it closes the dialog rather than writing,
                   and a revoked subscription must still leave a way out.
@@ -613,7 +683,7 @@ export function BackworkUploadSheet({
             <Button
               variant="secondary"
               className={UPLOAD_SHEET_BUTTON_CLASS}
-              onClick={() => uploadDialog.setOpen(false)}
+              onClick={cancelDraft}
               disabled={uploading}
             >
               Cancel

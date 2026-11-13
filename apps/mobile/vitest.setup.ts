@@ -1,5 +1,12 @@
 import React from "react";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
+
+// Form drafts kept past a screen live in module memory (#4593); one test's
+// draft must not open in the next.
+afterEach(() => {
+  dropAllKeptDrafts();
+});
 
 // Mock global variables for Expo
 globalThis.expo = globalThis.expo || {};

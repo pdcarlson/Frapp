@@ -2086,3 +2086,80 @@ describe("BackworkPage zip download", () => {
     );
   });
 });
+
+/**
+ * Leaving the upload panel keeps what was typed (#4593): no "are you sure",
+ * and the panel opens on it next time. Cancel gives it up.
+ */
+describe("BackworkPage keeps the upload draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedResourcesQuery();
+    chapter.active();
+  });
+
+  const docked = () => (
+    <div data-tool-column="">
+      <div data-tool-page="">
+        <BackworkPage />
+      </div>
+    </div>
+  );
+
+  it("opens on what was typed after going back, and says so", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+
+    expect(screen.getByLabelText("Title")).toHaveValue("Midterm 2");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("reopens the panel on its draft when the page was left with it open", async () => {
+    const user = userEvent.setup();
+    const first = render(docked());
+    await user.click(uploadTrigger());
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    first.unmount();
+
+    render(docked());
+    const region = await screen.findByRole("region", {
+      name: "Upload backwork",
+    });
+    expect(within(region).getByLabelText("Title")).toHaveValue("Midterm 2");
+    expect(within(region).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps nothing on Cancel, or for a panel left untouched", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    await user.click(uploadTrigger());
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+});
