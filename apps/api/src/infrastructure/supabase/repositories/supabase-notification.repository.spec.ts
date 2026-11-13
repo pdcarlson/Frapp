@@ -186,10 +186,20 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
   describe('deleteMany (#3948)', () => {
     it('deletes only the caller rows in the caller chapter', async () => {
       const otherUsers = '0b000000-0000-4000-8000-000000000141';
+      const otherUsersTwin = '0a000000-0000-4000-8000-000000000141';
       harness = createTenantHarness({
         tables: {
           notifications: [
             ...seed().notifications,
+            inA({
+              id: otherUsersTwin,
+              user_id: USER_A,
+              title: 'Not yours',
+              body: '',
+              data: {},
+              read_at: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+            }),
             inB({
               id: otherUsers,
               user_id: USER_A,
@@ -214,7 +224,7 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
           .rows('notifications')
           .map((n) => n.id)
           .sort(),
-      ).toEqual([NOTIF_A, otherUsers].sort());
+      ).toEqual([NOTIF_A, otherUsersTwin, otherUsers].sort());
     });
   });
 
