@@ -2,27 +2,26 @@ import { AI_MODEL_CATALOG } from './ai-model-catalog';
 import { AI_CONSENT_SHEET, AI_FAMILY_SWITCH } from './ai-consent-sheet';
 
 /**
- * Which providers each version named, by key. A member's Yes is for one
- * version, so changing the providers a version names after members answered
- * it would make their Yes cover a company they never saw. Add a line here
- * with every new version; never edit an old one. Since #4790 a new kind of
- * data is not a new version (the privacy policy names the kinds), so only the
- * providers are locked.
+ * What each sheet version covered: its providers and its kinds of data, by
+ * key. A member's Yes is for one version, so changing what a version covers
+ * after members answered it would make their Yes cover something they never
+ * saw. Add a line here with every new version; never edit an old one.
  */
 const SHEET_VERSIONS: Record<number, string> = {
-  1: 'providers=anthropic,google',
+  1: 'providers=anthropic,google;data=questions,chapter_records,roster,channel_messages,meetings',
   // #712: AssemblyAI transcribes a meeting's recording.
-  2: 'providers=anthropic,google,assemblyai',
+  2: 'providers=anthropic,google,assemblyai;data=questions,chapter_records,roster,channel_messages,meetings',
 };
 
 function coverage(): string {
   const providers = AI_CONSENT_SHEET.providers.map((p) => p.key).join(',');
-  return `providers=${providers}`;
+  const data = AI_CONSENT_SHEET.data.map((d) => d.key).join(',');
+  return `providers=${providers};data=${data}`;
 }
 
 describe('AI_CONSENT_SHEET', () => {
   it('covers exactly what its version was recorded as covering', () => {
-    // A provider added without a version bump fails here:
+    // A provider or a kind of data added without a version bump fails here:
     // bump `version` and add its line to SHEET_VERSIONS.
     expect(SHEET_VERSIONS[AI_CONSENT_SHEET.version]).toBe(coverage());
   });

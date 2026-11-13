@@ -92,16 +92,19 @@ const aiChoice = vi.hoisted(() => ({
   readConsent: () => Promise.resolve(null),
   providers: ["Anthropic", "Google"],
   forChapter: false,
+  chapterSettled: true,
   turnOn: vi.fn(() => Promise.resolve(true)),
   notNow: vi.fn(() => Promise.resolve()),
   pending: false,
   lastOptions: undefined as { includeChapter?: boolean } | undefined,
+  seenOptions: [] as ({ includeChapter?: boolean } | undefined)[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useFrappAiChoice: (options?: { includeChapter?: boolean }) => {
     aiChoice.lastOptions = options;
+    aiChoice.seenOptions.push(options);
     return aiChoice;
   },
   useChapterDirectorySearch: () => ({
@@ -397,17 +400,29 @@ describe("chapter setup — step order", () => {
     expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
   });
 
-  it("asks the founder to meet Frapp AI after the display pick, for the new chapter too (#4790)", async () => {
-    aiChoice.consent = {
-      answer: null,
-      answered_at: null,
-      sheet_changed: false,
-      sheet: { version: 2, providers: [], data: [] },
-    };
-    aiChoice.forChapter = true;
-    aiChoice.turnOn.mockClear();
-    try {
-      const { root } = await render();
+  describe("Meet Frapp AI (#4790)", () => {
+    beforeEach(() => {
+      aiChoice.consent = {
+        answer: null,
+        answered_at: null,
+        sheet_changed: false,
+        sheet: { version: 2, providers: [], data: [] },
+      };
+      aiChoice.forChapter = true;
+      aiChoice.turnOn.mockReset();
+      aiChoice.turnOn.mockImplementation(() => Promise.resolve(true));
+      aiChoice.notNow.mockClear();
+      aiChoice.seenOptions = [];
+    });
+
+    afterEach(() => {
+      aiChoice.consent = null;
+      aiChoice.forChapter = false;
+    });
+
+    async function reachAi() {
+      const view = await render();
+      const { root } = view;
       await pickRow(root, "Phi Gamma Delta");
       await press(root, "Continue");
       await press(root, "agree");
@@ -419,8 +434,14 @@ describe("chapter setup — step order", () => {
       expect(title(root)).toBe(SETUP_TITLES.display);
       await press(root, "Continue");
       expect(title(root)).toBe(SETUP_TITLES.ai);
+      return view;
+    }
+
+    it("asks the founder after the display pick, for the new chapter too", async () => {
+      const { root } = await reachAi();
       // The chapter's switches are only touched once the new chapter is the
-      // active one.
+      // active one: before it is, the screen asks for no chapter at all.
+      expect(aiChoice.seenOptions[0]).toEqual({ includeChapter: false });
       expect(aiChoice.lastOptions).toEqual({ includeChapter: true });
       // Read through `drawnText`: the line nests the privacy link's Text.
       expect(
@@ -433,11 +454,32 @@ describe("chapter setup — step order", () => {
       );
       await press(root, "Continue");
       expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);
+      expect(aiChoice.notNow).not.toHaveBeenCalled();
       expect(title(root)).toBe(SETUP_TITLES.invite);
-    } finally {
-      aiChoice.consent = null;
-      aiChoice.forChapter = false;
-    }
+    });
+
+    it("leaves Frapp AI off on Not now, and moves on", async () => {
+      const { root } = await reachAi();
+      await press(root, "Not now");
+      expect(aiChoice.notNow).toHaveBeenCalledTimes(1);
+      expect(aiChoice.turnOn).not.toHaveBeenCalled();
+      expect(title(root)).toBe(SETUP_TITLES.invite);
+    });
+
+    it("keeps the founder on the step with the reason when Continue fails", async () => {
+      aiChoice.turnOn.mockImplementation(() =>
+        Promise.reject(new Error("offline")),
+      );
+      const { root } = await reachAi();
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.ai);
+      expect(
+        root
+          .findAllByType("Text" as never, { deep: true })
+          .map((text) => drawnText(text))
+          .join("\n"),
+      ).toContain("Couldn't turn on Frapp AI");
+    });
   });
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {

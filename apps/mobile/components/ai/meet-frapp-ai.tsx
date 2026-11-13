@@ -9,7 +9,7 @@ import { StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as WebBrowser from "expo-web-browser";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { errorCopy, useFrappAiChoice } from "@repo/hooks";
+import { errorCopy, shouldMeetFrappAi, useFrappAiChoice } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   FRAPP_AI_COPY,
@@ -151,8 +151,10 @@ export function MeetFrappAiActions({
 /**
  * The screen as a beat of an onboarding flow (s03, chapter setup). `show` is
  * true once the server is known to have AI and the member has never
- * answered; `settled` once that is known either way, so the host can decide
- * its beats. Continue turns it on; Not now records a No. Either answer moves
+ * answered, or when their Continue would also turn on a chapter whose
+ * switches were never set (a founder who already said yes on another
+ * chapter still gets the choice for this one); `settled` once that is known
+ * either way, so the host can decide its beats. Continue turns it on; Not now records a No. Either answer moves
  * on: a save that fails on Not now is left for the next open to ask again,
  * and one that fails on Continue keeps the member here with the reason.
  */
@@ -179,7 +181,9 @@ export function useMeetFrappAiStep(options?: { includeChapter?: boolean }) {
     setError(null);
     setAnswering(true);
     try {
-      await choice.notNow();
+      // A member who already said yes is here only for the chapter's
+      // switches: Not now leaves those off and keeps their own yes.
+      if (choice.consent?.answer !== "yes") await choice.notNow();
     } catch {
       // Unanswered still: the next open asks once more.
     } finally {
@@ -188,10 +192,12 @@ export function useMeetFrappAiStep(options?: { includeChapter?: boolean }) {
   }, [choice]);
 
   return {
-    settled: choice.consent !== undefined || choice.consentFailed,
-    show: choice.consent !== undefined && choice.consent !== null
-      ? choice.consent.answer === null
-      : false,
+    settled:
+      choice.consentFailed ||
+      (choice.consent !== undefined && choice.chapterSettled),
+    show:
+      shouldMeetFrappAi(choice.consent) ||
+      (!!choice.consent && choice.forChapter),
     providers: choice.providers,
     forChapter: choice.forChapter,
     error,

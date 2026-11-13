@@ -104,4 +104,26 @@ describe("MeetFrappAiHost", () => {
     act(() => releaseStartupSheet("whats-new"));
     expect(sheet.present).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps its turn while the answer lands, until the sheet itself closes", async () => {
+    const tree = await render();
+    expect(sheet.present).toHaveBeenCalledTimes(1);
+    const whatsNew = vi.fn();
+    requestStartupSheet("whats-new", whatsNew);
+    // Continue saved: the cached answer is yes while the sheet is still up.
+    state.consent = { ...UNANSWERED, answer: "yes" };
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <MeetFrappAiHost />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(whatsNew).not.toHaveBeenCalled();
+    const host = tree.root.findAll(
+      (node) => (node.type as unknown) === "MeetFrappAiSheet",
+    )[0];
+    act(() => host.props.onClosed());
+    expect(whatsNew).toHaveBeenCalledTimes(1);
+  });
 });

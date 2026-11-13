@@ -1,6 +1,6 @@
 "use client";
 
-import { CHECKOUT_LANDING_PATHNAMES } from "@/components/billing/billing-paths";
+import { isCheckoutLandingPath } from "@/components/billing/billing-paths";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -56,13 +56,7 @@ export function MeetFrappAiHost() {
 
   useEffect(() => {
     if (!due || shown.current) return;
-    if (
-      CHECKOUT_LANDING_PATHNAMES.some(
-        (prefix) => pathname === prefix || pathname?.startsWith(`${prefix}/`),
-      )
-    ) {
-      return;
-    }
+    if (isCheckoutLandingPath(pathname)) return;
     const timer = setTimeout(() => {
       if (document.querySelector(BLOCKING_LAYER)) return;
       shown.current = true;

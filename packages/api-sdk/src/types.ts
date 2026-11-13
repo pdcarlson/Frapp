@@ -3259,12 +3259,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the AI sheet and the caller’s answer
+         * Get what Meet Frapp AI shows and the caller’s answer
          * @description The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.
          */
         get: operations["AiConsentController_getConsent_v1"];
         /**
-         * Answer the AI sheet
+         * Answer Meet Frapp AI (turn Frapp AI on or off)
          * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
          */
         put: operations["AiConsentController_answerConsent_v1"];

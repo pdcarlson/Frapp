@@ -43,7 +43,7 @@ const AI_OFF = {
 };
 
 /**
- * The member's answer on the AI sheet (#4308, `spec/behavior/ai.md` §
+ * The member's Frapp AI answer, given on Meet Frapp AI (#4308, #4790; `spec/behavior/ai.md` §
  * Consent).
  *
  * The answer belongs to the person, not to a chapter (one answer covers every
@@ -70,7 +70,7 @@ export class AiConsentController {
 
   @Get('consent')
   @ApiOperation({
-    summary: 'Get the AI sheet and the caller’s answer',
+    summary: 'Get what Meet Frapp AI shows and the caller’s answer',
     description:
       'The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.',
   })
@@ -82,7 +82,7 @@ export class AiConsentController {
 
   @Put('consent')
   @ApiOperation({
-    summary: 'Answer the AI sheet',
+    summary: 'Answer Meet Frapp AI (turn Frapp AI on or off)',
     description:
       'Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.',
   })

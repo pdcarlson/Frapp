@@ -242,11 +242,19 @@ export function useFrappAiChoice(options?: {
       await answerAsync({ sheet_version: state.sheet.version, answer: "yes" });
     }
     if (forChapter) {
-      await updateSettingsAsync({
-        ask: true,
-        meeting_notes: true,
-        chat_source: true,
-      });
+      // The member's yes is saved by now, so a failure here is not a failed
+      // Continue: Frapp AI is on for them, and the president can still turn
+      // the chapter's switches on in Chapter settings. Reporting it as one
+      // would hold them on the screen with their yes already counted.
+      try {
+        await updateSettingsAsync({
+          ask: true,
+          meeting_notes: true,
+          chat_source: true,
+        });
+      } catch {
+        // Left for Chapter settings, as above.
+      }
     }
     return true;
   }, [answerAsync, forChapter, readState, updateSettingsAsync]);
@@ -266,6 +274,17 @@ export function useFrappAiChoice(options?: {
     readConsent: readState,
     providers: consent.data?.sheet.providers.map((p) => p.name) ?? [],
     forChapter,
+    /**
+     * Whether `forChapter` is known: the chapter's switches have been read,
+     * or the read failed, or this screen never touches a chapter. A step
+     * that waits on it never shows the member's wording and then the
+     * chapter's under their finger.
+     */
+    chapterSettled:
+      !includeChapter ||
+      !available ||
+      settings.data !== undefined ||
+      settings.isError,
     turnOn,
     notNow,
     pending: answer.isPending || updateSettings.isPending,

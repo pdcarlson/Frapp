@@ -86,6 +86,7 @@ const aiChoice = vi.hoisted(() => ({
   readConsent: () => Promise.resolve(null),
   providers: ["Anthropic", "Google"],
   forChapter: false,
+  chapterSettled: true,
   turnOn: vi.fn(() => Promise.resolve(true)),
   notNow: vi.fn(() => Promise.resolve()),
   pending: false,
@@ -447,6 +448,24 @@ describe("s03 welcome, Meet Frapp AI beat", () => {
     expect(onAiBeat(root)).toBe(true);
     expect(allText(root)).toMatch(/try again/i);
     expect(vi.mocked(useRouter)().replace).not.toHaveBeenCalled();
+  });
+
+  it("walks Android back from notifications to this beat, not past it", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    await press(button(root, "Continue"));
+    expect(button(root, "Turn on notifications")).toBeDefined();
+    const calls = listen.mock.calls as unknown as [string, () => boolean][];
+    const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+    act(() => {
+      handler![1]();
+    });
+    expect(onAiBeat(root)).toBe(true);
   });
 
   it.each([

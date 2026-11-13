@@ -25,6 +25,6 @@ export function aiConsentRefusal(detail: ConsentDenial): ForbiddenException {
   }
   return new ForbiddenException({
     code: 'ai.consent.required',
-    message: 'Answer the AI sheet before using AI features.',
+    message: 'Turn on Frapp AI before using AI features.',
   });
 }

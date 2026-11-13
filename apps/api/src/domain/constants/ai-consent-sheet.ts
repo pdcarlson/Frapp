@@ -6,17 +6,16 @@ import type { AiFeatureFamily } from '../adapters/ai-call-context';
  *
  * Since #4790 (Paul, 2026-11-13) the member answers on Meet Frapp AI, one
  * onboarding screen that names the companies Frapp AI works with in one line
- * and links the privacy policy, which carries the detail. So `providers` is
- * what the screen names, and **adding a provider is a new version**: bump
- * `version`, and every member is asked again, because a Yes counts only for
- * the version it was given on (`user_ai_consents.sheet_version`).
- * `ai-consent-sheet.spec.ts` fails when the providers change without a bump,
- * and when the model catalog uses a provider this list does not name.
- *
- * `data` lists the kinds of data that are sent, in a member's words. A new
- * kind is no longer a new version: the privacy policy names the kinds. Current
- * clients don't draw it; it is still served because store builds from before
- * #4790 draw the old sheet from it (`GET /v1/ai/consent`).
+ * and links the privacy policy, which carries the detail. `providers` is what
+ * the screen names; `data` lists the kinds of data that are sent, which the
+ * privacy policy's "Frapp AI" section names (`apps/landing/app/privacy/
+ * page.tsx`) and store builds from before #4790 still draw on the old sheet.
+ * **Adding a provider or a kind of data is a new version**: bump `version`,
+ * and every member is asked again, because a Yes counts only for the version
+ * it was given on (`user_ai_consents.sheet_version`). Change the privacy
+ * policy's Frapp AI section in the same PR. `ai-consent-sheet.spec.ts` fails
+ * when the providers or the kinds change without a bump, and when the model
+ * catalog uses a provider this list does not name.
  *
  * Only the API reads it, as with the Terms version (`LEGAL_POLICY_VERSION`):
  * clients render the companies from `GET /v1/ai/consent`, so a store binary

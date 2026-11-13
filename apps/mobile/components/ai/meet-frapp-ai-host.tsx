@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { shouldMeetFrappAi, useAiConsent, useCurrentUser } from "@repo/hooks";
 import { MeetFrappAiSheet } from "@/components/ai/meet-frapp-ai";
@@ -30,7 +30,12 @@ export function MeetFrappAiHost() {
   const consent = useAiConsent();
   const userQuery = useCurrentUser();
   const userId = (userQuery.data as { id?: string } | undefined)?.id ?? null;
-  const due = shouldMeetFrappAi(consent.data);
+  // Latched: once due, it stays due for this launch. The answer lands in the
+  // cache while the sheet is still up, and an effect keyed on the live value
+  // would release the startup turn then, letting What's new open over it.
+  // The sheet's own close releases the turn.
+  const [due, setDue] = useState(false);
+  if (!due && shouldMeetFrappAi(consent.data)) setDue(true);
   // Once per process: the answer is the account's, and it is read here.
   const checked = useRef(false);
 

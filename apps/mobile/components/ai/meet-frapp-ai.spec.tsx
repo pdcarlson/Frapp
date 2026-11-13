@@ -19,6 +19,7 @@ const choice = vi.hoisted(() => ({
   readConsent: vi.fn(),
   providers: ["Anthropic", "Google"],
   forChapter: false,
+  chapterSettled: true,
   turnOn: vi.fn(),
   notNow: vi.fn(),
   pending: false,
@@ -29,7 +30,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
-import { MeetFrappAiSheet, useAiConsentGate } from "./meet-frapp-ai";
+import {
+  MeetFrappAiSheet,
+  useAiConsentGate,
+  useMeetFrappAiStep,
+} from "./meet-frapp-ai";
 
 const CONSENT = {
   answer: null,
@@ -66,6 +71,7 @@ const sheetNode = (tree: ReactTestRenderer) =>
 beforeEach(() => {
   choice.consent = CONSENT;
   choice.forChapter = false;
+  choice.chapterSettled = true;
   choice.readConsent.mockReset();
   choice.readConsent.mockImplementation(() => Promise.resolve(choice.consent));
   choice.turnOn.mockReset();
@@ -118,6 +124,42 @@ describe("MeetFrappAiSheet", () => {
     );
     expect(onAnswered).not.toHaveBeenCalled();
     expect(screenText(tree)).toMatch(/try again/i);
+  });
+});
+
+describe("useMeetFrappAiStep", () => {
+  function step(): { current: ReturnType<typeof useMeetFrappAiStep> } {
+    const ref = {} as { current: ReturnType<typeof useMeetFrappAiStep> };
+    function Probe() {
+      ref.current = useMeetFrappAiStep();
+      return null;
+    }
+    render(<Probe />);
+    return ref;
+  }
+
+  it("is shown to a member who never answered, and not to one who did", () => {
+    expect(step().current.show).toBe(true);
+    choice.consent = { ...CONSENT, answer: "no" };
+    expect(step().current.show).toBe(false);
+  });
+
+  it("offers a founder who already said yes the new chapter's switches, and Not now keeps their yes", async () => {
+    choice.consent = { ...CONSENT, answer: "yes" };
+    choice.forChapter = true;
+    const ref = step();
+    expect(ref.current.show).toBe(true);
+    await act(async () => {
+      await ref.current.notNow();
+    });
+    expect(choice.notNow).not.toHaveBeenCalled();
+  });
+
+  it("waits for the chapter's switches before it is settled", () => {
+    choice.chapterSettled = false;
+    expect(step().current.settled).toBe(false);
+    choice.chapterSettled = true;
+    expect(step().current.settled).toBe(true);
   });
 });
 

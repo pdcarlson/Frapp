@@ -17,7 +17,7 @@
 ## Privacy Policy
 
 - Displayed on the landing site (frapp.live/privacy) and linked from the app footer.
-- Covers: what data is collected (account info, location data for study hours, uploaded files, chat messages), how data is used (to provide the service, not sold to third parties), third-party services (the page's "3. Service Providers" section, in [`apps/landing/app/privacy/page.tsx`](../../apps/landing/app/privacy/page.tsx), is the list — do not restate it here; it named only three providers when the page named five, and missed Resend, #2305), data retention (see [`data-retention.md`](data-retention.md)), user rights (deletion on request — the shipped page grants no access or correction right, and does not mention cookies or the per-chapter analytics that `chapters.analytics_opt_out` gates).
+- Covers: what data is collected (account info, location data for study hours, uploaded files, chat messages), how data is used (to provide the service, not sold to third parties), third-party services (the page's "3. Service Providers" section, in [`apps/landing/app/privacy/page.tsx`](../../apps/landing/app/privacy/page.tsx), is the list, except the AI providers, which its "4. Frapp AI" section names (#4790) and which move with `AI_CONSENT_SHEET` in `apps/api/src/domain/constants/ai-consent-sheet.ts` — do not restate either here; it named only three providers when the page named five, and missed Resend, #2305), data retention (see [`data-retention.md`](data-retention.md)), user rights (deletion on request — the shipped page grants no access or correction right, and does not mention cookies or the per-chapter analytics that `chapters.analytics_opt_out` gates).
 
 ## FERPA Notice
 
