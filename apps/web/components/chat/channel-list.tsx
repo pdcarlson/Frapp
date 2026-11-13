@@ -200,6 +200,14 @@ function isDm(channel: ChatChannel): boolean {
 }
 
 /**
+ * A row's marks carry their own quiet tone, so they don't inherit the row's
+ * hover lift; this lifts them with the name, on hover and while the row's
+ * right-click menu is open (`group/row` is the row's `<li>`).
+ */
+const ROW_LIFT =
+  "group-hover/row:text-foreground group-data-[state=open]/row:text-foreground";
+
+/**
  * A row's name, then the muted mark (`MuteGlyph`, the crossed-out speaker)
  * straight after it on a muted channel, where the phone's row and GroupMe put
  * theirs (#4136): the mark describes the name, and the row's far end stays
@@ -211,14 +219,6 @@ function isDm(channel: ChatChannel): boolean {
  * screen reader read for free; swapping it for a mark without this would have
  * silently dropped it.
  */
-/**
- * A row's marks carry their own quiet tone, so they don't inherit the row's
- * hover lift; this lifts them with the name, on hover and while the row's
- * right-click menu is open (`group/row` is the row's `<li>`).
- */
-const ROW_LIFT =
-  "group-hover/row:text-foreground group-data-[state=open]/row:text-foreground";
-
 function ChannelRowName({
   title,
   muted,
@@ -790,16 +790,21 @@ export function ChannelList({
     // A mention implies an unread row even if the two counts ever
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
-    // A mention implies an unread row even if the two counts ever disagree.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
     // `countsLookUnread` is the rule the phone's row and the arrangement's
     // header totals and Unread only read too (#3999): a muted channel reads as
     // unread only when it addresses the member, and otherwise sits quietly in
-    // `--muted`.
+    // `--muted`. It quiets from the arrangement's own muted set, as the phone's
+    // row does, so a failed refetch of the levels (which `channel.muted` rides
+    // out on the last good answer) can't leave a read-looking row under a lit
+    // folded header. Without the sidebar there is no header to disagree with.
     const isMuted = !!channel.muted;
+    const quietedByMute = sidebar
+      ? (mutedChannelIds?.has(channel.id) ?? false)
+      : isMuted;
     const looksUnread =
       countsKnown &&
-      countsLookUnread(isDirectChannel(channel), counts, isMuted);
+      countsLookUnread(isDirectChannel(channel), counts, quietedByMute);
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;

@@ -339,10 +339,11 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     mutedChannelIds,
   } = input;
 
-  // The counts a row shows. A muted channel's plain unread is quiet (#3999,
-  // Shawn 2026-11-13): it adds nothing to a folded header and Unread only
-  // drops it, as its row reads as read. Its counts are read again when the
-  // channel is opened; nothing here changes what the server holds.
+  // The counts the filters and the folded headers read (rows read the
+  // server's counts directly). A muted channel's plain unread is quiet here
+  // (#3999, Shawn 2026-11-13): it adds nothing to a folded header and Unread
+  // only drops it, as its row (`countsLookUnread`) reads as read. Nothing here
+  // changes what the server holds.
   const countsOf = (channel: C): SidebarUnreadCounts => {
     const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
     if (

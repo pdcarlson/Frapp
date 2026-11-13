@@ -362,30 +362,42 @@ describe("--muted is a text tone, never a fill under text (#3826)", () => {
    * foreground text at 2.46:1 and the accent text at 1.64:1 when this was
    * written, so a quiet fill takes a ladder step or `--card-hover`. Two
    * non-text uses are allowed, named here so a third is a decision: the
-   * switch's unchecked thumb and the chat-density preview bars, plus the
-   * task photo's loading placeholder, an empty `aria-hidden` wash.
+   * switch's unchecked thumb and the chat-density preview bars. One literal
+   * is allowed by itself, not its whole file: the task photo's loading
+   * placeholder, an empty `aria-hidden` `block bg-muted/40` span, since the
+   * rest of `task-photo.tsx` puts text on fills.
    *
    * An alpha wash is held too (#3999). This guard used to let any
    * `bg-muted/N` through on the claim that a wash composites dark enough to
-   * keep text over AA. On the 2026-11-12 ladder even `/40` puts
-   * `--muted-foreground` at 3.55:1 on `--popover` and 3.95:1 on `--card`, and
-   * the Discord import's scan-warnings box had shipped exactly that; it is
+   * keep text over AA. That depends on the surface under it: on the
+   * 2026-11-12 ladder a `/40` wash puts `--muted-foreground` at 5.41:1 on
+   * `--background` but 3.95:1 on `--card` and 3.55:1 on `--popover`, and a
+   * class can't know which it lands on. The Discord import's scan-warnings
+   * box (on `--background`, so passing) was the one wash under text; it is
    * `bg-card` now.
    */
   const ALLOWED = new Set([
     "apps/web/components/ui/switch.tsx",
     "apps/web/components/profile/chat-density-control.tsx",
-    "apps/web/components/tasks/task-photo.tsx",
+  ]);
+  const ALLOWED_LITERALS = new Map([
+    [
+      "apps/web/components/tasks/task-photo.tsx",
+      new Set(["block bg-muted/40"]),
+    ],
   ]);
 
   it("finds no bg-muted fill, solid, hover or alpha, outside the allowed non-text sites", () => {
     const hits = productSourceFiles()
       .filter((path) => !ALLOWED.has(relative(REPO, path)))
-      .filter((path) =>
-        classLiterals(path).some((text) =>
-          /(?<![\w-])bg-muted(?![\w-])/.test(text),
-        ),
-      )
+      .filter((path) => {
+        const allowed = ALLOWED_LITERALS.get(relative(REPO, path));
+        return classLiterals(path).some(
+          (text) =>
+            !allowed?.has(text.trim()) &&
+            /(?<![\w-])bg-muted(?![\w-])/.test(text),
+        );
+      })
       .map((path) => relative(REPO, path));
     expect(hits).toEqual([]);
   });

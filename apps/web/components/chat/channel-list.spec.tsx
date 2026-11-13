@@ -441,6 +441,12 @@ describe("ChannelList unread badges", () => {
     );
     const markOf = (name: RegExp) =>
       within(screen.getByRole("button", { name })).getByText("#");
+    // The variants below fire only inside the row's `group/row`.
+    for (const name of [/general/, /quiet/, /hush/]) {
+      expect(screen.getByRole("button", { name }).closest("li")).toHaveClass(
+        "group/row",
+      );
+    }
     // Unread: no tone of its own, so it takes the row's white.
     expect(markOf(/general/).className).not.toMatch(
       /\btext-(muted|disabled)\b/,
@@ -917,6 +923,36 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(rows).toHaveTextContent("announcements");
     expect(rows).toHaveTextContent("random");
     expect(rows).not.toHaveTextContent("general");
+  });
+
+  it("quiets a muted row from the arrangement's muted set, as its header does (#3999)", () => {
+    // `channel.muted` keeps the last good levels through a failed refetch,
+    // while the arrangement reads them as unknown and quiets nothing. The row
+    // follows the arrangement, so a lit folded header never sits over a
+    // read-looking row.
+    const draw = (mutedChannelIds: ReadonlySet<string> | undefined) =>
+      render(
+        <ChannelList
+          channels={[{ ...general, muted: true } as ChatChannel]}
+          activeChannelId={null}
+          viewerId={VIEWER}
+          memberNames={NAMES}
+          unreadByChannelId={
+            new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]])
+          }
+          onPick={vi.fn()}
+          sidebar={sidebarControls({ mutedChannelIds })}
+        />,
+      );
+    const quiet = draw(new Set(["c-gen"]));
+    expect(
+      screen.getByRole("button", { name: /general/ }).className,
+    ).not.toMatch(/\bfont-bold\b/);
+    quiet.unmount();
+    draw(undefined);
+    expect(screen.getByRole("button", { name: /general/ }).className).toMatch(
+      /\bfont-bold\b/,
+    );
   });
 
   it("announces a folded Direct messages header as direct messages", () => {
