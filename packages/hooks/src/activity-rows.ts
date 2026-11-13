@@ -1,11 +1,12 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { taskStatusLabel } from "./task-card";
+import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   dayDelta,
   formatDueLabel,
   formatMinutesRounded,
   formatRelativeDayTime,
+  formatTimeOfDay,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -81,7 +82,7 @@ export function parseActivityFilter(raw: unknown): ActivityFilter | null {
 }
 
 /** How many rows each list of the read carries at most (`activity.md`). */
-const ACTIVITY_LIST_LIMIT = 25;
+export const ACTIVITY_LIST_LIMIT = 25;
 
 /** Whether the member can check in to an event right now and hasn't. */
 function activityEventNeedsCheckIn(
@@ -348,6 +349,13 @@ export function activityPollIsOpen(
 }
 
 /**
+ * How a row's detail says when: `dated` names the day ("Tomorrow · 7:00
+ * PM"), for a row that stands alone; `timed` says only the time ("7:00 PM"),
+ * for a row drawn under a day's heading, as the Events lists draw theirs.
+ */
+type RowWhen = "dated" | "timed";
+
+/**
  * When a closed poll stopped taking votes, for ordering the archive newest
  * first: closed by hand, or its closing time; its posting as a last resort.
  */
@@ -356,12 +364,19 @@ function pollClosedAt(poll: ActivityPoll): number {
   return at ? at.getTime() : 0;
 }
 
-function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
+function pollRow(
+  poll: ActivityPoll,
+  group: string,
+  now: Date,
+  when: RowWhen = "dated",
+): ActivityRow {
   const closed = !activityPollIsOpen(poll, now);
   const left = closed ? null : timeLeftWithinDay(poll.closes_at, now);
   const soon = left ? `closes in ${left}` : null;
   const closes = poll.closes_at
-    ? formatRelativeDayTime(poll.closes_at, now)
+    ? when === "timed"
+      ? formatTimeOfDay(poll.closes_at)
+      : formatRelativeDayTime(poll.closes_at, now)
     : null;
   return {
     kind: "poll",
@@ -435,11 +450,17 @@ const CARD_ASK: Record<ActivityCard["kind"], string> = {
  * 4). It is answered on the card in chat, so the row opens the message there
  * rather than a panel.
  */
-function cardRow(card: ActivityCard, now: Date): ActivityRow {
+function cardRow(
+  card: ActivityCard,
+  now: Date,
+  when: RowWhen = "dated",
+): ActivityRow {
   const left = timeLeftWithinDay(card.closes_at, now);
   const soon = left ? `closes in ${left}` : null;
   const closes = card.closes_at
-    ? formatRelativeDayTime(card.closes_at, now)
+    ? when === "timed"
+      ? formatTimeOfDay(card.closes_at)
+      : formatRelativeDayTime(card.closes_at, now)
     : null;
   return {
     kind: "card",
@@ -471,6 +492,7 @@ function taskRow(
   group: string,
   role: "mine" | "confirm" | "assigned",
   now: Date,
+  when: RowWhen = "dated",
 ): ActivityRow {
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
@@ -479,7 +501,13 @@ function taskRow(
   const soon = left ? `Due in ${left}` : null;
   const due = finished
     ? null
-    : (soon ?? formatDueLabel(task.due_at ?? task.due_date, now));
+    : (soon ??
+      (when === "timed"
+        ? // Under its day's heading a task says only its time, if it has one.
+          task.due_at
+          ? `Due ${formatTimeOfDay(task.due_at)}`
+          : null
+        : formatDueLabel(task.due_at ?? task.due_date, now)));
   const who =
     role === "mine"
       ? task.created_by_name
@@ -558,14 +586,24 @@ function dateBlock(event: ActivityEvent): ActivityDateBlock | null {
   };
 }
 
-function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
+function eventRow(
+  event: ActivityEvent,
+  group: string,
+  now: Date,
+  when: RowWhen = "dated",
+): ActivityRow {
   const needsCheckIn = activityEventNeedsCheckIn(event);
   return {
     kind: "event",
     key: `${group}:event:${event.id}`,
     event,
     title: event.name,
-    detail: [formatRelativeDayTime(event.start_time, now), event.location]
+    detail: [
+      when === "timed"
+        ? formatTimeOfDay(event.start_time)
+        : formatRelativeDayTime(event.start_time, now),
+      event.location,
+    ]
       .filter(Boolean)
       .join(" · "),
     soon: null,
@@ -578,7 +616,9 @@ function eventRow(event: ActivityEvent, group: string, now: Date): ActivityRow {
           ? { label: "Required", variant: "outline" }
           : null,
     glyph: "event",
-    dateBlock: dateBlock(event),
+    // Under a day's heading the date is already said: the row leads with
+    // the events glyph instead.
+    dateBlock: when === "timed" ? null : dateBlock(event),
     unread: group !== "made" && event.unread,
     readRef: { kind: "event", item_id: event.id },
   };
@@ -916,6 +956,111 @@ export function activityGroups(
           : { ...group, rows: [], parts: [], unavailable: [], archive: null },
       )
     : groups;
+}
+
+/** One of the member's own to-dos, with when it falls. */
+export interface ActivityToDo {
+  /** The row as it stands alone: its detail names the day. */
+  dated: ActivityRow;
+  /** The same row for under a day's heading: its detail says only the time. */
+  timed: ActivityRow;
+  /**
+   * When it is due, starts or closes; `null` for a poll or card with no
+   * closing time. A task with only a date is read as noon that day.
+   */
+  at: Date | null;
+  /** An event the member can check in to right now and hasn't. */
+  now: boolean;
+  /** A task past its due date. */
+  overdue: boolean;
+}
+
+/**
+ * The member's own to-dos (#4766): their events, their open tasks, and the
+ * polls, sign-ups and forms they haven't answered, in the read's order. Never
+ * what waits on their review (`activityReviewRows`). Each row keeps the key
+ * `activityGroups` gives it, so a sheet opened on one finds it in either.
+ */
+export function activityToDos(
+  activity: Activity,
+  now: Date = new Date(),
+): ActivityToDo[] {
+  const both = (
+    build: (when: RowWhen) => ActivityRow,
+    at: Date | null,
+    flags: { now?: boolean; overdue?: boolean } = {},
+  ): ActivityToDo => ({
+    dated: build("dated"),
+    timed: build("timed"),
+    at,
+    now: flags.now ?? false,
+    overdue: flags.overdue ?? false,
+  });
+  return [
+    // An event the member has checked in to is done: it counts in the week
+    // ring and leaves the list.
+    ...activity.coming_up
+      .filter((event) => !event.checked_in)
+      .map((event) => {
+        const needsCheckIn = activityEventNeedsCheckIn(event);
+        return both(
+          (when) =>
+            eventRow(event, needsCheckIn ? "needs" : "coming", now, when),
+          parseInstant(event.start_time),
+          { now: needsCheckIn },
+        );
+      }),
+    ...activity.needs_you.tasks.map((task) =>
+      both(
+        (when) => toDoTaskRow(taskRow(task, "needs", "mine", now, when)),
+        parseInstantOrBareLocalNoon(task.due_at ?? task.due_date),
+        { overdue: task.status === "OVERDUE" },
+      ),
+    ),
+    ...activity.needs_you.polls
+      .filter((poll) => activityPollIsOpen(poll, now))
+      .map((poll) =>
+        both(
+          (when) => pollRow(poll, "needs", now, when),
+          poll.closes_at ? parseInstant(poll.closes_at) : null,
+        ),
+      ),
+    ...activityCards(activity)
+      .filter((card) => activityCardIsOpen(card, now))
+      .map((card) =>
+        both(
+          (when) => cardRow(card, now, when),
+          card.closes_at ? parseInstant(card.closes_at) : null,
+        ),
+      ),
+  ];
+}
+
+/**
+ * A task on the To do list says its state only when that is news: overdue,
+ * or sent back for changes. "To do" on every row of a list named To do is
+ * the chip Paul's principles call noise (P3).
+ */
+function toDoTaskRow(row: ActivityRow): ActivityRow {
+  if (row.kind !== "task" || row.badge?.variant !== "outline") return row;
+  return isSentBack(row.task) ? row : { ...row, badge: null };
+}
+
+/**
+ * What waits on the member's review (#4766): finished tasks they can confirm,
+ * longest waiting first, then service hours they can approve, as the read
+ * serves them. Empty for a member who holds neither permission.
+ */
+export function activityReviewRows(
+  activity: Activity,
+  now: Date = new Date(),
+): ActivityRow[] {
+  return [
+    ...activity.needs_you.task_confirmations.map((task) =>
+      taskRow(task, "needs-confirm", "confirm", now),
+    ),
+    ...activity.needs_you.hours_approvals.map(hoursRow),
+  ];
 }
 
 /** One count tile at the top of the page (#4173). */

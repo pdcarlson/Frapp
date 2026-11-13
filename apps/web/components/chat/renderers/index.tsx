@@ -124,6 +124,7 @@ export function MessageRenderer({
         <FormCard
           message={message}
           viewerId={viewerId}
+          nameFor={nameFor}
           isConfirmed={isConfirmed}
           onCloseCard={onCloseCard}
         />

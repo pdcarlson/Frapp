@@ -67,6 +67,7 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      {},
     );
 
     // The toggles are what keeps a switched-off module out of the page, so
@@ -75,8 +76,44 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      { weekStart: undefined, now: expect.any(Date) },
     );
     expect(result).toBe(view);
+  });
+
+  it('hands the service the week the client named', async () => {
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
+    const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: weekStart.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart, now: expect.any(Date) },
+    );
+  });
+
+  it('does not refuse a week start from a wrong clock: the page still loads', async () => {
+    // Every Activity read carries the device's own week, so a refusal here
+    // would cost a phone with a wrong clock its whole list and its tab
+    // badge. The service counts the default week for a start out of range.
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: yearAgo.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart: yearAgo, now: expect.any(Date) },
+    );
   });
 
   describe('standing', () => {

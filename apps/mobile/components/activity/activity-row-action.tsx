@@ -101,7 +101,7 @@ export function useActivityRowActions({
   /** The plan's own verdict (`activityRowActionsAllowed`). */
   allowed: boolean;
   chapterPending: boolean;
-  /** Records the read and re-reads, so the row leaves Needs you. */
+  /** Records the read and re-reads, so the row leaves its list. */
   onActed: (row: ActivityRow) => void;
 }): {
   /** `null` while the writes are refused: every row opens its sheet. */
@@ -249,11 +249,17 @@ export function ActivityRowItem({
   row,
   isFirst,
   actions,
+  onCard = false,
+  solo = false,
   onPress,
 }: {
   row: ActivityRow;
   isFirst: boolean;
   actions: ActivityRowActions | null;
+  /** The row sits in a card (the To review card): `ActivityListRow`'s. */
+  onCard?: boolean;
+  /** The week card's Next row: `ActivityListRow`'s. */
+  solo?: boolean;
   onPress: () => void;
 }) {
   // The phone can supply a location, so a zoned event checks in here too.
@@ -267,6 +273,8 @@ export function ActivityRowItem({
       row={row}
       isFirst={isFirst}
       action={control}
+      onCard={onCard}
+      solo={solo}
       onPress={onPress}
     />
   );

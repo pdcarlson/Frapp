@@ -96,6 +96,9 @@ member's own answer, not the event's default:
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
+**`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
+phone's page. See [Week](#week).
+
 ## Rules
 
 - **A module that is off contributes nothing.** Each section checks its own module
@@ -109,9 +112,63 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
 
+## Week
+
+`week` on `GET /v1/activity` is the member's week as done of total, by kind
+([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13: the count tiles "tell
+me no information", "maybe there's like a percentage or like a dial"). The count tiles say how
+much is waiting; this says how far along the member is, which needs what they already finished,
+and nothing else in the read carries that. The phone draws it as one ring
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+
+- **The week is the Study screen's:** Sunday at the member's local midnight to the next. The
+  client names it (`week_start`) as it does for [Standing](#standing): a start from eight days
+  back to a day ahead is accepted, and Sunday at midnight UTC is used when none is given. A start
+  outside that range is not refused here as Standing refuses it: the default week is counted
+  instead, because this read is the whole page and the tab's badge, and a phone with a wrong
+  clock must not lose its list over the number at the top. Only a value that is not a date-time
+  is a 400. `week.start` and `week.end` say what was counted.
+- **The member's own things only.** What waits on their review (confirmations, hours approvals)
+  is never counted: reviewing is an officer's queue, not their week.
+- **Each kind is `{ done, total }`,** where `total` is `done` plus what is still open, so a ring
+  drawn from it never passes full. Counted before any list cap.
+- **Events** that start in the week and invite the member. Done: marked present or late. Still
+  open: a required event not attended, ahead or missed (a missed one stays open, so the ring
+  does not close on a week with an absence in it). An optional event counts while its check-in
+  has not closed and is dropped once the member has skipped it: skipping something optional is
+  not a miss. An excused event is left out of both, as [Standing](#standing) leaves it out of
+  `required`. Required is the absence sweep's rule, and two members are held to less, as Standing
+  holds them: an alumnus the event invites only by its default is counted only when marked
+  present, since check-in refuses them and the event is never theirs to do; and a required event
+  from before the member joined does not hold them.
+- **Tasks** the member holds. Done: marked done since the week began (`completed_at`), confirmed
+  or not, since the member's part is finished. Still open: not done and due before the week ends,
+  overdue ones included, however old. Every task has a due date.
+- **Polls** from other members that the caller can read. Done: voted on since the week began,
+  by when the vote was last changed, which is the only time a vote keeps (a change rewrites it,
+  ADR-07). So a pick changed this week on a poll first answered earlier counts as one done this
+  week. Still open: every open one they haven't voted on (`needs_you.polls`, before its cap).
+- **Cards** (sign-up sheets, headcounts and forms from others). Done: first answered since the
+  week began; a sign-up given up and taken again keeps its first time. Still open: every
+  `needs_you.cards` row, before its cap.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in
+  `week.unavailable` (`events`, `tasks`, `polls`, `cards`). A client draws a failed part as
+  unknown and says "at least", never as zero and never as a finished week.
+- **It adds little to the read.** The week's events come from the one events read Coming up
+  already makes, widened to reach back to the week's start. The rest is a count of finished
+  tasks, the member's attendance on those events, one more read of the member's claims on
+  sign-up sheets that have closed, and the vote and form-answer reads the poll and card sections
+  already make, widened to closed polls and forms so an answer given this week on one that has
+  since ended still counts. That matters because the page is read on every app open, when the
+  phone sends its largest burst of requests.
+
+Open points, Paul's to settle, each a one-line change here and in `ActivityService`: whether the
+week should run Monday to Sunday instead; and whether an optional event the member skipped should
+count against them.
+
 ## Standing
 
-`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block at the top of the page (Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
+`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (at the top on web, under the week card on the phone; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
 
 - **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
 - **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).

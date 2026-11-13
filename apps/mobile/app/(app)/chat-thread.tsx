@@ -1837,7 +1837,7 @@ function ChannelThreadScreen() {
         menu in paint order and in hit-testing (#2033). The actions sheet
         before it draws through the app's sheet provider, not here.
       */}
-      <FormFillPage state={formFill} message={filledRow} />
+      <FormFillPage state={formFill} message={filledRow} nameFor={nameFor} />
       <ImageViewer viewer={imageViewer} />
     </SafeAreaView>
   );

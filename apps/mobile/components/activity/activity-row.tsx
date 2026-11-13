@@ -57,6 +57,8 @@ export function ActivityListRow({
   row,
   isFirst,
   action = null,
+  onCard = false,
+  solo = false,
   onPress,
 }: {
   row: ActivityRow;
@@ -64,6 +66,20 @@ export function ActivityListRow({
   isFirst: boolean;
   /** The row's ask as a button (`components/activity/activity-row-action.tsx`). */
   action?: ActivityRowActionControl | null;
+  /**
+   * The row sits in a card (the week card's Next row, the To review card's
+   * rows; #4766): it keeps to the card's own padding rather than bleeding
+   * into the screen gutter, and its press lift is the step above the card.
+   */
+  onCard?: boolean;
+  /**
+   * The row stands alone as the week card's Next row (#4766): its ask is
+   * filled with the chapter accent, the one primary action on the screen
+   * (`foundations.md` § Where the accent goes); its detail may take a second
+   * line, since "Due in 2 hours" must not be cut; and it keeps no slot for
+   * the unread dot once read, having no other row to line up with.
+   */
+  solo?: boolean;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -76,29 +92,35 @@ export function ActivityListRow({
   const poster =
     row.kind === "poll" && row.faceId ? faceFor(row.faceId)?.name : null;
   const label = poster ? `${row.title}, from ${poster}` : row.title;
-  const rowStyle = [styles.row, isFirst ? null : styles.divider];
+  const rowStyle = [
+    styles.row,
+    onCard ? styles.rowOnCard : null,
+    isFirst ? null : styles.divider,
+  ];
   const content = (
     <>
       {/* The unread mark (#4405): the notification list's dot, in a slot of
           its own that stays when read so rows don't shift. */}
-      <View
-        style={row.unread ? dotStyles.dot : dotStyles.spacer}
-        testID={row.unread ? "activity-unread-dot" : undefined}
-      />
-      <ActivityRowLead row={row} />
+      {solo && !row.unread ? null : (
+        <View
+          style={row.unread ? dotStyles.dot : dotStyles.spacer}
+          testID={row.unread ? "activity-unread-dot" : undefined}
+        />
+      )}
+      <ActivityRowLead row={row} onCard={onCard} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
             task names short, and the old list wrapped them in full. */}
         <Text numberOfLines={2} style={styles.title}>
           {row.title}
         </Text>
-        <ActivityRowDetail row={row} />
+        <ActivityRowDetail row={row} lines={solo ? 2 : 1} />
       </View>
       {row.badge ? (
         action ? (
-          <ActivityAskButton action={action} />
+          <ActivityAskButton action={action} filled={solo} />
         ) : activityBadgeIsAsk(row) ? (
-          <ActivityAsk label={row.badge.label} />
+          <ActivityAsk label={row.badge.label} filled={solo} />
         ) : row.badge.variant === "outline" ? (
           <HairlineChip label={row.badge.label} />
         ) : (
@@ -108,7 +130,7 @@ export function ActivityListRow({
           />
         )
       ) : null}
-      <ForwardGlyph color={tokens.color.text.muted} />
+      <ForwardGlyph color={tokens.color.text.mutedForeground} />
     </>
   );
 
@@ -136,6 +158,7 @@ export function ActivityListRow({
         }
       }}
       onPress={onPress}
+      onCard={onCard}
       style={rowStyle}
     >
       {content}
@@ -154,7 +177,14 @@ export function ActivityListRow({
  * ("Tomorrow · 7:00 PM") and names the person, and a poll's poster is in the
  * row's label (`ActivityListRow`).
  */
-function ActivityRowLead({ row }: { row: ActivityRow }) {
+function ActivityRowLead({
+  row,
+  onCard,
+}: {
+  row: ActivityRow;
+  onCard: boolean;
+}) {
+  const on = onCard ? "card" : "background";
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
   const faceFor = useContext(ActivityFaces);
@@ -189,7 +219,7 @@ function ActivityRowLead({ row }: { row: ActivityRow }) {
   }
   if (row.dateBlock) {
     return (
-      <LeadTile size="lead" testID="activity-date-block">
+      <LeadTile size="lead" on={on} testID="activity-date-block">
         <View style={styles.leadDate}>
           <Text style={styles.leadMonth}>{row.dateBlock.month}</Text>
           <Text style={styles.leadDay}>{row.dateBlock.day}</Text>
@@ -198,7 +228,7 @@ function ActivityRowLead({ row }: { row: ActivityRow }) {
     );
   }
   return (
-    <LeadTile size="lead" testID={`activity-glyph-${row.glyph}`}>
+    <LeadTile size="lead" on={on} testID={`activity-glyph-${row.glyph}`}>
       <NavGlyph
         paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
         color={tokens.color.text.mutedForeground}
@@ -217,13 +247,19 @@ const FACE_GLYPH_DISC = 20;
  * (`row.soon`, "closes in 2 hours") is drawn in the warning hue, so what runs
  * out soon reads apart from what runs out next week (#4402, item 4).
  */
-function ActivityRowDetail({ row }: { row: ActivityRow }) {
+function ActivityRowDetail({
+  row,
+  lines,
+}: {
+  row: ActivityRow;
+  lines: number;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
   if (!row.detail) return null;
   const { lead, soon } = activityDetailParts(row);
   return (
-    <Text numberOfLines={1} style={styles.detail}>
+    <Text numberOfLines={lines} style={styles.detail}>
       {lead}
       {lead && soon ? " · " : null}
       {soon ? (
@@ -246,18 +282,33 @@ function ActivityRowDetail({ row }: { row: ActivityRow }) {
  * stay this; `Confirm` and `Approve` draw as `ActivityAskButton` while the
  * plan allows them (#4437).
  */
-export function ActivityAsk({ label }: { label: string }) {
+export function ActivityAsk({
+  label,
+  filled = false,
+}: {
+  label: string;
+  /** The filled accent button: the week card's Next row only (#4766). */
+  filled?: boolean;
+}) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const { accent, accentSubtle, accentBorder, accentPrimary, accentOnPrimary } =
+    useChapterBranding();
   const styles = createActivityRowStyles(tokens);
   return (
     <View
+      testID={filled ? "activity-ask-filled" : undefined}
       style={[
         styles.ask,
-        { backgroundColor: accentSubtle, borderColor: accentBorder },
+        filled
+          ? { backgroundColor: accentPrimary, borderColor: accentPrimary }
+          : { backgroundColor: accentSubtle, borderColor: accentBorder },
       ]}
     >
-      <Text style={[styles.askText, { color: accent }]}>{label}</Text>
+      <Text
+        style={[styles.askText, { color: filled ? accentOnPrimary : accent }]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -281,11 +332,15 @@ export interface ActivityRowActionControl {
  */
 export function ActivityAskButton({
   action,
+  filled = false,
 }: {
   action: ActivityRowActionControl;
+  /** `ActivityAsk`'s filled accent: the week card's Next row (#4766, #4427). */
+  filled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const { accent, accentSubtle, accentBorder, accentPrimary, accentOnPrimary } =
+    useChapterBranding();
   const styles = createActivityRowStyles(tokens);
   const slop = Math.max(0, (tokens.touch.minimum - ASK_HEIGHT) / 2);
   return (
@@ -298,7 +353,9 @@ export function ActivityAskButton({
       onPress={action.run}
       style={({ pressed }) => [
         styles.ask,
-        { backgroundColor: accentSubtle, borderColor: accentBorder },
+        filled
+          ? { backgroundColor: accentPrimary, borderColor: accentPrimary }
+          : { backgroundColor: accentSubtle, borderColor: accentBorder },
         action.disabled
           ? styles.askDisabled
           : pressed
@@ -306,7 +363,11 @@ export function ActivityAskButton({
             : null,
       ]}
     >
-      <Text style={[styles.askText, { color: accent }]}>{action.label}</Text>
+      <Text
+        style={[styles.askText, { color: filled ? accentOnPrimary : accent }]}
+      >
+        {action.label}
+      </Text>
     </Pressable>
   );
 }
@@ -357,6 +418,11 @@ function createActivityRowStyles(tokens: SignetTokens) {
       // Square and hairline-split, as the Events list's flat rows bleed:
       // content on the gutter line, press feedback clear of it.
       ...gutterBleed(tokens, { rounded: false }),
+    },
+    // In a card the card's padding is the gutter: no bleed.
+    rowOnCard: {
+      paddingHorizontal: 0,
+      marginHorizontal: 0,
     },
     divider: {
       borderTopWidth: StyleSheet.hairlineWidth,

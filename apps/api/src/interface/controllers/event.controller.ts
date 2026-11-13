@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -37,6 +38,7 @@ import {
   UpdateEventDto,
 } from '../dtos/event.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
 
 @ApiTags('Events')
 @ApiBearerAuth()
@@ -89,17 +91,22 @@ export class EventController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
     @Body() dto: CreateEventDto,
+    // A legacy repeat token keeps the wall clock of the device's zone (#4746).
+    @Headers(TIME_ZONE_HEADER) timeZone: string | undefined,
   ) {
-    return this.eventService.create({
-      // Server-decided keys go last so they win the spread. With the DTO
-      // spread last instead, adding a `chapter_id` property to CreateEventDto
-      // would silently let a caller write into another chapter — the whitelist
-      // pipe is what stops that today, and this ordering is what stops it if
-      // the DTO ever changes.
-      ...dto,
-      chapter_id: chapterId,
-      created_by: createdBy,
-    });
+    return this.eventService.create(
+      {
+        // Server-decided keys go last so they win the spread. With the DTO
+        // spread last instead, adding a `chapter_id` property to CreateEventDto
+        // would silently let a caller write into another chapter — the whitelist
+        // pipe is what stops that today, and this ordering is what stops it if
+        // the DTO ever changes.
+        ...dto,
+        chapter_id: chapterId,
+        created_by: createdBy,
+      },
+      timeZone,
+    );
   }
 
   @Patch(':id')
@@ -111,11 +118,19 @@ export class EventController {
     @CurrentUser('id') actorId: string,
     @Param('id') id: string,
     @Body() dto: UpdateEventDto,
+    @Headers(TIME_ZONE_HEADER) timeZone: string | undefined,
   ) {
     // `scope` is a control flag, not a column. Split it off here so it can never
     // reach the repository's update payload as a stray field.
     const { scope, ...patch } = dto;
-    return this.eventService.update(id, chapterId, patch, scope, actorId);
+    return this.eventService.update(
+      id,
+      chapterId,
+      patch,
+      scope,
+      actorId,
+      timeZone,
+    );
   }
 
   @Delete(':id')

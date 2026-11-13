@@ -1,3 +1,4 @@
+export * from "./activity-agenda";
 export * from "./activity-faces";
 export * from "./activity-rows";
 export * from "./activity-standing";

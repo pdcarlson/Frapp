@@ -67,6 +67,14 @@ export interface EventEditTarget<
    * parent could be read. A series time change is sent to it.
    */
   parent: Pick<SeriesEventFields, "id" | "start_time" | "end_time"> | null;
+  /**
+   * The starts of the series' generated meetings (rows whose parent is the
+   * series' head), when the editor holds the chapter's events
+   * ({@link seriesStartsIn}). A Repeat change on a started series steps
+   * from the first one after now, as the API does (#4746). Missing, the next
+   * meeting is predicted from the rule.
+   */
+  seriesStarts?: readonly string[];
 }
 
 /** The wording both apps ask with, so web and the phone read the same. */
@@ -161,14 +169,52 @@ export function repeatEditSeriesOf(
   start: Date,
   now: Date,
 ): RepeatEditSeries {
-  const { event, parent, seriesRule } = target;
+  const { event, parent, seriesRule, seriesStarts } = target;
   const head = event.parent_event_id && parent ? parent : event;
   return {
     headStart: new Date(head.start_time),
     headRule: seriesRule,
     shiftMs: start.getTime() - new Date(event.start_time).getTime(),
     now,
+    nextStart: nextStartOf(seriesStarts, now),
   };
+}
+
+/** The earliest of `starts` after `now`, or `null`. */
+function nextStartOf(
+  starts: readonly string[] | undefined,
+  now: Date,
+): Date | null {
+  let next: number | null = null;
+  for (const start of starts ?? []) {
+    const ms = new Date(start).getTime();
+    if (Number.isNaN(ms) || ms <= now.getTime()) continue;
+    if (next === null || ms < next) next = ms;
+  }
+  return next === null ? null : new Date(next);
+}
+
+/**
+ * The starts of the series' generated meetings among `events` (a chapter's
+ * events as the list returns them, read loosely), for
+ * {@link EventEditTarget.seriesStarts}. `undefined` while the list isn't
+ * held, or for a one-time event, so the anchor falls back to the rule.
+ */
+export function seriesStartsIn(
+  target: Pick<EventEditTarget, "event" | "parent" | "seriesRule">,
+  events: unknown,
+): string[] | undefined {
+  if (!target.seriesRule || !Array.isArray(events)) return undefined;
+  const headId = target.event.parent_event_id ?? target.event.id;
+  const starts: string[] = [];
+  for (const row of events) {
+    if (typeof row !== "object" || row === null) continue;
+    const { parent_event_id, start_time } = row as Record<string, unknown>;
+    if (parent_event_id === headId && typeof start_time === "string") {
+      starts.push(start_time);
+    }
+  }
+  return starts;
 }
 
 export interface GeofencePoint {

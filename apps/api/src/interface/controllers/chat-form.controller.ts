@@ -18,6 +18,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   FormResponseDto,
+  FormResponsesDto,
   OwnFormResponseDto,
   SaveFormResponseDto,
 } from '../dtos/chat-form.dto';
@@ -50,6 +51,22 @@ export class ChatFormController {
     return {
       response: await this.forms.getOwnResponse(messageId, chapterId, userId),
     };
+  }
+
+  @Get('messages/:messageId/form-responses')
+  @ApiOperation({
+    summary:
+      'Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it',
+    description:
+      'Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.',
+  })
+  @ApiOkResponse({ type: FormResponsesDto })
+  async getResponses(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<FormResponsesDto> {
+    return this.forms.getResponses(messageId, chapterId, userId);
   }
 
   @Put('messages/:messageId/form-response')

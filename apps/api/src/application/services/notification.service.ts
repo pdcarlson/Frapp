@@ -419,8 +419,9 @@ export class NotificationService {
    * campus, so the person who scheduled an event is the best guess for it.
    *
    * A failed read is reported, not only swallowed: a recurring series' legacy
-   * token is stepped in this zone and its meetings are stored (#4505), so a
-   * read that failed leaves rows a DST change moves, and the report says why.
+   * token saved by a request with no usable `x-time-zone` is stepped in this
+   * zone and its meetings are stored (#4505, #4746), so a read that failed
+   * leaves rows a DST change moves, and the report says why.
    */
   async timeZoneFor(userId: string): Promise<string | null> {
     try {

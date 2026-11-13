@@ -106,7 +106,7 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  * (`useCardWrite`), as they do in a thread.
  *
  * `onActed` runs after an action this sheet makes itself (a vote, a review),
- * so the row can leave "Needs you"; `onClosed` runs when the sheet has gone,
+ * so the row can leave its list; `onClosed` runs when the sheet has gone,
  * which is when the screen re-reads for what the cards' own buttons changed
  * and lets go of `row`. Until then the screen keeps handing the row down, so
  * the card stays drawn while the sheet slides away.
