@@ -1022,8 +1022,53 @@ export class ChatReportService {
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
  * A malformed card falls back to `content`, the same as any other message:
  * this runs on the filing path and must not fail it.
+ *
+ * A forward (#4864) adds its copy of the original after its comment
+ * ({@link forwardedText}), unless the original was deleted.
  */
 export function reportedContentSnapshot(
+  message: Pick<
+    ChatMessage,
+    'content' | 'type' | 'kind' | 'payload' | 'metadata' | 'forwarded_from'
+  >,
+): string {
+  const own = ownContentSnapshot(message);
+  const copy = forwardedText(message.forwarded_from);
+  if (!copy) return own;
+  return own.trim() ? `${own}\n\n${copy}` : copy;
+}
+
+/**
+ * A forward's copy of its original (#4864). A forward with no comment has an
+ * empty `content`, and the copy is what the member saw, so the report keeps
+ * it after the comment. A copy whose original was deleted holds nothing of
+ * it, and a deleted original keeps nothing past its delete (§ Forward), so
+ * none is added.
+ */
+function forwardedText(
+  copy: ChatMessage['forwarded_from'] | undefined,
+): string | null {
+  if (!copy || typeof copy !== 'object' || copy.deleted === true) return null;
+  const author =
+    typeof copy.author_name === 'string' && copy.author_name.trim()
+      ? copy.author_name.trim()
+      : 'a member';
+  const lines: string[] = [];
+  const text = typeof copy.content === 'string' ? copy.content.trim() : '';
+  if (text) lines.push(`Forwarded from ${author}: ${text}`);
+  const gif = gifText({ gif: copy.gif });
+  if (gif) lines.push(`Forwarded ${gif}`);
+  if (lines.length === 0) {
+    const count = Number(copy.attachment_count);
+    if (!Number.isInteger(count) || count <= 0) return null;
+    lines.push(
+      `Forwarded from ${author}: ${count === 1 ? '1 attachment' : `${count} attachments`}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function ownContentSnapshot(
   message: Pick<
     ChatMessage,
     'content' | 'type' | 'kind' | 'payload' | 'metadata'

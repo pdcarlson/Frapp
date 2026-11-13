@@ -1963,6 +1963,69 @@ describe('reportedContentSnapshot', () => {
     ).toBe('GIF: https://static.klipy.com/ii/a/dance.webp');
   });
 
+  it("keeps a forward's copy after its comment, unless the original was deleted (#4864)", () => {
+    const copy = {
+      message_id: 'orig-1',
+      channel_id: 'chan-src',
+      sender_id: 'user-ana',
+      author_name: 'Ana',
+      content: 'harassing words',
+      gif: null,
+      attachment_count: 0,
+      created_at: '2026-11-01T00:00:00Z',
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', forwarded_from: copy }),
+    ).toBe('Forwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: copy,
+      }),
+    ).toBe('look\n\nForwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: {
+          ...copy,
+          content: '',
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: 'Happy dance',
+            url: 'https://static.klipy.com/ii/a/dance.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      }),
+    ).toBe(
+      'Forwarded GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp',
+    );
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: { ...copy, content: '', attachment_count: 2 },
+      }),
+    ).toBe('Forwarded from Ana: 2 attachments');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: {
+          ...copy,
+          sender_id: null,
+          author_name: null,
+          content: '',
+          deleted: true,
+        },
+      }),
+    ).toBe('look');
+  });
+
   it('is the content for anything that is not a poll', () => {
     expect(reportedContentSnapshot(text)).toBe('hello');
     // A card of another kind carries no member-written options.

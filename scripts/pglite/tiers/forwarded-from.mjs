@@ -11,6 +11,11 @@ import { db, miss } from "../harness.mjs";
 // - a hard delete of the original (here, its channel going) does the same;
 // - Chat home's preview carries the copy, cut to 500, and withholds it from a
 //   caller who blocked the original's author;
+// - the notifications of a forward with no comment go when its original is
+//   soft- or hard-deleted, and a forward with a comment keeps its own;
+// - a notification the push worker inserts after the blanking is dropped;
+// - a forward inserted after its original is deleted (or of a message that
+//   never existed) lands with its copy blanked;
 // - `anonymize_user` rewrites the deleted member's name in their copies only;
 // - the trigger functions aren't callable by a signed-in client.
 try {
@@ -27,6 +32,15 @@ try {
   const W1 = "fcfcfcfc-0000-4000-8000-000000004861";
   const W2 = "fcfcfcfc-0000-4000-8000-000000004862";
   const W3 = "fcfcfcfc-0000-4000-8000-000000004863";
+  const GONE2 = "fafafafa-0000-4000-8000-000000004867";
+  const O4 = "fbfbfbfb-0000-4000-8000-000000004864";
+  const O5 = "fbfbfbfb-0000-4000-8000-000000004865";
+  const W4 = "fcfcfcfc-0000-4000-8000-000000004864"; // no comment, of O4
+  const W5 = "fcfcfcfc-0000-4000-8000-000000004865"; // with a comment, of O4
+  const W6 = "fcfcfcfc-0000-4000-8000-000000004866"; // no comment, of O5
+  const W7 = "fcfcfcfc-0000-4000-8000-000000004867"; // sent after O4 went
+  const W8 = "fcfcfcfc-0000-4000-8000-000000004868"; // of no message at all
+  const NOWHERE = "fbfbfbfb-0000-4000-8000-000000004869";
   const at = (minutes) => `now() - interval '${60 - minutes} minutes'`;
   const copyOf = (id, channel, content) =>
     `jsonb_build_object('message_id', '${id}', 'channel_id', '${channel}',
@@ -84,7 +98,9 @@ try {
   `);
   const blockedPreview = await preview(V);
 
-  await db.exec(`update chat_messages set content = 'one, edited' where id = '${O1}'`);
+  await db.exec(
+    `update chat_messages set content = 'one, edited' where id = '${O1}'`,
+  );
   const afterEdit = await copy(W1);
   await db.exec(
     `update chat_messages set content = '[message deleted]', is_deleted = true where id = '${O1}'`,
@@ -93,6 +109,54 @@ try {
   await db.exec(`delete from chat_channels where id = '${GONE}'`);
   const afterHardDelete = await copy(W3);
 
+  // Notifications of forwards (#4864): seeded after the preview reads, so
+  // DEST's latest message is unchanged for them.
+  await db.exec(`
+    insert into chat_channels (id, chapter_id, name, type, member_ids) values
+      ('${GONE2}', '${CH}', 'gone too', 'PUBLIC', '{}'::uuid[]);
+    insert into chat_messages (id, channel_id, sender_id, content, created_at) values
+      ('${O4}', '${SRC}', '${A}', 'four', ${at(4)}),
+      ('${O5}', '${GONE2}', '${A}', 'five', ${at(5)});
+    insert into chat_messages (id, channel_id, sender_id, content, forwarded_from, created_at) values
+      ('${W4}', '${DEST}', '${F}', ' ', ${copyOf(O4, SRC, "'four'")}, ${at(4)}),
+      ('${W5}', '${DEST}', '${F}', 'look', ${copyOf(O4, SRC, "'four'")}, ${at(4)}),
+      ('${W6}', '${DEST}', '${F}', '', ${copyOf(O5, GONE2, "'five'")}, ${at(5)});
+    insert into notifications (chapter_id, user_id, title, body, data, chat_message_id) values
+      ('${CH}', '${V}', 'Fay', 'w4 Forwarded: four', '{}', '${W4}'),
+      ('${CH}', '${V}', 'Fay', 'w5 look', '{}', '${W5}'),
+      ('${CH}', '${V}', 'Fay', 'w6 Forwarded: five', '{}', '${W6}');
+  `);
+  const bodies = async () =>
+    (
+      await db.query(
+        `select coalesce(string_agg(body, ' | ' order by body), '∅') as s
+           from notifications where chapter_id = $1`,
+        [CH],
+      )
+    ).rows[0]?.s;
+  const notifsBefore = await bodies();
+  await db.exec(
+    `update chat_messages set content = '[message deleted]', is_deleted = true where id = '${O4}'`,
+  );
+  const notifsAfterSoftDelete = await bodies();
+  await db.exec(`delete from chat_channels where id = '${GONE2}'`);
+  const notifsAfterHardDelete = await bodies();
+  // The push worker, still fanning out W4 and W5 from their Realtime rows.
+  await db.exec(`
+    insert into notifications (chapter_id, user_id, title, body, data, chat_message_id) values
+      ('${CH}', '${F}', 'Fay', 'late w4 Forwarded: four', '{}', '${W4}'),
+      ('${CH}', '${F}', 'Fay', 'late w5 look', '{}', '${W5}');
+  `);
+  const notifsAfterLateInsert = await bodies();
+  // A forward the API built before O4 went, inserted after; and one whose
+  // original never existed.
+  await db.exec(`
+    insert into chat_messages (id, channel_id, sender_id, content, forwarded_from, created_at) values
+      ('${W7}', '${DEST}', '${F}', '', ${copyOf(O4, SRC, "'four'")}, ${at(6)}),
+      ('${W8}', '${DEST}', '${F}', 'hm', ${copyOf(NOWHERE, SRC, "'ghost'")}, ${at(6)});
+  `);
+  const lateForwards = `${await copy(W7)} ${await copy(W8)}`;
+
   await db.exec(`select * from anonymize_user('${A}')`);
   const afterAnonymize = `${await copy(W1)} ${await copy(W2)}`;
 
@@ -100,7 +164,8 @@ try {
     await db.query(
       `select has_function_privilege('authenticated', 'public.chat_messages_blank_forwards_on_soft_delete()', 'execute')
            or has_function_privilege('authenticated', 'public.chat_messages_blank_forwards_on_delete()', 'execute')
-           or has_function_privilege('authenticated', 'public.chat_forward_snapshot_blanked(jsonb)', 'execute') as open`,
+           or has_function_privilege('authenticated', 'public.chat_forward_snapshot_blanked(jsonb)', 'execute')
+           or has_function_privilege('authenticated', 'public.chat_messages_blank_forward_of_deleted()', 'execute') as open`,
     )
   ).rows[0]?.open;
 
@@ -132,6 +197,31 @@ try {
       want: blanked(O3),
     },
     {
+      name: "forward notifications are seeded",
+      got: notifsBefore,
+      want: "w4 Forwarded: four | w5 look | w6 Forwarded: five",
+    },
+    {
+      name: "a soft delete of the original removes a comment-less forward's notifications, not a commented one's",
+      got: notifsAfterSoftDelete,
+      want: "w5 look | w6 Forwarded: five",
+    },
+    {
+      name: "a hard delete of the original removes a comment-less forward's notifications",
+      got: notifsAfterHardDelete,
+      want: "w5 look",
+    },
+    {
+      name: "a notification inserted after the blanking is dropped for a comment-less forward only",
+      got: notifsAfterLateInsert,
+      want: "late w5 look | w5 look",
+    },
+    {
+      name: "a forward inserted after its original is deleted, or of no message, lands blanked",
+      got: lateForwards,
+      want: `${blanked(O4)} ${blanked(NOWHERE)}`,
+    },
+    {
       name: "account deletion renames the member in the copies of their messages",
       got: afterAnonymize,
       want: `${blanked(O1)} two/Deleted User/${A}/1/∅/${O2}`,
@@ -147,7 +237,9 @@ try {
       console.log(`OK    ${s.name}`);
     } else {
       miss();
-      console.log(`MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`);
+      console.log(
+        `MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`,
+      );
     }
   }
 

@@ -4421,6 +4421,41 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
+    // The source is authorized as a read by the REAL ChannelAccessService: a
+    // message that exists, in a channel the caller can't read, is refused with
+    // the 403 every message action answers there (`assertMessageAccess`). A
+    // bare `findById` in its place would forward it.
+    it.each([
+      [
+        "someone else's DM",
+        {
+          type: 'DM' as const,
+          name: 'dm-user-2-user-3',
+          member_ids: ['user-2', 'user-3'],
+        },
+      ],
+      [
+        'a private channel the caller is not in',
+        {
+          type: 'PRIVATE' as const,
+          name: 'exec-secrets',
+          member_ids: ['user-2'],
+        },
+      ],
+    ])('answers 403 for a message in %s', async (_label, shape) => {
+      const hidden: ChatChannel = { ...baseChannel, id: 'ch-hidden', ...shape };
+      mockChannelRepo.findById.mockImplementation(async (id: string) =>
+        id === DEST ? destChannel : id === 'ch-hidden' ? hidden : baseChannel,
+      );
+      mockMessageRepo.findById.mockResolvedValue({
+        ...original,
+        channel_id: 'ch-hidden',
+      });
+
+      await expect(forward()).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
     it('answers 404 for a destination in another chapter', async () => {
       channels(null);
 

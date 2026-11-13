@@ -16,6 +16,24 @@
 --    forward of it keeps only `message_id`, `channel_id` and `created_at`,
 --    with `deleted: true`. An edit to the original changes no copy. The
 --    forward's own row update echoes to its channel's open clients.
+--    A forward with no comment quotes the original in its notifications
+--    ("Forwarded: ..."), so those go too, as a delete removes the
+--    notifications quoting it (#4418): the blank triggers delete the
+--    notification rows of every forward they blank whose comment is empty.
+--    A forward with a comment quotes only the comment, which stays, so its
+--    rows stay. Two races are closed with `for share` reads, the pattern of
+--    `notifications_skip_deleted_message`:
+--    - a forward inserted while its original's delete commits: a BEFORE
+--      INSERT trigger reads the original `for share` and, if it is gone or
+--      deleted, stores the copy blanked. A forward with no comment then
+--      lands as a card reading "Original message was deleted"; it is kept,
+--      not refused, since the forwarder did send it.
+--    - a notification the push worker inserts after the blanking, built from
+--      the pre-blank Realtime row: `notifications_skip_deleted_message` (now
+--      redefined here) also drops a row for a forward with no comment whose
+--      copy is blanked. Dropped rather than rewritten, because the push the
+--      API sends carries the worker's own body, not the row's, and a dropped
+--      insert sends no push either.
 -- 3. `get_channel_latest_messages` also returns the latest message's
 --    `forwarded_from`, so Chat home can preview a forward with no comment
 --    ("Forwarded: ..."), withheld when the caller blocked the original's
@@ -74,6 +92,14 @@ begin
    where f.forwarded_from is not null
      and f.forwarded_from ->> 'message_id' = new.id::text
      and coalesce((f.forwarded_from ->> 'deleted')::boolean, false) = false;
+  -- A separate statement, so its fresh snapshot also sees a row the push
+  -- worker committed while the update above waited on the forward's lock.
+  delete from notifications n
+   using chat_messages f
+   where n.chat_message_id = f.id
+     and f.forwarded_from is not null
+     and f.forwarded_from ->> 'message_id' = new.id::text
+     and regexp_replace(replace(f.content, U&'\FFFC', ' '), '^\s+|\s+$', '', 'g') = '';
   return null;
 end
 $$;
@@ -102,6 +128,12 @@ begin
    where f.forwarded_from is not null
      and f.forwarded_from ->> 'message_id' = g.id::text
      and coalesce((f.forwarded_from ->> 'deleted')::boolean, false) = false;
+  delete from notifications n
+   using chat_messages f, gone g
+   where n.chat_message_id = f.id
+     and f.forwarded_from is not null
+     and f.forwarded_from ->> 'message_id' = g.id::text
+     and regexp_replace(replace(f.content, U&'\FFFC', ' '), '^\s+|\s+$', '', 'g') = '';
   return null;
 end
 $$;
@@ -113,9 +145,97 @@ create trigger chat_messages_blank_forwards_on_delete
   for each statement
   execute function public.chat_messages_blank_forwards_on_delete();
 
+-- A forward inserted after its original's delete committed, or while it is
+-- in flight. The API reads the source, builds the copy and inserts later with
+-- no lock, and the AFTER triggers above cannot see a row not yet inserted.
+-- `for share` waits out a delete in flight on the original (and makes a
+-- delete that starts later wait for this insert, so its trigger, a fresh
+-- statement, then sees the forward and blanks it).
+create or replace function public.chat_messages_blank_forward_of_deleted()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_original_id text := new.forwarded_from ->> 'message_id';
+  v_deleted boolean;
+begin
+  if coalesce((new.forwarded_from ->> 'deleted')::boolean, false) then
+    return new;
+  end if;
+  if v_original_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    select is_deleted into v_deleted
+      from chat_messages
+     where id = v_original_id::uuid
+       for share;
+  end if;
+  if v_deleted is distinct from false then
+    new.forwarded_from := chat_forward_snapshot_blanked(new.forwarded_from);
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists chat_messages_blank_forward_of_deleted on public.chat_messages;
+create trigger chat_messages_blank_forward_of_deleted
+  before insert on public.chat_messages
+  for each row
+  when (new.forwarded_from is not null)
+  execute function public.chat_messages_blank_forward_of_deleted();
+
+-- Redefined in full from `20261112140000_notifications_chat_message_id.sql`;
+-- the only change is the forward step. A row for a forward with no comment
+-- quotes the copy, so once the copy is blanked the row is dropped, as a row
+-- about a deleted message is. The empty test is the preview's own
+-- (`chatPushPreview`: U+FFFC to a space, trimmed).
+create or replace function public.notifications_skip_deleted_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  msg record;
+begin
+  -- `for share` waits out a soft delete (or an edit) still in flight on the
+  -- message: a plain read would see the last committed row, let the insert
+  -- through, and the delete trigger, which cannot see this uncommitted row,
+  -- would leave it behind. It also waits out the blanking of a forward's
+  -- copy, which updates this row.
+  select content, is_deleted, edited_at, forwarded_from into msg
+    from chat_messages
+   where id = new.chat_message_id
+     for share;
+  if not found or msg.is_deleted then
+    return null;
+  end if;
+  -- A forward with no comment whose original was deleted (#4864): the worker
+  -- built this row from the copy as it was before the blanking.
+  if msg.forwarded_from is not null
+     and coalesce((msg.forwarded_from ->> 'deleted')::boolean, false)
+     and regexp_replace(replace(msg.content, U&'\FFFC', ' '), '^\s+|\s+$', '', 'g') = ''
+  then
+    return null;
+  end if;
+  -- The push worker writes every row from the message as it was sent. One
+  -- that lands after an edit takes the edited text instead, the same preview
+  -- `chatPushPreview` cuts (U+FFFC to a space, trimmed, 200 characters; an
+  -- edit always has text, so its attachment fallback never applies here).
+  if msg.edited_at is not null then
+    new.body := left(
+      regexp_replace(replace(msg.content, U&'\FFFC', ' '), '^\s+|\s+$', '', 'g'),
+      200
+    );
+  end if;
+  return new;
+end
+$$;
+
 revoke execute on function public.chat_forward_snapshot_blanked(jsonb) from public;
 revoke execute on function public.chat_messages_blank_forwards_on_soft_delete() from public;
 revoke execute on function public.chat_messages_blank_forwards_on_delete() from public;
+revoke execute on function public.chat_messages_blank_forward_of_deleted() from public;
 
 -- Supabase grants new functions to `anon` and `authenticated` directly, so
 -- revoking from `public` alone leaves them callable.
@@ -125,11 +245,13 @@ begin
     revoke execute on function public.chat_forward_snapshot_blanked(jsonb) from anon;
     revoke execute on function public.chat_messages_blank_forwards_on_soft_delete() from anon;
     revoke execute on function public.chat_messages_blank_forwards_on_delete() from anon;
+    revoke execute on function public.chat_messages_blank_forward_of_deleted() from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke execute on function public.chat_forward_snapshot_blanked(jsonb) from authenticated;
     revoke execute on function public.chat_messages_blank_forwards_on_soft_delete() from authenticated;
     revoke execute on function public.chat_messages_blank_forwards_on_delete() from authenticated;
+    revoke execute on function public.chat_messages_blank_forward_of_deleted() from authenticated;
   end if;
 end
 $$;
