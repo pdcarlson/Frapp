@@ -44,7 +44,10 @@ import { TaskModule } from '../task/task.module';
  *
  * A new live-data tool is a class added to the `ASK_TOOLS` list. The list is
  * closed: the plan step can only pick from it, and `AskService` checks each
- * pick against the asker's permissions before it runs.
+ * pick against the asker's permissions before it runs. It also needs its
+ * words for the line under a working turn (`ASK_COPY.reads` in
+ * `@repo/validation`, "Reading the roster"); `ask-tools.spec.ts` holds the
+ * list to that.
  *
  * `AskSuggestionsService` builds what Ask opens with (#4700) from the same
  * services the tools read through; it calls no model.

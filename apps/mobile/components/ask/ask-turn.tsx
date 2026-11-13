@@ -8,6 +8,7 @@ import {
   askAnswerSegments,
   askLeftOutLine,
   askSourceMetaLine,
+  askStepLine,
   askUnavailableLine,
   type AskAnswer,
   type AskSource,
@@ -101,9 +102,7 @@ export function AskTurn({
               <Text style={styles.answer}>{exchange.preview}</Text>
             ) : null}
             <Text style={styles.note}>
-              {(ASK_COPY.steps as Record<string, string>)[
-                exchange.step ?? ""
-              ] ?? ASK_COPY.steps.searching}
+              {askStepLine(exchange.step, exchange.stepDetail)}
             </Text>
           </>
         ) : null}

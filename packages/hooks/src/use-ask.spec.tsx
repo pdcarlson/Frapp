@@ -103,6 +103,25 @@ describe("applyAskEvent", () => {
     });
   });
 
+  it("keeps what a step says is being read, and only for that step", () => {
+    const reading = applyAskEvent(WORKING, {
+      v,
+      type: "status",
+      step: "reading",
+      reads: ["events"],
+      found: 2,
+    });
+    expect(reading).toMatchObject({
+      step: "reading",
+      stepDetail: { reads: ["events"], found: 2 },
+    });
+    const writing = applyAskEvent(reading, { v, type: "status", step: "writing" });
+    expect(writing.stepDetail).toEqual({ reads: undefined, found: undefined });
+    expect(
+      applyAskEvent(reading, { v, type: "done", answer: ANSWER }).stepDetail,
+    ).toBeNull();
+  });
+
   it("replaces the preview with the checked answer on done", () => {
     const streaming = { ...WORKING, preview: "Quorum is three people, I think" };
     expect(

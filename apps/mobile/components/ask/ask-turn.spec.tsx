@@ -147,10 +147,22 @@ describe("AskTurn", () => {
     );
     const text = screenText(tree);
     expect(text).toContain("Dues are");
-    expect(text).toContain(
-      (ASK_COPY.steps as Record<string, string>).reading ??
-        ASK_COPY.steps.searching,
+    expect(text).toContain(ASK_COPY.steps.reading);
+  });
+
+  it("says what is being read, and that a card is being worked out", () => {
+    const reading = render(
+      exchange({
+        phase: "working",
+        step: "reading",
+        stepDetail: { reads: ["events", "my_tasks"], found: 3 },
+      }),
     );
+    expect(screenText(reading)).toContain(
+      "Reading the events calendar, your tasks and 3 sources",
+    );
+    const proposing = render(exchange({ phase: "working", step: "proposing" }));
+    expect(screenText(proposing)).toContain(ASK_COPY.steps.proposing);
   });
 
   it("falls back to the searching line for a step this build doesn't know", () => {

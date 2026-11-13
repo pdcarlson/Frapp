@@ -11,6 +11,7 @@ import {
   askAnswerSegments,
   askLeftOutLine,
   askSourceMetaLine,
+  askStepLine,
   askUnavailableLine,
   type AskAnswer,
   type AskSource,
@@ -87,9 +88,7 @@ export function AskTurn({
               </p>
             ) : null}
             <p className="text-caption text-muted-foreground">
-              {(ASK_COPY.steps as Record<string, string>)[
-                exchange.step ?? ""
-              ] ?? ASK_COPY.steps.searching}
+              {askStepLine(exchange.step, exchange.stepDetail)}
             </p>
           </>
         ) : null}

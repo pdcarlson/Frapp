@@ -1,4 +1,8 @@
-import type { AskAnswer, AskStreamEvent } from '@repo/validation';
+import {
+  ASK_STREAM_VERSION,
+  type AskAnswer,
+  type AskStreamEvent,
+} from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type {
@@ -273,6 +277,124 @@ describe('AskService', () => {
           unverified_citations: 2,
         }),
       );
+    });
+  });
+
+  describe('what it says it is doing (#4701)', () => {
+    const steps = (events: AskStreamEvent[]) =>
+      events.flatMap((event) => (event.type === 'status' ? [event] : []));
+
+    it('names the live reads it picked and counts each source the search found once', async () => {
+      const { service } = build({
+        tools: [tool()],
+        plan: { status: 'ok', value: { tools: ['roster'] }, usage: USAGE },
+        passages: [
+          passage(),
+          // A second passage of the same document, and one of another.
+          passage({ id: 'p2' }),
+          passage({ id: 'p3', sourceId: 'doc-2', title: 'Risk policy' }),
+        ],
+      });
+      const { events } = await run(service);
+      expect(steps(events)[1]).toEqual({
+        v: ASK_STREAM_VERSION,
+        type: 'status',
+        step: 'reading',
+        reads: ['roster'],
+        found: 2,
+      });
+    });
+
+    it('never says it is reading when the search found nothing and no read was picked', async () => {
+      const { service } = build({ passages: [] });
+      const { events } = await run(service);
+      expect(steps(events).map((event) => event.step)).toEqual(['searching']);
+    });
+
+    it('says it is writing at the first word, and never for an answer that was not written', async () => {
+      const written = build({
+        passages: [passage()],
+        deltas: ['Quorum ', 'is'],
+      });
+      expect(
+        (await run(written.service)).events.map((event) =>
+          event.type === 'status' ? event.step : event.type,
+        ),
+      ).toEqual([
+        'start',
+        'searching',
+        'reading',
+        'writing',
+        'text',
+        'text',
+        'done',
+      ]);
+
+      const unwritten = build({
+        passages: [passage()],
+        deltas: [],
+        answer: { status: 'refused', category: null },
+      });
+      expect(
+        steps((await run(unwritten.service)).events).map((event) => event.step),
+      ).toEqual(['searching', 'reading']);
+    });
+  });
+
+  describe('a turn that may not go past its search', () => {
+    it('asks once the search and the plan are back, and ends with nothing run, kept or written', async () => {
+      const roster = tool();
+      const { service, retrieval, gateway, diagnostics, consent } = build({
+        tools: [roster],
+        plan: { status: 'ok', value: { tools: ['roster'] }, usage: USAGE },
+        passages: [passage()],
+      });
+      const mayGoOn = jest.fn(async () => {
+        expect(retrieval.retrieve).toHaveBeenCalledTimes(1);
+        expect(gateway.generateObject).toHaveBeenCalledTimes(1);
+        return false;
+      });
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({ mayGoOn, savedNoticeShown: true }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(mayGoOn).toHaveBeenCalledTimes(1);
+      expect(
+        events.map((event) =>
+          event.type === 'status' ? event.step : event.type,
+        ),
+      ).toEqual(['start', 'searching']);
+      expect(roster.run).not.toHaveBeenCalled();
+      expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
+      expect(gateway.streamCited).not.toHaveBeenCalled();
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('goes on to the answer when it is told it may', async () => {
+      const { service } = build({ passages: [passage()] });
+      const { answer } = await run(service, { mayGoOn: async () => true });
+      expect(answer.status).toBe('answered');
+    });
+
+    it('is held even when the search could not run, so nothing is said for a turn that is a card', async () => {
+      const { service } = build({
+        retrieved: {
+          status: 'unavailable',
+          reason: 'spend_cap',
+          detail: 'member_cap',
+        },
+      });
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({ mayGoOn: async () => false }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(events.some((event) => event.type === 'done')).toBe(false);
     });
   });
 

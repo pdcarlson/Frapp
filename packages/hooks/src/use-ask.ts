@@ -8,6 +8,7 @@ import {
   askHistory,
   createAskStreamReader,
   type AskAnswer,
+  type AskStepDetail,
   type AskStreamEvent,
   type AskSuggestion,
 } from "@repo/validation";
@@ -167,6 +168,8 @@ export interface AskExchange {
   phase: "working" | "done" | "failed";
   /** The step the server last named, while working. Open on the wire. */
   step: string | null;
+  /** What that step said is being read, for the line under the turn. */
+  stepDetail?: AskStepDetail | null;
   /** The text as it streams. A preview: `answer` replaces it. */
   preview: string;
   answer: AskAnswer | null;
@@ -215,7 +218,13 @@ export function applyAskEvent(
     case "start":
       return { ...exchange, askId: event.ask_id };
     case "status":
-      return { ...exchange, step: event.step };
+      return {
+        ...exchange,
+        step: event.step,
+        // Each step replaces the last one's detail, so "3 sources" never
+        // outlives the step that counted them.
+        stepDetail: { reads: event.reads, found: event.found },
+      };
     case "text":
       return { ...exchange, preview: exchange.preview + event.delta };
     case "done":
@@ -223,6 +232,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
+        stepDetail: null,
         preview: "",
         answer: event.answer,
       };
@@ -231,6 +241,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
+        stepDetail: null,
         preview: "",
         // The shape `POST /v1/ai/act` answers with; open on the wire, and
         // the card shows a status it does not know as the generic line.
@@ -242,6 +253,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "failed",
         step: null,
+        stepDetail: null,
         preview: "",
         failure: { message: ASK_COPY.failed, retryable: event.retryable },
       };
@@ -253,6 +265,7 @@ function failed(exchange: AskExchange, message: string): AskExchange {
     ...exchange,
     phase: "failed",
     step: null,
+    stepDetail: null,
     preview: "",
     failure: { message, retryable: true },
   };
@@ -419,6 +432,7 @@ export function useAsk(): {
               ...current,
               phase: "done",
               step: null,
+              stepDetail: null,
               answer: unavailable("consent_required"),
             }));
             return;
@@ -447,7 +461,13 @@ export function useAsk(): {
           }
           update((current) =>
             reason
-              ? { ...current, phase: "done", step: null, answer: unavailable(reason) }
+              ? {
+                  ...current,
+                  phase: "done",
+                  step: null,
+                  stepDetail: null,
+                  answer: unavailable(reason),
+                }
               : failed(current, errorCopy(result.error, ASK_COPY.failed)),
           );
           return;

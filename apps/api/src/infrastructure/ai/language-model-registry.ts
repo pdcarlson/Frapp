@@ -31,7 +31,10 @@ export function buildLanguageModelRegistry(
   env: Env = process.env,
 ): ILanguageModelRegistry {
   if (aiProviderMode(env) === 'scripted') {
-    const scripted = new ScriptedLanguageModel(SCRIPTED_REPLIES);
+    const scripted = new ScriptedLanguageModel(
+      SCRIPTED_REPLIES,
+      scriptedPaceMs(env),
+    );
     return { resolve: () => scripted };
   }
 
@@ -45,4 +48,17 @@ export function buildLanguageModelRegistry(
     adapters.set('google', GoogleLanguageModel.fromSettings(google));
   }
   return { resolve: (provider) => adapters.get(provider) ?? null };
+}
+
+/** The longest a paced scripted reply waits, so a typo cannot hang a walk. */
+const SCRIPTED_PACE_MAX_MS = 10_000;
+
+/**
+ * `AI_SCRIPTED_PACE_MS`: how long the scripted adapter takes to start each
+ * reply. Unset, empty or not a whole number of milliseconds is no wait.
+ */
+export function scriptedPaceMs(env: Env): number {
+  const value = envSetting(env, 'AI_SCRIPTED_PACE_MS');
+  if (value === null || !/^\d+$/.test(value)) return 0;
+  return Math.min(Number(value), SCRIPTED_PACE_MAX_MS);
 }

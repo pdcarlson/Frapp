@@ -1,3 +1,4 @@
+import { ASK_COPY } from '@repo/validation';
 import {
   EventsAskTool,
   MyDuesAskTool,
@@ -30,6 +31,11 @@ describe('Ask tools', () => {
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
     // The planner reads the list as `- name: description`.
     expect(tools.every((tool) => /^[a-z_]+$/.test(tool.name))).toBe(true);
+    // The line under a working turn names each read ("Reading the roster"),
+    // in words both clients share (#4701).
+    expect(
+      tools.filter((tool) => !Object.hasOwn(ASK_COPY.reads, tool.name)),
+    ).toEqual([]);
   });
 
   describe('roster', () => {
