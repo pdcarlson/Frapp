@@ -70,9 +70,10 @@ describe("pickAndSetChapterLogo", () => {
       filename: "crest.png",
       content_type: "image/png",
     });
+    // The downscaled PNG re-encode is what goes up (#2912).
     expect(fs.uploadAsync).toHaveBeenCalledWith(
       TICKET.upload_url,
-      "file:///crest.png",
+      "file:///out.jpg",
       expect.objectContaining({ httpMethod: "PUT" }),
     );
     expect(confirm).toHaveBeenCalledWith(TICKET.storage_path);
@@ -106,8 +107,11 @@ describe("pickAndSetChapterLogo", () => {
       uri: "file:///big.png",
       fileName: "big.png",
       mimeType: "image/png",
-      fileSize: 26 * 1024 * 1024,
     });
+    fs.getInfoAsync.mockResolvedValue({
+      exists: true,
+      size: 26 * 1024 * 1024,
+    } as never);
     await expect(run()).resolves.toEqual({
       status: "refused",
       reason: LOGO_SIZE_REFUSAL,

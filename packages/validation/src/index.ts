@@ -197,6 +197,7 @@ export {
   acceptAttribute,
   contentTypeByExtension,
   DOCUMENT_UPLOAD_SURFACES,
+  AVATAR_MAX_EDGE,
   fileExtension,
   type InspectedUpload,
   inspectUploadFile,

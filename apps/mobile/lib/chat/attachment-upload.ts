@@ -5,6 +5,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "./photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
+  AVATAR_MAX_EDGE,
   MAX_UPLOAD_LABEL,
   inspectUploadFile,
   isAllowedUploadExtension,
@@ -253,6 +254,58 @@ async function encodeJpeg(asset: {
   return saved.uri;
 }
 
+/** JPEG quality for a downscaled profile photo: no visible loss at 512px. */
+const AVATAR_JPEG_QUALITY = 0.85;
+
+/**
+ * Re-encode a profile photo or chapter logo with its longest edge at most
+ * `AVATAR_MAX_EDGE` (#2912): the stored object is what every 24-84px avatar
+ * and crest downloads. Always re-encodes, so a GIF keeps one frame and HEIC
+ * becomes an allowlisted type. A photo is JPEG; a logo is PNG, which keeps
+ * the transparency a crest may have.
+ */
+export async function encodeAvatar(
+  asset: {
+    uri: string;
+    fileName?: string | null;
+    width?: number;
+    height?: number;
+  },
+  avatar: "photo" | "logo",
+): Promise<{ uri: string; filename: string; contentType: string }> {
+  const width = asset.width ?? 0;
+  const height = asset.height ?? 0;
+  const context = ImageManipulator.manipulate(asset.uri);
+  // An unknown size is resized anyway: a no-op for a small image, and the
+  // bound holds for a large one.
+  if (
+    Math.max(width, height) > AVATAR_MAX_EDGE ||
+    width === 0 ||
+    height === 0
+  ) {
+    context.resize(
+      width >= height
+        ? { width: AVATAR_MAX_EDGE }
+        : { height: AVATAR_MAX_EDGE },
+    );
+  }
+  const rendered = await context.renderAsync();
+  const saved = await rendered.saveAsync(
+    avatar === "photo"
+      ? { format: SaveFormat.JPEG, compress: AVATAR_JPEG_QUALITY }
+      : { format: SaveFormat.PNG },
+  );
+  const base = safeBasename(asset.fileName ?? asset.uri, "photo").replace(
+    /\.[^.]*$/,
+    "",
+  );
+  return {
+    uri: saved.uri,
+    filename: `${base.length > 0 ? base : "photo"}.${avatar === "photo" ? "jpg" : "png"}`,
+    contentType: avatar === "photo" ? "image/jpeg" : "image/png",
+  };
+}
+
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
 async function byteSizeOf(uri: string, hinted?: number): Promise<number> {
   if (typeof hinted === "number" && Number.isFinite(hinted) && hinted >= 0) {
@@ -268,6 +321,11 @@ export interface ImagePickOptions {
   kind: UploadKind;
   /** Square-crop in the picker. Re-encodes, so a GIF keeps one frame. */
   cropSquare?: boolean;
+  /**
+   * Downscale to `AVATAR_MAX_EDGE` before the upload ({@link encodeAvatar}):
+   * a profile photo encodes JPEG, a chapter logo PNG.
+   */
+  avatar?: "photo" | "logo";
   /** The sentences a refusal reads as, in the caller's own words. */
   copy: {
     /** Library access was refused and the prompt can be shown again. */
@@ -405,7 +463,9 @@ async function preparePickedAsset(
   const { kind, copy } = options;
   let uploadable: Awaited<ReturnType<typeof resolveUploadable>>;
   try {
-    uploadable = await resolveUploadable(asset, kind);
+    uploadable = options.avatar
+      ? await encodeAvatar(asset, options.avatar)
+      : await resolveUploadable(asset, kind);
   } catch {
     return { status: "refused", reason: copy.type };
   }
