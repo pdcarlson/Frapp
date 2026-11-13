@@ -580,14 +580,21 @@ describe("AskTurn", () => {
   });
 
   describe("thumbs", () => {
-    const kept = (rating: "up" | "down" | null, reason: string | null = null) => {
+    const kept = (
+      rating: "up" | "down" | null,
+      reason: string | null = null,
+      receipt: string | null = "sealed",
+    ) => {
       thumbs.state = { rating, reason };
       thumbs.failed = false;
       thumbs.rate.mockClear();
       thumbs.giveReason.mockClear();
       reportDialog.opened.mockClear();
       return show(
-        exchange({ askId: "a-1", answer: { ...ANSWER, ask_id: "trace-1" } }),
+        exchange({
+          askId: "a-1",
+          answer: { ...ANSWER, ask_id: "trace-1", report_receipt: receipt },
+        }),
       );
     };
 
@@ -654,6 +661,14 @@ describe("AskTurn", () => {
         screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
       ).toBeNull();
       expect(screen.getByText(ASK_FEEDBACK_COPY.thanks)).toBeInTheDocument();
+    });
+
+    it("offer no send for an answer a report would keep nothing of", () => {
+      kept("down", null, null);
+      expect(screen.getByText(ASK_FEEDBACK_COPY.prompt)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      ).toBeNull();
     });
 
     it("fold the offer away on Not now", async () => {

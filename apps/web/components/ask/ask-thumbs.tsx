@@ -66,6 +66,9 @@ export function AskThumbButtons({
  * and offers to send the answer through Report this, which opens on the
  * reason already given. Nothing here is a typed box.
  *
+ * The offer is made only for an answer that came with a receipt: without one
+ * a report keeps none of the answer, so "send this answer" would not be true.
+ *
  * "Not now" and a sent report both fold it back to the thanks line. It is
  * keyed by the rating where it is used, so a change of thumb starts it over.
  */
@@ -122,24 +125,26 @@ export function AskThumbsFollowUp({
           </Button>
         ))}
       </div>
-      <p className="text-caption text-muted-foreground">
-        {ASK_FEEDBACK_COPY.send.line}{" "}
-        <button
-          type="button"
-          className="font-medium text-foreground underline-offset-2 hover:underline"
-          onClick={() => setSending(true)}
-        >
-          {ASK_FEEDBACK_COPY.send.action}
-        </button>
-        <span aria-hidden="true"> · </span>
-        <button
-          type="button"
-          className="underline-offset-2 hover:underline"
-          onClick={() => setClosed(true)}
-        >
-          {ASK_FEEDBACK_COPY.send.dismiss}
-        </button>
-      </p>
+      {target.receipt ? (
+        <p className="text-caption text-muted-foreground">
+          {ASK_FEEDBACK_COPY.send.line}{" "}
+          <button
+            type="button"
+            className="font-medium text-foreground underline-offset-2 hover:underline"
+            onClick={() => setSending(true)}
+          >
+            {ASK_FEEDBACK_COPY.send.action}
+          </button>
+          <span aria-hidden="true"> · </span>
+          <button
+            type="button"
+            className="underline-offset-2 hover:underline"
+            onClick={() => setClosed(true)}
+          >
+            {ASK_FEEDBACK_COPY.send.dismiss}
+          </button>
+        </p>
+      ) : null}
       {sending ? (
         <ReportAiDialog
           target={target}
