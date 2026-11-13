@@ -13,6 +13,7 @@ import type { AskExchange } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_FEEDBACK_COPY,
   askLeftOutLine,
   askReadLine,
   askSourceMetaLine,
@@ -32,11 +33,32 @@ import { AskTurn } from "./ask-turn";
 
 // The reader has #rush-week (c1) and no other channel.
 const channelList = vi.hoisted(() => ({ reads: 0 }));
+// The thumbs hook has its own spec (`use-ask-feedback.spec.tsx`); here it is
+// what the row draws from, and it is only called for a traced answer.
+const thumbs = vi.hoisted(() => ({
+  state: { rating: null, reason: null } as {
+    rating: "up" | "down" | null;
+    reason: string | null;
+  },
+  failed: false,
+  asked: [] as (string | null | undefined)[],
+  rate: vi.fn(),
+  giveReason: vi.fn(),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useChannels: () => {
     channelList.reads += 1;
     return { data: [{ id: "c1", name: "rush-week", type: "PUBLIC" }] };
+  },
+  useAskThumbs: (askId: string | null | undefined) => {
+    thumbs.asked.push(askId);
+    return {
+      state: thumbs.state,
+      failed: thumbs.failed,
+      rate: thumbs.rate,
+      giveReason: thumbs.giveReason,
+    };
   },
 }));
 
@@ -536,5 +558,99 @@ describe("under an answer", () => {
     expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
       /Read the /,
     );
+  });
+});
+
+describe("thumbs under an answer (#4904)", () => {
+  const traced = exchange({
+    askId: "ask-1",
+    answer: answer({ ask_id: "trace-1" }),
+  });
+  const show = (
+    rating: "up" | "down" | null,
+    reason: string | null = null,
+    report: React.ComponentProps<typeof AskTurn>["report"] = null,
+  ) => {
+    thumbs.state = { rating, reason };
+    thumbs.failed = false;
+    thumbs.asked.length = 0;
+    thumbs.rate.mockClear();
+    thumbs.giveReason.mockClear();
+    return render(traced, { report });
+  };
+
+  it("are not drawn, and nothing is asked of the server, without a kept trace", () => {
+    thumbs.asked.length = 0;
+    const tree = render(exchange({ askId: "ask-1", answer: answer() }));
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.up)).toHaveLength(0);
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.down)).toHaveLength(0);
+    expect(thumbs.asked).toHaveLength(0);
+  });
+
+  it("rate against the kept trace's id, not the turn's", () => {
+    const tree = show(null);
+    expect(thumbs.asked).toContain("trace-1");
+    act(() => byLabel(tree, ASK_FEEDBACK_COPY.down)[0]!.props.onPress());
+    expect(thumbs.rate).toHaveBeenCalledWith("down");
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.thanks);
+  });
+
+  it("thank an up and say it is selected", () => {
+    const tree = show("up");
+    expect(
+      byLabel(tree, ASK_FEEDBACK_COPY.up)[0]!.props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("ask why on a down in one tap, and offer to send on the reason given", () => {
+    const onSend = vi.fn();
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend,
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.prompt);
+    act(() =>
+      byLabel(tree, ASK_FEEDBACK_COPY.reasons.missed)[0]!.props.onPress(),
+    );
+    expect(thumbs.giveReason).toHaveBeenCalledWith("missed");
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.send.line);
+    const send = tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        typeof node.props.onPress === "function" &&
+        screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.send.action,
+        ) &&
+        !screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.prompt,
+        ),
+    )[0]!;
+    act(() => send.props.onPress());
+    expect(onSend).toHaveBeenCalledWith("wrong");
+  });
+
+  it("offer no send to a member who cannot report, or once it is reported", () => {
+    expect(screenText(show("down"))).not.toContain(
+      ASK_FEEDBACK_COPY.send.action,
+    );
+    const reported = show("down", null, {
+      reported: true,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    expect(screenText(reported)).not.toContain(ASK_FEEDBACK_COPY.send.action);
+    // The reasons stay: the rating is still the member's to explain.
+    expect(screenText(reported)).toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("say so when a rating did not send", () => {
+    thumbs.state = { rating: null, reason: null };
+    thumbs.failed = true;
+    const tree = render(traced);
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.failed);
+    thumbs.failed = false;
   });
 });
