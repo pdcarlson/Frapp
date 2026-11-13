@@ -71,7 +71,6 @@ import {
   type MentionPick,
 } from "@repo/validation";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
-import { AskComposerButton } from "@/components/ask/ask-host";
 import { GifPickerButton } from "./gif-picker";
 import type { GifResult } from "@repo/hooks";
 import { ComposerPlusCard } from "./composer-plus-card";
@@ -1979,12 +1978,6 @@ export function Composer({
             </>
           )}
         </p>
-        {/*
-          A member who can't post here can still ask about what was posted.
-          The negative margin keeps the row the height of its one line of
-          text, so the button arriving moves nothing.
-        */}
-        <AskComposerButton className="-my-2 pointer-coarse:-my-3.5" />
       </div>
     );
   }
@@ -2151,13 +2144,6 @@ export function Composer({
               />
             ) : null}
             <ComposerHelp />
-            {/*
-              Ask Frapp, the one highlighted control on the row (#4702, Paul
-              2026-11-13: "a nice big highlighted one" beside GIF and the
-              help mark). It opens the conversation over the thread. Drawn
-              only for a member who has Ask; `ask-host.tsx` decides.
-            */}
-            <AskComposerButton className="ml-1" />
           </div>
           {/*
             What Send will do while the draft names `@Frapp` (#4713), said

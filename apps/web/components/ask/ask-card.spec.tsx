@@ -1,12 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ASK_COPY, askSavedLine } from "@repo/validation";
 
 /**
  * The Ask conversation's own rules: consent before the first question
  * leaves, the saved notice shown before a question may be kept (#4315), and
- * where it is drawn: over the chat, in the slot above the composer (#4702).
+ * where it is drawn: a dialog where Find opens (#4904).
  */
 
 const state = vi.hoisted(() => ({
@@ -67,20 +67,9 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
 
 const { AskCard } = await import("./ask-card");
 
-/** Chat's slot above the composer, which the card is drawn into. */
-let slot: HTMLElement;
-beforeEach(() => {
-  slot = document.createElement("div");
-  slot.setAttribute("data-testid", "ask-slot");
-  document.body.appendChild(slot);
-});
-afterEach(() => slot.remove());
-
-/** The card as `AskHost` renders it, with chat's slot on screen. */
+/** The conversation as `AskHost` renders it. */
 function Card(props: Partial<Parameters<typeof AskCard>[0]>) {
-  return (
-    <AskCard open onOpenChange={() => undefined} container={slot} {...props} />
-  );
+  return <AskCard open onOpenChange={() => undefined} {...props} />;
 }
 
 const open = (isOpen = true) => render(<Card open={isOpen} />);
@@ -365,63 +354,54 @@ describe("AskCard", () => {
     });
   });
 
-  describe("over the chat (#4702)", () => {
-    it("is drawn in chat's slot above the composer: not a dialog, not a panel beside the page, and the shell is not asked to move", () => {
+  describe("a dialog where Find opens (#4904)", () => {
+    const dialog = () => screen.queryByRole("dialog", { name: ASK_COPY.name });
+
+    it("is a dialog over the page, on Find's surface, and gone when closed", () => {
       const view = render(<Card />);
-      const card = screen.getByRole("region", { name: ASK_COPY.name });
-      expect(slot).toContainElement(card);
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(dialog()).toBeInTheDocument();
+      expect(dialog()).toHaveClass("bg-popover");
+      // No panel beside the page, and the shell is not asked to move.
       expect(screen.queryByRole("complementary")).toBeNull();
-      // The docked panel marked the shell to make room for it. Nothing does.
       expect(document.documentElement).not.toHaveAttribute("data-ask-open");
       view.rerender(<Card open={false} />);
-      expect(screen.queryByRole("region", { name: ASK_COPY.name })).toBeNull();
-    });
-
-    it("waits while chat is not on screen, and comes back with its thread", () => {
-      state.exchanges = [DONE];
-      // A tool page covers the chat: there is no slot to draw over.
-      const view = render(<Card container={null} />);
-      expect(screen.queryByRole("region", { name: ASK_COPY.name })).toBeNull();
-      expect(state.stop).not.toHaveBeenCalled();
-      expect(state.reset).not.toHaveBeenCalled();
-      view.rerender(<Card />);
-      expect(
-        screen.getByText("The budget vote is in the minutes."),
-      ).toBeInTheDocument();
-    });
-
-    it("moves to the next channel's slot with the same thread", () => {
-      state.exchanges = [DONE];
-      const view = render(<Card />);
-      const next = document.createElement("div");
-      document.body.appendChild(next);
-      try {
-        view.rerender(<Card container={next} />);
-        expect(next).toHaveTextContent("The budget vote is in the minutes.");
-        expect(slot).toBeEmptyDOMElement();
-        expect(state.reset).not.toHaveBeenCalled();
-      } finally {
-        view.unmount();
-        next.remove();
-      }
+      expect(dialog()).toBeNull();
     });
 
     it("names itself in its header, beside the crest", () => {
       render(<Card />);
-      const card = screen.getByRole("region", { name: ASK_COPY.name });
       expect(
         screen.getByRole("heading", { name: ASK_COPY.name }),
       ).toBeInTheDocument();
-      // The crest is decoration: the words beside it name the card.
-      expect(card.querySelector("svg[aria-hidden]")).not.toBeNull();
+      // The crest is decoration: the words beside it name the dialog.
+      expect(dialog()!.querySelector("svg[aria-hidden]")).not.toBeNull();
     });
 
-    it("closes on Escape pressed inside it, and by its close button", async () => {
+    it("asks a question typed into the top bar's field as it opens, once", () => {
+      const onAsked = vi.fn();
+      const view = render(
+        <Card asking="When is the budget vote?" onAsked={onAsked} />,
+      );
+      expect(state.ask).toHaveBeenCalledTimes(1);
+      expect(state.ask).toHaveBeenCalledWith(
+        "When is the budget vote?",
+        sent(),
+      );
+      expect(onAsked).toHaveBeenCalledTimes(1);
+      // The host hands nothing more until the next question.
+      view.rerender(<Card asking={null} onAsked={onAsked} />);
+      expect(state.ask).toHaveBeenCalledTimes(1);
+    });
+
+    it("holds a question from the field while it is closed", () => {
+      render(<Card open={false} asking="When is the budget vote?" />);
+      expect(state.ask).not.toHaveBeenCalled();
+    });
+
+    it("closes on Escape and by its close button, with the cursor starting in the field", async () => {
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);
       const user = userEvent.setup();
-      // Focus starts in the field.
       expect(
         screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
       ).toHaveFocus();
@@ -432,44 +412,20 @@ describe("AskCard", () => {
       expect(onOpenChange).toHaveBeenLastCalledWith(false);
     });
 
-    it("leaves Escape to the chat when focus is in the chat", async () => {
-      const onOpenChange = vi.fn();
-      const onPageEscape = vi.fn();
-      render(
-        <>
-          <input
-            aria-label="Message"
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && !event.defaultPrevented) {
-                onPageEscape();
-              }
-            }}
-          />
-          <Card onOpenChange={onOpenChange} />
-        </>,
-      );
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("textbox", { name: "Message" }));
-      await user.keyboard("{Escape}");
-      expect(onPageEscape).toHaveBeenCalledTimes(1);
-      expect(onOpenChange).not.toHaveBeenCalled();
-    });
-
-    it("drops a question still being answered when it closes, however it was closed, and keeps the turns before it", () => {
+    it("drops a question still being answered when it closes, and keeps the turns before it", () => {
       state.exchanges = [
         DONE,
         { ...DONE, id: "turn-2", phase: "working", answer: null },
       ];
       const view = render(<Card />);
       expect(state.stop).not.toHaveBeenCalled();
-      // Closed from outside, as the composer's button does.
       view.rerender(<Card open={false} />);
       expect(state.stop).toHaveBeenCalledTimes(1);
       expect(state.reset).not.toHaveBeenCalled();
     });
 
-    it("leaves a question asked from a channel to finish when the card closes (#4713)", () => {
-      // Its answer is drawn in the channel, which closing the card does not
+    it("leaves a question asked from a channel to finish when it closes (#4713)", () => {
+      // Its answer is drawn in the channel, which closing this does not
       // take away, so the question goes on being answered.
       state.exchanges = [
         {
@@ -485,12 +441,12 @@ describe("AskCard", () => {
       expect(state.stop).not.toHaveBeenCalled();
     });
 
-    it("keeps a finished answer across a close, and gives focus back to what opened it", () => {
+    it("keeps a finished answer across a close, and gives focus back to what opened it", async () => {
       state.exchanges = [DONE];
       const opener = { current: null as HTMLButtonElement | null };
       const tree = (isOpen: boolean) => (
         <>
-          <button ref={(node) => void (opener.current = node)}>Ask</button>
+          <button ref={(node) => void (opener.current = node)}>Find</button>
           <Card open={isOpen} returnFocus={opener} />
         </>
       );
@@ -498,86 +454,37 @@ describe("AskCard", () => {
       view.rerender(tree(false));
       expect(state.reset).not.toHaveBeenCalled();
       expect(state.stop).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: "Ask" })).toHaveFocus();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Find" })).toHaveFocus(),
+      );
       view.rerender(tree(true));
       expect(
         screen.getByText("The budget vote is in the minutes."),
       ).toBeInTheDocument();
     });
 
-    it("leaves Escape to whatever inside it took the key first", async () => {
+    it("gives focus to the field on screen when what opened it is gone", async () => {
+      const gone = { current: document.createElement("button") };
+      const tree = (isOpen: boolean) => (
+        <>
+          <button data-ask-entry="">Search or ask Frapp</button>
+          <Card open={isOpen} returnFocus={gone} />
+        </>
+      );
+      const view = render(tree(true));
+      view.rerender(tree(false));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Search or ask Frapp" }),
+        ).toHaveFocus(),
+      );
+    });
+
+    it("closes when a link in the thread is followed: whatever it opens is under the dialog", async () => {
+      state.exchanges = [DONE];
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);
-      const field = screen.getByRole("textbox", { name: ASK_COPY.placeholder });
-      // A menu or the consent sheet inside the card that closes on Escape.
-      field.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") event.preventDefault();
-      });
-      await userEvent.setup().keyboard("{Escape}");
-      expect(onOpenChange).not.toHaveBeenCalled();
-    });
-
-    it("takes the cursor when it is opened, and not again when chat comes back under it", async () => {
-      const view = render(
-        <>
-          <input aria-label="Search" />
-          <Card />
-        </>,
-      );
-      expect(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      ).toHaveFocus();
-      // A tool page covers the chat, and the member is typing in it.
-      view.rerender(
-        <>
-          <input aria-label="Search" />
-          <Card container={null} />
-        </>,
-      );
-      await userEvent
-        .setup()
-        .click(screen.getByRole("textbox", { name: "Search" }));
-      view.rerender(
-        <>
-          <input aria-label="Search" />
-          <Card />
-        </>,
-      );
-      expect(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      ).toBeInTheDocument();
-      expect(screen.getByRole("textbox", { name: "Search" })).toHaveFocus();
-    });
-
-    it("is drawn on the app's own background, not a raised grey", () => {
-      render(<Card />);
-      const card = screen.getByRole("region", { name: ASK_COPY.name });
-      expect(card).toHaveClass("bg-background");
-      expect(card).not.toHaveClass("bg-popover");
-    });
-
-    it("closes when a cited chat message is followed: that message is in the thread the card covers", async () => {
-      state.exchanges = [
-        {
-          ...DONE,
-          answer: {
-            ...DONE.answer,
-            sources: [
-              {
-                id: "s2",
-                kind: "chat",
-                title: "#general",
-                detail: null,
-                date: "2026-11-09T12:00:00.000Z",
-                target: { type: "message", channel_id: "c1", message_id: "m1" },
-              },
-            ],
-          },
-        },
-      ];
-      const onOpenChange = vi.fn();
-      render(<Card onOpenChange={onOpenChange} />);
-      const source = screen.getByRole("link", { name: /#general/ });
+      const source = screen.getByRole("link", { name: /Chapter meeting/ });
       source.addEventListener("click", (event) => event.preventDefault());
       await userEvent.setup().click(source);
       expect(onOpenChange).toHaveBeenLastCalledWith(false);
@@ -585,13 +492,16 @@ describe("AskCard", () => {
       expect(state.reset).not.toHaveBeenCalled();
     });
 
-    it("stays open when a source with a page of its own is followed: the page opens beside the chat, and the answer is still there to read against it", async () => {
+    it("stays open when a link is opened in a new tab", async () => {
       state.exchanges = [DONE];
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);
       const source = screen.getByRole("link", { name: /Chapter meeting/ });
       source.addEventListener("click", (event) => event.preventDefault());
-      await userEvent.setup().click(source);
+      const user = userEvent.setup();
+      await user.keyboard("{Control>}");
+      await user.click(source);
+      await user.keyboard("{/Control}");
       expect(onOpenChange).not.toHaveBeenCalled();
     });
   });

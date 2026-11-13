@@ -5,8 +5,10 @@ import { Search } from "lucide-react";
 import { useChannels } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
+import { useAskEntry } from "@/components/ask/ask-host";
 import {
   FindDialog,
+  FIND_ASK_PLACEHOLDER,
   FIND_PLACEHOLDER,
 } from "@/components/layout/find-dialog";
 
@@ -26,6 +28,12 @@ import {
  * be mounted. `components.md` §7 bans a hint for a binding that is NOT wired;
  * an unadvertised binding that is wired breaks nothing.
  *
+ * **For a member with Ask it is also the way to Frapp** (#4904, Paul's pick
+ * of 2026-11-13): the field reads "Search or ask Frapp", and the dialog's
+ * first row asks what was typed (`find-dialog.tsx`). Ask has no control of
+ * its own anywhere else; the conversation gives focus back to this field
+ * (`data-ask-entry`).
+ *
  * The query lives here, not in the dialog, so closing the dialog (Escape or a
  * click outside) and reopening it keeps what was typed.
  */
@@ -34,6 +42,10 @@ export function FindBar({ className }: { className?: string }) {
   const [query, setQuery] = useState("");
   // False only when a keystroke on the field opened the dialog; see FindDialog.
   const [selectOnOpen, setSelectOnOpen] = useState(true);
+  const ask = useAskEntry();
+  const placeholder = ask ? FIND_ASK_PLACEHOLDER : FIND_PLACEHOLDER;
+  // Set when this dialog closes into the Ask conversation, which takes focus.
+  const handedToAsk = useRef(false);
   /*
    * Read here, while the dialog is closed, on purpose. It keeps `["channels"]`
    * warm on every dashboard route, so the dialog's Channels group is instant
@@ -104,17 +116,32 @@ export function FindBar({ className }: { className?: string }) {
   const restoreFocus = useCallback(() => {
     const target = returnFocusRef.current;
     returnFocusRef.current = null;
+    if (handedToAsk.current) {
+      handedToAsk.current = false;
+      return;
+    }
     (target?.isConnected ? target : triggerRef.current)?.focus();
   }, []);
+
+  const onAsk = useCallback(
+    (question: string) => {
+      handedToAsk.current = true;
+      setOpen(false);
+      ask?.openWith(question, triggerRef.current);
+    },
+    [ask],
+  );
 
   return (
     <>
       <button
         ref={triggerRef}
+        // Where the Ask conversation returns focus (`ask-card.tsx`).
+        data-ask-entry={ask ? "" : undefined}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={FIND_PLACEHOLDER}
+        aria-label={placeholder}
         onClick={() => {
           returnFocusRef.current = null;
           setSelectOnOpen(true);
@@ -149,7 +176,7 @@ export function FindBar({ className }: { className?: string }) {
           {query.trim() ? (
             <span className="text-foreground">{query}</span>
           ) : (
-            FIND_PLACEHOLDER
+            placeholder
           )}
         </span>
       </button>
@@ -161,6 +188,7 @@ export function FindBar({ className }: { className?: string }) {
         inputRef={inputRef}
         onCloseFocus={restoreFocus}
         selectOnOpen={selectOnOpen}
+        onAsk={ask ? onAsk : undefined}
       />
     </>
   );

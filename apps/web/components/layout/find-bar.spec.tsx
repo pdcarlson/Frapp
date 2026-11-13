@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   render,
@@ -70,8 +70,17 @@ vi.mock("@/lib/hooks/use-debounced-value", () => ({
   useDebouncedValue: (value: unknown) => debounced.current ?? value,
 }));
 
+// Whether this member has Ask is the host's question (`ask-host.spec.tsx`).
+// Null, as for a member without it, unless a test says otherwise.
+const askEntry = vi.hoisted(() => ({
+  current: null as { open: boolean; openWith: ReturnType<typeof vi.fn> } | null,
+}));
+vi.mock("@/components/ask/ask-host", () => ({
+  useAskEntry: () => askEntry.current,
+}));
+
 import { FindBar } from "./find-bar";
-import { FIND_PLACEHOLDER } from "./find-dialog";
+import { FIND_ASK_PLACEHOLDER, FIND_PLACEHOLDER } from "./find-dialog";
 
 // Offsetless instants on purpose: they parse as local time, so the calendar
 // days the assertions name hold in every runner timezone.
@@ -706,3 +715,145 @@ describe("FindBar", () => {
     });
   });
 });
+
+/**
+ * One field for search and Ask (#4904, Paul's pick of 2026-11-13). A member
+ * with Ask gets a first row that asks Frapp what they typed; which row Enter
+ * means is read from the words (`find-ask.ts`), so it never moves because
+ * results arrived.
+ */
+describe("FindBar for a member with Ask (#4904)", () => {
+  const askField = () =>
+    screen.getByRole("button", { name: FIND_ASK_PLACEHOLDER });
+  const askRow = () => screen.getByRole("option", { name: /^Ask Frapp/ });
+  async function typeInto(user: ReturnType<typeof userEvent.setup>, text: string) {
+    await user.click(askField());
+    const input = await screen.findByRole("combobox");
+    if (text) await user.type(input, text);
+    return input;
+  }
+
+  beforeEach(() => {
+    askEntry.current = { open: false, openWith: vi.fn() };
+    push.mockClear();
+    debounced.current = null;
+    moduleGate.current = () => true;
+    channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
+    searchQuery.current = searchState({ data: searchPayload() });
+  });
+  afterEach(() => {
+    askEntry.current = null;
+  });
+
+  it("says so on the field and in the dialog, and is where Ask returns focus", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    expect(askField()).toHaveAttribute("data-ask-entry");
+    const input = await typeInto(user, "");
+    expect(input).toHaveAttribute("placeholder", FIND_ASK_PLACEHOLDER);
+  });
+
+  it("offers to open the conversation before anything is typed, and Enter does", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "");
+    expect(askRow()).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(askEntry.current!.openWith).toHaveBeenCalledWith("", askField());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps a search a search: the first result is highlighted and Enter opens it", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "announce");
+    const options = screen.getAllByRole("option");
+    expect(options[0]).toBe(askRow());
+    expect(options[0]).toHaveAttribute("aria-selected", "false");
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/chat?channel=c1"));
+    expect(askEntry.current!.openWith).not.toHaveBeenCalled();
+  });
+
+  it("asks Frapp on Enter when the words read as a question, and clears the field", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "when is the announce party?");
+    expect(askRow()).toHaveAttribute("aria-selected", "true");
+    expect(askRow()).toHaveTextContent("when is the announce party?");
+    expect(input).toHaveAttribute("aria-activedescendant", askRow().id);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(askEntry.current!.openWith).toHaveBeenCalledWith(
+      "when is the announce party?",
+      askField(),
+    );
+    expect(push).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(askField()).toHaveTextContent(FIND_ASK_PLACEHOLDER);
+  });
+
+  it("asks a question without waiting for the list to catch up", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "announce");
+    debounced.current = "announce";
+    await user.type(input, " party when?");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(askEntry.current!.openWith).toHaveBeenCalledWith(
+      "announce party when?",
+      askField(),
+    );
+  });
+
+  it("lights no row while a search is still loading, so Enter cannot ask by accident", async () => {
+    searchQuery.current = searchState({ isFetching: true });
+    channelsQuery.current = { data: [] };
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "zzz");
+    expect(askRow()).toHaveAttribute("aria-selected", "false");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(askEntry.current!.openWith).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("falls to the Ask row once a search has settled with nothing to show", async () => {
+    searchQuery.current = searchState({
+      data: { payload: {}, timedOut: false, timedOutSources: [] },
+    });
+    channelsQuery.current = { data: [] };
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await typeInto(user, "zzz");
+    expect(screen.getAllByText("No matches.").length).toBeGreaterThan(0);
+    expect(askRow()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("reaches the Ask row from a search with the arrow keys, and by clicking it", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await typeInto(user, "announce");
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(askRow()).toHaveAttribute("aria-selected", "true");
+    await user.click(askRow());
+    expect(askEntry.current!.openWith).toHaveBeenCalledWith(
+      "announce",
+      askField(),
+    );
+  });
+
+  it("is only a search for a member without Ask", async () => {
+    askEntry.current = null;
+    const user = userEvent.setup();
+    render(<FindBar />);
+    expect(trigger()).not.toHaveAttribute("data-ask-entry");
+    await openAndType(user, "when is the announce party?");
+    expect(screen.queryByRole("option", { name: /^Ask Frapp/ })).toBeNull();
+  });
+});
+
