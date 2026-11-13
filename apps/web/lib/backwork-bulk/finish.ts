@@ -1,4 +1,5 @@
 import { statusOf } from "@repo/api-sdk";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { useConfirmBackworkUpload } from "@repo/hooks";
 import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
@@ -81,12 +82,7 @@ export function mustFlatten(fields: BulkFields, boxes: BoxesByPage): boolean {
   return fields.document_variant === "Student Copy" || countBoxes(boxes) > 0;
 }
 
-export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
+export { sha256Hex };
 
 function tagsOf(raw: string): string[] | undefined {
   const tags = raw

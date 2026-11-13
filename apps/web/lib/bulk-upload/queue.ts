@@ -79,6 +79,12 @@ export type BulkQueueOptions<P, S> = {
   maxHeldBytes?: number;
   /** Items prepared past the current one. */
   lookahead?: number;
+  /**
+   * Prepares running at once. Unlimited by default, since `lookahead`
+   * already bounds them; a folder import, which prepares (hashes) every file
+   * ahead, sets it so only a couple of files are read into memory at once.
+   */
+  maxPreparing?: number;
   maxFinishing?: number;
   /** Whether a failure leaves nothing to save, so it doesn't count as unsaved. */
   isFinal?: (error: unknown, stage: "prepare" | "finish") => boolean;
@@ -103,10 +109,12 @@ export class BulkUploadQueue<P, S> {
   private repump = false;
   private readonly lookahead: number;
   private readonly maxFinishing: number;
+  private readonly maxPreparing: number;
 
   constructor(private readonly options: BulkQueueOptions<P, S>) {
     this.lookahead = options.lookahead ?? 2;
     this.maxFinishing = options.maxFinishing ?? 2;
+    this.maxPreparing = options.maxPreparing ?? Number.POSITIVE_INFINITY;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -294,11 +302,15 @@ export class BulkUploadQueue<P, S> {
     try {
       do {
         this.repump = false;
+        const preparingNow = this.items.filter(
+          (it) => it.status === "preparing",
+        ).length;
         const toPrepare = this.closed
           ? []
           : this.reviewLine()
               .slice(0, this.overBudget() ? 1 : this.lookahead + 1)
-              .filter((it) => it.status === "queued");
+              .filter((it) => it.status === "queued")
+              .slice(0, Math.max(0, this.maxPreparing - preparingNow));
         let finishing = this.items.filter(
           (it) => it.status === "finishing",
         ).length;

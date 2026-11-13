@@ -26,6 +26,7 @@ function harness(
     trim?: (prepared: string) => string;
     sizeOf?: (prepared: string) => number;
     maxHeldBytes?: number;
+    maxPreparing?: number;
   } = {},
 ) {
   const prepares = new Map<string, ReturnType<typeof deferred<string>>>();
@@ -350,5 +351,14 @@ describe("BulkUploadQueue", () => {
     await flush();
     expect(h.prepares.has("e.pdf")).toBe(true);
     expect(h.prepares.has("f.pdf")).toBe(true);
+  });
+
+  it("runs at most `maxPreparing` prepares at once, in order", async () => {
+    const h = harness({ lookahead: Number.POSITIVE_INFINITY, maxPreparing: 2 });
+    h.queue.add(["a.pdf", "b.pdf", "c.pdf", "d.pdf"].map(pdf));
+    expect([...h.prepares.keys()]).toEqual(["a.pdf", "b.pdf"]);
+    h.prepares.get("a.pdf")!.resolve("A");
+    await flush();
+    expect([...h.prepares.keys()]).toEqual(["a.pdf", "b.pdf", "c.pdf"]);
   });
 });
