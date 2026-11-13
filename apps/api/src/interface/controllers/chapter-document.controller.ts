@@ -26,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
+import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -52,6 +53,9 @@ import {
   ChapterDocumentDto,
   DocumentFolderDto,
   DocumentPreviewUrlDto,
+  CreateDocumentTypeDto,
+  UpdateDocumentTypeDto,
+  DocumentTypeDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -63,6 +67,7 @@ import {
 export class ChapterDocumentController {
   constructor(
     private readonly chapterDocumentService: ChapterDocumentService,
+    private readonly chapterDocumentTypeService: ChapterDocumentTypeService,
   ) {}
 
   @Post('upload-url')
@@ -151,6 +156,66 @@ export class ChapterDocumentController {
         ? { ...folderFilter, ...searchFilter }
         : undefined;
     return this.chapterDocumentService.findByChapter(chapterId, filter);
+  }
+
+  // Type routes, like the folder routes below, are declared before `:id` so
+  // `@Get(':id')` doesn't take `/documents/types` for a document id.
+
+  @Get('types')
+  @ApiOperation({
+    summary: "List the chapter's document types in display order",
+  })
+  @ApiOkResponse({ type: DocumentTypeDto, isArray: true })
+  async listTypes(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<DocumentTypeDto[]> {
+    return this.chapterDocumentTypeService.list(chapterId);
+  }
+
+  @Post('types')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Add a document type' })
+  @ApiCreatedResponse({ type: DocumentTypeDto })
+  async createType(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: CreateDocumentTypeDto,
+  ): Promise<DocumentTypeDto> {
+    return this.chapterDocumentTypeService.create(
+      chapterId,
+      dto.name,
+      dto.sort_order,
+    );
+  }
+
+  @Patch('types/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Rename or reorder a document type (a rename renames it on its documents)',
+  })
+  @ApiOkResponse({ type: DocumentTypeDto })
+  async updateType(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDocumentTypeDto,
+  ): Promise<DocumentTypeDto> {
+    return this.chapterDocumentTypeService.update(id, chapterId, {
+      name: dto.name,
+      sort_order: dto.sort_order,
+    });
+  }
+
+  @Delete('types/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary: 'Delete a document type (its documents keep everything else)',
+  })
+  async deleteType(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.chapterDocumentTypeService.delete(id, chapterId);
+    return { success: true };
   }
 
   // Folder routes are declared before `:id` on purpose — Nest matches in

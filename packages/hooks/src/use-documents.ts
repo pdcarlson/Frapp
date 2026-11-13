@@ -58,7 +58,7 @@ export function useDocumentFolders() {
 }
 
 /**
- * Invalidate everything a folder write can have changed.
+ * Invalidate everything a folder or type write can have changed.
  *
  * Scoped to `["documents", chapterId]`, not the bare `["documents"]` the
  * document mutations below still use: folder writes are chapter-scoped and
@@ -131,6 +131,90 @@ export function useDeleteDocumentFolder() {
         "/v1/documents/folders/{id}",
         { params: { path: { id } } },
       );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * The chapter's document types, in display order (#3642). The upload form
+ * offers them as its type choices, and an officer edits them from there.
+ */
+export function useDocumentTypes(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["documents", chapterId, "types"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/documents/types");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 300_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export type DocumentTypeRow = components["schemas"]["DocumentTypeDto"];
+
+/*
+  A type write invalidates the whole chapter's documents prefix, as a folder
+  write does: a rename renames the type on its documents and a delete clears
+  it, so the document lists are stale too.
+*/
+
+export function useCreateDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "create-document-type"],
+    mutationFn: async (body: { name: string; sort_order?: number }) => {
+      const { data, error } = await client.POST("/v1/documents/types", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** Rename and reorder are one route, as for folders. */
+export function useUpdateDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "update-document-type"],
+    mutationFn: async ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      sort_order?: number;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/documents/types/{id}", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "delete-document-type"],
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE("/v1/documents/types/{id}", {
+        params: { path: { id } },
+      });
       if (error) throw error;
       return data;
     },

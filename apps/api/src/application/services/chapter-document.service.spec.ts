@@ -10,6 +10,11 @@ import { safeObjectFilename } from '#domain/constants/storage';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
+import {
+  CHAPTER_DOCUMENT_TYPE_REPOSITORY,
+  type IChapterDocumentTypeRepository,
+} from '#domain/repositories/chapter-document-type.repository.interface';
+import { ChapterDocumentTypeService } from './chapter-document-type.service';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import {
   CHAPTER_DOCUMENT_STAR_REPOSITORY,
@@ -26,6 +31,7 @@ describe('ChapterDocumentService', () => {
   let service: ChapterDocumentService;
   let mockDocumentRepo: jest.Mocked<IChapterDocumentRepository>;
   let mockFolderRepo: jest.Mocked<IChapterDocumentFolderRepository>;
+  let mockTypeRepo: jest.Mocked<IChapterDocumentTypeRepository>;
   let mockStarRepo: jest.Mocked<IChapterDocumentStarRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
 
@@ -65,6 +71,20 @@ describe('ChapterDocumentService', () => {
       setPinnedAt: jest.fn(),
       moveToRoot: jest.fn(),
       renameFolder: jest.fn(),
+    };
+
+    mockTypeRepo = {
+      findByChapter: jest.fn().mockResolvedValue([]),
+      findById: jest.fn(),
+      findByName: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation(async (row) => ({
+        id: 'type-new',
+        created_at: '2026-11-13T00:00:00.000Z',
+        ...row,
+      })),
+      setSortOrder: jest.fn(),
+      rename: jest.fn(),
+      deleteWithDocuments: jest.fn(),
     };
 
     mockFolderRepo = {
@@ -110,6 +130,8 @@ describe('ChapterDocumentService', () => {
         },
         { provide: CHAPTER_DOCUMENT_STAR_REPOSITORY, useValue: mockStarRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        ChapterDocumentTypeService,
+        { provide: CHAPTER_DOCUMENT_TYPE_REPOSITORY, useValue: mockTypeRepo },
       ],
     }).compile();
 
@@ -232,6 +254,76 @@ describe('ChapterDocumentService', () => {
   });
 
   describe('confirmUpload', () => {
+    it("files a type in the chapter's own spelling (#3642)", async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+      mockTypeRepo.findByName.mockResolvedValue({
+        id: 'type-1',
+        chapter_id: 'ch-1',
+        name: 'Bylaws',
+        sort_order: 1,
+        created_at: '2026-11-13T00:00:00.000Z',
+      });
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Bylaws 2025',
+        storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+        uploaded_by: 'user-1',
+        document_type: '  bylaws ',
+      });
+
+      expect(mockTypeRepo.findByName).toHaveBeenCalledWith('ch-1', 'bylaws');
+      expect(mockTypeRepo.create).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ document_type: 'Bylaws' }),
+      );
+    });
+
+    it("adds a type the chapter doesn't have to its list", async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+      mockTypeRepo.create.mockResolvedValue({
+        id: 'type-9',
+        chapter_id: 'ch-1',
+        name: 'Rush schedule',
+        sort_order: 7,
+        created_at: '2026-11-13T00:00:00.000Z',
+      });
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Rush 2026',
+        storage_path: 'chapters/ch-1/documents/doc-1/rush.pdf',
+        uploaded_by: 'user-1',
+        document_type: 'Rush schedule',
+      });
+
+      expect(mockTypeRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        name: 'Rush schedule',
+        sort_order: 0,
+      });
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ document_type: 'Rush schedule' }),
+      );
+    });
+
+    it('files no type when none is given, without reading the list', async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Bylaws 2025',
+        storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+        uploaded_by: 'user-1',
+        document_type: '   ',
+      });
+
+      expect(mockTypeRepo.findByName).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ document_type: null }),
+      );
+    });
+
     it('should create document with full metadata', async () => {
       mockDocumentRepo.create.mockResolvedValue(baseDocument);
 

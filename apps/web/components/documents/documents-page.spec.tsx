@@ -35,7 +35,15 @@ const {
   mockStarsRefetch,
   mockSetStar,
   mockSetPin,
+  typesQuery,
+  manageGate,
+  mockUpdateType,
 } = vi.hoisted(() => ({
+  // The chapter's document types (#3642). Unread by default, so the panel
+  // falls back to the common types plus the library's own, as before.
+  typesQuery: { data: undefined as unknown[] | undefined, isSuccess: false },
+  // Whether the viewer also holds `chapter_docs:manage` ("Edit types").
+  manageGate: { granted: false },
   stars: {
     value: { folder_ids: [] as string[], document_ids: [] as string[] },
     failed: false,
@@ -43,6 +51,7 @@ const {
   mockStarsRefetch: vi.fn(),
   mockSetStar: vi.fn().mockResolvedValue(undefined),
   mockSetPin: vi.fn().mockResolvedValue(undefined),
+  mockUpdateType: vi.fn().mockResolvedValue({}),
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
@@ -106,7 +115,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "viewer-1",
   useMyPermissions: () => ({
     data: {
-      permissions: canGate.granted ? ["chapter_docs:upload"] : [],
+      permissions: [
+        ...(canGate.granted ? ["chapter_docs:upload"] : []),
+        ...(manageGate.granted ? ["chapter_docs:manage"] : []),
+      ],
     },
   }),
   useDocuments: (options?: { search?: string }) => {
@@ -116,6 +128,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return documentsQuery;
   },
   useDocumentFolders: () => foldersQuery,
+  useDocumentTypes: () => typesQuery,
+  useCreateDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateDocumentType: () => ({ mutateAsync: mockUpdateType, isPending: false }),
+  useDeleteDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
@@ -194,6 +210,9 @@ function resolvedDocumentsQuery() {
   foldersQuery.refetch = mockFolderRefetch;
   stars.value = { folder_ids: [], document_ids: [] };
   stars.failed = false;
+  typesQuery.data = undefined;
+  typesQuery.isSuccess = false;
+  manageGate.granted = false;
 }
 
 const uploadTrigger = () =>
@@ -600,6 +619,103 @@ describe("DocumentsPage upload metadata", () => {
     });
     return file;
   };
+
+  it("offers the chapter's own types once they load (#3642)", async () => {
+    typesQuery.data = [
+      { id: "t-1", chapter_id: "chap-1", name: "By-Laws", sort_order: 1, created_at: "" },
+      { id: "t-2", chapter_id: "chap-1", name: "Contract", sort_order: 2, created_at: "" },
+    ];
+    typesQuery.isSuccess = true;
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "fall-2026-bylaws-revision.pdf");
+
+    // The file name's guess lands on the chapter's spelling, and the seeded
+    // defaults the chapter deleted are gone.
+    expect(within(dialog).getByRole("button", { name: "By-Laws" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(dialog).getByRole("button", { name: "Contract" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Minutes" })).toBeNull();
+    // Editing the list is for document managers only.
+    expect(within(dialog).queryByRole("button", { name: /edit types/i })).toBeNull();
+  });
+
+  it("shows Edit types to a document manager", async () => {
+    typesQuery.data = [
+      { id: "t-1", chapter_id: "chap-1", name: "Bylaws", sort_order: 1, created_at: "" },
+    ];
+    typesQuery.isSuccess = true;
+    manageGate.granted = true;
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /edit types/i }));
+    expect(await screen.findByText("Document types")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename Bylaws" })).toBeInTheDocument();
+  });
+
+  it("renames a type from Edit types without starting an upload", async () => {
+    typesQuery.data = [
+      { id: "t-1", chapter_id: "chap-1", name: "Bylaws", sort_order: 1, created_at: "" },
+    ];
+    typesQuery.isSuccess = true;
+    manageGate.granted = true;
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "bylaws.pdf");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: /edit types/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Rename Bylaws" }));
+    const name = screen.getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "  Constitution {Enter}");
+
+    await waitFor(() =>
+      expect(mockUpdateType).toHaveBeenCalledWith({ id: "t-1", name: "Constitution" }),
+    );
+    // The inline form's submit stays inside the popover (it's portalled, but
+    // React bubbles it up to the upload form around the trigger).
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
+
+  it("lets go of a picked type that left the list rather than re-adding it", async () => {
+    typesQuery.data = [
+      { id: "t-1", chapter_id: "chap-1", name: "Bylaws", sort_order: 1, created_at: "" },
+      { id: "t-2", chapter_id: "chap-1", name: "Minutes", sort_order: 2, created_at: "" },
+    ];
+    typesQuery.isSuccess = true;
+    const { rerender } = render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "bylaws.pdf");
+    expect(within(dialog).getByRole("button", { name: "Bylaws" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // An officer renames Bylaws elsewhere; the list refetches.
+    typesQuery.data = [
+      { id: "t-1", chapter_id: "chap-1", name: "Constitution", sort_order: 1, created_at: "" },
+      { id: "t-2", chapter_id: "chap-1", name: "Minutes", sort_order: 2, created_at: "" },
+    ];
+    rerender(<DocumentsPage />);
+
+    await waitFor(() =>
+      expect(within(dialog).queryByLabelText("New type name")).toBeNull(),
+    );
+    for (const chip of ["Constitution", "Minutes"]) {
+      expect(within(dialog).getByRole("button", { name: chip })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    }
+  });
 
   it("fills title and type from the file name and sends them with the date", async () => {
     render(<DocumentsPage />);
