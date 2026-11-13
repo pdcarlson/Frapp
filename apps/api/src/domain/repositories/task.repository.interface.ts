@@ -1,4 +1,10 @@
-import { Task, TaskStatus, TaskSubtask } from '../entities/task.entity';
+import {
+  Task,
+  TaskPhoto,
+  TaskStatus,
+  TaskSubtask,
+} from '../entities/task.entity';
+import type { TaskProofKind } from '@repo/validation';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -75,25 +81,19 @@ export interface ITaskRepository {
    */
   confirmCompletionAtomic(id: string, chapterId: string): Promise<Task | null>;
   /**
-   * Move a COMPLETED task back to IN_PROGRESS and clear `completed_at` and
-   * `proof_photo_path`, only
-   * while it is still COMPLETED and unconfirmed (compare-and-set on `status`
-   * and `points_awarded`). Returns the updated task, or `null` when nothing
-   * was updated: an officer confirmed it, or another write moved it first.
-   * Backs both an officer's reject and the assignee taking back their own
-   * "done" before it is confirmed. `sentBackAt` is set only for the reject:
-   * it is when the task started waiting on the assignee again.
+   * Move a COMPLETED task back to IN_PROGRESS and clear `completed_at`,
+   * `proof_link` and `completion_note`, only while it is still COMPLETED and
+   * unconfirmed (compare-and-set on `status` and `points_awarded`). Returns
+   * the updated task, or `null` when nothing was updated: an officer
+   * confirmed it, or another write moved it first. A task that needed no
+   * sign-off reopens from its automatic confirm (`options.pointsAwarded`). Backs both an officer's
+   * send-back and the assignee taking back their own "done" before it is
+   * confirmed. The caller deletes the proof photo rows it read.
    */
   reopenCompletion(
     id: string,
     chapterId: string,
-    sentBackAt?: string,
-    /**
-     * The proof the caller read (#4565): the write matches only while the row
-     * still holds it, so a newer completion's proof is never cleared by a
-     * reopen meant for an older one.
-     */
-    expectedProofPath?: string | null,
+    options?: ReopenCompletionOptions,
   ): Promise<Task | null>;
   /**
    * An officer's edit (#4296), only while the task is unconfirmed
@@ -114,11 +114,32 @@ export interface ITaskRepository {
   releaseReminderClaims(chapterId: string, taskId: string): Promise<void>;
   delete(id: string, chapterId: string): Promise<void>;
   /**
-   * Whether any of the chapter's tasks holds this storage path as either of
-   * its photos (#4565): one object belongs to one task, so releasing it can
-   * never delete a photo another task still shows.
+   * Whether any photo row holds this storage path (#4565, #4635): one object
+   * belongs to one photo, so releasing it can never delete a photo another
+   * task still shows. `task_photos.storage_path` is unique, so a racing
+   * second insert fails too.
    */
   isPhotoPathInUse(chapterId: string, path: string): Promise<boolean>;
+  /** Photos of these tasks, ordered by task, kind, then position (#4635). */
+  findPhotos(chapterId: string, taskIds: string[]): Promise<TaskPhoto[]>;
+  /** Adds photo rows. Fails whole when any path is already held. */
+  createPhotos(
+    rows: Pick<
+      TaskPhoto,
+      | 'task_id'
+      | 'chapter_id'
+      | 'kind'
+      | 'storage_path'
+      | 'position'
+      | 'created_by'
+    >[],
+  ): Promise<TaskPhoto[]>;
+  /** Removes these photo rows of one task; returns the ones removed. */
+  deletePhotos(
+    chapterId: string,
+    taskId: string,
+    photoIds: string[],
+  ): Promise<TaskPhoto[]>;
   /** Subtasks of these tasks, ordered by task then position (#4003). */
   findSubtasks(chapterId: string, taskIds: string[]): Promise<TaskSubtask[]>;
   /** Adds subtasks at the given positions. */
@@ -138,4 +159,30 @@ export interface ITaskRepository {
     taskId: string,
     subtaskId: string,
   ): Promise<boolean>;
+}
+
+/** What a reopen writes besides the status (#4635). */
+export interface ReopenCompletionOptions {
+  /**
+   * Set only for an officer's send-back: when the task started waiting on the
+   * assignee again.
+   */
+  sentBackAt?: string;
+  /** The send-back's reason, stored with `sentBackAt`. */
+  sentBackReason?: string;
+  /** "Ask for a photo next time": the send-back raises the proof kind. */
+  proofKind?: TaskProofKind;
+  /**
+   * The `completed_at` the caller read: the write matches only that
+   * completion, so a reopen meant for an older one never clears a newer
+   * completion's proof (#4565's guard, keyed on the completion now).
+   */
+  expectedCompletedAt?: string | null;
+  /**
+   * The `points_awarded` the caller read, matched by the compare-and-set.
+   * `true` only for a task that needed no sign-off (#4635): confirmed as it
+   * was marked done with nothing paid, so it can still be reopened, which
+   * clears `confirmed_at` and `points_awarded`. Default `false`.
+   */
+  pointsAwarded?: boolean;
 }

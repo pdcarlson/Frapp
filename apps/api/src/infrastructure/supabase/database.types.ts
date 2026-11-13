@@ -94,6 +94,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskPhoto,
   TaskSubtask,
   User,
   UserAiConsent,
@@ -228,6 +229,7 @@ export interface Database {
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       study_geofences: TableDefinition<StudyGeofence>;
       study_sessions: TableDefinition<StudySession>;
+      task_photos: TableDefinition<TaskPhoto>;
       task_subtasks: TableDefinition<TaskSubtask>;
       tasks: TableDefinition<Task>;
       user_ai_consents: TableDefinition<UserAiConsent>;

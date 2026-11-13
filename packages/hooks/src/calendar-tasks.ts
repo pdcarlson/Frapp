@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
+import { taskNeedsSignOff } from "@repo/validation";
+import {
+  TASK_CONFIRMED_LABEL,
+  TASK_DONE_LABEL,
+  TASK_STATUS_LABELS,
+} from "./task-card";
 import { useTasks } from "./use-tasks";
 import { useViewerUserId } from "./use-user";
 
@@ -122,8 +127,20 @@ function calendarTaskState(row: Record<string, unknown>): {
   if (status === "COMPLETED") {
     const confirmed =
       row.points_awarded === true || str(row, "confirmed_at") !== null;
+    // No points and no proof: Done as marked, no sign-off (#4635).
+    const kind = str(row, "proof_kind");
+    const done =
+      kind !== null &&
+      !taskNeedsSignOff({
+        point_reward:
+          typeof row.point_reward === "number" ? row.point_reward : null,
+        proof_kind: kind,
+      });
     return confirmed
-      ? { state: "confirmed", label: TASK_CONFIRMED_LABEL }
+      ? {
+          state: "confirmed",
+          label: done ? TASK_DONE_LABEL : TASK_CONFIRMED_LABEL,
+        }
       : { state: "waiting", label: TASK_STATUS_LABELS.COMPLETED };
   }
   if (status === "OVERDUE") {

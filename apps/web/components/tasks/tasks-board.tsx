@@ -2,7 +2,14 @@
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
-import { Camera, CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
+import {
+  Camera,
+  CheckCircle2,
+  Link2,
+  Pencil,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import {
   isFirstAiReadInFlight,
   useAiSuggestions,
@@ -19,10 +26,10 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
-import type { TaskStatus, TaskSubtask } from "@repo/hooks";
+import type { LiveTaskPhoto, TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
-import { can } from "@repo/validation";
+import { can, taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -43,7 +50,10 @@ import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import {
   TASK_ACTION_LABELS,
   TASK_CONFIRMED_LABEL,
+  TASK_DONE_LABEL,
+  TASK_NEEDS_CHANGES_LABEL,
   TASK_STATUS_LABELS,
+  isSentBack,
   actionStatus,
   canReopenOwnTask,
 } from "@repo/hooks";
@@ -51,7 +61,12 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskEditForm } from "./task-edit-form";
-import { MarkDoneControl, TaskPhotos } from "./task-photo";
+import {
+  MarkDoneControl,
+  SendBackDialog,
+  TaskProof,
+  type CompletionProof,
+} from "./task-photo";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
@@ -70,10 +85,15 @@ type Task = {
   due_at?: string | null;
   /** Its checklist, in order (#4003). */
   subtasks?: TaskSubtask[];
-  /** Task photos (#4565). */
-  reference_photo_path?: string | null;
-  proof_photo_path?: string | null;
-  photo_required?: boolean;
+  /** Task photos, reference then proof (#4635). */
+  photos?: LiveTaskPhoto[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
+  proof_link?: string | null;
+  /** When an officer last sent it back, and why (#4635). */
+  sent_back_at?: string | null;
+  sent_back_reason?: string | null;
+  completion_note?: string | null;
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -277,15 +297,13 @@ export function TasksBoard() {
   async function changeStatus(
     task: Task,
     next: TaskStatus,
-    proofPhotoPath?: string,
+    proof?: CompletionProof,
   ) {
     const reopening = actionStatus(task) === "COMPLETED";
     try {
       await updateStatus.mutateAsync({
         id: task.id,
-        body: proofPhotoPath
-          ? { status: next, proof_photo_path: proofPhotoPath }
-          : { status: next },
+        body: { status: next, ...(proof ?? {}) },
       });
       if (next === "COMPLETED") {
         // The undo a stray click needs (owner audit 2026-11-06, P6.1). The
@@ -293,7 +311,10 @@ export function TasksBoard() {
         // officer confirms it, so Undo is a real write, not a delayed one.
         toast({
           title: "Marked done",
-          description: `${task.title} is waiting on an officer to confirm it.`,
+          // A task with no points and no proof is Done as marked (#4635).
+          description: taskNeedsSignOff(task)
+            ? `${task.title} is waiting on an officer to confirm it.`
+            : task.title,
           action: (
             <ToastAction
               altText={`${TASK_ACTION_LABELS.reopen}: ${task.title}`}
@@ -344,37 +365,21 @@ export function TasksBoard() {
     }
   }
 
-  async function rejectCompletion(task: Task) {
-    const result = await confirm({
-      title: `Reject completion of "${task.title}"?`,
-      description:
-        "The task goes back to In progress and the assignee is notified to keep working.",
-      confirmLabel: "Reject completion",
-      tone: "destructive",
-      comment: {
-        label: "Comment for the assignee",
-        placeholder: "Optional. What still needs doing?",
-      },
+  // Send back asks for a reason in its own sheet (#4635).
+  const [sendingBack, setSendingBack] = useState<Task | null>(null);
+  function rejectCompletion(task: Task) {
+    setSendingBack(task);
+  }
+
+  async function sendBack(
+    task: Task,
+    body: { comment: string; require_photo?: boolean },
+  ) {
+    await rejectTask.mutateAsync({ id: task.id, body });
+    toast({
+      title: "Sent back",
+      description: `${task.title} went back to its assignee with your reason.`,
     });
-    // `null` is cancel; a confirmed empty box is still a rejection, which is the
-    // distinction `window.prompt` carried and the dialog preserves.
-    if (result === null) return;
-    try {
-      await rejectTask.mutateAsync({
-        id: task.id,
-        body: { comment: result.comment || undefined },
-      });
-      toast({
-        title: "Task moved back to In progress",
-        description: "The assignee was told to keep working on it.",
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't reject task",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-    }
   }
 
   async function removeTask(task: Task) {
@@ -639,6 +644,15 @@ export function TasksBoard() {
       ) : null}
 
       {confirmDialog}
+      <SendBackDialog
+        title={sendingBack?.title ?? ""}
+        proofKind={sendingBack?.proof_kind}
+        open={sendingBack !== null}
+        onClose={() => setSendingBack(null)}
+        onSubmit={(body) =>
+          sendingBack ? sendBack(sendingBack, body) : Promise.resolve()
+        }
+      />
     </div>
   );
 }
@@ -677,7 +691,7 @@ function TaskCard({
   canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
-  onChangeStatus: (next: TaskStatus, proofPhotoPath?: string) => void;
+  onChangeStatus: (next: TaskStatus, proof?: CompletionProof) => void;
   onConfirm: () => void;
   onReject: () => void;
   onDelete: () => void;
@@ -705,6 +719,9 @@ function TaskCard({
   // stood, so it has no Edit.
   const [editing, setEditing] = useState(false);
   const editable = canManage && !task.points_awarded;
+  // No points and no proof: Done as marked, nothing to confirm (#4635).
+  const needsSignOff = taskNeedsSignOff(task);
+  const sentBack = isSentBack(task);
   const isRow = layout === "list";
 
   if (editing && editable) {
@@ -782,14 +799,32 @@ function TaskCard({
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
-        {task.photo_required && status !== "COMPLETED" ? (
+        {task.proof_kind && task.proof_kind !== "none" && status !== "COMPLETED" ? (
           <Badge variant="outline" className="ml-1 gap-1">
-            <Camera className="h-3 w-3" aria-hidden="true" />
-            Photo required
+            {task.proof_kind === "photo" ? (
+              <Camera className="h-3 w-3" aria-hidden="true" />
+            ) : (
+              <Link2 className="h-3 w-3" aria-hidden="true" />
+            )}
+            {task.proof_kind === "photo" ? "Photo required" : "Link required"}
+          </Badge>
+        ) : null}
+        {sentBack ? (
+          <Badge variant="warning" className="ml-1">
+            {TASK_NEEDS_CHANGES_LABEL}
+          </Badge>
+        ) : null}
+        {status === "COMPLETED" && !needsSignOff && task.points_awarded ? (
+          <Badge variant="success" className="ml-1">
+            {TASK_DONE_LABEL}
           </Badge>
         ) : null}
       </div>
-      <TaskPhotos task={task} showProof={isMine || canManage} />
+      <TaskProof
+        task={task}
+        showProof={isMine || canManage}
+        sentBack={sentBack}
+      />
     </div>
   );
 
@@ -823,7 +858,8 @@ function TaskCard({
         <MarkDoneControl
           title={task.title}
           label={TASK_ACTION_LABELS.complete}
-          photoRequired={!!task.photo_required}
+          task={task}
+          sentBack={sentBack}
           controlProps={gate.controlProps(lifecycleWritePending)}
           onComplete={(proof) => onChangeStatus("COMPLETED", proof)}
           onUploadError={(message) =>
@@ -843,6 +879,7 @@ function TaskCard({
         stored: status,
         pointsAwarded: task.points_awarded,
         isAssignee: isMine,
+        needsSignOff,
       }) ? (
         <Button
           size="toolbar"
@@ -854,7 +891,7 @@ function TaskCard({
         </Button>
       ) : null}
       <Can permission="tasks:manage">
-        {status === "COMPLETED" && !task.points_awarded ? (
+        {status === "COMPLETED" && (!task.points_awarded || !needsSignOff) ? (
           <>
             {/*
              * Hidden on your own task: the API refuses a self-confirmation
@@ -866,7 +903,7 @@ function TaskCard({
              * your own unconfirmed task: it withholds points rather than
              * awarding them, so the self-confirm rule does not cover it.
              */}
-            {cannotConfirm ? null : (
+            {cannotConfirm || !needsSignOff ? null : (
               <Button
                 size="toolbar"
                 className="gap-1.5"

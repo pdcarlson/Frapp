@@ -7,12 +7,14 @@ import type {
 } from '../database.types';
 import type {
   ITaskRepository,
+  ReopenCompletionOptions,
   TaskListFilter,
   TaskListQuery,
 } from '#domain/repositories/task.repository.interface';
 import {
   Task,
   TaskStatus,
+  type TaskPhoto,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
@@ -184,8 +186,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
   async reopenCompletion(
     id: string,
     chapterId: string,
-    sentBackAt?: string,
-    expectedProofPath?: string | null,
+    options: ReopenCompletionOptions = {},
   ): Promise<Task | null> {
     // The filters are the compare-and-set: a confirm that lands first sets
     // `points_awarded`, and then this matches no row rather than leaving a
@@ -195,22 +196,36 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .update({
         status: TaskStatus.IN_PROGRESS,
         completed_at: null,
-        // A completion's proof goes with it (#4565).
-        proof_photo_path: null,
-        ...(sentBackAt ? { sent_back_at: sentBackAt } : {}),
+        // A completion's link and reply go with it (#4635); its photo rows
+        // are the caller's to delete.
+        proof_link: null,
+        completion_note: null,
+        // A task that needed no sign-off was confirmed as it was marked
+        // done, with nothing paid (#4635); reopening it unconfirms it.
+        ...(options.pointsAwarded
+          ? { confirmed_at: null, points_awarded: false }
+          : {}),
+        ...(options.sentBackAt
+          ? {
+              sent_back_at: options.sentBackAt,
+              sent_back_reason: options.sentBackReason ?? null,
+            }
+          : {}),
+        ...(options.proofKind ? { proof_kind: options.proofKind } : {}),
       })
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', TaskStatus.COMPLETED)
-      .eq('points_awarded', false);
+      .eq('points_awarded', options.pointsAwarded ?? false);
     // A take-back or send-back racing a newer completion must not clear (and
     // the caller then not delete) that completion's proof (#4565).
+    const expected = options.expectedCompletedAt;
     const guarded =
-      expectedProofPath === undefined
+      expected === undefined
         ? query
-        : expectedProofPath === null
-          ? query.is('proof_photo_path', null)
-          : query.eq('proof_photo_path', expectedProofPath);
+        : expected === null
+          ? query.is('completed_at', null)
+          : query.eq('completed_at', expected);
     const { data, error } = await guarded.select().maybeSingle();
 
     if (error) throw new SupabaseQueryError(error);
@@ -262,14 +277,68 @@ export class SupabaseTaskRepository implements ITaskRepository {
   }
 
   async isPhotoPathInUse(chapterId: string, path: string): Promise<boolean> {
-    const value = escapeFilterValue(path);
     const { count, error } = await this.supabase
-      .from('tasks')
+      .from('task_photos')
       .select('id', { count: 'exact', head: true })
       .eq('chapter_id', chapterId)
-      .or(`reference_photo_path.eq.${value},proof_photo_path.eq.${value}`);
+      .eq('storage_path', path);
     if (error) throw new SupabaseQueryError(error);
     return (count ?? 0) > 0;
+  }
+
+  async findPhotos(chapterId: string, taskIds: string[]): Promise<TaskPhoto[]> {
+    const rows: TaskPhoto[] = [];
+    for (let i = 0; i < taskIds.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_photos')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('task_id', taskIds.slice(i, i + SUBTASK_READ_BATCH))
+        .order('task_id', { ascending: true })
+        .order('kind', { ascending: false })
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data || []));
+    }
+    return rows;
+  }
+
+  async createPhotos(
+    rows: Pick<
+      TaskPhoto,
+      | 'task_id'
+      | 'chapter_id'
+      | 'kind'
+      | 'storage_path'
+      | 'position'
+      | 'created_by'
+    >[],
+  ): Promise<TaskPhoto[]> {
+    if (rows.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_photos')
+      .insert(rows)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).sort((a, b) => a.position - b.position);
+  }
+
+  async deletePhotos(
+    chapterId: string,
+    taskId: string,
+    photoIds: string[],
+  ): Promise<TaskPhoto[]> {
+    if (photoIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_photos')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('task_id', taskId)
+      .in('id', photoIds)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return data || [];
   }
 
   async findSubtasks(

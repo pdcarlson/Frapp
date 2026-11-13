@@ -1,6 +1,12 @@
 "use client";
 
-import { useUpdateTask, type TaskEdit, type TaskSubtask } from "@repo/hooks";
+import {
+  useUpdateTask,
+  type LiveTaskPhoto,
+  type TaskEdit,
+  type TaskSubtask,
+} from "@repo/hooks";
+import type { TaskProofKind } from "@repo/validation";
 import { dueEntryFromTask } from "@repo/formatting";
 import type { TaskInput } from "@repo/chat-core/dispatch";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
@@ -21,9 +27,15 @@ export interface EditableTask {
   stored_status?: string;
   status: string;
   subtasks?: TaskSubtask[];
-  /** Task photos (#4565). */
-  reference_photo_path?: string | null;
-  photo_required?: boolean;
+  /** Task photos, reference then proof (#4635). */
+  photos?: LiveTaskPhoto[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
+}
+
+/** The task's reference photos, in order. */
+function referencePhotos(task: EditableTask): LiveTaskPhoto[] {
+  return (task.photos ?? []).filter((photo) => photo.kind === "reference");
 }
 
 /** The form's draft for a task as it stands. */
@@ -35,9 +47,9 @@ function taskDraftFromTask(task: EditableTask): TaskDraft {
     points: task.point_reward ? String(task.point_reward) : "",
     description: task.description ?? "",
     subtasks: [],
-    photoFile: null,
-    photoRemoved: false,
-    photoRequired: !!task.photo_required,
+    photoFiles: [],
+    keptPhotos: referencePhotos(task),
+    proofKind: task.proof_kind ?? "none",
     showMore: false,
   };
 }
@@ -70,17 +82,23 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
   }
   const points = input.point_reward || null;
   if (points !== (task.point_reward || null)) body.point_reward = points;
-  // `undefined` keeps the photo; a path replaces it; null removes it (#4565).
-  if (input.reference_photo_path !== undefined) {
-    if (input.reference_photo_path !== (task.reference_photo_path ?? null)) {
-      body.reference_photo_path = input.reference_photo_path;
+  // The reference photos as they should stand, sent only when they changed:
+  // one removed, one added, or a new order (#4635).
+  if (input.reference_photo_paths !== undefined) {
+    const held = referencePhotos(task).map((photo) => photo.storage_path);
+    const next = input.reference_photo_paths;
+    if (
+      next.length !== held.length ||
+      next.some((path, i) => path !== held[i])
+    ) {
+      body.reference_photo_paths = next;
     }
   }
   if (
-    input.photo_required !== undefined &&
-    input.photo_required !== !!task.photo_required
+    input.proof_kind !== undefined &&
+    input.proof_kind !== (task.proof_kind ?? "none")
   ) {
-    body.photo_required = input.photo_required;
+    body.proof_kind = input.proof_kind;
   }
   return body;
 }
@@ -124,7 +142,7 @@ export function TaskEditForm({
         }
       }}
       editing={{
-        photo: { taskId: task.id, path: task.reference_photo_path },
+        taskId: task.id,
         steps: (
           <div className="grid gap-1">
             <p className="text-sm font-medium">Subtasks</p>

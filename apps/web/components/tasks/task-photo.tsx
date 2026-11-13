@@ -1,35 +1,63 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Camera, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  ImagePlus,
+  Link2,
+  Loader2,
+  X,
+} from "lucide-react";
 import {
   MemberFacingError,
   putSignedUpload,
   useRequestTaskPhotoUploadUrl,
   useTaskPhotoUrl,
-  type TaskPhotoKind,
+  type LiveTaskPhoto,
 } from "@repo/hooks";
 import {
   MAX_UPLOAD_LABEL,
+  TASK_COMPLETION_NOTE_MAX,
+  TASK_PHOTOS_MAX,
+  TASK_PROOF_KIND_LABELS,
+  TASK_PROOF_KINDS,
+  TASK_SEND_BACK_REASON_MAX,
   acceptAttribute,
   inspectUploadFile,
+  normalizeProofLink,
+  proofLinkDomain,
   readSignedUpload,
+  type TaskProofKind,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { FilePicker } from "@/components/shared/file-picker";
+import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/shared/short-form";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
- * Task photos on web (#4565, `spec/behavior/tasks.md` § Photos): the
- * service-hours proof flow, photos only. A photo is checked here for type and
- * size, uploaded to a signed URL the API mints under the chapter's `tasks/`
- * prefix, and its `storage_path` sent with the write that attaches it.
+ * Task photos and proof on web (#4565, #4635; `spec/behavior/tasks.md`
+ * § Photos): the service-hours proof flow, photos only. A photo is checked
+ * here for type and size, uploaded to a signed URL the API mints under the
+ * chapter's `tasks/` prefix, and its `storage_path` sent with the write that
+ * attaches it. A task carries up to 6 reference photos and a completion up to
+ * 6 proof photos, or a link.
  */
 
-export const TASK_PHOTO_HINT = `A JPEG, PNG, GIF or WebP photo, up to ${MAX_UPLOAD_LABEL}.`;
+export const TASK_PHOTO_HINT = `JPEG, PNG, GIF or WebP photos, up to ${MAX_UPLOAD_LABEL} each.`;
 
 /** Why a picked file can't be a task photo, or null when it can. */
 export function taskPhotoProblem(file: File): string | null {
@@ -38,6 +66,16 @@ export function taskPhotoProblem(file: File): string | null {
   return inspected.reason === "size"
     ? `That photo is over ${MAX_UPLOAD_LABEL}.`
     : "Use a JPEG, PNG, GIF or WebP photo.";
+}
+
+/** The first problem with a set of picked photos, or null. */
+export function taskPhotosProblem(files: File[], max = TASK_PHOTOS_MAX) {
+  if (files.length > max) return `Up to ${TASK_PHOTOS_MAX} photos.`;
+  for (const file of files) {
+    const problem = taskPhotoProblem(file);
+    if (problem) return problem;
+  }
+  return null;
 }
 
 /**
@@ -54,216 +92,502 @@ export function uploadFailureMessage(error: unknown): string {
 }
 
 /**
- * Upload one photo and resolve its `storage_path`. Rejects with a sentence
- * to show when the file is refused or the upload fails.
+ * Upload photos and resolve their `storage_path`s, in order. Rejects with a
+ * sentence to show when a file is refused or an upload fails.
  */
-export function useUploadTaskPhoto() {
+export function useUploadTaskPhotos() {
   const requestUrl = useRequestTaskPhotoUploadUrl();
-  return async (file: File): Promise<string> => {
-    const inspected = inspectUploadFile("task_photo", file);
-    if (!inspected.ok) {
-      throw new MemberFacingError(taskPhotoProblem(file) ?? TASK_PHOTO_HINT);
+  return async (files: File[]): Promise<string[]> => {
+    const paths: string[] = [];
+    for (const file of files) {
+      const inspected = inspectUploadFile("task_photo", file);
+      if (!inspected.ok) {
+        throw new MemberFacingError(taskPhotoProblem(file) ?? TASK_PHOTO_HINT);
+      }
+      const signed = await requestUrl.mutateAsync({
+        filename: file.name,
+        content_type: inspected.contentType,
+        size_bytes: file.size,
+      });
+      const { signedUrl, storagePath } = readSignedUpload(signed);
+      await putSignedUpload({
+        signedUrl,
+        body: file,
+        contentType: inspected.contentType,
+        upsert: true,
+        describeRejection: () => `The photo didn't upload. ${TASK_PHOTO_HINT}`,
+      });
+      paths.push(storagePath);
     }
-    const signed = await requestUrl.mutateAsync({
-      filename: file.name,
-      content_type: inspected.contentType,
-      size_bytes: file.size,
-    });
-    const { signedUrl, storagePath } = readSignedUpload(signed);
-    await putSignedUpload({
-      signedUrl,
-      body: file,
-      contentType: inspected.contentType,
-      upsert: true,
-      describeRejection: () => `The photo didn't upload. ${TASK_PHOTO_HINT}`,
-    });
-    return storagePath;
+    return paths;
   };
 }
 
-/**
- * One of a task's photos as a small thumbnail that opens full size in a new
- * tab, the way an Asana or Todoist attachment opens. Draws nothing while the
- * link loads or when it can't be read, so a tile never shows a broken image.
- */
-export function TaskPhotoThumb({
+/** One stored photo's image, or nothing while its link loads. */
+function StoredPhoto({
   taskId,
-  photo,
-  path,
-  label,
+  photoId,
   className,
 }: {
   taskId: string;
-  photo: TaskPhotoKind;
-  path: string | null | undefined;
-  /** What the photo is, for its name and its caption. */
-  label: string;
+  photoId: string;
   className?: string;
 }) {
-  const url = useTaskPhotoUrl(taskId, photo, path);
-  if (!path || !url.data) return null;
+  const url = useTaskPhotoUrl(taskId, photoId);
+  if (!url.data) {
+    return <span className={cn("block bg-muted", className)} aria-hidden />;
+  }
+  // A signed URL on the storage origin, not a Next image asset.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url.data} alt="" className={className} />;
+}
+
+/**
+ * A full-size viewer over a set of photos: arrows, the arrow keys and a swipe
+ * move between them, the way Google Photos and an Asana attachment preview
+ * page through a set.
+ */
+export function TaskPhotoViewer({
+  taskId,
+  photos,
+  index,
+  label,
+  onIndexChange,
+  onClose,
+}: {
+  taskId: string;
+  photos: LiveTaskPhoto[];
+  index: number | null;
+  label: string;
+  onIndexChange: (index: number) => void;
+  onClose: () => void;
+}) {
+  const swipeFrom = useRef<number | null>(null);
+  const open = index !== null && photos.length > 0;
+  const at = Math.min(index ?? 0, Math.max(photos.length - 1, 0));
+  const step = (by: number) =>
+    onIndexChange((at + by + photos.length) % photos.length);
+  const photo = photos[at];
+  return (
+    <Dialog open={open} onOpenChange={(next) => (next ? null : onClose())}>
+      <DialogContent
+        className="sm:max-w-3xl"
+        onKeyDown={(event) => {
+          if (photos.length < 2) return;
+          if (event.key === "ArrowRight") step(1);
+          if (event.key === "ArrowLeft") step(-1);
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription>
+            {photos.length > 1
+              ? `Photo ${at + 1} of ${photos.length}`
+              : "One photo"}
+          </DialogDescription>
+        </DialogHeader>
+        {photo ? (
+          <div
+            className="relative flex items-center justify-center"
+            onPointerDown={(event) => {
+              swipeFrom.current = event.clientX;
+            }}
+            onPointerUp={(event) => {
+              const from = swipeFrom.current;
+              swipeFrom.current = null;
+              if (from === null || photos.length < 2) return;
+              const moved = event.clientX - from;
+              if (Math.abs(moved) > 40) step(moved < 0 ? 1 : -1);
+            }}
+          >
+            <StoredPhoto
+              key={photo.id}
+              taskId={taskId}
+              photoId={photo.id}
+              className="max-h-[70vh] w-full touch-pan-y select-none rounded-[10px] object-contain"
+            />
+            {photos.length > 1 ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="absolute left-2 w-9 px-0"
+                  aria-label="Previous photo"
+                  onClick={() => step(-1)}
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="absolute right-2 w-9 px-0"
+                  aria-label="Next photo"
+                  onClick={() => step(1)}
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * A row of a task's photos as small thumbnails, each opening the viewer on
+ * itself. Nothing when there are none.
+ */
+export function TaskPhotoStrip({
+  taskId,
+  photos,
+  label,
+}: {
+  taskId: string;
+  photos: LiveTaskPhoto[];
+  /** What the photos are ("Photos", "Proof"): the caption and the viewer's title. */
+  label: string;
+}) {
+  const [open, setOpen] = useState<number | null>(null);
+  if (photos.length === 0) return null;
+  return (
+    <div className="grid gap-1">
+      <span className="text-caption text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap gap-2">
+        {photos.map((photo, i) => (
+          <button
+            key={photo.id}
+            type="button"
+            className="rounded-[10px] hover:opacity-90"
+            aria-label={`${label}, photo ${i + 1} of ${photos.length}, opens full size`}
+            onClick={() => setOpen(i)}
+          >
+            <StoredPhoto
+              taskId={taskId}
+              photoId={photo.id}
+              className="h-14 w-14 rounded-[10px] border border-border object-cover"
+            />
+          </button>
+        ))}
+      </div>
+      <TaskPhotoViewer
+        taskId={taskId}
+        photos={photos}
+        index={open}
+        label={label}
+        onIndexChange={setOpen}
+        onClose={() => setOpen(null)}
+      />
+    </div>
+  );
+}
+
+/** A proof link as a chip showing its domain; opens in a new tab. */
+export function ProofLinkChip({ link }: { link: string }) {
   return (
     <a
-      href={url.data}
+      href={link}
       target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        "group inline-flex flex-col items-start gap-1 rounded-[10px] text-caption text-muted-foreground",
-        className,
-      )}
-      aria-label={`${label}, opens full size`}
+      rel="noopener noreferrer nofollow"
+      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-caption text-foreground hover:bg-muted"
+      aria-label={`Proof link: ${proofLinkDomain(link)}, opens in a new tab`}
     >
-      {/* A signed URL on the storage origin, not a Next image asset. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={url.data}
-        alt=""
-        className="h-16 w-16 rounded-[10px] border border-border object-cover group-hover:opacity-90"
-      />
-      <span>{label}</span>
+      <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{proofLinkDomain(link)}</span>
     </a>
   );
 }
 
-/** A task's reference and proof photos side by side, when it has either. */
-export function TaskPhotos({
+/** The task fields a proof block reads. */
+export interface TaskProofView {
+  id: string;
+  photos?: LiveTaskPhoto[] | null;
+  proof_link?: string | null;
+  sent_back_reason?: string | null;
+  completion_note?: string | null;
+}
+
+/**
+ * What a task shows of its photos and proof (#4635): the reference photos;
+ * then, to the assignee and officers, why it was sent back, the proof photos
+ * or link, and the assignee's reply. The officer sees these above Confirm and
+ * Send back.
+ */
+export function TaskProof({
   task,
   showProof,
+  sentBack,
 }: {
-  task: {
-    id: string;
-    reference_photo_path?: string | null;
-    proof_photo_path?: string | null;
-  };
+  task: TaskProofView;
   /** The proof is the officer's to see before confirming, and the assignee's. */
   showProof: boolean;
+  /** The task waits on its assignee after a send-back (Needs changes). */
+  sentBack?: boolean;
 }) {
-  const proof = showProof ? task.proof_photo_path : null;
-  if (!task.reference_photo_path && !proof) return null;
+  const photos = task.photos ?? [];
+  const reference = photos.filter((photo) => photo.kind === "reference");
+  const proof = showProof
+    ? photos.filter((photo) => photo.kind === "proof")
+    : [];
+  const link = showProof ? task.proof_link : null;
+  const note = showProof ? task.completion_note : null;
+  // The reason shows while the task waits on the change, and beside the reply
+  // once it is marked done again.
+  const reason =
+    showProof && (sentBack || note) ? task.sent_back_reason : null;
+  if (reference.length === 0 && proof.length === 0 && !link && !reason && !note) {
+    return null;
+  }
   return (
-    <div className="mt-2 flex flex-wrap gap-3">
-      <TaskPhotoThumb
-        taskId={task.id}
-        photo="reference"
-        path={task.reference_photo_path}
-        label="Photo"
-      />
-      <TaskPhotoThumb
-        taskId={task.id}
-        photo="proof"
-        path={proof}
-        label="Proof"
-      />
+    <div className="mt-2 grid gap-2">
+      {reason ? (
+        <p className="rounded-[10px] bg-warning-tint px-2.5 py-1.5 text-caption text-foreground">
+          <span className="font-medium">Sent back: </span>
+          {reason}
+        </p>
+      ) : null}
+      <TaskPhotoStrip taskId={task.id} photos={reference} label="Photos" />
+      <TaskPhotoStrip taskId={task.id} photos={proof} label="Proof" />
+      {link ? <ProofLinkChip link={link} /> : null}
+      {note ? (
+        <p className="text-caption text-foreground">
+          <span className="font-medium">Reply: </span>
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-/** A form's photo state: a new file, the task's own photo kept, or none. */
+/** A local preview of a picked file, revoked when it goes. */
+function PickedPhoto({ file, className }: { file: File; className?: string }) {
+  const url = useMemo(() => URL.createObjectURL(file), [file]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url} alt="" className={className} />;
+}
+
+/**
+ * Pick several photos at once, shown as thumbnails with a remove button
+ * each: the task's own stored ones (editing) and newly picked files. Holds
+ * at most `TASK_PHOTOS_MAX` between them.
+ */
+export function TaskPhotoPicker({
+  id,
+  taskId,
+  kept = [],
+  files,
+  onKeptChange,
+  onFilesChange,
+  disabled,
+  invalid,
+  addLabel = "Add photos",
+}: {
+  id: string;
+  taskId?: string;
+  kept?: LiveTaskPhoto[];
+  files: File[];
+  onKeptChange?: (kept: LiveTaskPhoto[]) => void;
+  onFilesChange: (files: File[]) => void;
+  disabled?: boolean;
+  invalid?: boolean;
+  addLabel?: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const room = TASK_PHOTOS_MAX - kept.length - files.length;
+  const tile =
+    "relative h-16 w-16 overflow-hidden rounded-[10px] border border-border";
+  const remove = (label: string, onClick: () => void) => (
+    <button
+      type="button"
+      className="absolute right-0.5 top-0.5 rounded-full bg-background/90 p-0.5 text-foreground shadow-sm"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <X className="h-3.5 w-3.5" aria-hidden />
+    </button>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {taskId
+        ? kept.map((photo, i) => (
+            <div key={photo.id} className={tile}>
+              <StoredPhoto
+                taskId={taskId}
+                photoId={photo.id}
+                className="h-full w-full object-cover"
+              />
+              {remove(`Remove photo ${i + 1}`, () =>
+                onKeptChange?.(kept.filter((p) => p.id !== photo.id)),
+              )}
+            </div>
+          ))
+        : null}
+      {files.map((file, i) => (
+        <div key={`${file.name}-${i}`} className={tile}>
+          <PickedPhoto file={file} className="h-full w-full object-cover" />
+          {remove(`Remove ${file.name}`, () =>
+            onFilesChange(files.filter((_, j) => j !== i)),
+          )}
+        </div>
+      ))}
+      <input
+        ref={input}
+        id={id}
+        type="file"
+        multiple
+        accept={acceptAttribute("task_photo")}
+        className="sr-only"
+        tabIndex={-1}
+        data-testid={`${id}-input`}
+        onChange={(event) => {
+          const picked = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          if (picked.length > 0) onFilesChange([...files, ...picked]);
+        }}
+      />
+      {room > 0 ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={cn("gap-1.5", invalid && "border-destructive")}
+          disabled={disabled}
+          onClick={() => input.current?.click()}
+        >
+          <ImagePlus className="h-4 w-4" aria-hidden />
+          {addLabel}
+        </Button>
+      ) : (
+        <span className="text-caption text-muted-foreground">
+          {TASK_PHOTOS_MAX} photos is the most.
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** A form's photo state: newly picked files, the task's own kept, and the proof kind. */
 export interface TaskPhotoDraft {
-  /** A newly picked photo, uploaded on save. */
-  photoFile: File | null;
-  /** Editing: the task's own photo was removed. */
-  photoRemoved: boolean;
-  /** "Photo required" for Mark done. */
-  photoRequired: boolean;
+  /** Newly picked reference photos, uploaded on save. */
+  photoFiles: File[];
+  /** Editing: the task's stored reference photos still kept. */
+  keptPhotos: LiveTaskPhoto[];
+  /** What Mark done needs (#4635). */
+  proofKind: TaskProofKind;
 }
 
 export const EMPTY_TASK_PHOTO_DRAFT: TaskPhotoDraft = {
-  photoFile: null,
-  photoRemoved: false,
-  photoRequired: false,
+  photoFiles: [],
+  keptPhotos: [],
+  proofKind: "none",
+};
+
+const PROOF_KIND_HINTS: Record<TaskProofKind, string> = {
+  none: "Marking it done needs nothing more.",
+  photo: "Marking it done needs a photo of the finished job.",
+  link: "Marking it done needs a link, such as a doc or a post.",
 };
 
 /**
- * The create and edit forms' photo fields: a reference photo to attach, view
- * or remove, and the officer's "Photo required" switch.
+ * The create and edit forms' photo fields: reference photos to attach, view
+ * or remove, and the officer's proof control (None, Photo, Link), the way
+ * Google Classroom and Canvas set what an assignment's submission takes.
  */
 export function TaskPhotoFields({
   id,
+  taskId,
   draft,
   onChange,
-  existing,
   disabled,
   problem,
 }: {
   id: string;
+  /** Editing: the task whose stored photos `draft.keptPhotos` are. */
+  taskId?: string;
   draft: TaskPhotoDraft;
   onChange: (patch: Partial<TaskPhotoDraft>) => void;
-  /** Editing a task that has a photo: its id and stored path. */
-  existing?: { taskId: string; path: string | null | undefined };
   disabled?: boolean;
   problem?: string | null;
 }) {
-  const keepsExisting =
-    !!existing?.path && !draft.photoRemoved && !draft.photoFile;
   return (
     <div className="grid gap-3">
       <div className="grid gap-1">
-        <Label htmlFor={`${id}-photo`}>Photo</Label>
-        {keepsExisting && existing ? (
-          <div className="flex items-end gap-3">
-            <TaskPhotoThumb
-              taskId={existing.taskId}
-              photo="reference"
-              path={existing.path}
-              label="Current photo"
-            />
-            <Button
-              id={`${id}-photo`}
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={disabled}
-              onClick={() => onChange({ photoRemoved: true })}
-            >
-              Remove photo
-            </Button>
-          </div>
-        ) : (
-          <FilePicker
-            id={`${id}-photo`}
-            kind="task_photo"
-            testId="task-photo-input"
-            layout="card"
-            chooseLabel="Add a photo"
-            emptyLabel="What the job looks like (optional)"
-            file={draft.photoFile}
-            disabled={disabled}
-            invalid={!!problem}
-            onPick={(file) => onChange({ photoFile: file })}
-          />
-        )}
+        <Label htmlFor={`${id}-photos`}>Photos</Label>
+        <p className="text-caption text-muted-foreground">
+          What the job looks like (optional, up to {TASK_PHOTOS_MAX}).
+        </p>
+        <TaskPhotoPicker
+          id={`${id}-photos`}
+          taskId={taskId}
+          kept={draft.keptPhotos}
+          files={draft.photoFiles}
+          onKeptChange={(keptPhotos) => onChange({ keptPhotos })}
+          onFilesChange={(photoFiles) => onChange({ photoFiles })}
+          disabled={disabled}
+          invalid={!!problem}
+        />
         {problem ? <FieldError>{problem}</FieldError> : null}
       </div>
-      <div className="flex items-start justify-between gap-3">
-        <div className="grid gap-0.5">
-          <Label htmlFor={`${id}-photo-required`}>Photo required</Label>
-          <p className="text-caption text-muted-foreground">
-            Marking it done needs a photo of the finished job.
-          </p>
-        </div>
-        <Switch
-          id={`${id}-photo-required`}
-          checked={draft.photoRequired}
+      <div className="grid gap-1">
+        <span className="text-label font-medium" id={`${id}-proof-label`}>
+          Proof
+        </span>
+        <SegmentedChoice
+          label="Proof to mark it done"
+          options={TASK_PROOF_KINDS.map((kind) => ({
+            value: kind,
+            label: TASK_PROOF_KIND_LABELS[kind],
+          }))}
+          value={draft.proofKind}
+          onChange={(proofKind) => onChange({ proofKind })}
           disabled={disabled}
-          onCheckedChange={(checked) => onChange({ photoRequired: checked })}
         />
+        <p className="text-caption text-muted-foreground">
+          {PROOF_KIND_HINTS[draft.proofKind]}
+        </p>
       </div>
     </div>
   );
 }
 
+/** What Mark done sends besides the status (#4635). */
+export interface CompletionProof {
+  proof_photo_paths?: string[];
+  proof_link?: string;
+  completion_note?: string;
+}
+
+/** The task fields Mark done reads. */
+export interface MarkDoneTask {
+  proof_kind?: TaskProofKind | null;
+  /** Set while it waits on the assignee after a send-back. */
+  sent_back_at?: string | null;
+  sent_back_reason?: string | null;
+}
+
+/** Whether a sent-back task is waiting on its change (Needs changes). */
+function needsChange(task: MarkDoneTask, sentBack: boolean): boolean {
+  return sentBack && !!task.sent_back_at;
+}
+
 /**
- * The assignee's Mark done, with a proof photo (#4565). On a task with "Photo
- * required" the button itself asks for the photo, then marks it done with it,
- * the way TaskRabbit and Thumbtack ask for a photo of the finished job. On any
- * other task Mark done works as before, and a camera button beside it marks
- * it done with a photo. `onComplete` gets the uploaded photo's path, if any,
- * and rejects only for the caller to report.
+ * The assignee's Mark done, with proof (#4565, #4635). On a task that asks
+ * for a photo or a link, or one an officer sent back, the button opens a
+ * sheet that asks for it first: the proof the task needs, or a reply to the
+ * reason, the way Canvas and Google Classroom ask for a resubmission. On any
+ * other task Mark done works at once, and a camera button beside it opens the
+ * sheet to add photos anyway. `onComplete` rejects only for the caller to
+ * report.
  */
 export function MarkDoneControl({
   title,
-  photoRequired,
+  task,
+  sentBack,
   label,
   controlProps,
   onComplete,
@@ -271,83 +595,308 @@ export function MarkDoneControl({
   size = "toolbar",
 }: {
   title: string;
-  photoRequired: boolean;
+  task: MarkDoneTask;
+  /** The task is stored IN_PROGRESS with `sent_back_at` (Needs changes). */
+  sentBack: boolean;
   label: string;
   controlProps: { disabled?: boolean } & Record<string, unknown>;
-  onComplete: (proofPhotoPath?: string) => void | Promise<void>;
+  onComplete: (proof: CompletionProof) => void | Promise<void>;
   onUploadError: (message: string) => void;
   size?: "toolbar" | "sm";
 }) {
-  const upload = useUploadTaskPhoto();
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const disabled = !!controlProps.disabled || uploading;
-
-  async function withPhoto(file: File) {
-    setUploading(true);
-    try {
-      const path = await upload(file);
-      await onComplete(path);
-    } catch (error) {
-      onUploadError(uploadFailureMessage(error));
-    } finally {
-      setUploading(false);
-    }
-  }
-
+  const [open, setOpen] = useState(false);
+  const kind = task.proof_kind ?? "none";
+  const asks = kind !== "none" || needsChange(task, sentBack);
+  const disabled = !!controlProps.disabled;
   return (
     <>
-      <input
-        ref={fileInput}
-        type="file"
-        accept={acceptAttribute("task_photo")}
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden="true"
-        data-testid="task-proof-input"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void withPhoto(file);
-        }}
-      />
       <Button
         size={size}
         variant="secondary"
         className="gap-1.5"
         {...controlProps}
         disabled={disabled}
-        onClick={() =>
-          photoRequired ? fileInput.current?.click() : void onComplete()
-        }
+        onClick={() => (asks ? setOpen(true) : void onComplete({}))}
       >
-        {uploading ? (
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        ) : photoRequired ? (
+        {kind === "photo" ? (
           <Camera className="h-4 w-4" aria-hidden="true" />
+        ) : kind === "link" ? (
+          <Link2 className="h-4 w-4" aria-hidden="true" />
         ) : null}
-        {photoRequired ? `${label} with a photo` : label}
+        {kind === "photo"
+          ? `${label} with a photo`
+          : kind === "link"
+            ? `${label} with a link`
+            : label}
       </Button>
-      {photoRequired ? null : (
+      {asks ? null : (
         <Button
           size={size}
           variant="ghost"
           className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
-          aria-label={`Add a photo of the finished job: ${title}`}
+          aria-label={`Add photos of the finished job: ${title}`}
           {...controlProps}
           // After the spread: the gate's props carry `title` (undefined while
           // online), which would otherwise wipe the icon's only visible name.
           title={
             typeof controlProps.title === "string"
               ? controlProps.title
-              : "Add a photo of the finished job"
+              : "Add photos of the finished job"
           }
           disabled={disabled}
-          onClick={() => fileInput.current?.click()}
+          onClick={() => setOpen(true)}
         >
           <Camera className="h-4 w-4" aria-hidden="true" />
         </Button>
       )}
+      {open ? (
+        <MarkDoneDialog
+          title={title}
+          task={task}
+          sentBack={needsChange(task, sentBack)}
+          onClose={() => setOpen(false)}
+          onComplete={onComplete}
+          onUploadError={onUploadError}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** Mark done's sheet: the proof the task asks for and, after a send-back, a reply. */
+function MarkDoneDialog({
+  title,
+  task,
+  sentBack,
+  onClose,
+  onComplete,
+  onUploadError,
+}: {
+  title: string;
+  task: MarkDoneTask;
+  sentBack: boolean;
+  onClose: () => void;
+  onComplete: (proof: CompletionProof) => void | Promise<void>;
+  onUploadError: (message: string) => void;
+}) {
+  const upload = useUploadTaskPhotos();
+  const kind = task.proof_kind ?? "none";
+  const [files, setFiles] = useState<File[]>([]);
+  const [link, setLink] = useState("");
+  const [note, setNote] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const photoProblem = taskPhotosProblem(files);
+    if (photoProblem) return setProblem(photoProblem);
+    const trimmedLink = link.trim();
+    const proofLink = trimmedLink ? normalizeProofLink(trimmedLink) : null;
+    if (trimmedLink && !proofLink) {
+      return setProblem("Use a web link that starts with http:// or https://.");
+    }
+    if (kind === "photo" && files.length === 0) {
+      return setProblem("Add at least one photo of the finished job.");
+    }
+    if (kind === "link" && !proofLink) {
+      return setProblem("Add a link to show it's done.");
+    }
+    const reply = note.trim();
+    if (sentBack && files.length === 0 && !proofLink && !reply) {
+      return setProblem("Add proof or reply to the officer before marking it done.");
+    }
+    setProblem(null);
+    setBusy(true);
+    try {
+      const paths = files.length > 0 ? await upload(files) : [];
+      await onComplete({
+        ...(paths.length > 0 ? { proof_photo_paths: paths } : {}),
+        ...(proofLink ? { proof_link: proofLink } : {}),
+        ...(reply ? { completion_note: reply } : {}),
+      });
+      onClose();
+    } catch (error) {
+      onUploadError(uploadFailureMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? null : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Mark done</DialogTitle>
+          <DialogDescription>{title}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {sentBack && task.sent_back_reason ? (
+            <p className="rounded-[10px] bg-warning-tint px-2.5 py-1.5 text-caption text-foreground">
+              <span className="font-medium">Sent back: </span>
+              {task.sent_back_reason}
+            </p>
+          ) : null}
+          {kind !== "link" ? (
+            <div className="grid gap-1">
+              <Label htmlFor="mark-done-photos">
+                {kind === "photo" ? "Photos of the finished job" : "Photos (optional)"}
+              </Label>
+              <TaskPhotoPicker
+                id="mark-done-photos"
+                files={files}
+                onFilesChange={setFiles}
+                disabled={busy}
+              />
+            </div>
+          ) : (
+            <div className="grid gap-1">
+              <Label htmlFor="mark-done-link">Link</Label>
+              <Input
+                id="mark-done-link"
+                type="url"
+                inputMode="url"
+                placeholder="https://"
+                value={link}
+                disabled={busy}
+                onChange={(event) => setLink(event.target.value)}
+              />
+            </div>
+          )}
+          {sentBack ? (
+            <div className="grid gap-1">
+              <Label htmlFor="mark-done-note">Reply to the officer</Label>
+              <Textarea
+                id="mark-done-note"
+                rows={2}
+                maxLength={TASK_COMPLETION_NOTE_MAX}
+                placeholder="What you changed"
+                value={note}
+                disabled={busy}
+                onChange={(event) => setNote(event.target.value)}
+              />
+            </div>
+          ) : null}
+          {problem ? <FieldError>{problem}</FieldError> : null}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={busy} className="gap-1.5">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Mark done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** What Send back sends (#4635). */
+export interface SendBackInput {
+  comment: string;
+  require_photo?: boolean;
+}
+
+/**
+ * An officer's Send back (#4635): a required one-line reason, which stays on
+ * the task for the assignee, and "Ask for a photo next time" on a task that
+ * doesn't already ask for one, the way an Asana approval's "Request changes"
+ * and Canvas's resubmission ask for a comment.
+ */
+export function SendBackDialog({
+  title,
+  proofKind,
+  open,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  proofKind: TaskProofKind | null | undefined;
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (input: SendBackInput) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [askPhoto, setAskPhoto] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setReason("");
+      setAskPhoto(false);
+      setProblem(null);
+    }
+  }, [open]);
+
+  async function submit() {
+    const comment = reason.trim();
+    if (!comment) return setProblem("Say what needs to change.");
+    setBusy(true);
+    try {
+      await onSubmit({ comment, ...(askPhoto ? { require_photo: true } : {}) });
+      onClose();
+    } catch (error) {
+      setProblem(getErrorMessage(error, "Couldn't send it back. Try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => (next ? null : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Send back</DialogTitle>
+          <DialogDescription>
+            {title} goes back to its assignee with your reason.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="grid gap-1">
+            <Label htmlFor="send-back-reason">What needs to change</Label>
+            <Input
+              id="send-back-reason"
+              autoFocus
+              maxLength={TASK_SEND_BACK_REASON_MAX}
+              placeholder="The floor is still sticky"
+              value={reason}
+              disabled={busy}
+              aria-invalid={!!problem}
+              onChange={(event) => setReason(event.target.value)}
+            />
+            <p className="text-caption text-muted-foreground">
+              {reason.length}/{TASK_SEND_BACK_REASON_MAX}
+            </p>
+          </div>
+          {proofKind !== "photo" ? (
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="send-back-photo">Ask for a photo next time</Label>
+              <Switch
+                id="send-back-photo"
+                checked={askPhoto}
+                disabled={busy}
+                onCheckedChange={setAskPhoto}
+              />
+            </div>
+          ) : null}
+          {problem ? <FieldError>{problem}</FieldError> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              Send back
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

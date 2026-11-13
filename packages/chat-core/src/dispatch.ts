@@ -10,6 +10,7 @@
  * fault is `{ ok: true, warning }` (#1718) — not an escaped rejection.
  */
 
+import type { TaskProofKind } from "@repo/validation";
 import {
   parseAnnounceArgs,
   parseEventArgs,
@@ -860,12 +861,13 @@ export interface TaskInput {
   subtasks?: string[];
   point_reward?: number;
   /**
-   * A reference photo already uploaded (#4565). `null` only on an edit, to
-   * remove the task's photo; a create treats it as none.
+   * Reference photos already uploaded, in order (#4635). On an edit, the
+   * task's photos as they should stand (kept paths and new ones); `undefined`
+   * leaves them as they are.
    */
-  reference_photo_path?: string | null;
-  /** Mark done needs a proof photo (#4565). */
-  photo_required?: boolean;
+  reference_photo_paths?: string[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
 }
 
 /**
@@ -900,8 +902,10 @@ export async function postTask(
         due_at: input.due_at,
         subtasks: input.subtasks,
         point_reward: input.point_reward,
-        reference_photo_path: input.reference_photo_path ?? undefined,
-        photo_required: input.photo_required,
+        reference_photo_paths: input.reference_photo_paths?.length
+          ? input.reference_photo_paths
+          : undefined,
+        proof_kind: input.proof_kind,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },

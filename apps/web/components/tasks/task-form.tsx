@@ -6,7 +6,7 @@ import { useMembers } from "@repo/hooks";
 import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
+import { TASK_PHOTOS_MAX, TASK_TITLE_MAX_LENGTH } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,9 +40,9 @@ import { useToast } from "@/lib/hooks/use-toast";
 import {
   EMPTY_TASK_PHOTO_DRAFT,
   TaskPhotoFields,
-  taskPhotoProblem,
+  taskPhotosProblem,
   uploadFailureMessage,
-  useUploadTaskPhoto,
+  useUploadTaskPhotos,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -115,8 +115,8 @@ export interface TaskFormProps {
   editing?: {
     steps: React.ReactNode;
     assigneeNote: (assigneeId: string) => React.ReactNode;
-    /** The task's own reference photo, to view or remove (#4565). */
-    photo?: { taskId: string; path: string | null | undefined };
+    /** The task whose stored reference photos the draft keeps (#4635). */
+    taskId?: string;
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -160,7 +160,7 @@ export function TaskForm({
   const titleRef = useRef<HTMLInputElement>(null);
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
-  const uploadPhoto = useUploadTaskPhoto();
+  const uploadPhotos = useUploadTaskPhotos();
   // An edit opens on the title, the way the + card's form does.
   useEffect(() => {
     if (editing || suggestion) titleRef.current?.focus();
@@ -193,9 +193,10 @@ export function TaskForm({
     }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
-    const photoProblem = draft.photoFile
-      ? taskPhotoProblem(draft.photoFile)
-      : null;
+    const photoProblem = taskPhotosProblem(
+      draft.photoFiles,
+      TASK_PHOTOS_MAX - draft.keptPhotos.length,
+    );
     if (photoProblem) {
       setMissing((prev) => ({ ...prev, photo: photoProblem }));
       edit({ showMore: true });
@@ -203,11 +204,12 @@ export function TaskForm({
     }
     setPosting(true);
     try {
-      // The photo goes up first; the write carries its path (#4565).
-      let referencePhotoPath: string | null | undefined;
-      if (draft.photoFile) {
+      // The photos go up first; the write carries their paths (#4635). An
+      // edit sends the set as it should stand: the kept ones, then the new.
+      let uploaded: string[] = [];
+      if (draft.photoFiles.length > 0) {
         try {
-          referencePhotoPath = await uploadPhoto(draft.photoFile);
+          uploaded = await uploadPhotos(draft.photoFiles);
         } catch (error) {
           setMissing((prev) => ({
             ...prev,
@@ -216,9 +218,11 @@ export function TaskForm({
           edit({ showMore: true });
           return;
         }
-      } else if (draft.photoRemoved) {
-        referencePhotoPath = null;
       }
+      const referencePhotoPaths = [
+        ...draft.keptPhotos.map((photo) => photo.storage_path),
+        ...uploaded,
+      ];
       const result = await onPost({
         title: trimmed,
         description: draft.description.trim() || undefined,
@@ -230,8 +234,8 @@ export function TaskForm({
         ...(suggestion
           ? {}
           : {
-              reference_photo_path: referencePhotoPath,
-              photo_required: draft.photoRequired,
+              reference_photo_paths: referencePhotoPaths,
+              proof_kind: draft.proofKind,
             }),
       });
       if (!result.ok) {
@@ -262,10 +266,14 @@ export function TaskForm({
     ...(suggestion
       ? []
       : [
-          draft.photoFile || (editing?.photo?.path && !draft.photoRemoved)
-            ? "Photo"
+          draft.photoFiles.length + draft.keptPhotos.length > 0
+            ? "Photos"
             : null,
-          draft.photoRequired ? "Photo required" : null,
+          draft.proofKind === "photo"
+            ? "Photo required"
+            : draft.proofKind === "link"
+              ? "Link required"
+              : null,
         ].filter(Boolean)),
   ].join(" · ");
 
@@ -418,17 +426,19 @@ export function TaskForm({
             <TaskPhotoFields
               id={ids}
               draft={draft}
-              existing={editing?.photo}
+              taskId={editing?.taskId}
               disabled={posting || gate.controlProps().disabled}
               problem={missing.photo}
               onChange={(patch) => {
                 edit(patch);
-                if ("photoFile" in patch) {
+                if ("photoFiles" in patch || "keptPhotos" in patch) {
+                  const next = { ...draft, ...patch };
                   setMissing((prev) => ({
                     ...prev,
-                    photo: patch.photoFile
-                      ? taskPhotoProblem(patch.photoFile)
-                      : null,
+                    photo: taskPhotosProblem(
+                      next.photoFiles,
+                      TASK_PHOTOS_MAX - next.keptPhotos.length,
+                    ),
                   }));
                 }
               }}

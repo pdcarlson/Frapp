@@ -52,34 +52,46 @@ describe("taskEditFrom's due time (#4512)", () => {
   });
 });
 
-describe("taskEditFrom's photo (#4565)", () => {
-  const withPhoto: EditableTask = {
+describe("taskEditFrom's photos and proof kind (#4635)", () => {
+  const A = "chapters/c/tasks/a/mess.jpg";
+  const B = "chapters/c/tasks/b/mop.jpg";
+  const withPhotos: EditableTask = {
     ...task,
-    reference_photo_path: "chapters/c/tasks/p/mess.jpg",
-    photo_required: false,
+    photos: [
+      { id: "pa", kind: "reference", storage_path: A },
+      { id: "pb", kind: "reference", storage_path: B },
+      { id: "pp", kind: "proof", storage_path: "chapters/c/tasks/p/done.jpg" },
+    ],
+    proof_kind: "none",
   };
 
-  it("keeps the photo and the switch when neither changed", () => {
-    expect(taskEditFrom(withPhoto, input({ photo_required: false }))).toEqual(
-      {},
-    );
-  });
-
-  it("sends a new photo's path, or null to remove it", () => {
+  it("sends nothing when the photos and the proof kind stand", () => {
     expect(
       taskEditFrom(
-        withPhoto,
-        input({ reference_photo_path: "chapters/c/tasks/q/new.jpg" }),
+        withPhotos,
+        input({ reference_photo_paths: [A, B], proof_kind: "none" }),
       ),
-    ).toEqual({ reference_photo_path: "chapters/c/tasks/q/new.jpg" });
-    expect(
-      taskEditFrom(withPhoto, input({ reference_photo_path: null })),
-    ).toEqual({ reference_photo_path: null });
+    ).toEqual({});
   });
 
-  it("sends Photo required only when it changed", () => {
-    expect(taskEditFrom(withPhoto, input({ photo_required: true }))).toEqual({
-      photo_required: true,
+  it("sends the whole set when one is removed, added or moved", () => {
+    expect(
+      taskEditFrom(withPhotos, input({ reference_photo_paths: [B] })),
+    ).toEqual({ reference_photo_paths: [B] });
+    expect(
+      taskEditFrom(
+        withPhotos,
+        input({ reference_photo_paths: [A, B, "chapters/c/tasks/n/new.jpg"] }),
+      ),
+    ).toEqual({ reference_photo_paths: [A, B, "chapters/c/tasks/n/new.jpg"] });
+    expect(
+      taskEditFrom(withPhotos, input({ reference_photo_paths: [B, A] })),
+    ).toEqual({ reference_photo_paths: [B, A] });
+  });
+
+  it("sends the proof kind only when it changed", () => {
+    expect(taskEditFrom(withPhotos, input({ proof_kind: "link" }))).toEqual({
+      proof_kind: "link",
     });
   });
 });

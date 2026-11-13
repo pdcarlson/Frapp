@@ -417,9 +417,9 @@ function SuggestedTaskRow({
       points: "",
       description: task.description ?? "",
       subtasks: task.subtasks,
-      photoFile: null,
-      photoRemoved: false,
-      photoRequired: false,
+      photoFiles: [],
+      keptPhotos: [],
+      proofKind: "none",
       showMore: false,
     };
     return (

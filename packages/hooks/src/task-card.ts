@@ -1,5 +1,9 @@
 import { formatDueLabel, formatDueOn, isDueOverdue } from "@repo/formatting";
-import { STATUS_LABELS } from "@repo/validation";
+import {
+  STATUS_LABELS,
+  taskNeedsSignOff,
+  type TaskProofKind,
+} from "@repo/validation";
 import type { TaskStatus, TaskSubtask } from "./use-tasks";
 
 /**
@@ -30,6 +34,19 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> =
 export const TASK_CONFIRMED_LABEL = "Confirmed";
 
 /**
+ * The word for a completion that needed no sign-off (#4635, decision C): no
+ * points and no proof, so it is Done when marked done.
+ */
+export const TASK_DONE_LABEL = "Done";
+
+/**
+ * The word for a task an officer sent back (#4635): stored `IN_PROGRESS`
+ * with `sent_back_at` set. Worked out on read, never stored as a status, so it
+ * sits beside `TASK_STATUS_LABELS` rather than in it.
+ */
+export const TASK_NEEDS_CHANGES_LABEL = "Needs changes";
+
+/**
  * The verbs every task surface puts on its controls, so web's buttons, the
  * mobile sheet and both chat cards name each move the same way.
  */
@@ -40,24 +57,52 @@ export const TASK_ACTION_LABELS = {
   reopen: "Mark not done",
   confirm: "Confirm",
   confirmed: TASK_CONFIRMED_LABEL,
-  reject: "Reject",
+  /** An officer returning a completion to its assignee with a reason. */
+  reject: "Send back",
 } as const;
 
 /**
  * The word a task's status shows, wherever it is drawn.
  *
- * `TASK_STATUS_LABELS` by status, except a confirmed completion: confirming
- * leaves `status` at `COMPLETED` and sets `points_awarded`, so the label alone
- * would go on saying "Waiting on an officer" forever.
+ * `TASK_STATUS_LABELS` by status, except:
+ * - a confirmed completion: confirming leaves `status` at `COMPLETED` and
+ *   sets `points_awarded`, so the label alone would go on saying "Waiting on
+ *   an officer" forever. It reads Confirmed, or Done when it needed no
+ *   sign-off (#4635; only when the caller passes `proof_kind`, since without
+ *   it there is no telling).
+ * - a task an officer sent back reads Needs changes (#4635) until it is
+ *   marked done again.
  */
 export function taskStatusLabel(task: {
   status: TaskStatus;
   points_awarded: boolean;
+  stored_status?: TaskStatus;
+  sent_back_at?: string | null;
+  point_reward?: number | null;
+  proof_kind?: TaskProofKind | null;
 }): string {
   if (task.status === "COMPLETED" && task.points_awarded) {
-    return TASK_CONFIRMED_LABEL;
+    return task.proof_kind != null && !taskNeedsSignOff(task)
+      ? TASK_DONE_LABEL
+      : TASK_CONFIRMED_LABEL;
   }
+  if (isSentBack(task)) return TASK_NEEDS_CHANGES_LABEL;
   return TASK_STATUS_LABELS[task.status];
+}
+
+/**
+ * Whether an officer sent the task back and it waits on its assignee again
+ * (#4635): stored `IN_PROGRESS` with `sent_back_at` set. An overdue one still
+ * counts, since the reason is what the assignee needs to see.
+ */
+export function isSentBack(task: {
+  status: TaskStatus;
+  stored_status?: TaskStatus;
+  sent_back_at?: string | null;
+}): boolean {
+  return (
+    !!task.sent_back_at && (task.stored_status ?? task.status) === "IN_PROGRESS"
+  );
 }
 
 /**
@@ -71,9 +116,17 @@ export function canReopenOwnTask(input: {
   stored: TaskStatus | undefined;
   pointsAwarded: boolean;
   isAssignee: boolean;
+  /**
+   * `false` for a task that needed no sign-off (#4635): it was confirmed as
+   * it was marked done with nothing paid, so it can still be taken back.
+   * Omitted reads as needing one.
+   */
+  needsSignOff?: boolean;
 }): boolean {
   return (
-    input.isAssignee && input.stored === "COMPLETED" && !input.pointsAwarded
+    input.isAssignee &&
+    input.stored === "COMPLETED" &&
+    (!input.pointsAwarded || input.needsSignOff === false)
   );
 }
 
@@ -103,11 +156,28 @@ export interface LiveTask {
    * countdown reads this rather than the snapshot's date (#4135).
    */
   due: string | undefined;
-  /** Task photos (#4565): storage keys, read through the photo-url route. */
-  reference_photo_path: string | null;
-  proof_photo_path: string | null;
-  /** Mark done needs a proof photo. */
-  photo_required: boolean;
+  point_reward: number | null;
+  /** What Mark done needs (#4635). */
+  proof_kind: TaskProofKind;
+  /** The assignee's link proof, while the completion stands. */
+  proof_link: string | null;
+  /** When an officer last sent it back, and why (#4635). */
+  sent_back_at: string | null;
+  sent_back_reason: string | null;
+  /** The assignee's reply sent with Mark done. */
+  completion_note: string | null;
+  /**
+   * Task photos (#4635): reference photos, then proof photos, each in
+   * order. Read each through `useTaskPhotoUrl`.
+   */
+  photos: LiveTaskPhoto[];
+}
+
+/** One task photo as a card reads it. */
+export interface LiveTaskPhoto {
+  id: string;
+  kind: "reference" | "proof";
+  storage_path: string;
 }
 
 /**
@@ -185,10 +255,34 @@ export function readLiveTask(data: unknown): LiveTask | null {
         : typeof r.due_date === "string" && r.due_date !== ""
           ? r.due_date
           : undefined,
-    reference_photo_path: nonEmptyString(r.reference_photo_path),
-    proof_photo_path: nonEmptyString(r.proof_photo_path),
-    photo_required: r.photo_required === true,
+    point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
+    proof_kind:
+      r.proof_kind === "photo" || r.proof_kind === "link"
+        ? r.proof_kind
+        : "none",
+    proof_link: nonEmptyString(r.proof_link),
+    sent_back_at: nonEmptyString(r.sent_back_at),
+    sent_back_reason: nonEmptyString(r.sent_back_reason),
+    completion_note: nonEmptyString(r.completion_note),
+    photos: readLiveTaskPhotos(r.photos),
   };
+}
+
+/** A task's `photos` off the wire, dropping any row without its fields. */
+export function readLiveTaskPhotos(value: unknown): LiveTaskPhoto[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const r = row as Record<string, unknown>;
+    if (
+      typeof r.id !== "string" ||
+      typeof r.storage_path !== "string" ||
+      (r.kind !== "reference" && r.kind !== "proof")
+    ) {
+      return [];
+    }
+    return [{ id: r.id, kind: r.kind, storage_path: r.storage_path }];
+  });
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -255,10 +349,11 @@ export function canReadCardTask(input: {
  *   task that is already in progress or done, and the server would refuse it.
  * - **The assignee** walks `TODO → IN_PROGRESS → COMPLETED`, keyed off the
  *   stored status (`actionStatus`).
- * - **A `tasks:manage` holder** confirms or rejects a completion. Not on their
- *   own task: the server refuses self-confirm (#1056), so the assignee gets
- *   Reject only. Once points are awarded, the only control left is the
- *   Confirmed indicator.
+ * - **A `tasks:manage` holder** confirms or sends back a completion. Not on
+ *   their own task: the server refuses self-confirm (#1056), so the assignee
+ *   gets Send back only. Once points are awarded, the only control left is
+ *   the Confirmed indicator, except on a task that needed no sign-off
+ *   (#4635): it is Done with nothing to confirm, and Send back stays.
  */
 export function taskCardControls(input: {
   live: LiveTask | null;
@@ -271,6 +366,7 @@ export function taskCardControls(input: {
   if (isAssignee && stored === "TODO") return ["start"];
   if (isAssignee && stored === "IN_PROGRESS") return ["complete"];
   if (stored !== "COMPLETED" || !canManage) return [];
+  if (!taskNeedsSignOff(live)) return ["reject"];
   if (live.points_awarded) return ["confirmed"];
   return isAssignee ? ["reject"] : ["confirm", "reject"];
 }
@@ -315,8 +411,9 @@ export interface EditableCardTask {
   status: TaskStatus;
   stored_status: TaskStatus | undefined;
   subtasks: TaskSubtask[];
-  reference_photo_path: string | null;
-  photo_required: boolean;
+  /** Its reference photos, in order (#4635). */
+  reference_photos: LiveTaskPhoto[];
+  proof_kind: TaskProofKind;
 }
 
 /**
@@ -347,7 +444,7 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     status: live.status,
     stored_status: live.stored_status,
     subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
-    reference_photo_path: live.reference_photo_path,
-    photo_required: live.photo_required,
+    reference_photos: live.photos.filter((photo) => photo.kind === "reference"),
+    proof_kind: live.proof_kind,
   };
 }
