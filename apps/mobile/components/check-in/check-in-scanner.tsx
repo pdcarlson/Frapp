@@ -20,11 +20,12 @@ const VIEWPORT_MAX = 280;
  *
  * The phone's own camera reads the same code as a link (#4762); this is for a
  * member already in the app, the way Venmo and Cash App offer a Scan button
- * beside the camera path. The camera is asked for when the member taps Scan
- * code, once per visit, so a "Don't allow" is never asked again in a loop;
- * after that the viewport says what to change and offers the OS prompt again,
- * or Settings once the OS won't ask, and reads the permission again when the
- * member comes back from Settings.
+ * beside the camera path. The camera is asked for each time the member opens
+ * the viewport (tapping Scan code), and only once while it is open, so a
+ * "Don't allow" is never asked again in a loop; after that the viewport says
+ * what to change and offers the OS prompt again, or Settings once the OS won't
+ * ask. On Android it reads the permission again when the member comes back
+ * from Settings; iOS restarts the app when a permission changes there.
  *
  * `active` is false while the screen is covered or blurred: the camera
  * session is unmounted then, so it doesn't run behind another screen.

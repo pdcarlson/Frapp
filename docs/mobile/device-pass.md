@@ -26,7 +26,7 @@ before you pick up a phone.
 
 Rows marked **iPhone** or **Android** run on that phone only. The rest run on both. A row runs on
 one phone when what it checks is shared JavaScript with nothing native under it; that is what
-keeps the pass short: the section times add to about twenty minutes, with both phones side by
+keeps the pass short: the section times add to about twenty-one minutes, with both phones side by
 side.
 
 The [automated flows](#what-the-automated-flows-cover) haven't had their first run yet (they need
@@ -93,13 +93,13 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 25 | Android | Settings, Sign out, Continue with email, tap the password field | The field and Sign in sit above the keyboard. Android back returns to the first view without leaving the app | #4208, #808 row 2 |
 | 26 | Android | Sign back in | Straight to the chat, with no chapter picker | smoke checklist § 1 |
 
-## 8. Check-in link and Scan code (3 minutes)
+## 8. Check-in link and Scan code (4 minutes)
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
-| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. Point the Android phone's own camera app at it and tap the link it offers | Frapp opens on the check-in and checks you in, not a browser page with Open in Frapp | #4763 |
-| 28 | Android | With the iPhone still showing the code, open the same event in Frapp on the Android phone and tap Check myself in, then Scan code (a member without host rights sees Scan code on the event itself). Allow the camera when asked and point it at the code | The camera asks once, saying it's for scanning the check-in code; the viewport reads the code and lands on "You're already checked in" (row 27 checked you in), so the scan reached the server | #4763 |
-| 29 | iPhone | Show the code on the Android phone instead. On the iPhone, open the event, tap Check myself in, then Scan code, and choose Don't Allow. Tap Open Settings, turn the camera on for Frapp and come back | The viewport comes up and reads the code; you're checked in | #4763 |
+| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, open the same event in Frapp, tap Check myself in, then Scan code (a member without host rights sees Scan code on the event itself). Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code | Android asks again after the first no; the viewport comes up, reads the code, and checks you in | #4942 |
+| 28 | Android | Point the Android phone's own camera app at the same code and tap the link it offers | Frapp opens on the check-in and says "You're already checked in" (row 27), not a browser page with Open in Frapp | #4763 |
+| 29 | iPhone | On the Android phone, start a second event that's happening now and show its code. On the iPhone, open it, tap Check myself in, then Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Check myself in, then Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in | #4942 |
 
 ## What the pass leaves out, and why
 

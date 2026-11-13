@@ -1,5 +1,5 @@
 import { PRODUCTION_APP_ORIGIN } from "./invite-token";
-import { appUrl, type NativePlatform } from "./native-app";
+import { appLinkParams, appUrl, type NativePlatform } from "./native-app";
 
 /**
  * The check-in QR is a link (2026-11-13).
@@ -106,24 +106,11 @@ export function parseCheckInLink(
   raw: string,
   origins: readonly string[] = [PRODUCTION_APP_ORIGIN],
 ): CheckInLinkTarget | null {
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    return null;
-  }
-  const allowed = origins.map((origin) => {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      return null;
-    }
-  });
-  if (!allowed.includes(url.origin)) return null;
-  if (url.pathname.replace(/\/+$/, "") !== CHECK_IN_LINK_PATH) return null;
+  const params = appLinkParams(raw, origins, CHECK_IN_LINK_PATH);
+  if (!params) return null;
   return checkInTargetFrom(
-    url.searchParams.get(CHECK_IN_LINK_EVENT_PARAM),
-    url.searchParams.get(CHECK_IN_LINK_TOKEN_PARAM),
+    params.get(CHECK_IN_LINK_EVENT_PARAM),
+    params.get(CHECK_IN_LINK_TOKEN_PARAM),
   );
 }
 

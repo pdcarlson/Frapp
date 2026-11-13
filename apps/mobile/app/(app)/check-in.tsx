@@ -511,9 +511,20 @@ export default function CheckInScreen() {
         return;
       }
       setScannerOpen(false);
+      // A valid read replaces whatever the last one said.
+      setStatus({ kind: "idle" });
+      if (target.eventId === eventId && target.token === linkToken) {
+        // The same code the params already hold (read again after a refusal
+        // the member can fix, such as standing too far away): the params
+        // won't change, so the link effect won't send it again. Sent here.
+        if (writeBlockedReason === null && sendingHere === null) {
+          void submit({ token: target.token }, target.token);
+        }
+        return;
+      }
       router.setParams({ event: target.eventId, t: target.token });
     },
-    [router],
+    [eventId, linkToken, router, sendingHere, submit, writeBlockedReason],
   );
 
   const openScanner = () => {

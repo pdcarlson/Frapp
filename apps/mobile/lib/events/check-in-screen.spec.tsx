@@ -783,6 +783,36 @@ describe("Check-in's Scan code", () => {
     act(() => tree.unmount());
   });
 
+  it("sends the same code again when the member reads it again after a refusal", async () => {
+    // Too far from the officer's screen: the member walks closer and scans
+    // the code that is still up, inside its window.
+    openedByLink("evt-1", "tok-9");
+    checkIn.mockRejectedValueOnce(FAILED);
+    const tree = render();
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    await press(tree, "Scan code");
+    scan(tree, scanned("evt-1", "tok-9"));
+    await settle();
+    expect(router().setParams).not.toHaveBeenCalled();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(screenText(tree)).toContain("You're checked in");
+    act(() => tree.unmount());
+  });
+
+  it("puts a not-a-check-in line away once a real code is read", async () => {
+    openedFromApp();
+    state.writeBlockedReason = "You're offline.";
+    const tree = render();
+    await press(tree, "Scan code");
+    scan(tree, "https://example.com/menu");
+    expect(screenText(tree)).toContain(NOT_A_CHECK_IN_CODE);
+    scan(tree, scanned());
+    expect(screenText(tree)).not.toContain(NOT_A_CHECK_IN_CODE);
+    act(() => tree.unmount());
+  });
+
   it("acts on a code held in view once, not once per frame", async () => {
     openedFromApp();
     const tree = render();
@@ -810,6 +840,25 @@ describe("Check-in's Scan code", () => {
     await press(tree, "Scan code");
     expect(screenText(tree)).not.toContain(CODE_CHANGED_COPY);
     expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("keeps Scan code away from a refusal only an officer can lift", async () => {
+    openedByLink();
+    checkIn.mockRejectedValue(REFUSED);
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("keeps Scan code away while a link's event is still loading", () => {
+    openedByLink();
+    state.useEvent = () => ({ data: undefined });
+    const tree = render();
+    expect(screenText(tree)).toContain("Checking you in…");
+    expect(pressablesDrawing(tree, "Scan code")).toHaveLength(0);
     act(() => tree.unmount());
   });
 
