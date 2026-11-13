@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import type { QuickActionKey } from "@/lib/quick-actions";
+import { QUICK_ACTION_LABELS, type QuickActionKey } from "@/lib/quick-actions";
 
 const haptic = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: haptic }));
@@ -21,6 +21,8 @@ const OFFICER: QuickActionKey[] = [
   "logHours",
   "study",
   "upload",
+  "invite",
+  "newEvent",
 ];
 
 const props = {
@@ -75,6 +77,25 @@ describe("the panel at rest", () => {
 
     act(() => byLabel(tree.root, "Check in")!.props.onPress());
     expect(props.onRun).toHaveBeenCalledWith("checkIn");
+  });
+
+  it("lays six out three to a row, in the same cells as editing", () => {
+    // The cells were thirds of the panel's outer width, a hairline wider
+    // than the row inside the glass border, so the third wrapped and six
+    // drew as three rows of two (2026-11-13).
+    const widthOf = (node: Node) =>
+      [node.props.style]
+        .flat(Infinity)
+        .reduce<number | undefined>((w, style) => style?.width ?? w, undefined);
+    const resting = render(OFFICER.slice(0, 6));
+    const cells = OFFICER.slice(0, 6).map((key) =>
+      widthOf(byLabel(resting.root, QUICK_ACTION_LABELS[key])!),
+    );
+    const cell = cells[0]!;
+    expect(new Set(cells)).toEqual(new Set([cell]));
+    // Three fit inside the 374pt panel less its border and 10pt padding.
+    expect(cell * 3).toBeLessThanOrEqual(374 - 20 - 2);
+    expect(cell * 3).toBeGreaterThan(374 - 20 - 5);
   });
 
   it("starts editing on a hold, on an action or between them", () => {
@@ -140,12 +161,18 @@ describe("editing in place", () => {
     expect(props.onSave).toHaveBeenCalledWith(["message", "study"]);
   });
 
-  it("holds the Add row once six are placed", () => {
-    const six = OFFICER.slice(0, 6);
-    const tree = render(six, true);
-    const add = byLabel(tree.root, "Add Upload")!;
-    expect(add.props.disabled).toBe(true);
-    expect(add.props.accessibilityState).toEqual({ disabled: true });
+  it("still adds once six are placed, and holds the Add row at nine", () => {
+    const six = render(OFFICER.slice(0, 6), true);
+    expect(byLabel(six.root, "Add Upload")!.props.disabled).toBe(false);
+    const eight = render(OFFICER.slice(0, 8), true, [
+      ...OFFICER.slice(0, 8),
+      "newEvent",
+    ]);
+    act(() => byLabel(eight.root, "Add New event")!.props.onPress());
+    expect(props.onSave).toHaveBeenCalledWith(OFFICER);
+    // Nine of nine: nothing is left to add, so the Add row is gone.
+    const nine = render(OFFICER, true);
+    expect(byLabel(nine.root, "Add Upload")).toBeUndefined();
   });
 
   it("lets a screen reader remove and move, one place at a time", () => {
