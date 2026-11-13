@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Alert } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { SignupCard } from "./signup-card";
@@ -15,6 +16,17 @@ vi.mock("@repo/hooks", async () => {
     useMyPermissions: () => ({ data: { permissions: myPermissions.current } }),
   };
 });
+
+const exported = vi.hoisted(() => ({
+  calls: [] as { rows: Record<string, string>[]; prefix: string }[],
+  ok: true,
+}));
+vi.mock("@/lib/chat/share-csv", () => ({
+  shareCsv: async (rows: Record<string, string>[], prefix: string) => {
+    exported.calls.push({ rows, prefix });
+    return exported.ok;
+  },
+}));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -185,5 +197,50 @@ describe("SignupCard on the phone (#3926)", () => {
     act(() => button(open, "Close sign-ups").props.onPress());
     expect(onClose).toHaveBeenCalledWith("m1");
     myPermissions.current = [];
+  });
+
+  it("offers Export to a moderator once someone has signed up, and shares the list (#3926 step 4)", async () => {
+    // A member who isn't the creator and can't manage channels gets none.
+    expect(() =>
+      button(render(card([{ user: "u1", slots: ["fri"] }])), "Export"),
+    ).toThrow();
+
+    myPermissions.current = ["channels:manage"];
+    // Nothing to export yet.
+    expect(() => button(render(card([])), "Export")).toThrow();
+    exported.calls = [];
+    const tree = render(card([{ user: "u1", slots: ["fri", "sat"] }]));
+    await act(async () => {
+      button(tree, "Export").props.onPress();
+    });
+    expect(exported.calls).toHaveLength(1);
+    expect(exported.calls[0]!.prefix).toBe("signup-sober-drivers");
+    expect(exported.calls[0]!.rows.map((row) => row.Name)).toEqual([
+      "Devin Okafor",
+      "Devin Okafor",
+    ]);
+    myPermissions.current = [];
+  });
+
+  it("offers Export to the sheet's creator without channels:manage, and says so when a share fails", async () => {
+    myPermissions.current = [];
+    exported.calls = [];
+    exported.ok = false;
+    vi.mocked(Alert.alert).mockClear();
+    // The viewer ("me") posted this sheet.
+    const mine = {
+      ...card([{ user: "u1", slots: ["sat"] }]),
+      sender_id: "me",
+    } as ChatMessage;
+    const tree = render(mine);
+    await act(async () => {
+      button(tree, "Export").props.onPress();
+    });
+    expect(exported.calls).toHaveLength(1);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Couldn't export",
+      "Try again in a moment.",
+    );
+    exported.ok = true;
   });
 });

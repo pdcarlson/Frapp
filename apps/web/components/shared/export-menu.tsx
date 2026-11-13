@@ -27,7 +27,7 @@ import {
 } from "@/lib/utils";
 
 /**
- * The export button every dashboard export uses (Points, Billing, Reports):
+ * The export button every web export uses:
  * it opens a menu of file types instead of downloading a `.csv` outright
  * (#3969). A `.csv` opens in whatever spreadsheet app the computer has, so a
  * one-shot CSV download read as "it goes to Excel" with no visible choice.
@@ -38,8 +38,8 @@ import {
  * two clicks without re-reading the list.
  *
  * Rows are built by the caller only when a format is picked (`getRows`), and
- * every format goes through `exportRows` in `lib/utils.ts`, so the three
- * exports cannot differ in escaping, filenames or formula handling.
+ * every format goes through `exportRows` in `lib/utils.ts`, so no two
+ * exports can differ in escaping, filenames or formula handling.
  */
 const FORMAT_ITEMS: Record<ExportFormat, { label: string; icon: LucideIcon }> =
   {

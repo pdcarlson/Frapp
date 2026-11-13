@@ -310,7 +310,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
-| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.muted` | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
+| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.mutedForeground`, the tone of web's row `ChevronRight` (`text.muted` until 2026-11-13, #4138) | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
 | Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
@@ -637,7 +637,8 @@ holding its kind's glyph at 20px in `--muted-foreground`
 or, for an event, its month and day in place of a glyph. The phone's Activity
 rows draw the same lead at the same sizes in `text.mutedForeground`
 ([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
-#4173 step 2), and both read which shape a kind takes from one map,
+#4173 step 2), except that since #4766 an event listed under a day's heading
+leads with the events glyph, the heading having said the day. Both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.

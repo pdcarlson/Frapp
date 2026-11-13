@@ -5135,6 +5135,53 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/form-responses": {
+      "get": {
+        "description": "Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.",
+        "operationId": "ChatFormController_getResponses_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponsesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/bookmarks": {
       "get": {
         "operationId": "ChatBookmarkController_listBookmarks_v1",
@@ -14365,9 +14412,20 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "week_start",
+            "required": false,
+            "in": "query",
+            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -14378,6 +14436,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "`week_start` is not a date-time."
           },
           "default": {
             "description": "Error",
@@ -14410,7 +14471,7 @@
             "name": "week_start",
             "required": false,
             "in": "query",
-            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.",
+            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.",
             "schema": {
               "format": "date-time",
               "type": "string"
@@ -20634,6 +20695,71 @@
             ]
           }
         }
+      },
+      "FormResponseEntryDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When they first answered."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When they last changed their answers."
+          }
+        },
+        "required": [
+          "user_id",
+          "answers",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "FormResponsesDto": {
+        "type": "object",
+        "properties": {
+          "responses": {
+            "description": "Every saved response, first answered first. Names are joined from the roster; a member no longer on it has left.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormResponseEntryDto"
+            }
+          },
+          "not_responded": {
+            "description": "Members who can read the form’s channel now and haven’t answered, the creator left out.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "responses",
+          "not_responded"
+        ]
       },
       "SaveFormResponseDto": {
         "type": "object",
@@ -26958,6 +27084,100 @@
           "events"
         ]
       },
+      "ActivityWeekCountDto": {
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "number",
+            "description": "How many the caller has done this week."
+          },
+          "total": {
+            "type": "number",
+            "description": "`done` plus what is still open; never less than `done`."
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ]
+      },
+      "ActivityWeekDto": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Seven days after `start`."
+          },
+          "events": {
+            "nullable": true,
+            "description": "Events that start this week and invite the caller. Done: marked present or late. Still open: a required event not attended (ahead or missed), and an optional one whose check-in has not closed. An excused event, and an optional one the caller skipped, is left out. Null when Events is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityWeekCountDto"
+              }
+            ]
+          },
+          "tasks": {
+            "nullable": true,
+            "description": "The caller’s own tasks. Done: marked done since the week began, confirmed or not. Still open: not done and due before the week ends, overdue ones included. Null when Tasks is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityWeekCountDto"
+              }
+            ]
+          },
+          "polls": {
+            "nullable": true,
+            "description": "Other members’ polls the caller can read. Done: first voted on since the week began. Still open: every `needs_you.polls` row, counted before its cap. Null when Polls is off or couldn’t be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityWeekCountDto"
+              }
+            ]
+          },
+          "cards": {
+            "nullable": true,
+            "description": "Other members’ sign-up sheets, headcounts and forms. Done: first answered since the week began. Still open: every `needs_you.cards` row, counted before its cap. Null when the read failed.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityWeekCountDto"
+              }
+            ]
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Parts that could not be read this time. Each is served null, as a part whose module is off is; this list tells the two apart.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "events",
+                "tasks",
+                "polls",
+                "cards"
+              ]
+            }
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "events",
+          "tasks",
+          "polls",
+          "cards",
+          "unavailable"
+        ]
+      },
       "ActivityDto": {
         "type": "object",
         "properties": {
@@ -27001,6 +27221,14 @@
               ]
             }
           },
+          "week": {
+            "description": "How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityWeekDto"
+              }
+            ]
+          },
           "unread_since": {
             "type": "string",
             "format": "date-time",
@@ -27015,6 +27243,7 @@
           "made_by_you",
           "needs_you_count",
           "unavailable",
+          "week",
           "unread_since"
         ]
       },

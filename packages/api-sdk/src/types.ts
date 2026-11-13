@@ -1582,6 +1582,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/form-responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it
+         * @description Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.
+         */
+        get: operations["ChatFormController_getResponses_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bookmarks": {
         parameters: {
             query?: never;
@@ -4157,7 +4177,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -6315,6 +6335,29 @@ export interface components {
         };
         OwnFormResponseDto: {
             response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        FormResponseEntryDto: {
+            /** Format: uuid */
+            user_id: string;
+            answers: {
+                [key: string]: string | string[];
+            };
+            /**
+             * Format: date-time
+             * @description When they first answered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When they last changed their answers.
+             */
+            updated_at: string;
+        };
+        FormResponsesDto: {
+            /** @description Every saved response, first answered first. Names are joined from the roster; a member no longer on it has left. */
+            responses: components["schemas"]["FormResponseEntryDto"][];
+            /** @description Members who can read the form’s channel now and haven’t answered, the creator left out. */
+            not_responded: string[];
         };
         SaveFormResponseDto: {
             /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
@@ -8543,6 +8586,34 @@ export interface components {
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
         };
+        ActivityWeekCountDto: {
+            /** @description How many the caller has done this week. */
+            done: number;
+            /** @description `done` plus what is still open; never less than `done`. */
+            total: number;
+        };
+        ActivityWeekDto: {
+            /**
+             * Format: date-time
+             * @description Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range.
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Seven days after `start`.
+             */
+            end: string;
+            /** @description Events that start this week and invite the caller. Done: marked present or late. Still open: a required event not attended (ahead or missed), and an optional one whose check-in has not closed. An excused event, and an optional one the caller skipped, is left out. Null when Events is off or couldn’t be read. */
+            events: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description The caller’s own tasks. Done: marked done since the week began, confirmed or not. Still open: not done and due before the week ends, overdue ones included. Null when Tasks is off or couldn’t be read. */
+            tasks: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Other members’ polls the caller can read. Done: first voted on since the week began. Still open: every `needs_you.polls` row, counted before its cap. Null when Polls is off or couldn’t be read. */
+            polls: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Other members’ sign-up sheets, headcounts and forms. Done: first answered since the week began. Still open: every `needs_you.cards` row, counted before its cap. Null when the read failed. */
+            cards: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Parts that could not be read this time. Each is served null, as a part whose module is off is; this list tells the two apart. */
+            unavailable: ("events" | "tasks" | "polls" | "cards")[];
+        };
         ActivityDto: {
             needs_you: components["schemas"]["ActivityNeedsYouDto"];
             /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
@@ -8554,6 +8625,8 @@ export interface components {
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
+            /** @description How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted. */
+            week: components["schemas"]["ActivityWeekDto"];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
@@ -12991,6 +13064,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getResponses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponsesDto"];
                 };
             };
             /** @description Error */
@@ -19060,7 +19163,10 @@ export interface operations {
     };
     ActivityController_getActivity_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -19074,6 +19180,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description `week_start` is not a date-time. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -19089,7 +19202,7 @@ export interface operations {
     ActivityController_getStanding_v1: {
         parameters: {
             query?: {
-                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC. */
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
                 week_start?: string;
             };
             header?: never;

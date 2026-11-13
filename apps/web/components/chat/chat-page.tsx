@@ -6,6 +6,7 @@ import { isChatRoute } from "@/components/layout/shell-layout";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
 import { FormFillHost } from "./form-fill-dialog";
+import { FormResponsesHost } from "./form-responses-dialog";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
 import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
 import type { ChatView } from "@/components/layout/shell-prefs";
@@ -55,18 +56,21 @@ function ChatPageContent({
 
   return (
     <ChatProvider>
-      {/* The full-page form a form card opens (#3926), hosted above the
-          shell so a card the timeline scrolls away can't close it mid-answer. */}
+      {/* The full-page form a form card opens, and its creator's Responses
+          (#3926), hosted above the shell so a card the timeline scrolls away
+          can't close either mid-use. */}
       <FormFillHost>
-        <ChatShell
-          initialChannelId={channelParam}
-          initialMessageId={messageParam}
-          defaultMembersHidden={defaultMembersHidden}
-          toolBeside={toolBeside}
-          onClose={onClose}
-          view={view}
-          onViewChange={onViewChange}
-        />
+        <FormResponsesHost>
+          <ChatShell
+            initialChannelId={channelParam}
+            initialMessageId={messageParam}
+            defaultMembersHidden={defaultMembersHidden}
+            toolBeside={toolBeside}
+            onClose={onClose}
+            view={view}
+            onViewChange={onViewChange}
+          />
+        </FormResponsesHost>
       </FormFillHost>
     </ChatProvider>
   );

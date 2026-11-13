@@ -592,10 +592,11 @@ export const PINS = [
     lacks: [/headline:\s*"[^"]*\bSignet\b/, /description:\s*"[^"]*\bSignet\b/],
   },
   {
-    // A rename that drops the brand altogether passes the walk. The CSV name
-    // also has a unit spec (apps/web/lib/utils.spec.ts).
-    file: "apps/web/lib/utils.ts",
-    why: "the CSV download name",
+    // A rename that drops the brand altogether passes the walk. The export
+    // name is shared by the dashboard's downloads and the phone's shared CSV
+    // (#3926), and also has a unit spec (spreadsheet-cell.spec.ts).
+    file: "packages/formatting/src/spreadsheet-cell.ts",
+    why: "the export file name",
     has: ["`frapp-${filenamePrefix}-"],
   },
   {

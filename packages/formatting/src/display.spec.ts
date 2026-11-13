@@ -7,6 +7,7 @@ import {
   formatDayTime,
   formatDayTimeRange,
   formatDueLabel,
+  formatEndsLabel,
   formatDueOn,
   formatEventWindow,
   formatPoints,
@@ -302,5 +303,26 @@ describe("isDueOverdue (#4133)", () => {
     expect(isDueOverdue(FRI_5PM, NOW)).toBe(false);
     expect(isDueOverdue("banana", NOW)).toBe(false);
     expect(isDueOverdue(null, NOW)).toBe(false);
+  });
+});
+
+describe("formatEndsLabel", () => {
+  it("leads the countdown with the card's verb", () => {
+    expect(formatEndsLabel("Closes", "2026-11-05T18:00:00-08:00", NOW)).toBe(
+      "Closes tomorrow at 6 PM",
+    );
+    expect(formatEndsLabel("Ends", "2026-11-06T18:00:00-08:00", NOW)).toBe(
+      "Ends Friday at 6 PM",
+    );
+  });
+
+  it("is null for no end time, a Date, or one already past", () => {
+    expect(formatEndsLabel("Ends", undefined, NOW)).toBeNull();
+    expect(
+      formatEndsLabel("Ends", new Date("2026-11-05T18:00:00-08:00"), NOW),
+    ).toBeNull();
+    expect(
+      formatEndsLabel("Ends", "2026-11-03T18:00:00-08:00", NOW),
+    ).toBeNull();
   });
 });

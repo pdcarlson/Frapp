@@ -13,6 +13,17 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   };
 });
 
+const exported = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    exportRows: async (...args: unknown[]) => {
+      exported.calls.push(args);
+    },
+  };
+});
+
 const names: Record<string, string> = {
   u1: "Devin Okafor",
   u2: "Julian Reyes",
@@ -27,6 +38,8 @@ function card(
     id: "m1",
     channel_id: "c1",
     sender_id: "u9",
+    _status: "confirmed",
+    is_deleted: false,
     content: "Sober drivers",
     kind: "signup",
     payload: {
@@ -219,5 +232,90 @@ describe("SignupCard (#3926)", () => {
     await user.click(screen.getByRole("button", { name: "Close sign-ups" }));
     expect(onClose).toHaveBeenCalledWith("m1", "signup");
     myPermissions.current = [];
+  });
+});
+
+describe("SignupCard export (#3926 step 4)", () => {
+  const claims = [
+    { user: "u1", slots: ["fri"] },
+    { user: "u2", slots: ["fri", "sat"] },
+  ];
+
+  it("offers Export to the card's creator or a channels:manage holder only", () => {
+    myPermissions.current = [];
+    const { rerender } = render(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u1"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Export/ })).toBeNull();
+    myPermissions.current = ["channels:manage"];
+    rerender(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u1"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Export/ })).toBeEnabled();
+    myPermissions.current = [];
+  });
+
+  it("exports every member per slot, by name, as a CSV", async () => {
+    exported.calls = [];
+    const user = userEvent.setup();
+    render(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Export/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /CSV/ }));
+    expect(exported.calls).toEqual([
+      [
+        [
+          {
+            Slot: "Friday",
+            Name: "Devin Okafor",
+            "Signed up at": "2026-11-12T10:00:00Z",
+          },
+          {
+            Slot: "Friday",
+            Name: "Julian Reyes",
+            "Signed up at": "2026-11-12T10:01:00Z",
+          },
+          {
+            Slot: "Saturday",
+            Name: "Julian Reyes",
+            "Signed up at": "2026-11-12T10:01:00Z",
+          },
+        ],
+        "signup-sober-drivers",
+        "csv",
+      ],
+    ]);
+  });
+
+  it("holds Export until someone has signed up", () => {
+    render(
+      <SignupCard
+        message={card([])}
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Export/ })).toBeDisabled();
   });
 });

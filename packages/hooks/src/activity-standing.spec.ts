@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityStandingGauges,
   activityStandingRows,
   localWeekStart,
   type ActivityStanding,
@@ -127,6 +128,95 @@ describe("activityStandingRows", () => {
     );
     expect(rows[0]?.detail).toBeNull();
     expect(rows[2]?.detail).toBeNull();
+  });
+});
+
+describe("activityStandingGauges (#4766)", () => {
+  it("splits each number from its target, under a one-word label", () => {
+    const gauges = activityStandingGauges(
+      standing({
+        points: { total: 45, rank: 3, ranked: 23, goal: 150 },
+        service: {
+          approved_minutes: 240,
+          pending_minutes: 0,
+          goal_minutes: 600,
+        },
+      }),
+    );
+    expect(
+      gauges.map((gauge) => [
+        gauge.shortLabel,
+        gauge.figure,
+        gauge.target,
+        gauge.progress,
+      ]),
+    ).toEqual([
+      ["Points", "45", "of 150", 0.3],
+      ["Events", "6", "of 8", 0.75],
+      ["Service", "4h", "of 10h", 0.4],
+      // No goal: the number stands alone, with no ring.
+      ["Study", "2h 5m", null, null],
+    ]);
+  });
+
+  it("leaves out a zero with nothing to aim at, and keeps a zero with a goal", () => {
+    const gauges = activityStandingGauges(
+      standing({
+        points: { total: 0, rank: null, ranked: 23, goal: null },
+        required_events: { required: 0, attended: 0, excused: 0 },
+        service: { approved_minutes: 0, pending_minutes: 0, goal_minutes: 600 },
+        study: {
+          minutes: 0,
+          week_start: "2026-11-08T05:00:00.000Z",
+          goal_minutes: null,
+        },
+      }),
+    );
+    expect(gauges.map((gauge) => gauge.id)).toEqual(["service"]);
+    expect(gauges[0]).toMatchObject({ figure: "0m", progress: 0 });
+  });
+
+  it("keeps hours still pending, and a part that couldn't be read", () => {
+    const gauges = activityStandingGauges(
+      standing({
+        points: null,
+        required_events: { required: 0, attended: 0, excused: 0 },
+        service: {
+          approved_minutes: 0,
+          pending_minutes: 90,
+          goal_minutes: null,
+        },
+        study: null,
+        unavailable: ["points"],
+      } as unknown as Partial<ActivityStanding>),
+    );
+    expect(
+      gauges.map((gauge) => [gauge.id, gauge.figure, gauge.detail]),
+    ).toEqual([
+      ["points", null, "Couldn't load"],
+      ["service", "0m", "1h 30m pending"],
+    ]);
+  });
+
+  it("is empty for a new member in a chapter with no goals", () => {
+    expect(
+      activityStandingGauges(
+        standing({
+          points: { total: 0, rank: null, ranked: 0, goal: null },
+          required_events: { required: 0, attended: 0, excused: 0 },
+          service: {
+            approved_minutes: 0,
+            pending_minutes: 0,
+            goal_minutes: null,
+          },
+          study: {
+            minutes: 0,
+            week_start: "2026-11-08T05:00:00.000Z",
+            goal_minutes: null,
+          },
+        }),
+      ),
+    ).toEqual([]);
   });
 });
 

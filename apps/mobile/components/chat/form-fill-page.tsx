@@ -20,8 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  FORM_NO,
-  FORM_YES,
+  FORM_YES_NO_OPTIONS,
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
@@ -36,7 +35,7 @@ import {
   type FormQuestion,
 } from "@repo/chat-core/forms";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useFrappClient, useNow } from "@repo/hooks";
+import { useFrappClient, useNow, type NameResolver } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
@@ -65,6 +64,7 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import { InlinePicker, PickRow } from "./form-controls";
+import { FormResponsesPage } from "./form-responses-page";
 
 /**
  * The full-page form a form card opens (#3926 step 3), the phone's twin of
@@ -87,12 +87,21 @@ import { InlinePicker, PickRow } from "./form-controls";
  * a prop threaded down the row.
  */
 
+/**
+ * Which page a form card opened: the form to answer, or (its creator's)
+ * Responses (#3926 step 4). One host draws both, so neither can be closed by
+ * the virtualized row that opened it scrolling away.
+ */
+export type FormPageMode = "fill" | "responses";
+
 export interface FormFillState {
   /** The open form's message id, or `null`. */
   messageId: string | null;
+  /** Which page is open; `"fill"` while none is. */
+  mode: FormPageMode;
   /** Counts opens, so each starts clean and a late save can't reach the next. */
   session: number;
-  open: (messageId: string) => void;
+  open: (messageId: string, mode?: FormPageMode) => void;
   close: () => void;
 }
 
@@ -116,13 +125,14 @@ export function useOpenForm(): FormFillState["open"] | null {
 export function useFormFill(): FormFillState {
   const [target, setTarget] = useState<{
     messageId: string;
+    mode: FormPageMode;
     session: number;
   } | null>(null);
   const sessions = useRef(0);
-  const open = useCallback((messageId: string) => {
+  const open = useCallback((messageId: string, mode: FormPageMode = "fill") => {
     Keyboard.dismiss();
     sessions.current += 1;
-    setTarget({ messageId, session: sessions.current });
+    setTarget({ messageId, mode, session: sessions.current });
   }, []);
   const close = useCallback(() => {
     Keyboard.dismiss();
@@ -132,6 +142,7 @@ export function useFormFill(): FormFillState {
   useHoldSwipeBack(target !== null);
   return {
     messageId: target?.messageId ?? null,
+    mode: target?.mode ?? "fill",
     session: target?.session ?? 0,
     open,
     close,
@@ -212,16 +223,30 @@ export function useFormFillHost(
 export function FormFillPage({
   state,
   message,
+  nameFor,
 }: {
   state: FormFillState;
   /** The open form's live row, looked up by the host on every render. */
   message: ChatMessage | null | undefined;
+  /** The screen's roster lookup, for the names on the Responses page. */
+  nameFor: NameResolver;
 }) {
   const payload = useMemo(
     () => (message && formFillLive(message) ? readFormPayload(message) : null),
     [message],
   );
   if (!state.messageId || !message || !payload) return null;
+  if (state.mode === "responses") {
+    return (
+      <FormResponsesPage
+        key={state.session}
+        messageId={message.id}
+        payload={payload}
+        nameFor={nameFor}
+        onDone={state.close}
+      />
+    );
+  }
   return (
     <FormFillBody
       // A close unmounts everything an open started, and the next open (even
@@ -557,10 +582,7 @@ function QuestionField({
     case "checkboxes": {
       const options =
         question.type === "yes_no"
-          ? [
-              { id: FORM_YES, label: "Yes" },
-              { id: FORM_NO, label: "No" },
-            ]
+          ? FORM_YES_NO_OPTIONS
           : (question.options ?? []);
       const many = question.type === "checkboxes";
       control = (

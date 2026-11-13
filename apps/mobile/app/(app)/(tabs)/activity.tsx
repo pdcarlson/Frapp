@@ -3,12 +3,12 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
-  activityFilterAvailable,
+  activityAgenda,
   activityGroups,
+  activityReview,
+  activityWeekSummary,
   findActivityTaskRow,
-  activitySummary,
   useActivity,
   useActivityStanding,
   useActivityUnread,
@@ -21,13 +21,14 @@ import {
   useSetActivityLinkState,
   useViewerUserId,
   useActivityFaces,
-  type ActivityFilter,
+  type ActivityAgendaDay,
+  type ActivityAgendaFilter,
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled, joinNames } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -42,16 +43,13 @@ import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
+import { ReviewCard } from "@/components/activity/review-card";
 import {
-  ActivityStanding,
-  ActivityStandingSkeleton,
+  SemesterStrip,
+  SemesterStripSkeleton,
   type StandingDestination,
-} from "@/components/activity/activity-standing";
-import {
-  ActivitySummary,
-  ActivitySummarySkeleton,
-} from "@/components/activity/activity-summary";
-import { FilterChips } from "@/components/filter-chips";
+} from "@/components/activity/semester-strip";
+import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -62,48 +60,58 @@ import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
-import {
-  storeActivityFilter,
-  useStoredActivityFilter,
-} from "@/lib/activity/activity-filter";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** The chips: `null` is "All", as `FilterChips` spells it. */
-const CHIPS = ACTIVITY_FILTERS.map((option) => ({
-  value: option.value === "all" ? null : option.value,
-  label: option.label,
-}));
+/** The groups under To do, in the order they are drawn. */
+const BELOW_ORDER: ActivityGroup["id"][] = ["made-by-you", "links"];
+
+/** What the To do list says it is narrowed to, under a week line. */
+const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
+  events: "events",
+  tasks: "tasks",
+  answers: "polls and sign-ups",
+};
 
 /**
- * Activity: what is waiting on the member and what they made, in one place
- * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
- * Tab 2 since 2026-11-12 (#4610), whose icon carries the "needs you" count;
- * before that it was the More hub's first row. The task board left the tab
- * bar the same day, so its door is here, on the title row.
+ * Activity: the member's week, what they still have to do, and what waits on
+ * others (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a
+ * home. Tab 2 since 2026-11-12 (#4610), whose icon carries the count of what
+ * needs the member; the task board's door is on the title row.
  *
- * The phone's twin of web's `/activity`
- * (`spec/ui/web-dashboard/README.md` § Activity), on the same row model
- * (`activityGroups` and `activitySummary` in `@repo/hooks`): a summary
- * ("8 things need you") with a count tile per kind of ask, then four groups,
- * "Needs you" first and split into Now and Later, with chips that narrow
- * every group to one kind of thing (#4173). A row opens the record
- * in a sheet drawn with chat's own card, where the member acts on it
- * (`components/activity/activity-sheet.tsx`). A closed poll leaves its list
- * for Archived polls under Made by you (#4258).
+ * Rebuilt around one ring on 2026-11-13 (#4766; Paul: "too many little cards
+ * that, with the scale that we have right now, tell me no information"). Top
+ * to bottom:
  *
- * The read is never served fresh from cache (`useActivity`). It is read
- * again when the sheet closes, because the cards write through their own
- * hooks, which this read does not hear about, and whenever the member comes
- * back to this screen (`useActivityReread`).
+ * 1. The week card (`WeekCard`): done of total this week, a line per kind,
+ *    and the one thing to do next.
+ * 2. This semester (`SemesterStrip`): up to four gauges, two across.
+ * 3. To review (`ReviewCard`): for an officer with something to sign off.
+ * 4. To do: the member's own events, tasks, polls and sign-ups by day
+ *    (`activityAgenda`), three to a day before "Show more". A line of the
+ *    week card narrows it to one kind.
+ * 5. Waiting on others, then Links: what the member made and what was posted
+ *    for them, each left out when it has nothing.
+ *
+ * It is drawn and checked for four people (`principles.md` § Three people):
+ * a member with nothing due, an average member, a committee chair and the
+ * president. The count tiles, the filter chips and the Now and Later split
+ * are gone; web's `/activity` follows in its own change.
+ *
+ * A row opens the record in a sheet drawn with chat's own card, where the
+ * member acts on it (`components/activity/activity-sheet.tsx`). The read is
+ * never served fresh from cache (`useActivity`). It is read again when the
+ * sheet closes, because the cards write through their own hooks, which this
+ * read does not hear about, and whenever the member comes back to this
+ * screen (`useActivityReread`).
  */
 export default function ActivityScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const activity = useActivity();
   // The shared 30s clock the poll cards read: a poll whose time runs out
-  // leaves its section within a tick, without a re-read (#4258), and Now and
-  // Later and Next up stay current while the page is open.
+  // leaves the list within a tick, without a re-read (#4258), and the days
+  // and Next stay current while the page is open.
   const now = useNowDate();
   const viewerId = useViewerUserId();
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
@@ -111,37 +119,17 @@ export default function ActivityScreen() {
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread({ standing: true });
-  // The chip picked on this visit wins; until then, the one the member
-  // last left the screen on, on this phone (#4402).
-  const stored = useStoredActivityFilter();
-  const [picked, setPicked] = useState<ActivityFilter | null>(null);
-  const chapterModules = useCurrentChapter().data?.enabled_modules;
+  const chapterRead = useCurrentChapter();
+  const chapter = chapterRead.data;
+  const chapterModules = chapter?.enabled_modules;
   const moduleOn = useCallback(
     (key: string) => isModuleEnabled(chapterModules, key),
     [chapterModules],
   );
-  // A stored chip whose module the chapter has since turned off opens on All.
-  const filter: ActivityFilter =
-    picked ?? (activityFilterAvailable(stored, moduleOn) ? stored : "all");
-  const setFilter = (next: ActivityFilter) => {
-    setPicked(next);
-    // Clearing the To confirm tile isn't a pick: the stored chip stays.
-    if (!(filter === "confirm" && next === "all")) storeActivityFilter(next);
-  };
-  const chips = useMemo(
-    () =>
-      CHIPS.filter((chip) =>
-        activityFilterAvailable(
-          (chip.value ?? "all") as ActivityFilter,
-          moduleOn,
-        ),
-      ),
-    [moduleOn],
-  );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  // How the member is doing this semester, above what needs them. Its own
-  // read: a failure leaves the rest of the page as it is. `useActivityReread`
-  // reads it again with the list, on each return and after an action here.
+  // How the member is doing this semester, under the week. Its own read: a
+  // failure leaves the rest of the page as it is. `useActivityReread` reads
+  // it again with the list, on each return and after an action here.
   const standing = useActivityStanding();
   const router = useRouter();
   const openStanding = (destination: StandingDestination) => {
@@ -157,42 +145,79 @@ export default function ActivityScreen() {
   const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const permissions = useMyPermissions().data?.permissions;
-  const chapterRead = useCurrentChapter();
-  const chapter = chapterRead.data;
-  const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, filter, now) : []),
+  const summary = useMemo(
+    () => (activity.data ? activityWeekSummary(activity.data) : null),
+    [activity.data],
+  );
+  // The week line picked while the app is open. Never stored: a fresh launch
+  // opens on everything. A line that has left the card (its last item done,
+  // its module turned off, a new week) takes its narrowing with it for good,
+  // so the list doesn't narrow itself again when the line comes back.
+  const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
+  const pickedLineGone =
+    picked !== "all" &&
+    summary !== null &&
+    !summary.lines.some((line) => line.id === picked);
+  // Adjusted while rendering, as React documents for state that follows a
+  // prop: no frame is drawn with the stale pick.
+  if (pickedLineGone) setPicked("all");
+  const filter: ActivityAgendaFilter =
+    picked !== "all" && summary?.lines.some((line) => line.id === picked)
+      ? picked
+      : "all";
+  const agenda = useMemo(
+    () => (activity.data ? activityAgenda(activity.data, filter, now) : null),
     [activity.data, filter, now],
   );
-  // The tiles a member is never asked about (To confirm, Hours to approve)
-  // show only to the roles that are; a module the chapter has off shows none.
-  const summary = useMemo(
+  // Only for the roles that review: a member is never shown the card.
+  const review = useMemo(
     () =>
       activity.data
-        ? activitySummary(
+        ? activityReview(
             activity.data,
             {
-              canConfirmTasks: can("tasks:manage", permissions ?? []),
-              canApproveHours: can("service:approve", permissions ?? []),
-              isModuleEnabled: chapter
-                ? (key) => isModuleEnabled(chapter.enabled_modules, key)
-                : undefined,
+              canConfirmTasks:
+                moduleOn("tasks") && can("tasks:manage", permissions ?? []),
             },
             now,
           )
         : null,
-    [activity.data, permissions, chapter, now],
+    [activity.data, permissions, moduleOn, now],
   );
+  // What the member made, and the links posted for them, as the shared
+  // groups build them. Narrowed to a kind, the page is the To do list alone.
+  const groups = useMemo(
+    () => (activity.data ? activityGroups(activity.data, "all", now) : []),
+    [activity.data, now],
+  );
+  const below =
+    filter === "all"
+      ? BELOW_ORDER.flatMap((id) =>
+          groups.filter(
+            (group) =>
+              group.id === id &&
+              (group.rows.length > 0 ||
+                group.archive !== null ||
+                group.unavailable.length > 0),
+          ),
+        )
+      : [];
   // The open row as the latest read has it. A row that has left the list (a
   // vote cast, a completion confirmed) is `null` here and the sheet keeps
   // drawing the one it was opened with, so the member sees the result of
   // what they just did.
   const openRow = useMemo(() => {
     if (openedKey === null) return null;
-    const row = groups
-      .flatMap((group) => [...group.rows, ...(group.archive?.rows ?? [])])
-      .find((candidate) => candidate.key === openedKey);
+    const row = [
+      ...(agenda?.rows ?? []),
+      ...(review?.rows ?? []),
+      ...groups.flatMap((group) => [
+        ...group.rows,
+        ...(group.archive?.rows ?? []),
+      ]),
+    ].find((candidate) => candidate.key === openedKey);
     return row ?? null;
-  }, [groups, openedKey]);
+  }, [agenda, review, groups, openedKey]);
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
@@ -217,9 +242,9 @@ export default function ActivityScreen() {
     setOpened(row);
     setOpenedKey(row.key);
   };
-  // Confirm and Approve on the row (#4437), while the chapter's plan allows
-  // them; acting there reads the item, as opening it does, and re-reads so
-  // the row leaves Needs you.
+  // Confirm and Approve on the To review card's rows (#4437), while the
+  // chapter's plan allows them; acting there reads the item, as opening it
+  // does, and re-reads so the row leaves the card.
   const { actions: rowActions, stateOf: rowActionStateOf } =
     useActivityRowActions({
       allowed: activityRowActionsAllowed(chapter),
@@ -233,10 +258,9 @@ export default function ActivityScreen() {
   // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
   // The read is taken again first, because the one in hand predates the
   // submission whenever the app was warm, then that task's sheet opens,
-  // whatever chip is picked, and the param is dropped so coming back to the
-  // tab doesn't open it again. A task the read doesn't hold (confirmed from
-  // another device, or past the read's cap) opens nothing: the officer lands
-  // on the list.
+  // and the param is dropped so coming back to the tab doesn't open it
+  // again. A task the read doesn't hold (confirmed from another device, or
+  // past the read's cap) opens nothing: the officer lands on the page.
   const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
   const reviewTaskId =
     typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
@@ -268,10 +292,10 @@ export default function ActivityScreen() {
       return (
         <SkeletonRegion label="Loading activity">
           <View style={styles.body}>
-            <ActivityStandingSkeleton />
-            <ActivitySummarySkeleton />
+            <WeekCardSkeleton />
+            <SemesterStripSkeleton />
             <View>
-              <SectionHeader>Needs you</SectionHeader>
+              <SectionHeader>To do</SectionHeader>
               {Array.from({ length: 4 }, (_, index) => (
                 <ActivityRowSkeleton
                   key={index}
@@ -285,7 +309,7 @@ export default function ActivityScreen() {
       );
     }
     // Only with nothing to show: a re-read that fails (this screen re-reads
-    // after every action) keeps the list it already has.
+    // after every action) keeps the page it already has.
     if (activity.isError && !activity.data) {
       return (
         <ErrorState
@@ -296,49 +320,42 @@ export default function ActivityScreen() {
         />
       );
     }
+    if (!summary || !agenda) return null;
     return (
       <View style={styles.body}>
-        {standing.isPending ? (
-          <ActivityStandingSkeleton />
-        ) : standing.data ? (
-          <ActivityStanding standing={standing.data} onOpen={openStanding} />
-        ) : null}
-        {summary ? (
-          <ActivitySummary
-            summary={summary}
-            filter={filter}
-            onFilter={setFilter}
-          />
-        ) : null}
-        <FilterChips
-          chips={chips}
-          // The To confirm tile narrows within Tasks, so the Tasks chip stays
-          // lit under it, as on web.
-          selected={
-            filter === "all" ? null : filter === "confirm" ? "task" : filter
-          }
-          onSelect={(value) => setFilter((value ?? "all") as ActivityFilter)}
-          accessibilityLabel="Show"
-          scroll
+        <WeekCard
+          summary={summary}
+          next={agenda.next}
+          nextLabel={agenda.nextLabel}
+          filter={filter}
+          onFilter={setPicked}
+          onOpenNext={open}
         />
-        {groups.map((group) =>
-          // Under a chip, a group with nothing of that kind is left out
-          // rather than drawn as three "nothing here" lines; "Needs you"
-          // always stays.
-          filter !== "all" &&
-          group.id !== "needs-you" &&
-          group.rows.length === 0 &&
-          group.archive === null &&
-          group.unavailable.length === 0 ? null : (
-            <GroupSection
-              key={group.id}
-              group={group}
-              filtered={filter !== "all" && filter !== "waiting"}
-              rowActions={rowActions}
-              onOpen={open}
-            />
-          ),
-        )}
+        {standing.isPending ? (
+          <SemesterStripSkeleton />
+        ) : standing.data ? (
+          <SemesterStrip standing={standing.data} onOpen={openStanding} />
+        ) : null}
+        {review ? (
+          <ReviewCard review={review} rowActions={rowActions} onOpen={open} />
+        ) : null}
+        <ToDoSection
+          days={agenda.days}
+          unavailable={agenda.unavailable}
+          filter={filter}
+          // The one thing left is already on the week card.
+          onCard={agenda.next !== null}
+          onShowAll={() => setPicked("all")}
+          onOpen={open}
+        />
+        {below.map((group) => (
+          <GroupSection
+            key={group.id}
+            group={group}
+            rowActions={rowActions}
+            onOpen={open}
+          />
+        ))}
       </View>
     );
   }
@@ -481,14 +498,147 @@ function useLinkActions() {
   return { linkActions, undo, rereadOnClose };
 }
 
+/**
+ * "To do": the member's own list by day (#4766), as Things' Today and
+ * Todoist's Upcoming draw one. Overdue leads in the warning hue, then what
+ * is open for check-in now, then each day. What waits on the member's review
+ * is never here (`ReviewCard`).
+ */
+function ToDoSection({
+  days,
+  unavailable,
+  filter,
+  onCard,
+  onShowAll,
+  onOpen,
+}: {
+  days: ActivityAgendaDay[];
+  unavailable: ActivityGroup["unavailable"];
+  filter: ActivityAgendaFilter;
+  /** The week card holds the next thing, so an empty list isn't "nothing". */
+  onCard: boolean;
+  onShowAll: () => void;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const count = days.reduce((sum, day) => sum + day.rows.length, 0);
+  // Its one thing is on the week card: a heading over nothing says nothing.
+  if (count === 0 && onCard && filter === "all" && unavailable.length === 0) {
+    return null;
+  }
+  return (
+    <View style={styles.group}>
+      <SectionHeader count={count || null}>To do</SectionHeader>
+      {filter !== "all" ? (
+        <InlineNote action={{ label: "Show everything", onPress: onShowAll }}>
+          {count === 0
+            ? `No ${FILTER_NOUN[filter]} left to do.`
+            : `Showing only ${FILTER_NOUN[filter]}.`}
+        </InlineNote>
+      ) : null}
+      {unavailable.length > 0 ? (
+        // A section the read could not load is said, never shown as empty:
+        // "nothing to do" must not be a failed read.
+        <InlineNote tone="warning">
+          {`Couldn't load ${joinNames(
+            unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
+          )}. Pull down to try again.`}
+        </InlineNote>
+      ) : null}
+      {count === 0 && filter === "all" && unavailable.length === 0 ? (
+        <InlineNote>Nothing to do right now.</InlineNote>
+      ) : null}
+      {days.map((day) => (
+        <DaySection key={day.id} day={day} onOpen={onOpen} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One day of the To do list: its heading and count, its first few rows, and
+ * "Show N more" for the rest, so the president's Saturday doesn't bury
+ * Sunday. Overdue and Now are never cut (`day.limit` is `null`).
+ */
+function DaySection({
+  day,
+  onOpen,
+}: {
+  day: ActivityAgendaDay;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const [expanded, setExpanded] = useState(false);
+  const cappable = day.limit !== null && day.rows.length > day.limit;
+  const rows =
+    cappable && !expanded
+      ? day.rows.slice(0, day.limit ?? undefined)
+      : day.rows;
+  const tone =
+    day.tone === "warning"
+      ? { color: tokens.color.semantic.warning }
+      : day.tone === "accent"
+        ? { color: accent }
+        : // A day is the content's own label, in the foreground tone, as
+          // the Calendar's day headings are (`DayHeading`, #4138).
+          { color: tokens.color.text.foreground };
+  return (
+    <View testID={`activity-day-${day.id}`}>
+      <View
+        accessible
+        accessibilityRole="header"
+        accessibilityLabel={`${day.label}, ${day.rows.length}`}
+        style={styles.partHeading}
+      >
+        <Text style={[styles.partLabel, tone]}>{day.label}</Text>
+        <SectionCount count={day.rows.length} />
+      </View>
+      {rows.map((row, index) => (
+        <ActivityListRow
+          key={row.key}
+          row={row}
+          isFirst={index === 0}
+          onPress={() => onOpen(row)}
+        />
+      ))}
+      {cappable ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          onPress={() => setExpanded((open) => !open)}
+          style={styles.showAll}
+        >
+          <Text style={[styles.showAllText, { color: accent }]}>
+            {expanded
+              ? "Show fewer"
+              : `Show ${day.rows.length - rows.length} more`}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** The phone's name for a group the shared model still calls by web's. */
+const GROUP_LABEL: Partial<Record<ActivityGroup["id"], string>> = {
+  // What the member made is listed for what it still waits on (#4766).
+  "made-by-you": "Waiting on others",
+};
+
+/**
+ * A group under the To do list: Waiting on others (the polls the member
+ * posted, the events they made, the tasks they assigned), or Links. The
+ * screen leaves a group with nothing in it out, so there is no empty line.
+ */
 function GroupSection({
   group,
-  filtered,
   rowActions,
   onOpen,
 }: {
   group: ActivityGroup;
-  filtered: boolean;
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
@@ -497,33 +647,24 @@ function GroupSection({
   return (
     <View style={styles.group}>
       <SectionHeader count={group.rows.length || null}>
-        {group.label}
+        {GROUP_LABEL[group.id] ?? group.label}
       </SectionHeader>
       {group.unavailable.length > 0 ? (
-        // A section the read could not load is said, never shown as empty:
-        // "nothing is waiting on you" must not be a failed read.
+        // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
-          {`Couldn't load ${group.unavailable
-            .map((section) => ACTIVITY_SECTION_NAMES[section])
-            .join(", ")}. Pull down to try again.`}
+          {`Couldn't load ${joinNames(
+            group.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
+          )}. Pull down to try again.`}
         </InlineNote>
       ) : null}
-      {group.rows.length === 0 ? (
-        group.unavailable.length === 0 ? (
-          <InlineNote>
-            {filtered ? "Nothing of this kind here." : group.empty}
-          </InlineNote>
-        ) : null
-      ) : (
-        group.parts.map((part) => (
-          <GroupPart
-            key={part.id}
-            part={part}
-            rowActions={rowActions}
-            onOpen={onOpen}
-          />
-        ))
-      )}
+      {group.parts.map((part) => (
+        <GroupPart
+          key={part.id}
+          part={part}
+          rowActions={rowActions}
+          onOpen={onOpen}
+        />
+      ))}
       {group.archive ? (
         <ArchivePart part={group.archive} onOpen={onOpen} />
       ) : null}
@@ -577,11 +718,11 @@ function ArchivePart({
 }
 
 /**
- * One run of a group's rows (#4173): "Now" or "Later" under Needs you, one
- * kind under Made by you, or the whole group. A long part draws its first few
- * rows and a "Show all" for the rest, so one busy kind doesn't bury the
- * screen. Drawn from `group.parts`, never `group.rows`: the parts carry the
- * Now/Later split and the caps, and the headings that explain the order.
+ * One run of a group's rows (#4173): one kind under Waiting on others, or
+ * the whole group. A long part draws its first few rows and a "Show all" for
+ * the rest, so one busy kind doesn't bury the screen. Drawn from
+ * `group.parts`, never `group.rows`: the parts carry the caps and the
+ * headings.
  */
 function GroupPart({
   part,
@@ -641,8 +782,8 @@ function GroupPart({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    // The summary, the chips and each group, a step further apart than the
-    // shell's own gap, as web spaces its sections.
+    // The cards and each group, a step further apart than the shell's own
+    // gap, as web spaces its sections.
     body: {
       gap: tokens.spacing.lg,
     },
