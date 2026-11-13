@@ -8,6 +8,7 @@ import {
 } from "@/lib/onboarding/welcome-channels";
 import { SkeletonRegion, SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The chapter's public channels, as a card: chapter setup's live step shows it
@@ -96,12 +97,13 @@ export function JoinedChannelsSkeleton({ rows = 3 }: { rows?: number }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.xs,
     },
     row: {

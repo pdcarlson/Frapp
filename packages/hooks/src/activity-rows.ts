@@ -1,6 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
+import { taskStatusLabel } from "./task-card";
 import {
   dayDelta,
   formatDueLabel,
@@ -194,7 +194,11 @@ export type ActivityRowAction = "confirm" | "approve";
 
 export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
   if (!activityBadgeIsAsk(row)) return null;
-  if (row.kind === "task" && row.glyph === "confirm") return "confirm";
+  // A task that asks for proof opens instead: the officer sees the photos or
+  // link before confirming it (#4635), which a one-press row can't show.
+  if (row.kind === "task" && row.glyph === "confirm") {
+    return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
+  }
   if (row.kind === "hours") return "approve";
   return null;
 }
@@ -391,10 +395,14 @@ function taskRow(
       ? { label: "Confirm", variant: "warning" }
       : {
           // The shared words every task surface uses (`@repo/hooks`).
-          label:
-            task.status === "COMPLETED" && task.confirmed_at
-              ? TASK_CONFIRMED_LABEL
-              : TASK_STATUS_LABELS[task.status],
+          label: taskStatusLabel({
+            status: task.status,
+            stored_status: task.stored_status,
+            points_awarded: !!task.confirmed_at,
+            sent_back_at: task.sent_back_at,
+            point_reward: task.point_reward,
+            proof_kind: task.proof_kind,
+          }),
           variant:
             task.status === "OVERDUE"
               ? "destructive"

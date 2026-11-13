@@ -95,6 +95,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskPhoto,
   TaskSubtask,
   User,
   UserAiConsent,
@@ -230,6 +231,7 @@ export interface Database {
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       study_geofences: TableDefinition<StudyGeofence>;
       study_sessions: TableDefinition<StudySession>;
+      task_photos: TableDefinition<TaskPhoto>;
       task_subtasks: TableDefinition<TaskSubtask>;
       tasks: TableDefinition<Task>;
       user_ai_consents: TableDefinition<UserAiConsent>;
@@ -471,6 +473,21 @@ export interface Database {
       delete_empty_discord_import_channels: {
         Args: { p_import_id: string; p_chapter_id: string };
         Returns: string[];
+      };
+      /**
+       * `20261113040010` (#4620) — delete the upcoming occurrences a series
+       * edit rebuilt, carrying each matched pair's excuses (and an approved
+       * one's EXCUSED attendance) to the new meeting in the same transaction.
+       * Returns the pending and approved excuses no new meeting took.
+       */
+      delete_replaced_occurrences: {
+        Args: {
+          p_chapter_id: string;
+          p_old_ids: string[];
+          p_from_ids: string[];
+          p_to_ids: string[];
+        };
+        Returns: EventExcuse[];
       };
       /**
        * `20261106170000`. An import's rows being imported, added up per
@@ -907,7 +924,7 @@ export interface Database {
         };
         Returns: SemesterArchive;
       };
-      /** `20261113040009`. Raises `form_card_missing` or `form_closed`. */
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
       save_chat_form_response: {
         Args: {
           p_message_id: string;

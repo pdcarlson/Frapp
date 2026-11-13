@@ -24,6 +24,7 @@ import { StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Absence excuses on the event page (`spec/behavior/events.md` § Excuses,
@@ -147,7 +148,9 @@ export function MyExcuseCard({
               returnKeyType="send"
               onSubmitEditing={() => void submit()}
               accessibilityLabel="Reason"
-              style={field.field}
+              // On the card, so a step above it: the field's own input step
+              // is the card's fill on a screen (`lib/surfaces.ts`).
+              style={[field.field, styles.fieldOnCard]}
             />
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <SheetPrimaryButton
@@ -400,12 +403,16 @@ function DecisionButton({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
+    fieldOnCard: {
+      backgroundColor: surfaces.raised,
+    },
     card: {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.sm,
     },
@@ -458,7 +465,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.md,
       gap: tokens.spacing.xs,
     },

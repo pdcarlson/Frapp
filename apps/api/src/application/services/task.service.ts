@@ -15,13 +15,29 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type { Task, TaskSubtask, TaskView } from '#domain/entities/task.entity';
+import type {
+  Task,
+  TaskPhoto,
+  TaskPhotoKind,
+  TaskSubtask,
+  TaskView,
+} from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
 import {
+  normalizeProofLink,
+  TASK_COMPLETION_NOTE_MAX,
+  TASK_PHOTOS_MAX,
+  TASK_PROOF_LINK_REQUIRED_MESSAGE,
   TASK_PROOF_REQUIRED_CODE,
   TASK_PROOF_REQUIRED_MESSAGE,
+  TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+  TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
+  TASK_SEND_BACK_REASON_MAX,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
+  taskNeedsSignOff,
+  taskSignedOffAutomatically,
+  type TaskProofKind,
 } from '@repo/validation';
 import {
   STORAGE_PROVIDER,
@@ -51,13 +67,6 @@ const TASKS_BUCKET = 'tasks';
 function taskPhotoPrefix(chapterId: string): string {
   return `chapters/${chapterId.toLowerCase()}/tasks/`;
 }
-
-/** The two photos a task can carry, by column. */
-export type TaskPhotoKind = 'reference' | 'proof';
-const PHOTO_COLUMN = {
-  reference: 'reference_photo_path',
-  proof: 'proof_photo_path',
-} as const satisfies Record<TaskPhotoKind, keyof Task>;
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
@@ -136,10 +145,13 @@ export interface CreateTaskInput {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number | null;
-  /** A reference photo's storage path, from the upload URL (#4565). */
-  reference_photo_path?: string | null;
-  /** Mark done needs a proof photo (#4565). */
-  photo_required?: boolean;
+  /**
+   * Reference photos' storage paths, from the upload URL, in order (up to
+   * 6, #4635).
+   */
+  reference_photo_paths?: string[];
+  /** What Mark done needs (#4635). Default `none`. */
+  proof_kind?: TaskProofKind;
   /**
    * When set together with `client_message_id`, an interactive task card is
    * posted to this chat channel after the row commits (the `/task` slash
@@ -157,9 +169,20 @@ export interface UpdateTaskInput {
   due_date?: string | null;
   due_at?: string | null;
   point_reward?: number | null;
-  /** A new reference photo, or null to remove it (#4565). */
-  reference_photo_path?: string | null;
-  photo_required?: boolean;
+  /**
+   * The task's reference photos as they should stand, in order (#4635):
+   * paths it already holds stay, new ones are checked and added, and any it
+   * held that aren't listed are removed. `[]` removes them all.
+   */
+  reference_photo_paths?: string[];
+  proof_kind?: TaskProofKind;
+}
+
+/** Mark done's proof and reply (#4635). Only read with `COMPLETED`. */
+export interface CompletionInput {
+  proof_photo_paths?: string[];
+  proof_link?: string | null;
+  completion_note?: string | null;
 }
 
 /**
@@ -174,6 +197,7 @@ export interface UpdateTaskInput {
  * placeholder up forever (#1717).
  */
 export type CreateTaskResult = Task & {
+  photos: TaskPhoto[];
   card_posted?: boolean;
 };
 
@@ -238,24 +262,54 @@ export class TaskService {
   }
 
   /**
+   * Client-sent photo paths for one kind (#4635): trimmed, duplicates
+   * dropped, at most `TASK_PHOTOS_MAX`, and each checked like service proof.
+   * `held` are paths this task already holds for the kind, which stay without
+   * a second check.
+   */
+  private async checkedPhotoPaths(
+    chapterId: string,
+    paths: string[],
+    field: string,
+    held: ReadonlySet<string> = new Set(),
+  ): Promise<string[]> {
+    const unique = [
+      ...new Set(paths.map((path) => path.trim()).filter(Boolean)),
+    ];
+    if (unique.length > TASK_PHOTOS_MAX) {
+      throw new BadRequestException(
+        `${field} takes at most ${TASK_PHOTOS_MAX} photos`,
+      );
+    }
+    await Promise.all(
+      unique
+        .filter((path) => !held.has(path))
+        .map((path) => this.assertPhotoPath(chapterId, path, field)),
+    );
+    return unique;
+  }
+
+  /**
    * A short-lived link to one of a task's photos, for whoever may read the
    * task (its assignee or a `tasks:manage` holder; the controller checks).
    */
   async getPhotoDownloadUrl(
-    task: Task,
+    taskId: string,
     chapterId: string,
-    photo: TaskPhotoKind,
+    photoId: string,
   ): Promise<{ url: string }> {
-    const path = task[PHOTO_COLUMN[photo]];
+    const [photo] = (
+      await this.taskRepo.findPhotos(chapterId, [taskId])
+    ).filter((row) => row.id === photoId);
     // Only paths this API minted and checked are ever stored, but sign
     // nothing outside the chapter's prefix regardless.
-    if (!path || !path.startsWith(taskPhotoPrefix(chapterId))) {
+    if (!photo || !photo.storage_path.startsWith(taskPhotoPrefix(chapterId))) {
       throw new NotFoundException('This task has no such photo');
     }
     try {
       const url = await this.storageProvider.getSignedDownloadUrl(
         TASKS_BUCKET,
-        path,
+        photo.storage_path,
       );
       return { url };
     } catch (error) {
@@ -264,6 +318,57 @@ export class TaskService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Remove photo rows a write let go of, then their stored objects. Best
+   * effort once the write stands: a failure is reported, never thrown, and
+   * leaves an orphan for the sweep (#2197).
+   */
+  private async dropPhotos(
+    chapterId: string,
+    taskId: string,
+    photos: TaskPhoto[],
+  ): Promise<void> {
+    if (photos.length === 0) return;
+    let removed: TaskPhoto[] = [];
+    try {
+      removed = await this.taskRepo.deletePhotos(
+        chapterId,
+        taskId,
+        photos.map((photo) => photo.id),
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-photo-delete',
+        message: `task photo rows delete failed for task ${taskId}`,
+        error,
+      });
+      return;
+    }
+    await this.releasePhotos(
+      chapterId,
+      removed.map((photo) => photo.storage_path),
+    );
+  }
+
+  /** Photo rows for new paths of one kind, positioned after `from`. */
+  private photoRows(
+    task: Pick<Task, 'id' | 'chapter_id'>,
+    kind: TaskPhotoKind,
+    paths: string[],
+    createdBy: string,
+    from = 0,
+  ) {
+    return paths.map((storage_path, index) => ({
+      task_id: task.id,
+      chapter_id: task.chapter_id,
+      kind,
+      storage_path,
+      position: from + index,
+      created_by: createdBy,
+    }));
   }
 
   /**
@@ -314,26 +419,65 @@ export class TaskService {
     return tasks.map((task) => toDisplayStatus(task));
   }
 
-  /** Each task with its subtasks, in order (#4003). */
+  /** Each task with its subtasks and photos, in order (#4003, #4635). */
   private async withSubtasks(
     chapterId: string,
     tasks: TaskView[],
   ): Promise<TaskView[]> {
     if (tasks.length === 0) return tasks;
-    const subtasks = await this.taskRepo.findSubtasks(
-      chapterId,
-      tasks.map((task) => task.id),
-    );
+    const ids = tasks.map((task) => task.id);
+    const [subtasks, withPhotos] = await Promise.all([
+      this.taskRepo.findSubtasks(chapterId, ids),
+      this.withPhotos(chapterId, tasks),
+    ]);
     const byTask = new Map<string, TaskSubtask[]>();
     for (const subtask of subtasks) {
       const list = byTask.get(subtask.task_id) ?? [];
       list.push(subtask);
       byTask.set(subtask.task_id, list);
     }
-    return tasks.map((task) => ({
+    return withPhotos.map((task) => ({
       ...task,
       subtasks: byTask.get(task.id) ?? [],
     }));
+  }
+
+  /**
+   * Each task with its photos (#4635): reference photos, then proof photos,
+   * each in order. A status write returns these too, so the officer's card
+   * shows the proof that came with a completion.
+   */
+  private async withPhotos(
+    chapterId: string,
+    tasks: TaskView[],
+  ): Promise<TaskView[]> {
+    if (tasks.length === 0) return tasks;
+    const photos = await this.taskRepo.findPhotos(
+      chapterId,
+      tasks.map((task) => task.id),
+    );
+    const byTask = new Map<string, TaskPhoto[]>();
+    for (const photo of photos) {
+      const list = byTask.get(photo.task_id) ?? [];
+      list.push(photo);
+      byTask.set(photo.task_id, list);
+    }
+    const order = (photo: TaskPhoto) => (photo.kind === 'reference' ? 0 : 1);
+    return tasks.map((task) => ({
+      ...task,
+      photos: (byTask.get(task.id) ?? []).sort(
+        (a, b) => order(a) - order(b) || a.position - b.position,
+      ),
+    }));
+  }
+
+  /** One task as a write returns it: display status and its photos. */
+  private async viewWithPhotos(
+    chapterId: string,
+    task: Task,
+  ): Promise<TaskView> {
+    const [view] = await this.withPhotos(chapterId, [toDisplayStatus(task)]);
+    return view;
   }
 
   /**
@@ -483,14 +627,11 @@ export class TaskService {
     }
     const dueAt = this.checkedDueAt(input.due_date, input.due_at);
     const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
-    const referencePhoto = input.reference_photo_path?.trim() || null;
-    if (referencePhoto) {
-      await this.assertPhotoPath(
-        input.chapter_id,
-        referencePhoto,
-        'reference_photo_path',
-      );
-    }
+    const referencePhotos = await this.checkedPhotoPaths(
+      input.chapter_id,
+      input.reference_photo_paths ?? [],
+      'reference_photo_paths',
+    );
 
     const assignee = await this.memberRepo.findByUserAndChapter(
       input.assignee_id,
@@ -513,9 +654,27 @@ export class TaskService {
       points_awarded: false,
       completed_at: null,
       confirmed_at: null,
-      reference_photo_path: referencePhoto,
-      photo_required: input.photo_required ?? false,
+      proof_kind: input.proof_kind ?? 'none',
     });
+
+    // Reference photos go in after their task, like the checklist below. A
+    // failed insert is reported and the create stands; the officer sees no
+    // photos and can add them from the task.
+    let photos: TaskPhoto[] = [];
+    if (referencePhotos.length > 0) {
+      try {
+        photos = await this.taskRepo.createPhotos(
+          this.photoRows(task, 'reference', referencePhotos, input.created_by),
+        );
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-photos-create',
+          message: `reference photo insert failed for task ${task.id}`,
+          error,
+        });
+      }
+    }
 
     // The checklist goes in after its task. A failed insert is reported and
     // the create still succeeds: the task exists, and failing the request
@@ -560,8 +719,8 @@ export class TaskService {
     const cardPosted = await this.tryPostTaskCard(input, task);
 
     return cardPosted === undefined
-      ? task
-      : { ...task, card_posted: cardPosted };
+      ? { ...task, photos }
+      : { ...task, photos, card_posted: cardPosted };
   }
 
   /**
@@ -673,25 +832,39 @@ export class TaskService {
       if (dueAt !== storedAt) patch.due_at = dueAt;
     }
 
-    if (input.reference_photo_path !== undefined) {
-      const photo = input.reference_photo_path?.trim() || null;
-      if (photo !== task.reference_photo_path) {
-        if (photo) {
-          await this.assertPhotoPath(chapterId, photo, 'reference_photo_path');
-        }
-        patch.reference_photo_path = photo;
-      }
-    }
-
     if (
-      input.photo_required !== undefined &&
-      input.photo_required !== task.photo_required
+      input.proof_kind !== undefined &&
+      input.proof_kind !== task.proof_kind
     ) {
-      patch.photo_required = input.photo_required;
+      patch.proof_kind = input.proof_kind;
     }
 
+    // Photos live in their own rows (#4635): read them once for the
+    // reference set below and the proof a hand-over drops.
     const reassigned =
       input.assignee_id !== undefined && input.assignee_id !== task.assignee_id;
+    const held =
+      input.reference_photo_paths !== undefined || reassigned
+        ? await this.taskRepo.findPhotos(chapterId, [id])
+        : [];
+    const heldReference = held.filter((photo) => photo.kind === 'reference');
+    let addReference: string[] = [];
+    let dropReference: TaskPhoto[] = [];
+    if (input.reference_photo_paths !== undefined) {
+      const heldPaths = new Set(heldReference.map((p) => p.storage_path));
+      const wanted = await this.checkedPhotoPaths(
+        chapterId,
+        input.reference_photo_paths,
+        'reference_photo_paths',
+        heldPaths,
+      );
+      addReference = wanted.filter((path) => !heldPaths.has(path));
+      dropReference = heldReference.filter(
+        (photo) => !wanted.includes(photo.storage_path),
+      );
+    }
+    const photosChange = addReference.length > 0 || dropReference.length > 0;
+
     if (reassigned) {
       if (!input.assignee_id) {
         throw new BadRequestException('A task needs an assignee');
@@ -709,13 +882,40 @@ export class TaskService {
       patch.status = TaskStatus.TODO;
       patch.completed_at = null;
       patch.sent_back_at = null;
-      // The old assignee's proof isn't the new one's.
-      patch.proof_photo_path = null;
+      // The old assignee's proof, link, reply and send-back aren't the new
+      // one's (#4635).
+      patch.sent_back_reason = null;
+      patch.proof_link = null;
+      patch.completion_note = null;
     }
 
-    if (Object.keys(patch).length === 0) return this.findById(id, chapterId);
+    // A completion still waiting on an officer that this edit leaves with no
+    // points and no proof needs no sign-off any more (#4635, decision C):
+    // signed off now, as Mark done would have, stamped with its own
+    // completion time so it reads as automatic and can still be reopened.
+    // Otherwise Confirm would refuse it and it would wait for good.
+    if (
+      !reassigned &&
+      task.status === TaskStatus.COMPLETED &&
+      ('point_reward' in patch || 'proof_kind' in patch) &&
+      !taskNeedsSignOff({ ...task, ...patch })
+    ) {
+      patch.confirmed_at = task.completed_at ?? new Date().toISOString();
+      patch.completed_at = patch.confirmed_at;
+      patch.points_awarded = true;
+    }
 
-    const updated = await this.taskRepo.updateUnconfirmed(id, chapterId, patch);
+    if (Object.keys(patch).length === 0 && !photosChange) {
+      return this.findById(id, chapterId);
+    }
+
+    // A photos-only edit still goes through the compare-and-set, as a write
+    // of the one field it can't change, so a confirm that landed first wins.
+    const updated = await this.taskRepo.updateUnconfirmed(
+      id,
+      chapterId,
+      Object.keys(patch).length > 0 ? patch : { title: task.title },
+    );
     if (!updated) {
       throw new BadRequestException(
         'This task was confirmed while you were editing it, so it can no longer change',
@@ -736,11 +936,30 @@ export class TaskService {
       }
     }
 
-    // The replaced reference photo, and on a hand-over the old proof.
-    await this.releasePhotos(chapterId, [
-      'reference_photo_path' in patch ? task.reference_photo_path : null,
-      'proof_photo_path' in patch ? task.proof_photo_path : null,
+    // The removed reference photos, and on a hand-over the old proof.
+    await this.dropPhotos(chapterId, id, [
+      ...dropReference,
+      ...(reassigned ? held.filter((photo) => photo.kind === 'proof') : []),
     ]);
+    // New reference photos go in after the edit, as on create: a failed
+    // insert (a path another write took first) is reported and the edit
+    // stands; the officer sees the photos missing and adds them again.
+    if (addReference.length > 0) {
+      const from =
+        Math.max(-1, ...heldReference.map((photo) => photo.position)) + 1;
+      try {
+        await this.taskRepo.createPhotos(
+          this.photoRows(updated, 'reference', addReference, actorId, from),
+        );
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-photos-edit',
+          message: `reference photo insert failed for task ${id}`,
+          error,
+        });
+      }
+    }
 
     if (reassigned) await this.notifyAssigned(updated, actorId);
 
@@ -853,7 +1072,7 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     newStatus: TaskStatus,
-    proofPhotoPath?: string | null,
+    completion: CompletionInput = {},
   ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
@@ -897,48 +1116,143 @@ export class TaskService {
       );
     }
 
-    const updateData: Partial<Task> = { status: newStatus };
-    if (newStatus === TaskStatus.COMPLETED) {
-      updateData.completed_at = new Date().toISOString();
-      // Proof rides with Mark done (#4565). A task with "Photo required"
-      // refuses a completion without it, with a code a phone build can match
-      // for as long as it stays installed, like service hours' receipt rule.
-      const proof = proofPhotoPath?.trim() || null;
-      if (proof) {
-        await this.assertPhotoPath(chapterId, proof, 'proof_photo_path');
-        updateData.proof_photo_path = proof;
-      } else if (task.photo_required) {
-        throw new BadRequestException({
-          code: TASK_PROOF_REQUIRED_CODE,
-          message: TASK_PROOF_REQUIRED_MESSAGE,
-        });
+    if (newStatus !== TaskStatus.COMPLETED) {
+      const updated = await this.taskRepo.update(id, chapterId, {
+        status: newStatus,
+      });
+      return this.viewWithPhotos(chapterId, updated);
+    }
+    return this.complete(task, chapterId, userId, completion);
+  }
+
+  /**
+   * Mark done (#4565, #4635). Proof rides with it: the photos or link the
+   * task's proof kind asks for, refused without them with a code a phone
+   * build can match for as long as it stays installed, like service hours'
+   * receipt rule. A task an officer sent back needs something new: fresh
+   * proof, or a reply to the reason. A task with no points and no proof
+   * needs no sign-off, so it is confirmed as it is marked done.
+   */
+  private async complete(
+    task: Task,
+    chapterId: string,
+    userId: string,
+    completion: CompletionInput,
+  ): Promise<TaskView> {
+    const proofPhotos = await this.checkedPhotoPaths(
+      chapterId,
+      completion.proof_photo_paths ?? [],
+      'proof_photo_paths',
+    );
+    let proofLink: string | null = null;
+    if (completion.proof_link?.trim()) {
+      proofLink = normalizeProofLink(completion.proof_link);
+      if (!proofLink) {
+        throw new BadRequestException(
+          'proof_link must be a web link starting with http:// or https://',
+        );
       }
     }
-
-    const updated = await this.taskRepo.update(id, chapterId, updateData);
-
-    if (newStatus === TaskStatus.COMPLETED) {
-      await this.notifyTaskCompleted(updated, userId, chapterId);
+    const note = completion.completion_note?.trim() || null;
+    if (note && note.length > TASK_COMPLETION_NOTE_MAX) {
+      throw new BadRequestException(
+        `completion_note must be at most ${TASK_COMPLETION_NOTE_MAX} characters`,
+      );
     }
 
-    return toDisplayStatus(updated);
+    if (task.proof_kind === 'photo' && proofPhotos.length === 0) {
+      throw new BadRequestException({
+        code: TASK_PROOF_REQUIRED_CODE,
+        message: TASK_PROOF_REQUIRED_MESSAGE,
+      });
+    }
+    if (task.proof_kind === 'link' && !proofLink) {
+      throw new BadRequestException({
+        code: TASK_PROOF_REQUIRED_CODE,
+        message: TASK_PROOF_LINK_REQUIRED_MESSAGE,
+      });
+    }
+    // A send-back reopened the completion and cleared its proof, so any
+    // proof sent now is new; with none, a reply to the reason is the change.
+    if (task.sent_back_at && proofPhotos.length === 0 && !proofLink && !note) {
+      throw new BadRequestException({
+        code: TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+        message: TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
+      });
+    }
+
+    // The rows go in first: `storage_path` is unique, so a path another
+    // write took in the meantime fails here, before the task moves.
+    const photos = await this.taskRepo.createPhotos(
+      this.photoRows(task, 'proof', proofPhotos, userId),
+    );
+
+    const now = new Date().toISOString();
+    const signedOff = !taskNeedsSignOff(task);
+    let updated: Task | null;
+    try {
+      // Compare-and-set on what this completion was judged on: still in
+      // progress, with the points and proof kind read above. An officer's
+      // edit or a second Mark done landing in between matches nothing, so a
+      // task is never signed off on points it has since gained, and proof
+      // never piles up past the cap.
+      updated = await this.taskRepo.updateIfMatches(
+        task.id,
+        chapterId,
+        {
+          status: task.status,
+          point_reward: task.point_reward,
+          proof_kind: task.proof_kind,
+        },
+        {
+          status: TaskStatus.COMPLETED,
+          completed_at: now,
+          proof_link: proofLink,
+          completion_note: note,
+          // Decision C (#4635): nothing to award and nothing to check, so it
+          // is Done now, stamped with the completion's own time
+          // (`taskSignedOffAutomatically`). An officer can still send it
+          // back.
+          ...(signedOff ? { confirmed_at: now, points_awarded: true } : {}),
+        },
+      );
+    } catch (error) {
+      await this.dropPhotos(chapterId, task.id, photos);
+      throw error;
+    }
+    if (!updated) {
+      await this.dropPhotos(chapterId, task.id, photos);
+      throw new BadRequestException(
+        'This task changed while you were marking it done. Look again and retry.',
+      );
+    }
+
+    await this.notifyTaskCompleted(updated, userId, chapterId);
+    return this.viewWithPhotos(chapterId, updated);
+  }
+
+  /**
+   * Whether a completion can still be reopened: unconfirmed, or confirmed
+   * only because it needed no sign-off (#4635), so no points were paid.
+   */
+  private isReopenable(task: Task): boolean {
+    return !task.points_awarded || taskSignedOffAutomatically(task);
   }
 
   private async reopenOwnCompletion(
     task: Task,
     chapterId: string,
   ): Promise<TaskView> {
-    if (task.points_awarded) {
+    if (!this.isReopenable(task)) {
       throw new BadRequestException(
         'An officer already confirmed this task, so it stays done',
       );
     }
-    const updated = await this.taskRepo.reopenCompletion(
-      task.id,
-      chapterId,
-      undefined,
-      task.proof_photo_path,
-    );
+    const proof = await this.proofPhotosOf(chapterId, task.id);
+    const updated = await this.taskRepo.reopenCompletion(task.id, chapterId, {
+      expectedCompletedAt: task.completed_at,
+      pointsAwarded: task.points_awarded,
+    });
     if (!updated) {
       // Null is any write that moved it first: an officer's confirm, their
       // reject, or this member's own take-back from another device.
@@ -946,9 +1260,20 @@ export class TaskService {
         'This task is no longer waiting on confirmation',
       );
     }
-    // The reopen cleared the proof; the next Mark done sends its own.
-    await this.releasePhotos(chapterId, [task.proof_photo_path]);
-    return toDisplayStatus(updated);
+    // The reopen cleared the link and reply; the photos it read go too, and
+    // the next Mark done sends its own.
+    await this.dropPhotos(chapterId, task.id, proof);
+    return this.viewWithPhotos(chapterId, updated);
+  }
+
+  /** The proof photos a completion carries, as read now. */
+  private async proofPhotosOf(
+    chapterId: string,
+    taskId: string,
+  ): Promise<TaskPhoto[]> {
+    return (await this.taskRepo.findPhotos(chapterId, [taskId])).filter(
+      (photo) => photo.kind === 'proof',
+    );
   }
 
   /**
@@ -995,7 +1320,11 @@ export class TaskService {
         title: task.title,
         body: `${
           (await this.displayNameOf(task.assignee_id)) ?? 'The assignee'
-        } marked it done. Confirm it to award the points.`,
+        } marked it done.${
+          // A task that needed no sign-off is already Done (#4635); the
+          // officer still hears, and can send it back.
+          taskNeedsSignOff(task) ? ' Confirm it to award the points.' : ''
+        }`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -1038,6 +1367,14 @@ export class TaskService {
       );
     }
 
+    // No points and no proof: it was Done when marked (#4635), so there is
+    // nothing to confirm.
+    if (!taskNeedsSignOff(task)) {
+      throw new BadRequestException(
+        "This task doesn't need an officer to confirm it",
+      );
+    }
+
     if (task.points_awarded) {
       throw new BadRequestException(
         'Points have already been awarded for this task',
@@ -1075,14 +1412,26 @@ export class TaskService {
       'confirmation',
     );
 
-    return toDisplayStatus(updated);
+    return this.viewWithPhotos(chapterId, updated);
   }
 
   async rejectCompletion(
     id: string,
     chapterId: string,
-    comment?: string | null,
+    comment: string | null | undefined,
+    options: { requirePhoto?: boolean } = {},
   ): Promise<TaskView> {
+    // A send-back says why (#4635): the reason stays on the task for the
+    // assignee, and the push carries it.
+    const reason = comment?.trim() ?? '';
+    if (!reason) {
+      throw new BadRequestException('Say what needs to change to send it back');
+    }
+    if (reason.length > TASK_SEND_BACK_REASON_MAX) {
+      throw new BadRequestException(
+        `The reason must be at most ${TASK_SEND_BACK_REASON_MAX} characters`,
+      );
+    }
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -1092,7 +1441,7 @@ export class TaskService {
       throw new BadRequestException('Only completed tasks can be rejected');
     }
 
-    if (task.points_awarded) {
+    if (!this.isReopenable(task)) {
       throw new BadRequestException(
         'Cannot reject a task that has already been confirmed and points awarded',
       );
@@ -1102,27 +1451,28 @@ export class TaskService {
     // lands between the guards above and this write is not overwritten. The
     // send-back time is when it waits on the assignee again: Activity serves
     // it unread to them from then (`spec/behavior/activity.md` § Unread).
-    const updated = await this.taskRepo.reopenCompletion(
-      id,
-      chapterId,
-      new Date().toISOString(),
-      task.proof_photo_path,
-    );
+    const proof = await this.proofPhotosOf(chapterId, id);
+    const updated = await this.taskRepo.reopenCompletion(id, chapterId, {
+      sentBackAt: new Date().toISOString(),
+      sentBackReason: reason,
+      // "Ask for a photo next time" raises a None or Link task to Photo.
+      ...(options.requirePhoto ? { proofKind: 'photo' as const } : {}),
+      expectedCompletedAt: task.completed_at,
+      pointsAwarded: task.points_awarded,
+    });
     if (!updated) {
       throw new BadRequestException(
         'Task is no longer waiting on confirmation — it was confirmed or moved back already',
       );
     }
-    await this.releasePhotos(chapterId, [task.proof_photo_path]);
+    await this.dropPhotos(chapterId, id, proof);
 
     await this.safeNotifyUser(
       task.assignee_id,
       chapterId,
       {
         title: task.title,
-        body: comment
-          ? `Sent back: ${comment}`
-          : 'Sent back to in progress. It needs more before it counts.',
+        body: `Sent back: ${reason}`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -1131,7 +1481,7 @@ export class TaskService {
       'rejection',
     );
 
-    return toDisplayStatus(updated);
+    return this.viewWithPhotos(chapterId, updated);
   }
 
   private async safeNotifyUser(
@@ -1160,10 +1510,12 @@ export class TaskService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    const photos = await this.taskRepo.findPhotos(chapterId, [id]);
+    // The rows go with the task (on delete cascade); the objects after.
     await this.taskRepo.delete(id, chapterId);
-    await this.releasePhotos(chapterId, [
-      task.reference_photo_path,
-      task.proof_photo_path,
-    ]);
+    await this.releasePhotos(
+      chapterId,
+      photos.map((photo) => photo.storage_path),
+    );
   }
 }

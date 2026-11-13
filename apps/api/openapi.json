@@ -10460,7 +10460,7 @@
     },
     "/v1/tasks/photo-upload-url": {
       "post": {
-        "description": "PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
+        "description": "PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.",
         "operationId": "TaskController_requestPhotoUploadUrl_v1",
         "parameters": [],
         "requestBody": {
@@ -10506,7 +10506,7 @@
         ]
       }
     },
-    "/v1/tasks/{id}/photo-url": {
+    "/v1/tasks/{id}/photos/{photoId}/url": {
       "get": {
         "operationId": "TaskController_getPhotoUrl_v1",
         "parameters": [
@@ -10519,16 +10519,11 @@
             }
           },
           {
-            "name": "photo",
+            "name": "photoId",
             "required": true,
-            "in": "query",
-            "description": "Which photo: the reference photo or the proof photo.",
+            "in": "path",
             "schema": {
-              "type": "string",
-              "enum": [
-                "reference",
-                "proof"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -10559,7 +10554,7 @@
             "bearer": []
           }
         ],
-        "summary": "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+        "summary": "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635)",
         "tags": [
           "Tasks"
         ]
@@ -23463,7 +23458,7 @@
           },
           "storage_path": {
             "type": "string",
-            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+            "description": "Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done)."
           }
         },
         "required": [
@@ -23517,13 +23512,22 @@
             "type": "number",
             "description": "Points to award on completion"
           },
-          "reference_photo_path": {
-            "type": "string",
-            "description": "A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565)."
+          "reference_photo_paths": {
+            "description": "Reference photos, in order: each a `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4635). At most 6.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "When true, the task can only be marked done with a proof photo (#4565). Default false."
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`."
           },
           "channel_id": {
             "type": "string",
@@ -23538,6 +23542,57 @@
           "title",
           "assignee_id",
           "due_date"
+        ]
+      },
+      "TaskPhotoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "proof"
+            ]
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`."
+          },
+          "position": {
+            "type": "number",
+            "description": "Order within its kind, 0 first."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "chapter_id",
+          "kind",
+          "storage_path",
+          "position",
+          "created_by",
+          "created_at"
         ]
       },
       "CreateTaskResponseDto": {
@@ -23607,19 +23662,29 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
           },
-          "reference_photo_path": {
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs: nothing, a proof photo, or a link."
+          },
+          "proof_link": {
             "type": "string",
             "nullable": true,
-            "description": "Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`."
+            "description": "The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server."
           },
-          "proof_photo_path": {
+          "sent_back_reason": {
             "type": "string",
             "nullable": true,
-            "description": "Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`."
+            "description": "Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else."
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "When true, Mark done is refused without a proof photo."
+          "completion_note": {
+            "type": "string",
+            "nullable": true,
+            "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
           "created_at": {
             "type": "string",
@@ -23628,6 +23693,13 @@
           "card_posted": {
             "type": "boolean",
             "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          },
+          "photos": {
+            "description": "The reference photos added with the task, in order. Task reads and status writes carry `photos` too.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskPhotoDto"
+            }
           }
         },
         "required": [
@@ -23645,10 +23717,12 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
-          "reference_photo_path",
-          "proof_photo_path",
-          "photo_required",
-          "created_at"
+          "proof_kind",
+          "proof_link",
+          "sent_back_reason",
+          "completion_note",
+          "created_at",
+          "photos"
         ]
       },
       "UpdateTaskDto": {
@@ -23680,14 +23754,22 @@
             "type": "number",
             "nullable": true
           },
-          "reference_photo_path": {
-            "type": "string",
-            "nullable": true,
-            "description": "A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565)."
+          "reference_photo_paths": {
+            "description": "The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new `storage_path`s from `POST /v1/tasks/photo-upload-url` are added, and any it held that aren't listed are removed. `[]` removes them all. At most 6.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "photo_required": {
-            "type": "boolean",
-            "description": "Turn \"Photo required\" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer."
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer."
           }
         }
       },
@@ -23703,9 +23785,23 @@
               "OVERDUE"
             ]
           },
-          "proof_photo_path": {
+          "proof_photo_paths": {
+            "description": "With `status: COMPLETED` only: proof photos, each a `storage_path` from `POST /v1/tasks/photo-upload-url` (#4635), 1 to 6. Required when the task's `proof_kind` is `photo`; a completion without it is a 400 with the code `task.proof_required`.",
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proof_link": {
             "type": "string",
-            "description": "With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`."
+            "description": "With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it).",
+            "maxLength": 2048
+          },
+          "completion_note": {
+            "type": "string",
+            "description": "With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`.",
+            "maxLength": 500
           }
         },
         "required": [
@@ -23717,7 +23813,12 @@
         "properties": {
           "comment": {
             "type": "string",
-            "description": "Optional comment for rejection"
+            "description": "Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again.",
+            "maxLength": 200
+          },
+          "require_photo": {
+            "type": "boolean",
+            "description": "\"Ask for a photo next time\": raises the task's `proof_kind` to `photo`, so the next Mark done needs one."
           }
         }
       },
@@ -25869,6 +25970,15 @@
             "nullable": true,
             "description": "When an officer last sent the completion back to the assignee; null if never."
           },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -25893,6 +26003,7 @@
           "completed_at",
           "confirmed_at",
           "sent_back_at",
+          "proof_kind",
           "created_at",
           "unread"
         ]

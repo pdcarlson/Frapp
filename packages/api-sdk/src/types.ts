@@ -3051,7 +3051,7 @@ export interface paths {
         put?: never;
         /**
          * Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)
-         * @description PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
+         * @description PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
          */
         post: operations["TaskController_requestPhotoUploadUrl_v1"];
         delete?: never;
@@ -3060,14 +3060,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/tasks/{id}/photo-url": {
+    "/v1/tasks/{id}/photos/{photoId}/url": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565) */
+        /** A short-lived link to one of a task's photos (assignee or tasks:manage, #4635) */
         get: operations["TaskController_getPhotoUrl_v1"];
         put?: never;
         post?: never;
@@ -7271,7 +7271,7 @@ export interface components {
         TaskPhotoUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
             upload_url: string;
-            /** @description Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done). */
+            /** @description Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done). */
             storage_path: string;
         };
         TaskPhotoUrlResponseDto: {
@@ -7294,14 +7294,35 @@ export interface components {
             subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
-            /** @description A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565). */
-            reference_photo_path?: string;
-            /** @description When true, the task can only be marked done with a proof photo (#4565). Default false. */
-            photo_required?: boolean;
+            /** @description Reference photos, in order: each a `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4635). At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
             client_message_id?: string;
+        };
+        TaskPhotoDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @enum {string} */
+            kind: "reference" | "proof";
+            /** @description Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`. */
+            storage_path: string;
+            /** @description Order within its kind, 0 first. */
+            position: number;
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         CreateTaskResponseDto: {
             /** Format: uuid */
@@ -7331,16 +7352,23 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
              */
             sent_back_at: string | null;
-            /** @description Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`. */
-            reference_photo_path: string | null;
-            /** @description Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`. */
-            proof_photo_path: string | null;
-            /** @description When true, Mark done is refused without a proof photo. */
-            photo_required: boolean;
+            /**
+             * @description What Mark done needs: nothing, a proof photo, or a link.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
+            /** @description The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server. */
+            proof_link: string | null;
+            /** @description Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else. */
+            sent_back_reason: string | null;
+            /** @description The assignee's reply sent with Mark done, or null. Cleared with the completion. */
+            completion_note: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
+            /** @description The reference photos added with the task, in order. Task reads and status writes carry `photos` too. */
+            photos: components["schemas"]["TaskPhotoDto"][];
         };
         UpdateTaskDto: {
             title?: string;
@@ -7355,20 +7383,29 @@ export interface components {
              */
             due_at?: string | null;
             point_reward?: number | null;
-            /** @description A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565). */
-            reference_photo_path?: string | null;
-            /** @description Turn "Photo required" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer. */
-            photo_required?: boolean;
+            /** @description The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new `storage_path`s from `POST /v1/tasks/photo-upload-url` are added, and any it held that aren't listed are removed. `[]` removes them all. At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
-            /** @description With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`. */
-            proof_photo_path?: string;
+            /** @description With `status: COMPLETED` only: proof photos, each a `storage_path` from `POST /v1/tasks/photo-upload-url` (#4635), 1 to 6. Required when the task's `proof_kind` is `photo`; a completion without it is a 400 with the code `task.proof_required`. */
+            proof_photo_paths?: string[];
+            /** @description With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it). */
+            proof_link?: string;
+            /** @description With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`. */
+            completion_note?: string;
         };
         RejectTaskCompletionDto: {
-            /** @description Optional comment for rejection */
+            /** @description Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again. */
             comment?: string;
+            /** @description "Ask for a photo next time": raises the task's `proof_kind` to `photo`, so the next Mark done needs one. */
+            require_photo?: boolean;
         };
         CreateTaskSubtaskDto: {
             title: string;
@@ -8168,6 +8205,11 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never.
              */
             sent_back_at: string | null;
+            /**
+             * @description What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
@@ -16252,13 +16294,11 @@ export interface operations {
     };
     TaskController_getPhotoUrl_v1: {
         parameters: {
-            query: {
-                /** @description Which photo: the reference photo or the proof photo. */
-                photo: "reference" | "proof";
-            };
+            query?: never;
             header?: never;
             path: {
                 id: string;
+                photoId: string;
             };
             cookie?: never;
         };

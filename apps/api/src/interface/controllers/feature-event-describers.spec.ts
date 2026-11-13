@@ -600,6 +600,8 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             assignee_id: 'u1',
             created_by: 'u1',
             point_reward: null,
+            proof_kind: 'none',
+            photos: [],
             card_posted: true,
           },
         },
@@ -609,7 +611,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           has_point_reward: false,
           has_reference_photo: false,
           has_subtasks: false,
-          photo_required: false,
+          proof_kind: 'none',
           posted_to_chat: true,
         },
       ],
@@ -622,8 +624,8 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             created_by: 'u1',
             point_reward: 5,
             due_at: '2026-11-14T22:00:00.000Z',
-            reference_photo_path: 'chapters/c1/tasks/p1/mess.jpg',
-            photo_required: true,
+            photos: [{ storage_path: 'chapters/c1/tasks/p1/mess.jpg' }],
+            proof_kind: 'photo',
           },
         },
         {
@@ -632,7 +634,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           has_point_reward: true,
           has_reference_photo: true,
           has_subtasks: true,
-          photo_required: true,
+          proof_kind: 'photo',
           posted_to_chat: false,
         },
       ],
@@ -643,17 +645,57 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       [
         'in progress',
         { body: { status: 'IN_PROGRESS' } },
-        { status: 'IN_PROGRESS', has_proof_photo: false },
+        {
+          status: 'IN_PROGRESS',
+          has_proof_photo: false,
+          has_proof_link: false,
+          has_completion_note: false,
+        },
       ],
       [
         'done with proof',
         {
           body: {
             status: 'COMPLETED',
-            proof_photo_path: 'chapters/c1/tasks/p2/done.jpg',
+            proof_photo_paths: ['chapters/c1/tasks/p2/done.jpg'],
           },
         },
-        { status: 'COMPLETED', has_proof_photo: true },
+        {
+          status: 'COMPLETED',
+          has_proof_photo: true,
+          has_proof_link: false,
+          has_completion_note: false,
+        },
+      ],
+      [
+        'done again with a link and a reply',
+        {
+          body: {
+            status: 'COMPLETED',
+            proof_link: 'https://example.com',
+            completion_note: 'Fixed',
+          },
+        },
+        {
+          status: 'COMPLETED',
+          has_proof_photo: false,
+          has_proof_link: true,
+          has_completion_note: true,
+        },
+      ],
+    ],
+  },
+  'TaskController.rejectCompletion': {
+    'task-completion-rejected': [
+      [
+        'sent back',
+        { body: { comment: 'Blurry' } },
+        { asked_for_photo: false },
+      ],
+      [
+        'sent back asking for a photo',
+        { body: { comment: 'Blurry', require_photo: true } },
+        { asked_for_photo: true },
       ],
     ],
   },

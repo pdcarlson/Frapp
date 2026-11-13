@@ -1,5 +1,6 @@
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -18,14 +19,22 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   POINTS_ADJUSTMENT_MAX,
+  TASK_COMPLETION_NOTE_MAX,
+  TASK_PHOTOS_MAX,
+  TASK_PROOF_KINDS,
+  TASK_PROOF_LINK_MAX,
+  TASK_SEND_BACK_REASON_MAX,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
+  type TaskProofKind,
 } from '@repo/validation';
 import {
   TaskStatus,
   type Task,
   type TaskSubtask,
+  type TaskPhoto,
+  type TaskPhotoKind,
 } from '#domain/entities/task.entity';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import {
@@ -129,21 +138,25 @@ export class CreateTaskDto {
   point_reward?: number;
 
   @ApiPropertyOptional({
-    description:
-      'A reference photo: the `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4565).',
+    description: `Reference photos, in order: each a \`storage_path\` from \`POST /v1/tasks/photo-upload-url\`, after the bytes were uploaded (#4635). At most ${TASK_PHOTOS_MAX}.`,
+    type: [String],
+    maxItems: TASK_PHOTOS_MAX,
   })
   @IsOptional()
-  @IsString()
-  @MaxLength(1024)
-  reference_photo_path?: string;
+  @IsArray()
+  @ArrayMaxSize(TASK_PHOTOS_MAX)
+  @IsString({ each: true })
+  @MaxLength(1024, { each: true })
+  reference_photo_paths?: string[];
 
   @ApiPropertyOptional({
+    enum: TASK_PROOF_KINDS,
     description:
-      'When true, the task can only be marked done with a proof photo (#4565). Default false.',
+      'What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`.',
   })
   @IsOptional()
-  @IsStrictBoolean()
-  photo_required?: boolean;
+  @IsIn(TASK_PROOF_KINDS)
+  proof_kind?: TaskProofKind;
 
   @ApiPropertyOptional({
     description:
@@ -226,25 +239,34 @@ export class CreateTaskResponseDto implements Task {
   sent_back_at: string | null;
 
   @ApiProperty({
-    type: String,
-    nullable: true,
-    description:
-      'Storage key of the reference photo, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=reference`.',
+    enum: TASK_PROOF_KINDS,
+    description: 'What Mark done needs: nothing, a proof photo, or a link.',
   })
-  reference_photo_path: string | null;
+  proof_kind: TaskProofKind;
 
   @ApiProperty({
     type: String,
     nullable: true,
     description:
-      'Storage key of the proof photo sent with Mark done, or null. Read it through `GET /v1/tasks/:id/photo-url?photo=proof`.',
+      "The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server.",
   })
-  proof_photo_path: string | null;
+  proof_link: string | null;
 
   @ApiProperty({
-    description: 'When true, Mark done is refused without a proof photo.',
+    type: String,
+    nullable: true,
+    description:
+      'Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else.',
   })
-  photo_required: boolean;
+  sent_back_reason: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The assignee's reply sent with Mark done, or null. Cleared with the completion.",
+  })
+  completion_note: string | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -254,6 +276,42 @@ export class CreateTaskResponseDto implements Task {
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
+
+  @ApiProperty({
+    type: () => [TaskPhotoDto],
+    description:
+      'The reference photos added with the task, in order. Task reads and status writes carry `photos` too.',
+  })
+  photos: TaskPhotoDto[];
+}
+
+export class TaskPhotoDto implements TaskPhoto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  task_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty({ enum: ['reference', 'proof'] })
+  kind: TaskPhotoKind;
+
+  @ApiProperty({
+    description:
+      'Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`.',
+  })
+  storage_path: string;
+
+  @ApiProperty({ description: 'Order within its kind, 0 first.' })
+  position: number;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  created_by: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
 }
 
 export class TaskSubtaskDto implements TaskSubtask {
@@ -341,23 +399,25 @@ export class UpdateTaskDto {
   point_reward?: number | null;
 
   @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description:
-      'A new reference photo (a `storage_path` from `POST /v1/tasks/photo-upload-url`), or null to remove it (#4565).',
+    description: `The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new \`storage_path\`s from \`POST /v1/tasks/photo-upload-url\` are added, and any it held that aren't listed are removed. \`[]\` removes them all. At most ${TASK_PHOTOS_MAX}.`,
+    type: [String],
+    maxItems: TASK_PHOTOS_MAX,
   })
   @IsOptional()
-  @IsString()
-  @MaxLength(1024)
-  reference_photo_path?: string | null;
+  @IsArray()
+  @ArrayMaxSize(TASK_PHOTOS_MAX)
+  @IsString({ each: true })
+  @MaxLength(1024, { each: true })
+  reference_photo_paths?: string[];
 
   @ApiPropertyOptional({
+    enum: TASK_PROOF_KINDS,
     description:
-      'Turn "Photo required" on or off (#4565). Turning it on doesn’t touch a completion already waiting on an officer.',
+      "What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer.",
   })
   @IsOptional()
-  @IsStrictBoolean()
-  photo_required?: boolean;
+  @IsIn(TASK_PROOF_KINDS)
+  proof_kind?: TaskProofKind;
 }
 
 export class UpdateTaskSubtaskDto {
@@ -372,13 +432,37 @@ export class UpdateTaskStatusDto {
   status: TaskStatus;
 
   @ApiPropertyOptional({
+    description: `With \`status: COMPLETED\` only: proof photos, each a \`storage_path\` from \`POST /v1/tasks/photo-upload-url\` (#4635), 1 to ${TASK_PHOTOS_MAX}. Required when the task's \`proof_kind\` is \`photo\`; a completion without it is a 400 with the code \`task.proof_required\`.`,
+    type: [String],
+    maxItems: TASK_PHOTOS_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(TASK_PHOTOS_MAX)
+  @IsString({ each: true })
+  @MaxLength(1024, { each: true })
+  proof_photo_paths?: string[];
+
+  @ApiPropertyOptional({
     description:
-      'With `status: COMPLETED` only: a proof photo, the `storage_path` from `POST /v1/tasks/photo-upload-url` (#4565). Required when the task has `photo_required`; a completion without it is a 400 with the code `task.proof_required`.',
+      "With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it).",
+    maxLength: TASK_PROOF_LINK_MAX,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(1024)
-  proof_photo_path?: string;
+  @MaxLength(TASK_PROOF_LINK_MAX)
+  proof_link?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`.',
+    maxLength: TASK_COMPLETION_NOTE_MAX,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(TASK_COMPLETION_NOTE_MAX)
+  completion_note?: string;
 }
 
 export class RequestTaskPhotoUploadUrlDto {
@@ -408,21 +492,9 @@ export class TaskPhotoUploadUrlResponseDto {
 
   @ApiProperty({
     description:
-      'Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done).',
+      'Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done).',
   })
   storage_path: string;
-}
-
-export const TASK_PHOTOS = ['reference', 'proof'] as const;
-export type TaskPhoto = (typeof TASK_PHOTOS)[number];
-
-export class TaskPhotoUrlQueryDto {
-  @ApiProperty({
-    enum: TASK_PHOTOS,
-    description: 'Which photo: the reference photo or the proof photo.',
-  })
-  @IsIn(TASK_PHOTOS)
-  photo: TaskPhoto;
 }
 
 export class TaskPhotoUrlResponseDto {
@@ -431,10 +503,26 @@ export class TaskPhotoUrlResponseDto {
 }
 
 export class RejectTaskCompletionDto {
-  @ApiPropertyOptional({ description: 'Optional comment for rejection' })
+  // Required by the service, not the schema: shipped phone builds send
+  // Reject with no body, and the contract they were built with must stand
+  // (check:api-breaking:shipped). They get the 400's message instead.
+  @ApiPropertyOptional({
+    description:
+      'Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again.',
+    maxLength: TASK_SEND_BACK_REASON_MAX,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(TASK_SEND_BACK_REASON_MAX)
   comment?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '"Ask for a photo next time": raises the task\'s `proof_kind` to `photo`, so the next Mark done needs one.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  require_photo?: boolean;
 }
 
 /**
@@ -456,5 +544,5 @@ export type CreateTaskResponseDtoMissingFields = Assert<
  * own outcome flag, not a column — the one deliberate addition.
  */
 export type CreateTaskResponseDtoExtraFields = Assert<
-  Exclude<keyof CreateTaskResponseDto, keyof Task | 'card_posted'>
+  Exclude<keyof CreateTaskResponseDto, keyof Task | 'card_posted' | 'photos'>
 >;

@@ -470,7 +470,7 @@ describe("UpNextStrip rows", () => {
       // The suite's react-native stub runs as iOS. On a card the lift is the
       // step above it.
       expect(row.props.style({ pressed: true })).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.popover,
+        backgroundColor: signetDarkTokens.color.surface.card,
       });
       expect(row.props.style({ pressed: false })).toContain(null);
     }

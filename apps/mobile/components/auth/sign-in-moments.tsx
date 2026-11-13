@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The sign-in screen's picture of the product (#3349).
@@ -109,6 +110,7 @@ export function SignInMoments() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     stack: {
       width: "100%",
@@ -126,7 +128,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     badge: {
       width: 32,
@@ -134,7 +136,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control - 4,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     badgeGold: {
       backgroundColor: tint(tokens.color.gold.house, 0.16),

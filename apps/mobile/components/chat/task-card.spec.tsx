@@ -118,6 +118,8 @@ function liveTask(overrides: Record<string, unknown> = {}) {
     status: "TODO",
     stored_status: "TODO",
     points_awarded: false,
+    // Points, so a completion waits on an officer (#4635).
+    point_reward: 15,
     ...overrides,
   };
 }
@@ -175,7 +177,7 @@ function render(
 
 /** The card's own action buttons, by label: reactions and delivery excluded. */
 function actions(tree: ReactTestRenderer): string[] {
-  const labels = ["Start", "Mark done", "Confirm", "Confirmed", "Reject"];
+  const labels = ["Start", "Mark done", "Confirm", "Confirmed", "Send back"];
   return tree.root
     .findAll(
       (node) =>
@@ -306,21 +308,21 @@ describe("TaskCard — actions", () => {
     });
   });
 
-  it("offers a tasks:manage holder Confirm and Reject on a completion", async () => {
+  it("offers a tasks:manage holder Confirm and Send back on a completion", async () => {
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
     const tree = render("admin-2");
-    expect(actions(tree)).toEqual(["Confirm", "Reject"]);
+    expect(actions(tree)).toEqual(["Confirm", "Send back"]);
     await press(tree, "Confirm");
     expect(confirmTask).toHaveBeenCalledWith("task-1");
-    await press(tree, "Reject");
+    await press(tree, "Send back");
     expect(rejectTask).toHaveBeenCalledWith({ id: "task-1" });
   });
 
   it("never offers Confirm on the admin's own task (#1056)", () => {
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
-    expect(actions(render(ASSIGNEE))).toEqual(["Reject"]);
+    expect(actions(render(ASSIGNEE))).toEqual(["Send back"]);
   });
 
   it("leaves a disabled Confirmed indicator once points are awarded", () => {
@@ -382,7 +384,9 @@ describe("TaskCard — actions", () => {
     expect(button(tree, "Start").props.disabled).toBe(true);
     act(() => refocus());
     expect(button(tree, "Start").props.disabled).toBe(false);
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
 
     await press(tree, "Start");
     expect(button(tree, "Start").props.disabled).toBe(true);

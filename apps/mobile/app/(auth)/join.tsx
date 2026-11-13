@@ -72,6 +72,7 @@ import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350).
@@ -880,6 +881,7 @@ export default function JoinChapter() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: {
@@ -953,7 +955,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
       gap: tokens.spacing.xs,

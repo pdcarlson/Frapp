@@ -67,7 +67,10 @@ export function copyForErrorCode(code: string | null): string | null {
     return "Add a photo of your proof, then submit.";
   }
   if (code === "task.proof_required") {
-    return "This task needs a photo to show it's done. Add one, then mark it done.";
+    return "This task needs proof to show it's done. Add it, then mark it done.";
+  }
+  if (code === "task.resubmit_needs_change") {
+    return "This task was sent back. Add proof or reply to the officer, then mark it done.";
   }
   // Refused in the browser, never by the API: the web client turns writes
   // away while an officer views the app as a role (#4072).

@@ -7,6 +7,7 @@ import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-prim
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import type { PushAskAction } from "@/lib/notifications/use-push-primer";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Onboarding's notifications step, and the chat home's one reminder: the
@@ -157,6 +158,7 @@ export function BellGlyph({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     body: {
       gap: tokens.spacing.lg,
@@ -170,7 +172,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.xs,
     },
     row: {

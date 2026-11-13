@@ -50,7 +50,7 @@ export class SupabaseChatFormResponseRepository implements IChatFormResponseRepo
     });
     if (error) {
       // The RPC names each refusal in its message
-      // (`20261113040009_chat_form_responses.sql`); anything else is a
+      // (`20261113040011_chat_form_responses.sql`); anything else is a
       // failure.
       const reason = FORM_REFUSALS[error.message];
       if (reason) throw new FormResponseRefusedError(reason);

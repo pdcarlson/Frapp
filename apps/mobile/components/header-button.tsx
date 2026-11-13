@@ -3,6 +3,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { useGuardedBySwipe } from "@/lib/swipe-claim";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * A screen header's icon action: the glyph inside a 36pt round on the card
@@ -113,6 +114,7 @@ export const HEADER_BUTTON_SIZE = 36;
 export const HEADER_BUTTON_HIT_SLOP = 4;
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     round: {
       width: HEADER_BUTTON_SIZE,
@@ -120,11 +122,11 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: HEADER_BUTTON_SIZE / 2,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
     },
-    pressed: { backgroundColor: tokens.color.surface.popover },
+    pressed: { backgroundColor: surfaces.raised },
     badge: {
       position: "absolute",
       top: -4,
