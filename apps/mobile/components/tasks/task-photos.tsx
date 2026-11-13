@@ -83,6 +83,10 @@ export function TaskPhotoViewer({
   const styles = createStyles(tokens);
   const { width } = useWindowDimensions();
   const [at, setAt] = useState(index ?? 0);
+  // The pager's own height, measured: a page's photo can't size itself off a
+  // horizontal list's content, which has no height until something gives it
+  // one (`height: "100%"` there drew every photo 0 tall).
+  const [pageHeight, setPageHeight] = useState(0);
   const [openedOn, setOpenedOn] = useState(index);
   // A new open starts on the photo it was opened on.
   if (index !== openedOn) {
@@ -112,6 +116,10 @@ export function TaskPhotoViewer({
           <FlatList
             data={photos as LiveTaskPhoto[]}
             keyExtractor={(photo: LiveTaskPhoto) => photo.id}
+            style={styles.pager}
+            onLayout={(event: {
+              nativeEvent: { layout: { height: number } };
+            }) => setPageHeight(event.nativeEvent.layout.height)}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -129,7 +137,7 @@ export function TaskPhotoViewer({
               )
             }
             renderItem={({ item }: { item: LiveTaskPhoto }) => (
-              <View style={[styles.page, { width }]}>
+              <View style={[styles.page, { width, height: pageHeight }]}>
                 <StoredTaskPhoto
                   taskId={taskId}
                   photoId={item.id}
@@ -496,8 +504,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flex: 1,
     },
-    page: {
+    pager: {
       flex: 1,
+    },
+    page: {
       justifyContent: "center",
       alignItems: "center",
     },

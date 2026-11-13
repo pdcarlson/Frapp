@@ -3,6 +3,7 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import * as WebBrowser from "expo-web-browser";
+import { StyleSheet } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import type { LiveTaskPhoto } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -130,6 +131,19 @@ describe("TaskProof (#4635)", () => {
     expect(list.props.pagingEnabled).toBe(true);
     expect(list.props.horizontal).toBe(true);
     expect(list.props.initialScrollIndex).toBe(1);
+    // A page is as tall as the pager measures, never `100%` of a horizontal
+    // list's content, which drew each photo 0 tall.
+    expect(StyleSheet.flatten(list.props.style)).toMatchObject({ flex: 1 });
+    act(() =>
+      list.props.onLayout({ nativeEvent: { layout: { height: 640 } } }),
+    );
+    const page = (
+      tree.root.find((node) => (node.type as unknown) === "FlatList").props
+        .renderItem as (info: { item: unknown }) => React.ReactElement<{
+        style: unknown;
+      }>
+    )({ item: photo("p1", "proof") });
+    expect(StyleSheet.flatten(page.props.style)).toMatchObject({ height: 640 });
   });
 });
 
