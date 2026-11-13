@@ -65,6 +65,7 @@ const CALLS = new Set([
   'invoices.findByUser',
   'meetings.listPostedSince',
   'members.findByUserAndChapter',
+  'members.findProfileByUserId',
   'members.findProfilesByChapter',
   'members.findRosterByChapter',
   'points.getLeaderboard',

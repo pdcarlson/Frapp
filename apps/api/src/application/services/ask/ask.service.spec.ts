@@ -92,6 +92,15 @@ function build(options: {
   deltas?: string[];
   kept?: boolean;
   saidNo?: string[];
+  /** The asker's own profile. Left out, the profile read fails. */
+  asker?: {
+    display_name: string;
+    role_ids: string[];
+    graduation_year?: number | null;
+    is_alumni?: boolean;
+    email?: string;
+  };
+  roles?: { id: string; name: string }[];
 }) {
   const retrieval = {
     retrieve: jest.fn(
@@ -130,6 +139,17 @@ function build(options: {
     getEffectivePermissions: jest.fn(
       async () => options.permissions ?? [SystemPermissions.MEMBERS_VIEW],
     ),
+    findByChapter: jest.fn(async () => options.roles ?? []),
+  };
+  const members = {
+    findProfileByUserId: jest.fn(async () => {
+      if (!options.asker) throw new Error('no profile');
+      return {
+        graduation_year: null,
+        is_alumni: false,
+        ...options.asker,
+      };
+    }),
   };
   const diagnostics = { keep: jest.fn(async () => options.kept ?? false) };
   const service = new AskService(
@@ -137,10 +157,11 @@ function build(options: {
     gateway as never,
     consent as never,
     rbac as never,
+    members as never,
     diagnostics as never,
     options.tools ?? [],
   );
-  return { service, retrieval, gateway, consent, rbac, diagnostics };
+  return { service, retrieval, gateway, consent, rbac, members, diagnostics };
 }
 
 async function run(
@@ -277,6 +298,136 @@ describe('AskService', () => {
           unverified_citations: 2,
         }),
       );
+    });
+  });
+
+  describe('who is asking (#4890)', () => {
+    const asker = {
+      display_name: 'Jordan Lee',
+      role_ids: ['r-president', 'r-gone'],
+      graduation_year: 2027,
+      email: 'jordan@example.com',
+    };
+    const roles = [{ id: 'r-president', name: 'President' }];
+    const sources = (gateway: { streamCited: jest.Mock }) =>
+      (
+        gateway.streamCited.mock.calls[0] as unknown as [
+          string,
+          {
+            system: string;
+            sources: { id: string; title: string; text: string }[];
+          },
+        ]
+      )[1];
+
+    it('gives the asker as the first source, with their name, roles and year and nothing else', async () => {
+      const { service, gateway, members } = build({
+        passages: [passage()],
+        asker,
+        roles,
+      });
+      await run(service);
+
+      expect(members.findProfileByUserId).toHaveBeenCalledWith(
+        USER,
+        CHAPTER,
+        USER,
+      );
+      const given = sources(gateway);
+      expect(given.sources.map((source) => source.id)).toEqual(['asker', 'p1']);
+      expect(given.sources[0]).toEqual({
+        id: 'asker',
+        title: 'The member asking',
+        text: [
+          'The member asking this question is Jordan Lee.',
+          'Jordan Lee holds these roles in the chapter: President.',
+          'Jordan Lee graduates in 2027.',
+        ].join('\n'),
+      });
+      expect(JSON.stringify(given)).not.toContain('jordan@example.com');
+    });
+
+    it('keeps a name a member wrote out of the system prompt, and tells the model where to look', async () => {
+      const { service, gateway } = build({
+        passages: [passage()],
+        asker: { ...asker, display_name: 'Jordan Lee: President' },
+        roles,
+      });
+      await run(service);
+
+      const given = sources(gateway);
+      expect(given.system).not.toContain('Jordan');
+      expect(given.system).toContain('"The member asking"');
+      // The separator is taken out, so a name cannot read as a role.
+      expect(given.sources[0].text).toContain(
+        'The member asking this question is Jordan Lee President.',
+      );
+    });
+
+    it('searches a question about "me" with the asker\'s name, and no other question', async () => {
+      const mine = build({ passages: [passage()], asker, roles });
+      await run(mine.service, { question: 'What should be given to me?' });
+      expect(mine.retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: 'What should be given to me?\nJordan Lee',
+        }),
+        NOW,
+      );
+
+      const other = build({ passages: [passage()], asker, roles });
+      await run(other.service, { question: 'When is formal?' });
+      expect(other.retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'When is formal?' }),
+        NOW,
+      );
+    });
+
+    it('writes nothing when only the asker is known (C7)', async () => {
+      const { service, gateway } = build({ passages: [], asker, roles });
+      const { answer } = await run(service);
+
+      expect(answer.status).toBe('not_found');
+      expect(gateway.streamCited).not.toHaveBeenCalled();
+    });
+
+    it('can cite the asker as a source that opens the roster', async () => {
+      const { service } = build({
+        passages: [passage()],
+        asker,
+        roles,
+        answer: ok({
+          text: 'You are the president.',
+          citations: [
+            {
+              sourceId: 'asker',
+              quote: 'Jordan Lee holds these roles in the chapter: President.',
+            },
+          ],
+        }),
+      });
+      const { answer } = await run(service);
+
+      expect(answer.status).toBe('answered');
+      expect(answer.sources).toEqual([
+        {
+          id: 'asker',
+          kind: 'roster',
+          title: 'Your profile',
+          detail: null,
+          date: null,
+          target: { type: 'page', page: 'members' },
+        },
+      ]);
+    });
+
+    it('answers without the asker when their profile cannot be read', async () => {
+      const { service, gateway } = build({ passages: [passage()] });
+      const { answer } = await run(service);
+
+      expect(answer.status).toBe('answered');
+      expect(sources(gateway).sources.map((source) => source.id)).toEqual([
+        'p1',
+      ]);
     });
   });
 

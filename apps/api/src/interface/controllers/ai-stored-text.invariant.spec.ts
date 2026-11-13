@@ -327,6 +327,11 @@ function build(model: ILanguageModel, captured: Captured) {
     {
       getEffectivePermissions: () =>
         Promise.resolve([SystemPermissions.MEMBERS_VIEW]),
+      findByChapter: () => Promise.resolve([]),
+    } as never,
+    // The asker's profile is not read here: Ask answers without it.
+    {
+      findProfileByUserId: () => Promise.reject(new Error('no profile')),
     } as never,
     diagnostics,
     [roster],

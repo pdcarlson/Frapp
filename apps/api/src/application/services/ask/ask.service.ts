@@ -33,15 +33,18 @@ import {
   CorpusRetrievalService,
   type CorpusPassage,
 } from '../corpus/corpus-retrieval.service';
+import { MemberService } from '../member.service';
 import { RbacService } from '../rbac.service';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
+  ASK_ASKER_SOURCE_TITLE,
   ASK_PLAN_PROMPT_VERSION,
   ASK_PLAN_SYSTEM,
   AskPlanSchema,
   askAnswerMessages,
   askAnswerSystem,
+  askAskerSourceText,
   askPlanMessage,
   askSearchQuery,
   earlierQuestions,
@@ -53,6 +56,10 @@ import {
   type AskTool,
   type AskToolContext,
 } from './ask-tool';
+import { nameInLine } from './ask-lines';
+
+/** The id of the source that says who is asking. */
+const ASKER_SOURCE_ID = 'asker';
 
 /** Passages asked of retrieval for one question. */
 const PASSAGE_LIMIT = 8;
@@ -278,6 +285,7 @@ export class AskService {
     private readonly gateway: AiGatewayService,
     private readonly consent: AiConsentService,
     private readonly rbac: RbacService,
+    private readonly members: MemberService,
     private readonly diagnostics: AskDiagnosticsService,
     @Inject(ASK_TOOLS) private readonly tools: readonly AskTool[],
   ) {}
@@ -312,13 +320,20 @@ export class AskService {
     yield this.step('searching');
 
     const context = { chapterId: input.chapterId, actingUserId: input.userId };
-    const offered = await this.offeredTools(input);
+    const [offered, asker] = await Promise.all([
+      this.offeredTools(input),
+      this.asker(input),
+    ]);
     const [retrieved, planned] = await Promise.all([
       this.retrieval.retrieve(
         {
           chapterId: input.chapterId,
           actingUserId: input.userId,
-          query: askSearchQuery(input.question, input.history),
+          query: askSearchQuery(
+            input.question,
+            input.history,
+            asker?.name ?? null,
+          ),
           limit: PASSAGE_LIMIT,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
@@ -374,11 +389,14 @@ export class AskService {
     );
     // Live data is canon, then the official record, then chat, each in the
     // order retrieval ranked it.
-    const entries = [
+    const read = [
       ...toolEntries,
       ...passages.filter((entry) => !entry.chat),
       ...passages.filter((entry) => entry.chat),
     ];
+    // Who is asking goes first, and only beside something that was found:
+    // it says who "me" is, and is never by itself a reason to write (C7).
+    const entries = read.length > 0 && asker ? [asker.entry, ...read] : read;
 
     if (entries.length === 0) {
       const answer = emptyAnswer('not_found', { left_out_messages: leftOut });
@@ -494,6 +512,68 @@ export class AskService {
       // back as history either way.
       read_chat: entries.some((entry) => entry.chat),
     });
+  }
+
+  /**
+   * Who is asking, as a source (#4890): their name, the roles they hold and
+   * their year, read as their own profile page reads them. Nothing else from
+   * the profile reaches a model: it also carries an email, a phone number, a
+   * city and an employer (`ai.md` § Live structured data). A read that fails
+   * means an answer that does not know the asker, not no answer.
+   */
+  private async asker(
+    input: AskInput,
+  ): Promise<{ name: string; entry: AskSourceEntry } | null> {
+    try {
+      const [profile, roles] = await Promise.all([
+        this.members.findProfileByUserId(
+          input.userId,
+          input.chapterId,
+          input.userId,
+        ),
+        this.rbac.findByChapter(input.chapterId),
+      ]);
+      const name = nameInLine(profile.display_name);
+      if (!name) return null;
+      const roleName = new Map(roles.map((role) => [role.id, role.name]));
+      const held = [...new Set(profile.role_ids)]
+        .map((id) => roleName.get(id))
+        .filter((role): role is string => Boolean(role))
+        .map(nameInLine)
+        .filter(Boolean);
+      return {
+        name,
+        entry: {
+          chat: false,
+          authorIds: [],
+          model: {
+            id: ASKER_SOURCE_ID,
+            title: ASK_ASKER_SOURCE_TITLE,
+            text: askAskerSourceText({
+              name,
+              roles: held,
+              graduationYear: profile.graduation_year,
+              alumni: profile.is_alumni,
+            }),
+          },
+          view: {
+            id: ASKER_SOURCE_ID,
+            kind: 'roster',
+            title: 'Your profile',
+            detail: null,
+            date: null,
+            target: { type: 'page', page: 'members' },
+          },
+        },
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Ask: the asker's profile could not be read (${
+          error instanceof Error ? error.name : 'unknown'
+        }); answering without it`,
+      );
+      return null;
+    }
   }
 
   /**

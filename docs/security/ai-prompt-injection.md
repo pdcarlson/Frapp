@@ -178,6 +178,14 @@ or tool turn. Anything that reaches a user/tool turn is forgeable by whoever can
 underlying surface. Corpus content is passed as delimited source material in a user or tool turn
 (document content blocks where the provider has them), never concatenated into the system prompt.
 
+Who is asking follows the same rule (#4890, 2026-11-13). Ask tells the answering call the asker's
+display name, the roles they hold, whether they are an alumni member and their graduation year, so
+"me" and "my" mean someone. A display name and a role's name are text a member wrote, so they are
+given as a source titled "The member asking", with the name's separators removed the way a roster
+line removes them, and the system prompt only says that this source names the asker. The planning
+call is not shown it. It is added only beside something that was found, so it is never by itself a
+reason to write (C7). No contact detail is in it.
+
 **C2 — Every tool call runs under the caller's permissions, never the service's.** The agent must
 resolve authority through the same `ChapterGuard` / permission-decorator path as every other route.
 The `service_role` client must not be reachable from a tool implementation.

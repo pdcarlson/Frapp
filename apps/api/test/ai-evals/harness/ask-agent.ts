@@ -207,6 +207,12 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         } as never,
         {
           getEffectivePermissions: () => Promise.resolve(caller.permissions),
+          findByChapter: () => Promise.resolve([]),
+        } as never,
+        // The cases name no asker, so Ask answers without one, as it does
+        // when the profile read fails.
+        {
+          findProfileByUserId: () => Promise.reject(new Error('no profile')),
         } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
