@@ -32,7 +32,9 @@
  * Env: WEB_URL (default http://localhost:3000), MOBILE_URL (default
  *      http://localhost:3002), API_URL (default http://localhost:3001),
  *      RUNS (default 3), WINDOW_MS (default 8000), CHROMIUM_PATH,
- *      DEMO_EMAIL, DEMO_PASSWORD, JSON=1 (machine-readable output).
+ *      DEMO_EMAIL, DEMO_PASSWORD, JSON=1 (machine-readable output),
+ *      TRACE=1 (each run's requests in order, with their `include` and
+ *      whether they started before the first screen).
  */
 import { chromium } from "playwright";
 
@@ -43,6 +45,10 @@ const WEB_URL = process.env.WEB_URL ?? "http://localhost:3000";
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const API_URL = process.env.API_URL ?? "http://localhost:3001";
 const RUNS = Number(process.env.RUNS ?? 3);
+if (!Number.isInteger(RUNS) || RUNS < 1) {
+  console.error(`RUNS must be a whole number of at least 1, not "${process.env.RUNS}"`);
+  process.exit(2);
+}
 const WINDOW_MS = Number(process.env.WINDOW_MS ?? 8000);
 const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
 const PASSWORD = process.env.DEMO_PASSWORD ?? LOCAL_DEMO_PASSWORD;
@@ -202,7 +208,8 @@ async function measureOnce(browser, surface, storageState) {
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 async function main() {

@@ -531,8 +531,8 @@ function ChannelThreadScreen() {
   );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
-  // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
-  // s04 badges by prefix.
+  // mark-read-to-a-message API. It re-reads the unread counts and previews the
+  // s04 badges draw from (`useMarkChannelRead`).
   //
   // This is a **focus** effect, not a mount effect, and it stamps on the way out
   // as well as the way in. Both halves are load-bearing:

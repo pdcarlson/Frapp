@@ -2,6 +2,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  CHANNEL_LATEST_MESSAGES_KEY,
+  CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   useChannelUnreadCounts,
   useMarkChannelRead,
   markChannelReadMutationKey,
@@ -109,7 +112,7 @@ describe("useMarkChannelRead", () => {
     queryClient = createTestQueryClient();
   });
 
-  it("posts to the channel's read endpoint and invalidates only the unread counts and previews", async () => {
+  it("posts to the channel's read endpoint and re-reads the summaries and channel metadata, not the per-message reads", async () => {
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -118,11 +121,13 @@ describe("useMarkChannelRead", () => {
     const mockClient = { POST: mockPost };
     // Everything that lives under the `["channels"]` prefix on an open chat.
     const keys = {
-      unread: ["channels", "unread"],
-      latest: ["channels", "latest"],
-      list: ["channels"],
+      unread: CHANNEL_UNREAD_COUNTS_KEY,
+      latest: CHANNEL_LATEST_MESSAGES_KEY,
+      list: CHANNEL_LIST_KEY,
       categories: ["channels", "categories"],
       detail: ["channels", "chan-1"],
+      otherDetail: ["channels", "chan-2"],
+      pins: ["channels", "chan-1", "pins"],
       avatars: ["channels", "chan-1", "avatars", "x"],
       attachments: ["channels", "chan-1", "messages", "m-1", "attachments"],
     } as const;
@@ -139,9 +144,11 @@ describe("useMarkChannelRead", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/channels/{id}/read", {
       params: { path: { id: "chan-1" } },
     });
-    // The keys come from the hooks' own exported constants, so they cannot
-    // drift from the queries they name. The rest of the prefix stays fresh:
-    // refetching it on every open was part of the open burst (#4709).
+    // The summaries and the channel metadata are re-read: opening a channel
+    // is when the rail catches up with other members' channel changes. The
+    // per-message reads under the prefix are not: refetching them on every
+    // open (a signed URL re-minted per attachment) was part of the open
+    // burst (#4709).
     const invalidated = Object.fromEntries(
       Object.entries(keys).map(([name, key]) => [
         name,
@@ -151,16 +158,22 @@ describe("useMarkChannelRead", () => {
     expect(invalidated).toEqual({
       unread: true,
       latest: true,
-      list: false,
-      categories: false,
-      detail: false,
+      list: true,
+      categories: true,
+      detail: true,
+      otherDetail: false,
+      pins: false,
       avatars: false,
       attachments: false,
     });
   });
 
   it("surfaces an error without invalidating anything", async () => {
-    const body = { statusCode: 403, error: "Forbidden", message: "Not a member" };
+    const body = {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Not a member",
+    };
     const mockPost = vi.fn().mockResolvedValue({
       data: undefined,
       error: body,
@@ -183,7 +196,9 @@ describe("useMarkChannelRead", () => {
 
   it("clears the channel's cached chat notifications and refetches the inbox only when it showed one (#3788)", async () => {
     // Seeded entries no component observes need a gc window to survive.
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -191,7 +206,11 @@ describe("useMarkChannelRead", () => {
     });
     const listKey = ["notifications", "chapter-1", undefined];
     queryClient.setQueryData(listKey, [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "chan-1" } },
+      },
     ]);
     // Shares the `notifications` prefix, but a read can't change it.
     const prefsKey = ["notifications", "preferences", "chapter-1"];
@@ -221,9 +240,9 @@ describe("useMarkChannelRead", () => {
         exact: true,
       }),
     );
-    // Nothing left to clear: the unread counts and previews only, no list
-    // refetch.
-    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    // Nothing left to clear: the read's own five keys (summaries, list,
+    // categories, detail), no notification-list refetch.
+    expect(invalidateSpy).toHaveBeenCalledTimes(5);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
   });
 
@@ -273,7 +292,10 @@ describe("useSetChannelDisplayLock (#3787)", () => {
     const queryClient = createTestQueryClient();
     const mockPut = vi
       .fn()
-      .mockResolvedValue({ data: { id: "c-1", display_locked: true }, error: null });
+      .mockResolvedValue({
+        data: { id: "c-1", display_locked: true },
+        error: null,
+      });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useSetChannelDisplayLock(), {
       wrapper: createWrapper(queryClient, { PUT: mockPut }),
@@ -294,12 +316,16 @@ describe("canSetChannelDisplayLock (#3787)", () => {
 
   it("lets the creator and a channels:manage holder set it", () => {
     expect(canSetChannelDisplayLock(channel, "u-creator", [])).toBe(true);
-    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(true);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(
+      true,
+    );
     expect(canSetChannelDisplayLock(channel, "u-x", ["*"])).toBe(true);
   });
 
   it("refuses anyone else, a channel with no creator, and every DM", () => {
-    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(false);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(
+      false,
+    );
     expect(
       canSetChannelDisplayLock({ type: "PUBLIC", created_by: null }, null, []),
     ).toBe(false);
@@ -359,13 +385,19 @@ describe("useLeaveChannel", () => {
   });
 
   it("refetches the inbox when it shows an unread chat row for the hidden DM (#3788)", async () => {
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: { success: true }, error: null });
     const listKey = ["notifications", "chapter-1", undefined];
     const rows = [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "dm-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "dm-1" } },
+      },
     ];
     queryClient.setQueryData(listKey, rows);
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -381,7 +413,9 @@ describe("useLeaveChannel", () => {
 
   it("surfaces an error without invalidating anything", async () => {
     const mockError = new Error("leave failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -558,17 +592,15 @@ describe("channelSetFingerprint", () => {
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
       channelSetFingerprint([
         { id: "a", name: "general" },
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
+      channelSetFingerprint([{ id: "a", name: "announcements" }]),
+    );
   });
 
   it("changes with every field the server default reads (#2771)", () => {
@@ -677,7 +709,7 @@ describe("useChannelNotificationPreferences", () => {
       { channel_id: "chan-1", level: "mentions" },
     ]);
 
-    // Mark-read invalidates `["channels"]`. Same ids and names → same
+    // Mark-read re-reads the channel list. Same ids and names → same
     // fingerprint → the prefs query must not fire again.
     channels = [{ id: "chan-1", name: "general" }];
     await queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -754,9 +786,7 @@ describe("useSetChannelNotificationLevel", () => {
 
   it("invalidates the preferences query on error so the control does not keep a level the server never stored", async () => {
     const mockError = new Error("preference write failed");
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: mockError });
+    const mockPut = vi.fn().mockResolvedValue({ data: null, error: mockError });
     const mockClient = { PUT: mockPut };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -784,7 +814,9 @@ describe("useUploadSignedUrl", () => {
     // A legacy .doc usually arrives with `type: ""`. The chat bucket's MIME
     // allowlist rejects an empty Content-Type, so the resolved type the
     // composer requested the URL with is the one that must go on the PUT.
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response);
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200 }) as Response,
+    );
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["bytes"], "minutes.doc", { type: "" });
 

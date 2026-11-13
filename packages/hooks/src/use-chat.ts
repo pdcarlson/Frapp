@@ -14,6 +14,7 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
@@ -94,9 +95,10 @@ export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
  * has no row. Draw the line with `channelPreviewLine` in
  * `@repo/chat-core/channel-preview`.
  *
- * Under the `["channels"]` prefix and on the unread counts' 15s staleness, so
- * a preview refreshes whenever its row's badge does: the same invalidations
- * (opening a channel marks it read) and the same refetch on focus.
+ * On the unread counts' 15s staleness and refreshed with them by
+ * {@link invalidateChannelSummaries}, so a preview refreshes whenever its
+ * row's badge does: the same invalidations (opening a channel marks it read)
+ * and the same refetch on focus.
  */
 export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -112,6 +114,23 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
     },
     staleTime: 15_000,
     enabled: enabled && scope === "chapter",
+  });
+}
+
+/**
+ * Re-read the per-channel summaries every unread badge and preview draws
+ * from: the unread counts and the latest-message previews, by exact key. One
+ * helper so a badge and its preview can't be refreshed on different paths
+ * (`useChannelLatestMessages` promises they move together).
+ */
+export function invalidateChannelSummaries(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    exact: true,
+  });
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    exact: true,
   });
 }
 
@@ -155,10 +174,10 @@ export function usePinnedMessages(channelId: string) {
  *
  * Keyed under `["members", chapterId, …]`, not `["channels", …]`, on purpose.
  * Every member and role mutation invalidates the members prefix (a role grant
- * changes who reads a ROLE_GATED channel), while the channels prefix is
- * invalidated by every read receipt, so under it this chapter-wide read would
- * refetch twice on each channel switch. A channel edit names it explicitly
- * (`useUpdateChannel`).
+ * changes who reads a ROLE_GATED channel), while a read receipt re-reads
+ * several `["channels", …]` keys, and the whole prefix until #4709, so under
+ * it this chapter-wide read would have refetched twice on each channel
+ * switch. A channel edit names it explicitly (`useUpdateChannel`).
  */
 export function useChannelMembers(
   channelId: string | null | undefined,
@@ -300,11 +319,13 @@ export function useChannelNotificationPreferences() {
 
   return useQuery({
     // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
-    // invalidates that whole prefix, and TanStack Query matches prefixes
-    // non-exactly, so nesting made this endpoint refetch on every channel open
-    // AND close — two extra round trips per channel switch, each one re-running
-    // the accessible-channel predicate server-side. Mute state does not change
-    // when a read receipt is written, so it should not be invalidated by one.
+    // invalidated that whole prefix until #4709, and TanStack Query matches
+    // prefixes non-exactly, so nesting made this endpoint refetch on every
+    // channel open AND close — two extra round trips per channel switch, each
+    // one re-running the accessible-channel predicate server-side. Mute state
+    // does not change when a read receipt is written, so it should not be
+    // invalidated by one. The channel-list refetch a read still causes is what
+    // re-reads it when the channel set changes (the fingerprint above).
     queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET(
@@ -734,22 +755,26 @@ export function useMarkChannelRead() {
       return result.data;
     },
     onSuccess: (_data, id) => {
-      // A read moves the caller's read cursor and nothing else, so only the
-      // unread counts change. The latest-message previews ride along because
-      // they promise to refresh whenever a row's badge does (see
-      // `useChannelLatestMessages`). Exact keys, not the `["channels"]`
-      // prefix: that prefix also holds the channel list, its categories, each
-      // channel's detail, the imported-author avatars and every mounted
-      // attachment read, and refetching those on every open (signed URLs
-      // re-minted per attachment) was part of the open burst in #4709.
-      void queryClient.invalidateQueries({
-        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-        exact: true,
-      });
-      void queryClient.invalidateQueries({
-        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-        exact: true,
-      });
+      // The read moves the badges and previews. Opening a channel is also
+      // the routine moment the rail catches up with channels other members
+      // created, renamed or locked, so the list, its categories and the
+      // opened channel's detail are re-read too: nothing pushes channel
+      // metadata, and the list's refetch is what moves the notification
+      // preferences' fingerprint (`spec/behavior/notifications.md`).
+      //
+      // Exact keys, not the `["channels"]` prefix (#4709): the prefix also
+      // holds every mounted attachment read, the imported-author avatars, the
+      // pins and the per-channel member lists, which a read doesn't change,
+      // and refetching those on every open (a signed URL re-minted per
+      // attachment) was part of the open burst.
+      invalidateChannelSummaries(queryClient);
+      for (const queryKey of [
+        CHANNEL_LIST_KEY,
+        CATEGORY_LIST_KEY,
+        ["channels", id],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey, exact: true });
+      }
       // The read also cleared this channel's chat notifications on the server
       // (#3788). Mirror that in the inbox's cache, and refetch it only when it
       // was showing one, so a busy channel's reads don't each cost a list GET.
