@@ -1,6 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
@@ -38,7 +38,11 @@ import {
 } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { Segmented } from "@/components/segmented";
-import { useCanCreateEvents } from "@/components/events/new-event-sheet";
+import {
+  NewEventSheet,
+  useCanCreateEvents,
+} from "@/components/events/new-event-sheet";
+import { emptyEventDraft, type NewEventDraft } from "@/lib/events/create-event";
 import {
   createEventRowStyles,
   EventRowCard,
@@ -60,8 +64,10 @@ import {
 } from "@/lib/events/select";
 import {
   setCalendarLayersRaw,
+  setCalendarRange,
   setEventsView,
   useCalendarLayersRaw,
+  useCalendarRange,
   useEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
@@ -82,7 +88,9 @@ import { useFrappTheme } from "@/lib/theme";
  * selected day's events under it (`components/events/events-calendar.tsx`).
  *
  * The List | Calendar switch opens on whichever the member used last on this
- * phone (`lib/events/events-view.ts`; per device, #3823).
+ * phone (`lib/events/events-view.ts`; per device, #3823), and so does the
+ * Calendar's Month | 3 days | Day (#4818). In 3 days and Day, a member who
+ * can create events taps an hour to open New event starting then.
  *
  * A member who can create events (`events:create`, every member by default
  * since #3709) adds one from the tab
@@ -109,12 +117,24 @@ export default function EventsScreen() {
   const eventsQuery = useEvents();
   const canCreateEvents = useCanCreateEvents();
   const view = useEventsView();
+  const calendarRange = useCalendarRange();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   // Subscribe (#3322): the sheet asks for the member's calendar link only
   // while it is up.
   const subscribeSheet = useRef<BottomSheetModal>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
+  // An hour pressed in the 3 days or Day grid (#4818): New event, filled in
+  // to start then. One sheet per press (`key`), since a template seeds the
+  // draft once.
+  const createSheet = useRef<BottomSheetModal>(null);
+  const [createAt, setCreateAt] = useState<{
+    key: number;
+    template: NewEventDraft;
+  } | null>(null);
+  useEffect(() => {
+    if (createAt) createSheet.current?.present();
+  }, [createAt]);
 
   // One `now` per render so every row agrees on what "today" and "open" mean,
   // and it ticks so a check-in window opens and closes on a tab that never
@@ -344,6 +364,23 @@ export default function EventsScreen() {
             setPickedMonth(startOfMonth(day));
           }}
           onOpen={openEvent}
+          range={calendarRange}
+          onRangeChange={setCalendarRange}
+          canCreate={canCreateEvents}
+          onCreateAt={(day, hour) =>
+            setCreateAt((previous) => ({
+              key: (previous?.key ?? 0) + 1,
+              template: {
+                ...emptyEventDraft(),
+                start: new Date(
+                  day.getFullYear(),
+                  day.getMonth(),
+                  day.getDate(),
+                  hour,
+                ),
+              },
+            }))
+          }
           // With nothing scheduled, Calendar says what the List says (by the
           // List's own test), and points a creator at the +.
           emptyNote={
@@ -392,6 +429,19 @@ export default function EventsScreen() {
         open={subscribeOpen}
         onDismiss={() => setSubscribeOpen(false)}
       />
+      {createAt ? (
+        <NewEventSheet
+          key={createAt.key}
+          ref={createSheet}
+          now={now}
+          template={createAt.template}
+          // The block landing in the grid where the hour was pressed is
+          // the visible confirmation; a screen reader hears it said.
+          onCreated={() =>
+            AccessibilityInfo.announceForAccessibility("Event added.")
+          }
+        />
+      ) : null}
     </ScreenShell>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
@@ -179,6 +179,53 @@ export function CalendarTaskRow({
 }
 
 /**
+ * A task in the 3 days or Day view's All day strip (#4818), where a column
+ * is too narrow for a row: its mark and title. The member's own opens on
+ * Tasks; one they assigned is read out with where it stands, and its
+ * assignees are a tap away on Month's day list.
+ */
+export function CalendarTaskChip({
+  item,
+  onOpenTask,
+}: {
+  item: CalendarTask;
+  onOpenTask: (taskId: string) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const done = item.state === "waiting" || item.state === "confirmed";
+  return (
+    <Pressable
+      accessibilityRole={item.kind === "mine" ? "button" : "text"}
+      accessibilityLabel={calendarTaskAccessibleLabel(item)}
+      accessibilityHint={
+        item.kind === "mine" ? "Opens it on Tasks." : undefined
+      }
+      disabled={item.kind !== "mine"}
+      onPress={() => {
+        if (item.kind === "mine") onOpenTask(item.taskId);
+      }}
+      style={({ pressed }) => [
+        styles.chip,
+        pressed ? { backgroundColor: tokens.color.surface.card } : null,
+      ]}
+    >
+      <TaskMark state={item.state} size={12} />
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.chipTitle,
+          done ? styles.doneTitle : null,
+          item.state === "confirmed" ? styles.struck : null,
+        ]}
+      >
+        {item.title}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
  * What the calendar shows, as chips that double as its key: each carries
  * the mark its kind is drawn with. Only kinds the member has are offered.
  */
@@ -248,6 +295,20 @@ function createStyles(tokens: SignetTokens) {
     assigneeStatus: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 4,
+      paddingVertical: 3,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tokens.color.surface.surface1,
+    },
+    chipTitle: {
+      flex: 1,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
     },
     chips: {
       flexDirection: "row",
