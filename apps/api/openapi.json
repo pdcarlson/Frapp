@@ -23233,7 +23233,7 @@
           },
           "storage_path": {
             "type": "string",
-            "description": "Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done)."
+            "description": "Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done)."
           }
         },
         "required": [

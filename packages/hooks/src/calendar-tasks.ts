@@ -5,6 +5,7 @@ import { taskNeedsSignOff } from "@repo/validation";
 import {
   TASK_CONFIRMED_LABEL,
   TASK_DONE_LABEL,
+  TASK_NEEDS_CHANGES_LABEL,
   TASK_STATUS_LABELS,
 } from "./task-card";
 import { useTasks } from "./use-tasks";
@@ -147,7 +148,14 @@ function calendarTaskState(row: Record<string, unknown>): {
     return { state: "overdue", label: TASK_STATUS_LABELS.OVERDUE };
   }
   if (status === "TODO" || status === "IN_PROGRESS") {
-    return { state: "open", label: TASK_STATUS_LABELS[status] };
+    // A sent-back task reads Needs changes here too (#4635).
+    return {
+      state: "open",
+      label:
+        status === "IN_PROGRESS" && str(row, "sent_back_at") !== null
+          ? TASK_NEEDS_CHANGES_LABEL
+          : TASK_STATUS_LABELS[status],
+    };
   }
   return null;
 }

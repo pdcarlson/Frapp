@@ -1,5 +1,5 @@
 -- Task proof kinds and several photos (#4635). spec/behavior/tasks.md § Photos
--- and § Proof.
+-- and § Admin Confirmation.
 --
 -- 1. `proof_kind` (none | photo | link) replaces #4565's `photo_required`
 --    boolean: an officer sets what proof Mark done needs.

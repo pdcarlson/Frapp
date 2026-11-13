@@ -7220,7 +7220,7 @@ export interface components {
         TaskPhotoUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
             upload_url: string;
-            /** @description Storage path to send as `reference_photo_path` (create, edit) or `proof_photo_path` (Mark done). */
+            /** @description Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done). */
             storage_path: string;
         };
         TaskPhotoUrlResponseDto: {

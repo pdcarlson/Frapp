@@ -65,12 +65,39 @@ export function taskNeedsSignOff(task: {
 }
 
 /**
+ * Whether a completion was signed off as it was marked done because it needed
+ * no sign-off (#4635), rather than confirmed by an officer: the automatic
+ * sign-off stamps `confirmed_at` with the completion's own `completed_at`.
+ * Nothing was paid on it, so it can still be taken back or sent back; an
+ * officer's confirmation (which always comes later) can't.
+ */
+export function taskSignedOffAutomatically(task: {
+  points_awarded?: boolean | null;
+  completed_at?: string | null;
+  confirmed_at?: string | null;
+  point_reward?: number | null;
+  proof_kind?: TaskProofKind | string | null;
+}): boolean {
+  return (
+    task.points_awarded === true &&
+    !!task.completed_at &&
+    !!task.confirmed_at &&
+    Date.parse(task.confirmed_at) === Date.parse(task.completed_at) &&
+    !taskNeedsSignOff(task)
+  );
+}
+
+/**
  * A proof link as Frapp keeps it: trimmed, http or https only, or `null`
  * when it isn't one. Never fetched; shown as its domain.
  */
 export function normalizeProofLink(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > TASK_PROOF_LINK_MAX) return null;
+  // The scheme and its slashes as typed: `new URL` also takes
+  // `https:example.com` and `http:/x`, which the database's
+  // `^https?://` check refuses.
+  if (!/^https?:\/\//i.test(trimmed)) return null;
   let url: URL;
   try {
     url = new URL(trimmed);

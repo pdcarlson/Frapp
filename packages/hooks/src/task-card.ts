@@ -2,6 +2,7 @@ import { formatDueLabel, formatDueOn, isDueOverdue } from "@repo/formatting";
 import {
   STATUS_LABELS,
   taskNeedsSignOff,
+  taskSignedOffAutomatically,
   type TaskProofKind,
 } from "@repo/validation";
 import type { TaskStatus, TaskSubtask } from "./use-tasks";
@@ -117,16 +118,16 @@ export function canReopenOwnTask(input: {
   pointsAwarded: boolean;
   isAssignee: boolean;
   /**
-   * `false` for a task that needed no sign-off (#4635): it was confirmed as
-   * it was marked done with nothing paid, so it can still be taken back.
-   * Omitted reads as needing one.
+   * `true` for a task signed off as it was marked done because it needed no
+   * sign-off (#4635, `taskSignedOffAutomatically`): nothing was paid, so it
+   * can still be taken back. An officer's confirmation can't be.
    */
-  needsSignOff?: boolean;
+  signedOffAutomatically?: boolean;
 }): boolean {
   return (
     input.isAssignee &&
     input.stored === "COMPLETED" &&
-    (!input.pointsAwarded || input.needsSignOff === false)
+    (!input.pointsAwarded || input.signedOffAutomatically === true)
   );
 }
 
@@ -166,6 +167,9 @@ export interface LiveTask {
   sent_back_reason: string | null;
   /** The assignee's reply sent with Mark done. */
   completion_note: string | null;
+  /** When it was marked done and confirmed: equal for an automatic sign-off. */
+  completed_at: string | null;
+  confirmed_at: string | null;
   /**
    * Task photos (#4635): reference photos, then proof photos, each in
    * order. Read each through `useTaskPhotoUrl`.
@@ -264,6 +268,8 @@ export function readLiveTask(data: unknown): LiveTask | null {
     sent_back_at: nonEmptyString(r.sent_back_at),
     sent_back_reason: nonEmptyString(r.sent_back_reason),
     completion_note: nonEmptyString(r.completion_note),
+    completed_at: nonEmptyString(r.completed_at),
+    confirmed_at: nonEmptyString(r.confirmed_at),
     photos: readLiveTaskPhotos(r.photos),
   };
 }
@@ -366,8 +372,10 @@ export function taskCardControls(input: {
   if (isAssignee && stored === "TODO") return ["start"];
   if (isAssignee && stored === "IN_PROGRESS") return ["complete"];
   if (stored !== "COMPLETED" || !canManage) return [];
+  if (live.points_awarded) {
+    return taskSignedOffAutomatically(live) ? ["reject"] : ["confirmed"];
+  }
   if (!taskNeedsSignOff(live)) return ["reject"];
-  if (live.points_awarded) return ["confirmed"];
   return isAssignee ? ["reject"] : ["confirm", "reject"];
 }
 
@@ -411,8 +419,11 @@ export interface EditableCardTask {
   status: TaskStatus;
   stored_status: TaskStatus | undefined;
   subtasks: TaskSubtask[];
-  /** Its reference photos, in order (#4635). */
-  reference_photos: LiveTaskPhoto[];
+  /**
+   * Its photos (#4635), reference then proof: the edit form keeps the
+   * reference ones, the way the board's task row carries them.
+   */
+  photos: LiveTaskPhoto[];
   proof_kind: TaskProofKind;
 }
 
@@ -444,7 +455,7 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     status: live.status,
     stored_status: live.stored_status,
     subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
-    reference_photos: live.photos.filter((photo) => photo.kind === "reference"),
+    photos: live.photos,
     proof_kind: live.proof_kind,
   };
 }

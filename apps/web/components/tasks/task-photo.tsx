@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Camera,
-  ChevronLeft,
-  ChevronRight,
   ImagePlus,
   Link2,
   Loader2,
@@ -46,6 +44,7 @@ import { SegmentedChoice } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/shared/short-form";
+import { MediaViewer } from "@/components/shared/media-viewer";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
@@ -143,9 +142,10 @@ function StoredPhoto({
 }
 
 /**
- * A full-size viewer over a set of photos: arrows, the arrow keys and a swipe
- * move between them, the way Google Photos and an Asana attachment preview
- * page through a set.
+ * A full-size viewer over a set of a task's photos, in the shared
+ * `MediaViewer` chat images and documents open in: the arrows and the arrow
+ * keys page through the set, the way Google Photos and an Asana attachment
+ * preview do.
  */
 export function TaskPhotoViewer({
   taskId,
@@ -162,78 +162,33 @@ export function TaskPhotoViewer({
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }) {
-  const swipeFrom = useRef<number | null>(null);
   const open = index !== null && photos.length > 0;
   const at = Math.min(index ?? 0, Math.max(photos.length - 1, 0));
-  const step = (by: number) =>
-    onIndexChange((at + by + photos.length) % photos.length);
   const photo = photos[at];
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? null : onClose())}>
-      <DialogContent
-        className="sm:max-w-3xl"
-        onKeyDown={(event) => {
-          if (photos.length < 2) return;
-          if (event.key === "ArrowRight") step(1);
-          if (event.key === "ArrowLeft") step(-1);
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-          <DialogDescription>
-            {photos.length > 1
-              ? `Photo ${at + 1} of ${photos.length}`
-              : "One photo"}
-          </DialogDescription>
-        </DialogHeader>
-        {photo ? (
-          <div
-            className="relative flex items-center justify-center"
-            onPointerDown={(event) => {
-              swipeFrom.current = event.clientX;
-            }}
-            onPointerUp={(event) => {
-              const from = swipeFrom.current;
-              swipeFrom.current = null;
-              if (from === null || photos.length < 2) return;
-              const moved = event.clientX - from;
-              if (Math.abs(moved) > 40) step(moved < 0 ? 1 : -1);
-            }}
-          >
-            <StoredPhoto
-              key={photo.id}
-              taskId={taskId}
-              photoId={photo.id}
-              className="max-h-[70vh] w-full touch-pan-y select-none rounded-[10px] object-contain"
-            />
-            {photos.length > 1 ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="absolute left-2 w-9 px-0"
-                  aria-label="Previous photo"
-                  onClick={() => step(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="absolute right-2 w-9 px-0"
-                  aria-label="Next photo"
-                  onClick={() => step(1)}
-                >
-                  <ChevronRight className="h-4 w-4" aria-hidden />
-                </Button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <MediaViewer
+      open={open}
+      onClose={onClose}
+      label={label}
+      description={photos.length > 1 ? "" : `${label}, one photo.`}
+      step={{
+        index: at,
+        total: photos.length,
+        noun: "photo",
+        // Stepping wraps, as chat's image viewer does.
+        onStep: (delta) =>
+          onIndexChange((at + delta + photos.length) % photos.length),
+      }}
+    >
+      {photo ? (
+        <StoredPhoto
+          key={photo.id}
+          taskId={taskId}
+          photoId={photo.id}
+          className="max-h-full max-w-full object-contain"
+        />
+      ) : null}
+    </MediaViewer>
   );
 }
 
@@ -369,8 +324,16 @@ export function TaskProof({
 
 /** A local preview of a picked file, revoked when it goes. */
 function PickedPhoto({ file, className }: { file: File; className?: string }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Made and revoked in one effect, so a remount (StrictMode runs effects
+  // twice) never keeps a URL its own cleanup revoked.
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the URL is an external resource made here
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+  if (!url) return <span className={cn("block bg-muted/40", className)} aria-hidden />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" className={className} />;
 }
@@ -605,7 +568,11 @@ export function MarkDoneControl({
   sentBack: boolean;
   label: string;
   controlProps: { disabled?: boolean } & Record<string, unknown>;
-  onComplete: (proof: CompletionProof) => void | Promise<void>;
+  /**
+   * Marks it done. Resolves `false` (or rejects) when the write was refused,
+   * so the sheet stays open with what the member entered.
+   */
+  onComplete: (proof: CompletionProof) => Promise<boolean | void>;
   onUploadError: (message: string) => void;
   size?: "toolbar" | "sm";
 }) {
@@ -621,7 +588,7 @@ export function MarkDoneControl({
         className="gap-1.5"
         {...controlProps}
         disabled={disabled}
-        onClick={() => (asks ? setOpen(true) : void onComplete({}))}
+        onClick={() => (asks ? setOpen(true) : void onComplete({}).catch(() => {}))}
       >
         {kind === "photo" ? (
           <Camera className="h-4 w-4" aria-hidden="true" />
@@ -681,7 +648,7 @@ function MarkDoneDialog({
   task: MarkDoneTask;
   sentBack: boolean;
   onClose: () => void;
-  onComplete: (proof: CompletionProof) => void | Promise<void>;
+  onComplete: (proof: CompletionProof) => Promise<boolean | void>;
   onUploadError: (message: string) => void;
 }) {
   const upload = useUploadTaskPhotos();
@@ -715,15 +682,23 @@ function MarkDoneDialog({
     setProblem(null);
     setBusy(true);
     try {
-      const paths = files.length > 0 ? await upload(files) : [];
-      await onComplete({
+      let paths: string[] = [];
+      try {
+        paths = files.length > 0 ? await upload(files) : [];
+      } catch (error) {
+        onUploadError(uploadFailureMessage(error));
+        return;
+      }
+      const done = await onComplete({
         ...(paths.length > 0 ? { proof_photo_paths: paths } : {}),
         ...(proofLink ? { proof_link: proofLink } : {}),
         ...(reply ? { completion_note: reply } : {}),
       });
-      onClose();
-    } catch (error) {
-      onUploadError(uploadFailureMessage(error));
+      // A refused write keeps the sheet open on what the member entered;
+      // the caller already said why.
+      if (done !== false) onClose();
+    } catch {
+      // The caller reported it; keep what was entered.
     } finally {
       setBusy(false);
     }

@@ -338,13 +338,21 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               sentBack={!!live && isSentBack(live)}
               controlProps={gate.controlProps(actionsDisabled)}
               onComplete={(proof) =>
-                updateStatus.mutate(
-                  {
+                updateStatus
+                  .mutateAsync({
                     id: payload.task_id,
                     body: { status: "COMPLETED", ...proof },
-                  },
-                  onFailure("Couldn't complete task", "Try again in a moment."),
-                )
+                  })
+                  .then(
+                    () => true,
+                    (error: unknown) => {
+                      onFailure(
+                        "Couldn't complete task",
+                        "Try again in a moment.",
+                      ).onError(error);
+                      return false;
+                    },
+                  )
               }
               onUploadError={(message) =>
                 toast({

@@ -298,6 +298,96 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     );
   });
 
+  describe('updateIfMatches (#4635)', () => {
+    beforeEach(() => {
+      harness = createTenantHarness({
+        tables: {
+          tasks: seed().tasks.map((row) => ({
+            ...row,
+            status: 'IN_PROGRESS',
+            point_reward: null,
+            proof_kind: 'link',
+          })),
+        },
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+    });
+
+    it('writes only while every matched value holds: eq for a value, is null for null', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.updateIfMatches(
+          TASK_B,
+          CHAPTER_B,
+          {
+            status: TaskStatus.IN_PROGRESS,
+            point_reward: null,
+            proof_kind: 'link',
+          },
+          { status: TaskStatus.COMPLETED },
+        ),
+      );
+
+      expect(updated).toMatchObject({ id: TASK_B, status: 'COMPLETED' });
+      const write = harness.ops.at(-1)!;
+      expect(write.filters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ op: 'eq', column: 'id', value: TASK_B }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'chapter_id',
+            value: CHAPTER_B,
+          }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'status',
+            value: 'IN_PROGRESS',
+          }),
+          expect.objectContaining({
+            op: 'is',
+            column: 'point_reward',
+            value: null,
+          }),
+          expect.objectContaining({
+            op: 'eq',
+            column: 'proof_kind',
+            value: 'link',
+          }),
+        ]),
+      );
+      expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+
+    it('returns null and writes nothing when a matched value changed first', async () => {
+      await expect(
+        repo.updateIfMatches(
+          TASK_B,
+          CHAPTER_B,
+          { status: TaskStatus.IN_PROGRESS, point_reward: 5 },
+          { status: TaskStatus.COMPLETED },
+        ),
+      ).resolves.toBeNull();
+      expect(harness.rows('tasks').find((r) => r.id === TASK_B)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+
+    it('returns null for an id in another chapter', async () => {
+      await expect(
+        repo.updateIfMatches(
+          TASK_A,
+          CHAPTER_B,
+          { status: TaskStatus.IN_PROGRESS },
+          { status: TaskStatus.COMPLETED },
+        ),
+      ).resolves.toBeNull();
+      expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
+        'IN_PROGRESS',
+      );
+    });
+  });
+
   it('confirmCompletionAtomic passes the chapter to the RPC', async () => {
     harness = createTenantHarness({
       tables: seed(),
