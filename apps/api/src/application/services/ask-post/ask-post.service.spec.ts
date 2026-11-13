@@ -460,6 +460,28 @@ describe('AskPostService', () => {
       ]);
     });
 
+    it('who is asking is what the roster shows of them: open to whoever may open the roster', async () => {
+      const asker: Given = {
+        title: 'Who is asking',
+        text: 'Sam Abernathy. Roles: Member.',
+        ref: { type: 'tool', name: 'asker', reach: 'chapter' },
+        label: 'Your name and roles',
+      };
+      const open = build();
+      await expect(
+        open.post(receipt({ given: [asker, bylaws] }), { confirm: false }),
+      ).resolves.toEqual({ posted: false, restricted: [] });
+      const closed = build({ readers: [reader(ASKER), reader('user-b', [])] });
+      const { restricted } = await closed.post(
+        receipt({ given: [asker, bylaws] }),
+        { confirm: false },
+      );
+      expect(restricted.map(({ key }) => key)).toEqual([
+        'tool:asker',
+        `document:${DOC}`,
+      ]);
+    });
+
     it('a source with no rule here is never called open', async () => {
       const { post } = build();
       const { restricted } = await post(
