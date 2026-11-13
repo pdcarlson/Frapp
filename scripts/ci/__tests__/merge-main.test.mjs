@@ -359,6 +359,7 @@ test("a branch stacked on a squash-merged PR merges against its own copy of that
   const { seed, work } = setup(t);
   const notes = stackOnSquashedPr(seed, work);
 
+  const tip = git(work, "rev-parse", "HEAD");
   const { outcome, output } = run(work);
 
   assert.equal(outcome, "merged", output);
@@ -368,7 +369,67 @@ test("a branch stacked on a squash-merged PR merges against its own copy of that
   assert.equal(git(work, "replace", "-l"), "");
   assert.equal(git(work, "for-each-ref", "refs/merge-main/"), "");
   const parents = git(work, "rev-list", "--parents", "-n", "1", "HEAD").split(" ").slice(1);
-  assert.deepEqual(parents, [git(work, "rev-parse", "HEAD^1"), git(work, "rev-parse", "origin/main")]);
+  assert.deepEqual(parents, [tip, git(work, "rev-parse", "origin/main")]);
+});
+
+test("a branch whose tip is the squashed PR's head gets a merge commit, not a fast-forward", (t) => {
+  const { seed, work } = setup(t);
+  const notes = stackOnSquashedPr(seed, work);
+  git(work, "checkout", "-q", "-B", "feature", "part2");
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "merged", output);
+  assert.equal(git(work, "replace", "-l"), "");
+  // Under the grafts this would fast-forward to main and drop part2's commits
+  // from the branch, so the next push would be refused as non-fast-forward.
+  git(work, "merge-base", "--is-ancestor", git(work, "rev-parse", "part2"), "HEAD");
+  assert.equal(readFileSync(join(work, notes), "utf8"), "one\ntwo\nthree\nfour\nfive, from main\n");
+});
+
+test("a graft is dropped when the merge stops on another conflict", (t) => {
+  const { seed, work } = setup(t);
+  stackOnSquashedPr(seed, work);
+  write(work, "README.md", "one\nbranch\nthree\n");
+  commitAll(work, "branch edits README");
+  landOnMain(seed, (cwd) => write(cwd, "README.md", "one\nmain\nthree\n"), "Main edits README (#9)");
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "conflicts");
+  assert.match(output, /#7 is already in this branch/);
+  assert.deepEqual(git(work, "diff", "--name-only", "--diff-filter=U").split("\n"), ["README.md"]);
+  assert.equal(git(work, "replace", "-l"), "");
+  assert.equal(git(work, "for-each-ref", "refs/merge-main/"), "");
+});
+
+test("a graft an interrupted run left behind is removed; one made by hand stays", (t) => {
+  const { seed, work } = setup(t);
+  stackOnSquashedPr(seed, work);
+  git(work, "fetch", "-q", "origin");
+  const squash = git(work, "rev-parse", "origin/main^");
+  git(work, "replace", "--graft", squash, `${squash}^`, "part2");
+  git(work, "update-ref", `refs/merge-main/graft/${squash}`, squash);
+  // Someone's own replacement, of an object unrelated to the merge.
+  const blob = (text) =>
+    execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: work, input: text, encoding: "utf8" }).trim();
+  const mine = blob("mine\n");
+  git(work, "replace", mine, blob("replacement\n"));
+
+  const { outcome, output } = run(work);
+
+  assert.equal(outcome, "merged", output);
+  assert.equal(git(work, "replace", "-l"), mine);
+});
+
+test("an unknown base is refused, not thrown", (t) => {
+  const { work } = setup(t);
+  write(work, "README.md", "one\nbranch\nthree\n");
+  commitAll(work, "branch");
+
+  const { outcome } = run(work, { base: "origin/mian" });
+
+  assert.equal(outcome, "refused");
 });
 
 test("without the PR's head on the remote, a stacked branch merges as plain git would", (t) => {

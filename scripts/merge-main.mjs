@@ -99,29 +99,38 @@ export function squashedPrNumber(subject) {
 /**
  * Grafts each squash commit on `base` whose PR the branch already holds onto
  * that PR's head, so the merge base sees the branch's copy of the work. Fetches
- * the heads from `refs/pull/<n>/head` in one call. Returns the grafted commits,
- * for `dropGrafts`; an empty list when there is nothing to graft or the fetch
- * fails (the merge then runs as plain `git merge` would).
+ * the heads from `refs/pull/<n>/head` in one call. Each graft is also recorded
+ * under `refs/merge-main/graft/`, so `dropGrafts` removes one an interrupted
+ * run left behind. Returns how many it made; none when there is nothing to
+ * graft or the fetch fails (the merge then runs as plain `git merge` would).
  */
 export function graftSquashedPrs(git, { remote, base, log }) {
-  const squashes = lines(git(["log", "--first-parent", "--format=%H %s", `HEAD..${base}`]).out)
+  const range = git(["log", "--first-parent", "--format=%H %s", `HEAD..${base}`], { allowFail: true });
+  if (!range.ok || !remote) return 0; // an unknown base: `git merge` refuses it next
+  const squashes = lines(range.out)
     .map((line) => ({ sha: line.slice(0, line.indexOf(" ")), pr: squashedPrNumber(line.slice(line.indexOf(" ") + 1)) }))
     .filter((c) => c.pr !== null);
-  if (squashes.length === 0 || !remote) return [];
-  const refspecs = squashes.map((c) => `+refs/pull/${c.pr}/head:refs/merge-main/pull/${c.pr}`);
-  const fetched = git(["fetch", "--quiet", "--no-tags", remote, ...refspecs], { allowFail: true });
+  if (squashes.length === 0) return 0;
+  const refspec = (pr) => `+refs/pull/${pr}/head:refs/merge-main/pull/${pr}`;
+  let fetched = git(["fetch", "--quiet", "--no-tags", remote, ...squashes.map((c) => refspec(c.pr))], {
+    allowFail: true,
+  });
   if (!fetched.ok) {
     // One missing ref fails the whole fetch (a subject's "(#n)" that names an
-    // issue, not the PR); fetch them one at a time and take what exists.
-    const any = refspecs
-      .map((spec) => git(["fetch", "--quiet", "--no-tags", remote, spec], { allowFail: true }).ok)
-      .some(Boolean);
-    if (!any) {
+    // issue, or a remote with no pull refs): list what exists, fetch only that.
+    const listed = git(["ls-remote", remote, "refs/pull/*/head"], { allowFail: true });
+    const exists = new Set(listed.ok ? lines(listed.out).map((l) => l.split(/\s+/)[1]) : []);
+    const present = squashes.filter((c) => exists.has(`refs/pull/${c.pr}/head`));
+    fetched =
+      present.length > 0
+        ? git(["fetch", "--quiet", "--no-tags", remote, ...present.map((c) => refspec(c.pr))], { allowFail: true })
+        : fetched;
+    if (!fetched.ok) {
       log(`Could not fetch the merged PRs' heads, so stacked work merges without grafts.\n${fetched.out}`);
-      return [];
+      return 0;
     }
   }
-  const grafted = [];
+  let count = 0;
   for (const { sha, pr } of squashes) {
     const head = git(["rev-parse", "-q", "--verify", `refs/merge-main/pull/${pr}^{commit}`], { allowFail: true });
     if (!head.ok) continue;
@@ -135,19 +144,28 @@ export function graftSquashedPrs(git, { remote, base, log }) {
     if (git(["merge-base", "--is-ancestor", sha, head.out], { allowFail: true }).ok) continue;
     const parents = git(["rev-list", "--parents", "-n", "1", sha]).out.split(" ").slice(1);
     if (parents.length !== 1) continue; // not a squash
+    // Fails, and is skipped, when someone already replaced this commit by hand.
     if (git(["replace", "--graft", sha, parents[0], head.out], { allowFail: true }).ok) {
-      grafted.push(sha);
+      git(["update-ref", `refs/merge-main/graft/${sha}`, sha]);
+      count += 1;
       log(`#${pr} is already in this branch from its own commits; merging against that copy of it.`);
     }
   }
-  return grafted;
+  return count;
 }
 
-/** Deletes the grafts and the fetched PR heads, so nothing outlives the merge call. */
-function dropGrafts(git, grafted) {
-  for (const sha of grafted) git(["replace", "-d", sha], { allowFail: true });
+/**
+ * Deletes the grafts this script made, including any an interrupted run left,
+ * and the fetched PR heads. A replace ref someone made by hand isn't recorded
+ * under `refs/merge-main/graft/`, so it stays.
+ */
+function dropGrafts(git) {
   const refs = lines(git(["for-each-ref", "--format=%(refname)", "refs/merge-main/"]).out);
-  for (const ref of refs) git(["update-ref", "-d", ref], { allowFail: true });
+  for (const ref of refs) {
+    const graft = /^refs\/merge-main\/graft\/([0-9a-f]+)$/.exec(ref);
+    if (graft) git(["replace", "-d", graft[1]], { allowFail: true });
+    git(["update-ref", "-d", ref], { allowFail: true });
+  }
 }
 
 function mergeInProgress(git) {
@@ -280,12 +298,17 @@ export function mergeMain({
     }
 
     const before = git(["rev-parse", "HEAD"]).out;
-    const grafted = graftSquashedPrs(git, { remote: rest.length > 0 ? remote : null, base, log });
     let merged;
     try {
-      merged = git(["merge", "--no-commit", "--no-edit", base], { allowFail: true });
+      dropGrafts(git); // any an interrupted run left
+      const grafted = graftSquashedPrs(git, { remote: rest.length > 0 ? remote : null, base, log });
+      // Under the grafts the branch can look like an ancestor of the base (its
+      // tip is the lower PR's head), and a fast-forward would drop its history
+      // for real: always make the merge commit then.
+      const noFf = grafted > 0 ? ["--no-ff"] : [];
+      merged = git(["merge", "--no-commit", "--no-edit", ...noFf, base], { allowFail: true });
     } finally {
-      dropGrafts(git, grafted);
+      dropGrafts(git);
     }
     const after = git(["rev-parse", "HEAD"]).out;
 
