@@ -95,7 +95,7 @@ const LEGACY_ACCESS_FIELDS_MESSAGE =
 // A DM or group DM belongs to its members (#3633), so `PATCH /v1/channels/:id`
 // refuses every field of one.
 const DIRECT_CHANNEL_SETTINGS_MESSAGE =
-  "A DM or group DM has no channel settings to change";
+  'A DM or group DM has no channel settings to change';
 
 export interface CreateChannelInput {
   chapter_id: string;
