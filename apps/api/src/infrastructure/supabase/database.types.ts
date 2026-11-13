@@ -1073,6 +1073,20 @@ export interface Database {
         Returns: ChatSidebarPreferences[];
       };
       /**
+       * `20261113184311` (#4830). Writes a member's `role_ids` only if the row
+       * still holds `p_expected` and every newly given id names a live role;
+       * returns the row, or none when it wrote nothing.
+       */
+      set_member_role_ids: {
+        Args: {
+          p_chapter_id: string;
+          p_member_id: string;
+          p_expected: string[];
+          p_role_ids: string[];
+        };
+        Returns: Member[];
+      };
+      /**
        * `20261112165020` (#714) — settles a hold with the call's real counts
        * and cost, or records a call made with no hold. Returns `settled`,
        * `inserted` or `missing`.

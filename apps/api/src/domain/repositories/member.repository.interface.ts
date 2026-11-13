@@ -33,6 +33,20 @@ export interface IMemberRepository {
   ): Promise<ChapterMemberIdentity[]>;
   create(data: Partial<Member>): Promise<Member>;
   update(id: string, data: Partial<Member>): Promise<Member>;
+  /**
+   * Write a member's `role_ids` through the `set_member_role_ids` RPC: only
+   * when the row still holds `expectedRoleIds` (the value the caller read) and
+   * every id it newly gives names a live role of the chapter, under the role
+   * locks `delete_role` takes (#4830). Resolves to the written row, or `null`
+   * when the row moved or a given role was deleted since the read, so the
+   * caller can answer 409.
+   */
+  setRoleIds(
+    chapterId: string,
+    memberId: string,
+    expectedRoleIds: string[],
+    roleIds: string[],
+  ): Promise<Member | null>;
   delete(id: string): Promise<void>;
   /**
    * Atomically move the President (wildcard) role from one member to another via

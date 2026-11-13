@@ -166,6 +166,22 @@ export class SupabaseMemberRepository implements IMemberRepository {
     return data;
   }
 
+  async setRoleIds(
+    chapterId: string,
+    memberId: string,
+    expectedRoleIds: string[],
+    roleIds: string[],
+  ): Promise<Member | null> {
+    const { data, error } = await this.supabase.rpc('set_member_role_ids', {
+      p_chapter_id: chapterId,
+      p_member_id: memberId,
+      p_expected: expectedRoleIds,
+      p_role_ids: roleIds,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data?.[0] ?? null;
+  }
+
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase.from('members').delete().eq('id', id);
     if (error) throw new SupabaseQueryError(error);
