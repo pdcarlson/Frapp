@@ -60,7 +60,8 @@ const NEWEST = RELEASE_NOTES[0]!;
 const OLDER = RELEASE_NOTES[1]!;
 // Each entry shows its date over it, and dates are unique. Titles are not:
 // every entry the fold starts is titled "New in this update" until someone
-// rewords it, so two of those in a row would look like the same entry.
+// rewords it, so two of those in a row would look like the same entry. The
+// title is still checked where it should show.
 const NEWEST_LABEL = formatReleaseNoteDate(NEWEST.date);
 const OLDER_LABEL = formatReleaseNoteDate(OLDER.date);
 const seen = () => window.localStorage.getItem(WHATS_NEW_SEEN_STORAGE_KEY);
@@ -113,6 +114,7 @@ describe("WhatsNewHost", () => {
     wait();
     const dialog = screen.getByRole("dialog", { name: "What's new" });
     expect(dialog).toHaveTextContent(NEWEST_LABEL);
+    expect(dialog).toHaveTextContent(NEWEST.title);
     expect(dialog).not.toHaveTextContent(OLDER_LABEL);
     expect(seen()).toBe(releaseNoteVersion(NEWEST));
     expect(unreadMark()).toHaveTextContent("read");
@@ -123,6 +125,7 @@ describe("WhatsNewHost", () => {
     wait();
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveTextContent(NEWEST_LABEL);
+    expect(dialog).toHaveTextContent(NEWEST.title);
     expect(dialog).not.toHaveTextContent(OLDER_LABEL);
   });
 
@@ -348,7 +351,9 @@ describe("WhatsNewHost", () => {
       data.account = { settled: true, seen: releaseNoteVersion(OLDER) };
       renderHost();
       wait();
-      expect(screen.getByRole("dialog")).toHaveTextContent(NEWEST_LABEL);
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveTextContent(NEWEST_LABEL);
+      expect(dialog).toHaveTextContent(NEWEST.title);
     });
 
     it("waits for the account, then goes by this browser's marker when it can't be read", () => {
@@ -366,7 +371,9 @@ describe("WhatsNewHost", () => {
         </>,
       );
       wait();
-      expect(screen.getByRole("dialog")).toHaveTextContent(NEWEST_LABEL);
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveTextContent(NEWEST_LABEL);
+      expect(dialog).toHaveTextContent(NEWEST.title);
     });
 
     it("keeps the no-show cases: a new account records without a mark", () => {
