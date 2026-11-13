@@ -49,8 +49,9 @@ export const metadata: Metadata = {
   // Hidden from search while Frapp is in testing (#4758): one switch,
   // `SEARCH_INDEXING_ENABLED` in @repo/validation/search-indexing.mjs, which also
   // sets an `X-Robots-Tag` header in next.config.js. robots.txt already turns
-  // crawlers away from everything but /.well-known/; this covers a page a
-  // crawler reaches anyway, such as sign-in or an invite link.
+  // compliant crawlers away from everything but /.well-known/, so this only
+  // reaches a crawler that ignores robots.txt, or one following a link to
+  // sign-in or an invite.
   robots: SEARCH_ROBOTS_METADATA,
 };
 
