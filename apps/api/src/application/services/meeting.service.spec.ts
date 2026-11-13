@@ -382,9 +382,23 @@ describe('MeetingService', () => {
       );
     });
 
-    it('needs events:create to make an event', async () => {
+    it('makes the quiet event for an officer who can start minutes but not create events (#4935)', async () => {
+      await service.start(CHAPTER, VP, {
+        meeting_type: 'chapter',
+        new_event: {
+          name: 'Chapter meeting',
+          start_time: '2026-11-11T00:00:00.000Z',
+          end_time: '2026-11-11T01:00:00.000Z',
+        },
+      });
+      expect(eventService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ is_mandatory: false, silent: true }),
+      );
+    });
+
+    it('makes no event for someone who can neither start minutes nor create events', async () => {
       await expect(
-        service.start(CHAPTER, VP, {
+        service.start(CHAPTER, JAKE, {
           meeting_type: 'chapter',
           new_event: {
             name: 'Chapter meeting',
@@ -950,5 +964,43 @@ describe('MeetingService', () => {
         event_id: CHAPTER_EVENT.id,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+  describe('linking an event (#4935)', () => {
+    it('links minutes whose event is gone to an event without minutes', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      const view = await service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(view.meeting.event_id).toBe(CHAPTER_EVENT.id);
+      expect(repo.update).toHaveBeenCalledWith(
+        CHAPTER,
+        'mtg-1',
+        expect.any(String),
+        expect.objectContaining({ event_id: CHAPTER_EVENT.id }),
+      );
+    });
+
+    it('makes a quiet event after the fact', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      await service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+        new_event: {
+          name: 'Chapter meeting',
+          start_time: '2026-11-11T00:00:00.000Z',
+          end_time: '2026-11-11T01:00:00.000Z',
+        },
+      });
+      expect(eventService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ silent: true, is_mandatory: false }),
+      );
+    });
+
+    it('refuses minutes that already have their event', async () => {
+      rows.set('mtg-1', meeting());
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 });

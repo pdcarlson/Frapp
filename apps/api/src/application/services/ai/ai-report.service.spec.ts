@@ -112,6 +112,7 @@ function build(
             result: { review: { gaps: [] } },
             minutesNow: { decisions: 'Formal moves to March.' },
             requestedBy: 'officer-1',
+            quoted: ['officer-1'],
           }
         : options.draft,
     ),
@@ -434,7 +435,7 @@ describe('AiReportService', () => {
       // Named by its request, so a draft asked for again is reported anew.
       expect(row.subjectId).toBe('00000000-0000-4000-8000-0000000000d1');
       expect(row.quotedUserIds).toEqual(['officer-1']);
-      expect(row.promptVersion).toBe('minutes-draft@v1');
+      expect(row.promptVersion).toBe('minutes-draft@v2');
       expect(opened(row)).toEqual(
         expect.objectContaining({
           meeting_id: MEETING,

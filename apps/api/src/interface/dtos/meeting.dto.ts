@@ -22,6 +22,7 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   MEETING_DRAFT_FAILURES,
+  MEETING_DRAFT_SETTLED_BY,
   MEETING_DRAFT_STATUSES,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
@@ -255,6 +256,27 @@ export class StartMeetingDto {
   new_event?: NewMeetingEventDto;
 }
 
+export class LinkMeetingEventDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'An event with no minutes of its own. Send this or new_event.',
+  })
+  @IsOptional()
+  @IsUUID()
+  event_id?: string;
+
+  @ApiPropertyOptional({
+    type: NewMeetingEventDto,
+    description:
+      'Make an event for the minutes after the fact: nobody required, no points, and no new-event push.',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => NewMeetingEventDto)
+  new_event?: NewMeetingEventDto;
+}
+
 export class UpdateMeetingDto {
   @ApiProperty({
     format: 'date-time',
@@ -368,15 +390,15 @@ export class MeetingDto extends MeetingSummaryDto {
 // ── Drafting from notes (#4312) ──────────────────────────────────────────────
 
 export class RequestMeetingDraftDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     maxLength: MEETING_NOTES_MAX_LENGTH,
     description:
-      'The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft.',
+      'The officer’s own notes, saved as theirs before the draft is asked for. Optional since several note-takers (#4935): the draft reads every note-taker’s saved notes and the recording’s transcript, sent to the AI provider the catalog names for the task, and kept only while the minutes are a draft.',
   })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(MEETING_NOTES_MAX_LENGTH)
-  notes: string;
+  notes?: string;
 
   @ApiProperty({
     format: 'date-time',
@@ -417,6 +439,60 @@ export class MeetingDraftSourceDto {
     description: 'The line of the notes it came from, word for word.',
   })
   quote: string;
+  @ApiPropertyOptional({
+    description:
+      'Whose line it is: a note-taker’s name, or "Recording". Absent on a draft from before several note-takers.',
+  })
+  from?: string;
+}
+
+export class MeetingDraftVersionDto {
+  @ApiProperty({ description: 'A note-taker’s name, or "Recording".' })
+  from: string;
+  @ApiProperty() quote: string;
+  @ApiProperty() text: string;
+  @ApiProperty({ type: MeetingVoteDto, nullable: true })
+  vote: MeetingVoteDto | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  owner_user_id: string | null;
+  @ApiProperty({ type: String, nullable: true, example: '2026-11-20' })
+  due_date: string | null;
+}
+
+export class MeetingDraftConflictDto {
+  @ApiProperty({ enum: ['decision', 'action_item'] })
+  kind: 'decision' | 'action_item';
+  @ApiProperty({ description: 'What the sources disagree about.' })
+  about: string;
+  @ApiProperty({ type: [MeetingDraftVersionDto] })
+  versions: MeetingDraftVersionDto[];
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The version in the minutes, or null when nothing settled it and the author must pick.',
+  })
+  chosen: number | null;
+  @ApiProperty({ enum: MEETING_DRAFT_SETTLED_BY, nullable: true })
+  settled_by: (typeof MEETING_DRAFT_SETTLED_BY)[number] | null;
+}
+
+export class ChooseMeetingDraftVersionDto {
+  @ApiProperty({ description: 'The disagreement, by its place in the list.' })
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  conflict: number;
+
+  @ApiProperty({ description: 'The version to put in, by its place.' })
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  version: number;
+
+  @ApiProperty({ format: 'date-time' })
+  @IsDateString()
+  expected_updated_at: string;
 }
 
 export class MeetingDraftReviewDto {
@@ -432,6 +508,12 @@ export class MeetingDraftReviewDto {
       'Drafted lines left out because the line they named is not in the notes.',
   })
   left_out: number;
+  @ApiProperty({
+    type: [MeetingDraftConflictDto],
+    description:
+      'Where note-takers’ notes or the recording disagreed, and how each was settled (#4935).',
+  })
+  conflicts: MeetingDraftConflictDto[];
 }
 
 export class MeetingDraftDto {
@@ -461,6 +543,104 @@ export class MeetingDraftDto {
       'Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
   })
   blocked: 'chapter_off' | 'consent_required' | null;
+}
+
+// ── Several note-takers (#4935) ──────────────────────────────────────────────
+
+export class SaveMeetingNotesDto {
+  @ApiProperty({
+    maxLength: MEETING_NOTES_MAX_LENGTH,
+    description:
+      'The caller’s own notes, as typed. Empty clears them. Kept only while the minutes are a draft, and 30 days at most.',
+  })
+  @IsString()
+  @MaxLength(MEETING_NOTES_MAX_LENGTH)
+  notes: string;
+}
+
+export class AddMeetingNoteTakerDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'A member the meeting’s event invites.',
+  })
+  @IsUUID()
+  user_id: string;
+}
+
+export class MeetingNotesMeetingDto {
+  @ApiProperty({ format: 'uuid' }) id: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  event_id: string | null;
+  @ApiProperty() event_name: string;
+  @ApiProperty({ format: 'date-time' }) event_start_time: string;
+  @ApiProperty({ enum: MEETING_TYPES })
+  meeting_type: (typeof MEETING_TYPES)[number];
+  @ApiProperty() author_name: string;
+}
+
+export class MeetingOwnNotesDto {
+  @ApiProperty() notes: string;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  updated_at: string | null;
+  @ApiProperty({
+    enum: ['consent_required'],
+    nullable: true,
+    description:
+      'Why these notes would be left out of a draft now: their writer has not turned Frapp AI on.',
+  })
+  held: 'consent_required' | null;
+}
+
+export class MeetingNoteTakerDto extends MeetingOwnNotesDto {
+  @ApiProperty({ format: 'uuid' }) user_id: string;
+  @ApiProperty() display_name: string;
+  @ApiProperty() is_author: boolean;
+  @ApiProperty({
+    description: 'Added by the author or an editor, not joined by themselves.',
+  })
+  added: boolean;
+}
+
+export class MeetingNotesDto {
+  @ApiProperty({ type: MeetingNotesMeetingDto })
+  meeting: MeetingNotesMeetingDto;
+  @ApiProperty({
+    enum: ['editor', 'note_taker'],
+    description:
+      '`editor`: the minutes’ author or someone who can edit any minutes, who reads every note-taker’s notes and asks for the draft.',
+  })
+  role: 'editor' | 'note_taker';
+  @ApiProperty({ type: MeetingOwnNotesDto })
+  mine: MeetingOwnNotesDto;
+  @ApiProperty({
+    type: [MeetingNoteTakerDto],
+    description: 'Everyone else taking notes, for an editor; empty otherwise.',
+  })
+  takers: MeetingNoteTakerDto[];
+  @ApiProperty() others_count: number;
+  @ApiProperty() can_add: boolean;
+  @ApiProperty() joined: boolean;
+}
+
+export class ListMeetingNoteTakingQueryDto {
+  @ApiPropertyOptional({ format: 'uuid', description: 'Only this event.' })
+  @IsOptional()
+  @IsUUID()
+  event_id?: string;
+}
+
+export class MeetingNoteTakingDto {
+  @ApiProperty({ format: 'uuid' }) meeting_id: string;
+  @ApiProperty({ format: 'uuid' }) event_id: string;
+  @ApiProperty() event_name: string;
+  @ApiProperty({ format: 'date-time' }) event_start_time: string;
+  @ApiProperty({ enum: MEETING_TYPES })
+  meeting_type: (typeof MEETING_TYPES)[number];
+  @ApiProperty() author_name: string;
+  @ApiProperty({ description: 'The caller already takes notes here.' })
+  joined: boolean;
+  @ApiProperty({ description: 'The author or an editor added the caller.' })
+  added: boolean;
 }
 
 // ── Uploading a recording (#712) ─────────────────────────────────────────────

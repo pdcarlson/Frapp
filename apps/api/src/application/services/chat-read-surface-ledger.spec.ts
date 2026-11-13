@@ -682,6 +682,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [MEMBER_TEXT],
   },
+  // "Take notes" to a member added as a note-taker (#4935): names the
+  // meeting's event, never anyone's notes.
+  'application/services/meeting-notes.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   // The hand-off to `MeetingService.notifyRecordingUploaded` (#712).
   'application/services/meeting-recording.service.ts': {
     calls: 1,

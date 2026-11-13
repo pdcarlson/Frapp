@@ -638,6 +638,139 @@ export class MeetingService {
   }
 
   /**
+   * What note-taking needs to know about one set of minutes (#4935,
+   * `meetings.md` § Several note-takers): the row, whether `userId` may
+   * edit it (its author or a `meetings:edit` holder), whether its event
+   * shows itself to them, and whether they hold `meetings:record` and
+   * `meetings:edit`. A missing id is a 404. A note-taker reads none of the
+   * minutes themselves: a draft stays its author's.
+   */
+  async noteTakingView(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<{
+    meeting: Meeting;
+    canEdit: boolean;
+    eventVisible: boolean;
+    canRecord: boolean;
+  }> {
+    const meeting = await this.meetingRepo.findById(chapterId, id);
+    if (!meeting) throw new NotFoundException('Minutes not found');
+    const held = new Set(
+      await this.rbac.getEffectivePermissions(chapterId, userId),
+    );
+    const has = (permission: string) => held.has('*') || held.has(permission);
+    const access: ViewerAccess = {
+      canEditAny: has(SystemPermissions.MEETINGS_EDIT),
+      canDelete: has(SystemPermissions.MEETINGS_DELETE),
+    };
+    const eventVisible = await this.eventShowsTo(chapterId, meeting, userId);
+    const canEdit =
+      access.canEditAny || (meeting.created_by === userId && eventVisible);
+    return {
+      meeting,
+      canEdit,
+      eventVisible,
+      canRecord: has(SystemPermissions.MEETINGS_RECORD),
+    };
+  }
+
+  /** Whether the minutes' event shows itself to `userId` (false when gone). */
+  async eventShowsTo(
+    chapterId: string,
+    meeting: Meeting,
+    userId: string,
+  ): Promise<boolean> {
+    if (!meeting.event_id) return false;
+    const event = await this.events
+      .findById(meeting.event_id, chapterId, userId)
+      .catch((error: unknown) => {
+        if (error instanceof NotFoundException) return null;
+        throw error;
+      });
+    return event !== null;
+  }
+
+  /**
+   * The unposted minutes of the chapter, or of one event, whose events show
+   * themselves to `userId`, for the note-taking list (#4935). Who may take
+   * notes on which is `MeetingNotesService`'s rule.
+   */
+  async draftsVisibleTo(
+    chapterId: string,
+    userId: string,
+    eventId?: string,
+  ): Promise<Meeting[]> {
+    const rows = (
+      eventId
+        ? await this.meetingRepo
+            .findByEvent(chapterId, eventId)
+            .then((row) => (row ? [row] : []))
+        : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT)
+    ).filter((row) => row.status === 'draft' && row.event_id);
+    if (rows.length === 0) return [];
+    const visible = new Set(
+      (
+        await this.events.findVisibleByIds(
+          rows.map((row) => row.event_id!),
+          chapterId,
+          userId,
+        )
+      ).map((event) => event.id),
+    );
+    return rows.filter((row) => visible.has(row.event_id!));
+  }
+
+  /**
+   * Links minutes that have no event to one (`meetings.md` § Minutes are
+   * always linked to an event, #4935): minutes whose event was deleted.
+   * Only a `meetings:edit` holder reads such minutes, so only they link
+   * them. The event must not have minutes of its own; `new_event` makes the
+   * same quiet event starting minutes does.
+   */
+  async linkEvent(
+    chapterId: string,
+    id: string,
+    userId: string,
+    input: { event_id?: string; new_event?: StartMeetingInput['new_event'] },
+  ): Promise<MeetingView> {
+    const { meeting, access } = await this.editable(chapterId, id, userId);
+    if (meeting.event_id && (await this.liveEvent(chapterId, meeting))) {
+      throw new ConflictException({
+        code: 'meeting.event_linked',
+        message: 'These minutes already have their event.',
+      });
+    }
+    if (!input.event_id === !input.new_event) {
+      throw new BadRequestException(
+        'Send the meeting’s event_id, or new_event to make one, but not both.',
+      );
+    }
+    let event: Event;
+    if (input.event_id) {
+      event = await this.events.findById(input.event_id, chapterId, userId);
+      const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
+      if (existing) throw this.alreadyStarted();
+    } else {
+      event = await this.createEventFor(chapterId, userId, input.new_event!);
+    }
+    const saved = await this.meetingRepo.update(
+      chapterId,
+      id,
+      meeting.updated_at,
+      {
+        event_id: event.id,
+        event_name: event.name,
+        event_start_time: event.start_time,
+        updated_by: userId,
+      },
+    );
+    if (!saved) throw this.stale();
+    return this.view(chapterId, saved, event, userId, access);
+  }
+
+  /**
    * The minutes, when `userId` may change them; otherwise the refusal a save
    * gives (404 for someone who can't read them, 403 for a reader who isn't
    * their author). The draft-from-notes flow asks this rather than restating
@@ -708,14 +841,21 @@ export class MeetingService {
     userId: string,
     input: NonNullable<StartMeetingInput['new_event']>,
   ): Promise<Event> {
+    // Starting minutes is enough (#4935): this event requires nobody, earns
+    // no points and sends no push, so it can't do what `events:create`
+    // guards. Linking an event takes `meetings:edit`, which is checked first.
     const canCreate = await this.rbac.memberHasAnyPermission(
       chapterId,
       userId,
-      [SystemPermissions.EVENTS_CREATE],
+      [
+        SystemPermissions.EVENTS_CREATE,
+        SystemPermissions.MEETINGS_RECORD,
+        SystemPermissions.MEETINGS_EDIT,
+      ],
     );
     if (!canCreate) {
       throw new ForbiddenException(
-        'Making an event for these minutes needs permission to create events. Pick the meeting’s event instead.',
+        'Making an event for these minutes needs permission to start minutes. Pick the meeting’s event instead.',
       );
     }
     const roleIds = [...new Set(input.role_ids ?? [])];

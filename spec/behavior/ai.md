@@ -105,6 +105,7 @@ What No means for that member:
 | Announcements and documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
 | Their roster fields | Still appear in an officer's tool results. A question like "who is behind on dues" needs every member, and the fields carry no contact details. |
 | Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
+| Notes they take on a meeting | Left out of the draft. Several members can take notes on one meeting, and a note-taker's own notes go to a provider only with their own yes; the minutes' author is told whose notes wait on it ([`meetings.md` § Several note-takers](meetings.md#several-note-takers)). Added 2026-11-13 (#4935). |
 | A recorded meeting | Having Frapp AI on does not stop a recording. The [recording notice](meetings.md#recording-notice) does: anyone present can object, whatever they answered, and the officer then doesn't record. |
 
 How the first two gates are kept (#4308, #4790):
@@ -388,6 +389,7 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
 - An answer its asker posts to a channel is a chat message from then on, kept and deleted as chat messages are, and is not one of the exceptions above: the asker chose to publish it ([Posting an answer to the channel](#posting-an-answer-to-the-channel)). Added in #4713 by pdcarlson, 2026-11-13.
 - Neither store holds meeting audio or Standards material.
 - An officer's notes for drafted minutes are the officer's own input to a feature, not a stored prompt: they are kept beside the unposted minutes so the officer can ask again, with what the officer checks the draft against (what the notes leave out, and each drafted decision and action item beside its line), and are deleted when the minutes are posted ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes)). Added 2026-11-12 (#4312, the drafting session's, Paul's to change).
+  - Since #4935 (Paul, 2026-11-13) each note-taker's notes are kept the same way, each under its own writer: deleted when the minutes are posted or deleted, when the note-taker clears them, is removed or deletes their account, and 30 days after they were started. A draft keeps what it was written from (every note-taker's notes and the transcript) until it goes, and goes with any of those note-takers' accounts. A report of such a draft quotes every note-taker it read ([`meetings.md` § Several note-takers](meetings.md#several-note-takers)).
 - A stored exchange is deleted when the member who asked or reported deletes their account. It is also deleted early when a member it quotes deletes their account or turns their choice off. (2026-11-12: the diagnostics window quotes no member, because it keeps no answer that had chat in front of the model, so its only early deletions are the asker's.)
 - Both are named on the privacy page.
 - The usage ledger has no text column. It records counts, the model, the prompt version and the cost.

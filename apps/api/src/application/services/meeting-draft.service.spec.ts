@@ -31,6 +31,8 @@ import { AiRunFailure, AiRunRegistry } from './ai-run-registry';
 import type { AiRunService, AiRunView } from './ai-run.service';
 import { MeetingDraftService } from './meeting-draft.service';
 import type { MeetingService } from './meeting.service';
+import type { MeetingNotesService } from './meeting-notes.service';
+import type { MinutesSource } from '#domain/utils/minutes-draft';
 import type { RbacService } from './rbac.service';
 
 const CHAPTER = 'ch-1';
@@ -149,7 +151,65 @@ class FakeDrafts implements IMeetingDraftRepository {
     this.row = null;
     return Promise.resolve();
   }
+  deleteWrittenFrom(_c: string, _m: string, userId: string): Promise<void> {
+    if (this.row?.source_user_ids.includes(userId)) this.row = null;
+    return Promise.resolve();
+  }
   deleteRequestedBefore = jest.fn().mockResolvedValue(2);
+}
+
+/**
+ * Each note-taker's notes, in memory (`MeetingNotesService`'s part of a
+ * draft): the secretary's own notes, plus any other sources a test adds.
+ */
+class FakeNotes {
+  own = new Map<string, string>();
+  others: Omit<MinutesSource, 'id'>[] = [];
+  ownNotes(_c: string, _m: string, userId: string): Promise<string> {
+    return Promise.resolve(this.own.get(userId) ?? '');
+  }
+  saveForDraft(
+    _c: string,
+    _m: Meeting,
+    userId: string,
+    text: string,
+  ): Promise<void> {
+    if (text.trim()) this.own.set(userId, text.trim());
+    else this.own.delete(userId);
+    return Promise.resolve();
+  }
+  sourcesFor(): Promise<{ sources: MinutesSource[]; sourceUserIds: string[] }> {
+    const mine = this.own.get(SECRETARY);
+    const all: Omit<MinutesSource, 'id'>[] = [
+      ...(mine
+        ? [
+            {
+              kind: 'notes' as const,
+              label: 'Eli Sorensen',
+              standing: 'minutes author',
+              rank: -2,
+              userId: SECRETARY,
+              text: mine,
+            },
+          ]
+        : []),
+      ...this.others,
+    ];
+    if (all.length === 0) {
+      return Promise.reject(
+        new BadRequestException('Paste or type your notes first.'),
+      );
+    }
+    const sources = all.map((source, index) => ({
+      ...source,
+      id: `S${index + 1}`,
+    }));
+    return Promise.resolve({
+      sources,
+      sourceUserIds: sources.flatMap((x) => (x.userId ? [x.userId] : [])),
+    });
+  }
+  deleteExpired = jest.fn().mockResolvedValue(1);
 }
 
 interface Setup {
@@ -163,6 +223,7 @@ interface Setup {
 
 function setup(options: Setup = {}) {
   const drafts = new FakeDrafts();
+  const notes = new FakeNotes();
   const seen: LanguageModelRequest[] = [];
   const model = new ScriptedLanguageModel({
     'minutes.draft': (request) => {
@@ -216,6 +277,7 @@ function setup(options: Setup = {}) {
       ]),
     } as unknown as IMemberRepository,
     meetings as unknown as MeetingService,
+    notes as unknown as MeetingNotesService,
     {
       findByChapter: jest
         .fn()
@@ -256,6 +318,7 @@ function setup(options: Setup = {}) {
   return {
     service,
     drafts,
+    notes,
     meetings,
     runs,
     registry,
@@ -462,6 +525,7 @@ describe('MeetingDraftService', () => {
         kind: 'action_item',
         text: 'Email the six members who have not paid.',
         quote: 'Priya will email the 6 by Wednesday',
+        from: 'Eli Sorensen',
       });
     });
 
@@ -711,14 +775,196 @@ describe('MeetingDraftService', () => {
     });
   });
 
-  it('the sweep deletes requests older than thirty days', async () => {
-    const { service, drafts } = setup();
-    const deleted = await service.deleteExpired(
-      new Date('2026-12-12T00:00:00.000Z'),
-    );
-    expect(deleted).toBe(2);
+  it('the sweep deletes requests and note-takers’ notes older than thirty days', async () => {
+    const { service, drafts, notes } = setup();
+    const now = new Date('2026-12-12T00:00:00.000Z');
+    const deleted = await service.deleteExpired(now);
+    expect(deleted).toBe(3);
     expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
       '2026-11-12T00:00:00.000Z',
     );
+    expect(notes.deleteExpired).toHaveBeenCalledWith(now);
+  });
+
+  describe('several note-takers (#4935)', () => {
+    const SAM = '0a000000-0000-4000-8000-00000000000c';
+    const SAMS_NOTES = [
+      'formal DJ vote went 21-6',
+      'philo week moves to the first week of Dec',
+    ].join('\n');
+    const CONFLICTED: MeetingDraftOutput = {
+      ...DRAFTED,
+      decisions: [
+        {
+          text: 'Moved philanthropy week to the first week of December.',
+          vote: null,
+          quote: 'philo week moves to the first week of Dec',
+          source: 'S2',
+        },
+      ],
+      action_items: [],
+      conflicts: [
+        {
+          kind: 'decision',
+          about: 'The vote on the formal DJ',
+          versions: [
+            {
+              source: 'S1',
+              quote:
+                'formal: motion to spend up to $1,200 on a DJ. passed 22-5',
+              text: 'Approved up to $1,200 for a DJ at formal, 22 to 5.',
+              vote: { for: 22, against: 5, abstain: 0 },
+              owner: null,
+              due_date: null,
+            },
+            {
+              source: 'S2',
+              quote: 'formal DJ vote went 21-6',
+              text: 'Approved a DJ at formal, 21 to 6.',
+              vote: { for: 21, against: 6, abstain: 0 },
+              owner: null,
+              due_date: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    function withSam(reply = CONFLICTED) {
+      const ctx = setup({
+        reply: { text: JSON.stringify(reply), object: reply },
+      });
+      ctx.notes.others.push({
+        kind: 'notes',
+        label: 'Sam Abernathy',
+        standing: 'Officers and chairs',
+        rank: 2,
+        userId: SAM,
+        text: SAMS_NOTES,
+      });
+      return ctx;
+    }
+
+    it('drafts from every note-taker and records whose notes it read', async () => {
+      const { ask, drafts, work, seen } = withSam();
+      await ask();
+      expect(drafts.row?.source_user_ids).toEqual([SECRETARY, SAM]);
+      expect(drafts.row?.notes).toContain("Sam Abernathy's notes:");
+      await work();
+      const prompt = seen[0].messages[0].content;
+      expect(prompt).toContain(
+        '<source id="S1" kind="notes" by="Eli Sorensen"',
+      );
+      expect(prompt).toContain(
+        '<source id="S2" kind="notes" by="Sam Abernathy"',
+      );
+    });
+
+    it('puts the author’s version of a disagreement in, and lists it with both lines', async () => {
+      const { ask, work, meetings, service } = withSam();
+      await ask();
+      await work();
+      const written = meetings.update.mock.calls[0][3].content;
+      expect(written.decisions).toEqual([
+        {
+          text: 'Moved philanthropy week to the first week of December.',
+          vote: null,
+        },
+        {
+          text: 'Approved up to $1,200 for a DJ at formal, 22 to 5.',
+          vote: { for: 22, against: 5, abstain: 0 },
+        },
+      ]);
+      const state = await service.state(CHAPTER, MEETING, SECRETARY);
+      expect(state.review.conflicts).toEqual([
+        expect.objectContaining({
+          kind: 'decision',
+          chosen: 0,
+          settled_by: 'authority',
+          versions: [
+            expect.objectContaining({ from: 'Eli Sorensen' }),
+            expect.objectContaining({ from: 'Sam Abernathy' }),
+          ],
+        }),
+      ]);
+    });
+
+    it('lets the author put the other version in instead', async () => {
+      const { ask, work, meetings, service } = withSam();
+      await ask();
+      await work();
+      meetings.editableBy.mockResolvedValue(
+        meeting({
+          content: {
+            decisions: [
+              {
+                text: 'Approved up to $1,200 for a DJ at formal, 22 to 5.',
+                vote: { for: 22, against: 5, abstain: 0 },
+              },
+            ],
+          },
+        }),
+      );
+      const state = await service.choose(CHAPTER, MEETING, SECRETARY, {
+        conflict: 0,
+        version: 1,
+        expected_updated_at: V1,
+      });
+      expect(meetings.update).toHaveBeenLastCalledWith(
+        CHAPTER,
+        MEETING,
+        SECRETARY,
+        {
+          expected_updated_at: V1,
+          content: {
+            decisions: [
+              {
+                text: 'Approved a DJ at formal, 21 to 6.',
+                vote: { for: 21, against: 6, abstain: 0 },
+              },
+            ],
+          },
+        },
+      );
+      expect(state.review.conflicts[0]).toMatchObject({
+        chosen: 1,
+        settled_by: 'author',
+      });
+    });
+
+    it('refuses a pick when the draft is gone', async () => {
+      const { service } = withSam();
+      await expect(
+        service.choose(CHAPTER, MEETING, SECRETARY, {
+          conflict: 0,
+          version: 1,
+          expected_updated_at: V1,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('drafts from other note-takers’ notes when the author sends none', async () => {
+      const { service, drafts } = withSam();
+      await service.request(CHAPTER, MEETING, SECRETARY, {
+        expected_updated_at: V1,
+      });
+      expect(drafts.row?.source_user_ids).toEqual([SAM]);
+    });
+
+    it('Clear notes clears only the caller’s own notes', async () => {
+      const { ask, service, notes } = withSam();
+      await ask();
+      await service.discard(CHAPTER, MEETING, SECRETARY);
+      expect(notes.own.has(SECRETARY)).toBe(false);
+      expect(notes.others).toHaveLength(1);
+    });
+
+    it('a report quotes every note-taker the draft read', async () => {
+      const { ask, work, service } = withSam();
+      await ask();
+      await work();
+      const kept = await service.forReport(CHAPTER, MEETING, SECRETARY, null);
+      expect(kept?.quoted).toEqual([SECRETARY, SAM]);
+    });
   });
 });

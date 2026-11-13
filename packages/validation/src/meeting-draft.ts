@@ -17,8 +17,15 @@ import { z } from "zod";
  */
 export const MEETING_NOTES_MAX_LENGTH = 160_000;
 
+/**
+ * The most text one draft reads from every note-taker and the transcript
+ * together (#4935). Matches the table's backstop on what a draft stores
+ * (`meeting_drafts_notes_len`).
+ */
+export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
+
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v1";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v2";
 
 const DueDate = z
   .string()
@@ -34,6 +41,13 @@ const DueDate = z
  * character. The API keeps an item only when its quote is in the notes
  * (ADR-28 decision 4), so a decision the notes don't hold never reaches the
  * editor.
+ *
+ * Since #4935 a draft reads several sources (each note-taker's notes and the
+ * recording's transcript), each named in the prompt ("S1", "S2"). `source`
+ * names the one an item's quote is from. `conflicts` is where two sources
+ * say different things about the same item; Frapp, not the model, picks
+ * which version goes into the minutes. Both are optional so a reply to a
+ * one-source prompt that leaves them out still fits.
  */
 export const MeetingDraftOutputSchema = z.object({
   summary: z.string(),
@@ -46,6 +60,7 @@ export const MeetingDraftOutputSchema = z.object({
         .object({ for: z.number(), against: z.number(), abstain: z.number() })
         .nullable(),
       quote: z.string(),
+      source: z.string().optional(),
     }),
   ),
   action_items: z.array(
@@ -55,6 +70,7 @@ export const MeetingDraftOutputSchema = z.object({
       owner: z.string().nullable(),
       due_date: DueDate,
       quote: z.string(),
+      source: z.string().optional(),
     }),
   ),
   officer_reports: z.string(),
@@ -63,6 +79,37 @@ export const MeetingDraftOutputSchema = z.object({
   discussion_log: z.string(),
   /** What the notes leave unsaid, one plain sentence each. */
   open_questions: z.array(z.string()),
+  /**
+   * Items two or more sources disagree about (a vote count, who owns an
+   * action, what was decided). Each version is one source's account, in its
+   * own words and with its own quote. A contested item is not also listed in
+   * `decisions` or `action_items`.
+   */
+  conflicts: z
+    .array(
+      z.object({
+        kind: z.enum(["decision", "action_item"]),
+        /** What the disagreement is about, in a few words. */
+        about: z.string(),
+        versions: z.array(
+          z.object({
+            source: z.string(),
+            quote: z.string(),
+            text: z.string(),
+            vote: z
+              .object({
+                for: z.number(),
+                against: z.number(),
+                abstain: z.number(),
+              })
+              .nullable(),
+            owner: z.string().nullable(),
+            due_date: DueDate,
+          }),
+        ),
+      }),
+    )
+    .optional(),
 });
 export type MeetingDraftOutput = z.infer<typeof MeetingDraftOutputSchema>;
 
@@ -138,8 +185,58 @@ export const MeetingDraftSourceSchema = z.object({
   text: z.string(),
   /** Word for word from the notes. */
   quote: z.string(),
+  /**
+   * Whose line it is: a note-taker's name, or "Recording" (#4935). Absent
+   * on a draft written before several note-takers.
+   */
+  from: z.string().optional(),
 });
 export type MeetingDraftSource = z.infer<typeof MeetingDraftSourceSchema>;
+
+/** How a disagreement between sources was settled (#4935). */
+export const MEETING_DRAFT_SETTLED_BY = [
+  /** The recording's transcript covered the moment. */
+  "recording",
+  /** The note-taker with more authority: the author, then `meetings:edit`, then role tier. */
+  "authority",
+  /** The author picked a version. */
+  "author",
+] as const;
+export type MeetingDraftSettledBy = (typeof MEETING_DRAFT_SETTLED_BY)[number];
+
+/** One source's account of a contested item, checked like any drafted item. */
+export const MeetingDraftVersionSchema = z.object({
+  from: z.string(),
+  quote: z.string(),
+  text: z.string(),
+  vote: z
+    .object({
+      for: z.number().int(),
+      against: z.number().int(),
+      abstain: z.number().int(),
+    })
+    .nullable(),
+  owner_user_id: z.string().nullable(),
+  due_date: z.string().nullable(),
+});
+export type MeetingDraftVersion = z.infer<typeof MeetingDraftVersionSchema>;
+
+/**
+ * Two or more sources disagreed about one item. `chosen` is the version in
+ * the minutes, or null when nothing settled it and the author must pick
+ * (the item is then not in the minutes yet).
+ */
+export const MeetingDraftConflictSchema = z.object({
+  kind: z.enum(["decision", "action_item"]),
+  about: z.string(),
+  versions: z.array(MeetingDraftVersionSchema).min(2),
+  chosen: z.number().int().min(0).nullable(),
+  settled_by: z.enum(MEETING_DRAFT_SETTLED_BY).nullable(),
+});
+export type MeetingDraftConflict = z.infer<typeof MeetingDraftConflictSchema>;
+
+/** The most disagreements one draft lists. */
+export const MEETING_DRAFT_CONFLICTS_MAX = 12;
 
 /**
  * What the officer checks a draft against: what the notes left unsaid, the
@@ -150,6 +247,8 @@ export const MeetingDraftReviewSchema = z.object({
   gaps: z.array(z.string()),
   sources: z.array(MeetingDraftSourceSchema),
   left_out: z.number().int().min(0),
+  /** Where sources disagreed, and how each was settled (#4935). */
+  conflicts: z.array(MeetingDraftConflictSchema).default([]),
 });
 export type MeetingDraftReview = z.infer<typeof MeetingDraftReviewSchema>;
 
@@ -157,6 +256,7 @@ export const EMPTY_MEETING_DRAFT_REVIEW: MeetingDraftReview = Object.freeze({
   gaps: [],
   sources: [],
   left_out: 0,
+  conflicts: [],
 }) as MeetingDraftReview;
 
 /** The most gaps a draft lists, and how long each may run. */
@@ -179,5 +279,24 @@ export function meetingDraftQuoteFor(
     review.sources.find(
       (source) => source.kind === kind && source.text === wanted,
     )?.quote ?? null
+  );
+}
+
+/**
+ * Whose line a drafted item came from ("Sam Abernathy", "Recording"), while
+ * its text is still the drafted text; null on a draft from before several
+ * note-takers, or once the officer rewrites the item.
+ */
+export function meetingDraftSourceFor(
+  review: MeetingDraftReview | null | undefined,
+  kind: MeetingDraftSource["kind"],
+  text: string,
+): string | null {
+  const wanted = text.trim();
+  if (!review || !wanted) return null;
+  return (
+    review.sources.find(
+      (source) => source.kind === kind && source.text === wanted,
+    )?.from ?? null
   );
 }

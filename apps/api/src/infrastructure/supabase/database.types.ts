@@ -76,6 +76,7 @@ import type {
   Invite,
   Meeting,
   MeetingDraft,
+  MeetingNote,
   MeetingRecording,
   MeetingTemplate,
   Member,
@@ -221,6 +222,7 @@ export interface Database {
       google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
       meeting_drafts: TableDefinition<MeetingDraft>;
+      meeting_notes: TableDefinition<MeetingNote>;
       meeting_recordings: TableDefinition<MeetingRecording>;
       meeting_templates: TableDefinition<MeetingTemplate>;
       meetings: TableDefinition<Meeting>;

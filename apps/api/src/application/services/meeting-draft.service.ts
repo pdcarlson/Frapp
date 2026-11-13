@@ -16,6 +16,8 @@ import {
   MEETING_NOTES_MAX_LENGTH,
   MeetingDraftOutputSchema,
   MeetingDraftReviewSchema,
+  type MeetingActionItem,
+  type MeetingDecision,
   STANDARDS_MEETING_REFUSAL,
   STANDARDS_MEETING_TYPE,
   isMeetingDraftFailure,
@@ -43,8 +45,10 @@ import {
   verifyMinutesDraft,
   type MinutesDraftRequest,
   type MinutesRosterMember,
+  type MinutesSource,
 } from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
+import { MeetingNotesService } from './meeting-notes.service';
 import { RbacService } from './rbac.service';
 import type { EnabledModules } from './module-gate';
 import { AiRunService } from './ai-run.service';
@@ -90,7 +94,12 @@ export interface MeetingDraftState {
 }
 
 export interface RequestMeetingDraftInput {
-  notes: string;
+  /**
+   * The officer's notes, saved as theirs before the draft is asked for.
+   * Optional since #4935: the notes box saves as it is typed, and the draft
+   * reads every note-taker's notes and the transcript.
+   */
+  notes?: string;
   /** The minutes' `updated_at` the editor has; a draft over a newer save is refused. */
   expected_updated_at: string;
   /** The meeting's calendar day where the officer is, `YYYY-MM-DD`. */
@@ -157,6 +166,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     private readonly attendanceRepo: IAttendanceRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     private readonly meetings: MeetingService,
+    private readonly meetingNotes: MeetingNotesService,
     private readonly rbac: RbacService,
     private readonly runs: AiRunService,
     private readonly registry: AiRunRegistry,
@@ -175,22 +185,25 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     userId: string,
   ): Promise<MeetingDraftState> {
     await this.meetings.editableBy(chapterId, meetingId, userId);
-    const [draft, consent] = await Promise.all([
+    const [draft, consent, notes] = await Promise.all([
       this.drafts.find(chapterId, meetingId),
       this.consentFor(chapterId, userId),
+      this.meetingNotes.ownNotes(chapterId, meetingId, userId),
     ]);
     const blocked = consent.allowed
       ? null
       : consent.reason === 'chapter_off'
         ? 'chapter_off'
         : 'consent_required';
-    if (!draft) return { ...NO_DRAFT, blocked };
-    return { ...this.stateOf(await this.settled(draft)), blocked };
+    if (!draft) return { ...NO_DRAFT, notes, blocked };
+    return { ...this.stateOf(await this.settled(draft)), notes, blocked };
   }
 
   /**
-   * Stores the notes and queues the draft. Asking again replaces the earlier
-   * request, notes and result, and stops its run.
+   * Queues a draft from every note-taker's notes and the recording's
+   * transcript (#4935), saving the officer's own notes first when they are
+   * sent. Asking again replaces the earlier request and result, and stops
+   * its run.
    */
   async request(
     chapterId: string,
@@ -205,10 +218,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     );
     this.assertDraftable(meeting);
 
-    const notes = input.notes.trim();
-    if (!notes) {
-      throw new BadRequestException('Paste or type your notes first.');
-    }
+    const notes = (input.notes ?? '').trim();
     if (notes.length > MEETING_NOTES_MAX_LENGTH) {
       throw new BadRequestException(
         `Notes can be up to ${MEETING_NOTES_MAX_LENGTH.toLocaleString('en-US')} characters. Shorten them, or draft the meeting in two parts.`,
@@ -228,6 +238,14 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     const consent = await this.consentFor(chapterId, userId);
     if (!consent.allowed) throw aiConsentRefusal(consent.reason);
 
+    if (notes) {
+      await this.meetingNotes.saveForDraft(chapterId, meeting, userId, notes);
+    }
+    const { sources, sourceUserIds } = await this.meetingNotes.sourcesFor(
+      chapterId,
+      meeting,
+    );
+
     const earlier = await this.drafts.find(chapterId, meetingId);
     if (earlier?.status === 'drafting' && earlier.run_id) {
       await this.runs.cancel(chapterId, earlier.run_id);
@@ -239,7 +257,9 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       chapter_id: chapterId,
       request_id: requestId,
       requested_by: userId,
-      notes,
+      notes: readableSources(sources),
+      sources,
+      source_user_ids: sourceUserIds,
       meeting_date: meetingDateOf(meeting, input.meeting_date),
       base_updated_at: meeting.updated_at,
     });
@@ -256,7 +276,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         input: { meeting_id: meetingId, request_id: requestId },
       });
       await this.drafts.setRun(chapterId, meetingId, requestId, run.id);
-      return this.stateOf({ ...draft, run_id: run.id });
+      return { ...this.stateOf({ ...draft, run_id: run.id }), notes };
     } catch (error) {
       // Nothing will draft from these notes. They are kept, so the officer
       // doesn't paste them twice, and the request reads as failed.
@@ -279,8 +299,17 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     userId: string,
     options: { keepNotes?: boolean } = {},
   ): Promise<void> {
-    await this.meetings.editableBy(chapterId, meetingId, userId);
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
     const draft = await this.drafts.find(chapterId, meetingId);
+    if (!options.keepNotes && meeting.status === 'draft') {
+      // The officer's own notes go with Clear notes; other note-takers'
+      // stay theirs.
+      await this.meetingNotes.saveForDraft(chapterId, meeting, userId, '');
+    }
     if (!draft) return;
     if (draft.status === 'drafting' && draft.run_id) {
       await this.runs.cancel(chapterId, draft.run_id);
@@ -373,8 +402,10 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     status: string;
     result: Record<string, unknown> | null;
     minutesNow: unknown;
-    /** The officer whose notes they are. */
+    /** The officer who asked for it. */
     requestedBy: string | null;
+    /** Everyone whose words the draft holds: the asker and each note-taker. */
+    quoted: string[];
   } | null> {
     // The draft routes' own gates (`@RequireModule('meetings')` and
     // `meetings:record` on the controller): a report reads no draft its
@@ -410,15 +441,112 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       result: draft.result,
       minutesNow: draft.status === 'applied' ? meeting.content : null,
       requestedBy: draft.requested_by,
+      quoted: [
+        ...new Set([
+          ...(draft.requested_by ? [draft.requested_by] : []),
+          ...(draft.source_user_ids ?? []),
+        ]),
+      ],
     };
   }
 
-  /** The retention sweep: every request older than the limit, everywhere. */
+  /**
+   * The retention sweep: every request, and every note-taker's notes, older
+   * than the limit, everywhere.
+   */
   async deleteExpired(now: Date = new Date()): Promise<number> {
     const cutoff = new Date(
       now.getTime() - MEETING_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
     );
-    return this.drafts.deleteRequestedBefore(cutoff.toISOString());
+    const [drafts, notes] = await Promise.all([
+      this.drafts.deleteRequestedBefore(cutoff.toISOString()),
+      this.meetingNotes.deleteExpired(now),
+    ]);
+    return drafts + notes;
+  }
+
+  /**
+   * Puts another version of a disagreement into the minutes (#4935): the
+   * author read the note-takers' lines under "Notes disagreed" and picked a
+   * different one, or settled a tie. The version on screen replaces the one
+   * the draft put in, by its drafted text; one the officer has since
+   * rewritten stays, and the picked version is added beside it. The same
+   * compare-and-set as a save.
+   */
+  async choose(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    input: { conflict: number; version: number; expected_updated_at: string },
+  ): Promise<MeetingDraftState> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    this.assertDraftable(meeting);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    const parsed = MeetingDraftReviewSchema.safeParse(draft?.result?.review);
+    const conflict = parsed.success
+      ? parsed.data.conflicts[input.conflict]
+      : undefined;
+    const picked = conflict?.versions[input.version];
+    if (!draft || draft.status !== 'applied' || !parsed.success || !picked) {
+      throw new ConflictException({
+        code: 'meeting.draft_not_waiting',
+        message:
+          'That disagreement is no longer in the draft. Ask for a draft again.',
+      });
+    }
+    const review = parsed.data;
+    const before =
+      conflict.chosen === null ? null : conflict.versions[conflict.chosen];
+    const content = readMeetingContent(meeting.content);
+    const patch: Partial<MeetingContent> = {};
+    if (conflict.kind === 'decision') {
+      const item: MeetingDecision = { text: picked.text, vote: picked.vote };
+      patch.decisions = swapItem(content.decisions, before?.text, item);
+    } else {
+      const item: MeetingActionItem = {
+        text: picked.text,
+        owner_user_id: picked.owner_user_id,
+        due_date: picked.due_date,
+      };
+      patch.action_items = swapItem(content.action_items, before?.text, item);
+    }
+    await this.meetings.update(chapterId, meetingId, userId, {
+      expected_updated_at: input.expected_updated_at,
+      content: patch,
+    });
+    const sources = review.sources.filter(
+      (source) =>
+        !(source.kind === conflict.kind && source.text === before?.text),
+    );
+    sources.push({
+      kind: conflict.kind,
+      text: picked.text,
+      quote: picked.quote,
+      from: picked.from,
+    });
+    const conflicts = review.conflicts.map((c, index) =>
+      index === input.conflict
+        ? { ...c, chosen: input.version, settled_by: 'author' as const }
+        : c,
+    );
+    const saved = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      draft.request_id,
+      ['applied'],
+      {
+        status: 'applied',
+        result: { review: { ...review, sources, conflicts } },
+      },
+    );
+    return {
+      ...this.stateOf(saved ?? draft),
+      notes: await this.meetingNotes.ownNotes(chapterId, meetingId, userId),
+    };
   }
 
   // ── The AI run ────────────────────────────────────────────────────────────
@@ -613,6 +741,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         checkedIn: checkedIn.has(member.user_id),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+    const sources = storedSources(draft.sources);
     return {
       meetingName: meeting.event_name,
       meetingType: meeting.meeting_type,
@@ -620,7 +749,11 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       meetingDate: draft.meeting_date,
       sections,
       roster,
-      notes: draft.notes,
+      // A draft asked before several note-takers has its notes alone.
+      ...(sources.length > 0 ? { sources } : { notes: draft.notes }),
+      // Event agendas (#4934) are not built yet; the prompt takes one when
+      // they are.
+      agenda: [],
     };
   }
 
@@ -717,6 +850,73 @@ export function assertMeetingDraftable(meeting: Meeting): void {
       message: 'These minutes are already posted. Edit them by hand from here.',
     });
   }
+}
+
+/**
+ * The sources stored with a request, each checked, since the column is
+ * jsonb: anything that doesn't read as a source is dropped.
+ */
+function storedSources(stored: unknown): MinutesSource[] {
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((value): MinutesSource[] => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (
+      typeof row.id !== 'string' ||
+      (row.kind !== 'notes' && row.kind !== 'recording') ||
+      typeof row.label !== 'string' ||
+      typeof row.rank !== 'number' ||
+      typeof row.text !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: row.id,
+        kind: row.kind,
+        label: row.label,
+        standing: typeof row.standing === 'string' ? row.standing : null,
+        rank: row.rank,
+        userId: typeof row.userId === 'string' ? row.userId : null,
+        text: row.text,
+      },
+    ];
+  });
+}
+
+/**
+ * What a draft was written from, as one text a person reads (a report keeps
+ * it): each source under its writer's name.
+ */
+function readableSources(sources: readonly MinutesSource[]): string {
+  // One officer's notes read as they were typed.
+  if (sources.length === 1 && sources[0].kind === 'notes') {
+    return sources[0].text;
+  }
+  return sources
+    .map((source) =>
+      source.kind === 'recording'
+        ? `Recording:\n${source.text}`
+        : `${source.label}'s notes:\n${source.text}`,
+    )
+    .join('\n\n');
+}
+
+/**
+ * The list with `item` in place of the one whose text is `replacing`, or
+ * added at the end when none has that text any more.
+ */
+function swapItem<T extends { text: string }>(
+  list: readonly T[],
+  replacing: string | undefined,
+  item: T,
+): T[] {
+  const at =
+    replacing === undefined ? -1 : list.findIndex((x) => x.text === replacing);
+  if (at < 0) {
+    return list.some((x) => x.text === item.text) ? [...list] : [...list, item];
+  }
+  return list.map((x, index) => (index === at ? item : x));
 }
 
 /** The stored sections, read as minutes; only the sections that were drafted. */

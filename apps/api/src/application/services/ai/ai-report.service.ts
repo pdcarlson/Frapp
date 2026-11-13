@@ -348,7 +348,7 @@ export class AiReportService implements OnModuleInit {
         minutes_now: draft.minutesNow,
       },
       // The officer whose notes they are, when that is someone else.
-      quoted: draft.requestedBy ? [draft.requestedBy] : [],
+      quoted: draft.quoted,
       model: aiCatalogEntry('minutes.draft').model,
       promptVersion: MEETING_DRAFT_PROMPT_VERSION,
     };

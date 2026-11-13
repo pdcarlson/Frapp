@@ -7869,6 +7869,62 @@
         ]
       }
     },
+    "/v1/meetings/{id}/event": {
+      "post": {
+        "operationId": "MeetingController_linkEvent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkMeetingEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).",
@@ -17390,7 +17446,7 @@
             "bearer": []
           }
         ],
-        "summary": "Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent",
+        "summary": "Draft the minutes from every note-taker’s notes and the recording’s transcript, as a background AI run, saving the caller’s `notes` first when sent. Replaces an earlier request. 400 when there is nothing to draft from. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent",
         "tags": [
           "Meetings"
         ]
@@ -17435,7 +17491,7 @@
             "bearer": []
           }
         ],
-        "summary": "Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed",
+        "summary": "Clear the caller’s own notes and the draft, and stop a draft still being written. Other note-takers’ notes stay. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed",
         "tags": [
           "Meetings"
         ]
@@ -17492,6 +17548,316 @@
           }
         ],
         "summary": "Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/draft/choose": {
+      "post": {
+        "operationId": "MeetingDraftController_choose_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChooseMeetingDraftVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDraftDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put another version of a disagreement between note-takers into the minutes, or settle a tie (#4935). 409 `meeting.stale` when the minutes moved, 409 `meeting.draft_not_waiting` when the disagreement is gone",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meeting-notes": {
+      "get": {
+        "operationId": "MeetingNotesController_list_v1",
+        "parameters": [
+          {
+            "name": "event_id",
+            "required": false,
+            "in": "query",
+            "description": "Only this event.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingNoteTakingDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unposted minutes the caller may take notes on and doesn’t edit: an officer’s to join, or ones they were added to",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/notes": {
+      "get": {
+        "operationId": "MeetingNotesController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNotesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller’s own notes on these minutes and who else takes notes; the author and editors read everyone’s",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "put": {
+        "operationId": "MeetingNotesController_save_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMeetingNotesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNotesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the caller’s own notes, joining as a note-taker if they weren’t. Empty notes clear them, with any draft written from them. 409 `meeting.draft_posted`, 400 `meeting.standards_refused`",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/note-takers": {
+      "post": {
+        "operationId": "MeetingNotesController_add_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMeetingNoteTakerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNotesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a member the meeting’s event invites as a note-taker, for the author or an editor. They are told once. 400 `meeting.not_in_audience`",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/note-takers/{userId}": {
+      "delete": {
+        "operationId": "MeetingNotesController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a note-taker with their notes and any draft written from them: the author or an editor removes anyone, a note-taker themselves",
         "tags": [
           "Meetings"
         ]
@@ -23806,6 +24172,24 @@
         "required": [
           "expected_updated_at"
         ]
+      },
+      "LinkMeetingEventDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An event with no minutes of its own. Send this or new_event."
+          },
+          "new_event": {
+            "description": "Make an event for the minutes after the fact: nobody required, no points, and no new-event push.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewMeetingEventDto"
+              }
+            ]
+          }
+        }
       },
       "CheckInDto": {
         "type": "object",
@@ -30571,12 +30955,101 @@
           "quote": {
             "type": "string",
             "description": "The line of the notes it came from, word for word."
+          },
+          "from": {
+            "type": "string",
+            "description": "Whose line it is: a note-taker’s name, or \"Recording\". Absent on a draft from before several note-takers."
           }
         },
         "required": [
           "kind",
           "text",
           "quote"
+        ]
+      },
+      "MeetingDraftVersionDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "A note-taker’s name, or \"Recording\"."
+          },
+          "quote": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "vote": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetingVoteDto"
+              }
+            ]
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-11-20"
+          }
+        },
+        "required": [
+          "from",
+          "quote",
+          "text",
+          "vote",
+          "owner_user_id",
+          "due_date"
+        ]
+      },
+      "MeetingDraftConflictDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "decision",
+              "action_item"
+            ]
+          },
+          "about": {
+            "type": "string",
+            "description": "What the sources disagree about."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDraftVersionDto"
+            }
+          },
+          "chosen": {
+            "type": "number",
+            "nullable": true,
+            "description": "The version in the minutes, or null when nothing settled it and the author must pick."
+          },
+          "settled_by": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "authority",
+              "author"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "kind",
+          "about",
+          "versions",
+          "chosen",
+          "settled_by"
         ]
       },
       "MeetingDraftReviewDto": {
@@ -30598,12 +31071,20 @@
           "left_out": {
             "type": "number",
             "description": "Drafted lines left out because the line they named is not in the notes."
+          },
+          "conflicts": {
+            "description": "Where note-takers’ notes or the recording disagreed, and how each was settled (#4935).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDraftConflictDto"
+            }
           }
         },
         "required": [
           "gaps",
           "sources",
-          "left_out"
+          "left_out",
+          "conflicts"
         ]
       },
       "MeetingDraftDto": {
@@ -30686,7 +31167,7 @@
           "notes": {
             "type": "string",
             "maxLength": 160000,
-            "description": "The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft."
+            "description": "The officer’s own notes, saved as theirs before the draft is asked for. Optional since several note-takers (#4935): the draft reads every note-taker’s saved notes and the recording’s transcript, sent to the AI provider the catalog names for the task, and kept only while the minutes are a draft."
           },
           "expected_updated_at": {
             "type": "string",
@@ -30700,7 +31181,6 @@
           }
         },
         "required": [
-          "notes",
           "expected_updated_at"
         ]
       },
@@ -30715,6 +31195,259 @@
         },
         "required": [
           "expected_updated_at"
+        ]
+      },
+      "ChooseMeetingDraftVersionDto": {
+        "type": "object",
+        "properties": {
+          "conflict": {
+            "type": "number",
+            "description": "The disagreement, by its place in the list."
+          },
+          "version": {
+            "type": "number",
+            "description": "The version to put in, by its place."
+          },
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "conflict",
+          "version",
+          "expected_updated_at"
+        ]
+      },
+      "MeetingNoteTakingDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "author_name": {
+            "type": "string"
+          },
+          "joined": {
+            "type": "boolean",
+            "description": "The caller already takes notes here."
+          },
+          "added": {
+            "type": "boolean",
+            "description": "The author or an editor added the caller."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "author_name",
+          "joined",
+          "added"
+        ]
+      },
+      "MeetingNotesMeetingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "exec",
+              "committee",
+              "other"
+            ]
+          },
+          "author_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "event_start_time",
+          "meeting_type",
+          "author_name"
+        ]
+      },
+      "MeetingOwnNotesDto": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "held": {
+            "type": "string",
+            "enum": [
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why these notes would be left out of a draft now: their writer has not turned Frapp AI on."
+          }
+        },
+        "required": [
+          "notes",
+          "updated_at",
+          "held"
+        ]
+      },
+      "MeetingNoteTakerDto": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "held": {
+            "type": "string",
+            "enum": [
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why these notes would be left out of a draft now: their writer has not turned Frapp AI on."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_author": {
+            "type": "boolean"
+          },
+          "added": {
+            "type": "boolean",
+            "description": "Added by the author or an editor, not joined by themselves."
+          }
+        },
+        "required": [
+          "notes",
+          "updated_at",
+          "held",
+          "user_id",
+          "display_name",
+          "is_author",
+          "added"
+        ]
+      },
+      "MeetingNotesDto": {
+        "type": "object",
+        "properties": {
+          "meeting": {
+            "$ref": "#/components/schemas/MeetingNotesMeetingDto"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "note_taker"
+            ],
+            "description": "`editor`: the minutes’ author or someone who can edit any minutes, who reads every note-taker’s notes and asks for the draft."
+          },
+          "mine": {
+            "$ref": "#/components/schemas/MeetingOwnNotesDto"
+          },
+          "takers": {
+            "description": "Everyone else taking notes, for an editor; empty otherwise.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingNoteTakerDto"
+            }
+          },
+          "others_count": {
+            "type": "number"
+          },
+          "can_add": {
+            "type": "boolean"
+          },
+          "joined": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "meeting",
+          "role",
+          "mine",
+          "takers",
+          "others_count",
+          "can_add",
+          "joined"
+        ]
+      },
+      "SaveMeetingNotesDto": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 160000,
+            "description": "The caller’s own notes, as typed. Empty clears them. Kept only while the minutes are a draft, and 30 days at most."
+          }
+        },
+        "required": [
+          "notes"
+        ]
+      },
+      "AddMeetingNoteTakerDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A member the meeting’s event invites."
+          }
+        },
+        "required": [
+          "user_id"
         ]
       },
       "CalendarFeedLinkDto": {

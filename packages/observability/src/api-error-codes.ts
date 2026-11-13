@@ -139,6 +139,12 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "meeting.draft_posted",
   // "Use the draft" on a draft that is no longer waiting.
   "meeting.draft_not_waiting",
+  // Several note-takers (#4935): adding a member the meeting's event doesn't
+  // invite, notes and a transcript too long together for one draft, and
+  // linking an event to minutes that already have theirs.
+  "meeting.not_in_audience",
+  "meeting.notes_too_long",
+  "meeting.event_linked",
   // A recording Frapp doesn't take (#712): the wrong kind of file, too
   // large, too short or too long. The upload step checks first, but the
   // server's limits follow the provider it is set up with.

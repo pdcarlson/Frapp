@@ -15,6 +15,8 @@ export type NewMeetingDraft = Pick<
   | 'notes'
   | 'meeting_date'
   | 'base_updated_at'
+  | 'source_user_ids'
+  | 'sources'
 >;
 
 /** How a request ended. */
@@ -51,6 +53,15 @@ export interface IMeetingDraftRepository {
     outcome: MeetingDraftOutcome,
   ): Promise<MeetingDraft | null>;
   delete(chapterId: string, meetingId: string): Promise<void>;
+  /**
+   * Deletes the meeting's draft when it was written from `userId`'s notes
+   * (#4935): their notes were cleared, or they were removed as a note-taker.
+   */
+  deleteWrittenFrom(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<void>;
   /**
    * Deletes every request made before `cutoff`, in every chapter: the
    * retention sweep. Resolves to how many went.
