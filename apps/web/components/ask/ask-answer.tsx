@@ -1,6 +1,5 @@
 "use client";
 
-import type { MouseEvent } from "react";
 import Link from "next/link";
 import { Check, Copy } from "lucide-react";
 import type {
@@ -11,6 +10,7 @@ import type {
 import {
   ASK_COPY,
   ASK_POST_COPY,
+  askAnswerEntities,
   askAnswerSegments,
   askLeftOutLine,
   askPostedSourceTitle,
@@ -27,6 +27,11 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
+import {
+  AskEntityText,
+  AskChannelOpens,
+  onPlainClick,
+} from "@/components/ask/ask-entity-text";
 import { AskProposal } from "@/components/ask/ask-proposal";
 import {
   askSourceHref,
@@ -294,21 +299,7 @@ function AskAnswerBody({
   }
   return (
     <>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-        {askAnswerSegments(answer).map((segment, position) =>
-          segment.type === "text" ? (
-            <span key={position}>{segment.text}</span>
-          ) : (
-            <CitationMarker
-              key={position}
-              number={segment.citation.source + 1}
-              source={answer.sources[segment.citation.source]}
-              quote={segment.citation.quote}
-              onFollowMessage={onFollowMessage}
-            />
-          ),
-        )}
-      </p>
+      <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>
@@ -422,16 +413,49 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
 }
 
 /**
- * Runs on a click that follows the link here. A click that opens it in a new
- * tab or window leaves this page, and so the conversation, as it was.
+ * The answer's own words: each cited sentence ends in its marker, and a
+ * person or channel the server named is drawn as chat draws a mention
+ * (`ask-entity-text.tsx`). With no names listed, as from a server before the
+ * agent build, it is the text and its markers, as it was.
  */
-function onPlainClick(run: (() => void) | undefined) {
-  if (!run) return undefined;
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-      return;
-    run();
-  };
+function AnswerText({
+  answer,
+  onFollowMessage,
+}: {
+  answer: AskAnswer;
+  onFollowMessage?: () => void;
+}) {
+  const entities = askAnswerEntities(answer);
+  const draw = (canOpenChannel: (channelId: string) => boolean) => (
+    <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+      {askAnswerSegments(answer).map((segment, position) =>
+        segment.type === "text" ? (
+          <span key={position}>
+            <AskEntityText
+              text={segment.text}
+              entities={entities}
+              canOpenChannel={canOpenChannel}
+              onFollow={onFollowMessage}
+            />
+          </span>
+        ) : (
+          <CitationMarker
+            key={position}
+            number={segment.citation.source + 1}
+            source={answer.sources[segment.citation.source]}
+            quote={segment.citation.quote}
+            onFollowMessage={onFollowMessage}
+          />
+        ),
+      )}
+    </p>
+  );
+  // The reader's channel list is only read for an answer that names one.
+  return entities.some((entity) => entity.type === "channel") ? (
+    <AskChannelOpens>{draw}</AskChannelOpens>
+  ) : (
+    draw(() => false)
+  );
 }
 
 /**

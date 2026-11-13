@@ -30,6 +30,16 @@ import { AskTurn } from "./ask-turn";
  * can't drift.
  */
 
+// The reader has #rush-week (c1) and no other channel.
+const channelList = vi.hoisted(() => ({ reads: 0 }));
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useChannels: () => {
+    channelList.reads += 1;
+    return { data: [{ id: "c1", name: "rush-week", type: "PUBLIC" }] };
+  },
+}));
+
 // A purple chapter: the member's bubble takes its solid accent pair, and
 // nothing that is Frapp's (a marker, a chip's number) may.
 vi.mock("@/lib/chapter-branding", () => ({
@@ -345,9 +355,74 @@ describe("AskTurn", () => {
   });
 });
 
+describe("people and channels an answer names (#4904)", () => {
+  const named = (entities: unknown) =>
+    exchange({
+      answer: {
+        ...answer({
+          text: "Ask @Ana Ruiz in #rush-week, not @Nobody.",
+          citations: [],
+          sources: [],
+        }),
+        entities,
+      } as AskAnswer,
+    });
+  const ENTITIES = [
+    { type: "member", id: "u1", name: "Ana Ruiz" },
+    { type: "channel", id: "c1", name: "rush-week" },
+  ];
+  const ELSEWHERE = [{ type: "channel", id: "c9", name: "rush-week" }];
+  const runs = (tree: ReactTestRenderer, text: string) =>
+    tree.root.findAll(
+      (node) => node.type === Text && node.props.children === text,
+    );
+  const filled = (node: ReactTestInstance) =>
+    Boolean(
+      (node.props.style as { backgroundColor?: string } | undefined)
+        ?.backgroundColor,
+    );
+
+  it("highlights a listed member and links a channel the reader has", () => {
+    const onOpenChannel = vi.fn();
+    const tree = render(named(ENTITIES), { onOpenChannel });
+
+    const [member] = runs(tree, "@Ana Ruiz");
+    expect(filled(member)).toBe(true);
+    expect(member.props.onPress).toBeUndefined();
+
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBe("link");
+    act(() => channel.props.onPress());
+    expect(onOpenChannel).toHaveBeenCalledWith("c1");
+
+    // A name the server did not list is ordinary text.
+    expect(runs(tree, "@Nobody")).toHaveLength(0);
+  });
+
+  it("leaves a channel the reader cannot open as plain words", () => {
+    const tree = render(named(ELSEWHERE), { onOpenChannel: vi.fn() });
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBeUndefined();
+    expect(channel.props.onPress).toBeUndefined();
+    expect(filled(channel)).toBe(false);
+  });
+
+  it("draws an answer with no list as it always was, without reading the channel list", () => {
+    channelList.reads = 0;
+    const tree = render(named(undefined), { onOpenChannel: vi.fn() });
+    expect(channelList.reads).toBe(0);
+    expect(runs(tree, "@Ana Ruiz")).toHaveLength(0);
+    expect(
+      runs(tree, "Ask @Ana Ruiz in #rush-week, not @Nobody."),
+    ).toHaveLength(1);
+  });
+});
+
 describe("askSourceMetaLine", () => {
   it("writes kind, place and the full date", () => {
-    expect(askSourceMetaLine(BYLAWS)).toMatch(/· Article IV · September 1, 2026$/);
+    expect(askSourceMetaLine(BYLAWS)).toMatch(
+      /· Article IV · September 1, 2026$/,
+    );
   });
 
   it("marks live data, and says its kind once when the title is the kind", () => {
@@ -369,7 +444,9 @@ describe("under an answer", () => {
     expect(screenText(tree)).not.toContain(AI_REPORT_COPY.action);
 
     const sent = render(done, { report: { reported: true, onPress } });
-    expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(true);
+    expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(
+      true,
+    );
 
     // Nothing AI-made in an answer that was never attempted, or not yet named.
     expect(

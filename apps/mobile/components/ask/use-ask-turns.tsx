@@ -78,6 +78,19 @@ export function useAskTurns({
     [leave, router],
   );
 
+  // Opens a channel an answer names (#4904); `ask-turn.tsx` offers it only
+  // for a channel the reader has.
+  const openChannel = useCallback(
+    (channelId: string) => {
+      leave?.();
+      openHref(
+        router,
+        asRoute(`/chat-thread?channelId=${encodeURIComponent(channelId)}`),
+      );
+    },
+    [leave, router],
+  );
+
   const propsFor = (exchange: AskExchange) => ({
     exchange,
     canOpen: canOpenAskSource,
@@ -89,6 +102,7 @@ export function useAskTurns({
     onRetry: () => void retry(exchange.id, options()),
     onAnswerConsent: () => void retry(exchange.id, options()),
     report: reportFor(exchange, reporting),
+    onOpenChannel: openChannel,
     proposal: exchange.proposal ? (
       <AskProposal
         proposal={exchange.proposal}
