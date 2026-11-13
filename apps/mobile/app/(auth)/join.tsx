@@ -50,6 +50,7 @@ import {
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
+import { NewAccountNotice } from "@/components/onboarding/new-account-notice";
 import {
   SignedInAs,
   useOnboardingSignOut,
@@ -71,6 +72,7 @@ import { useSelectChapter } from "@/lib/select-chapter";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
+import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 
@@ -155,7 +157,11 @@ export default function JoinChapter() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, email, userId } = useAuthSession();
+  const { status, email, userId, isNewAccount, dismissNewAccount } =
+    useAuthSession();
+  // "New account created" (#4769) only for an account the gate sent here for
+  // having no chapter, never for a member opening Join from the picker.
+  const gateDestination = useAuthGateDestination();
   const { signOut: signOutToSignIn, signingOut } = useOnboardingSignOut();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
@@ -595,6 +601,19 @@ export default function JoinChapter() {
               />
             </View>
 
+            {isNewAccount && gateDestination === "join" ? (
+              <View style={[styles.accountLine, styles.noticeLine]}>
+                <NewAccountNotice
+                  email={email}
+                  inviteFirst={arrivedWithInvite}
+                  signOut={signOutToSignIn}
+                  signingOut={signingOut}
+                  disabled={submitting}
+                  onContinue={dismissNewAccount}
+                />
+              </View>
+            ) : null}
+
             {view === "choose" ? (
               // At the top, like the other two views, so the title doesn't
               // jump from mid-screen to the top on the first tap. No line
@@ -950,6 +969,10 @@ function createStyles(tokens: SignetTokens) {
       width: "100%",
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
+    },
+    // "New account created" under the Sign out line (#4769).
+    noticeLine: {
+      paddingTop: tokens.spacing.sm,
     },
     inviteCard: {
       borderRadius: tokens.radius.card,

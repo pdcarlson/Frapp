@@ -1001,7 +1001,8 @@ describe("AuthSessionProvider — sign-in", () => {
     expect(mockState.signInWithOtpCalls).toEqual([
       {
         email: "officer@university.edu",
-        options: { emailRedirectTo: "frapp:///?" },
+        // Tagged so its return asks whether it made a new account (#4769).
+        options: { emailRedirectTo: "frapp:///?intent=sign-in-link" },
       },
     ]);
     expect(result.current.status).toBe("unauthenticated");
@@ -1575,5 +1576,109 @@ describe("sessionStorageAdapter", () => {
 
     expect(mockState.secureStore.size).toBe(0);
     await expect(sessionStorageAdapter.getItem("sb-auth")).resolves.toBeNull();
+  });
+});
+
+describe("AuthSessionProvider — new account (#4769)", () => {
+  const T0 = Date.now();
+  const iso = (offsetMs: number) => new Date(T0 + offsetMs).toISOString();
+  // Asked for an hour ago, confirmed by the link opened just now.
+  const newEmailUser = {
+    id: "user-new",
+    email: "typo@university.edu",
+    identities: [{ provider: "email" }],
+    created_at: iso(-60 * 60_000),
+    email_confirmed_at: iso(-1_000),
+    last_sign_in_at: iso(0),
+    app_metadata: { provider: "email" },
+  };
+
+  async function client() {
+    const { getSupabaseClient } = await import("./supabase");
+    return vi.mocked(getSupabaseClient)()!;
+  }
+
+  it("flags the sign-in link landing in an email account it just confirmed", async () => {
+    const auth = (await client()).auth;
+    vi.mocked(auth.verifyOtp).mockResolvedValueOnce({
+      data: { user: newEmailUser },
+      error: null,
+    } as never);
+    mockState.deepLinkUrl =
+      "frapp:///?intent=sign-in-link&token_hash=hash-1&type=signup";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(auth.verifyOtp).toHaveBeenCalled());
+    act(() => {
+      emitAuthChange({ access_token: "token-new", user: newEmailUser } as never);
+    });
+
+    await waitFor(() => expect(result.current.isNewAccount).toBe(true));
+
+    // "Continue with the new account" puts it away for this account.
+    act(() => result.current.dismissNewAccount());
+    expect(result.current.isNewAccount).toBe(false);
+  });
+
+  it("leaves a sign-up confirmation alone: the link carries no sign-in tag", async () => {
+    const auth = (await client()).auth;
+    vi.mocked(auth.verifyOtp).mockResolvedValueOnce({
+      data: { user: newEmailUser },
+      error: null,
+    } as never);
+    mockState.deepLinkUrl = "frapp:///?token_hash=hash-2&type=signup";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(auth.verifyOtp).toHaveBeenCalled());
+    act(() => {
+      emitAuthChange({ access_token: "token-new", user: newEmailUser } as never);
+    });
+
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isNewAccount).toBe(false);
+  });
+
+  it("leaves a returning email account alone, tag or not", async () => {
+    const auth = (await client()).auth;
+    const returning = {
+      ...newEmailUser,
+      created_at: iso(-90 * 24 * 60 * 60_000),
+      email_confirmed_at: iso(-90 * 24 * 60 * 60_000),
+    };
+    vi.mocked(auth.verifyOtp).mockResolvedValueOnce({
+      data: { user: returning },
+      error: null,
+    } as never);
+    mockState.deepLinkUrl =
+      "frapp:///?intent=sign-in-link&token_hash=hash-3&type=magiclink";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(auth.verifyOtp).toHaveBeenCalled());
+    act(() => {
+      emitAuthChange({ access_token: "token-old", user: returning } as never);
+    });
+
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isNewAccount).toBe(false);
+  });
+
+  it("flags a first Google or Apple sign-in from its timestamps alone", async () => {
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    act(() => {
+      emitAuthChange({
+        access_token: "token-apple",
+        user: {
+          id: "user-apple",
+          email: "abc@privaterelay.appleid.com",
+          created_at: iso(-2_000),
+          last_sign_in_at: iso(0),
+          app_metadata: { provider: "apple" },
+        },
+      } as never);
+    });
+
+    await waitFor(() => expect(result.current.isNewAccount).toBe(true));
   });
 });

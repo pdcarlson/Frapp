@@ -1229,6 +1229,8 @@ The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md
 | Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
 | Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
 
+The phone shows the same title, line and actions as a card at the top of s02, the screen a new account with no chapter lands on (#4769, 2026-11-13; [`screens.md`](../mobile/screens.md) s02). It has no sign-out-failed line: the phone's sign-out always ends the local session.
+
 ### Onboarding wizard (dashboard overlay)
 
 | State | Title | Description |

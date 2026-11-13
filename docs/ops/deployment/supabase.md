@@ -181,7 +181,8 @@ personal token that can write; no stored CI token can.
 **`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link
 `emailRedirectTo` is `Linking.createURL("/")` with a trailing `?` (`frapp:///?` in a build that
 owns the scheme; see `spec/ui/mobile/navigation.md` § Magic-link auth callback) so the hosted
-template can append `&token_hash=`. Without the allow-list entry, GoTrue rejects the redirect
+template can append `&token_hash=`. The sign-in screen's link carries `intent=sign-in-link` after
+the `?` (`frapp:///?intent=sign-in-link`, #4769); the `frapp://**` wildcard already covers it. Without the allow-list entry, GoTrue rejects the redirect
 and drops the member on the web Site URL instead. Expo Go's `exp://<host>:8081/--/` form is
 still per-machine and still #765.
 

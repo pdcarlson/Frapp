@@ -16,6 +16,7 @@ import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
 import { MemberFacingError } from "@repo/hooks/error-copy";
+import { isFirstOAuthSignIn, isNewEmailSignIn } from "@repo/validation";
 import {
   describeAuthReturnError,
   describeOAuthKickoffError,
@@ -80,6 +81,17 @@ type AuthSessionContextValue = {
   isConfigured: boolean;
   /** Why the last magic-link callback failed, if it did. Cleared on retry. */
   callbackError: string | null;
+  /**
+   * True when this sign-in created a brand-new account (#4769), so s02 can
+   * say so before onboarding treats the person as new: a first Google or
+   * Apple sign-in, or the sign-in screen's magic link landing in an email
+   * account it just confirmed (`@repo/validation` `new-account`). The third
+   * rule, no chapter, is s02's own: the gate opens it only for an account
+   * whose chapters read answered `[]`. False once dismissed.
+   */
+  isNewAccount: boolean;
+  /** "Continue with the new account": hides the notice for this account. */
+  dismissNewAccount: () => void;
   signInWithPassword: (input: {
     email: string;
     password: string;
@@ -143,6 +155,8 @@ function readAuthParams(url: string): {
   errorCode: string | null;
   /** The bare `error` identifier (`access_denied`), kept apart from the sentence. */
   error: string | null;
+  /** `sign-in-link` on the sign-in screen's magic link ({@link SIGN_IN_LINK_INTENT}). */
+  intent: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -170,6 +184,7 @@ function readAuthParams(url: string): {
     errorDescription: read("error_description") ?? read("error"),
     errorCode: read("error_code"),
     error: read("error"),
+    intent: queryParams.get("intent"),
   };
 }
 
@@ -186,6 +201,21 @@ function appRedirectTo(): string {
 }
 
 /**
+ * Tags the sign-in screen's magic link, as web's `intent=sign-in-link` does
+ * (#3801), so its return knows to ask whether it created a new account. The
+ * Confirm-signup resend (`resendConfirmation`) shares the redirect but not
+ * the tag: someone confirming a sign-up they made knows the account is new.
+ */
+export const SIGN_IN_LINK_INTENT = "sign-in-link";
+
+/** `frapp:///?intent=sign-in-link`; GoTrue's template appends `&token_hash=…`. */
+export function signInLinkRedirectTo(): string {
+  const base = appRedirectTo();
+  const joiner = base.endsWith("?") || base.endsWith("&") ? "" : "&";
+  return `${base}${joiner}intent=${SIGN_IN_LINK_INTENT}`;
+}
+
+/**
  * Exchanges a magic-link callback for a session.
  *
  * Returns a message when the link itself was rejected. Magic links are
@@ -196,6 +226,7 @@ function appRedirectTo(): string {
 async function createSessionFromUrl(
   supabase: SupabaseClient,
   url: string,
+  onSignInLink?: (userId: string) => void,
 ): Promise<string | null> {
   const {
     accessToken,
@@ -206,7 +237,12 @@ async function createSessionFromUrl(
     errorDescription,
     errorCode,
     error: errorIdentifier,
+    intent,
   } = readAuthParams(url);
+  // The user a tagged sign-in link signed in, for `isNewAccount` (#4769).
+  const noteSignIn = (userId: string | undefined) => {
+    if (userId && intent === SIGN_IN_LINK_INTENT) onSignInLink?.(userId);
+  };
 
   // A link or provider return that didn't become a session (#3832). Only the
   // code is read, never the URL, which holds the code or token itself.
@@ -243,16 +279,18 @@ async function createSessionFromUrl(
         reportCallback(undefined, "verify_failed");
         return FINISH_FAILED_COPY;
       }
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
       if (error) reportCallback(error);
+      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) reportCallback(error);
+      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     return null;
@@ -305,6 +343,17 @@ export function AuthSessionProvider({
     null,
   );
   const [callbackError, setCallbackError] = useState<string | null>(null);
+  /**
+   * The user the sign-in screen's magic link last signed in (#4769). Only that
+   * return asks the email rule: a Confirm-signup link passes it too.
+   * In memory, so a cold start forgets it and the notice with it; a Google or
+   * Apple account needs no marker, its timestamps say it all.
+   */
+  const [signInLinkUserId, setSignInLinkUserId] = useState<string | null>(null);
+  /** The account whose new-account notice was dismissed this run. */
+  const [dismissedNewAccountId, setDismissedNewAccountId] = useState<
+    string | null
+  >(null);
   /**
    * Last auth uid observed in `applySession`.
    *
@@ -554,9 +603,11 @@ export function AuthSessionProvider({
 
     let cancelled = false;
     lastHandledCallbackUrl.current = url;
-    void createSessionFromUrl(supabase, url).then((message) => {
-      if (!cancelled && message) setCallbackError(message);
-    });
+    void createSessionFromUrl(supabase, url, setSignInLinkUserId).then(
+      (message) => {
+        if (!cancelled && message) setCallbackError(message);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -571,7 +622,11 @@ export function AuthSessionProvider({
         password,
       });
       if (error) {
-        reportAuthFailure({ flow: "password_sign_in", screen: "/sign-in", error });
+        reportAuthFailure({
+          flow: "password_sign_in",
+          screen: "/sign-in",
+          error,
+        });
         throw error;
       }
     },
@@ -585,10 +640,14 @@ export function AuthSessionProvider({
       setCallbackError(null);
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: appRedirectTo() },
+        options: { emailRedirectTo: signInLinkRedirectTo() },
       });
       if (error) {
-        reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
+        reportAuthFailure({
+          flow: "magic_link_send",
+          screen: "/sign-in",
+          error,
+        });
         throw error;
       }
     },
@@ -661,9 +720,7 @@ export function AuthSessionProvider({
         );
       }
       if (!data.url) {
-        throw startFailed(
-          new MemberFacingError(START_FAILED_COPY),
-        );
+        throw startFailed(new MemberFacingError(START_FAILED_COPY));
       }
 
       const result = await WebBrowser.openAuthSessionAsync(
@@ -685,7 +742,11 @@ export function AuthSessionProvider({
         return;
       }
       lastHandledCallbackUrl.current = result.url;
-      const message = await createSessionFromUrl(supabase, result.url);
+      const message = await createSessionFromUrl(
+        supabase,
+        result.url,
+        setSignInLinkUserId,
+      );
       if (message) {
         throw new MemberFacingError(message);
       }
@@ -736,6 +797,17 @@ export function AuthSessionProvider({
   // comment for why an in-flight re-read must not.
   const isChapterResolving = status === "authenticated" && !hasReadChapterClaim;
 
+  const sessionUser = session?.user ?? null;
+  const isNewAccount =
+    status === "authenticated" &&
+    sessionUser !== null &&
+    dismissedNewAccountId !== sessionUser.id &&
+    (isFirstOAuthSignIn(sessionUser) ||
+      (signInLinkUserId === sessionUser.id && isNewEmailSignIn(sessionUser)));
+  const dismissNewAccount = useCallback(() => {
+    setDismissedNewAccountId(userId);
+  }, [userId]);
+
   const value = useMemo<AuthSessionContextValue>(
     () => ({
       status,
@@ -745,6 +817,8 @@ export function AuthSessionProvider({
       isChapterResolving,
       isConfigured: configured,
       callbackError,
+      isNewAccount,
+      dismissNewAccount,
       signInWithPassword,
       sendMagicLink,
       resendConfirmation,
@@ -755,7 +829,9 @@ export function AuthSessionProvider({
       callbackError,
       chapterId,
       configured,
+      dismissNewAccount,
       isChapterResolving,
+      isNewAccount,
       resendConfirmation,
       sendMagicLink,
       session?.user?.email,
