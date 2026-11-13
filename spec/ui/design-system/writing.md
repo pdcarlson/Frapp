@@ -518,7 +518,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 | New event (sheet from the tab bar's +) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
-| Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
+| Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` In place of Check in on the phone's event card and Event detail, and on web's chat event card while check-in is open (#4136, 2026-11-13; `CHECK_IN_MODULE_OFF_LINE` in `@repo/validation`) |
 | Log service hours (s20) | `Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.` |
 | Review service hours (Activity sheet, #3897) | `Service hours are turned off for your chapter right now, so hours can't be reviewed. An officer can turn service hours back on.` |
 | Upload document (s21) | `Documents are turned off for your chapter right now, so new documents can't be uploaded. An officer can turn documents back on.` |
