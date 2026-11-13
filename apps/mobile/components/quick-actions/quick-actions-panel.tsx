@@ -29,6 +29,7 @@ import {
   removeQuickAction,
 } from "@/lib/quick-actions";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 
 /** Each action's glyph: the nav-set shape of the place it leads. */
 const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
@@ -672,10 +673,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     addHead: {
-      ...typeRole(tokens.typography.role.caption),
-      fontFamily: fontFamilyFor(600),
-      letterSpacing: 1.2,
-      textTransform: "uppercase",
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
       marginTop: 18,
       marginBottom: 12,
