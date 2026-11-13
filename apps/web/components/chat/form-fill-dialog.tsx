@@ -20,6 +20,8 @@ import {
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
+  formPageNotice,
+  formProblemCountLine,
   formResponseKey,
   isFormClosed,
   readFormPayload,
@@ -275,13 +277,7 @@ function FormFillBody({
           </DialogDescription>
         )}
         <p className="mt-3 text-caption text-muted-foreground">
-          {closed
-            ? !loaded
-              ? "This form is closed."
-              : answered
-                ? "This form is closed. These are the answers you sent."
-                : "This form is closed. You didn't answer it."
-            : "Your answers aren't posted in the chat. Only you and the person who posted this form can see them."}
+          {formPageNotice(closed, loaded, answered)}
         </p>
 
         {response.isPending ? (
@@ -327,9 +323,7 @@ function FormFillBody({
           </p>
         ) : showProblems && problemCount > 0 ? (
           <p role="alert" className="mr-auto text-sm text-destructive-text">
-            {problemCount === 1
-              ? "One question needs an answer."
-              : `${problemCount} questions need an answer.`}
+            {formProblemCountLine(problemCount)}
           </p>
         ) : null}
         <Button type="button" variant="ghost" onClick={onDone}>

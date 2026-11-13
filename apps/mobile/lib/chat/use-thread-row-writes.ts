@@ -3,13 +3,14 @@ import {
   actOnCard,
   closePoll as closePollAction,
   closeCard as closeCardAction,
+  type ClosableCardKind,
   deleteMessage,
   editMessage,
   react as reactAction,
   unreact as unreactAction,
 } from "@repo/chat-core/chat-client";
 import { MemberFacingError } from "@repo/hooks/error-copy";
-import { withFailureMessage } from "./use-chat-channel";
+import { closeCardFailure, withFailureMessage } from "./use-chat-channel";
 import { useChatActionContext } from "./use-chat-runtime";
 
 export interface ThreadRowWritesInput {
@@ -41,7 +42,7 @@ export interface ThreadRowWrites {
   /** Rejects with the member-facing reason, for the confirm's alert. */
   closePoll: (messageId: string) => Promise<void>;
   /** Rejects with the member-facing reason, for the confirm's alert. */
-  closeSignup: (messageId: string) => Promise<void>;
+  closeCard: (messageId: string, kind: ClosableCardKind) => Promise<void>;
   /**
    * Why the latest reaction didn't land, or `null`; the channel's
    * `reactionError`, the same banner (`spec/ui/mobile/patterns.md` § Chat).
@@ -238,9 +239,9 @@ export function useThreadRowWrites({
     [ctx, channelId, targetOf, settle],
   );
 
-  const closeSignup = useCallback(
-    async (messageId: string) => {
-      const failure = "Couldn't close sign-ups. Try again.";
+  const closeCard = useCallback(
+    async (messageId: string, kind: ClosableCardKind) => {
+      const failure = closeCardFailure(kind);
       if (!ctx) throw new MemberFacingError(failure);
       await settle(
         messageId,
@@ -248,7 +249,12 @@ export function useThreadRowWrites({
           (onError) =>
             closeCardAction(
               { ...ctx, onError },
-              { channelId, messageId, threadRootId: targetOf(messageId) },
+              {
+                channelId,
+                messageId,
+                threadRootId: targetOf(messageId),
+                kind,
+              },
             ),
           failure,
         ),
@@ -264,7 +270,7 @@ export function useThreadRowWrites({
     edit,
     remove,
     closePoll,
-    closeSignup,
+    closeCard,
     reactionError,
     clearReactionError,
     actionError,

@@ -66,9 +66,7 @@ export interface ComposerPlusSheetProps {
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
   poll: PollGlyph,
   signup: SignupGlyph,
-  // Never drawn yet: the phone's + doesn't offer a form until #3926 step 3's
-  // phone PR, which gives it its own glyph.
-  form: SignupGlyph,
+  form: FormGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceHoursGlyph,
@@ -283,6 +281,33 @@ function SignupGlyph(props: TabGlyphProps) {
       />
       <Path
         d="M9.4 3.4h5.2v3.2H9.4zM8.8 12.2l1.6 1.6 3-3M8.8 16.8h6.4"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * Form (#3926 step 3): web's `FormGlyph` path data, a sheet with two
+ * answered lines and a blank one, its sheet filled, the lines stroke-only.
+ */
+function FormGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Path
+        d="M6.6 3.5h10.8a1.6 1.6 0 011.6 1.6v13.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 18.9V5.1a1.6 1.6 0 011.6-1.6z"
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M8.4 8.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 8.6h3.6M8.4 12.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 12.6h3.6M8.6 16.6h6.8"
         fill="none"
         stroke={stroke}
         strokeWidth={STROKE_WIDTH}

@@ -221,6 +221,52 @@ export const CLOSE_FORM_CONFIRM_BODY =
   "Nobody can answer or change their answers after this. Answers already sent stay.";
 export const CLOSE_FORM_CONFIRM_LABEL = "Close form";
 
+/**
+ * Who sees a member's answers, said on the form page above the questions.
+ * One string for web and the phone: it is a privacy claim, so the two must
+ * never disagree. It names the ceiling (the poster will read them in step 4's
+ * responses view), not only who can read them today.
+ */
+export const FORM_PRIVACY_NOTE =
+  "Your answers aren't posted in the chat. Only you and the person who posted this form can see them.";
+
+/**
+ * The form page's line above the questions: the privacy note on an open
+ * form, and on a closed one whether these are the answers sent. `loaded` is
+ * whether the viewer's answers have been read at least once, so a closed form
+ * never says "You didn't answer it" before they load.
+ */
+export function formPageNotice(
+  closed: boolean,
+  loaded: boolean,
+  answered: boolean,
+): string {
+  if (!closed) return FORM_PRIVACY_NOTE;
+  if (!loaded) return "This form is closed.";
+  return answered
+    ? "This form is closed. These are the answers you sent."
+    : "This form is closed. You didn't answer it.";
+}
+
+/** Above Send once it was pressed with questions still to answer. */
+export function formProblemCountLine(count: number): string {
+  return count === 1
+    ? "One question needs an answer."
+    : `${count} questions need an answer.`;
+}
+
+/**
+ * Whether the card knows the viewer has answered: `undefined` until their
+ * answers are first read. Keyed on the data, not the query's status, so a
+ * failed background refetch, which keeps the data, doesn't turn an answered
+ * card back into Open.
+ */
+export function formAnsweredState(
+  data: OwnFormResponse | null | undefined,
+): boolean | undefined {
+  return data === undefined ? undefined : data !== null;
+}
+
 /** "3 questions", the card's count line. */
 export function formQuestionCountLine(payload: FormPayload): string {
   const n = payload.questions.length;

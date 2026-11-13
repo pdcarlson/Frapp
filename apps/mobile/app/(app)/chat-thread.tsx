@@ -38,6 +38,7 @@ import {
 import { setChannelLocked } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -86,6 +87,11 @@ import {
   ImageViewerContext,
   useImageViewer,
 } from "@/components/chat/image-viewer";
+import {
+  FormFillContext,
+  FormFillPage,
+  useFormFillHost,
+} from "@/components/chat/form-fill-page";
 import { JumpToLatestButton } from "@/components/chat/jump-to-latest-button";
 import {
   MessageActionsSheet,
@@ -148,7 +154,7 @@ import {
 } from "@/components/chat/channel-member-sheet";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
-import { confirmCloseSignup } from "@/lib/chat/confirm-close-signup";
+import { confirmCloseCard } from "@/lib/chat/confirm-close-card";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -317,6 +323,7 @@ function ChannelThreadScreen() {
     sendInFlight,
     sendPoll,
     sendSignup,
+    sendForm,
     sendGif,
     postTask,
     postHours,
@@ -324,7 +331,7 @@ function ChannelThreadScreen() {
     edit,
     remove,
     closePoll,
-    closeSignup,
+    closeCard,
     flag,
     react,
     unreact,
@@ -966,10 +973,12 @@ function ChannelThreadScreen() {
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
     [closePoll],
   );
-  // A sign-up card's Close sign-ups (#3926), asked first like Close poll.
-  const handleCloseSignup = useCallback(
-    (messageId: string) => confirmCloseSignup(() => closeSignup(messageId)),
-    [closeSignup],
+  // A sign-up card's Close sign-ups (#3926) and a form card's Close form
+  // (step 3), asked first like Close poll.
+  const handleCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) =>
+      confirmCloseCard(kind, () => closeCard(messageId, kind)),
+    [closeCard],
   );
 
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
@@ -1195,7 +1204,7 @@ function ChannelThreadScreen() {
             void act(id, actionType, payload)
           }
           onClosePoll={handleClosePoll}
-          onCloseSignup={handleCloseSignup}
+          onCloseCard={handleCloseCard}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -1226,7 +1235,7 @@ function ChannelThreadScreen() {
       handleUnreact,
       act,
       handleClosePoll,
-      handleCloseSignup,
+      handleCloseCard,
       byId,
       layout,
       blockState,
@@ -1250,6 +1259,7 @@ function ChannelThreadScreen() {
     channel: {
       sendPoll,
       sendSignup,
+      sendForm,
       postTask,
       postHours,
       trackEventCard,
@@ -1331,6 +1341,16 @@ function ChannelThreadScreen() {
   }
   const imageViewerOpen = imageViewer.target !== null;
 
+  // The form page (#3926 step 3) covers the thread like the image viewer. It
+  // is handed the card's live row on every render, so a Close form reaches an
+  // open page, and closes on a blur, a channel switch or the card's delete
+  // (`useFormFillHost`).
+  const { state: formFill, message: filledRow } = useFormFillHost(
+    thread.rows,
+    channelId,
+  );
+  const overlayOpen = imageViewerOpen || formFill.messageId !== null;
+
   // The app-wide connection pill (`components/network-banner.tsx`) says what
   // this thread's realtime transport is doing, folded with the app's own
   // connection state, so the thread draws no connection band of its own
@@ -1359,10 +1379,8 @@ function ChannelThreadScreen() {
         // while it is open, as the mute menu's wrapper below does for the
         // menu. Either avoiding view hands these to the View it renders.
         collapsable={false}
-        accessibilityElementsHidden={imageViewerOpen}
-        importantForAccessibility={
-          imageViewerOpen ? "no-hide-descendants" : "auto"
-        }
+        accessibilityElementsHidden={overlayOpen}
+        importantForAccessibility={overlayOpen ? "no-hide-descendants" : "auto"}
       >
         {/*
           Everything the mute menu covers, out of the accessibility tree while
@@ -1575,72 +1593,76 @@ function ChannelThreadScreen() {
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
-              {/* Which `@`-tokens in the rows really pinged someone. */}
-              <MentionChipTargetsContext.Provider value={mentionChipTargets}>
-                {/* The list and the jump control over its corner. */}
-                <View style={styles.flex}>
-                  {/* Behind the messages only (#3973, #3779). */}
-                  <ChatBackground channelId={channelId ?? null} />
-                  <FlatList
-                    // One list per channel. The screen stays mounted across a
-                    // switch, so a shared list kept the last channel's scroll
-                    // offset and opened a cached channel mid-history, with no
-                    // jump control to say so. A fresh list opens at offset 0,
-                    // the newest message.
-                    key={channelId ?? undefined}
-                    ref={listRef}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewability.viewabilityConfig}
-                    onViewableItemsChanged={viewability.onViewableItemsChanged}
-                    data={inverted}
-                    renderItem={renderItem}
-                    // `client_message_id` is always present and is stable across
-                    // the optimistic → confirmed transition, which the server id
-                    // is not.
-                    keyExtractor={(item) => item.message.client_message_id}
-                    inverted
-                    // A new message is inserted at index 0, the scroll origin of
-                    // an inverted list, so without this every arrival moved what
-                    // a member reading back through history was reading by a
-                    // row. The native scroll view keeps the first visible row
-                    // where it was (iOS, and Android's Fabric scroll view in RN
-                    // 0.86, which this app runs) and, within
-                    // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
-                    // to show the arrival instead. Older pages append at the far
-                    // end, which this never touches.
-                    maintainVisibleContentPosition={MAINTAIN_POSITION}
-                    onScroll={latest.onScroll}
-                    onLayout={latest.onLayout}
-                    // A tap on a reaction, link, photo, quote or Retry acts at
-                    // once with the keyboard up; React Native's default spent
-                    // that tap on dismissing the keyboard. Dragging the thread
-                    // puts the keyboard away, as every messenger does, and so
-                    // does a tap on a plain message (`MessageRowFrame`). A tap
-                    // on a card's body doesn't (#3461): the card's own
-                    // long-press Pressable takes it first.
-                    // `on-drag` rather than iOS's `interactive`, on both: the
-                    // avoiding view under the composer follows keyboard frame
-                    // events, which an interactive drag only sends at its end,
-                    // so the composer would hang in mid-air while the keyboard
-                    // followed the finger down.
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    onEndReached={handleEndReached}
-                    onEndReachedThreshold={0.5}
-                    // An inverted list draws its footer at the top, above the
-                    // oldest loaded row.
-                    ListFooterComponent={historyEdge}
-                    contentContainerStyle={styles.listContent}
-                    style={styles.flex}
-                  />
-                  {latest.showsJump ? (
-                    <JumpToLatestButton
-                      hasNew={latest.hasNewBelow}
-                      onPress={() => jumpToLatest()}
+              <FormFillContext.Provider value={formFill.open}>
+                {/* Which `@`-tokens in the rows really pinged someone. */}
+                <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+                  {/* The list and the jump control over its corner. */}
+                  <View style={styles.flex}>
+                    {/* Behind the messages only (#3973, #3779). */}
+                    <ChatBackground channelId={channelId ?? null} />
+                    <FlatList
+                      // One list per channel. The screen stays mounted across a
+                      // switch, so a shared list kept the last channel's scroll
+                      // offset and opened a cached channel mid-history, with no
+                      // jump control to say so. A fresh list opens at offset 0,
+                      // the newest message.
+                      key={channelId ?? undefined}
+                      ref={listRef}
+                      onScrollToIndexFailed={handleScrollToIndexFailed}
+                      viewabilityConfig={viewability.viewabilityConfig}
+                      onViewableItemsChanged={
+                        viewability.onViewableItemsChanged
+                      }
+                      data={inverted}
+                      renderItem={renderItem}
+                      // `client_message_id` is always present and is stable across
+                      // the optimistic → confirmed transition, which the server id
+                      // is not.
+                      keyExtractor={(item) => item.message.client_message_id}
+                      inverted
+                      // A new message is inserted at index 0, the scroll origin of
+                      // an inverted list, so without this every arrival moved what
+                      // a member reading back through history was reading by a
+                      // row. The native scroll view keeps the first visible row
+                      // where it was (iOS, and Android's Fabric scroll view in RN
+                      // 0.86, which this app runs) and, within
+                      // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                      // to show the arrival instead. Older pages append at the far
+                      // end, which this never touches.
+                      maintainVisibleContentPosition={MAINTAIN_POSITION}
+                      onScroll={latest.onScroll}
+                      onLayout={latest.onLayout}
+                      // A tap on a reaction, link, photo, quote or Retry acts at
+                      // once with the keyboard up; React Native's default spent
+                      // that tap on dismissing the keyboard. Dragging the thread
+                      // puts the keyboard away, as every messenger does, and so
+                      // does a tap on a plain message (`MessageRowFrame`). A tap
+                      // on a card's body doesn't (#3461): the card's own
+                      // long-press Pressable takes it first.
+                      // `on-drag` rather than iOS's `interactive`, on both: the
+                      // avoiding view under the composer follows keyboard frame
+                      // events, which an interactive drag only sends at its end,
+                      // so the composer would hang in mid-air while the keyboard
+                      // followed the finger down.
+                      keyboardShouldPersistTaps="handled"
+                      keyboardDismissMode="on-drag"
+                      onEndReached={handleEndReached}
+                      onEndReachedThreshold={0.5}
+                      // An inverted list draws its footer at the top, above the
+                      // oldest loaded row.
+                      ListFooterComponent={historyEdge}
+                      contentContainerStyle={styles.listContent}
+                      style={styles.flex}
                     />
-                  ) : null}
-                </View>
-              </MentionChipTargetsContext.Provider>
+                    {latest.showsJump ? (
+                      <JumpToLatestButton
+                        hasNew={latest.hasNewBelow}
+                        onPress={() => jumpToLatest()}
+                      />
+                    ) : null}
+                  </View>
+                </MentionChipTargetsContext.Provider>
+              </FormFillContext.Provider>
             </ImageViewerContext.Provider>
           )}
 
@@ -1815,6 +1837,7 @@ function ChannelThreadScreen() {
         menu in paint order and in hit-testing (#2033). The actions sheet
         before it draws through the app's sheet provider, not here.
       */}
+      <FormFillPage state={formFill} message={filledRow} />
       <ImageViewer viewer={imageViewer} />
     </SafeAreaView>
   );
