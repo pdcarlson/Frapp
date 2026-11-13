@@ -135,6 +135,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Chat cards are one width and check you in the same way on the web and your phone, a muted channel's mark sits right after its name, and pinned messages show a pin on both.",
       "Ask Frapp opens with questions about your own account, like your next event or your open tasks, instead of the same three examples for everyone.",
       "Weekly and monthly repeating events set up or changed from now on keep the same time of day when the clocks change for daylight saving.",
+      "While Ask Frapp works, it now says what it is really doing, like which records it is reading and how many sources it found.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -155,6 +156,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A muted channel's mark is now a crossed-out speaker, the same as on the web, so it no longer looks like the notifications bell.",
       "You can now post a form in chat from the + menu and answer it on its own page, where your answers stay private and can be changed until the form closes.",
       "The + beside the tab bar now lays its shortcuts out three to a row, and you can keep up to nine of them.",
+      "Check in by pointing your phone's camera at the code on the officer's screen, and Frapp asks for your location right there if it needs it.",
     ],
   },
   {
