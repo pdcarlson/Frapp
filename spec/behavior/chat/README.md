@@ -338,6 +338,18 @@ stating: `deleteMessage` soft-deletes, rewriting `content` to
 own content. The bookmarks query therefore must **not** filter `is_deleted` —
 adding that filter would make the bookmark vanish, the opposite of this rule.
 
+**Forward (#4864, step 4 of #3723):**
+
+Discord, Slack and WhatsApp all let a member pass a message on to another conversation. Discord's long-press Forward adds an optional message and posts a quote card marked "Forwarded". Slack's Share message names the author and the channel it came from. WhatsApp marks the copy "Forwarded".
+
+- **Where.** On the phone, Forward sits on a message's long-press sheet after Reply and Start thread. It opens a picker titled Forward to, which searches the viewer's channels and direct messages, offers only those whose `can_post` isn't false (the current channel included), and has an optional comment field. Web renders forwards but has no Forward action yet.
+- **What is sent.** `POST /v1/channels/messages/{messageId}/forward` with `channel_id` and an optional `content` creates one ordinary text message in the destination, sent by the forwarder. Its `content` is the comment, which may be empty, and its `forwarded_from` is a snapshot of the original: `message_id`, `channel_id`, `sender_id`, `author_name`, `content`, `gif`, `attachment_count`, `created_at` and `deleted`. The new message notifies, resolves `@` mentions in the comment and counts as unread like any post. Its push reads `Forwarded: <text>` when there is no comment.
+- **A copy, not a link.** People in the destination may not be able to read the source channel, so the card draws from the snapshot, never from a live lookup. It names the source channel only when the viewer's own channel list holds it, so a private channel's name never reaches anyone outside it. Edits to the original don't change the copy, as on Discord.
+- **Access.** The caller must be able to read the original (`assertMessageAccess`, 404 otherwise) and post in the destination (`assertChannelAccess(..., 'post')`, 403 or 404). That second check covers archived channels, the audit log and the Alumni rule.
+- **What can be forwarded.** A confirmed, undeleted text message, including a GIF or one with attachments. Cards and deleted messages are refused with a 400. Attachments aren't copied, because their storage stays with the original, so the card says `1 attachment` or `N attachments`. A forward of a forward with no comment passes the inner snapshot on, so cards never nest.
+- **The copy follows the original's deletion.** When the original is deleted, a trigger blanks every forward's snapshot down to its `message_id`, `channel_id`, `created_at` and `deleted: true`, and the card reads Original message was deleted. That keeps the rule below true: a forward is not a third path to durable content. Account deletion rewrites a snapshot's `author_name` to "Deleted User" ([`data-retention.md`](../data-retention.md)).
+- **Masking.** A viewer who blocked the original's author sees the snapshot masked, as they would the author's own message (§ The masking contract). A deleted forward loses its snapshot along with its content.
+
 **No sender-extend on ephemerality.** Senders cannot extend the lifetime of their own message past channel retention rules. The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker). This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
 
 **Typing indicators:**
