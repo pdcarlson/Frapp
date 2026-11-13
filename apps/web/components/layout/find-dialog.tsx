@@ -27,7 +27,7 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
-import { ASK_COPY, canAny } from "@repo/validation";
+import { ASK_COPY, ASK_FIND_PLACEHOLDER, canAny } from "@repo/validation";
 import { useAskEntry } from "@/components/ask/ask-host";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -81,7 +81,7 @@ import {
 
 export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
 /** The field's words for a member who can also ask Frapp from it. */
-export const FIND_ASK_PLACEHOLDER = "Search or ask Frapp";
+export const FIND_ASK_PLACEHOLDER = ASK_FIND_PLACEHOLDER;
 
 const GROUP_ICON: Record<FindGroup, LucideIcon> = {
   Channels: Hash,
@@ -413,7 +413,8 @@ function FindPanel({
       : results.length > 0
         ? 1
         : -1;
-  const activeRow = movedTo !== null && movedTo < rowCount ? movedTo : defaultRow;
+  const activeRow =
+    movedTo !== null && movedTo < rowCount ? movedTo : defaultRow;
   const askActive = askRow && activeRow === 0;
   const activeIndex = activeRow - offset;
 

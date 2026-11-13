@@ -14,6 +14,7 @@ export * from "./chapter-scope";
 export * from "./chat-activity";
 export * from "./chat-record-writes";
 export * from "./display-names";
+export * from "./find-results";
 export * from "./dm-search";
 export * from "./document-download";
 export * from "./error-copy";
