@@ -91,6 +91,7 @@ describe('my_tasks', () => {
     expect(result.sources[0]).toMatchObject({
       id: 'tool:my_tasks',
       kind: 'tasks',
+      audience: { type: 'asker' },
       target: { type: 'page', page: 'tasks' },
     });
   });

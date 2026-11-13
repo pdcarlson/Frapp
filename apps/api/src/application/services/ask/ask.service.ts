@@ -323,14 +323,39 @@ function agentSourceTitle(source: AgentSource, timeZone: string): string {
   return looksLikeAskerSourceTitle(title) ? `Chapter source: ${title}` : title;
 }
 
+/**
+ * Who else may open a source the loop read, as the receipt keeps it for a
+ * post to a channel (#4713). The tool said it (`AgentSourceAudience`); one
+ * that said nothing is `other`, which is never treated as open to all, so
+ * the asker is warned about it.
+ */
+function agentSourceRef(source: AgentSource): AskGivenRef {
+  if (source.chat) return { type: 'chat' };
+  const audience = source.audience;
+  switch (audience?.type) {
+    case 'document':
+    case 'meeting':
+      return { type: audience.type, id: audience.id };
+    case 'chapter':
+    case 'asker':
+      return { type: 'tool', name: source.id, reach: audience.type };
+    case 'events':
+      return {
+        type: 'tool',
+        name: source.id,
+        reach: 'events',
+        ...(audience.limited.length > 0 ? { events: audience.limited } : {}),
+      };
+    default:
+      return { type: 'other' };
+  }
+}
+
 function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
   return {
     chat: source.chat,
     authorIds: source.chat ? source.authorIds : [],
-    // An agent source does not say yet who else may open it, so an answer
-    // read through the loop can be reported but never posted to a channel
-    // (`AskGivenRef`: `other` is never treated as open to all).
-    ref: source.chat ? { type: 'chat' } : { type: 'other' },
+    ref: agentSourceRef(source),
     model: { id: source.id, title, text: source.text },
     view: {
       id: source.id,

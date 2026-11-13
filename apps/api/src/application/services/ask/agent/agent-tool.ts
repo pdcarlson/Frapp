@@ -56,6 +56,30 @@ export interface AgentToolContext {
   signal?: AbortSignal;
 }
 
+/**
+ * Who else could open a source, which is what lets an answer built on it go
+ * to a channel without a warning (#4713, `spec/behavior/ai.md` § Posting an
+ * answer to the channel). The tool says it, because only the tool knows
+ * which route it mirrors:
+ *
+ * - `document`, `meeting`: the record by id; the post asks that record's
+ *   own rule about everyone in the channel.
+ * - `chapter`: the same for every member who holds `members:view` (the
+ *   roster, the standings). Never for a read an officer permission gates.
+ * - `asker`: the asker's own records. Nobody else can open them.
+ * - `events`: the calendar as the asker sees it; `limited` names the listed
+ *   events that leave some member out.
+ *
+ * Left off a source, nobody else is taken to be able to open it. A channel
+ * message never needs one: an answer that read chat is not posted at all.
+ */
+export type AgentSourceAudience =
+  | { type: 'document'; id: string }
+  | { type: 'meeting'; id: string }
+  | { type: 'chapter' }
+  | { type: 'asker' }
+  | { type: 'events'; limited: string[] };
+
 /** One thing a tool read, as the model reads it and as a citation shows it. */
 export interface AgentSource {
   /**
@@ -80,6 +104,8 @@ export interface AgentSource {
   chat: boolean;
   /** Chat: whose words are in it. Empty for every other source. */
   authorIds: readonly string[];
+  /** {@link AgentSourceAudience}. Left out: only the asker. */
+  audience?: AgentSourceAudience;
 }
 
 /** A member or channel a result mentions, by the name the result uses. */

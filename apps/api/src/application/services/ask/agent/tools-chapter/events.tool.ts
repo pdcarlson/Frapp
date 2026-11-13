@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
+import { eventLimitsAudience } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { EventService } from '../../../event.service';
 import { memberAttendance } from '../../../event-role-targeting';
@@ -152,6 +153,12 @@ export class EventsAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.from, args.to, args.words),
         kind: 'events',
+        // Which of the events in range not every member can see, listed
+        // here or cut for length, for the check a post to a channel makes.
+        audience: {
+          type: 'events',
+          limited: matching.filter(eventLimitsAudience).map(({ id }) => id),
+        },
         title: 'Events',
         page: 'events',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

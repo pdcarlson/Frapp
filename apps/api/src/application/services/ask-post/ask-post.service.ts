@@ -147,11 +147,14 @@ export class AskPostService {
     const limited = new Set(restricted.map(({ key }) => key));
     // A live read's chip opens a page, which names no single read, so a
     // chip is matched to the read behind it by the title they share.
-    const reads = new Map(
-      given.flatMap(({ ref, label }) =>
-        ref?.type === 'tool' && label ? [[label, ref] as const] : [],
-      ),
-    );
+    // Two reads can share a title (the calendar, and one event with the
+    // asker's own attendance on it): the asker's own wins, so a chip is
+    // never called open on the strength of the other.
+    const reads = new Map<string, Extract<AskGivenRef, { type: 'tool' }>>();
+    for (const { ref, label } of given) {
+      if (ref?.type !== 'tool' || !label) continue;
+      if (reads.get(label)?.reach !== 'asker') reads.set(label, ref);
+    }
     const payload: AskPostedAnswer = {
       v: ASK_POSTED_ANSWER_VERSION,
       ask_id: receipt.ask_id,

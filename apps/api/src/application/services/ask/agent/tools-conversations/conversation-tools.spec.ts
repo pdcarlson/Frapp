@@ -1235,10 +1235,13 @@ describe('conversation and record tools', () => {
           text: 'Quorum is two thirds.\nElections need three quarters.',
           chat: false,
           authorIds: [],
+          // Whose rule a post to a channel asks about everyone there.
+          audience: { type: 'document', id: DOCUMENT },
         },
         expect.objectContaining({
           id: `meeting:${MEETING}:chunk-2`,
           kind: 'minutes',
+          audience: { type: 'meeting', id: MEETING },
           detail: 'Decisions',
           target: { type: 'meeting', meeting_id: MEETING },
         }),

@@ -619,6 +619,50 @@ describe('AskPostService', () => {
       ]);
     });
 
+    it("lets the asker's own read win when two reads share a title", async () => {
+      // Through the tool loop the calendar and one opened event (which
+      // holds the asker's attendance) are both "Events".
+      const { post, messageRepo } = build();
+      const shown = receipt().shown;
+      const own: Given = {
+        title: 'Events, Formal (live data, read just now)',
+        text: 'You are going.',
+        ref: { type: 'tool', name: 'event:event-1', reach: 'asker' },
+        label: 'Events',
+        kind: 'events',
+      };
+      for (const given of [
+        [own, calendar()],
+        [calendar(), own],
+      ]) {
+        messageRepo.insertIdempotent.mockClear();
+        await post(
+          receipt({
+            given,
+            shown: {
+              ...shown,
+              sources: [
+                {
+                  kind: 'events',
+                  title: 'Events',
+                  detail: null,
+                  date: null,
+                  target: { type: 'page', page: 'events' },
+                },
+              ],
+            },
+          }),
+          { acknowledged: ['tool:event:event-1'] },
+        );
+        const [row] = messageRepo.insertIdempotent.mock.calls[0] as [
+          { payload: { sources: unknown[] } },
+        ];
+        expect(row.payload.sources).toEqual([
+          expect.objectContaining({ own: true, target: null, limited: true }),
+        ]);
+      }
+    });
+
     it('says when the answer was cut short', async () => {
       const { post, messageRepo } = build();
       await post(receipt({ shown: { ...receipt().shown, truncated: true } }));
