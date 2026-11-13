@@ -31,8 +31,8 @@ export function mixHex(top: string, share: number, bottom: string): string {
  * `buttonVariants({ variant: "tinted" })` draws (`apps/web/components/ui/button.tsx`:
  * `border-accent-border bg-accent-subtle font-bold text-accent-text`), and
  * `components.md` §3's Tinted row, so one module owns it on each platform and
- * the copies can't drift apart (#4206). The chapter picker's house-gold
- * button still spells its own until #4811 moves it here.
+ * the copies can't drift apart (#4206). The chapter picker passes it house
+ * gold, having no chapter accent to take (#4811).
  *
  * Its states are §3's too, as web's are:
  * - **Pressed** steps the fill up one, to web's `--accent-subtle-hover`

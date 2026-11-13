@@ -22,7 +22,25 @@ import { SkeletonRegion } from "@/components/state-block";
 import { BackRow } from "@/components/back-row";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { useSelectChapter } from "@/lib/select-chapter";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { tintedControlStyles } from "@/components/tinted-control";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * The picker's buttons are the tinted control (components.md §3) in house
+ * gold: the picker sits before or between chapters, so it has no chapter
+ * accent to take. The fill and border are the pinned `gold.askFill` /
+ * `gold.askBorder` pair, the same pair `useChapterBranding` falls back to for
+ * a chapter with no accent, so this button matches a house-accent chapter's
+ * tinted controls exactly. They are opaque, unlike `tint(gold.house)`, which
+ * also lets the recipe step the pressed fill (`mixHex` needs two hex colours).
+ */
+function houseTintedBrand(tokens: SignetTokens) {
+  return {
+    accent: tokens.color.gold.house,
+    accentSubtle: tokens.color.gold.askFill,
+    accentBorder: tokens.color.gold.askBorder,
+  };
+}
 
 /**
  * Chapter picker — the supporting route with no drawn Canvas screen
@@ -47,6 +65,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const tinted = tintedControlStyles(tokens, houseTintedBrand(tokens));
   const router = useRouter();
   const { status, chapterId: currentChapterId } = useAuthSession();
   // The onboarding sign-out (#3782): it also forgets a remembered invite,
@@ -255,11 +274,11 @@ export default function ChapterPicker() {
                 onPress={() => {
                   void refetch();
                 }}
-                rippleColor={styles.primaryRipple.color}
-                heldStyle={styles.primaryButtonPressed}
-                style={styles.primaryButton}
+                rippleColor={tinted.pressed.backgroundColor}
+                heldStyle={tinted.pressed}
+                style={[tinted.surface, styles.primaryButton]}
               >
-                <Text style={styles.primaryButtonText}>Try again</Text>
+                <Text style={tinted.label}>Try again</Text>
               </OnboardingPressable>
             </View>
           ) : listEmpty || !data ? (
@@ -280,13 +299,11 @@ export default function ChapterPicker() {
                 onPress={() => {
                   router.push("/join");
                 }}
-                rippleColor={styles.primaryRipple.color}
-                heldStyle={styles.primaryButtonPressed}
-                style={styles.primaryButton}
+                rippleColor={tinted.pressed.backgroundColor}
+                heldStyle={tinted.pressed}
+                style={[tinted.surface, styles.primaryButton]}
               >
-                <Text style={styles.primaryButtonText}>
-                  Join or start a chapter
-                </Text>
+                <Text style={tinted.label}>Join or start a chapter</Text>
               </OnboardingPressable>
             </View>
           ) : (
@@ -409,29 +426,13 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
     },
+    // Size only: the fill, border, label and press come from `tinted`.
     primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tint(tokens.color.gold.house),
-      borderWidth: 1,
-      borderColor: tint(tokens.color.gold.house, 0.3),
       paddingHorizontal: tokens.spacing.lg,
       paddingVertical: tokens.spacing.md,
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
-    },
-    // components.md § Buttons: Tinted presses one step up its own tint, held
-    // on iOS and as the ripple on Android (`OnboardingPressable`).
-    primaryButtonPressed: {
-      backgroundColor: tint(tokens.color.gold.house, 0.2),
-    },
-    // Not a style a view takes: the ripple's color, from a token like the rest.
-    primaryRipple: {
-      color: tint(tokens.color.gold.house, 0.2),
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.house,
     },
     secondaryButton: {
       minHeight: tokens.touch.button,
