@@ -96,7 +96,7 @@ describe("MessageItem forward card", () => {
       "datetime",
       new Date(2026, 10, 12, 20, 0).toISOString(),
     );
-    expect(scope.getByText("in #general")).toBeInTheDocument();
+    expect(scope.getByText("· in #general")).toBeInTheDocument();
     // Markdown renders, so the bold draws as bold rather than as asterisks.
     expect(scope.getByText("8").tagName).toBe("STRONG");
     // The forwarder still heads the row.
@@ -110,10 +110,10 @@ describe("MessageItem forward card", () => {
 
   it("names no channel the viewer's list doesn't hold, and never a DM", () => {
     let card = renderForward(forward({ channel_id: "chan-private" }))!;
-    expect(within(card).queryByText(/^in #/)).toBeNull();
+    expect(within(card).queryByText(/in #/)).toBeNull();
     document.body.innerHTML = "";
     card = renderForward(forward({ channel_id: "dm-1" }))!;
-    expect(within(card).queryByText(/^in #/)).toBeNull();
+    expect(within(card).queryByText(/in #/)).toBeNull();
   });
 
   it("draws the GIF and counts the files", () => {

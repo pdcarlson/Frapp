@@ -106,7 +106,7 @@ export function ForwardedCard({
             ) : null}
             {channelName ? (
               <span className="min-w-0 truncate text-caption text-muted-foreground">
-                in #{channelName}
+                · in #{channelName}
               </span>
             ) : null}
           </div>
