@@ -482,6 +482,9 @@ const setNotificationLevel = {
   variables: undefined,
 };
 const markRead = { mutate: vi.fn() };
+const markUnread = {
+  mutateAsync: vi.fn<(messageId: string) => Promise<unknown>>(async () => ({})),
+};
 const requestUploadUrl = { mutateAsync: vi.fn() };
 
 const rosterCatchUp = vi.hoisted(() =>
@@ -543,6 +546,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       ? { data: undefined, fetchStatus: "fetching" }
       : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
   useMarkChannelRead: () => markRead,
+  useMarkMessageUnread: () => markUnread,
   useRequestChatUploadUrl: () => requestUploadUrl,
   useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
   useSetChannelNotificationLevel: () => setNotificationLevel,
@@ -2223,6 +2227,90 @@ describe("chat thread reports its transport to the connection pill", () => {
  * it, and this screen stays mounted under one pushed over it (another thread
  * opened from the member sheet), where nothing it receives has been seen.
  */
+/*
+ * Mark unread (#3723): the sheet's row moves the read cursor back, and the
+ * thread stops stamping it for the rest of the visit, or leaving would read
+ * the channel straight back. Then it leaves, so the list shows the badge.
+ */
+describe("chat thread Mark unread", () => {
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+    markUnread.mutateAsync.mockClear();
+    markUnread.mutateAsync.mockImplementation(async () => ({}));
+  });
+
+  const openSheetOn = (tree: ReturnType<typeof render>) => {
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Mark unread, moves the cursor, skips the blur's stamp and leaves", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    expect(sheet.props.target.canMarkUnread).toBe(true);
+    const goBack = vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo);
+    goBack.mockClear();
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+    });
+
+    expect(markUnread.mutateAsync).toHaveBeenCalledWith("m1");
+    // The activity handler no longer re-stamps this channel.
+    expect(viewedChannelId()).toBeNull();
+    // Leaving runs the focus effect's cleanup, which must not stamp it back.
+    // (An unmount, not the global blur: another spec's mounted screen would
+    // answer that.)
+    markRead.mutate.mockClear();
+    act(() => tree.unmount());
+    expect(markRead.mutate).not.toHaveBeenCalled();
+    // A pushed thread with nothing below goes back to Chat home.
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("reads the channel as usual on the next visit", () => {
+    channel = channelState({ messages: [message("m1")] });
+    markRead.mutate.mockClear();
+    const tree = render();
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("says so when it fails, and reads as before", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    markUnread.mutateAsync.mockImplementation(async () => {
+      throw new Error("Couldn't reach the server");
+    });
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't mark unread",
+      expect.any(String),
+    );
+    markRead.mutate.mockClear();
+    act(() => tree.unmount());
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    alert.mockRestore();
+  });
+});
+
 describe("chat thread claims the viewed channel while focused (#3698)", () => {
   const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 

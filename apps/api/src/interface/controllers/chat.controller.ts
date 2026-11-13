@@ -1038,6 +1038,23 @@ export class ChatController {
     return this.chatService.markChannelRead(channelId, chapterId, userId);
   }
 
+  /**
+   * Mark unread (#3723): the caller's own read cursor, so it needs only read
+   * access to the message's channel, like Mark as read.
+   */
+  @Post('messages/:messageId/unread')
+  @ApiOperation({
+    summary:
+      'Mark a message unread: move the caller’s read cursor to just before it',
+  })
+  async markMessageUnread(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.markMessageUnread(messageId, chapterId, userId);
+  }
+
   // ── Per-channel notification level (mute) ────────────────────────────
 
   /**

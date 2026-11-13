@@ -4952,6 +4952,69 @@ describe('ChatService', () => {
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
+  describe('markMessageUnread (#3723)', () => {
+    beforeEach(() => {
+      mockReadReceiptRepo.upsert.mockImplementation(
+        async (channelId, userId, lastReadAt) => ({
+          id: 'rr-1',
+          channel_id: channelId,
+          user_id: userId,
+          last_read_at: lastReadAt,
+          hidden_at: null,
+          updated_at: lastReadAt,
+        }),
+      );
+    });
+
+    it("moves the caller's cursor in the message's channel to just before it", async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        created_at: '2026-11-13T18:00:00.500Z',
+      });
+
+      const receipt = await service.markMessageUnread(
+        'msg-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockReadReceiptRepo.upsert).toHaveBeenCalledWith(
+        baseMessage.channel_id,
+        'user-1',
+        '2026-11-13T18:00:00.499Z',
+      );
+      expect(receipt.last_read_at < '2026-11-13T18:00:00.500Z').toBe(true);
+      // Mark unread clears nothing: the notifications stay as they are.
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('refuses a thread reply, which never counts in its channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        thread_root_id: 'root-1',
+      });
+
+      await expect(
+        service.markMessageUnread('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockReadReceiptRepo.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deleted message', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+
+      await expect(
+        service.markMessageUnread('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockReadReceiptRepo.upsert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('markChannelRead', () => {
     it('should upsert read receipt', async () => {
       mockReadReceiptRepo.upsert.mockResolvedValue({

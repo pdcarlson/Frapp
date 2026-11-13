@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useChannelUnreadCounts,
   useMarkChannelRead,
+  useMarkMessageUnread,
   markChannelReadMutationKey,
   useLeaveChannel,
   useSetChannelDisplayLock,
@@ -102,6 +103,43 @@ describe("useChannelUnreadCounts", () => {
   });
 });
 
+describe("useMarkMessageUnread (#3723)", () => {
+  it("waits for a read stamp in flight, then moves the cursor and refreshes the badges", async () => {
+    const queryClient = createTestQueryClient();
+    const order: string[] = [];
+    let finishRead!: () => void;
+    const mockPost = vi.fn((path: string) => {
+      order.push(path);
+      if (path === "/v1/channels/{id}/read") {
+        return new Promise((resolve) => {
+          finishRead = () =>
+            resolve({ data: {}, response: { ok: true, status: 200 } });
+        });
+      }
+      return Promise.resolve({ data: {}, response: { ok: true, status: 201 } });
+    });
+    const wrapper = createWrapper(queryClient, { POST: mockPost });
+    const read = renderHook(() => useMarkChannelRead(), { wrapper });
+    const unread = renderHook(() => useMarkMessageUnread(), { wrapper });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    read.result.current.mutate("chan-1");
+    await waitFor(() => expect(order).toEqual(["/v1/channels/{id}/read"]));
+    unread.result.current.mutate("msg-1");
+    // Still holding: the stamp hasn't landed.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(order).toEqual(["/v1/channels/{id}/read"]);
+
+    finishRead();
+    await waitFor(() => expect(unread.result.current.isSuccess).toBe(true));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/v1/channels/messages/{messageId}/unread",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+  });
+});
+
 describe("useMarkChannelRead", () => {
   let queryClient: QueryClient;
 
@@ -137,7 +175,11 @@ describe("useMarkChannelRead", () => {
   });
 
   it("surfaces an error without invalidating anything", async () => {
-    const body = { statusCode: 403, error: "Forbidden", message: "Not a member" };
+    const body = {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Not a member",
+    };
     const mockPost = vi.fn().mockResolvedValue({
       data: undefined,
       error: body,
@@ -160,7 +202,9 @@ describe("useMarkChannelRead", () => {
 
   it("clears the channel's cached chat notifications and refetches the inbox only when it showed one (#3788)", async () => {
     // Seeded entries no component observes need a gc window to survive.
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -168,7 +212,11 @@ describe("useMarkChannelRead", () => {
     });
     const listKey = ["notifications", "chapter-1", undefined];
     queryClient.setQueryData(listKey, [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "chan-1" } },
+      },
     ]);
     // Shares the `notifications` prefix, but a read can't change it.
     const prefsKey = ["notifications", "preferences", "chapter-1"];
@@ -246,7 +294,10 @@ describe("useSetChannelDisplayLock (#3787)", () => {
     const queryClient = createTestQueryClient();
     const mockPut = vi
       .fn()
-      .mockResolvedValue({ data: { id: "c-1", display_locked: true }, error: null });
+      .mockResolvedValue({
+        data: { id: "c-1", display_locked: true },
+        error: null,
+      });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useSetChannelDisplayLock(), {
       wrapper: createWrapper(queryClient, { PUT: mockPut }),
@@ -267,12 +318,16 @@ describe("canSetChannelDisplayLock (#3787)", () => {
 
   it("lets the creator and a channels:manage holder set it", () => {
     expect(canSetChannelDisplayLock(channel, "u-creator", [])).toBe(true);
-    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(true);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(
+      true,
+    );
     expect(canSetChannelDisplayLock(channel, "u-x", ["*"])).toBe(true);
   });
 
   it("refuses anyone else, a channel with no creator, and every DM", () => {
-    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(false);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(
+      false,
+    );
     expect(
       canSetChannelDisplayLock({ type: "PUBLIC", created_by: null }, null, []),
     ).toBe(false);
@@ -332,13 +387,19 @@ describe("useLeaveChannel", () => {
   });
 
   it("refetches the inbox when it shows an unread chat row for the hidden DM (#3788)", async () => {
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: { success: true }, error: null });
     const listKey = ["notifications", "chapter-1", undefined];
     const rows = [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "dm-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "dm-1" } },
+      },
     ];
     queryClient.setQueryData(listKey, rows);
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -354,7 +415,9 @@ describe("useLeaveChannel", () => {
 
   it("surfaces an error without invalidating anything", async () => {
     const mockError = new Error("leave failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -531,17 +594,15 @@ describe("channelSetFingerprint", () => {
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
       channelSetFingerprint([
         { id: "a", name: "general" },
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
+      channelSetFingerprint([{ id: "a", name: "announcements" }]),
+    );
   });
 
   it("changes with every field the server default reads (#2771)", () => {
@@ -727,9 +788,7 @@ describe("useSetChannelNotificationLevel", () => {
 
   it("invalidates the preferences query on error so the control does not keep a level the server never stored", async () => {
     const mockError = new Error("preference write failed");
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: mockError });
+    const mockPut = vi.fn().mockResolvedValue({ data: null, error: mockError });
     const mockClient = { PUT: mockPut };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -757,7 +816,9 @@ describe("useUploadSignedUrl", () => {
     // A legacy .doc usually arrives with `type: ""`. The chat bucket's MIME
     // allowlist rejects an empty Content-Type, so the resolved type the
     // composer requested the URL with is the one that must go on the PUT.
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response);
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200 }) as Response,
+    );
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["bytes"], "minutes.doc", { type: "" });
 

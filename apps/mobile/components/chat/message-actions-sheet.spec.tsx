@@ -58,6 +58,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
+  MARK_UNREAD_LABEL,
   PIN_LABEL,
   SAVE_LABEL,
   UNPIN_LABEL,
@@ -100,6 +101,7 @@ function render(
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
     onMention?: (messageId: string) => void;
+    onMarkUnread?: (messageId: string) => void;
     onSetPinned?: (messageId: string, pinned: boolean) => void;
     onSetSaved?: (messageId: string, saved: boolean) => void;
   } = {},
@@ -263,6 +265,33 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("offers Mark unread after Copy text and hands the message to the thread (#3723)", () => {
+    const onMarkUnread = vi.fn();
+    const tree = render(
+      { ...OWN, copyText: "hi", canMarkUnread: true },
+      undefined,
+      { onMarkUnread },
+    );
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(MARK_UNREAD_LABEL),
+    );
+    pressByLabel(tree, MARK_UNREAD_LABEL);
+    expect(onMarkUnread).toHaveBeenCalledWith(OWN.messageId);
+    expect(
+      hasRow(
+        render({ ...OWN, copyText: "hi" }, undefined, { onMarkUnread }),
+        MARK_UNREAD_LABEL,
+      ),
+    ).toBe(false);
   });
 
   it("draws no Copy text when the message has nothing to copy", () => {

@@ -4981,6 +4981,45 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/unread": {
+      "post": {
+        "operationId": "ChatController_markMessageUnread_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a message unread: move the caller’s read cursor to just before it",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/notification-preference": {
       "put": {
         "operationId": "ChatController_setChannelNotificationLevel_v1",

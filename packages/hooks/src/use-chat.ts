@@ -745,6 +745,47 @@ export function useMarkChannelRead() {
   });
 }
 
+/** How long Mark unread waits for a read stamp already in flight. */
+const READ_STAMP_SETTLE_MS = 3_000;
+
+/**
+ * Mark unread (#3723): move the viewer's read cursor in a message's channel to
+ * just before it (`POST /v1/channels/messages/{messageId}/unread`), so the
+ * channel's badge counts it and what came after, as Discord's and Slack's
+ * Mark unread do.
+ *
+ * A read stamp already in flight (`useMarkChannelRead`, which the open thread
+ * fires on focus and as messages land) would land after this and undo it, so
+ * this waits, up to {@link READ_STAMP_SETTLE_MS}, for those to settle first.
+ * The caller stops stamping before it calls: a thread screen keeps the
+ * channel unread for the rest of the visit.
+ */
+export function useMarkMessageUnread() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "unread"],
+    mutationFn: async (messageId: string) => {
+      const deadline = Date.now() + READ_STAMP_SETTLE_MS;
+      while (
+        queryClient.isMutating({ mutationKey: markChannelReadMutationKey }) >
+          0 &&
+        Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/unread",
+        { params: { path: { messageId } } },
+      );
+      throwUnlessOk(result);
+      return result.data;
+    },
+    // Every channel badge and the unread counts live under `["channels"]`.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
+  });
+}
+
 /**
  * Mint a signed upload URL for a chat attachment.
  *
