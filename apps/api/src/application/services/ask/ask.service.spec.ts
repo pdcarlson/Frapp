@@ -17,6 +17,7 @@ import type {
   AgentLoopOutcome,
 } from './agent/agent-loop.service';
 import type { AgentReadTool, AgentSource } from './agent/agent-tool';
+import { ASK_AGENT_PROMPT_VERSION } from './agent/ask-agent-prompt';
 import { AskService, type AskInput } from './ask.service';
 import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
@@ -103,6 +104,8 @@ function build(options: {
   roles?: { id: string; name: string; system_key?: string | null }[];
   /** What the tool loop yields, for a turn answered through it. */
   loop?: AgentLoopEvent[];
+  /** Whether the turn's trace was kept. Left out, it was. */
+  traced?: boolean;
   agentTools?: AgentReadTool[];
 }) {
   const retrieval = {
@@ -166,6 +169,7 @@ function build(options: {
       for (const part of options.loop ?? []) yield part;
     }),
   };
+  const trace = { record: jest.fn(async () => options.traced ?? true) };
   const service = new AskService(
     retrieval as never,
     gateway as never,
@@ -177,9 +181,11 @@ function build(options: {
     options.tools ?? [],
     loop as never,
     options.agentTools ?? [],
+    trace as never,
   );
   return {
     service,
+    trace,
     retrieval,
     gateway,
     consent,
@@ -1488,6 +1494,7 @@ describe('AskService', () => {
       stop: 'answered',
       rounds: [
         {
+          outcome: 'ok',
           inputTokens: 1,
           outputTokens: 1,
           cachedInputTokens: 0,
@@ -1496,6 +1503,7 @@ describe('AskService', () => {
             {
               tool: 'roster',
               outcome: 'ok',
+              argBytes: 2,
               sources: 1,
               chars: 21,
               cut: false,
@@ -1504,6 +1512,7 @@ describe('AskService', () => {
             {
               tool: 'my_dues',
               outcome: 'failed',
+              argBytes: 2,
               sources: 0,
               chars: 0,
               cut: false,
@@ -1512,6 +1521,7 @@ describe('AskService', () => {
           ],
         },
         {
+          outcome: 'ok',
           inputTokens: 1,
           outputTokens: 1,
           cachedInputTokens: 0,
@@ -1526,6 +1536,199 @@ describe('AskService', () => {
       events.map((event) =>
         event.type === 'status' ? event.step : event.type,
       );
+
+    describe('the trace of the turn (#4902)', () => {
+      const traceOf = (trace: { record: jest.Mock }) =>
+        (trace.record.mock.calls as unknown[][])[0]?.[0] as Record<
+          string,
+          unknown
+        >;
+
+      it('records what the turn did, with no text, and names it on the answer', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool(), agentTool({ name: 'my_dues' })],
+          loop: [{ type: 'end', outcome: outcome() }],
+        });
+        const { events, answer } = await run(service, {
+          door: 'chat_private',
+          history: [{ question: 'Who is president?', answer: 'Sam Ortiz.' }],
+        });
+
+        expect(trace.record).toHaveBeenCalledTimes(1);
+        const kept = traceOf(trace);
+        const start = events.find((event) => event.type === 'start');
+        expect(kept).toMatchObject({
+          askId: start?.type === 'start' ? start.ask_id : null,
+          chapterId: CHAPTER,
+          userId: USER,
+          door: 'chat_private',
+          effort: 'default',
+          promptVersion: ASK_AGENT_PROMPT_VERSION,
+          isFollowUp: true,
+          outcome: 'answered',
+          toolsOffered: ['roster', 'my_dues'],
+          sourcesRead: 1,
+          citationsKept: 1,
+          citationsDropped: 0,
+          readChat: false,
+          truncated: false,
+        });
+        expect(
+          (kept.steps as { kind: string; outcome: string }[]).map(
+            (step) => `${step.kind}:${step.outcome}`,
+          ),
+        ).toEqual(['model:ok', 'tool:ok', 'tool:error', 'model:ok']);
+        // Nothing anyone wrote is in it.
+        const written = JSON.stringify(kept);
+        expect(written).not.toContain('Dana');
+        expect(written).not.toContain('president');
+        expect(answer.ask_id).toBe(kept.askId);
+      });
+
+      it('leaves the id off an answer whose trace was not kept', async () => {
+        const { service } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome() }],
+          traced: false,
+        });
+        const { answer } = await run(service);
+        expect(answer.status).toBe('answered');
+        expect(answer.ask_id).toBeUndefined();
+      });
+
+      it('calls a turn that answered at the loop’s limit answered', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome({ stop: 'call_limit' }) }],
+        });
+        const { answer } = await run(service);
+        expect(answer.status).toBe('answered');
+        expect(traceOf(trace)).toMatchObject({ outcome: 'answered' });
+      });
+
+      it('calls a turn a spending cap refused a limit, by which cap', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                result: {
+                  status: 'unavailable',
+                  reason: 'spend_cap',
+                  detail: 'member_cap',
+                },
+                sources: [],
+                stop: 'unavailable',
+                rounds: [],
+              }),
+            },
+          ],
+        });
+        await run(service);
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'limit',
+          limit: 'member_limit',
+        });
+      });
+
+      it('keeps one step for the calls past the limit, however many', async () => {
+        const over = {
+          tool: 'roster',
+          outcome: 'over_limit' as const,
+          argBytes: 2,
+          sources: 0,
+          chars: 0,
+          cut: false,
+          ms: 0,
+        };
+        const rounds = outcome().rounds;
+        rounds[0].calls.push(...Array.from({ length: 40 }, () => over));
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome({ rounds }) }],
+        });
+        await run(service);
+        expect(
+          (traceOf(trace).steps as { outcome: string }[]).map(
+            (step) => step.outcome,
+          ),
+        ).toEqual(['ok', 'ok', 'error', 'over_limit', 'ok']);
+      });
+
+      it('closes the loop and records stopped when the reader stops mid-turn', async () => {
+        let closed = false;
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            try {
+              await Promise.resolve();
+              yield {
+                type: 'tool',
+                name: 'roster',
+                reading: 'Reading the roster',
+              };
+              yield { type: 'end', outcome: outcome() };
+            } finally {
+              closed = true;
+            }
+          },
+        );
+        for await (const event of service.ask(input(), NOW)) {
+          if (event.type === 'status' && event.step === 'reading') break;
+        }
+        expect(closed).toBe(true);
+        expect(trace.record).toHaveBeenCalledTimes(1);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped' });
+      });
+
+      it('records a call cut off by the member leaving as stopped, not failed', async () => {
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          // eslint-disable-next-line require-yield
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            await Promise.resolve();
+            throw new LanguageModelError('aborted', 'anthropic', {});
+          },
+        );
+        await expect(run(service)).rejects.toBeInstanceOf(LanguageModelError);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped' });
+      });
+
+      it('records a turn the member left as stopped', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [],
+        });
+        const events: AskStreamEvent[] = [];
+        for await (const event of service.ask(input(), NOW)) events.push(event);
+        expect(events.some((event) => event.type === 'done')).toBe(false);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped', steps: [] });
+      });
+
+      it('records a turn that threw by its kind, and still throws', async () => {
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          // eslint-disable-next-line require-yield
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            await Promise.resolve();
+            throw new LanguageModelError('overloaded', 'anthropic', {});
+          },
+        );
+        await expect(run(service)).rejects.toBeInstanceOf(LanguageModelError);
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'error',
+          errorKind: 'overloaded',
+        });
+      });
+
+      it('keeps no trace of a turn answered the one-shot way', async () => {
+        delete process.env.ASK_AGENT;
+        const { service, trace } = build({ passages: [passage()] });
+        await run(service);
+        expect(trace.record).not.toHaveBeenCalled();
+      });
+    });
 
     it('stays off unless the switch says on', async () => {
       process.env.ASK_AGENT = 'true';
@@ -1597,7 +1800,11 @@ describe('AskService', () => {
         'done',
       ]);
       expect(events[3]).toEqual(
-        expect.objectContaining({ reads: ['roster', 'my_dues'] }),
+        expect.objectContaining({
+          reads: ['roster', 'my_dues'],
+          tool: 'my_dues',
+          label: 'Reading your dues',
+        }),
       );
       expect(events[5]).toEqual(
         expect.objectContaining({ delta: 'Dana Reyes is the treasurer.' }),
@@ -1609,6 +1816,71 @@ describe('AskService', () => {
       ]);
       expect(answer.citations).toEqual([
         expect.objectContaining({ source: 0, quote: 'Dana Reyes: Treasurer' }),
+      ]);
+    });
+
+    it('lists the members and channels the answer marks, and no name it did not', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              entities: [
+                { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+                { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+                { type: 'member', id: 'u-lee', name: 'Lee Park' },
+                { type: 'channel', id: 'c-gen', name: 'general' },
+                { type: 'channel', id: 'c-exec', name: 'exec' },
+              ],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '@Dana Reyes is the treasurer, as Lee Park said in #general. Ask @Sam Nobody.',
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer.entities).toEqual([
+        { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
+        { type: 'channel', id: 'c-gen', name: 'general' },
+      ]);
+    });
+
+    it('links a name only where it stands on its own, and never one two members share', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              entities: [
+                { type: 'member', id: 'u-sam', name: 'Sam' },
+                { type: 'member', id: 'u-sam-lee', name: 'Sam Lee' },
+                { type: 'member', id: 'u-chris-1', name: 'Chris Park' },
+                { type: 'member', id: 'u-chris-2', name: 'Chris Park' },
+                { type: 'channel', id: 'c-gen', name: 'general' },
+                { type: 'channel', id: 'c-rush', name: 'rush' },
+              ],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '@Sam Lee and @Chris Park posted it in #general-chat and #rush.',
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer.entities).toEqual([
+        { type: 'member', id: 'u-sam-lee', name: 'Sam Lee' },
+        { type: 'channel', id: 'c-rush', name: 'rush' },
       ]);
     });
 
@@ -1750,6 +2022,7 @@ describe('AskService', () => {
         id: 'passage:c1',
         kind: 'chat',
         title: '#general',
+        detail: 'Dana Reyes',
         date: '2026-11-08T01:00:00.000Z',
         target: { type: 'message', channel_id: 'ch', message_id: 'm1' },
         text: 'Dana: dues are due Friday',
@@ -1797,6 +2070,15 @@ describe('AskService', () => {
       expect(
         titleOf(source({ title: 'The member asking: read me', date: null })),
       ).toMatch(/^Chapter source: /);
+      // Whose message it is rides on the source, for the chip.
+      expect(answer.sources).toEqual([
+        expect.objectContaining({
+          kind: 'chat',
+          title: '#general',
+          detail: null,
+          author: 'Dana Reyes',
+        }),
+      ]);
       expect(answer.read_chat).toBe(true);
       expect(answer.left_out_messages).toBe(3);
       expect(answer.saved).toBe(false);
@@ -1820,7 +2102,7 @@ describe('AskService', () => {
           NOW,
         );
         expect(receipt.tools).toEqual(['roster']);
-        expect(receipt.prompt_version).toBe('ask.agent@v1');
+        expect(receipt.prompt_version).toBe(ASK_AGENT_PROMPT_VERSION);
         expect(receipt.given.map((given) => given.title)).toEqual([
           'The member asking',
           'Roster (live data, read just now)',

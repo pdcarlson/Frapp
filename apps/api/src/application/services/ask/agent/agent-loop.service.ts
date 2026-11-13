@@ -77,6 +77,8 @@ export interface AgentCallTrace {
     | 'timed_out'
     | 'foreign_chapter'
     | 'over_limit';
+  /** The size of the arguments the model wrote, in bytes. Never the arguments. */
+  argBytes: number;
   sources: number;
   chars: number;
   cut: boolean;
@@ -85,6 +87,8 @@ export interface AgentCallTrace {
 
 /** One model call and what it asked for. */
 export interface AgentRoundTrace {
+  /** `refused`: the provider declined the round, and the turn ended there. */
+  outcome: 'ok' | 'refused';
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -231,6 +235,18 @@ export class AgentLoopService {
       if (result === null) throw new Error('An agent round had no result');
 
       if (result.status !== 'ok') {
+        // A declined round was still a call to the model. One the gateway
+        // would not make was not, and leaves no step.
+        if (result.status === 'refused') {
+          traces.push({
+            outcome: 'refused',
+            inputTokens: 0,
+            outputTokens: 0,
+            cachedInputTokens: 0,
+            ms: clock() - roundStartedAt,
+            calls: [],
+          });
+        }
         yield {
           type: 'end',
           outcome: outcome(
@@ -241,6 +257,7 @@ export class AgentLoopService {
         return;
       }
       const trace: AgentRoundTrace = {
+        outcome: 'ok',
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         cachedInputTokens: result.usage.cachedInputTokens,
@@ -434,6 +451,7 @@ export class AgentLoopService {
         trace: {
           tool: tool.name,
           outcome: 'ok',
+          argBytes: argBytes(call),
           sources: kept.length,
           chars,
           cut,
@@ -461,6 +479,7 @@ export class AgentLoopService {
         trace: {
           tool: tool.name,
           outcome: timedOut ? 'timed_out' : 'failed',
+          argBytes: argBytes(call),
           sources: 0,
           chars: 0,
           cut: false,
@@ -483,8 +502,24 @@ function notRun(
     sources: [],
     entities: [],
     leftOutMessages: 0,
-    trace: { tool, outcome, sources: 0, chars: 0, cut: false, ms: 0 },
+    trace: {
+      tool,
+      outcome,
+      argBytes: argBytes(call),
+      sources: 0,
+      chars: 0,
+      cut: false,
+      ms: 0,
+    },
   };
+}
+
+function argBytes(call: LanguageModelToolCall): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(call.input ?? null), 'utf8');
+  } catch {
+    return 0;
+  }
 }
 
 /**

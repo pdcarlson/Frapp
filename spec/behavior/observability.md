@@ -523,7 +523,7 @@ Posting an answer to a channel ([`ai.md` § Posting an answer to the channel](ai
 
 ## AI answer events
 
-What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). None is sent until the agent loop (#4899) calls `AskTraceService.record` (2026-11-13).
+What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). Only a turn answered through the tool loop (#4899) calls `AskTraceService.record`, so none is sent by a server without `ASK_AGENT=on` (2026-11-13).
 
 | Event | Sent when | Properties |
 | --- | --- | --- |

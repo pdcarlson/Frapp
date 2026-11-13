@@ -4992,7 +4992,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ai/ask/posts": {
+    "/v1/ai/catch-up": {
         parameters: {
             query?: never;
             header?: never;
@@ -5002,10 +5002,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Post an Ask Frapp answer to a channel, or ask what posting would warn about
-         * @description The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.
+         * Summarize a channel's new messages, or one thread
+         * @description Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.
          */
-        post: operations["AskPostController_post_v1"];
+        post: operations["ChatCatchUpController_catchUp_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5056,7 +5056,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ai/catch-up": {
+    "/v1/ai/ask/posts": {
         parameters: {
             query?: never;
             header?: never;
@@ -5066,10 +5066,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Summarize a channel's new messages, or one thread
-         * @description Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.
+         * Post an Ask Frapp answer to a channel, or ask what posting would warn about
+         * @description The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.
          */
-        post: operations["ChatCatchUpController_catchUp_v1"];
+        post: operations["AskPostController_post_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9527,6 +9527,23 @@ export interface components {
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
         };
+        AskFromDto: {
+            /**
+             * Format: uuid
+             * @description The channel the member had open.
+             */
+            channel_id?: string;
+            /**
+             * Format: uuid
+             * @description The event the member had open.
+             */
+            event_id?: string;
+            /**
+             * Format: uuid
+             * @description The task the member had open.
+             */
+            task_id?: string;
+        };
         AskRequestDto: {
             /**
              * @description The question, in the member’s own words.
@@ -9544,6 +9561,13 @@ export interface components {
              * @enum {string}
              */
             door?: "ask" | "chat_private";
+            /** @description What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one. */
+            from?: components["schemas"]["AskFromDto"] | null;
+            /**
+             * @description How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.
+             * @enum {string}
+             */
+            effort?: "default" | "more";
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -9607,59 +9631,6 @@ export interface components {
             reason?: string;
             /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
             keep_earlier?: boolean;
-        };
-        AskPostDto: {
-            /**
-             * Format: uuid
-             * @description The channel to post in. The caller must be able to post there.
-             */
-            channel_id: string;
-            /** @description The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request. */
-            receipt: string;
-            /** @description False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning. */
-            confirm: boolean;
-            /** @description The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned. */
-            acknowledged?: string[];
-        };
-        AskPostRestrictedDto: {
-            /** @description Stable for the same source, for `acknowledged`. */
-            key: string;
-            /** @description The kind of source, as an answer names it. */
-            kind: string;
-            /** @description The source’s name, or the records’ ("Your tasks"). */
-            title: string;
-        };
-        AskPostOutcomeDto: {
-            /** @description Whether the answer is now in the channel. */
-            posted: boolean;
-            /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
-            restricted: components["schemas"]["AskPostRestrictedDto"][];
-        };
-        SetAskFeedbackDto: {
-            /** @enum {string} */
-            rating: "up" | "down";
-            /**
-             * @description With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before.
-             * @enum {string|null}
-             */
-            reason?: "wrong" | "missed" | "too_long" | "other" | null;
-        };
-        AskFeedbackDto: {
-            /** Format: uuid */
-            ask_id: string;
-            /** @enum {string} */
-            rating: "up" | "down";
-            /** @enum {string|null} */
-            reason: "wrong" | "missed" | "too_long" | "other" | null;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        AskSignalDto: {
-            /**
-             * @description What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`.
-             * @enum {string}
-             */
-            signal: "retried" | "think_harder" | "source_opened" | "card_confirmed" | "card_dismissed";
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -9745,6 +9716,59 @@ export interface components {
             summary_id?: string | null;
             /** @description The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text. */
             report_receipt?: string | null;
+        };
+        SetAskFeedbackDto: {
+            /** @enum {string} */
+            rating: "up" | "down";
+            /**
+             * @description With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before.
+             * @enum {string|null}
+             */
+            reason?: "wrong" | "missed" | "too_long" | "other" | null;
+        };
+        AskFeedbackDto: {
+            /** Format: uuid */
+            ask_id: string;
+            /** @enum {string} */
+            rating: "up" | "down";
+            /** @enum {string|null} */
+            reason: "wrong" | "missed" | "too_long" | "other" | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AskSignalDto: {
+            /**
+             * @description What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`.
+             * @enum {string}
+             */
+            signal: "retried" | "think_harder" | "source_opened" | "card_confirmed" | "card_dismissed";
+        };
+        AskPostDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post in. The caller must be able to post there.
+             */
+            channel_id: string;
+            /** @description The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request. */
+            receipt: string;
+            /** @description False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning. */
+            confirm: boolean;
+            /** @description The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned. */
+            acknowledged?: string[];
+        };
+        AskPostRestrictedDto: {
+            /** @description Stable for the same source, for `acknowledged`. */
+            key: string;
+            /** @description The kind of source, as an answer names it. */
+            kind: string;
+            /** @description The source’s name, or the records’ ("Your tasks"). */
+            title: string;
+        };
+        AskPostOutcomeDto: {
+            /** @description Whether the answer is now in the channel. */
+            posted: boolean;
+            /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
+            restricted: components["schemas"]["AskPostRestrictedDto"][];
         };
         MemberNudgeDto: {
             /** Format: uuid */
@@ -21341,7 +21365,7 @@ export interface operations {
             };
         };
     };
-    AskPostController_post_v1: {
+    ChatCatchUpController_catchUp_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -21350,7 +21374,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AskPostDto"];
+                "application/json": components["schemas"]["ChatCatchUpRequestDto"];
             };
         };
         responses: {
@@ -21359,24 +21383,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AskPostOutcomeDto"];
+                    "application/json": components["schemas"]["ChatCatchUpDto"];
                 };
             };
-            /** @description The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`). */
+            /** @description Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`). */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`). */
+            /** @description The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`). */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
+            /** @description AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21516,7 +21540,7 @@ export interface operations {
             };
         };
     };
-    ChatCatchUpController_catchUp_v1: {
+    AskPostController_post_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -21525,7 +21549,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChatCatchUpRequestDto"];
+                "application/json": components["schemas"]["AskPostDto"];
             };
         };
         responses: {
@@ -21534,24 +21558,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatCatchUpDto"];
+                    "application/json": components["schemas"]["AskPostOutcomeDto"];
                 };
             };
-            /** @description Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`). */
+            /** @description The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`). */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`). */
+            /** @description The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`). */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter. */
+            /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;

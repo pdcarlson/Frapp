@@ -245,6 +245,8 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         // the tool loop switched on. #4903 grades the loop.
         new AgentLoopService(gateway),
         [],
+        // The one-shot path keeps no trace.
+        { record: () => Promise.resolve(false) } as never,
       );
 
       let answer: AskAnswer | null = null;

@@ -2,7 +2,7 @@
 
 How the Frapp team tells whether Ask's answers are good, from records that hold no text (#4902). The rules are in [`spec/behavior/ai.md` § Stored AI text](../../spec/behavior/ai.md#stored-ai-text) and [§ Feedback on an answer](../../spec/behavior/ai.md#feedback-on-an-answer); the table shapes are the migration's (`20261113203728_ai_ask_traces_and_feedback.sql`). When a member chooses to send the words of an answer, that is a report, and reading it is on [`ai-stored-text.md`](ai-stored-text.md).
 
-> **Not running yet (2026-11-13).** Nothing calls `AskTraceService.record` until the agent loop does (#4899). Until then no trace is written, so a thumbs or a tap on any answer is refused as not found and the tables stay empty.
+> **Not running yet (2026-11-13).** Only the tool loop calls `AskTraceService.record` (#4899), and it is off unless the server sets `ASK_AGENT=on`. With it off no trace is written, so a thumbs or a tap on any answer is refused as not found and the tables stay empty.
 
 ## What is kept
 

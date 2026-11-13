@@ -3,6 +3,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_STREAM_VERSION,
   type AskAnswer,
+  type AskDoor,
+  type AskEffort,
+  type AskEntity,
+  type AskFrom,
   type AskHistoryTurn,
   type AskSource,
   type AskStep,
@@ -48,10 +52,13 @@ import { MemberService } from '../member.service';
 import { RbacService } from '../rbac.service';
 import {
   AgentLoopService,
+  type AgentLoopEvent,
   type AgentLoopOutcome,
 } from './agent/agent-loop.service';
+import { agentTurnTrace, type AgentTurnEnd } from './agent/agent-turn-trace';
 import {
   AGENT_READ_TOOLS,
+  type AgentEntity,
   type AgentReadTool,
   type AgentSource,
 } from './agent/agent-tool';
@@ -60,6 +67,7 @@ import {
   askAgentSystem,
 } from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
+import { AskTraceService } from './observe/ask-trace.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
   ASK_ASKER_SOURCE_TITLE,
@@ -149,6 +157,16 @@ export interface AskInput {
    * said, and it reaches only the asker's own answer.
    */
   history?: readonly AskHistoryTurn[];
+  /**
+   * What the member had open when they asked. Ids from the client: each is
+   * looked up as the asker before anything about it reaches a model. Carried
+   * to here and not read yet (#4899).
+   */
+  from?: AskFrom;
+  /** How hard to work on it. Carried to here and not read yet (#4899). */
+  effort?: AskEffort;
+  /** Where the member asked from. Counted in the turn's trace, never read. */
+  door?: AskDoor;
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The asker's IANA time zone. */
@@ -318,11 +336,63 @@ function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
       id: source.id,
       kind: source.kind,
       title: source.title,
-      detail: source.detail,
+      // A chat source's detail is whose message it is.
+      detail: source.chat ? null : source.detail,
       date: source.date,
       target: source.target,
+      ...(source.chat && source.detail ? { author: source.detail } : {}),
     },
   };
+}
+
+/**
+ * Of the members and channels the tools named, the ones the answer names:
+ * `@Name` for a member, `#name` for a channel, as the prompt asks for them.
+ * A client links only these, so a name the model made up is plain text, and
+ * so is a real name it did not mark.
+ */
+function namedIn(text: string, entities: readonly AgentEntity[]): AskEntity[] {
+  // One name, one thing: two members called the same cannot be told apart
+  // by a name in the text, so neither is linked.
+  const byMark = new Map<string, AskEntity | null>();
+  for (const entity of entities) {
+    const name = entity.name.trim();
+    if (!name) continue;
+    const mark = `${entity.type === 'member' ? '@' : '#'}${name}`;
+    const held = byMark.get(mark);
+    if (held === undefined) {
+      byMark.set(mark, { type: entity.type, id: entity.id, name });
+    } else if (held !== null && held.id !== entity.id) byMark.set(mark, null);
+  }
+  const marks = [...byMark.keys()];
+  return [...byMark].flatMap(([mark, entity]): AskEntity[] =>
+    entity !== null && marksText(text, mark, marks) ? [entity] : [],
+  );
+}
+
+/**
+ * Whether `text` has `mark` standing on its own: not running on into more
+ * of a word ("#general" in "#general-chat"), and not as the start of a
+ * longer mark the tools also named ("@Sam" in "@Sam Lee").
+ */
+function marksText(
+  text: string,
+  mark: string,
+  marks: readonly string[],
+): boolean {
+  const longer = marks.filter(
+    (other) => other.length > mark.length && other.startsWith(mark),
+  );
+  for (
+    let at = text.indexOf(mark);
+    at !== -1;
+    at = text.indexOf(mark, at + 1)
+  ) {
+    const rest = text.slice(at);
+    if (/^[\p{L}\p{N}_-]/u.test(rest.slice(mark.length))) continue;
+    if (!longer.some((other) => rest.startsWith(other))) return true;
+  }
+  return false;
 }
 
 /**
@@ -390,6 +460,7 @@ export class AskService {
     private readonly loop: AgentLoopService,
     @Inject(AGENT_READ_TOOLS)
     private readonly agentTools: readonly AgentReadTool[],
+    private readonly trace: AskTraceService,
   ) {}
 
   /**
@@ -602,11 +673,36 @@ export class AskService {
     const context = asker ? [asker] : [];
     const titleOf = (source: AgentSource) =>
       agentSourceTitle(source, input.timeZone);
+    // What the turn's trace says of it beside what the loop did (#4902).
+    // Every way out below this line records one, and none holds any text.
+    const began = Date.now();
+    let recorded = false;
+    const traced = (end: AgentTurnEnd): Promise<boolean> => {
+      recorded = true;
+      return this.trace.record(
+        agentTurnTrace(
+          {
+            askId,
+            chapterId: input.chapterId,
+            userId: input.userId,
+            door: input.door ?? 'ask',
+            effort: input.effort ?? 'default',
+            task: 'ask.agent',
+            promptVersion: ASK_AGENT_PROMPT_VERSION,
+            startedAt: now,
+            durationMs: Date.now() - began,
+            isFollowUp: (input.history?.length ?? 0) > 0,
+            toolsOffered: offered.map((tool) => tool.name),
+          },
+          end,
+        ),
+      );
+    };
     const reads: string[] = [];
     let pending = '';
     let writing = false;
     let outcome: AgentLoopOutcome | null = null;
-    for await (const part of this.loop.run({
+    const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
       system: askAgentSystem(longDate(now, input.timeZone), asker !== null),
@@ -625,26 +721,59 @@ export class AskService {
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
-    })) {
-      if (part.type === 'text') {
-        pending += part.delta;
-        if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
-          if (!writing) {
-            writing = true;
-            yield this.step('writing');
-          }
-          yield event({ type: 'text', delta: pending });
-          pending = '';
+    });
+    try {
+      for (;;) {
+        let next: IteratorResult<AgentLoopEvent, void>;
+        try {
+          next = await turn.next();
+        } catch (error) {
+          const kind =
+            error instanceof LanguageModelError ? error.kind : 'unknown';
+          // A call cut off because the member left did not fail.
+          await traced(
+            kind === 'aborted' || input.signal?.aborted
+              ? { kind: 'stopped' }
+              : { kind: 'error', errorKind: kind },
+          );
+          throw error;
         }
-      } else if (part.type === 'discard') {
-        // Words before a call were not the answer. Any that already went out
-        // are replaced by the final answer, as every streamed word is.
-        pending = '';
-        writing = false;
-      } else if (part.type === 'tool') {
-        if (!reads.includes(part.name)) reads.push(part.name);
-        yield event({ type: 'status', step: 'reading', reads: [...reads] });
-      } else outcome = part.outcome;
+        if (next.done) break;
+        const part = next.value;
+        if (part.type === 'text') {
+          pending += part.delta;
+          if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
+            if (!writing) {
+              writing = true;
+              yield this.step('writing');
+            }
+            yield event({ type: 'text', delta: pending });
+            pending = '';
+          }
+        } else if (part.type === 'discard') {
+          // Words before a call were not the answer. Any that already went out
+          // are replaced by the final answer, as every streamed word is.
+          pending = '';
+          writing = false;
+        } else if (part.type === 'tool') {
+          if (!reads.includes(part.name)) reads.push(part.name);
+          yield event({
+            type: 'status',
+            step: 'reading',
+            reads: [...reads],
+            tool: part.name,
+            label: part.reading,
+          });
+        } else outcome = part.outcome;
+      }
+    } finally {
+      // Whoever was reading this stream stopped (the member left, or the
+      // turn became a card) while the loop was mid-round: close it, so the
+      // model call under it is settled, and say so in the trace.
+      if (outcome === null) {
+        await turn.return(undefined);
+        if (!recorded) await traced({ kind: 'stopped' });
+      }
     }
     // The loop ends with nothing for a member who left.
     if (outcome === null) return;
@@ -682,6 +811,9 @@ export class AskService {
     ) {
       answer = emptyAnswer('unavailable', { reason: 'not_available' });
     }
+    if (answer.status === 'answered') {
+      answer.entities = namedIn(answer.text, outcome.entities);
+    }
     const written = outcome.result.status === 'ok' ? outcome.result.text : '';
     answer.saved = await this.keep(input, answer, written, entries, run, now);
     answer.report_receipt = this.receipt(
@@ -694,6 +826,17 @@ export class AskService {
       now,
       [...context, ...entries.map((entry) => entry.model)],
     );
+    // An answer can be rated only when its trace was kept, so the id the
+    // thumbs name goes out only then (`AskFeedbackService`).
+    const kept = await traced({
+      kind: 'ended',
+      outcome,
+      status: answer.status,
+      citationsKept: answer.citations.length,
+      readChat: answer.read_chat === true,
+      truncated: answer.truncated,
+    });
+    if (kept) answer.ask_id = askId;
     yield this.done(answer);
   }
 
