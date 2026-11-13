@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { isModuleEnabled } from '@repo/validation';
 import { z } from 'zod';
 import { SystemPermissions } from '#domain/constants/permissions';
+import type { CorpusSourceType } from '#domain/entities/corpus.entity';
 import {
   CorpusRetrievalService,
   type CorpusPassage,
@@ -19,10 +20,14 @@ import {
   readDateRange,
 } from './conversation-lines';
 
-export const DOCUMENT_SOURCE_TYPE = 'chapter_document';
-export const MINUTES_SOURCE_TYPE = 'meeting_minutes';
+export const DOCUMENT_SOURCE_TYPE: CorpusSourceType = 'chapter_document';
+export const MINUTES_SOURCE_TYPE: CorpusSourceType = 'meeting_minutes';
 
-/** A passage is up to 2,400 characters, so five fill a result. */
+/**
+ * Passages asked for. A passage is at most 2,400 characters and most are
+ * well under, so eight usually fit a result; when they do not, the last
+ * ones are left off and the note says so.
+ */
 const PASSAGES = 8;
 
 /** What each kind of record is, and the module its own routes sit behind. */
@@ -172,7 +177,7 @@ export class SearchRecordsTool implements AgentReadTool<Args> {
         fitted.sources.length === 0
           ? 'Nothing in the documents or minutes you can open matched.'
           : fitted.cut
-            ? 'More passages matched than are shown. Narrow the search, or read the document or the minutes in full.'
+            ? 'More matched than fits here: passages were left off or the last one is cut short. Narrow the search, or read the document or the minutes in full.'
             : null,
       leftOutMessages: 0,
     };

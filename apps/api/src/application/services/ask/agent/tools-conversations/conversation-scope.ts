@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { CHAPTER_CHANNEL_TYPES } from '#domain/utils/chat-catch-up';
 import { ChatChannelReadsService } from '../../../chat-channel-reads.service';
 import { MemberService } from '../../../member.service';
 import type { AgentToolContext } from '../agent-tool';
@@ -16,12 +17,7 @@ export type MemberMatch =
   /** More than one member fits what was typed. Never which. */
   | { status: 'several'; count: number };
 
-/** The channel types members talk in. Never a DM or a group DM. */
-const CHAPTER_CHANNEL_TYPES: readonly string[] = [
-  'PUBLIC',
-  'PRIVATE',
-  'ROLE_GATED',
-];
+const CHANNEL_TYPES: readonly string[] = CHAPTER_CHANNEL_TYPES;
 
 const ASKER_WORDS = new Set(['me', 'myself', 'i', 'mine']);
 
@@ -67,7 +63,7 @@ export class ConversationScope {
       .filter(
         (channel) =>
           channel.chapter_id === context.chapterId &&
-          CHAPTER_CHANNEL_TYPES.includes(channel.type) &&
+          CHANNEL_TYPES.includes(channel.type) &&
           !channel.is_audit_log,
       )
       .map((channel) => ({
@@ -93,8 +89,9 @@ export class ConversationScope {
 
   /**
    * The member a model named. "me" is the asker. Otherwise the roster's
-   * display names: the whole name first, then a name that starts with what
-   * was typed ("Jordan" for Jordan Lee) when exactly one does.
+   * display names: the whole name first, then one word of a name ("Jordan"
+   * or "Lee" for Jordan Lee) when exactly one member has it. Part of a word
+   * ("Jord") matches nobody.
    */
   async findMember(
     context: AgentToolContext,

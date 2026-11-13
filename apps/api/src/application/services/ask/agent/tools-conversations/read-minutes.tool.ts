@@ -147,9 +147,19 @@ export class ReadMinutesTool implements AgentReadTool<Args> {
       return nothing(chapterId, 'Those minutes have nothing written in them.');
     }
     const fitted = fitSources(sources);
-    const shown = fitted.sources.map((source) => source.text).join('\n');
+    // An owner is an entity when their action item is among what is shown,
+    // and only when no other owner here goes by the same name: an answer
+    // links a member by name, and one name must open one member.
+    const items =
+      fitted.sources.find(
+        (source) => source.id === `meeting:${meeting.id}:action_items`,
+      )?.text ?? '';
+    const named = [...nameOf.values()];
     for (const [id, name] of nameOf) {
-      if (shown.includes(name)) entities.push({ type: 'member', id, name });
+      const alone = named.filter((other) => other === name).length === 1;
+      if (alone && items.includes(name)) {
+        entities.push({ type: 'member', id, name });
+      }
     }
     return {
       chapterId,

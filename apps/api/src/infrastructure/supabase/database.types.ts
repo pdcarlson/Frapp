@@ -822,8 +822,9 @@ export interface Database {
         Returns: CorpusCandidate[];
       };
       /**
-       * `20261113204057` (#4900) — one indexed source's passages in order,
-       * for a member of the chapter; never a chat window.
+       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * conversation first; one row with a null `message_id` when it holds
+       * none, no row when it is gone or its channel is a DM.
        */
       read_chat_corpus_window: {
         Args: { p_chapter_id: string; p_window_id: string };
@@ -841,10 +842,8 @@ export interface Database {
         }[];
       };
       /**
-       * `20260928170000` (#1302). Atomically removes `p_user_id` from a
-       * PRIVATE channel's `member_ids`. Empty result set means the row didn't
-       * match (wrong id/chapter, not PRIVATE) or the removal would have left
-       * no current chapter member listed, which it refuses.
+       * `20261113204057` (#4900) — one indexed source's passages in order,
+       * for a member of the chapter; never a chat window.
        */
       read_corpus_source_chunks: {
         Args: {
@@ -868,9 +867,10 @@ export interface Database {
         }[];
       };
       /**
-       * `20261112170000` (#4314) — a chat window's readable messages, oldest
-       * conversation first; one row with a null `message_id` when it holds
-       * none, no row when it is gone or its channel is a DM.
+       * `20260928170000` (#1302). Atomically removes `p_user_id` from a
+       * PRIVATE channel's `member_ids`. Empty result set means the row didn't
+       * match (wrong id/chapter, not PRIVATE) or the removal would have left
+       * no current chapter member listed, which it refuses.
        */
       remove_private_channel_member: {
         Args: {

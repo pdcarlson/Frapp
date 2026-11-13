@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { ChatChannelReadsService } from '../../../chat-channel-reads.service';
-import type {
-  AgentReadTool,
-  AgentToolContext,
-  AgentToolResult,
+import {
+  AGENT_RESULT_MAX_CHARS,
+  type AgentReadTool,
+  type AgentToolContext,
+  type AgentToolResult,
 } from '../agent-tool';
 import { oneLine } from '../../ask-lines';
 import { ConversationScope } from './conversation-scope';
@@ -79,8 +80,13 @@ export class ListChannelsTool implements AgentReadTool<Args> {
           : 'There are no channels to list.',
       );
     }
-    const shown = rows.slice(0, CHANNELS_LISTED);
-    const lines = shown.map((row) => {
+    // The list is one source, so it is held to the result's character cap
+    // here: a line that does not fit ends the list, and the note says how
+    // many channels were shown. Nothing is cut after this without a word.
+    const shown: typeof rows = [];
+    const lines: string[] = [];
+    let room = AGENT_RESULT_MAX_CHARS;
+    for (const row of rows.slice(0, CHANNELS_LISTED)) {
       const unread =
         row.unread === 0
           ? 'nothing unread'
@@ -88,8 +94,12 @@ export class ListChannelsTool implements AgentReadTool<Args> {
               row.mentions > 0 ? `, ${row.mentions} mentioning you` : ''
             }`;
       const about = oneLine(row.channel.description);
-      return `#${row.name}: ${unread}.${about ? ` About: ${about}` : ''}`;
-    });
+      const line = `#${row.name}: ${unread}.${about ? ` About: ${about}` : ''}`;
+      if (line.length + 1 > room) break;
+      room -= line.length + 1;
+      shown.push(row);
+      lines.push(line);
+    }
     return {
       chapterId,
       sources: [

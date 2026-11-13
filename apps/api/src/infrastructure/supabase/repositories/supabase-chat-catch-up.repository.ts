@@ -5,6 +5,10 @@ import type {
   CatchUpStretch,
   IChatCatchUpRepository,
 } from '#domain/repositories/chat-catch-up.repository.interface';
+import {
+  CHAPTER_CHANNEL_TYPES,
+  WRITTEN_MESSAGE_KINDS,
+} from '#domain/utils/chat-catch-up';
 import type { FrappSupabaseClient } from '../database.types';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import { SupabaseQueryError } from '../supabase-query-error';
@@ -17,10 +21,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
 const COLUMNS =
   'id, sender_id, content, created_at, thread_root_id, mentions, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id, type, is_audit_log)';
 
-/** The channel types members talk in. Never a DM or a group DM. */
-const CHAPTER_CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
-/** The kinds a member wrote. Cards and system rows are not conversation. */
-const WRITTEN_KINDS = ['text', 'announcement', 'imported'] as const;
+const WRITTEN_KINDS = WRITTEN_MESSAGE_KINDS;
 
 interface Row extends CatchUpMessageRow {
   chat_channels?: unknown;

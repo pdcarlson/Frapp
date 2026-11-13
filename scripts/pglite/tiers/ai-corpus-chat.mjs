@@ -235,6 +235,54 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
       { matched },
     );
 
+    // Narrowing (20261113204057, #4900): each argument can only remove
+    // passages, and a null one removes none.
+    const narrowed = async (extra, params) =>
+      (
+        await rows(
+          `select * from match_corpus_chunks($1, $2, 'van keys', $3, $4, 40, ${extra})`,
+          [CH, U1, VEC, MODEL, ...params],
+        )
+      ).length;
+    const stranger = "00000000-0000-4000-8000-00000000f00d";
+    const narrowing = {
+      chatOnly: await narrowed(`p_source_types => $5::text[]`, [["chat_message"]]),
+      documentsOnly: await narrowed(`p_source_types => $5::text[]`, [["chapter_document"]]),
+      thisChannel: await narrowed(`p_channel_ids => $5::uuid[]`, [[GEN]]),
+      otherChannel: await narrowed(`p_channel_ids => $5::uuid[]`, [[stranger]]),
+      thisAuthor: await narrowed(`p_author_id => $5::uuid`, [U1]),
+      otherAuthor: await narrowed(`p_author_id => $5::uuid`, [stranger]),
+      sinceLongAgo: await narrowed(`p_since => $5::timestamptz`, ["2000-01-01T00:00:00Z"]),
+      sinceTheFuture: await narrowed(`p_since => $5::timestamptz`, ["2999-01-01T00:00:00Z"]),
+      untilLongAgo: await narrowed(`p_until => $5::timestamptz`, ["2000-01-01T00:00:00Z"]),
+      untilTheFuture: await narrowed(`p_until => $5::timestamptz`, ["2999-01-01T00:00:00Z"]),
+    };
+    check(
+      "retrieval narrows by source type, channel, author and dates, and only ever removes",
+      JSON.stringify(narrowing) ===
+        JSON.stringify({
+          chatOnly: 1,
+          documentsOnly: 0,
+          thisChannel: 1,
+          otherChannel: 0,
+          thisAuthor: 1,
+          otherAuthor: 0,
+          sinceLongAgo: 1,
+          sinceTheFuture: 0,
+          untilLongAgo: 0,
+          untilTheFuture: 1,
+        }),
+      { narrowing },
+    );
+    check(
+      "the source read never returns a chat window, and nothing to a stranger to the chapter",
+      (await rows(`select * from read_corpus_source_chunks($1, $2, 'chat_message', $3)`, [CH, U1, genWin.id]))
+        .length === 0 &&
+        (await rows(`select * from read_corpus_source_chunks($1, $2, 'chapter_document', $3)`, [CH, stranger, genWin.id]))
+          .length === 0,
+      {},
+    );
+
     // ── Following the chat ───────────────────────────────────────────────
     let before = await chatSource(genWin.id);
     await db.query(`update chat_messages set is_pinned = true, pinned_at = now() where id = $1`, [ROOT]);
@@ -496,7 +544,8 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
       "public.read_chat_corpus_window(uuid, uuid)",
       "public.chat_corpus_window_channels(uuid, uuid[])",
       "public.finish_corpus_source(uuid, bigint, text, text, timestamptz, boolean, integer, text, integer, uuid[])",
-      "public.match_corpus_chunks(uuid, uuid, text, text, text, integer)",
+      "public.match_corpus_chunks(uuid, uuid, text, text, text, integer, text[], uuid[], uuid, timestamptz, timestamptz)",
+      "public.read_corpus_source_chunks(uuid, uuid, text, uuid, integer, integer)",
     ];
     const grants = [];
     for (const fn of fns) {

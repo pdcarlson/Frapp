@@ -2,8 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { CatchUpMessageRow } from '#domain/repositories/chat-catch-up.repository.interface';
-import type { CatchUpMessage } from '#domain/utils/chat-catch-up';
-import { ChatCatchUpService } from '../../../chat-catch-up/chat-catch-up.service';
+import {
+  WRITTEN_MESSAGE_KINDS,
+  type CatchUpMessage,
+} from '#domain/utils/chat-catch-up';
+import {
+  ChatCatchUpService,
+  type WithheldMessage,
+} from '../../../chat-catch-up/chat-catch-up.service';
 import { CHAT_SOURCE_TYPE } from '../../../corpus/chat-message-corpus-source';
 import { CorpusRetrievalService } from '../../../corpus/corpus-retrieval.service';
 import { SearchService } from '../../../search.service';
@@ -22,6 +28,7 @@ import {
 } from './conversation-scope';
 import {
   BAD_DATES_NOTE,
+  CHAT_OFF_NOTE,
   MESSAGES_PER_RESULT,
   distinctEntities,
   fitSources,
@@ -30,12 +37,16 @@ import {
   readDateRange,
 } from './conversation-lines';
 
+/**
+ * Hits asked of the search by words: more than a result holds, because
+ * cards and thread replies among them are dropped after.
+ */
+const WORD_HITS = 40;
 /** Conversations the search by meaning opens, best first. */
 const MEANING_PASSAGES = 4;
 /** Messages read from the start of each of those conversations. */
 const MESSAGES_PER_PASSAGE = 4;
-/** The kinds a member wrote. Cards and system rows are not conversation. */
-const WRITTEN_KINDS: readonly string[] = ['text', 'announcement', 'imported'];
+const WRITTEN_KINDS: readonly string[] = WRITTEN_MESSAGE_KINDS;
 /** `SearchService` answers nothing for less (`spec/behavior/search.md`). */
 const MIN_QUERY = 3;
 
@@ -82,8 +93,8 @@ type Args = z.infer<typeof input>;
  * message that answers may share none of them ("coach is booked, deposit
  * went Tuesday").
  *
- * - **By words** is the app's own message search (`GET /v1/search`,
- *   `SearchService`): exact, newest first, narrowed by channel, sender and
+ * - **By words** is the message half of the app's own search (`GET
+ *   /v1/search`, `SearchService.searchMessagesIn`): exact, newest first, narrowed by channel, sender and
  *   dates in the query. It also answers a search with no words at all,
  *   "everything Jordan posted this week".
  * - **By meaning** is the chapter's index (`CorpusRetrievalService`),
@@ -159,7 +170,7 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
     const channelOf = new Map(channels.map((channel) => [channel.id, channel]));
 
     const [byWords, byMeaning] = await Promise.all([
-      this.byWords(reader, query, channelOf, args.channel.trim() !== '', {
+      this.byWords(reader, query, channelOf, {
         fromUserId,
         since,
         until,
@@ -170,8 +181,11 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
             since,
             until,
           })
-        : Promise.resolve({ found: [], leftOut: 0 }),
+        : Promise.resolve<Found>({ found: [], withheld: [], chatOff: false }),
     ]);
+    if (byWords.chatOff || byMeaning.chatOff) {
+      return nothing(chapterId, CHAT_OFF_NOTE);
+    }
 
     // Exact matches first, newest first; then the conversations the meaning
     // search opened, best first, each in the order it was said.
@@ -185,7 +199,7 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
       sources.push(built.source);
       entities.push(...built.entities);
     }
-    const fitted = fitSources(sources);
+    const fitted = fitSources(sources, { whole: true });
     const authors = new Set(
       fitted.sources.flatMap((source) => source.authorIds),
     );
@@ -210,7 +224,14 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
           : fitted.cut
             ? `${fitted.dropped} more matching messages are not shown. Narrow the search to see them.`
             : null,
-      leftOutMessages: byWords.leftOut + byMeaning.leftOut,
+      // Each message once, however many of the two searches and their
+      // stretches met it; and under `from`, only that member's, since no one
+      // else's message would have been shown.
+      leftOutMessages: new Set(
+        [...byWords.withheld, ...byMeaning.withheld]
+          .filter((message) => !fromUserId || message.senderId === fromUserId)
+          .map((message) => message.id),
+      ).size,
     };
   }
 
@@ -219,23 +240,24 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
     reader: { chapterId: string; userId: string },
     query: string,
     channelOf: ReadonlyMap<string, OpenChannel>,
-    oneChannel: boolean,
     filters: { fromUserId?: string; since?: string; until?: string },
   ): Promise<Found> {
-    const { messages } = await this.search.search(
+    const messages = await this.search.searchMessagesIn(
       reader.chapterId,
       reader.userId,
       query.length >= MIN_QUERY ? query : '',
+      [...channelOf.keys()],
       {
-        ...(oneChannel ? { channelId: [...channelOf.keys()][0] } : {}),
         ...(filters.fromUserId ? { fromUserId: filters.fromUserId } : {}),
         ...(filters.since ? { after: filters.since } : {}),
         ...(filters.until ? { before: filters.until } : {}),
       },
+      WORD_HITS,
     );
-    // The search covers everything the member can open, direct messages
-    // included, and every kind of row. Only a member's words in a chapter
-    // channel go further, and never a row the search masked as blocked.
+    // The search was held to the chapter channels this member can open, but
+    // returns every kind of row and thread replies too. Only a member's
+    // words on a channel's timeline go further, and never a row the search
+    // masked as blocked.
     const rows: (CatchUpMessageRow & { channel_id: string })[] = messages
       .filter(
         (message) =>
@@ -262,7 +284,8 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
         const channel = channelOf.get(channelIdOf.get(message.id) ?? '');
         return channel ? [{ message, channel }] : [];
       }),
-      leftOut: readable.leftOut,
+      withheld: readable.withheld,
+      chatOff: readable.chatOff,
     };
   }
 
@@ -297,7 +320,9 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
     );
     // The index being unavailable (the chapter's cap, the provider) costs
     // this half only: the search by words still answers.
-    if (retrieved.status !== 'ok') return { found: [], leftOut: 0 };
+    if (retrieved.status !== 'ok') {
+      return { found: [], withheld: [], chatOff: false };
+    }
 
     const stretches = await Promise.all(
       retrieved.passages.map(async (passage) => {
@@ -315,14 +340,16 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
           ),
           keep: 'oldest',
         });
-        return stretch && !stretch.chatOff ? { stretch, channel } : null;
+        return stretch ? { stretch, channel } : null;
       }),
     );
     const found: Found['found'] = [];
-    let leftOut = 0;
+    const withheld: WithheldMessage[] = [];
+    let chatOff = false;
     for (const entry of stretches) {
       if (!entry) continue;
-      leftOut += entry.stretch.leftOut;
+      chatOff ||= entry.stretch.chatOff;
+      withheld.push(...entry.stretch.withheld);
       const theirs = entry.stretch.messages.filter(
         (message) =>
           !filters.fromUserId || message.senderId === filters.fromUserId,
@@ -331,11 +358,14 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
         found.push({ message, channel: entry.channel });
       }
     }
-    return { found, leftOut };
+    return { found, withheld, chatOff };
   }
 }
 
 interface Found {
   found: { message: CatchUpMessage; channel: OpenChannel }[];
-  leftOut: number;
+  /** Left out for consent. Counted once each, never shown. */
+  withheld: WithheldMessage[];
+  /** The chapter has channel messages switched off for AI. */
+  chatOff: boolean;
 }

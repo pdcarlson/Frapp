@@ -99,12 +99,23 @@ export type ChatStretchRequest =
     };
 
 /** A stretch as a reader may be given it: no summary, no model call. */
+/** A message left out for consent: which, and whose. Never its text. */
+export interface WithheldMessage {
+  id: string;
+  senderId: string | null;
+}
+
 export interface ChatStretchRead {
   channel: { id: string; name: string };
   /** Oldest first: only authors who said yes, the reader's blocks left out. */
   messages: CatchUpMessage[];
   /** Messages left out because their authors have not said yes. A count. */
   leftOut: number;
+  /**
+   * Those same messages, for a caller that reads overlapping stretches and
+   * must count each once. For counting only: never a model's to see.
+   */
+  withheld: WithheldMessage[];
   /** Messages of the stretch that were past `limit` and not read. */
   notRead: number;
   /** The chapter has channel messages switched off for AI: nothing is read. */
@@ -389,7 +400,14 @@ export class ChatCatchUpService {
     if (
       !(await this.consent.chapterSwitchOn(reader.chapterId, 'chat_source'))
     ) {
-      return { ...base, messages: [], leftOut: 0, notRead: 0, chatOff: true };
+      return {
+        ...base,
+        messages: [],
+        leftOut: 0,
+        withheld: [],
+        notRead: 0,
+        chatOff: true,
+      };
     }
 
     const scope = { chapterId: reader.chapterId, channelId };
@@ -453,6 +471,7 @@ export class ChatCatchUpService {
       ...base,
       messages: readable.messages,
       leftOut: readable.leftOut,
+      withheld: readable.withheld,
       notRead: Math.max(stretch.total - stretch.messages.length, 0),
       chatOff: false,
     };
@@ -462,15 +481,31 @@ export class ChatCatchUpService {
    * Step 4 for messages a caller already holds (#4900): a search's hits,
    * from channels the caller has checked this reader can open. Which of
    * them a model may be shown, by the same rule as a stretch, with the
-   * author's name. Nothing while the chapter's chat switch is off.
+   * author's name.
+   *
+   * With the chapter's chat switch off nothing is read and nothing is
+   * counted as left out, as in {@link readStretch}: `chatOff` says why, so
+   * the caller does not tell the member their chaptermates have not agreed.
    */
   async readableAmong(
     reader: ChatReader,
     rows: readonly CatchUpMessageRow[],
-  ): Promise<{ messages: CatchUpMessage[]; leftOut: number }> {
-    if (rows.length === 0) return { messages: [], leftOut: 0 };
-    const { messages, leftOut } = await this.readable(reader, rows);
-    return { messages, leftOut };
+  ): Promise<{
+    messages: CatchUpMessage[];
+    leftOut: number;
+    withheld: WithheldMessage[];
+    chatOff: boolean;
+  }> {
+    if (
+      !(await this.consent.chapterSwitchOn(reader.chapterId, 'chat_source'))
+    ) {
+      return { messages: [], leftOut: 0, withheld: [], chatOff: true };
+    }
+    if (rows.length === 0) {
+      return { messages: [], leftOut: 0, withheld: [], chatOff: false };
+    }
+    const { messages, leftOut, withheld } = await this.readable(reader, rows);
+    return { messages, leftOut, withheld, chatOff: false };
   }
 
   /**
@@ -626,6 +661,7 @@ export class ChatCatchUpService {
   ): Promise<{
     messages: CatchUpMessage[];
     leftOut: number;
+    withheld: WithheldMessage[];
     blocked: number;
     readerName: string;
   }> {
@@ -646,7 +682,7 @@ export class ChatCatchUpService {
       identities.map((identity) => [identity.id, identity.display_name]),
     );
     const messages: CatchUpMessage[] = [];
-    let leftOut = 0;
+    const withheld: WithheldMessage[] = [];
     let blocked = 0;
     for (const row of rows) {
       if (row.sender_id !== null && blockedSet.has(row.sender_id)) {
@@ -654,7 +690,7 @@ export class ChatCatchUpService {
         continue;
       }
       if (row.sender_id === null || !yes.has(row.sender_id)) {
-        leftOut += 1;
+        withheld.push({ id: row.id, senderId: row.sender_id });
         continue;
       }
       messages.push({
@@ -673,7 +709,8 @@ export class ChatCatchUpService {
     }
     return {
       messages,
-      leftOut,
+      leftOut: withheld.length,
+      withheld,
       blocked,
       readerName: names.get(input.userId) ?? '',
     };

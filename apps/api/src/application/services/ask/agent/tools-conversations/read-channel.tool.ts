@@ -120,22 +120,35 @@ export class ReadChannelTool implements AgentReadTool<Args> {
 
     const name = label(stretch.channel.name, 'channel');
     const built = messageSources(stretch.messages, stretch.channel, timeZone);
-    const fitted = fitSources(built.sources);
+    // A channel is read for its newest messages, so when the caps cut the
+    // stretch it is the oldest that go. A thread and the conversation around
+    // a message are read from their start, so there the end goes.
+    const fromEnd = 'channelId' in request;
+    const fitted = fitSources(built.sources, {
+      keep: fromEnd ? 'last' : 'first',
+      whole: true,
+    });
     const kept = new Set(fitted.sources.map((source) => source.id));
+    const shown = stretch.messages.filter((message) =>
+      kept.has(`message:${message.id}`),
+    );
     const notes: string[] = [];
     if (fitted.sources.length === 0) {
       notes.push(`No messages to read in #${name} there.`);
     }
-    // What was past the limit is older than what was read, except when the
-    // stretch was read from its start.
-    const older = stretch.notRead + fitted.dropped;
-    if (older > 0 && stretch.messages.length > 0) {
-      const oldest = stretch.messages[0].createdAt;
-      notes.push(
-        'keep' in request && request.keep === 'oldest'
-          ? `${older} later messages in this stretch were not read.`
-          : `${older} earlier messages in this stretch were not read. To read them, call again with until set to ${oldest}.`,
-      );
+    const unread = stretch.notRead + fitted.dropped;
+    if (unread > 0 && shown.length > 0) {
+      if (fromEnd) {
+        notes.push(
+          `${unread} earlier messages in this stretch were not read. To read them, call again with until set to ${shown[0].createdAt}.`,
+        );
+      } else if ('aroundMessageId' in request) {
+        notes.push(
+          `${unread} later messages did not fit. To read on, call again with around set to message:${shown[shown.length - 1].id}.`,
+        );
+      } else {
+        notes.push(`${unread} more replies in this thread were not read.`);
+      }
     }
     return {
       chapterId,

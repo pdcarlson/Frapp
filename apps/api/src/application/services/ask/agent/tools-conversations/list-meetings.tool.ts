@@ -43,7 +43,14 @@ const input = z.object({
 });
 type Args = z.infer<typeof input>;
 
-/** "3 decisions, 5 action items, a summary and announcements". */
+/**
+ * "a summary, announcements, 3 decisions, 5 action items": the sections
+ * every chapter's minutes have. The four a chapter switches on for itself
+ * (officer reports, old and new business, the discussion log) are left out
+ * of this line, because `read_minutes` shows only the sections the
+ * chapter's template has on now, and this must not promise one it will not
+ * return.
+ */
 function holds(meeting: Meeting): string {
   const content = readMeetingContent(meeting.content);
   const parts = [
@@ -55,10 +62,6 @@ function holds(meeting: Meeting): string {
     content.action_items.length > 0
       ? `${content.action_items.length} action ${content.action_items.length === 1 ? 'item' : 'items'}`
       : null,
-    content.officer_reports.trim() ? 'officer reports' : null,
-    content.old_business.trim() ? 'old business' : null,
-    content.new_business.trim() ? 'new business' : null,
-    content.discussion_log.trim() ? 'a discussion log' : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(', ') : 'nothing written yet';
 }

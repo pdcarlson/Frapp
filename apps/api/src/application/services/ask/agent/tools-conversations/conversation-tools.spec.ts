@@ -10,7 +10,12 @@ import {
 } from '../agent-tool';
 import { toolsMemberMayUse } from '../../ask-tool';
 import { ConversationScope } from './conversation-scope';
-import { fitSources, readDateRange, recordId } from './conversation-lines';
+import {
+  boundedRange,
+  fitSources,
+  readDateRange,
+  recordId,
+} from './conversation-lines';
 import { CONVERSATION_AGENT_TOOLS } from './index';
 import { ListChannelsTool } from './list-channels.tool';
 import { ListMeetingsTool } from './list-meetings.tool';
@@ -226,7 +231,7 @@ describe('conversation and record tools', () => {
       'scope.findChannel',
       'scope.findMember',
       'scope.openChannels',
-      'search.search',
+      'search.searchMessagesIn',
     ]);
     const WRITERS = [
       /\/chat\.service'/,
@@ -297,8 +302,51 @@ describe('conversation and record tools', () => {
       ['last week', ''],
       ['2026-02-30', ''],
       ['2026-11-07', '2026-11-01'],
+      // `Date.parse` reads each of these as some date, in the server's zone.
+      ['Nov 7', ''],
+      ['', 'November 1'],
+      ['2026-11-07T18:00', ''],
+      ['2026', ''],
     ])('refuses %j to %j', (since, until) => {
       expect(readDateRange(since, until, 'America/New_York')).toBeNull();
+    });
+
+    it('counts a default start back from the end asked for, not from now', () => {
+      const now = new Date('2026-11-13T12:00:00.000Z');
+      const before = new Date('2025-12-02T05:00:00.000Z');
+      const range = boundedRange({ from: null, before }, now, 120, 365);
+      expect(range.before).toEqual(before);
+      expect(range.from.getTime()).toBeLessThan(before.getTime());
+      expect(range.from.toISOString()).toBe('2025-08-04T05:00:00.000Z');
+      // With no end, it is still counted back from now.
+      expect(
+        boundedRange({ from: null, before: null }, now, 120, 365).from,
+      ).toEqual(new Date('2026-07-16T12:00:00.000Z'));
+    });
+
+    it('keeps either end of a cut, and never half a source when told whole', () => {
+      const source = (id: string, length: number) => ({
+        id,
+        kind: 'chat' as const,
+        title: '#general',
+        detail: null,
+        date: null,
+        target: null,
+        text: 'x'.repeat(length),
+        chat: true,
+        authorIds: [],
+      });
+      const five = ['a', 'b', 'c', 'd', 'e'].map((id) => source(id, 5000));
+      const first = fitSources(five);
+      expect(first.sources.map((kept) => kept.id)).toEqual(['a', 'b', 'c']);
+      expect(first.sources[2].text).toHaveLength(2000);
+      expect(first).toMatchObject({ dropped: 2, shortened: true, cut: true });
+      const last = fitSources(five, { keep: 'last', whole: true });
+      expect(last.sources.map((kept) => kept.id)).toEqual(['d', 'e']);
+      expect(last.sources.every((kept) => kept.text.length === 5000)).toBe(
+        true,
+      );
+      expect(last).toMatchObject({ dropped: 3, shortened: false, cut: true });
     });
 
     it('takes a bare id or a source id, and nothing else', () => {
@@ -437,6 +485,30 @@ describe('conversation and record tools', () => {
       ]);
     });
 
+    it('ends the list where the result is full, and says how many channels it showed', async () => {
+      const many = Array.from({ length: 60 }, (_, index) =>
+        channelRow(
+          `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`,
+          `committee-${String(index).padStart(2, '0')}`,
+          { description: 'd'.repeat(300) },
+        ),
+      );
+      const { scope, chat } = scopeWith(many);
+      const result = await new ListChannelsTool(scope, chat as never).run(
+        { unread_only: false },
+        context,
+      );
+      const lines = result.sources[0].text.split('\n');
+      expect(result.sources[0].text.length).toBeLessThanOrEqual(
+        AGENT_RESULT_MAX_CHARS,
+      );
+      expect(lines.length).toBeLessThan(60);
+      // Every channel named as shown is on a whole line of its own.
+      expect(result.entities).toHaveLength(lines.length);
+      expect(lines[lines.length - 1]).toMatch(/About: d+$/);
+      expect(result.note).toBe(`Showing ${lines.length} of 60 channels.`);
+    });
+
     it('says so when nothing is unread', async () => {
       const { scope, chat } = scopeWith([channelRow(EXEC, 'exec-board')]);
       const result = await new ListChannelsTool(scope, chat as never).run(
@@ -461,6 +533,7 @@ describe('conversation and record tools', () => {
       channel: { id: GENERAL, name: 'general' },
       messages,
       leftOut: 0,
+      withheld: [],
       notRead: 0,
       chatOff: false,
       ...over,
@@ -609,22 +682,57 @@ describe('conversation and record tools', () => {
       );
     });
 
-    it('holds a long stretch to the caps and counts what it cut', async () => {
+    it('holds a channel to the caps by keeping its newest messages whole, and says how to step back', async () => {
       const long = Array.from({ length: 20 }, () =>
         said(SAM, 'Sam Ortiz', 'x'.repeat(2000)),
       );
-      const { tool } = build(stretchOf(long));
+      const { tool } = build(stretchOf(long, { notRead: 5 }));
       const result = await tool.run({ ...args, channel: 'general' }, context);
-      expect(result.sources.length).toBeLessThanOrEqual(
-        AGENT_RESULT_MAX_SOURCES,
-      );
       expect(
         result.sources.reduce((sum, source) => sum + source.text.length, 0),
       ).toBeLessThanOrEqual(AGENT_RESULT_MAX_CHARS);
       // Each message is cut at 1,000 characters of its own first.
-      expect(result.sources.length).toBeGreaterThanOrEqual(10);
-      expect(result.note).toMatch(
-        /earlier messages in this stretch were not read/,
+      const kept = result.sources.length;
+      expect(kept).toBeGreaterThanOrEqual(10);
+      expect(kept).toBeLessThan(20);
+      // The newest are the ones kept, in the order they were said.
+      expect(result.sources.map((source) => source.id)).toEqual(
+        long.slice(20 - kept).map((message) => `message:${message.id}`),
+      );
+      // No message is cut in half without a word.
+      const lengths = new Set(
+        result.sources.map((source) => source.text.length),
+      );
+      expect(lengths.size).toBe(1);
+      // What was past the limit and what did not fit are both older, and the
+      // way back starts at the oldest message shown, not the oldest read.
+      expect(result.note).toBe(
+        `${5 + 20 - kept} earlier messages in this stretch were not read. To read them, call again with until set to ${long[20 - kept].createdAt}.`,
+      );
+    });
+
+    it('keeps the start of a conversation around a message and of a thread, and says what is left', async () => {
+      const long = Array.from({ length: 20 }, () =>
+        said(SAM, 'Sam Ortiz', 'x'.repeat(2000)),
+      );
+      const around = await build(stretchOf(long)).tool.run(
+        { ...args, around: `message:${MESSAGE}` },
+        context,
+      );
+      const kept = around.sources.length;
+      expect(around.sources.map((source) => source.id)).toEqual(
+        long.slice(0, kept).map((message) => `message:${message.id}`),
+      );
+      expect(around.note).toBe(
+        `${20 - kept} later messages did not fit. To read on, call again with around set to message:${long[kept - 1].id}.`,
+      );
+      const thread = await build(stretchOf(long, { notRead: 3 })).tool.run(
+        { ...args, thread: `message:${MESSAGE}` },
+        context,
+      );
+      expect(thread.sources[0].id).toBe(`message:${long[0].id}`);
+      expect(thread.note).toBe(
+        `${3 + 20 - thread.sources.length} more replies in this thread were not read.`,
       );
     });
 
@@ -671,11 +779,11 @@ describe('conversation and record tools', () => {
       passages?: unknown[];
       retrieval?: unknown;
       stretch?: unknown;
-      leftOut?: number;
+      withheld?: { id: string; senderId: string | null }[];
     }) => {
       const { scope } = scopeWith();
       const search = {
-        search: jest.fn(async () => ({ messages: options.hits ?? [] })),
+        searchMessagesIn: jest.fn(async () => options.hits ?? []),
       };
       const retrieval = {
         retrieve: jest.fn(
@@ -707,7 +815,9 @@ describe('conversation and record tools', () => {
               threadRootId: null,
               mentionsReader: false,
             })),
-            leftOut: options.leftOut ?? 0,
+            leftOut: (options.withheld ?? []).length,
+            withheld: options.withheld ?? [],
+            chatOff: false,
           }),
         ),
         readStretch: jest.fn(async () => options.stretch ?? null),
@@ -724,11 +834,13 @@ describe('conversation and record tools', () => {
     it('searches by words and by meaning, narrowed to the channels the asker can open', async () => {
       const { tool, search, retrieval } = build({ hits: [hit()] });
       const result = await tool.run({ ...args, query: 'formal bus' }, context);
-      expect(search.search).toHaveBeenCalledWith(
+      expect(search.searchMessagesIn).toHaveBeenCalledWith(
         CHAPTER,
         ASKER,
         'formal bus',
+        [GENERAL, EXEC],
         {},
+        40,
       );
       expect(retrieval.retrieve).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -779,8 +891,13 @@ describe('conversation and record tools', () => {
     });
 
     it('returns the left-out count and no message when consent leaves everything out', async () => {
-      const { tool, catchUp } = build({ hits: [hit()], leftOut: 1 });
-      catchUp.readableAmong.mockResolvedValueOnce({ messages: [], leftOut: 1 });
+      const { tool, catchUp } = build({ hits: [hit()] });
+      catchUp.readableAmong.mockResolvedValueOnce({
+        messages: [],
+        leftOut: 1,
+        withheld: [{ id: MESSAGE, senderId: SAM }],
+        chatOff: false,
+      });
       const result = await tool.run({ ...args, query: 'formal' }, context);
       expect(result).toMatchObject({
         sources: [],
@@ -788,6 +905,53 @@ describe('conversation and record tools', () => {
         note: 'No messages matched.',
         leftOutMessages: 1,
       });
+    });
+
+    it('says chat is off, and counts nothing as left out, when the chapter switched it off', async () => {
+      const { tool, catchUp } = build({ hits: [hit()] });
+      catchUp.readableAmong.mockResolvedValueOnce({
+        messages: [],
+        leftOut: 0,
+        withheld: [],
+        chatOff: true,
+      });
+      const result = await tool.run({ ...args, query: 'formal' }, context);
+      expect(result).toMatchObject({ sources: [], leftOutMessages: 0 });
+      expect(result.note).toMatch(/turned off for Frapp AI/);
+    });
+
+    it('counts a message left out for consent once, however many reads met it', async () => {
+      const passage = {
+        channelId: GENERAL,
+        messageId: MESSAGE,
+        sourceAt: '2026-11-10T20:00:00.000Z',
+        messageCount: 9,
+      };
+      const { tool } = build({
+        hits: [hit()],
+        // The word search and two overlapping conversations all met `held-1`.
+        withheld: [{ id: 'held-1', senderId: DANA }],
+        passages: [passage, passage],
+        stretch: {
+          channel: { id: GENERAL, name: 'general' },
+          messages: [],
+          leftOut: 2,
+          withheld: [
+            { id: 'held-1', senderId: DANA },
+            { id: 'held-2', senderId: SAM },
+          ],
+          notRead: 0,
+          chatOff: false,
+        },
+      });
+      const all = await tool.run({ ...args, query: 'formal bus' }, context);
+      expect(all.leftOutMessages).toBe(2);
+      // Under `from`, only the named member's messages would have been shown.
+      const dana = await tool.run(
+        { ...args, query: 'formal bus', from: 'Dana Reyes' },
+        context,
+      );
+      expect(dana.leftOutMessages).toBe(1);
     });
 
     it('narrows by channel, by the member named, and by days, in both searches', async () => {
@@ -802,12 +966,18 @@ describe('conversation and record tools', () => {
         },
         context,
       );
-      expect(search.search).toHaveBeenCalledWith(CHAPTER, ASKER, 'deposit', {
-        channelId: EXEC,
-        fromUserId: DANA,
-        after: '2026-11-01T04:00:00.000Z',
-        before: '2026-11-08T05:00:00.000Z',
-      });
+      expect(search.searchMessagesIn).toHaveBeenCalledWith(
+        CHAPTER,
+        ASKER,
+        'deposit',
+        [EXEC],
+        {
+          fromUserId: DANA,
+          after: '2026-11-01T04:00:00.000Z',
+          before: '2026-11-08T05:00:00.000Z',
+        },
+        40,
+      );
       expect(firstRequest(retrieval.retrieve).filter).toEqual({
         sourceTypes: ['chat_message'],
         channelIds: [EXEC],
@@ -820,10 +990,14 @@ describe('conversation and record tools', () => {
     it('answers "everything I said this week" with no words, by the word search alone', async () => {
       const { tool, search, retrieval } = build({});
       await tool.run({ ...args, from: 'me', since: '2026-11-09' }, context);
-      expect(search.search).toHaveBeenCalledWith(CHAPTER, ASKER, '', {
-        fromUserId: ASKER,
-        after: '2026-11-09T05:00:00.000Z',
-      });
+      expect(search.searchMessagesIn).toHaveBeenCalledWith(
+        CHAPTER,
+        ASKER,
+        '',
+        [GENERAL, EXEC],
+        { fromUserId: ASKER, after: '2026-11-09T05:00:00.000Z' },
+        40,
+      );
       expect(retrieval.retrieve).not.toHaveBeenCalled();
     });
 
@@ -851,6 +1025,10 @@ describe('conversation and record tools', () => {
           channel: { id: GENERAL, name: 'general' },
           messages: [first, second],
           leftOut: 2,
+          withheld: [
+            { id: 'held-1', senderId: DANA },
+            { id: 'held-2', senderId: null },
+          ],
           notRead: 0,
           chatOff: false,
         },
@@ -893,6 +1071,7 @@ describe('conversation and record tools', () => {
             said(DANA, 'Dana Reyes', 'I paid it Tuesday'),
           ],
           leftOut: 0,
+          withheld: [],
           notRead: 0,
           chatOff: false,
         },
@@ -934,7 +1113,7 @@ describe('conversation and record tools', () => {
         context,
       );
       expect(none.note).toMatch(/No member of this chapter has that name/);
-      expect(search.search).not.toHaveBeenCalled();
+      expect(search.searchMessagesIn).not.toHaveBeenCalled();
       expect(retrieval.retrieve).not.toHaveBeenCalled();
     });
 
@@ -951,7 +1130,7 @@ describe('conversation and record tools', () => {
         (await tool.run({ ...args, query: 'formal', since: 'soon' }, context))
           .note,
       ).toMatch(/dates could not be read/);
-      expect(search.search).not.toHaveBeenCalled();
+      expect(search.searchMessagesIn).not.toHaveBeenCalled();
     });
 
     it('holds the result to the caps', async () => {
@@ -967,6 +1146,7 @@ describe('conversation and record tools', () => {
           said(SAM, 'Sam Ortiz', 'z'.repeat(3000)),
         ),
         leftOut: 0,
+        withheld: [],
         notRead: 0,
         chatOff: false,
       };
@@ -1103,7 +1283,7 @@ describe('conversation and record tools', () => {
         result.sources.reduce((sum, source) => sum + source.text.length, 0),
       ).toBeLessThanOrEqual(AGENT_RESULT_MAX_CHARS);
       expect(result.sources).toHaveLength(5);
-      expect(result.note).toMatch(/More passages matched than are shown/);
+      expect(result.note).toMatch(/More matched than fits here/);
     });
 
     it('says so when nothing matched, when search is unavailable, and when the dates are unreadable', async () => {
@@ -1390,6 +1570,23 @@ describe('conversation and record tools', () => {
       const meetings = { list: jest.fn(async () => rows) };
       return { meetings, tool: new ListMeetingsTool(meetings as never) };
     };
+
+    it('promises only the sections every chapter’s minutes have', async () => {
+      const { tool } = build([
+        row('m-1', '2026-11-08T23:00:00.000Z', {
+          content: {
+            summary: 'x',
+            // Off unless the chapter switched them on: read_minutes may not
+            // return them, so the list does not say they are there.
+            officer_reports: 'Treasurer: fine.',
+            discussion_log: 'Long.',
+          },
+        }),
+      ]);
+      const result = await tool.run({ since: '', until: '' }, context);
+      expect(result.sources[0].text).toMatch(/and hold a summary\.$/);
+      expect(result.sources[0].text).not.toMatch(/officer|discussion/);
+    });
 
     it('lists the meetings in the stretch newest first, each a source read_minutes takes', async () => {
       const { tool, meetings } = build([

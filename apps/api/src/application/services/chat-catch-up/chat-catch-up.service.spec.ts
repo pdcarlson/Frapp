@@ -908,13 +908,29 @@ describe('ChatCatchUpService', () => {
         'Sam Ortiz',
       ]);
       expect(read.leftOut).toBe(1);
+      // Which message, and whose: for a caller that counts each once.
+      expect(read.withheld).toEqual([
+        { id: expect.any(String), senderId: 'quiet' },
+      ]);
+      expect(read.chatOff).toBe(false);
     });
 
     it('reads nothing for no rows', async () => {
       const { service, consent } = build({});
       expect(
         await service.readableAmong({ chapterId: CHAPTER, userId: READER }, []),
-      ).toEqual({ messages: [], leftOut: 0 });
+      ).toEqual({ messages: [], leftOut: 0, withheld: [], chatOff: false });
+      expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing and counts nothing while the chapter has chat off for AI', async () => {
+      const { service, consent } = build({ yes: ['sam'], chatSwitch: false });
+      expect(
+        await service.readableAmong({ chapterId: CHAPTER, userId: READER }, [
+          row('sam', 'Bus leaves at six.'),
+          row('quiet', 'Not agreed.'),
+        ]),
+      ).toEqual({ messages: [], leftOut: 0, withheld: [], chatOff: true });
       expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
     });
   });

@@ -105,6 +105,9 @@ export interface DateRange {
  * the end of it; an ISO time is that moment. An empty string is no bound.
  * Null when either cannot be read, or the two are the wrong way round.
  */
+const EXACT_INSTANT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
+
 export function readDateRange(
   since: string,
   until: string,
@@ -124,9 +127,13 @@ export function readDateRange(
       );
       return zonedTimeToUtc(nextDay, '00:00', timeZone) ?? 'bad';
     }
-    // A day that does not exist ("2026-02-30") is refused, not rolled into
-    // the next month the way `Date.parse` would.
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return 'bad';
+    // Anything else must be an exact instant with its own offset, the form
+    // a message's time has in a note ("2026-11-07T18:00:00.000Z"). A day
+    // that does not exist ("2026-02-30"), a time with no offset and loose
+    // words ("Nov 7") are refused: `Date.parse` would read each of them as
+    // some date, in the server's zone, and the search would quietly run
+    // over the wrong days.
+    if (!EXACT_INSTANT.test(text)) return 'bad';
     const at = Date.parse(text);
     return Number.isNaN(at) ? 'bad' : new Date(at);
   };
@@ -143,7 +150,7 @@ export const BAD_DATES_NOTE =
 
 /**
  * A range held to `maxDays`, ending at `before` (or now). With no `from`,
- * it starts `defaultDays` back. `clamped` says a longer range was shortened.
+ * it starts `defaultDays` before that end. `clamped` says a longer range was shortened.
  */
 export function boundedRange(
   range: DateRange,
@@ -153,7 +160,11 @@ export function boundedRange(
 ): { from: Date; before: Date; clamped: boolean } {
   const before = range.before ?? new Date(now.getTime() + DAY_MS);
   const floor = new Date(before.getTime() - maxDays * DAY_MS);
-  const wanted = range.from ?? new Date(now.getTime() - defaultDays * DAY_MS);
+  // With only an end given, the default start is counted back from that
+  // end, not from now: "up to last December" is the months before it.
+  const anchor = range.before ? before : now;
+  const wanted =
+    range.from ?? new Date(anchor.getTime() - defaultDays * DAY_MS);
   const clamped = wanted.getTime() < floor.getTime();
   return { from: clamped ? floor : wanted, before, clamped };
 }
@@ -165,29 +176,42 @@ export function nothing(chapterId: string, note: string): AgentToolResult {
 
 /**
  * `sources` held to the two caps every result keeps
- * (`AGENT_RESULT_MAX_SOURCES`, `AGENT_RESULT_MAX_CHARS`), in order. The
- * source that crosses the character cap is cut to what is left when that
- * still says something, and dropped otherwise; `cut` is true whenever
- * anything was shortened or left off, so the tool can say so in its note.
+ * (`AGENT_RESULT_MAX_SOURCES`, `AGENT_RESULT_MAX_CHARS`), in the order given.
+ *
+ * - `keep` says which end survives a cut: `'first'` (the default) keeps
+ *   from the start, `'last'` from the end, for a stretch whose newest
+ *   messages are the ones asked for.
+ * - A source that crosses the character cap is cut to what is left when
+ *   that still says something, and dropped otherwise. With `whole`, it is
+ *   always dropped: a message is short, and half of one reads as all of it.
+ *
+ * `dropped` counts sources left off, `shortened` says one was cut short,
+ * and `cut` is true for either, so the tool can say so in its note.
  */
-export function fitSources(sources: readonly AgentSource[]): {
+export function fitSources(
+  sources: readonly AgentSource[],
+  options: { keep?: 'first' | 'last'; whole?: boolean } = {},
+): {
   sources: AgentSource[];
   dropped: number;
+  shortened: boolean;
   cut: boolean;
 } {
+  const last = options.keep === 'last';
+  const ordered = last ? [...sources].reverse() : sources;
   const kept: AgentSource[] = [];
   let room = AGENT_RESULT_MAX_CHARS;
-  let cut = false;
-  for (const source of sources) {
+  let shortened = false;
+  for (const source of ordered) {
     if (kept.length >= AGENT_RESULT_MAX_SOURCES) break;
     if (source.text.length <= room) {
       kept.push(source);
       room -= source.text.length;
       continue;
     }
-    cut = true;
     // A few words of a long section are not worth a source of their own.
-    if (room >= 400) {
+    if (!options.whole && room >= 400) {
+      shortened = true;
       kept.push({
         ...source,
         text: source.text
@@ -199,7 +223,12 @@ export function fitSources(sources: readonly AgentSource[]): {
     break;
   }
   const dropped = sources.length - kept.length;
-  return { sources: kept, dropped, cut: cut || dropped > 0 };
+  return {
+    sources: last ? kept.reverse() : kept,
+    dropped,
+    shortened,
+    cut: shortened || dropped > 0,
+  };
 }
 
 /** Entities with one entry per member or channel. */
