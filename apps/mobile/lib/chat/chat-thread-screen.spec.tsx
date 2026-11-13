@@ -211,6 +211,24 @@ vi.mock("@/components/chat/new-signup-sheet", async () => {
   };
 });
 
+const presentFormSheet = vi.fn();
+vi.mock("@/components/chat/new-form-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewFormSheet: forwardRef(function NewFormSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentFormSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewFormSheet", props);
+    }),
+  };
+});
+
 const presentPlusSheet = vi.fn();
 vi.mock("@/components/chat/composer-plus-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
@@ -354,6 +372,7 @@ function channelState(
     sendPoll: vi.fn(async () => ({ ok: true as const })),
     sendGif: vi.fn(async () => ({ ok: true as const })),
     sendSignup: vi.fn(async () => ({ ok: true as const })),
+    sendForm: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
     trackEventCard: vi.fn(() => ({
@@ -364,7 +383,7 @@ function channelState(
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     closePoll: vi.fn(async () => {}),
-    closeSignup: vi.fn(async () => {}),
+    closeCard: vi.fn(async () => {}),
     flag: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
@@ -529,8 +548,7 @@ const catchUp = vi.hoisted(() => ({
   resume: vi.fn(),
   drop: vi.fn(),
   options: undefined as
-    | { onOpenPoint: (point: Record<string, unknown>) => void }
-    | undefined,
+    { onOpenPoint: (point: Record<string, unknown>) => void } | undefined,
 }));
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ({ catchUp: catchUp.surface }),
@@ -2235,8 +2253,9 @@ describe("chat thread + sheet (#3865)", () => {
     const open = composer(tree).props.onOpenPlus as () => void;
     act(() => open());
     expect(presentPlusSheet).toHaveBeenCalledTimes(1);
-    // A sign-up sheet needs no grant (#3926), so it is always offered.
-    expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup"]);
+    // A sign-up sheet and a form need no grant (#3926), so they are always
+    // offered.
+    expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup", "form"]);
     expect(footerOf(tree)).toEqual([
       "Your role can't create polls, events, tasks or service hours.",
     ]);
@@ -2249,6 +2268,7 @@ describe("chat thread + sheet (#3865)", () => {
     expect(rowsOf(tree).map((row) => row.command)).toEqual([
       "poll",
       "signup",
+      "form",
       "event",
       "task",
       "hours",
@@ -2275,6 +2295,7 @@ describe("chat thread + sheet (#3865)", () => {
       { command: "poll", label: "Poll", disabledReason: "Still loading" },
       // It needs no module, so it waits on nothing (#3926).
       { command: "signup", label: "Sign-up sheet", disabledReason: null },
+      { command: "form", label: "Form", disabledReason: null },
     ]);
     act(() => tree.unmount());
   });
@@ -2339,6 +2360,22 @@ describe("chat thread + sheet (#3865)", () => {
       await onPost(signup);
     });
     expect(channel.sendSignup).toHaveBeenCalledWith(signup);
+    act(() => tree.unmount());
+  });
+
+  it("opens the New form sheet from its row and posts through sendForm (#3926 step 3)", async () => {
+    presentFormSheet.mockClear();
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("form"));
+    expect(presentFormSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewFormSheet" as never).props
+      .onPost as (form: unknown) => Promise<unknown>;
+    const form = { content: "Formal housing", payload: {} };
+    await act(async () => {
+      await onPost(form);
+    });
+    expect(channel.sendForm).toHaveBeenCalledWith(form);
     act(() => tree.unmount());
   });
 
@@ -2723,8 +2760,7 @@ describe("Catch me up in a channel (#3946)", () => {
     ]);
   const menuActions = (tree: ReactTestRenderer) =>
     tree.root.findByType(NotificationLevelMenu).props.actions as
-      | { label: string; onPress: () => void }[]
-      | undefined;
+      { label: string; onPress: () => void }[] | undefined;
 
   it("offers nothing where the chapter has no summaries", () => {
     arriveWith(60);

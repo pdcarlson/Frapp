@@ -413,8 +413,11 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
   },
 );
 
-/** The end time moved to another day (`YYYY-MM-DD`), its time kept. */
-function withDay(at: Date | null, day: string): Date | null {
+/**
+ * The end time moved to another day (`YYYY-MM-DD`), its time kept. Shared
+ * with the New form sheet's end time.
+ */
+export function withDay(at: Date | null, day: string): Date | null {
   if (!at) return at;
   const [y, m, d] = day.split("-").map(Number);
   if (!y || !m || !d) return at;
@@ -424,7 +427,7 @@ function withDay(at: Date | null, day: string): Date | null {
 }
 
 /** The end time moved to another time of day (`HH:MM`), its day kept. */
-function withTime(at: Date | null, time: string): Date | null {
+export function withTime(at: Date | null, time: string): Date | null {
   if (!at) return at;
   const [hh, mm] = time.split(":").map(Number);
   if (hh === undefined || mm === undefined || Number.isNaN(hh + mm)) return at;

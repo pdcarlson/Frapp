@@ -71,6 +71,12 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
+// The form card's own read of the viewer's answers (#3926 step 3); its own
+// spec covers what the card does with it.
+vi.mock("@/lib/chat/use-own-form-response", () => ({
+  useOwnFormResponse: () => ({ isSuccess: false, data: undefined }),
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#C49A3A",
@@ -169,7 +175,7 @@ function renderRow(
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
           onClosePoll={overrides.onClosePoll ?? vi.fn()}
-          onCloseSignup={vi.fn()}
+          onCloseCard={vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -1044,6 +1050,20 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       },
       eyebrow: "Sign-up",
     },
+    form: {
+      payload: {
+        title: "Formal housing",
+        questions: [
+          {
+            id: "q1",
+            type: "short_answer",
+            title: "Which room?",
+            required: true,
+          },
+        ],
+      },
+      eyebrow: "Form",
+    },
     event: {
       payload: {
         event_id: "evt-1",
@@ -1082,11 +1102,8 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       eyebrow: "Rush",
     },
   };
-  /**
-   * Card kinds mobile draws as their text on purpose (`cardFor`). A form
-   * (#3926 step 3) reads as its title until the phone's form card lands.
-   */
-  const TEXT_ON_MOBILE = ["dues", "loading", "form"];
+  /** Card kinds mobile draws as their text on purpose (`cardFor`). */
+  const TEXT_ON_MOBILE = ["dues", "loading"];
 
   it("draws every card kind as a card, but the ones it means to leave as text", () => {
     expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(

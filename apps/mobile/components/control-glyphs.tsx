@@ -96,6 +96,20 @@ export function PencilGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * Done: one tick, leading a card button that marks something the viewer has
+ * already done, as a form card's Edit your answers (#3926 step 3). Web draws
+ * Lucide's `Check` there.
+ */
+export function CheckGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M5 12.5l4.5 4.5L19 7.5" {...detail} />
+    </Frame>
+  );
+}
+
 /** Mark all read: web draws Lucide's `CheckCheck` for the same intent. */
 export function CheckAllGlyph({
   color,
