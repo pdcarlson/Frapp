@@ -25,8 +25,7 @@ export type AskProposal = Extract<
  * place of an answer, the proposal the member's words asked for.
  */
 export type AskConversationEvent =
-  | AskStreamEvent
-  | { type: 'act'; outcome: AskProposal };
+  AskStreamEvent | { type: 'act'; outcome: AskProposal };
 
 /** The events that mean nothing has been read for an answer yet. */
 function beforeReading(event: AskStreamEvent): boolean {

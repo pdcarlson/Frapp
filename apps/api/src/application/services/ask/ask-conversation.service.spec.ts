@@ -99,9 +99,7 @@ function build(options: {
 }
 
 const shown = (events: AskConversationEvent[]) =>
-  events.map((event) =>
-    event.type === 'status' ? event.step : event.type,
-  );
+  events.map((event) => (event.type === 'status' ? event.step : event.type));
 
 describe('AskConversationService', () => {
   beforeEach(() => jest.mocked(reportSwallowed).mockClear());
@@ -205,16 +203,22 @@ describe('AskConversationService', () => {
 
     it.each([
       ['no action fits', { status: 'no_action', available: ['create_task'] }],
-      ['nothing could be read as an action', {
-        status: 'unclear',
-        action: null,
-        missing: 'request',
-      }],
+      [
+        'nothing could be read as an action',
+        {
+          status: 'unclear',
+          action: null,
+          missing: 'request',
+        },
+      ],
       ['the provider declined the request lane', { status: 'refused' }],
-      ['the request lane is unavailable', {
-        status: 'unavailable',
-        reason: 'member_limit',
-      }],
+      [
+        'the request lane is unavailable',
+        {
+          status: 'unavailable',
+          reason: 'member_limit',
+        },
+      ],
     ] as [string, ActOutcome][])(
       'are answered when %s',
       async (_name, outcome) => {

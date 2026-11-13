@@ -173,7 +173,11 @@ describe('AskController', () => {
       yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
       yield {
         type: 'act',
-        outcome: { status: 'unclear', action: 'give_points', missing: 'amount' },
+        outcome: {
+          status: 'unclear',
+          action: 'give_points',
+          missing: 'amount',
+        },
       };
     });
     await ask(undefined, { actions: true });

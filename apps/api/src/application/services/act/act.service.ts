@@ -46,7 +46,7 @@ export interface ActMember {
  * A request that arrives inside a conversation (`AskConversationService`),
  * where each proposal stays on screen as its own card.
  */
-export interface ActConversation {
+interface ActConversation {
   /**
    * What the member typed earlier in the conversation, oldest first: their
    * own words only, never an answer. It lets "5, for cleaning the kitchen"

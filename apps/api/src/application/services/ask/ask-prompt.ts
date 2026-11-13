@@ -23,7 +23,7 @@ export const ASK_ANSWER_PROMPT_VERSION = 'ask.answer@v2';
 export const ASK_PLAN_PROMPT_VERSION = 'ask.plan@v2';
 
 /** Earlier questions shown to the planner and added to the search. */
-export const ASK_EARLIER_QUESTIONS_FOR_PLAN = 3;
+const ASK_EARLIER_QUESTIONS_FOR_PLAN = 3;
 
 export function askAnswerSystem(today: string): string {
   return [

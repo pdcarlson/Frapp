@@ -217,7 +217,7 @@ function failed(exchange: AskExchange, message: string): AskExchange {
  * finished, oldest first. A turn that failed or never reached the server
  * said nothing worth carrying.
  */
-export function askHistoryOf(exchanges: readonly AskExchange[]) {
+function askHistoryOf(exchanges: readonly AskExchange[]) {
   return askHistory(
     exchanges
       .filter(

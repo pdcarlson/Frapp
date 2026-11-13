@@ -111,7 +111,9 @@ export function scriptedActPlan(request: LanguageModelRequest): ScriptedReply {
   const [requestPart, actionsPart = ''] = message.split('\n\nActions:\n');
   // In a conversation the officer's earlier messages come first; the request
   // is the last "Request:" line on.
-  const said = (/(?:^|\n)Request: ([\s\S]*)$/.exec(requestPart)?.[1] ?? '').trim();
+  const said = (
+    /(?:^|\n)Request: ([\s\S]*)$/.exec(requestPart)?.[1] ?? ''
+  ).trim();
   const offered = new Set(
     [...actionsPart.matchAll(/^- ([a-z_]+):/gm)].map((match) => match[1]),
   );
