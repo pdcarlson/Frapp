@@ -1,7 +1,11 @@
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { auditLineText, readSystemAuditPayload } from "./cards";
 import { replyPreviewText } from "./reply-preview";
-import type { ChatMessage, ChatMessageKind } from "./types";
+import {
+  forwardedFromOf,
+  type ChatMessage,
+  type ChatMessageKind,
+} from "./types";
 
 /**
  * One channel's latest message as `GET /v1/channels/latest` serves it: what a
@@ -19,6 +23,11 @@ export interface ChannelLatestMessage {
   payload: Record<string, unknown> | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * A forward's copy of its original (#4864), as the server serves it (masked
+   * for a blocked author). Optional: absent from an older server.
+   */
+  forwarded_from?: unknown;
 }
 
 /** The preview of a channel with no message yet, so every row is two lines. */
@@ -94,6 +103,7 @@ export function channelPreviewLine(
     content: latest.content,
     attachment_count: latest.attachment_count,
     kind: latest.kind as ChatMessageKind,
+    forwarded_from: forwardedFromOf(latest.forwarded_from),
   });
 
   if (latest.kind === "system_audit" || latest.sender_id === SYSTEM_SENDER_ID) {
