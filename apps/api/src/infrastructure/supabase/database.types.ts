@@ -473,6 +473,21 @@ export interface Database {
         Returns: string[];
       };
       /**
+       * `20261113040010` (#4620) — delete the upcoming occurrences a series
+       * edit rebuilt, carrying each matched pair's excuses (and an approved
+       * one's EXCUSED attendance) to the new meeting in the same transaction.
+       * Returns the pending and approved excuses no new meeting took.
+       */
+      delete_replaced_occurrences: {
+        Args: {
+          p_chapter_id: string;
+          p_old_ids: string[];
+          p_from_ids: string[];
+          p_to_ids: string[];
+        };
+        Returns: EventExcuse[];
+      };
+      /**
        * `20261106170000`. An import's rows being imported, added up per
        * Discord category, a thread under its parent's category.
        */

@@ -107,6 +107,7 @@ describe('AttendanceService', () => {
       findChildren: jest.fn(),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
+      deleteReplacedOccurrences: jest.fn(),
     };
 
     mockMemberRepo = {
