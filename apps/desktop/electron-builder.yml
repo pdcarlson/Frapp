@@ -1,0 +1,61 @@
+# Packaging for the desktop shell (ADR-29). `npm run dist -w apps/desktop`
+# builds for the current OS. Signing, notarization and publishing to the
+# update feed come with #4843; until then every build is unsigned.
+appId: live.frapp.desktop
+productName: Frapp
+copyright: Copyright © Frapp
+
+directories:
+  output: release
+
+# The compiled shell and nothing else. It has no runtime dependencies, and
+# without the exclusion electron-builder walks up to the monorepo root and
+# packs its whole node_modules into the app.
+files:
+  - dist/**/*
+  - package.json
+  - "!**/node_modules/**/*"
+npmRebuild: false
+asar: true
+
+# The tray icon, read from `process.resourcesPath` (src/main/index.ts).
+# Brand rasters stay canonical in packages/brand-assets; nothing is copied
+# into this app.
+extraResources:
+  - from: ../../packages/brand-assets/assets/signet-emblem-B-32.png
+    to: tray.png
+
+mac:
+  icon: ../../packages/brand-assets/assets/signet-emblem-B-1024.png
+  category: public.app-category.social-networking
+  target:
+    # The zip is what electron-updater downloads; the dmg is what people install.
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  hardenedRuntime: true
+  # Unsigned until #4843 adds the Developer ID certificate.
+  identity: null
+
+dmg:
+  title: Frapp
+
+win:
+  icon: ../../packages/brand-assets/assets/signet-emblem-B.ico
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+# One click, per user, no admin prompt: how Discord and Slack install.
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: Frapp-Setup-${version}.${ext}
+
+linux:
+  executableName: frapp
+  icon: ../../packages/brand-assets/assets/signet-emblem-B-1024.png
+  category: Network
+  target:
+    - AppImage

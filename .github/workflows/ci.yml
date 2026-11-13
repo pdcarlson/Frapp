@@ -202,6 +202,10 @@ jobs:
       - name: Landing unit tests
         run: npm run test -w apps/landing
 
+      # The desktop shell's navigation allow-list, bridge checks and window state (ADR-29).
+      - name: Desktop shell tests
+        run: npm run test -w apps/desktop
+
       # Consumed by API, web and mobile; had no suite until #687.
       - name: Shared validation package tests
         run: npm run test -w @repo/validation

@@ -1,0 +1,70 @@
+name: Desktop build
+
+# Packages the desktop shell (apps/desktop, ADR-29) on each OS it ships for,
+# so a change that breaks packaging fails on its PR, and attaches the
+# installers to the run for trying by hand. Unsigned until #4843 adds signing:
+# macOS asks to confirm the first open (System Settings, Privacy & Security,
+# Open Anyway), and Windows SmartScreen needs More info, then Run anyway.
+# Lint, types and unit tests run in ci.yml's lint-and-typecheck.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "packages/brand-assets/assets/**"
+      - ".github/workflows/desktop-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "packages/brand-assets/assets/**"
+      - ".github/workflows/desktop-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  # Cancellable on a PR ref, never on main (same reason as links.yml).
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: "apps/desktop/release/*.dmg"
+          - os: windows-latest
+            artifact: "apps/desktop/release/*.exe"
+          - os: ubuntu-latest
+            artifact: "apps/desktop/release/*.AppImage"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Package
+        shell: bash
+        env:
+          # No certificate yet: don't let electron-builder go looking for one.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist -w apps/desktop
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: frapp-desktop-${{ runner.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
