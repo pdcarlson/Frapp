@@ -95,6 +95,8 @@ member's own answer, not the event's default:
 
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
+It is what the member can act on now, and so is not the week ring's "left", which also counts
+events still ahead ([Week](#week), settled 2026-11-13).
 
 **`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
 page on both clients. See [Week](#week).
@@ -170,9 +172,31 @@ and nothing else in the read carries that. Both clients draw it as one ring
   since ended still counts. That matters because the page is read on every app open, when the
   phone sends its largest burst of requests.
 
-Open points, Paul's to settle, each a one-line change here and in `ActivityService`: whether the
-week should run Monday to Sunday instead; and whether an optional event the member skipped should
-count against them.
+Five of these rules were open points until 2026-11-13, when Paul left them to the build ("make an
+educated choice", [#4793](https://github.com/pdcarlson/Frapp/issues/4793)). Each was kept as built,
+judged for an average member, a committee chair and the president
+([`principles.md` § Three people](../ui/design-system/principles.md#three-people)):
+
+- **The week starts Sunday, not Monday.** The Study hours gauge under the ring is "this week" too,
+  and a weekly study goal already resets on Sunday; two different weeks on one screen would be
+  worse than either. It is also the week a US calendar draws. To do lists by day whatever the week
+  is, so a weekend that straddles two weeks is still read in order.
+- **A skipped optional event is not a miss.** Optional means not owed. If skipping one kept the
+  ring open, a member who goes to everything required could never finish a week with a social in
+  it, and officers already have the word for what counts: required.
+- **The tab's badge is not the ring's "left", and the two are not meant to match.** The badge
+  (`needs_you_count`) is what the member can act on right now: their open tasks, unanswered polls
+  and sign-ups, an event open for check-in, and, for who reviews, what waits on their sign-off. It
+  falls with each thing they do and reaches zero. The ring is the week, which also counts events
+  that have not happened yet, and nobody can clear those today: a badge built from it would sit at
+  3 until Saturday and stop being read. Review items stay in the badge because a member's points
+  wait on that confirmation, though they are never in the ring.
+- **Polls and sign-ups share one line on the card.** Both are an answer the member owes, and the
+  server still counts them apart (`week.polls`, `week.cards`). A fourth line would be a zero for
+  most members most weeks, on a card already tight at a phone's width.
+- **A poll counts as done in the week its vote was last changed.** A vote keeps only that time
+  (ADR-07). A pick changed this week on an older poll adds one done and one to the total, which
+  moves the ring by a sliver; a first-voted time would cost a schema change to remove it.
 
 ## Standing
 
