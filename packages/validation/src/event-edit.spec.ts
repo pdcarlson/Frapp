@@ -5,9 +5,11 @@ import {
   isEmptyEventPatch,
   isInSeries,
   leavesAfterSave,
+  repeatEditSeriesOf,
   saveRequestFor,
   saveScopeFor,
   seriesRuleOf,
+  seriesStartsIn,
   type EventEditStored,
   type EventEditTarget,
   type SeriesEventFields,
@@ -291,5 +293,74 @@ describe("deleteOffersSeriesChoice", () => {
     expect(deleteOffersSeriesChoice(EVENT, NOW)).toBe(false);
     const during = new Date("2026-11-10T00:00:00Z");
     expect(deleteOffersSeriesChoice(occurrence.event, during)).toBe(false);
+  });
+});
+
+// #4746: a Repeat change on a started series anchors on its real next meeting.
+describe("the series' real next meeting", () => {
+  const head: SeriesEventFields = {
+    id: "head-1",
+    start_time: "2027-02-26T04:30:00.000Z",
+    end_time: "2027-02-26T05:30:00.000Z",
+    parent_event_id: null,
+    recurrence_rule: "WEEKLY",
+  };
+  const child = (id: string, start: string, parent = "head-1") => ({
+    id,
+    start_time: start,
+    end_time: start,
+    parent_event_id: parent,
+    recurrence_rule: null,
+  });
+  const list = [
+    head,
+    child("c-1", "2027-03-12T04:30:00.000Z"),
+    child("c-3", "2027-03-26T04:30:00.000Z"),
+    child("c-2", "2027-03-19T04:30:00.000Z"),
+    child("other", "2027-03-16T04:30:00.000Z", "head-2"),
+    { id: "broken", parent_event_id: "head-1" },
+    null,
+  ];
+  const now = new Date("2027-03-15T12:00:00Z");
+
+  it("collects the starts of the series' own rows, from the head or a child", () => {
+    const starts = [
+      "2027-03-12T04:30:00.000Z",
+      "2027-03-26T04:30:00.000Z",
+      "2027-03-19T04:30:00.000Z",
+    ];
+    const target = { event: head, parent: null, seriesRule: "WEEKLY" };
+    expect(seriesStartsIn(target, list)).toEqual(starts);
+    const fromChild = {
+      event: child("c-2", "2027-03-19T04:30:00.000Z"),
+      parent: head,
+      seriesRule: "WEEKLY",
+    };
+    expect(seriesStartsIn(fromChild, list)).toEqual(starts);
+  });
+
+  it("holds nothing without a list or a series", () => {
+    const target = { event: head, parent: null, seriesRule: "WEEKLY" };
+    expect(seriesStartsIn(target, undefined)).toBeUndefined();
+    expect(
+      seriesStartsIn({ ...target, seriesRule: null }, list),
+    ).toBeUndefined();
+  });
+
+  it("hands the earliest row after now to the anchor", () => {
+    const target: EventEditTarget = {
+      event: head,
+      parent: null,
+      seriesRule: "WEEKLY",
+    };
+    const withRows = {
+      ...target,
+      seriesStarts: seriesStartsIn(target, list),
+    };
+    const start = new Date(head.start_time);
+    expect(repeatEditSeriesOf(withRows, start, now).nextStart).toEqual(
+      new Date("2027-03-19T04:30:00.000Z"),
+    );
+    expect(repeatEditSeriesOf(target, start, now).nextStart).toBeNull();
   });
 });
