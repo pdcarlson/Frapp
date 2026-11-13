@@ -3196,6 +3196,21 @@ describe("Catch me up in a channel (#3946)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers the summary when the counts land after the channel opens", async () => {
+    // A cold launch opens the last channel while Chat home's read is still
+    // out: the screen's own observer of the counts is what catches them.
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    // TanStack tells observers on its next tick.
+    await act(async () => {
+      arriveWith(60);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
+    act(() => tree.unmount());
+  });
+
   it("asks for no unread stretch on a channel opened cold", () => {
     catchUp.surface = true;
     const tree = render();

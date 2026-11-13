@@ -830,8 +830,9 @@ function ChannelThreadScreen() {
   // The counts can land after the channel does: a cold launch opens the last
   // channel while Chat home's read is still out. Taken once, as web does;
   // never asked for from here. Observed through the shared hook, disabled,
-  // so the query keeps its fetch function: a bare observer with none
-  // replaced it, and the next refetch failed with "No queryFn" (#4885).
+  // so the observer carries the fetch function: TanStack console.errors on
+  // every render of one without, which a development build shows as a red
+  // toast (#4885).
   const liveUnread = arrivalUnread(
     useChannelUnreadCounts({ enabled: false }).data,
     channelId,
