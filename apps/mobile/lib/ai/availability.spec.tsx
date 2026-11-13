@@ -37,6 +37,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 import {
   useActActions,
   useAiSurfaces,
+  useMayAct,
   type AiSurfaces,
 } from "./availability";
 
@@ -56,6 +57,18 @@ function readActions(enabled?: boolean): readonly string[] {
   let value!: readonly string[];
   function Probe() {
     value = useActActions(enabled === undefined ? undefined : { enabled });
+    return null;
+  }
+  act(() => {
+    create(<Probe />);
+  });
+  return value;
+}
+
+function readMayAct(): boolean {
+  let value!: boolean;
+  function Probe() {
+    value = useMayAct();
     return null;
   }
   act(() => {
@@ -183,5 +196,21 @@ describe("useActActions", () => {
     state.permissions = { data: { permissions: [] }, isPending: false };
     expect(readActions()).toEqual([]);
     expect(state.actEnabled).toBe(false);
+  });
+});
+
+describe("useMayAct", () => {
+  it("is the permission alone, before the list of actions has been read", () => {
+    state.actions = undefined;
+    expect(readMayAct()).toBe(true);
+  });
+
+  it("is false without ai:act, without Ask, and while the permissions are still out", () => {
+    state.permissions = { data: { permissions: ["ai:use"] }, isPending: false };
+    expect(readMayAct()).toBe(false);
+    state.permissions = { data: { permissions: ["ai:act"] }, isPending: false };
+    expect(readMayAct()).toBe(false);
+    state.permissions = { data: undefined, isPending: true };
+    expect(readMayAct()).toBe(false);
   });
 });

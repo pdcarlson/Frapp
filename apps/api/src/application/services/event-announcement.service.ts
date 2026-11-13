@@ -194,6 +194,13 @@ export class EventAnnouncementService {
       location: event.location ?? null,
       point_value: event.point_value,
       is_mandatory: event.is_mandatory,
+      // Who the event asks for, so the card can offer Can't make it to the
+      // members it requires without reading the event (#4660). A snapshot,
+      // like the rest: the event page reads the live answer.
+      required_role_ids: event.required_role_ids ?? [],
+      optional_role_ids: event.optional_role_ids ?? [],
+      excluded_role_ids: event.excluded_role_ids ?? [],
+      others_invited: event.others_invited ?? true,
       check_in_opens_minutes: event.check_in_opens_minutes,
       created_at: event.created_at,
     };

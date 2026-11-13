@@ -149,4 +149,20 @@ describe('ActController', () => {
       missing: 'nobody_attended',
     });
   });
+
+  it.each([
+    ['a pick made in a conversation keeps the earlier cards', true, true],
+    ['a pick from a build that says nothing replaces them', undefined, false],
+    ['only true keeps them', false, false],
+  ])('%s', async (_name, sent, kept) => {
+    const { controller, service } = build();
+    await controller.eventAudience(CHAPTER, USER, null, undefined, {
+      event_id: EVENT,
+      amount: 5,
+      ...(sent === undefined ? {} : { keep_earlier: sent }),
+    });
+    expect(service.proposePointsForEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ keepEarlier: kept }),
+    );
+  });
 });

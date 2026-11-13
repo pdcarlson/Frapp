@@ -268,13 +268,13 @@ describe("Event card", () => {
     );
   });
 
-  it("paints Mandatory as a danger status and points in the accent", () => {
+  it("paints Mandatory as quiet hairline metadata and points in the accent", () => {
     events = [{ ...EVENT, is_mandatory: true, point_value: 10 }];
     const tree = render();
 
-    // Danger text in its AA lift (components.md §5), the tint keeps the hue.
+    // The hairline kind, as web's row (#3822, #4132): muted text, no fill.
     expect(styleOf(tree, "Mandatory").color).toBe(
-      signetDarkTokens.color.semantic.destructiveText,
+      signetDarkTokens.color.text.mutedForeground,
     );
     expect(styleOf(tree, "+10 pts").color).toBe(ACCENT);
   });
@@ -478,7 +478,7 @@ describe("Events after the first", () => {
     expect(screenText(tree)).not.toContain("Later");
   });
 
-  it("draws a later row with no card fill and Mandatory in danger", () => {
+  it("draws a later row with no card fill and Mandatory as a hairline", () => {
     events = [make("a", 0), make("b", 2, { is_mandatory: true })];
     const tree = render();
     const row = tree.root.find(
@@ -495,7 +495,7 @@ describe("Events after the first", () => {
         node.props.children === "Mandatory",
     );
     expect(StyleSheet.flatten(chip.props.style).color).toBe(
-      signetDarkTokens.color.semantic.destructiveText,
+      signetDarkTokens.color.text.mutedForeground,
     );
   });
 

@@ -13,6 +13,7 @@ import {
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
+import { HairlineChip } from "@/components/status-chip";
 import type { TabGlyphProps } from "@/components/tab-glyphs";
 import {
   groupReactions,
@@ -353,17 +354,13 @@ export function CardMetaWithGlyph({
 }
 
 /**
- * "+10 pts": a hairline outline with muted text, the reward a card offers,
- * as web's outline badge draws it. Not a status chip: §5 keeps those for
- * status, and a reward is not one.
+ * "+10 pts": the reward a card offers, in §5's hairline kind
+ * (`HairlineChip`), as web's outline badge draws it. Not a status chip: §5
+ * keeps those for status, and a reward is not one. It sits beside the event
+ * card's Mandatory, which is the same chip (#4132).
  */
 export function PointsChip({ points }: { points: number }) {
-  const styles = useCardStyles();
-  return (
-    <View style={styles.pointsChip}>
-      <Text style={styles.pointsText}>{formatPointsChip(points)}</Text>
-    </View>
-  );
+  return <HairlineChip label={formatPointsChip(points)} />;
 }
 
 /** The row a card's buttons sit in, wrapping on a narrow phone. */
@@ -550,17 +547,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     metaSeparator: {
       marginHorizontal: tokens.spacing.xs + 2,
-    },
-    pointsChip: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 2,
-    },
-    pointsText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     actions: {
       flexDirection: "row",

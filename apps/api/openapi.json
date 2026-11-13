@@ -12543,6 +12543,100 @@
         ]
       }
     },
+    "/v1/documents/upload-urls": {
+      "post": {
+        "operationId": "ChapterDocumentController_requestUploadUrls_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDocumentUploadUrlsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadUrlsResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URLs for up to 25 files (folder import)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/batch": {
+      "post": {
+        "operationId": "ChapterDocumentController_confirmUploads_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDocumentUploadsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentConfirmResultsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents": {
       "post": {
         "operationId": "ChapterDocumentController_confirmUpload_v1",
@@ -12634,6 +12728,184 @@
           }
         ],
         "summary": "List documents (optional folder and title search)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/types": {
+      "get": {
+        "operationId": "ChapterDocumentController_listTypes_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentTypeDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's document types in display order",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterDocumentController_createType_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocumentTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a document type",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/types/{id}": {
+      "patch": {
+        "operationId": "ChapterDocumentController_updateType_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename or reorder a document type (a rename renames it on its documents)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_deleteType_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a document type (its documents keep everything else)",
         "tags": [
           "Documents"
         ]
@@ -15868,7 +16140,7 @@
         ]
       },
       "post": {
-        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.",
+        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.",
         "operationId": "AskController_ask_v1",
         "parameters": [],
         "requestBody": {
@@ -16011,7 +16283,7 @@
     },
     "/v1/ai/act": {
       "get": {
-        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.",
+        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.",
         "operationId": "ActController_status_v1",
         "parameters": [],
         "responses": {
@@ -25411,6 +25683,37 @@
           "document_id"
         ]
       },
+      "RequestDocumentUploadUrlsDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "One to 25 files, each checked as the single upload-url route checks it",
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestDocumentUploadUrlDto"
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "DocumentUploadUrlsResponseDto": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "description": "One ticket per file, in the order sent",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentUploadUrlResponseDto"
+            }
+          }
+        },
+        "required": [
+          "tickets"
+        ]
+      },
       "ConfirmDocumentUploadDto": {
         "type": "object",
         "properties": {
@@ -25440,7 +25743,7 @@
           },
           "document_type": {
             "type": "string",
-            "description": "Free-text document category (bylaws, budget, minutes, ...)"
+            "description": "One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list."
           },
           "effective_date": {
             "type": "string",
@@ -25450,6 +25753,22 @@
         "required": [
           "storage_path",
           "title"
+        ]
+      },
+      "ConfirmDocumentUploadsDto": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "description": "One to 25 uploads to file, each as the single confirm route takes it",
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfirmDocumentUploadDto"
+            }
+          }
+        },
+        "required": [
+          "documents"
         ]
       },
       "ChapterDocumentDto": {
@@ -25518,6 +25837,105 @@
           "effective_date",
           "pinned_at"
         ]
+      },
+      "DocumentConfirmResultDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "The storage path this result is for"
+          },
+          "document": {
+            "description": "The filed document, when it was filed",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChapterDocumentDto"
+              }
+            ]
+          },
+          "error": {
+            "type": "string",
+            "description": "Why it was not filed, when it was not"
+          }
+        },
+        "required": [
+          "storage_path"
+        ]
+      },
+      "DocumentConfirmResultsDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "description": "One result per upload, in the order sent",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentConfirmResultDto"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "DocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "sort_order",
+          "created_at"
+        ]
+      },
+      "CreateDocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Type name (unique within the chapter, ignoring case)",
+            "maxLength": 100
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "Display position. Defaults to the end of the list.",
+            "maximum": 1000000000
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateDocumentTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New type name. Renaming renames the type on every document of that type.",
+            "maxLength": 100
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "New display position",
+            "maximum": 1000000000
+          }
+        }
       },
       "DocumentPreviewUrlDto": {
         "type": "object",
@@ -27853,6 +28271,25 @@
           "diagnostics"
         ]
       },
+      "AskHistoryTurnDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "What the member typed in that turn.",
+            "maxLength": 1000
+          },
+          "answer": {
+            "type": "string",
+            "description": "What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages).",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ]
+      },
       "AskRequestDto": {
         "type": "object",
         "properties": {
@@ -27865,6 +28302,18 @@
           "saved_notice_shown": {
             "type": "boolean",
             "description": "True when the client showed the \"answers are being saved\" line before sending. An exchange is kept by the beta diagnostics window only when this is true."
+          },
+          "history": {
+            "maxItems": 6,
+            "description": "The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskHistoryTurnDto"
+            }
+          },
+          "actions": {
+            "type": "boolean",
+            "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
           }
         },
         "required": [
@@ -28055,6 +28504,10 @@
             "type": "string",
             "maxLength": 500,
             "description": "As the `needs_event` answer carried it. Empty names the event instead."
+          },
+          "keep_earlier": {
+            "type": "boolean",
+            "description": "True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them."
           }
         },
         "required": [

@@ -9,12 +9,14 @@ import { z } from 'zod';
  *
  * **What the planning call is shown: the officer's own words and the list of
  * actions they may take. Nothing else.** No chat, no document, no roster, no
- * event title. That is the whole of the injection defence for which action
+ * event title, and no answer Ask gave. In a conversation the officer's own
+ * earlier messages come with the request, and they are still only the
+ * officer's words. That is the whole of the injection defence for which action
  * is taken (C3, C8): nothing anyone else wrote is in front of the model when
  * it picks, so nothing anyone else wrote can pick.
  */
 
-export const ACT_PLAN_PROMPT_VERSION = 'act.plan@v1';
+export const ACT_PLAN_PROMPT_VERSION = 'act.plan@v2';
 export const ACT_MATCH_PROMPT_VERSION = 'act.match@v1';
 
 /** The answer for "none of the actions fits". */
@@ -29,6 +31,7 @@ export function actPlanSystem(
     'You turn one request from an officer of a fraternity or sorority chapter into at most one action in their chapter app.',
     `You are given the request and the actions this officer may take. Pick the one action the request asks for. If the request asks for something that is not on the list, or is a question, answer with the action "${ACT_NO_ACTION}".`,
     'Fill in only what the officer said. Use null for anything they did not say. Never invent a name, a date, a time, an amount or a reason.',
+    'You may also be given what the officer wrote earlier in the conversation. Use it only to fill in what the request leaves out, when the request is clearly finishing or correcting an earlier one ("5, for cleaning the kitchen" after "give Jordan points"). The action must be one the request itself asks for. Never act again on an earlier message that the request does not continue.',
     'people: the people or roles the action is for, each name exactly as the officer wrote it. Use "me" when they mean themself. Empty when they named nobody.',
     'everyone_who_attended: true only when the action is for everyone who came to an event. Then event_name is that event as they named it (null when they did not name it) and date is its day.',
     'date: a calendar day as YYYY-MM-DD, worked out from today. start_time and end_time: 24-hour HH:MM.',
@@ -60,11 +63,23 @@ export const ActPlanSchema = z.object({
 });
 export type ActPlan = z.infer<typeof ActPlanSchema>;
 
+/** Earlier messages shown to the planner, the last few. */
+const ACT_EARLIER_MESSAGES = 3;
+
 export function actPlanMessage(
   request: string,
   tools: readonly { name: string; description: string }[],
+  earlier: readonly string[] = [],
 ): string {
+  const before = earlier.slice(-ACT_EARLIER_MESSAGES);
   return [
+    ...(before.length === 0
+      ? []
+      : [
+          'Earlier in the conversation the officer wrote:',
+          ...before.map((said) => `- ${said}`),
+          '',
+        ]),
     `Request: ${request}`,
     '',
     'Actions:',

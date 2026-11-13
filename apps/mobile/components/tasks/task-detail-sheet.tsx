@@ -21,8 +21,15 @@ import {
 } from "@/components/sheet-scaffold";
 import { PressableRow } from "@/components/list-section";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
-import type { TaskRowModel } from "@/lib/tasks/board";
+import {
+  rowIsSentBack,
+  rowNeedsSignOff,
+  rowSignedOffAutomatically,
+  type TaskRowModel,
+} from "@/lib/tasks/board";
+import { markDoneLabel } from "@/lib/tasks/task-photos";
 import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
+import { TaskProof } from "@/components/tasks/task-photos";
 
 /**
  * A task, opened: what the row has no room for (owner audit 2026-11-06, P6.1,
@@ -32,6 +39,11 @@ import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
  * Here the same move is a labelled button, and the status says who the task
  * is waiting on in the shared words web uses (`TASK_STATUS_LABELS`), so a
  * member never reads "done" where an officer still has to confirm.
+ *
+ * It shows the task's photos and, once there is one, the officer's reason
+ * for sending it back and the proof the member sent (#4635). Mark done names
+ * what the task asks for ("Mark done with a photo") and, on such a task or a
+ * sent-back one, the board opens Mark done's sheet.
  *
  * An officer also gets Edit beside the title (#4296), which opens the New
  * task sheet's fields on the task, and adds or removes its steps in the
@@ -76,13 +88,23 @@ export const TaskDetailSheet = forwardRef<
   const display = isTaskStatus(row?.displayStatus) ? row.displayStatus : stored;
   const status =
     row && display
-      ? taskStatusLabel({ status: display, points_awarded: row.pointsAwarded })
+      ? taskStatusLabel({
+          status: display,
+          stored_status: stored,
+          points_awarded: row.pointsAwarded,
+          sent_back_at: row.sentBackAt,
+          point_reward: row.pointReward,
+          proof_kind: row.proofKind,
+        })
       : null;
+  const signOff = row ? rowNeedsSignOff(row) : true;
+  const sentBack = row ? rowIsSentBack(row) : false;
   const reopenable = row
     ? canReopenOwnTask({
         stored,
         pointsAwarded: row.pointsAwarded,
         isAssignee: true,
+        signedOffAutomatically: rowSignedOffAutomatically(row),
       })
     : false;
   const chip = row
@@ -95,15 +117,19 @@ export const TaskDetailSheet = forwardRef<
   // one who assigned it to themselves (the API refuses a self-confirm).
   const meaning = !row
     ? null
-    : row.isDone && row.pointsAwarded
-      ? row.pointReward
-        ? `Confirmed. The ${row.pointReward} points are yours.`
-        : "Confirmed."
-      : row.isDone
-        ? `You marked this done. An officer confirms it${
-            row.pointReward ? " before the points count" : ""
-          }.`
-        : null;
+    : row.isDone && !signOff
+      ? // Done as it was marked (#4635): no points, no proof, nothing waits
+        // on an officer.
+        "You marked this done. Nothing waits on an officer."
+      : row.isDone && row.pointsAwarded
+        ? row.pointReward
+          ? `Confirmed. The ${row.pointReward} points are yours.`
+          : "Confirmed."
+        : row.isDone
+          ? `You marked this done. An officer confirms it${
+              row.pointReward ? " before the points count" : ""
+            }.`
+          : null;
 
   return (
     <BottomSheetModal
@@ -170,6 +196,21 @@ export const TaskDetailSheet = forwardRef<
               </Text>
             ) : null}
 
+            {/* Photos, the reason it was sent back, and the proof sent with
+                Mark done (#4635). The board is the viewer's own tasks, so
+                the proof is theirs to see. */}
+            <TaskProof
+              task={{
+                id: row.id,
+                photos: row.photos,
+                proofLink: row.proofLink,
+                sentBackReason: row.sentBackReason,
+                completionNote: row.completionNote,
+              }}
+              showProof
+              sentBack={sentBack}
+            />
+
             {row.subtasks.length > 0 || (onEdit && !row.pointsAwarded) ? (
               <SubtaskChecklist
                 taskId={row.id}
@@ -183,7 +224,10 @@ export const TaskDetailSheet = forwardRef<
 
             {!row.isDone && onToggle ? (
               <SheetPrimaryButton
-                label={TASK_ACTION_LABELS.complete}
+                label={markDoneLabel(
+                  TASK_ACTION_LABELS.complete,
+                  row.proofKind,
+                )}
                 onPress={onToggle}
                 accent={accent}
                 onAccent={tokens.color.gold.onHouse}

@@ -10,8 +10,10 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
+import { AuditGlyph, LockGlyph } from "@/components/chat/card-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
+import { type ChannelMark } from "@repo/hooks/channel-start";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
@@ -67,6 +69,12 @@ export interface ChannelRowProps {
   name: string;
   /** DM/group rows draw an avatar; channel rows draw a `#` sigil. */
   isDirect?: boolean;
+  /**
+   * A channel row's mark (`channelMarkFor` in `@repo/hooks/channel-start`):
+   * `#`, a lock for a private or role-gated channel (#4134), or the audit
+   * shield. Unset, a channel row draws `#`. DM rows ignore it.
+   */
+  mark?: ChannelMark;
   /**
    * A one-to-one DM's other member's photo, drawn over the initials. `null`
    * (a group DM, or no photo) keeps the initials.
@@ -145,6 +153,7 @@ export function badgeLabel(unreadCount: number, mentionCount: number): string {
 export function ChannelRow({
   name,
   isDirect = false,
+  mark = "hash",
   avatarUrl = null,
   avatarTint = null,
   isPinned = false,
@@ -181,6 +190,11 @@ export function ChannelRow({
       accessibilityLabel={accessibilityLabelFor({
         name,
         isDirect,
+        restriction: isDirect
+          ? null
+          : mark === "private" || mark === "role-gated"
+            ? mark
+            : null,
         unreadCount,
         mentionCount,
         isMuted,
@@ -232,7 +246,7 @@ export function ChannelRow({
           style={styles.avatar}
           textStyle={styles.avatarText}
         />
-      ) : (
+      ) : mark === "hash" ? (
         <Text
           style={[
             styles.sigil,
@@ -245,6 +259,19 @@ export function ChannelRow({
         >
           #
         </Text>
+      ) : (
+        <SigilGlyph
+          mark={mark === "audit" ? "audit" : "lock"}
+          // The sigil's own three states: read, unread, muted.
+          color={
+            looksUnread
+              ? tokens.color.text.foreground
+              : isMuted
+                ? tokens.color.text.disabled
+                : tokens.color.text.muted
+          }
+          size={tokens.typography.role.title.size}
+        />
       )}
 
       <View style={styles.body}>
@@ -283,6 +310,31 @@ export function ChannelRow({
         ) : null}
       </View>
     </PressableRow>
+  );
+}
+
+/**
+ * The lock or audit shield in the `#`'s slot and colour, at the sigil's size
+ * (the title role's 18). Decorative: the row's label says "private channel".
+ */
+function SigilGlyph({
+  mark,
+  color,
+  size,
+}: {
+  mark: "lock" | "audit";
+  color: string;
+  size: number;
+}) {
+  const Glyph = mark === "lock" ? LockGlyph : AuditGlyph;
+  return (
+    <View
+      testID={`channel-row-${mark}`}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Glyph focused={false} accent={color} muted={color} size={size} />
+    </View>
   );
 }
 
@@ -374,6 +426,7 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
 export function accessibilityLabelFor({
   name,
   isDirect,
+  restriction = null,
   unreadCount,
   mentionCount,
   isMuted = false,
@@ -381,6 +434,12 @@ export function accessibilityLabelFor({
 }: {
   name: string;
   isDirect: boolean;
+  /**
+   * A locked row (#4134): a `PRIVATE` channel is said to be private; a
+   * `ROLE_GATED` one is limited to some roles, which may be every member's,
+   * so it is not called private (`channelStartCopy`).
+   */
+  restriction?: "private" | "role-gated" | null;
   unreadCount: number;
   mentionCount: number;
   isMuted?: boolean;
@@ -388,6 +447,8 @@ export function accessibilityLabelFor({
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
+  if (restriction === "private") parts.push("private channel");
+  if (restriction === "role-gated") parts.push("limited to some roles");
   if (isMuted) parts.push("muted");
   if (mentionCount > 0) {
     parts.push(
@@ -437,8 +498,14 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.typography.role.body.lineHeight,
       justifyContent: "center",
     },
+    // One slot for every mark, the glyphs' width, so a locked row's name
+    // lines up with a `#` row's, as web's rail sets both in one 16px slot.
+    // The `#` stays at the slot's start, on the gutter line. A minimum, not
+    // a width: the `#` scales with the system text size and the glyphs
+    // don't, so at a large setting it grows past the slot rather than clip.
     sigil: {
       ...typeRole(tokens.typography.role.title),
+      minWidth: tokens.typography.role.title.size,
       color: tokens.color.text.muted,
     },
     sigilUnread: {

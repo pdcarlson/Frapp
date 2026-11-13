@@ -8,6 +8,18 @@ import {
 } from "@repo/hooks/calendar-tasks";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
 
+// The rule itself is the hook's own spec; the calendar follows its answer
+// (#4132). By default, a viewer with no roles: the event's default decides.
+type AttendanceFields = { is_mandatory?: boolean | null };
+const byDefault = (fields: AttendanceFields) => fields.is_mandatory === true;
+const requiredOfViewer = vi.hoisted(() => ({
+  current: null as
+    null | ((fields: { is_mandatory?: boolean | null }) => boolean),
+}));
+vi.mock("@repo/hooks", () => ({
+  useRequiredOfViewer: () => requiredOfViewer.current ?? byDefault,
+}));
+
 // Local wall-clock parts, so the event lands in the anchor month's grid in any
 // zone the suite runs in.
 const anchor = startOfMonth(new Date(2026, 10, 1));
@@ -54,6 +66,20 @@ function renderEmptyCalendar(canCreate: boolean) {
 }
 
 describe("EventsCalendar", () => {
+  afterEach(() => {
+    requiredOfViewer.current = null;
+  });
+
+  it("marks an event mandatory by what it asks of this viewer, not its default (#4132)", () => {
+    // Chapter Meeting is required by default; this viewer's role makes it
+    // optional for them.
+    requiredOfViewer.current = () => false;
+    renderCalendar();
+    expect(
+      screen.getByRole("button", { name: /^View Chapter Meeting, 5:00\sPM$/ }),
+    ).toBeInTheDocument();
+  });
+
   it("names a chip by its time of day alone, since the cell carries the day", () => {
     renderCalendar();
 

@@ -18,6 +18,8 @@ import {
   useMemberDisplayNames,
   useMyPermissions,
   useSemesters,
+  useDocumentTypes,
+  type DocumentTypeRow,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -49,6 +51,7 @@ import {
   FolderDialog,
   useFolderManagement,
 } from "@/components/documents/folder-management";
+import { FolderImportPanel } from "@/components/documents/folder-import-panel";
 import { FolderRail } from "@/components/documents/folder-rail";
 import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
@@ -252,18 +255,34 @@ function ChapterDocumentsPage() {
   );
 
   /*
-    The upload panel's type chips: the common types plus every type this
-    chapter has already filed under, read off the documents in hand. Free text
-    on the wire until #3642, so this keeps new uploads on the spellings the
-    library already uses.
+    The upload panel's type chips: the chapter's own list of document types
+    (#3642). Until that list has loaded, or when it can't be read, the common
+    types plus every type the documents in hand already use, so the panel still
+    offers the spellings the library has.
   */
+  const typesQuery = useDocumentTypes();
+  const typeRows = useMemo(
+    () => asArray<DocumentTypeRow>(typesQuery.data),
+    [typesQuery.data],
+  );
   const typeOptions = useMemo(
-    () => documentTypeOptions(documents.map((doc) => doc.document_type)),
-    [documents],
+    () =>
+      typesQuery.isSuccess
+        ? typeRows.map((type) => type.name)
+        : documentTypeOptions(documents.map((doc) => doc.document_type)),
+    [typesQuery.isSuccess, typeRows, documents],
+  );
+  const canManageTypes = can(
+    "chapter_docs:manage",
+    permissionsPayload?.permissions ?? [],
   );
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
     [folders],
+  );
+  const importContext = useMemo(
+    () => ({ typeOptions, folders: folderNames, documents }),
+    [typeOptions, folderNames, documents],
   );
   const upload = useDocumentUpload(gate, {
     activeFolder,
@@ -375,7 +394,9 @@ function ChapterDocumentsPage() {
             upload={upload}
             folders={folderNames}
             typeOptions={typeOptions}
+            typeRows={typesQuery.isSuccess && canManageTypes ? typeRows : null}
           />
+          <FolderImportPanel gate={gate} context={importContext} />
           <DocumentsPageDropTarget
             gate={gate}
             upload={upload}

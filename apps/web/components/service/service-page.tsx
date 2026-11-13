@@ -17,9 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { serviceStatusKind } from "@/components/service/service-status";
-import { Badge } from "@/components/ui/badge";
-import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import {
@@ -39,11 +37,17 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import type { components } from "@repo/api-sdk";
-import { awardedPointsLabel, statusLabel } from "@repo/validation";
 import { formatDay, formatMinutesRounded } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 import { approvePointsPreview } from "@/components/service/service-points-preview";
 import { LogHoursDialog } from "@/components/service/log-hours-dialog";
+import { ServiceYours } from "@/components/service/service-yours";
+import { ServiceEntryRow } from "@/components/service/service-entry-row";
+import {
+  ServiceLeaderboard,
+  useServiceSemesterStart,
+} from "@/components/service/service-leaderboard";
+import { ownServiceTotals } from "@/components/service/service-summary";
 
 /**
  * One row of `GET /v1/service-entries`, from the generated contract, so a
@@ -112,28 +116,20 @@ export function ServiceHoursPage() {
     [entries],
   );
 
-  // The viewer's own pending entries, which is a different list with a
-  // different job: the "Your pending entries" card at the bottom, whose
-  // Withdraw deletes. It used to render from `pending` above, so an approver
-  // saw every member's rows — date · duration · description, no name — under a
-  // heading claiming they were their own, each with a live Withdraw. That was
-  // not inert: `DELETE /v1/service-entries/:id` accepts `service:approve` as
-  // well as `service:log`, and the service only refuses a foreign entry when
-  // `!isAdmin`, so it succeeded and purged the other member's proof file. While
-  // the viewer id is still resolving this is empty rather than unfiltered.
-  const myPending = useMemo(
-    () =>
-      viewerUserId === null
-        ? []
-        : pending.filter((e) => e.user_id === viewerUserId),
-    [pending, viewerUserId],
-  );
+  // The chapter's reviewed entries, every member's, for an approver's
+  // "Chapter history" below the queue. A member without `service:approve`
+  // doesn't see the section: their read is pinned to them, so it would only
+  // repeat their own log.
   const history = useMemo(
     () =>
       entries
         .filter((e) => e.status !== "PENDING")
         .sort((a, b) => (a.date < b.date ? 1 : -1)),
     [entries],
+  );
+  const nameFor = useMemo(
+    () => (userId: string) => memberNameById.get(userId),
+    [memberNameById],
   );
 
   const logDialog = useGatedDialog(gate);
@@ -150,6 +146,51 @@ export function ServiceHoursPage() {
   const pointsRate = useServicePointsRate({ enabled: canApprove });
   const minutesPerPoint = pointsRate.data?.minutes_per_point;
   const getProofUrl = useGetServiceProofUrl();
+
+  // The viewer's own entries, read scoped to their id (#4669). Not filtered
+  // out of the chapter-wide read above: for an approver that read is every
+  // member's, newest first and capped at the database's 1,000 rows, so an
+  // officer's older entries would fall off their own log and totals.
+  const ownQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
+    enabled: viewerUserId !== null,
+  });
+  // Without the viewer's id there is no scoped read. A member who can't
+  // approve still has an honest list, because the server pins their chapter
+  // read to them; an approver's (or an unread role's) is everyone's, so it
+  // stays withheld. Withdraw is off either way: it deletes by id.
+  const permissionsKnown = permissionsPayload !== undefined;
+  const pinnedFallback = viewerUnknown && permissionsKnown && !canApprove;
+  // Every state, newest first by service date, then by when it was logged.
+  // Still filtered to the viewer: that filter is what keeps Withdraw, which
+  // sits on this list's pending rows, off anyone else's entry, since `DELETE
+  // /v1/service-entries/:id` accepts `service:approve` and the service only
+  // refuses a foreign entry when `!isAdmin`.
+  const mine = useMemo(() => {
+    const rows = pinnedFallback
+      ? entries
+      : viewerUserId === null
+        ? []
+        : asArray<ServiceEntry>(ownQuery.data).filter(
+            (e) => e.user_id === viewerUserId,
+          );
+    return [...rows].sort((a, b) =>
+      a.date !== b.date
+        ? b.date.localeCompare(a.date)
+        : b.created_at.localeCompare(a.created_at),
+    );
+  }, [pinnedFallback, entries, viewerUserId, ownQuery.data]);
+  const ownState: "loading" | "error" | "ready" = pinnedFallback
+    ? "ready"
+    : ownQuery.isError
+      ? "error"
+      : ownQuery.data === undefined
+        ? "loading"
+        : "ready";
+  const semester = useServiceSemesterStart();
+  const totals = useMemo(
+    () => ownServiceTotals(mine, semester.start),
+    [mine, semester.start],
+  );
 
   async function viewProof(entry: ServiceEntry) {
     try {
@@ -268,6 +309,64 @@ export function ServiceHoursPage() {
         stop, and this says why.
       */}
       <SubscriptionNotice gate={gate} feature="logging service hours" />
+
+      {/*
+        Yours first (#4669): your hours and your log, then the chapter's
+        leaderboard beside them on a wide page and under them beside chat,
+        where the page is narrow. The officer queue and the chapter's history
+        follow, for a `service:approve` holder.
+      */}
+      <div className="grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        {viewerUnknown && !pinnedFallback ? (
+          /* The viewer id is what scopes this section, so without it there is
+             no honest list to show. Withholding the section silently would be
+             the wrong half of §5 rule 4: a member whose `/v1/users/me` failed
+             would find their hours and their only way to correct an entry
+             gone, with no reason and no retry (#1346). Say which of the two
+             states it is. */
+          <section aria-labelledby="svc-mine-label" className="space-y-3">
+            <SectionLabel id="svc-mine-label">Your service hours</SectionLabel>
+            <p className="text-sm text-muted-foreground">
+              {viewerLoading
+                ? "Confirming your account…"
+                : "We couldn't confirm your account, so your hours and withdrawing are unavailable. Reload to try again."}
+            </p>
+          </section>
+        ) : (
+          <ServiceYours
+            entries={mine}
+            totals={totals}
+            semesterUnreadable={semester.isError}
+            entryMeta={entryMeta}
+            canLog={canLog}
+            onLogFirst={() => logDialog.setOpen(true)}
+            logControlProps={gate.controlProps()}
+            withdrawControlProps={gate.controlProps()}
+            onWithdraw={(entry) => void withdraw(entry)}
+            state={ownState}
+            onRetry={() => void ownQuery.refetch()}
+            errorDescription={
+              ownQuery.isError ? describeLoadFailure(ownQuery.error) : undefined
+            }
+            notice={
+              !pinnedFallback
+                ? undefined
+                : viewerLoading
+                  ? "Confirming your account…"
+                  : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."
+            }
+          />
+        )}
+        <Can permission="members:view">
+          <ServiceLeaderboard
+            viewerUserId={viewerUserId}
+            nameFor={nameFor}
+            semesterStart={semester.start}
+            semesterUnreadable={semester.isError}
+            retrySemester={semester.refetch}
+          />
+        </Can>
+      </div>
 
       <Can
         permission="service:approve"
@@ -427,133 +526,29 @@ export function ServiceHoursPage() {
         </section>
       </Can>
 
-      <section aria-labelledby="svc-history-label" className="space-y-3">
-        <SectionLabel id="svc-history-label">History</SectionLabel>
-        {/* `pending` is chapter-wide on purpose here, matching `history`, which
-            is also everything the viewer may see. The second branch names no
-            position: an approver reads the review queue above this section, but
-            a member who cannot approve sees their pending entries only in the
-            section below. */}
-        {history.length === 0 && pending.length === 0 ? (
-          // One line where the rows go (empty-states plan rule 7); the
-          // first entry starts from the line, through the toolbar's gated
-          // Log service dialog.
-          <InlineNote>
-            No service logged yet.
-            {canLog ? (
-              <>
-                {" "}
-                <InlineNoteAction
-                  onClick={() => logDialog.setOpen(true)}
-                  {...gate.controlProps()}
-                >
-                  Log the first hours
-                </InlineNoteAction>
-              </>
-            ) : null}
-          </InlineNote>
-        ) : history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing reviewed yet.</p>
-        ) : (
-          <ul className={denseListClassName}>
-            {history.map((entry) => {
-              const name =
-                memberNameById.get(entry.user_id) ??
-                memberFallbackLabel(entry.user_id);
-              const pointsLabel = awardedPointsLabel(entry);
-              return (
-                <li
+      <Can permission="service:approve">
+        <section aria-labelledby="svc-history-label" className="space-y-3">
+          <SectionLabel id="svc-history-label">Chapter history</SectionLabel>
+          {history.length === 0 ? (
+            <InlineNote>Nothing reviewed yet.</InlineNote>
+          ) : (
+            <ul className={denseListClassName}>
+              {history.map((entry) => (
+                <ServiceEntryRow
                   key={entry.id}
-                  className="flex min-h-11 flex-col gap-1 py-2 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{name}</p>
-                    <p className="text-caption text-muted-foreground">
-                      {entryMeta(entry)}
-                    </p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {entry.description}
-                    </p>
-                    {entry.review_comment ? (
-                      <p className="text-caption text-muted-foreground">
-                        Reviewer note: {entry.review_comment}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={serviceStatusKind(entry.status)}>
-                      {statusLabel("serviceEntry", entry.status)}
-                    </Badge>
-                    {pointsLabel ? (
-                      <Badge variant="outline">{pointsLabel}</Badge>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {viewerUnknown ? (
-        /* The viewer id is what scopes this section, so without it there is no
-           honest list to show. But withholding the section silently is the
-           wrong half of §5 rule 4 — a member whose `/v1/users/me` failed would
-           find their only way to correct an entry simply gone, with no reason
-           and no retry, which is the silent-dead-control gap #1346 records. Say
-           which of the two states it is, in the same words the Approve control
-           uses for them. */
-        <section aria-labelledby="svc-mine-label" className="space-y-3">
-          <SectionLabel id="svc-mine-label">Your pending entries</SectionLabel>
-          <p className="text-sm text-muted-foreground">
-            {viewerLoading
-              ? "Confirming your account…"
-              : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."}
-          </p>
+                  entry={entry}
+                  title={
+                    memberNameById.get(entry.user_id) ??
+                    memberFallbackLabel(entry.user_id)
+                  }
+                  body={entry.description}
+                  meta={entryMeta(entry)}
+                />
+              ))}
+            </ul>
+          )}
         </section>
-      ) : myPending.length > 0 ? (
-        <section aria-labelledby="svc-mine-label" className="space-y-3">
-          <SectionLabel
-            id="svc-mine-label"
-            count={`${myPending.length} pending`}
-          >
-            Your pending entries
-          </SectionLabel>
-          <ul className={denseListClassName}>
-            {myPending.map((entry) => (
-              <li
-                key={entry.id}
-                className="flex min-h-11 items-center justify-between gap-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {entry.description}
-                  </p>
-                  <p className="text-caption text-muted-foreground">
-                    {entryMeta(entry)}
-                  </p>
-                </div>
-                {/* DELETE /v1/service-entries/:id accepts `service:log` OR
-                    `service:approve`, and the service only refuses a foreign
-                    entry when `!isAdmin` — so this is NOT "the same guard as
-                    the submit that created the entry", which is what this
-                    comment used to claim. An approver can delete anyone's
-                    pending entry and its proof. The list is filtered to the
-                    viewer above so that power is never reachable by mistake
-                    from a section headed "Your pending entries". */}
-                <Button
-                  size="toolbar"
-                  variant="ghost"
-                  onClick={() => void withdraw(entry)}
-                  {...gate.controlProps()}
-                >
-                  Withdraw
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      </Can>
       {confirmDialog}
       {review.confirmDialog}
     </div>

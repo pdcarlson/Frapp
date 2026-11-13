@@ -6,6 +6,7 @@ import {
   putSignedUpload,
   useConfirmDocumentUpload,
   useRequestDocumentUploadUrl,
+  type DocumentTypeRow,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import {
   useGatedDialog,
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { DocumentTypesEditor } from "@/components/documents/document-types-editor";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 import {
@@ -45,6 +47,8 @@ import {
   titleFromFilename,
 } from "@/lib/documents/upload-defaults";
 import {
+  DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  DOCUMENT_TYPES_MAX,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
@@ -302,9 +306,9 @@ const NEW_FOLDER = "__new-folder__";
  * like the event editor and the Directory's member profile, led
  * by the file well, which also takes a dropped file. Picking a file fills the
  * title from its name, guesses the type from it, and files it into the folder
- * on screen. Type is a row of chips and folder a picker of the chapter's
- * folders, where both used to be free text that let "Bylaws", "bylaws" and
- * "By-laws" pile up as three. Description and effective date wait behind one
+ * on screen. Type is a row of chips over the chapter's own list of types
+ * (#3642), and folder a picker of the chapter's folders, where both used to be
+ * free text that let "Bylaws", "bylaws" and "By-laws" pile up as three. Description and effective date wait behind one
  * line, because most uploads never set them.
  */
 export function UploadDocumentPanel({
@@ -312,11 +316,17 @@ export function UploadDocumentPanel({
   upload,
   folders,
   typeOptions,
+  typeRows = null,
 }: {
   gate: SubscriptionGate;
   upload: DocumentUpload;
   folders: readonly string[];
   typeOptions: readonly string[];
+  /**
+   * The chapter's types, for "Edit types"; null hides it (no
+   * `chapter_docs:manage`, or the list hasn't loaded).
+   */
+  typeRows?: readonly DocumentTypeRow[] | null;
 }) {
   const {
     uploadDialog,
@@ -339,6 +349,17 @@ export function UploadDocumentPanel({
     !typeOptions.includes(uploadDraft.documentType);
   const [customTypeOpen, setCustomTypeOpen] = useState(false);
   const showCustomType = customTypeOpen || typeIsCustom;
+  /*
+    A type picked from the chips that then left the list (renamed or deleted
+    in Edit types) is not a new type to add back: let it go. One typed under
+    New type stays, since that is the officer's own.
+  */
+  const staleType =
+    typeIsCustom && !customTypeOpen ? uploadDraft.documentType : null;
+  useEffect(() => {
+    if (staleType !== null) set("documentType", "");
+  }, [staleType, set]);
+  const atTypeCap = typeOptions.length >= DOCUMENT_TYPES_MAX;
 
   const hasDetails =
     uploadDraft.description !== "" || uploadDraft.effectiveDate !== "";
@@ -436,32 +457,46 @@ export function UploadDocumentPanel({
                     </TypeChip>
                   );
                 })}
-                <TypeChip
-                  on={showCustomType}
-                  onClick={() => {
-                    if (showCustomType) {
-                      setCustomTypeOpen(false);
-                      set("documentType", "");
-                    } else {
-                      setCustomTypeOpen(true);
-                      set("documentType", "");
-                    }
-                  }}
-                >
-                  Other
-                </TypeChip>
+                {atTypeCap && !showCustomType ? null : (
+                  <TypeChip
+                    on={showCustomType}
+                    onClick={() => {
+                      if (showCustomType) {
+                        setCustomTypeOpen(false);
+                        set("documentType", "");
+                      } else {
+                        setCustomTypeOpen(true);
+                        set("documentType", "");
+                      }
+                    }}
+                  >
+                    New type
+                  </TypeChip>
+                )}
+                {typeRows ? (
+                  <DocumentTypesEditor
+                    types={typeRows}
+                    disabled={uploading}
+                    chipClassName={TYPE_CHIP_CLASS}
+                  />
+                ) : null}
               </div>
               {showCustomType ? (
                 <Input
                   id="doc-type-other"
-                  aria-label="Other type"
+                  aria-label="New type name"
                   autoFocus={customTypeOpen && !typeIsCustom}
                   className={UPLOAD_FIELD_CLASS}
                   value={uploadDraft.documentType}
                   onChange={(event) => set("documentType", event.target.value)}
                   placeholder="Constitution, Contract, Schedule"
-                  maxLength={100}
+                  maxLength={DOCUMENT_TYPE_NAME_MAX_LENGTH}
                 />
+              ) : null}
+              {showCustomType ? (
+                <p className="text-caption text-muted-foreground">
+                  Uploading adds it to the chapter&apos;s types.
+                </p>
               ) : null}
             </div>
 
@@ -569,6 +604,15 @@ export function UploadDocumentPanel({
   );
 }
 
+/**
+ * The find dialog's filter chip, one step taller to sit with the panel's
+ * fields. "Edit types" wears it too, so it sits in the row as a chip.
+ */
+const TYPE_CHIP_CLASS = cn(
+  "inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors pointer-coarse:h-10",
+  FOCUS_RING,
+);
+
 function TypeChip({
   on,
   onClick,
@@ -584,10 +628,7 @@ function TypeChip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        // The find dialog's filter chip, one step taller to sit with the
-        // panel's fields.
-        "inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors pointer-coarse:h-10",
-        FOCUS_RING,
+        TYPE_CHIP_CLASS,
         on
           ? "border-transparent bg-accent-subtle font-semibold text-accent-text"
           : "border-border text-muted-foreground hover:text-foreground",

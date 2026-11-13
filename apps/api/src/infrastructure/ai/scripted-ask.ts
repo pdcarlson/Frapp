@@ -119,7 +119,23 @@ export function scriptedAskAnswer(
   request: LanguageModelRequest,
 ): ScriptedReply {
   if (request.kind !== 'cited') return { text: '' };
-  const asked = words(request.messages.at(-1)?.content ?? '');
+  const last = request.messages.at(-1)?.content ?? '';
+  const asked = words(last);
+  // A follow-up that leans on the turn before ("and the one after that?")
+  // is read beside the question before it, as the real search does. A
+  // question that stands on its own is not.
+  if (
+    asked.size < 3 &&
+    /^\s*(and|also|what about|how about)\b|\b(it|its|that|those|them|they|one)\b/i.test(
+      last,
+    )
+  ) {
+    const before = request.messages
+      .slice(0, -1)
+      .filter((message) => message.role === 'user')
+      .at(-1);
+    for (const word of words(before?.content ?? '')) asked.add(word);
+  }
   const candidates: Candidate[] = [];
   for (const source of request.sources) {
     for (const raw of source.text.split(/(?<=[.!?])\s+|\n+/)) {

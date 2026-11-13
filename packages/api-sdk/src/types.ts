@@ -3672,6 +3672,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/upload-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URLs for up to 25 files (folder import) */
+        post: operations["ChapterDocumentController_requestUploadUrls_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own */
+        post: operations["ChapterDocumentController_confirmUploads_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents": {
         parameters: {
             query?: never;
@@ -3688,6 +3722,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's document types in display order */
+        get: operations["ChapterDocumentController_listTypes_v1"];
+        put?: never;
+        /** Add a document type */
+        post: operations["ChapterDocumentController_createType_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a document type (its documents keep everything else) */
+        delete: operations["ChapterDocumentController_deleteType_v1"];
+        options?: never;
+        head?: never;
+        /** Rename or reorder a document type (a rename renames it on its documents) */
+        patch: operations["ChapterDocumentController_updateType_v1"];
         trace?: never;
     };
     "/v1/documents/previews": {
@@ -4722,7 +4792,7 @@ export interface paths {
         put?: never;
         /**
          * Ask a question; the answer is streamed
-         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.
          */
         post: operations["AskController_ask_v1"];
         delete?: never;
@@ -4764,7 +4834,7 @@ export interface paths {
         };
         /**
          * The actions the caller can ask for
-         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.
          */
         get: operations["ActController_status_v1"];
         put?: never;
@@ -7965,6 +8035,14 @@ export interface components {
             /** @description Server-allocated document id embedded in storage_path. */
             document_id: string;
         };
+        RequestDocumentUploadUrlsDto: {
+            /** @description One to 25 files, each checked as the single upload-url route checks it */
+            files: components["schemas"]["RequestDocumentUploadUrlDto"][];
+        };
+        DocumentUploadUrlsResponseDto: {
+            /** @description One ticket per file, in the order sent */
+            tickets: components["schemas"]["DocumentUploadUrlResponseDto"][];
+        };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
@@ -7978,10 +8056,14 @@ export interface components {
             content_type?: string;
             /** @description File size in bytes */
             byte_size?: number;
-            /** @description Free-text document category (bylaws, budget, minutes, ...) */
+            /** @description One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list. */
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+        };
+        ConfirmDocumentUploadsDto: {
+            /** @description One to 25 uploads to file, each as the single confirm route takes it */
+            documents: components["schemas"]["ConfirmDocumentUploadDto"][];
         };
         ChapterDocumentDto: {
             id: string;
@@ -7998,6 +8080,37 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+        };
+        DocumentConfirmResultDto: {
+            /** @description The storage path this result is for */
+            storage_path: string;
+            /** @description The filed document, when it was filed */
+            document?: components["schemas"]["ChapterDocumentDto"];
+            /** @description Why it was not filed, when it was not */
+            error?: string;
+        };
+        DocumentConfirmResultsDto: {
+            /** @description One result per upload, in the order sent */
+            results: components["schemas"]["DocumentConfirmResultDto"][];
+        };
+        DocumentTypeDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+        };
+        CreateDocumentTypeDto: {
+            /** @description Type name (unique within the chapter, ignoring case) */
+            name: string;
+            /** @description Display position. Defaults to the end of the list. */
+            sort_order?: number;
+        };
+        UpdateDocumentTypeDto: {
+            /** @description New type name. Renaming renames the type on every document of that type. */
+            name?: string;
+            /** @description New display position */
+            sort_order?: number;
         };
         DocumentPreviewUrlDto: {
             id: string;
@@ -8861,6 +8974,12 @@ export interface components {
             saved_until: string | null;
             diagnostics: components["schemas"]["AskDiagnosticsDto"];
         };
+        AskHistoryTurnDto: {
+            /** @description What the member typed in that turn. */
+            question: string;
+            /** @description What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages). */
+            answer: string;
+        };
         AskRequestDto: {
             /**
              * @description The question, in the member’s own words.
@@ -8869,6 +8988,10 @@ export interface components {
             question: string;
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
+            /** @description The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it. */
+            history?: components["schemas"]["AskHistoryTurnDto"][];
+            /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
+            actions?: boolean;
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -8930,6 +9053,8 @@ export interface components {
             amount: number;
             /** @description As the `needs_event` answer carried it. Empty names the event instead. */
             reason?: string;
+            /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
+            keep_earlier?: boolean;
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
@@ -17695,6 +17820,70 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_requestUploadUrls_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestDocumentUploadUrlsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentUploadUrlsResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_confirmUploads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDocumentUploadsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentConfirmResultsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_list_v1: {
         parameters: {
             query?: {
@@ -17745,6 +17934,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_listTypes_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_createType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_deleteType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_updateType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
             };
             /** @description Error */
             default: {

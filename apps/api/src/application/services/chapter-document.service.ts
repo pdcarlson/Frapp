@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -43,6 +44,8 @@ import {
   storedFilename,
 } from '#domain/constants/storage';
 
+import { ChapterDocumentTypeService } from './chapter-document-type.service';
+
 const DOCUMENTS_BUCKET = 'documents';
 
 /** Ids one `GET /documents/previews` may sign (#4647). */
@@ -56,6 +59,12 @@ export interface RequestUploadUrlInput {
   contentType: string;
   sizeBytes?: number;
 }
+
+export type RequestUploadUrlFile = Omit<RequestUploadUrlInput, 'chapterId'>;
+
+export type ConfirmUploadResult =
+  | { storage_path: string; document: ChapterDocument; error?: never }
+  | { storage_path: string; error: string; document?: never };
 
 export interface ConfirmUploadInput {
   chapter_id: string;
@@ -81,6 +90,7 @@ export class ChapterDocumentService {
     private readonly starRepo: IChapterDocumentStarRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    private readonly typeService: ChapterDocumentTypeService,
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
@@ -117,6 +127,61 @@ export class ChapterDocumentService {
     );
 
     return { signedUrl, storagePath, documentId };
+  }
+
+  /**
+   * Signed upload links for several files at once (a folder import, #2242),
+   * each checked as {@link requestUploadUrl} checks one. One refused file
+   * refuses the call, naming which, since the client checked them all first.
+   */
+  async requestUploadUrls(chapterId: string, files: RequestUploadUrlFile[]) {
+    const tickets: Awaited<ReturnType<typeof this.requestUploadUrl>>[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        tickets.push(await this.requestUploadUrl({ chapterId, ...file }));
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw new BadRequestException(
+            `File ${index + 1} (${file.filename}): ${error.message}`,
+          );
+        }
+        throw error;
+      }
+    }
+    return tickets;
+  }
+
+  /**
+   * Files several uploads at once (a folder import, #2242), each as
+   * {@link confirmUpload} files one. A refusal of one (a bad type, a full
+   * type list, a path outside the chapter) is reported against it and the
+   * rest still file, since their bytes are already in storage. Anything else
+   * fails the call. Confirming is idempotent per stored object, and the web
+   * import keeps each file's storage path across retries, so retrying a
+   * failed call files what wasn't filed and answers the rest with the
+   * documents already filed.
+   */
+  async confirmUploads(
+    inputs: ConfirmUploadInput[],
+  ): Promise<ConfirmUploadResult[]> {
+    const results: ConfirmUploadResult[] = [];
+    for (const input of inputs) {
+      try {
+        results.push({
+          storage_path: input.storage_path,
+          document: await this.confirmUpload(input),
+        });
+      } catch (error) {
+        if (!(error instanceof HttpException) || error.getStatus() >= 500) {
+          throw error;
+        }
+        results.push({
+          storage_path: input.storage_path,
+          error: error.message,
+        });
+      }
+    }
+    return results;
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<ChapterDocument> {
@@ -188,6 +253,15 @@ export class ChapterDocumentService {
     // allowed — it is how every folder came into being before folders were
     // first-class. Register it so it shows up in the folder list and can be
     // renamed, reordered, and deleted like any other.
+    // The type is stored in the chapter's own spelling, and a type the
+    // chapter doesn't have yet joins its list, as a new folder does
+    // (`spec/behavior/chapter-docs.md` § Document types). Resolved before the
+    // folder, so a refusal (a full list) leaves no folder behind.
+    const documentType = await this.typeService.resolveForUpload(
+      input.chapter_id,
+      input.document_type,
+    );
+
     if (folder !== null) {
       await this.ensureFolder(folder, input.chapter_id);
     }
@@ -201,7 +275,7 @@ export class ChapterDocumentService {
       uploaded_by: input.uploaded_by,
       content_type: input.content_type ?? null,
       byte_size: input.byte_size ?? null,
-      document_type: input.document_type ?? null,
+      document_type: documentType,
       effective_date: input.effective_date ?? null,
     });
     return this.filedFor(document, input.uploaded_by);

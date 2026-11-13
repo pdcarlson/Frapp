@@ -112,10 +112,13 @@ Interceptors:
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
 - **requestReadsMiddleware** and **RequestReadsInterceptor** — global. Within one request, the
   caller's membership row and roles are read once and shared by the guards and the handler; a write's
-  handler reads afresh. What is shared and why it never crosses requests:
+  handler reads afresh. Across requests, only a burst of reads joins one in-flight lookup, for at most
+  250 ms (#3752). What is shared, between which requests, and the bound:
   [`authorization-model.md` § The model in short](../security/authorization-model.md#1-the-model-in-short).
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
-  authenticated request. Parallel first requests can both miss the row and collide on
+  authenticated request. Where `ChapterGuard` already resolved the row, the sync runs in the
+  background, at most once per session per ten minutes, unless the session's email or metadata
+  changed. Parallel first requests can both miss the row and collide on
   `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
   "the other request won" and returns the existing id (Sentry FRAPP-API-3). Not global:
   applied per-controller/per-route via `@UseInterceptors` — see

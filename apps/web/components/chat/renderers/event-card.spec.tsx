@@ -10,6 +10,9 @@ import type { ChatMessage } from "@repo/chat-core/types";
 
 const mockUseAttendance = vi.fn();
 const mockUseMyPermissions = vi.fn();
+const mockEventCardExcuse = vi.fn<(payload: unknown) => unknown>(() => ({
+  kind: "none",
+}));
 const checkIn = vi.fn().mockResolvedValue(undefined);
 
 const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
@@ -32,13 +35,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   useMyPermissions: () => mockUseMyPermissions(),
   useNow: () => Date.now(),
+  useEventCardExcuse: (payload: unknown) => mockEventCardExcuse(payload),
+  // A viewer with no roles: the event's default decides (the rule is the
+  // hook's own spec).
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
 }));
-
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -76,6 +83,7 @@ describe("EventCard", () => {
     vi.clearAllMocks();
     mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: [] });
+    mockEventCardExcuse.mockReturnValue({ kind: "none" });
     // Default to an attendance-viewer (admin) so the count tests exercise the
     // count path; the non-admin case is covered explicitly below.
     mockUseMyPermissions.mockReturnValue({
@@ -90,13 +98,61 @@ describe("EventCard", () => {
     expect(screen.getByText(/\+15 pts/)).toBeInTheDocument();
   });
 
-  it("draws Mandatory as the danger badge, never the accent", () => {
+  it("draws Mandatory as the hairline badge, as the Events list does (#4132)", () => {
     render(
       <EventCard message={makeMessage({ is_mandatory: true })} isConfirmed />,
     );
     const badge = screen.getByText("Mandatory");
-    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).toContain("text-muted-foreground");
+    expect(badge.className).not.toContain("text-destructive-text");
     expect(badge.className).not.toContain("text-accent-text");
+  });
+
+  it("shows Mandatory only when the event requires this viewer (#4132)", () => {
+    render(
+      <EventCard
+        message={makeMessage({ is_mandatory: true, viewer_required: false })}
+        isConfirmed
+      />,
+    );
+    expect(screen.queryByText("Mandatory")).not.toBeInTheDocument();
+  });
+
+  // #4660: the rule is `useEventCardExcuse`'s (its own spec in @repo/hooks);
+  // the card draws what it answers.
+  it("offers Can't make it, linking to the sheet with the line open", () => {
+    mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(screen.getByRole("link", { name: "Can't make it" })).toHaveAttribute(
+      "href",
+      "/events?event=evt-1&excuse=1",
+    );
+  });
+
+  it("says where a sent excuse stands instead", () => {
+    mockEventCardExcuse.mockReturnValue({
+      kind: "sent",
+      status: "PENDING",
+      reason: "Away game",
+      title: "Excuse sent to Jake",
+      detail: null,
+      canWithdraw: true,
+    });
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(screen.getByText("Excuse sent to Jake")).toBeInTheDocument();
+    expect(screen.queryByText("Can't make it")).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to a member the event doesn't require", () => {
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(screen.queryByText("Can't make it")).not.toBeInTheDocument();
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(mockEventCardExcuse).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: "evt-1", is_mandatory: false }),
+    );
   });
 
   it("falls back to the content string on a malformed payload", () => {
@@ -253,7 +309,6 @@ describe("EventCard", () => {
     ).not.toBeInTheDocument();
   });
 });
-
 
 describe("EventCard subscription gating", () => {
   // `POST /v1/events/:eventId/attendance/check-in` is on `AttendanceController`,

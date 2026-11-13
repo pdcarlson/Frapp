@@ -44,12 +44,27 @@ const ANSWER: AskAnswer = {
 };
 
 const WORKING: AskExchange = {
+  id: "turn-test",
   question: "What is quorum?",
   phase: "working",
   step: "searching",
   preview: "",
   answer: null,
+  proposal: null,
+  resolution: null,
   failure: null,
+};
+
+/** A card that asks for what was left unsaid, as the request route answers. */
+const UNCLEAR = {
+  status: "unclear",
+  action: "give_points",
+  suggestion: null,
+  notes: [],
+  event_choice: null,
+  missing: "amount",
+  reason: null,
+  available_actions: [],
 };
 
 /** A response body that delivers `chunks` one read at a time. */
@@ -110,6 +125,18 @@ describe("applyAskEvent", () => {
     });
   });
 
+  it("ends the turn with the proposal when the member asked for something to be done", () => {
+    const streaming = { ...WORKING, preview: "" };
+    const turn = applyAskEvent(streaming, { v, type: "proposal", act: UNCLEAR });
+    expect(turn).toMatchObject({
+      phase: "done",
+      step: null,
+      answer: null,
+      proposal: UNCLEAR,
+    });
+    expect(applyAskEvent(turn, { v, type: "text", delta: "more" })).toBe(turn);
+  });
+
   it("ignores anything after the answer is final", () => {
     const done = applyAskEvent(WORKING, { v, type: "done", answer: ANSWER });
     expect(applyAskEvent(done, { v, type: "text", delta: "more" })).toBe(done);
@@ -156,10 +183,199 @@ describe("the Ask hooks", () => {
         parseAs: "stream",
       }),
     );
-    expect(result.current.exchange).toMatchObject({
+    expect(result.current.exchanges).toHaveLength(1);
+    expect(result.current.exchanges[0]).toMatchObject({
       question: "What is quorum?",
       phase: "done",
       answer: ANSWER,
+    });
+    expect(result.current.working).toBe(false);
+  });
+
+  describe("a conversation", () => {
+    const answering = () =>
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+
+    it("keeps every turn, and sends the turns before a question with it", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      await act(() => result.current.ask("And to expel a member?"));
+      expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
+        "What is quorum?",
+        "And to expel a member?",
+      ]);
+      expect(POST.mock.calls[0]![1].body).toEqual({ question: "What is quorum?" });
+      expect(POST.mock.calls[1]![1].body).toEqual({
+        question: "And to expel a member?",
+        history: [{ question: "What is quorum?", answer: ANSWER.text }],
+      });
+    });
+
+    it("sends an answer that drew on channel messages as its question only", async () => {
+      const fromChat: AskAnswer = {
+        ...ANSWER,
+        sources: [{ ...ANSWER.sources[0]!, kind: "chat" }],
+      };
+      const POST = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: fromChat }])),
+        );
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("Who is driving Saturday?"));
+      await act(() => result.current.ask("What time?"));
+      expect(POST.mock.calls[1]![1].body.history).toEqual([
+        { question: "Who is driving Saturday?", answer: "" },
+      ]);
+    });
+
+    it("asks for a card only when the screen says it shows them, and holds the card on its turn", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValue(streamed([{ v, type: "proposal", act: UNCLEAR }]));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("Give Jordan points", { actions: true }));
+      expect(POST.mock.calls[0]![1].body).toEqual({
+        question: "Give Jordan points",
+        actions: true,
+      });
+      const [turn] = result.current.exchanges;
+      expect(turn).toMatchObject({ phase: "done", answer: null, proposal: UNCLEAR });
+
+      // The card ends; its turn says how, and the next question carries the
+      // member's words from it and no answer.
+      act(() =>
+        result.current.resolveProposal(turn!.id, {
+          kind: "done",
+          line: "Task created",
+          page: "tasks",
+        }),
+      );
+      expect(result.current.exchanges[0]!.resolution).toEqual({
+        kind: "done",
+        line: "Task created",
+        page: "tasks",
+      });
+      POST.mockResolvedValue(streamed([{ v, type: "done", answer: ANSWER }]));
+      await act(() => result.current.ask("5, for cleaning"));
+      expect(POST.mock.calls[1]![1].body.history).toEqual([
+        { question: "Give Jordan points", answer: "" },
+      ]);
+    });
+
+    it("swaps a turn's proposal for the one an event pick answers with", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValue(streamed([{ v, type: "proposal", act: UNCLEAR }]));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("Give points", { actions: true }));
+      const picked = { ...UNCLEAR, status: "proposed" };
+      act(() =>
+        result.current.setProposal(result.current.exchanges[0]!.id, picked as never),
+      );
+      expect(result.current.exchanges[0]!.proposal).toEqual(picked);
+    });
+
+    it("leaves a failed turn out of what it sends, and retries it in place at the end", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
+        .mockImplementation(() =>
+          Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
+        );
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      expect(result.current.exchanges[0]!.phase).toBe("failed");
+      await act(() => result.current.retry(result.current.exchanges[0]!.id));
+      expect(result.current.exchanges).toHaveLength(1);
+      expect(result.current.exchanges[0]).toMatchObject({
+        question: "What is quorum?",
+        phase: "done",
+      });
+      expect(POST.mock.calls[1]![1].body).toEqual({ question: "What is quorum?" });
+    });
+
+    it("does not ask an earlier turn again while another is being answered: it would take that turn's place", async () => {
+      const POST = vi
+        .fn()
+        .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
+        .mockImplementationOnce(() => new Promise(() => undefined));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      act(() => {
+        void result.current.ask("And to expel a member?");
+      });
+      await waitFor(() => expect(POST).toHaveBeenCalledTimes(2));
+      await act(() => result.current.retry(result.current.exchanges[0]!.id));
+      expect(POST).toHaveBeenCalledTimes(2);
+      expect(
+        result.current.exchanges.map((turn) => [turn.question, turn.phase]),
+      ).toEqual([
+        ["What is quorum?", "failed"],
+        ["And to expel a member?", "working"],
+      ]);
+    });
+
+    it("shows the question at once, then ends the turn without a request when the gate says no", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      let release: (agreed: boolean) => void = () => undefined;
+      const gate = () => new Promise<boolean>((resolve) => (release = resolve));
+      let asking: Promise<void> = Promise.resolve();
+      act(() => {
+        asking = result.current.ask("What is quorum?", { gate });
+      });
+      expect(result.current.exchanges[0]).toMatchObject({
+        question: "What is quorum?",
+        phase: "working",
+      });
+      expect(result.current.working).toBe(true);
+      await act(async () => {
+        release(false);
+        await asking;
+      });
+      expect(POST).not.toHaveBeenCalled();
+      expect(result.current.exchanges[0]).toMatchObject({
+        phase: "done",
+        answer: { status: "unavailable", reason: "consent_required" },
+      });
+      // A turn that never reached the server is not part of the conversation sent.
+      await act(() => result.current.ask("What is quorum?"));
+      expect(POST.mock.calls[0]![1].body).toEqual({ question: "What is quorum?" });
+    });
+
+    it("fails the turn in words when the gate itself breaks", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() =>
+        result.current.ask("What is quorum?", {
+          gate: () => Promise.reject(new Error("offline")),
+        }),
+      );
+      expect(POST).not.toHaveBeenCalled();
+      expect(result.current.exchanges[0]!.phase).toBe("failed");
+    });
+
+    it("stop takes the waiting turn away and keeps the rest; reset starts over", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      POST.mockImplementationOnce(() => new Promise(() => undefined));
+      act(() => {
+        void result.current.ask("And to expel a member?");
+      });
+      expect(result.current.exchanges).toHaveLength(2);
+      act(() => result.current.stop());
+      expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
+        "What is quorum?",
+      ]);
+      act(() => result.current.reset());
+      expect(result.current.exchanges).toEqual([]);
     });
   });
 
@@ -173,7 +389,7 @@ describe("the Ask hooks", () => {
     await act(() => result.current.ask("One?"));
     await act(() => result.current.ask("Two?", { savedNoticeShown: true }));
     expect(POST.mock.calls[0]![1].body).toEqual({ question: "One?" });
-    expect(POST.mock.calls[1]![1].body).toEqual({
+    expect(POST.mock.calls[1]![1].body).toMatchObject({
       question: "Two?",
       saved_notice_shown: true,
     });
@@ -189,7 +405,7 @@ describe("the Ask hooks", () => {
       .mockResolvedValue(refusedWith({ statusCode: 403, code }));
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("Anything?"));
-    expect(result.current.exchange).toMatchObject({
+    expect(result.current.exchanges[0]).toMatchObject({
       phase: "done",
       answer: { status: "unavailable", reason },
     });
@@ -201,7 +417,7 @@ describe("the Ask hooks", () => {
       .mockResolvedValue(streamed([{ v, type: "text", delta: "Quor" }]));
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("What is quorum?"));
-    expect(result.current.exchange).toMatchObject({
+    expect(result.current.exchanges[0]).toMatchObject({
       phase: "failed",
       preview: "",
       failure: { message: ASK_COPY.failed, retryable: true },
@@ -212,7 +428,7 @@ describe("the Ask hooks", () => {
     const POST = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("What is quorum?"));
-    expect(result.current.exchange?.phase).toBe("failed");
+    expect(result.current.exchanges[0]?.phase).toBe("failed");
   });
 
   it("asks nothing for an empty question", async () => {
@@ -220,7 +436,7 @@ describe("the Ask hooks", () => {
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("   "));
     expect(POST).not.toHaveBeenCalled();
-    expect(result.current.exchange).toBeNull();
+    expect(result.current.exchanges).toEqual([]);
   });
 
   it("reads a server with AI off as no status, not as a failure", async () => {

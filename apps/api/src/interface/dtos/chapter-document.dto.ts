@@ -1,4 +1,8 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsInt,
   IsOptional,
@@ -8,9 +12,13 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { POSITION_MAX } from '#domain/constants/field-limits';
-import { DOCUMENT_TITLE_MAX_LENGTH } from '@repo/validation';
+import {
+  DOCUMENT_TITLE_MAX_LENGTH,
+  DOCUMENT_TYPE_NAME_MAX_LENGTH,
+} from '@repo/validation';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -91,11 +99,12 @@ export class ConfirmDocumentUploadDto {
   byte_size?: number;
 
   @ApiPropertyOptional({
-    description: 'Free-text document category (bylaws, budget, minutes, ...)',
+    description:
+      "One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list.",
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
   document_type?: string;
 
   @ApiPropertyOptional({
@@ -105,6 +114,50 @@ export class ConfirmDocumentUploadDto {
   @IsOptional()
   @IsDateString()
   effective_date?: string;
+}
+
+/**
+ * Files one batch call takes: a folder import (#2242) mints its upload links
+ * and files its documents 25 at a time, so the fan-out throttle (10 calls a
+ * minute) still lets it move up to 250 files a minute: it mints links ahead
+ * in full batches and gathers filings into batches.
+ */
+export const DOCUMENT_BATCH_MAX = 25;
+
+export class RequestDocumentUploadUrlsDto {
+  @ApiProperty({
+    type: [RequestDocumentUploadUrlDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} files, each checked as the single upload-url route checks it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RequestDocumentUploadUrlDto)
+  files: RequestDocumentUploadUrlDto[];
+}
+
+export class DocumentUploadUrlsResponseDto {
+  @ApiProperty({
+    type: [DocumentUploadUrlResponseDto],
+    description: 'One ticket per file, in the order sent',
+  })
+  tickets: DocumentUploadUrlResponseDto[];
+}
+
+export class ConfirmDocumentUploadsDto {
+  @ApiProperty({
+    type: [ConfirmDocumentUploadDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} uploads to file, each as the single confirm route takes it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmDocumentUploadDto)
+  documents: ConfirmDocumentUploadDto[];
 }
 
 export class CreateDocumentFolderDto {
@@ -145,6 +198,59 @@ export class UpdateDocumentFolderDto {
   @Min(0)
   @Max(POSITION_MAX)
   sort_order?: number;
+}
+
+export class CreateDocumentTypeDto {
+  @ApiProperty({
+    description: 'Type name (unique within the chapter, ignoring case)',
+    maxLength: DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
+  name: string;
+
+  @ApiPropertyOptional({
+    description: 'Display position. Defaults to the end of the list.',
+    maximum: POSITION_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POSITION_MAX)
+  sort_order?: number;
+}
+
+export class UpdateDocumentTypeDto {
+  @ApiPropertyOptional({
+    description:
+      'New type name. Renaming renames the type on every document of that type.',
+    maxLength: DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
+  name?: string;
+
+  @ApiPropertyOptional({
+    description: 'New display position',
+    maximum: POSITION_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POSITION_MAX)
+  sort_order?: number;
+}
+
+/** A document type as the type routes return it (#3642). */
+export class DocumentTypeDto {
+  @ApiProperty() id: string;
+  @ApiProperty() chapter_id: string;
+  @ApiProperty() name: string;
+  @ApiProperty() sort_order: number;
+  @ApiProperty() created_at: string;
 }
 
 /** The caller's own starred folders and documents (#3934). */
@@ -207,4 +313,28 @@ export class DocumentPreviewUrlDto {
   @ApiProperty() id: string;
   @ApiProperty({ description: 'Inline signed URL, valid for an hour' })
   url: string;
+}
+
+export class DocumentConfirmResultDto {
+  @ApiProperty({ description: 'The storage path this result is for' })
+  storage_path: string;
+
+  @ApiPropertyOptional({
+    type: ChapterDocumentDto,
+    description: 'The filed document, when it was filed',
+  })
+  document?: ChapterDocumentDto;
+
+  @ApiPropertyOptional({
+    description: 'Why it was not filed, when it was not',
+  })
+  error?: string;
+}
+
+export class DocumentConfirmResultsDto {
+  @ApiProperty({
+    type: [DocumentConfirmResultDto],
+    description: 'One result per upload, in the order sent',
+  })
+  results: DocumentConfirmResultDto[];
 }
