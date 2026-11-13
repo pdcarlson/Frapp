@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   canHideConversation,
   compareLatestFirst,
@@ -8,8 +8,11 @@ import {
   otherMemberId,
   resolveAuthorLabel,
   resolveAuthorName,
+  searchDirectMessages,
   sidebarUnreadCounts,
+  useBlockedUserIds,
   useChannelLatestMessages,
+  useChapterRoster,
   useChannelNotificationPreferences,
   useChannels,
   useGetOrCreateDm,
@@ -18,6 +21,12 @@ import {
   useSidebarPreferences,
   useViewerUserId,
   sidebarMutedChannelIds,
+  DM_SEARCH_BLOCK_LIST_FAILED,
+  DM_SEARCH_CHECKING_BLOCK_LIST,
+  DM_SEARCH_MEMBERS_HEADING,
+  DM_SEARCH_PLACEHOLDER,
+  dmSearchNoMatches,
+  type DmSearchMember,
 } from "@repo/hooks";
 import {
   channelPreviewLine,
@@ -33,6 +42,12 @@ import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { IconButton } from "@/components/icon-button";
 import { PencilGlyph } from "@/components/control-glyphs";
+import { SearchField } from "@/components/filter-chips";
+import {
+  dmChannelIdOf,
+  START_DM_FAILED_BODY,
+  startDmFailedTitle,
+} from "@/lib/directory/start-dm";
 import {
   displayChannelName,
   hiddenChannels,
@@ -59,6 +74,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Hidden conversations (#2303) moved here from Chat home with the rows they
  * belong to; opening one unhides it, as before.
+ *
+ * A search field heads the list (#4668, Shawn, 2026-11-12), as Instagram's
+ * and iMessage's inbox search and the Directory's own field do: a name narrows
+ * the screen to the member's conversations, then everyone else it matches
+ * under "Start a conversation", and tapping one of those opens the DM,
+ * creating it if needed. The pencil focuses it rather than leaving for the
+ * Directory. What it finds is web's people search exactly
+ * (`searchDirectMessages` in `@repo/hooks/dm-search`).
  */
 export default function MessagesScreen() {
   const { tokens } = useFrappTheme();
@@ -88,7 +111,16 @@ export default function MessagesScreen() {
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const leaveChannel = useLeaveChannel();
   const reopenDm = useGetOrCreateDm();
+  // A tap on a member opens the thread as soon as the DM exists; this screen
+  // already watches `["channels"]` (the member sheet's Message does the same).
+  const startDm = useGetOrCreateDm({ awaitRefetch: false });
+  const rosterQuery = useChapterRoster();
+  const blockList = useBlockedUserIds();
   const [showHidden, setShowHidden] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<TextInput>(null);
+  // Members whose DM is being opened, so a second tap starts nothing.
+  const startingRef = useRef(new Set<string>());
   const refresh = useRefetchAll([
     channelsQuery,
     unreadQuery,
@@ -139,6 +171,86 @@ export default function MessagesScreen() {
   }, [direct, latestById, pinnedIds, viewerId, memberNames]);
   const hidden = useMemo(() => hiddenChannels(direct), [direct]);
 
+  const searching = query.trim().length > 0;
+  const found = useMemo(
+    () =>
+      searchDirectMessages({
+        query,
+        conversations: listed,
+        titleOf: (channel) =>
+          displayChannelName(channel, viewerId, memberNames),
+        roster: (rosterQuery.data ?? []) as DmSearchMember[],
+        names: memberNames,
+        viewerId,
+        blockedIds: blockList.ids,
+        blockListReady: blockList.status === "ready",
+      }),
+    [
+      query,
+      listed,
+      viewerId,
+      memberNames,
+      rosterQuery.data,
+      blockList.ids,
+      blockList.status,
+    ],
+  );
+  // Why no members are listed yet, as the member sheet's Message row says it.
+  const heldNote =
+    searching && found.membersHeld
+      ? blockList.status === "unavailable" && !blockList.isRetrying
+        ? DM_SEARCH_BLOCK_LIST_FAILED
+        : DM_SEARCH_CHECKING_BLOCK_LIST
+      : null;
+
+  async function startConversation(member: DmSearchMember) {
+    if (startingRef.current.has(member.user_id)) return;
+    startingRef.current.add(member.user_id);
+    try {
+      const channelId = dmChannelIdOf(
+        await startDm.mutateAsync({ member_id: member.user_id }),
+      );
+      if (!channelId) throw new Error("No channel id returned");
+      setQuery("");
+      openChannel(channelId);
+    } catch {
+      Alert.alert(
+        startDmFailedTitle(member.display_name),
+        START_DM_FAILED_BODY,
+      );
+    } finally {
+      startingRef.current.delete(member.user_id);
+    }
+  }
+
+  function renderConversation(channel: ChannelSummary) {
+    const counts = unreadByChannelId?.get(channel.id);
+    const name = titleOf(channel);
+    return (
+      <ChannelRow
+        key={channel.id}
+        name={name}
+        isDirect
+        avatarUrl={avatarOf(channel)}
+        avatarTint={tintOf(channel)}
+        preview={previewOf(channel)}
+        isMuted={mutedChannelIds?.has(channel.id) ?? false}
+        unreadCount={counts?.unreadCount ?? 0}
+        mentionCount={counts?.mentionCount ?? 0}
+        onPress={() => openChannel(channel.id)}
+        onHide={
+          canHideConversation(channel)
+            ? () =>
+                confirmHideConversation({
+                  name,
+                  run: () => leaveChannel.mutateAsync(channel.id),
+                })
+            : undefined
+        }
+      />
+    );
+  }
+
   function openChannel(channelId: string) {
     router.push({ pathname: "/chat-thread", params: { channelId } });
   }
@@ -163,13 +275,13 @@ export default function MessagesScreen() {
       back={BACK_TO_CHAT}
       title="Messages"
       refresh={refresh}
-      // New message, where iMessage and Instagram keep it. A DM starts from
-      // a member, so it opens the Directory, whose member sheet has Message.
+      // New message, where iMessage and Instagram keep it. It focuses the
+      // search below, as their pencil opens a "To:" field (#4668).
       headerAction={
         <IconButton
           label="New message"
-          hint="Opens the Directory to pick someone."
-          onPress={() => router.push("/directory")}
+          hint="Opens the search to find someone."
+          onPress={() => searchRef.current?.focus()}
         >
           <PencilGlyph color={tokens.color.text.foreground} />
         </IconButton>
@@ -187,81 +299,108 @@ export default function MessagesScreen() {
           retryLabel="Try loading messages again"
           isRetrying={channelsQuery.isFetching}
         />
-      ) : listed.length === 0 && hidden.length === 0 ? (
-        <InlineNote>
-          No messages yet. Tap the pencil to pick someone from the Directory.
-        </InlineNote>
       ) : (
         <>
-          <View style={styles.rows}>
-            {listed.map((channel) => {
-              const counts = unreadByChannelId?.get(channel.id);
-              const name = titleOf(channel);
-              return (
-                <ChannelRow
-                  key={channel.id}
-                  name={name}
-                  isDirect
-                  avatarUrl={avatarOf(channel)}
-                  avatarTint={tintOf(channel)}
-                  preview={previewOf(channel)}
-                  isMuted={mutedChannelIds?.has(channel.id) ?? false}
-                  unreadCount={counts?.unreadCount ?? 0}
-                  mentionCount={counts?.mentionCount ?? 0}
-                  onPress={() => openChannel(channel.id)}
-                  onHide={
-                    canHideConversation(channel)
-                      ? () =>
-                          confirmHideConversation({
-                            name,
-                            run: () => leaveChannel.mutateAsync(channel.id),
-                          })
+          <SearchField
+            inputRef={searchRef}
+            value={query}
+            onChangeText={setQuery}
+            placeholder={DM_SEARCH_PLACEHOLDER}
+            accessibilityLabel={DM_SEARCH_PLACEHOLDER}
+            searchGlyph
+          />
+          {searching ? (
+            <>
+              <View style={styles.rows}>
+                {found.conversations.map(renderConversation)}
+              </View>
+              {found.members.length > 0 ? (
+                <>
+                  <Text accessibilityRole="header" style={styles.heading}>
+                    {DM_SEARCH_MEMBERS_HEADING}
+                  </Text>
+                  <View style={styles.rows}>
+                    {found.members.map((member) => (
+                      <ChannelRow
+                        key={member.user_id}
+                        name={member.display_name}
+                        isDirect
+                        avatarUrl={avatarFor(member.user_id)}
+                        avatarTint={avatarTintFor(member.user_id)}
+                        unreadCount={0}
+                        mentionCount={0}
+                        onPress={() => void startConversation(member)}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
+              {heldNote ? (
+                <InlineNote
+                  action={
+                    heldNote === DM_SEARCH_BLOCK_LIST_FAILED &&
+                    !blockList.isPaused
+                      ? { label: "Try again", onPress: blockList.retry }
                       : undefined
                   }
-                />
-              );
-            })}
-          </View>
-
-          {hidden.length > 0 ? (
-            <>
-              <StickyHeader>
-                <PressableRow
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showHidden }}
-                  onPress={() => setShowHidden((open) => !open)}
-                  style={styles.hiddenToggle}
                 >
-                  <Text style={styles.hiddenLabel}>
-                    {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
-                  </Text>
-                </PressableRow>
-              </StickyHeader>
-              {showHidden ? (
-                <View style={styles.rows}>
-                  {hidden.map((channel) => (
-                    <ChannelRow
-                      key={channel.id}
-                      name={titleOf(channel)}
-                      isDirect
-                      avatarUrl={avatarOf(channel)}
-                      avatarTint={tintOf(channel)}
-                      // A hidden DM carries no count (`GET /v1/channels/unread`
-                      // leaves it out), so there is no badge to draw.
-                      unreadCount={0}
-                      mentionCount={0}
-                      onPress={() => {
-                        // Opening it again is what clears a hide (#2303).
-                        const memberId = otherMemberId(channel, viewerId);
-                        if (memberId) reopenDm.mutate({ member_id: memberId });
-                        openChannel(channel.id);
-                      }}
-                    />
-                  ))}
-                </View>
+                  {heldNote}
+                </InlineNote>
+              ) : found.conversations.length === 0 &&
+                found.members.length === 0 &&
+                !rosterQuery.isPending ? (
+                <InlineNote>{dmSearchNoMatches(query)}</InlineNote>
               ) : null}
             </>
-          ) : null}
+          ) : listed.length === 0 && hidden.length === 0 ? (
+            <InlineNote>
+              No messages yet. Search for someone above to start one.
+            </InlineNote>
+          ) : (
+            <>
+              <View style={styles.rows}>{listed.map(renderConversation)}</View>
+              {hidden.length > 0 ? (
+                <>
+                  <StickyHeader>
+                    <PressableRow
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showHidden }}
+                      onPress={() => setShowHidden((open) => !open)}
+                      style={styles.hiddenToggle}
+                    >
+                      <Text style={styles.hiddenLabel}>
+                        {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
+                      </Text>
+                    </PressableRow>
+                  </StickyHeader>
+                  {showHidden ? (
+                    <View style={styles.rows}>
+                      {hidden.map((channel) => (
+                        <ChannelRow
+                          key={channel.id}
+                          name={titleOf(channel)}
+                          isDirect
+                          avatarUrl={avatarOf(channel)}
+                          avatarTint={tintOf(channel)}
+                          // A hidden DM carries no count (`GET /v1/channels/unread`
+                          // leaves it out), so there is no badge to draw.
+                          unreadCount={0}
+                          mentionCount={0}
+                          onPress={() => {
+                            // Opening it again is what clears a hide (#2303).
+                            const memberId = otherMemberId(channel, viewerId);
+                            if (memberId)
+                              reopenDm.mutate({ member_id: memberId });
+                            openChannel(channel.id);
+                          }}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          )}
         </>
       )}
     </ScreenShell>
@@ -277,6 +416,11 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
       ...gutterBleed(tokens),
+    },
+    heading: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.md,
     },
     hiddenLabel: {
       ...typeRole(tokens.typography.role.label),
