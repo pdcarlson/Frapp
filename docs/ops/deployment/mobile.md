@@ -604,8 +604,8 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
 Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
-publish from a laptop. Both go through the same guard. The staging app variant's profile and
-config exist (`staging` in `eas.json`, #4917) but nothing builds or publishes it yet; #2511 still
+publish from a laptop. Both go through the same guard. The staging app variant is built and
+updated by its own workflow ([§ 6.8](#68-frapp-staging)); #2511 still
 owns promotion and staged rollout. Its runtime is the version plus a hash of its native inputs, not
 the version alone ([`spec/environments`](../../../spec/environments/README.md#mobile-eas)), so what
 follows about `expo.version` is about the store app.
@@ -774,5 +774,41 @@ production --runtime-version <version>` and `npm run eas -- update:republish --g
 
 The `preview` and `development` channels go through the same argument and env handling. There
 are no store-build records for those channels, so the native check is skipped there.
+
+### 6.8 Frapp Staging
+
+Frapp Staging is the second app that installs beside the store app and talks to staging
+(the `staging` profile; what makes it a separate app is in
+[`spec/environments` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)). It is for
+the people building Frapp, never a chapter. The **Staging app** workflow
+([`staging-app.yml`](../../../.github/workflows/staging-app.yml)) builds, uploads and updates it.
+Its header owns how; this section is how to use it.
+
+One run at a time: while a run is in flight, GitHub keeps only the newest waiting run and cancels
+an older waiting one, so dispatch again if a run you asked a named platform from shows as cancelled.
+
+Run it from `main` in GitHub Actions. It is started by hand until a first run has proved both
+store uploads; after that it will follow every staging deploy (#4917).
+
+- **`build: auto`** (the default) publishes the commit as an update to the `staging` channel, and
+  builds a binary for a platform only when no uploaded binary carries this commit's runtime, which
+  is the version plus a hash of the native inputs. So a JS-only change reaches installed apps in
+  minutes, and a native change produces a new TestFlight build and a new Play internal build.
+- **`ios`**, **`android`**, **`all`** build that platform whatever the record says. Use one after
+  an upload failed.
+- **`none`** publishes the update only.
+- **`save_android_bundle`** is for the first Android run only. Google Play takes a new app's first
+  bundle through Play Console, not the API, so that run keeps the `.aab` as a one-day artifact
+  (`frapp-staging-first-upload`) to upload by hand and skips the store upload.
+
+Binaries are compiled on GitHub's runners with `eas build --local` (Paul, 2026-11-13, after the
+spike in #4877), so they cost no Expo build. They are signed with the credentials EAS holds for
+`live.frapp.mobile.staging`, and uploaded through EAS Submit, whose free queue adds about 47
+minutes before a binary reaches the store. The run's summary says what each platform did, and its
+`confirm` job goes red when an upload didn't finish.
+
+Known limits: a staging binary's native crashes are not symbolicated in Sentry, because a local
+build can't read the Secret EAS variable the upload needs; and a native change takes about an hour
+and a half to reach a phone (build, Expo's queue, the store's processing).
 
 ---
