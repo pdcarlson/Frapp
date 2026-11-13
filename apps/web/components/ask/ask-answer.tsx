@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { Check, Copy } from "lucide-react";
-import type {
-  ActResponse,
-  AskExchange,
-  AskProposalResolution,
+import {
+  useAskThumbs,
+  type ActResponse,
+  type AskExchange,
+  type AskProposalResolution,
 } from "@repo/hooks";
 import {
   ASK_COPY,
@@ -38,6 +39,10 @@ import {
   askSourceIsMessage,
 } from "@/components/ask/ask-source-link";
 import { ReportAiButton } from "@/components/ai/report-ai";
+import {
+  AskThumbButtons,
+  AskThumbsFollowUp,
+} from "@/components/ask/ask-thumbs";
 
 /**
  * One turn of the Ask conversation: what the member typed, then what Frapp
@@ -199,21 +204,11 @@ export function AskReply({
           {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
           {exchange.answer.status !== "unavailable" && exchange.askId ? (
-            <div className="-ml-2 flex items-center">
-              {exchange.answer.status === "answered" && exchange.answer.text ? (
-                <CopyAnswer text={exchange.answer.text} />
-              ) : null}
-              <ReportAiButton
-                key={exchange.askId}
-                iconOnly
-                className={QUIET_ACTION}
-                target={{
-                  subject: "ask_answer",
-                  subjectId: exchange.askId,
-                  receipt: exchange.answer.report_receipt ?? null,
-                }}
-              />
-            </div>
+            <AnswerActions
+              key={exchange.askId}
+              askId={exchange.askId}
+              answer={exchange.answer}
+            />
           ) : null}
         </>
       ) : null}
@@ -228,6 +223,54 @@ export function AskReply({
  */
 const QUIET_ACTION =
   "h-8 w-8 text-muted-foreground/70 hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11";
+
+/**
+ * Copy, the thumbs and Report under a finished answer, and under them what a
+ * thumbs down opens (`ask-thumbs.tsx`). The thumbs are drawn only for an
+ * answer whose turn the server kept a trace of (`answer.ask_id`): a rating
+ * has nothing to be recorded against otherwise.
+ */
+function AnswerActions({
+  askId,
+  answer,
+}: {
+  /** The turn's id, which Report this names. */
+  askId: string;
+  answer: AskAnswer;
+}) {
+  const target = {
+    subject: "ask_answer" as const,
+    subjectId: askId,
+    receipt: answer.report_receipt ?? null,
+  };
+  const thumbs = useAskThumbs(answer.ask_id);
+  return (
+    <div className="space-y-2">
+      <div className="-ml-2 flex items-center">
+        {answer.status === "answered" && answer.text ? (
+          <CopyAnswer text={answer.text} />
+        ) : null}
+        {answer.ask_id ? (
+          <AskThumbButtons
+            rating={thumbs.state.rating}
+            onRate={thumbs.rate}
+            className={QUIET_ACTION}
+          />
+        ) : null}
+        <ReportAiButton iconOnly className={QUIET_ACTION} target={target} />
+      </div>
+      {answer.ask_id ? (
+        <AskThumbsFollowUp
+          key={thumbs.state.rating ?? "none"}
+          state={thumbs.state}
+          failed={thumbs.failed}
+          onReason={thumbs.giveReason}
+          target={target}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** Copies the answer's words, without the markers. */
 function CopyAnswer({ text }: { text: string }) {

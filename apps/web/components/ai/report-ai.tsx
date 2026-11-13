@@ -123,19 +123,25 @@ export function ReportAiButton({
  * message report: closing would throw the answer away, and a failure would
  * reach no one.
  */
-function ReportAiDialog({
+export function ReportAiDialog({
   target,
   onClose,
   onReported,
+  initialReason = null,
 }: {
   target: AiReportTarget;
   onClose: () => void;
   onReported: () => void;
+  /**
+   * The reason it opens on, when the member already gave one: a thumbs down
+   * on an Ask answer (`ask-thumbs.tsx`, #4904), so they do not pick twice.
+   */
+  initialReason?: AiReportReason | null;
 }) {
   const ids = useId();
   const policy = useAiReportPolicy();
   const report = useReportAi();
-  const [reason, setReason] = useState<AiReportReason | null>(null);
+  const [reason, setReason] = useState<AiReportReason | null>(initialReason);
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
