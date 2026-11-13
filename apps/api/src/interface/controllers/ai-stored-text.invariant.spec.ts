@@ -290,6 +290,7 @@ function build(model: ILanguageModel, captured: Captured) {
     kind: 'roster',
     title: 'Roster',
     page: 'members',
+    reach: 'chapter',
     permission: SystemPermissions.MEMBERS_VIEW,
     module: null,
     effect: 'read',

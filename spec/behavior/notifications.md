@@ -345,6 +345,7 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 | ------------------------------------- | ---------------------------- |
 | `system_audit` kind (any channel)     | `off`                        |
 | `imported` kind (any channel)         | `off` (absolute — see below) |
+| `ask_answer` kind (any channel)       | `off` (absolute: the worker returns on the kind, and it is not settable; [`ai.md`](ai.md#posting-an-answer-to-the-channel), #4713) |
 | A DM or group DM                      | `all`                        |
 | A channel with an officer-set default | that default                 |
 | The announcements channel (below)     | `all`                        |

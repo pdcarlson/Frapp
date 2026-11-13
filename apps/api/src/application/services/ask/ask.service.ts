@@ -14,7 +14,10 @@ import {
   type LanguageModelSource,
 } from '#domain/adapters/language-model.interface';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
-import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
+import {
+  sealAskReportReceipt,
+  type AskGivenRef,
+} from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
@@ -99,6 +102,8 @@ interface AskSourceEntry {
   chat: boolean;
   /** Chat: whose words are in it. Empty for every other source. */
   authorIds: readonly string[];
+  /** Where it came from, for the report receipt (`AskGivenRef`). */
+  ref: AskGivenRef;
 }
 
 type AskEventFields = AskStreamEvent extends infer E
@@ -199,6 +204,13 @@ function passageEntry(
   return {
     chat,
     authorIds: chat ? passage.authorIds : [],
+    ref: chat
+      ? { type: 'chat' }
+      : passage.sourceType === 'chapter_document'
+        ? { type: 'document', id: passage.sourceId }
+        : passage.sourceType === 'meeting_minutes'
+          ? { type: 'meeting', id: passage.sourceId }
+          : { type: 'other' },
     model: {
       id: passage.id,
       // What the model reads as the source's name. Chat is labelled as chat,
@@ -595,6 +607,14 @@ export class AskService {
           return {
             chat: false,
             authorIds: [],
+            ref: {
+              type: 'tool',
+              name: tool.name,
+              reach: tool.reach,
+              ...(result.limitedEventIds?.length
+                ? { events: result.limitedEventIds }
+                : {}),
+            },
             model: {
               id: `tool:${tool.name}`,
               title: `${tool.title} (live data, read just now)`,
@@ -699,6 +719,7 @@ export class AskService {
               title: source.title,
               detail: source.detail,
               date: source.date,
+              target: source.target,
             })),
             left_out_messages: answer.left_out_messages,
             unverified_citations: answer.unverified_citations,
@@ -707,6 +728,9 @@ export class AskService {
           given: entries.map((source) => ({
             title: source.model.title,
             text: source.model.text,
+            ref: source.ref,
+            label: source.view.title,
+            kind: source.view.kind,
           })),
           tools: planned.map((tool) => tool.name),
           model: entry.model,

@@ -15,6 +15,7 @@ import { EyeOff } from "lucide-react";
 import {
   askTurnsInChannel,
   useAsk,
+  useAskPostFlow,
   useMyPermissions,
   type ActResponse,
   type AskExchange,
@@ -24,8 +25,12 @@ import {
 import {
   ASK_COPY,
   ASK_MENTION_NAME,
+  ASK_POST_COPY,
+  ASK_POST_REFUSALS,
+  askPostRestrictedList,
   can,
   type AskAccess,
+  type AskAnswer,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskReply } from "@/components/ask/ask-answer";
@@ -34,6 +39,7 @@ import {
   AskCardEditsContext,
   type AskCardEditsStore,
 } from "@/components/ask/ask-proposal";
+import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 
@@ -339,19 +345,182 @@ export function AskChannelTurn({ id }: { id: string }) {
           />
         </AskCardEditsContext.Provider>
         {exchange.phase !== "working" ? (
-          <button
-            type="button"
-            onClick={() => channel.dismiss(exchange.id)}
-            className={cn(
-              // 44px to a finger.
-              "rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:items-center",
-              FOCUS_RING,
-            )}
-          >
-            {ASK_COPY.dismiss}
-          </button>
+          <AskChannelTurnActions
+            exchange={exchange}
+            onDismiss={() => channel.dismiss(exchange.id)}
+          />
         ) : null}
       </div>
     </article>
+  );
+}
+
+/** A quiet text action under a turn. 44px to a finger. */
+const TURN_ACTION =
+  "rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:items-center";
+
+/**
+ * What the asker can do with a finished turn: take it out of the channel,
+ * and, for an answer, post it for everyone here (#4713). A card, a refusal
+ * and a turn with nothing found have nothing to post; nor does an answer
+ * from a server that sealed no receipt, since the receipt is what is posted.
+ */
+function AskChannelTurnActions({
+  exchange,
+  onDismiss,
+}: {
+  exchange: AskExchange;
+  onDismiss: () => void;
+}) {
+  const { answer, origin } = exchange;
+  const dismiss = (
+    <button
+      type="button"
+      onClick={onDismiss}
+      className={cn(TURN_ACTION, FOCUS_RING)}
+    >
+      {ASK_COPY.dismiss}
+    </button>
+  );
+  if (
+    exchange.phase !== "done" ||
+    exchange.proposal ||
+    !origin ||
+    answer?.status !== "answered" ||
+    !answer.report_receipt
+  ) {
+    return dismiss;
+  }
+  if (answer.read_chat) {
+    // Known without asking, so no action is offered that could only refuse:
+    // the line stands where the action would.
+    return (
+      <p className="flex min-h-5 flex-wrap items-center gap-x-4">
+        {dismiss}
+        <span className="text-caption text-muted-foreground">
+          {ASK_POST_REFUSALS["ai.ask.post.read_chat"]}
+        </span>
+      </p>
+    );
+  }
+  return (
+    <AskPostActions
+      channelId={origin.channelId}
+      answer={answer}
+      // Once it is in the channel for everyone, the asker's own copy of it
+      // there would be the same answer twice. It stays in Ask.
+      onPosted={onDismiss}
+    >
+      {dismiss}
+    </AskPostActions>
+  );
+}
+
+/**
+ * "Post for everyone here", in three steps and one place. The answer is
+ * already the asker's; pressing the action only asks the server who else in
+ * the channel could open what it drew on. Then, where the action was, what
+ * posting does and what not everyone can open, with Post and Cancel. Slack
+ * shows an app's private reply with the same choice under it, and Discord's
+ * "Only you can see this" rows carry Dismiss; neither says what a wider
+ * audience could not open, which is what Paul's rule adds (2026-11-13).
+ */
+function AskPostActions({
+  channelId,
+  answer,
+  onPosted,
+  children,
+}: {
+  channelId: string;
+  answer: AskAnswer;
+  onPosted: () => void;
+  /** Dismiss, drawn beside the action while nothing is being confirmed. */
+  children: ReactNode;
+}) {
+  const flow = useAskPostFlow({ channelId, answer, onPosted });
+  const error = flow.error ? (
+    <p role="alert" className="text-caption text-destructive">
+      {flow.error}
+    </p>
+  ) : null;
+  if (flow.stage === "idle" || flow.stage === "checking") {
+    return (
+      <div className="space-y-1">
+        <p className="flex min-h-5 flex-wrap items-center gap-x-4">
+          {children}
+          {flow.stage === "checking" ? (
+            // In the action's place and its size, so nothing moves.
+            <span role="status" className="text-caption text-muted-foreground">
+              {ASK_POST_COPY.checking}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={flow.start}
+              className={cn(TURN_ACTION, FOCUS_RING)}
+            >
+              {ASK_POST_COPY.action}
+            </button>
+          )}
+        </p>
+        {error}
+      </div>
+    );
+  }
+  const posting = flow.stage === "posting";
+  const warned = flow.restricted.length > 0;
+  return (
+    <div
+      role="group"
+      aria-label={ASK_POST_COPY.action}
+      className="space-y-2 rounded-lg border border-border px-3 py-2.5"
+    >
+      {flow.changed ? (
+        <p role="status" className="text-caption text-muted-foreground">
+          {ASK_POST_COPY.changed}
+        </p>
+      ) : null}
+      <p className="text-sm text-foreground">{ASK_POST_COPY.confirm}</p>
+      {warned ? (
+        <p className="flex gap-1.5 text-sm text-foreground">
+          <EyeOff
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="min-w-0 break-words">
+            {ASK_POST_COPY.warning}:{" "}
+            <span className="font-medium">
+              {askPostRestrictedList(flow.restricted)}
+            </span>
+            .
+          </span>
+        </p>
+      ) : null}
+      {error}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={posting}
+          onClick={flow.confirm}
+          className="min-w-16"
+        >
+          {posting
+            ? ASK_POST_COPY.posting
+            : warned
+              ? ASK_POST_COPY.post_anyway
+              : ASK_POST_COPY.post}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={posting}
+          onClick={flow.cancel}
+        >
+          {ASK_POST_COPY.cancel}
+        </Button>
+      </div>
+    </div>
   );
 }

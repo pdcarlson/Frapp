@@ -906,6 +906,24 @@ describe('ChatPushWorkerService', () => {
     expect(findByChapter).not.toHaveBeenCalled();
   });
 
+  it('exits on a posted Ask Frapp answer: no push, no notification, no roster read (#4713)', async () => {
+    service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+    setMembers(['sender', 'a', 'b']);
+
+    await service.handleMessage({
+      id: 'm-ask-answer-1',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: '00000000-0000-0000-0000-000000000000',
+      content: 'Chapter meeting is Sunday at 7:00 PM.',
+      kind: 'ask_answer',
+      mentions: [],
+      created_at: '2026-11-13T18:00:00.000Z',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+    expect(findByChapter).not.toHaveBeenCalled();
+  });
+
   it('does not push an imported message that mentions a member', async () => {
     // Imported prose is full of `@name` tokens. A mention overrides a muted
     // channel, so this is the case that would page people about 2019.

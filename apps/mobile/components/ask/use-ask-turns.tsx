@@ -64,47 +64,11 @@ export function useAskTurns({
 } {
   const router = useRouter();
   const reporting = useAiReport();
-  const openDocument = useDocumentDownloadUrl();
   const { kept, keep, forget } = useAskKept();
   const { working, retry, setProposal, resolveProposal } = conversation;
 
-  const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
-  // A source that didn't open, said under the turn it belongs to.
-  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
-  const presenting = useRef(false);
-
-  const openSource = useCallback(
-    async (exchangeId: string, source: AskSource) => {
-      const opening = askSourceOpening(source);
-      if (!opening) return;
-      if (opening.kind === "route") {
-        leave?.();
-        openHref(router, asRoute(notificationHref(opening.target)));
-        return;
-      }
-      // One browser at a time: iOS rejects a second presentation.
-      if (presenting.current) return;
-      presenting.current = true;
-      setSourceNotice(null);
-      setOpeningSourceId(`${exchangeId}:${source.id}`);
-      try {
-        const url = selectDownloadUrl(
-          await openDocument.mutateAsync(opening.documentId),
-        );
-        if (!url) {
-          setSourceNotice(exchangeId);
-          return;
-        }
-        await WebBrowser.openBrowserAsync(url);
-      } catch {
-        setSourceNotice(exchangeId);
-      } finally {
-        presenting.current = false;
-        setOpeningSourceId(null);
-      }
-    },
-    [leave, openDocument, router],
-  );
+  const sources = useAskSourceOpener(leave);
+  const { open: openSource, openingKey: openingSourceId } = sources;
 
   const openActLink = useCallback(
     (link: ActLink) => {
@@ -116,7 +80,7 @@ export function useAskTurns({
 
   const propsFor = (exchange: AskExchange) => ({
     exchange,
-    canOpen,
+    canOpen: canOpenAskSource,
     openingSourceId: openingSourceId?.startsWith(`${exchange.id}:`)
       ? openingSourceId.slice(exchange.id.length + 1)
       : null,
@@ -141,15 +105,72 @@ export function useAskTurns({
 
   return {
     propsFor,
-    sourceFailed: (exchangeId) => sourceNotice === exchangeId,
-    clearNotice: useCallback(() => setSourceNotice(null), []),
+    sourceFailed: (exchangeId) => sources.failedOwner === exchangeId,
+    clearNotice: sources.clearNotice,
     forget,
     reportSheet: reporting.reportSheet,
   };
 }
 
+/**
+ * Opens an Ask source, for a turn of the conversation or for an answer
+ * posted to a channel (`ask-answer-card.tsx`): the same thing from either.
+ * `owner` names what the source belongs to (a turn's id, a message's id), so
+ * the chip that is opening and the row that failed can each say so.
+ */
+export function useAskSourceOpener(leave?: () => void): {
+  open: (owner: string, source: AskSource) => Promise<void>;
+  /** `<owner>:<source id>` while a document's link is fetched. */
+  openingKey: string | null;
+  /** The owner whose source didn't open. */
+  failedOwner: string | null;
+  clearNotice: () => void;
+} {
+  const router = useRouter();
+  const openDocument = useDocumentDownloadUrl();
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [failedOwner, setFailedOwner] = useState<string | null>(null);
+  const presenting = useRef(false);
+
+  const open = useCallback(
+    async (owner: string, source: AskSource) => {
+      const opening = askSourceOpening(source);
+      if (!opening) return;
+      if (opening.kind === "route") {
+        leave?.();
+        openHref(router, asRoute(notificationHref(opening.target)));
+        return;
+      }
+      // One browser at a time: iOS rejects a second presentation.
+      if (presenting.current) return;
+      presenting.current = true;
+      setFailedOwner(null);
+      setOpeningKey(`${owner}:${source.id}`);
+      try {
+        const url = selectDownloadUrl(
+          await openDocument.mutateAsync(opening.documentId),
+        );
+        if (!url) {
+          setFailedOwner(owner);
+          return;
+        }
+        await WebBrowser.openBrowserAsync(url);
+      } catch {
+        setFailedOwner(owner);
+      } finally {
+        presenting.current = false;
+        setOpeningKey(null);
+      }
+    },
+    [leave, openDocument, router],
+  );
+  const clearNotice = useCallback(() => setFailedOwner(null), []);
+  return { open, openingKey, failedOwner, clearNotice };
+}
+
 /** Whether this build has a screen or a document for the source. */
-const canOpen = (source: AskSource) => askSourceOpening(source) !== null;
+export const canOpenAskSource = (source: AskSource) =>
+  askSourceOpening(source) !== null;
 
 /** The answer's "Report this", for a member who may report (#4315). */
 function reportFor(

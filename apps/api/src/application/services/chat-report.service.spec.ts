@@ -1942,6 +1942,23 @@ describe('reportedContentSnapshot', () => {
     metadata: {},
   };
 
+  it('keeps the question a posted Ask Frapp answer was given (#4713)', () => {
+    const posted = {
+      content: 'Dues are due on the 1st.',
+      type: 'TEXT' as const,
+      kind: 'ask_answer' as const,
+      payload: { v: 1, question: ' When are dues due? ' },
+      metadata: {},
+    };
+    expect(reportedContentSnapshot(posted)).toBe(
+      'Asked Frapp: When are dues due?\nDues are due on the 1st.',
+    );
+    // A payload this build cannot read still files the answer.
+    expect(reportedContentSnapshot({ ...posted, payload: null })).toBe(
+      'Dues are due on the 1st.',
+    );
+  });
+
   it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
     const gif = {
       provider: 'klipy',

@@ -514,10 +514,12 @@ Each question a member is allowed to ask sends one PostHog event, `ai-question-a
 
 | Property | Value |
 | --- | --- |
-| `door` | Where the question was typed: `ask` (Ask's own screen: the card on web, the sheet on the phone) or `chat_private` (`@Frapp` in a channel, answered to the asker alone; [`ai.md` § Asking from a channel](ai.md#asking-from-a-channel)). A build from before #4713 names no door and is counted as `ask`. A closed set, `ASK_DOORS` in `@repo/validation`; a door that posts an answer to the channel will be a third value |
+| `door` | Where the question was typed: `ask` (Ask's own screen: the card on web, the sheet on the phone) or `chat_private` (`@Frapp` in a channel, answered to the asker alone; [`ai.md` § Asking from a channel](ai.md#asking-from-a-channel)). A build from before #4713 names no door and is counted as `ask`. A closed set, `ASK_DOORS` in `@repo/validation`; posting an answer to the channel is not a door, since every answer is asked through one of these two first; it has its own event below |
 | `is_follow_up` | Whether the question was sent with earlier turns of the conversation |
 
 It is sent once the member has passed the checks that can refuse a question outright (the server switch, the chapter's switch, `ai:use`, consent), and before the answer starts, so a question that later fails or is stopped is still counted. It is not a feature event: Ask belongs to no module. No question text, answer text, source, channel id or message id is on it; `ask.controller.spec.ts` runs the event through `assertContentFreeProperties`, and `ai-stored-text.invariant.spec.ts` reads it for leaks with everything else the route sends out. The share of questions asked from a channel is `door = chat_private` over all.
+
+Posting an answer to a channel ([`ai.md` § Posting an answer to the channel](ai.md#posting-an-answer-to-the-channel), #4713) sends `ai-answer-posted` from `AskPostController`, once per request that posted, attributed to the member. Its one property is `warned`: whether the asker posted past a list of sources not everyone in the channel could open. No question, answer, source name, channel id or message id is on it. The share of answers members make public is this event over `ai-question-asked` with `door = chat_private`.
 
 ## AI Suggestion Events
 

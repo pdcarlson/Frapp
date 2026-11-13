@@ -3283,6 +3283,24 @@ describe('ChatService', () => {
       });
     });
 
+    it('refuses a client that sends an Ask Frapp answer of its own (#4713)', async () => {
+      // Only `AskPostService` writes the kind, from an answer the server
+      // sealed. A member who could send one would be writing as Frapp.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Dues are waived this semester.',
+          kind: 'ask_answer',
+          payload: { v: 1, asked_by: 'user-2' },
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
     it('allows server-originated kinds when system_originated is set', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -3892,6 +3910,46 @@ describe('ChatService', () => {
       await expect(
         service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('an Ask Frapp answer posted to the channel (#4713)', () => {
+      const posted = {
+        ...baseMessage,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        kind: 'ask_answer' as const,
+        payload: { v: 1, asked_by: 'user-2' },
+      };
+
+      it('can be taken back by the member who posted it', async () => {
+        mockMessageRepo.findById.mockResolvedValue(posted);
+        mockMessageRepo.update.mockResolvedValue({
+          ...posted,
+          is_deleted: true,
+        });
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-2', false);
+        expect(mockMessageRepo.update).toHaveBeenCalled();
+      });
+
+      it('cannot be deleted by another member', async () => {
+        mockMessageRepo.findById.mockResolvedValue(posted);
+
+        await expect(
+          service.deleteMessage('msg-1', 'ch-1', 'user-3', false),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('gives no one a Frapp row of another kind by naming them in its payload', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...posted,
+          kind: 'system_audit' as const,
+        });
+
+        await expect(
+          service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
+        ).rejects.toThrow(ForbiddenException);
+      });
     });
 
     // #514: the spec says "Attachments for deleted messages are removed from

@@ -22,6 +22,16 @@ const hooks = vi.hoisted(() => ({
   dismiss: vi.fn(),
   hasAsk: true,
   mayAct: false,
+  post: {
+    stage: "idle" as string,
+    restricted: [] as { key: string; kind: string; title: string }[],
+    changed: false,
+    error: null as string | null,
+    start: vi.fn(),
+    confirm: vi.fn(),
+    cancel: vi.fn(),
+  },
+  posting: [] as { channelId: string; onPosted: () => void }[],
 }));
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ({ ask: hooks.hasAsk }),
@@ -29,6 +39,10 @@ vi.mock("@/lib/ai/availability", () => ({
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useAskPostFlow: (input: { channelId: string; onPosted: () => void }) => {
+    hooks.posting.push(input);
+    return hooks.post;
+  },
   useAsk: () => ({
     exchanges: hooks.exchanges,
     working: (hooks.exchanges as { phase: string }[]).some(
@@ -164,6 +178,13 @@ beforeEach(() => {
   hooks.exchanges = [];
   hooks.hasAsk = true;
   hooks.mayAct = false;
+  Object.assign(hooks.post, {
+    stage: "idle",
+    restricted: [],
+    changed: false,
+    error: null,
+  });
+  hooks.posting.length = 0;
   hooks.ask.mockResolvedValue(undefined);
   hooks.retry.mockResolvedValue(undefined);
   gate.ensureConsent.mockResolvedValue(true);
@@ -305,5 +326,135 @@ describe("where the rows learn of a turn", () => {
     hooks.exchanges = [];
     act(() => rendered.update(tree()));
     expect(turns(rendered)).toHaveLength(0);
+  });
+});
+
+describe("posting an answer for everyone here (#4713)", () => {
+  const sealed = () =>
+    answered({
+      answer: { ...answered().answer!, report_receipt: "sealed" } as AskAnswer,
+    });
+  it("offers it under an answer the server sealed, beside Dismiss", () => {
+    hooks.exchanges = [sealed()];
+    const rendered = render();
+    expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
+    // Pressing it only starts the check: nothing is posted by this press.
+    act(() => byLabel(rendered, "Post for everyone here")[0]!.props.onPress());
+    expect(hooks.post.start).toHaveBeenCalledTimes(1);
+    expect(hooks.post.confirm).not.toHaveBeenCalled();
+    expect(hooks.posting.at(-1)).toMatchObject({ channelId: "chan-1" });
+  });
+
+  it("offers nothing to post for an answer with no receipt, a turn with no answer or nothing found", () => {
+    hooks.exchanges = [
+      answered(),
+      // As a card has: no answer to post.
+      answered({ id: "turn-2", answer: null }),
+      answered({
+        id: "turn-3",
+        answer: {
+          ...answered().answer!,
+          status: "not_found",
+          report_receipt: "sealed",
+        } as AskAnswer,
+      }),
+    ];
+    const rendered = render();
+    expect(byLabel(rendered, "Post for everyone here")).toHaveLength(0);
+    expect(hooks.posting).toEqual([]);
+    expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
+  });
+
+  it("says it is checking, in the action's place", () => {
+    hooks.exchanges = [sealed()];
+    hooks.post.stage = "checking";
+    const rendered = render();
+    expect(byLabel(rendered, "Post for everyone here")).toHaveLength(0);
+    expect(screenText(rendered)).toContain("Checking who can open the sources");
+    expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
+  });
+
+  it("says what posting does before it does it, with Post and Cancel", () => {
+    hooks.exchanges = [sealed()];
+    hooks.post.stage = "confirm";
+    const rendered = render();
+    const text = screenText(rendered);
+    expect(text).toContain(
+      "Everyone here will see your question and this answer.",
+    );
+    expect(text).not.toContain("Not everyone here can open");
+    expect(byLabel(rendered, "Post")).not.toHaveLength(0);
+    expect(byLabel(rendered, "Cancel")).not.toHaveLength(0);
+    // Dismiss waits behind the choice.
+    expect(byLabel(rendered, "Dismiss")).toHaveLength(0);
+  });
+
+  it("names what not everyone here can open, and the button says it is posted anyway", () => {
+    hooks.exchanges = [sealed()];
+    Object.assign(hooks.post, {
+      stage: "confirm",
+      restricted: [
+        { key: "tool:my_tasks", kind: "tasks", title: "Your tasks" },
+        { key: "meeting:m1", kind: "meeting", title: "Exec minutes" },
+      ],
+    });
+    const rendered = render();
+    const text = screenText(rendered);
+    expect(text).toContain("Not everyone here can open");
+    expect(text).toContain("Your tasks and Exec minutes");
+    expect(byLabel(rendered, "Post anyway")).not.toHaveLength(0);
+    expect(byLabel(rendered, "Post")).toHaveLength(0);
+  });
+
+  it("says so when the list changed, and why it could not be posted", () => {
+    hooks.exchanges = [sealed()];
+    Object.assign(hooks.post, {
+      stage: "confirm",
+      changed: true,
+      error: "That didn't post. Try again.",
+    });
+    const text = screenText(render());
+    expect(text).toContain(
+      "Who can open the sources changed. Check the list again.",
+    );
+    expect(text).toContain("That didn't post. Try again.");
+  });
+
+  it("holds both buttons while it posts", () => {
+    hooks.exchanges = [sealed()];
+    hooks.post.stage = "posting";
+    const rendered = render();
+    for (const label of ["Posting", "Cancel"]) {
+      const disabled = byLabel(rendered, label).some(
+        (node) => node.props.accessibilityState?.disabled === true,
+      );
+      expect(disabled, label).toBe(true);
+    }
+  });
+
+  it("offers no action for an answer that read chat, and says why in its place", () => {
+    hooks.exchanges = [
+      answered({
+        answer: {
+          ...answered().answer!,
+          report_receipt: "sealed",
+          read_chat: true,
+        } as AskAnswer,
+      }),
+    ];
+    const rendered = render();
+    expect(byLabel(rendered, "Post for everyone here")).toHaveLength(0);
+    expect(hooks.posting).toEqual([]);
+    expect(screenText(rendered)).toContain(
+      "This answer read chat messages, so it stays with you.",
+    );
+    expect(byLabel(rendered, "Dismiss")).not.toHaveLength(0);
+  });
+
+  it("takes the asker's own copy out of the channel once it is posted", () => {
+    hooks.exchanges = [sealed()];
+    render();
+    hooks.posting.at(-1)!.onPosted();
+    expect(hooks.dismiss).toHaveBeenCalledWith("turn-1");
   });
 });

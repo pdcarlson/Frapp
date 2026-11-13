@@ -104,13 +104,29 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   ...overrides,
 });
 
+/** A member as a whole-audience check is handed them, already resolved. */
+const AUDIENCE = new Map(
+  MEMBERS.map((row) => [
+    row.user_id,
+    {
+      user_id: row.user_id,
+      permissions: new Set(PERMISSIONS[row.user_id] ?? []),
+      role_ids: row.role_ids,
+    },
+  ]),
+);
+const audience = (userId: string) => AUDIENCE.get(userId)!;
+
 describe('MeetingService', () => {
   let events: Map<string, Event>;
   let rows: Map<string, Meeting>;
   let repo: jest.Mocked<IMeetingRepository>;
   let attendance: jest.Mocked<Pick<IAttendanceRepository, 'findByEvent'>>;
   let eventService: jest.Mocked<
-    Pick<EventService, 'findById' | 'findVisibleByIds' | 'create'>
+    Pick<
+      EventService,
+      'findById' | 'findVisibleByIds' | 'visibleToAll' | 'create'
+    >
   >;
   let notifyMembers: jest.Mock;
   let service: MeetingService;
@@ -193,6 +209,30 @@ describe('MeetingService', () => {
           ids
             .map((id) => events.get(id))
             .filter((row): row is Event => !!row && sees(viewer, row)),
+      ),
+      visibleToAll: jest.fn(
+        async (
+          ids: readonly string[],
+          _chapterId: string,
+          viewers: Parameters<EventService['visibleToAll']>[2],
+        ) =>
+          new Set(
+            ids.filter((id) => {
+              const row = events.get(id);
+              return (
+                !!row &&
+                viewers.every((viewer) =>
+                  sees(
+                    Object.keys(PERMISSIONS).find(
+                      (userId) =>
+                        audience(userId).permissions === viewer.permissions,
+                    )!,
+                    row,
+                  ),
+                )
+              );
+            }),
+          ),
       ),
       create: jest.fn(async (input) => {
         const row = event({
@@ -487,6 +527,61 @@ describe('MeetingService', () => {
       await expect(service.readableAmong(CHAPTER, JAKE, ids)).resolves.toEqual(
         new Set(['mtg-1']),
       );
+    });
+
+    it('answers for a whole audience by the same rule as each member alone', async () => {
+      // What posting an Ask Frapp answer to a channel asks (#4713): could
+      // everyone who reads the channel open these minutes.
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set('mtg-1', meeting(posted));
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          event_name: EXEC_EVENT.name,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set('mtg-draft', meeting({ id: 'mtg-draft' }));
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const ids = ['mtg-1', 'mtg-exec', 'mtg-draft', 'mtg-orphan', 'missing'];
+      for (const viewers of [
+        [JAKE],
+        [VP, SECRETARY],
+        [PRESIDENT],
+        [JAKE, VP, SECRETARY, PRESIDENT],
+        [SECRETARY],
+      ]) {
+        const each = await Promise.all(
+          viewers.map((viewer) => service.readableAmong(CHAPTER, viewer, ids)),
+        );
+        const all = new Set(
+          ids.filter((id) => each.every((readable) => readable.has(id))),
+        );
+        await expect(
+          service.readableByAll(CHAPTER, ids, viewers.map(audience)),
+        ).resolves.toEqual(all);
+      }
+      // The whole chapter reads only the posted chapter minutes; the exec
+      // board reads its own as well.
+      await expect(
+        service.readableByAll(
+          CHAPTER,
+          ids,
+          [JAKE, VP, SECRETARY, PRESIDENT].map(audience),
+        ),
+      ).resolves.toEqual(new Set(['mtg-1']));
+      await expect(
+        service.readableByAll(CHAPTER, ids, [VP, SECRETARY].map(audience)),
+      ).resolves.toEqual(new Set(['mtg-1', 'mtg-exec']));
     });
 
     it('follows the event when its audience changes', async () => {

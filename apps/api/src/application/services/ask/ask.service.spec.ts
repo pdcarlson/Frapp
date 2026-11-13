@@ -57,6 +57,7 @@ const tool = (over: Partial<AskTool> = {}): AskTool => ({
   kind: 'roster',
   title: 'Roster',
   page: 'members',
+  reach: 'chapter',
   permission: SystemPermissions.MEMBERS_VIEW,
   module: null,
   effect: 'read',
@@ -1102,6 +1103,91 @@ describe('AskService', () => {
           NOW,
         ),
       ).toThrow('invalid');
+    });
+
+    it('says where each thing the model was handed came from, by id and never by text (#4713)', async () => {
+      process.env.AI_STORED_TEXT_KEY = KEY;
+      const { service } = build({
+        tools: [
+          tool({
+            name: 'events',
+            title: 'Events',
+            kind: 'events',
+            page: 'events',
+            reach: 'events',
+            run: jest.fn(async () => ({
+              chapterId: CHAPTER,
+              text: 'Exec retreat: Saturday.',
+              limitedEventIds: ['event-exec'],
+            })),
+          }),
+          tool({
+            name: 'my_tasks',
+            title: 'Your tasks',
+            kind: 'tasks',
+            page: 'tasks',
+            reach: 'asker',
+          }),
+        ],
+        plan: {
+          status: 'ok',
+          value: { tools: ['events', 'my_tasks'] },
+          usage: USAGE,
+        },
+        passages: [
+          passage(),
+          passage({
+            id: 'p3',
+            sourceType: 'meeting_minutes',
+            sourceId: 'meeting-1',
+            title: 'Chapter meeting minutes',
+          }),
+          passage({
+            id: 'p2',
+            sourceType: 'chat_message',
+            sourceId: 'window-1',
+            title: 'general',
+            channelId: 'channel-1',
+            messageId: 'message-1',
+            authorIds: ['dana'],
+            messageCount: 1,
+          }),
+        ],
+      });
+      const { answer } = await run(service);
+      const receipt = openAskReportReceipt(
+        ring,
+        answer.report_receipt!,
+        { chapterId: CHAPTER, userId: USER },
+        NOW,
+      );
+      // What a post to a channel checks against everyone who reads it
+      // (`AskPostService`): every handed source, cited or not.
+      expect(receipt.given.map(({ ref, label }) => ({ ref, label }))).toEqual([
+        {
+          ref: {
+            type: 'tool',
+            name: 'events',
+            reach: 'events',
+            events: ['event-exec'],
+          },
+          label: 'Events',
+        },
+        {
+          ref: { type: 'tool', name: 'my_tasks', reach: 'asker' },
+          label: 'Your tasks',
+        },
+        { ref: { type: 'document', id: 'doc-1' }, label: 'Bylaws' },
+        {
+          ref: { type: 'meeting', id: 'meeting-1' },
+          label: 'Chapter meeting minutes',
+        },
+        { ref: { type: 'chat' }, label: 'general' },
+      ]);
+      // Each shown source keeps where its chip opens.
+      expect(
+        receipt.shown.sources.every((source) => source.target !== undefined),
+      ).toBe(true);
     });
 
     it('carries no receipt when no answer was attempted', async () => {

@@ -1022,6 +1022,10 @@ export class ChatReportService {
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
  * A malformed card falls back to `content`, the same as any other message:
  * this runs on the filing path and must not fail it.
+ *
+ * An Ask Frapp answer posted to a channel (`kind: 'ask_answer'`, #4713)
+ * keeps the question it answers on its own line first: `content` is the
+ * answer alone, and an answer is judged against what was asked.
  */
 export function reportedContentSnapshot(
   message: Pick<
@@ -1031,6 +1035,12 @@ export function reportedContentSnapshot(
 ): string {
   const gif = gifText(message.metadata);
   if (gif) return gif;
+  if (message.kind === 'ask_answer') {
+    const question: unknown = message.payload?.question;
+    return typeof question === 'string' && question.trim()
+      ? `Asked Frapp: ${question.trim()}\n${message.content}`
+      : message.content;
+  }
   const poll = pollText(message);
   if (!poll || poll.labels.length === 0) return message.content;
   const lines = [message.content];

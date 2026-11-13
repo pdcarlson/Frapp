@@ -1578,6 +1578,7 @@ on their imported messages in that chapter are theirs.
 | `rush` | Recruitment candidate card (created by `/<vocab> add`; live votes and bid via GET), on web and mobile |
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
+| `ask_answer` | An Ask Frapp answer its asker posted to the channel: the Frapp sender's row, the answer's words as `content`, who asked and the sources in `payload`. Server-only, never edited, deleted by its asker or a `channels:manage` holder, notifies nobody ([`../ai.md` § Posting an answer to the channel](../ai.md#posting-an-answer-to-the-channel), #4713) |
 | `system_audit` | System-generated notice, never client-postable. Its server-side writers and where each posts: [integrations.md § Server-originated kinds](./integrations.md#server-originated-kinds-anti-forgery) |
 | `imported` | A read-only archive message brought in from another system (Discord). Server-only; see *Imported archive messages* below |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command. `_status: "recorded"` is the terminal form when the write committed but the chat card did not post — no Retry, no Discard |

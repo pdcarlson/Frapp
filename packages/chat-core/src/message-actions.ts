@@ -41,6 +41,9 @@ export const CARD_KINDS: ReadonlySet<string> = new Set([
   "rush",
   "signup",
   "form",
+  // An Ask Frapp answer posted to the channel (#4713): the Frapp sender's
+  // row, with who asked and its sources in `payload`.
+  "ask_answer",
 ]);
 
 /**
@@ -106,17 +109,40 @@ export function canEditMessage(
 }
 
 /**
- * Delete: your own message, or any message when the viewer holds
- * `channels:manage`. The server resolves that permission in the message's own
- * chapter, after channel access is confirmed; the client only decides whether
- * the control is likely to succeed.
+ * Whether the viewer posted this Ask Frapp answer to the channel (#4713).
+ * The row is the Frapp sender's, so `isOwnMessage` is false for everyone;
+ * the server writes who posted it in `payload.asked_by`, and no client can
+ * send the kind.
+ */
+export function isOwnPostedAnswer(
+  message: Partial<Pick<ChatMessage, "kind" | "payload">>,
+  viewerId: string | null,
+): boolean {
+  return (
+    !!viewerId &&
+    message.kind === "ask_answer" &&
+    message.payload?.asked_by === viewerId
+  );
+}
+
+/**
+ * Delete: your own message, an Ask Frapp answer you posted, or any message
+ * when the viewer holds `channels:manage`. The server resolves that
+ * permission in the message's own chapter, after channel access is
+ * confirmed; the client only decides whether the control is likely to
+ * succeed.
  */
 export function canDeleteMessage(
-  message: Pick<ChatMessage, "sender_id">,
+  message: Pick<ChatMessage, "sender_id"> &
+    Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
   canManageChannel: boolean,
 ): boolean {
-  return isOwnMessage(message, viewerId) || canManageChannel;
+  return (
+    isOwnMessage(message, viewerId) ||
+    isOwnPostedAnswer(message, viewerId) ||
+    canManageChannel
+  );
 }
 
 /**
@@ -329,7 +355,8 @@ export function messageActionsFor(
   message: Pick<
     ChatMessage,
     "id" | "sender_id" | "kind" | "_status" | "is_deleted"
-  >,
+  > &
+    Partial<Pick<ChatMessage, "payload">>,
   viewerId: string | null,
   context: MessageActionsContext,
 ): MessageActions {
