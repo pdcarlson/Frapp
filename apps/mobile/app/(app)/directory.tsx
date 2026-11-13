@@ -1,3 +1,4 @@
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
@@ -64,7 +65,7 @@ import {
   filterActives,
   graduationYearOptions,
   NO_ACTIVES_FILTER,
-  parseFilterRoles,
+  activesFilterRoles,
   type ActivesFilter,
 } from "@/lib/directory/actives-filter";
 import {
@@ -219,7 +220,7 @@ export default function DirectoryScreen() {
   const { classTerm, orderTerm } = usePledgeClassTerms();
   const rolesQuery = useRoles();
   const filterRoles = useMemo(
-    () => parseFilterRoles(rolesQuery.data),
+    () => activesFilterRoles(parseChapterRoles(rolesQuery.data)),
     [rolesQuery.data],
   );
   // `null` until the list has answered once. The last list read is kept when

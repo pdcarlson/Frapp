@@ -16,13 +16,16 @@ import {
   availableQuickActions,
   mergeSavedQuickActions,
   moveQuickAction,
+  QUICK_ACTION_COLUMNS,
   QUICK_ACTION_LIMIT,
-  quickActionColumns,
+  QUICK_ACTION_START,
+  quickActionCellWidth,
   quickActionsStorageKey,
   readSavedQuickActions,
   removeQuickAction,
   resolveQuickActions,
   writeSavedQuickActions,
+  type QuickActionKey,
 } from "./quick-actions";
 
 const OFFICER = ["*"];
@@ -177,15 +180,19 @@ describe("what the panel shows", () => {
     expect(resolveQuickActions([], officer)).toEqual([]);
   });
 
-  it("never shows more than six", () => {
-    expect(resolveQuickActions([...officer], officer)).toHaveLength(
-      QUICK_ACTION_LIMIT,
-    );
+  it("starts on two rows, and keeps every action once a member places them all", () => {
+    expect(QUICK_ACTION_START).toBe(6);
+    expect(QUICK_ACTION_LIMIT).toBe(9);
+    expect(resolveQuickActions(null, officer)).toHaveLength(QUICK_ACTION_START);
+    expect(resolveQuickActions([...officer], officer)).toEqual(officer);
+    // Eight since Check in left (2026-11-13), all of which fit under the cap.
+    expect(officer).toHaveLength(8);
+    expect(officer.length).toBeLessThanOrEqual(QUICK_ACTION_LIMIT);
   });
 });
 
 describe("editing", () => {
-  it("removes, adds at the end, and refuses a seventh", () => {
+  it("removes, adds at the end, and refuses a tenth", () => {
     const six = [
       "newTask",
       "message",
@@ -196,7 +203,17 @@ describe("editing", () => {
     ] as const;
     expect(removeQuickAction(six, "invite")).not.toContain("invite");
     expect(addQuickAction(["message"], "study")).toEqual(["message", "study"]);
-    expect(addQuickAction(six, "upload")).toEqual([...six]);
+    // Six is no longer full: a seventh goes on the third row.
+    expect(addQuickAction(six, "upload")).toEqual([...six, "upload"]);
+    const nine = [...six, "upload", "invite", "newEvent"] as const;
+    expect(addQuickAction(nine.slice(0, 8), "newEvent")).toEqual([...nine]);
+    expect(addQuickAction(nine.slice(0, 8), "newEvent")).toHaveLength(
+      QUICK_ACTION_LIMIT,
+    );
+    // A tenth, were there one, is refused.
+    expect(
+      addQuickAction([...nine], "polls" as unknown as QuickActionKey),
+    ).toEqual([...nine]);
     expect(addQuickAction(["message"], "message")).toEqual(["message"]);
   });
 
@@ -246,10 +263,21 @@ describe("editing", () => {
     ).toEqual(["invite", "study"]);
   });
 
-  it("lays four out two by two and the rest in threes", () => {
-    expect([1, 2, 3, 4, 5, 6].map(quickActionColumns)).toEqual([
-      1, 2, 3, 2, 3, 3,
-    ]);
+  it("fits three cells on a row inside the glass border, on every phone", () => {
+    // Panel widths: a 320pt, 375pt, 402pt and 430pt screen less the bar's
+    // 14pt sides. Hairlines: Android's and the 2x and 3x iPhones'.
+    for (const panel of [292, 347, 374, 402]) {
+      for (const hairline of [1, 0.5, 1 / 3]) {
+        const cell = quickActionCellWidth(panel, 10, hairline);
+        const inner = panel - 2 * hairline - 20;
+        expect(cell * QUICK_ACTION_COLUMNS).toBeLessThanOrEqual(inner);
+        // Whole points: an exact third can overrun the row by a rounding
+        // error, which is the wrap all over again.
+        expect(Number.isInteger(cell)).toBe(true);
+        // And it uses the row: under a point per cell is left over.
+        expect(inner - cell * QUICK_ACTION_COLUMNS).toBeLessThan(3);
+      }
+    }
   });
 });
 

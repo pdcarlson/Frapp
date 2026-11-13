@@ -42,8 +42,8 @@ import {
   copyWhenReady,
 } from "@/components/members/invite-composer";
 import { getErrorMessage, cn } from "@/lib/utils";
-import { normalizeRoleOptions } from "@/lib/roles";
-import { EVERYONE_ROLE_NAME, isEveryoneRole } from "@repo/validation";
+import { parseChapterRoles, toRoleOptions } from "@repo/hooks/chapter-roles";
+import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
 /**
@@ -103,17 +103,15 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   // The Everyone role (#4191) stays in the picker as "No role", first: an
   // invite into it joins with no role, as one with no default does.
   const everyoneRole = useMemo(
-    () =>
-      (Array.isArray(rolesQuery.data) ? rolesQuery.data : []).find(
-        isEveryoneRole,
-      ) as Record<string, unknown> | undefined,
+    () => parseChapterRoles(rolesQuery.data).find((role) => role.everyone),
     [rolesQuery.data],
   );
-  const everyoneRoleId =
-    typeof everyoneRole?.id === "string" ? everyoneRole.id : undefined;
+  const everyoneRoleId = everyoneRole?.id;
+  // A role holding `*` is left out: an invite can't grant it (the API answers
+  // 403); it changes hands only through Transfer presidency.
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data, "keep").sort(
+      toRoleOptions(rolesQuery.data, "keep", { dropLocked: true }).sort(
         (first, second) =>
           Number(second.id === everyoneRoleId) -
             Number(first.id === everyoneRoleId) ||
@@ -122,7 +120,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     [rolesQuery.data, everyoneRoleId],
   );
 
-  // The Everyone role's current name: by `system_key` (`isEveryoneRole`),
+  // The Everyone role's current name: by `system_key` (`parseChapterRoles`),
   // then by the seeded Member name. `undefined` when neither exists.
   const memberRoleName = useMemo(() => {
     const keyedName = everyoneRole?.name;

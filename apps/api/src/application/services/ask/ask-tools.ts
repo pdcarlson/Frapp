@@ -492,3 +492,18 @@ export class MyTasksAskTool implements AskTool {
     ]);
   }
 }
+
+/**
+ * Every live-data tool Ask can be offered, in the order the planner reads
+ * them. `AskModule` provides exactly this list as `ASK_TOOLS`, and
+ * `ask-tools.spec.ts` holds each class in it to the rules a tool keeps, so a
+ * tool added here is checked without a second list to remember.
+ */
+export const ASK_TOOL_CLASSES = [
+  RosterAskTool,
+  EventsAskTool,
+  MyPointsAskTool,
+  PointsLeaderboardAskTool,
+  MyDuesAskTool,
+  MyTasksAskTool,
+] as const;

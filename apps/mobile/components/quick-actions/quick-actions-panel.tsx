@@ -13,17 +13,18 @@ import Svg, { Path } from "react-native-svg";
 import { NAV_GLYPHS, type DuotoneGlyphPaths } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ASK_COPY } from "@repo/validation";
-import { GlassSurface } from "@/components/glass-surface";
+import { GLASS_EDGE, GlassSurface } from "@/components/glass-surface";
 import { NavGlyph } from "@/components/nav-glyph";
 import { selectionHaptic } from "@/lib/haptics";
 import {
   addableQuickActions,
   addQuickAction,
   moveQuickAction,
+  QUICK_ACTION_COLUMNS,
   QUICK_ACTION_HINTS,
   QUICK_ACTION_LABELS,
   QUICK_ACTION_LIMIT,
-  quickActionColumns,
+  quickActionCellWidth,
   type QuickActionKey,
   removeQuickAction,
 } from "@/lib/quick-actions";
@@ -60,8 +61,8 @@ const ROW_PITCH = CELL_HEIGHT + ROW_GAP;
 /** The panel's inner padding. */
 const PAD_X = 10;
 const PAD_Y = 18;
-/** Edit mode lays out in threes, whatever the count. */
-const EDIT_COLUMNS = 3;
+/** A label's breathing room inside its cell, so neighbours never touch. */
+const LABEL_INSET = 4;
 
 export type QuickActionsPanelProps = {
   shown: readonly QuickActionKey[];
@@ -86,7 +87,9 @@ export type QuickActionsPanelProps = {
 
 /**
  * The glass panel the tab bar's + opens (`spec/ui/mobile/navigation.md` §
- * Quick actions): round actions in rows, sized like the board's touch targets.
+ * Quick actions): round actions in rows of three, up to three rows, sized like
+ * the board's touch targets. Rows fill from the left at rest and while
+ * editing, so holding the panel moves nothing.
  *
  * Press and hold anywhere on it to edit in place: the actions jiggle, each
  * takes a minus, a drag moves one, and the Add row below holds what the member
@@ -117,8 +120,7 @@ export function QuickActionsPanel({
     onEditingChange(true);
   };
 
-  const cols = editing ? EDIT_COLUMNS : quickActionColumns(shown.length);
-  const cellWidth = Math.max((width - PAD_X * 2) / cols, 1);
+  const cellWidth = quickActionCellWidth(width, PAD_X, GLASS_EDGE);
 
   return (
     <GlassSurface style={[styles.panel, { width }]}>
@@ -221,13 +223,19 @@ function ActionButton({
       onPressOut={() => setPressed(false)}
       style={[styles.cell, { width }]}
     >
-      <ActionFace actionKey={actionKey} pressed={pressed} styles={styles} />
+      <ActionFace
+        actionKey={actionKey}
+        labelWidth={width - LABEL_INSET * 2}
+        pressed={pressed}
+        styles={styles}
+      />
     </Pressable>
   );
 }
 
 function ActionFace({
   actionKey,
+  labelWidth,
   pressed = false,
   dimmed = false,
   badge,
@@ -235,6 +243,8 @@ function ActionFace({
   styles,
 }: {
   actionKey: QuickActionKey;
+  /** The cell's width less an inset: a long label ends in an ellipsis inside it. */
+  labelWidth: number;
   pressed?: boolean;
   dimmed?: boolean;
   badge?: "remove" | "add";
@@ -277,7 +287,14 @@ function ActionFace({
           </View>
         ) : null}
       </View>
-      <Text numberOfLines={1} style={[styles.label, dimmed && styles.dimmed]}>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.label,
+          { maxWidth: labelWidth },
+          dimmed && styles.dimmed,
+        ]}
+      >
         {QUICK_ACTION_LABELS[actionKey]}
       </Text>
     </View>
@@ -312,8 +329,8 @@ function BadgeGlyph({
 /** The slot's top-left in the edit grid. */
 function slot(index: number, cellWidth: number) {
   return {
-    x: (index % EDIT_COLUMNS) * cellWidth,
-    y: Math.floor(index / EDIT_COLUMNS) * ROW_PITCH,
+    x: (index % QUICK_ACTION_COLUMNS) * cellWidth,
+    y: Math.floor(index / QUICK_ACTION_COLUMNS) * ROW_PITCH,
   };
 }
 
@@ -344,8 +361,11 @@ function EditGrid({
   const dragY = useSharedValue(0);
 
   const addable = addableQuickActions(order, available);
+  // Nine is every action today, so a full panel has nothing left to add and
+  // the Add row is gone. This holds the row only once there are more actions
+  // than the cap.
   const full = order.length >= QUICK_ACTION_LIMIT;
-  const rows = Math.max(1, Math.ceil(order.length / EDIT_COLUMNS));
+  const rows = Math.max(1, Math.ceil(order.length / QUICK_ACTION_COLUMNS));
 
   return (
     <View>
@@ -415,6 +435,7 @@ function EditGrid({
               >
                 <ActionFace
                   actionKey={key}
+                  labelWidth={cellWidth - LABEL_INSET * 2}
                   dimmed
                   badge={full ? undefined : "add"}
                   styles={styles}
@@ -482,7 +503,8 @@ function DraggableAction({
   const startX = useSharedValue(home.x);
   const startY = useSharedValue(home.y);
 
-  // JS-thread callbacks: the grid is six cells, and a reorder is React state.
+  // JS-thread callbacks: the grid is at most nine cells, and a reorder is
+  // React state.
   const pan = Gesture.Pan()
     .runOnJS(true)
     .minDistance(4)
@@ -501,10 +523,13 @@ function DraggableAction({
       dragY.set(y);
       const col = Math.max(
         0,
-        Math.min(EDIT_COLUMNS - 1, Math.floor((x + cellWidth / 2) / cellWidth)),
+        Math.min(
+          QUICK_ACTION_COLUMNS - 1,
+          Math.floor((x + cellWidth / 2) / cellWidth),
+        ),
       );
       const row = Math.max(0, Math.floor((y + CELL_HEIGHT / 2) / ROW_PITCH));
-      onHover(Math.min(count - 1, row * EDIT_COLUMNS + col));
+      onHover(Math.min(count - 1, row * QUICK_ACTION_COLUMNS + col));
     })
     .onFinalize(() => {
       if (active.get() !== actionKey) return;
@@ -557,6 +582,7 @@ function DraggableAction({
       >
         <ActionFace
           actionKey={actionKey}
+          labelWidth={cellWidth - LABEL_INSET * 2}
           badge="remove"
           onBadge={onRemove}
           styles={styles}
@@ -575,7 +601,6 @@ function createStyles(tokens: SignetTokens) {
     rows: {
       flexDirection: "row",
       flexWrap: "wrap",
-      justifyContent: "center",
       rowGap: ROW_GAP,
     },
     cell: { alignItems: "center", height: CELL_HEIGHT },
@@ -607,7 +632,6 @@ function createStyles(tokens: SignetTokens) {
       lineHeight: 18,
       fontFamily: fontFamilyFor(600),
       color: tokens.color.text.foreground,
-      maxWidth: 104,
     },
     badge: {
       position: "absolute",
