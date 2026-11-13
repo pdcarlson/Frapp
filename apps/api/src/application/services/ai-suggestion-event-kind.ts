@@ -79,10 +79,11 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
    * Who plans the chapter's calendar, not who can add an event to it (#4549,
    * Paul 2026-11-13: not every member). `events:create` is a member default
    * since #3709, so gating on it put these in front of the whole chapter and
-   * let any member dismiss one for good. `events:update` stays with the
-   * officers a chapter trusts with its calendar (by default the Exec board
-   * tier and the Treasurer) and with any role it grants "Edit events", such
-   * as a social chair's. It gates seeing, accepting and dismissing alike,
+   * let any member dismiss one for good. `events:update` ("Edit events") is
+   * what a chapter gives the officers it trusts with its calendar, a social
+   * chair included when it chooses. It gates seeing, accepting and
+   * dismissing alike, and `LastYearSuggestionsService` reads last year's
+   * events only for a member who holds it,
    * since the permission is stored on the row (the
    * `last_year_event_suggestions_planners` migration moved the rows written
    * before this).

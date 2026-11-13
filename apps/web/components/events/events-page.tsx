@@ -1006,7 +1006,9 @@ export function EventsPage() {
 
       {/*
         What the chapter held around now last year and hasn't planned (#3930).
-        Only for an officer who could add it; nothing waiting draws nothing.
+        The server lists these only to officers who can edit events (#4549);
+        the section also needs Create events, since its answer is the event
+        form. Nothing waiting draws nothing.
       */}
       {canCreateEvents ? (
         <SuggestedEvents

@@ -149,7 +149,7 @@ interface FakeEvent {
   name: string;
   start_time: string;
   end_time: string;
-  /** Left out of a member's list unless they may update events. */
+  /** Left out of a member's list unless they are in the Exec group. */
   execOnly?: boolean;
   created_by?: string | null;
 }
@@ -197,10 +197,13 @@ const aTask = (
 });
 
 /**
- * Who plans the calendar (#4549): a chair the chapter gave "Edit events", and
- * a member as #3709 starts one, who can add an event but doesn't plan the
- * chapter's.
+ * Who plans the calendar (#4549): a chair the chapter gave "Edit events" but
+ * who is not in the Exec group, and a member as #3709 starts one, who can add
+ * an event but doesn't plan the chapter's.
  */
+/** Not a real permission: stands for being in a role-gated event's group. */
+const EXEC_GROUP = 'test:exec-group';
+
 const CALENDAR_PERMISSIONS: Record<string, string[]> = {
   [PRESIDENT]: ['*'],
   [SOCIAL_CHAIR]: ['members:view', 'events:create', 'events:update'],
@@ -224,11 +227,7 @@ function build(
     tasks: options.tasks ?? [],
     askOn: options.askOn ?? true,
   };
-  const permissions = options.permissions ?? {
-    [PRESIDENT]: ['*'],
-    [SOCIAL_CHAIR]: ['members:view', 'events:create'],
-    [MEMBER]: ['members:view'],
-  };
+  const permissions = options.permissions ?? CALENDAR_PERMISSIONS;
   const holds = (userId: string, wanted: readonly string[]) => {
     const held = permissions[userId] ?? [];
     return held.includes('*') || wanted.some((p) => held.includes(p));
@@ -243,7 +242,7 @@ function build(
     ),
   };
   const visible = (event: FakeEvent, viewerId?: string) =>
-    !viewerId || !event.execOnly || holds(viewerId, ['events:update']);
+    !viewerId || !event.execOnly || holds(viewerId, [EXEC_GROUP]);
   const events = {
     findByChapter: jest.fn(
       async (
@@ -693,6 +692,13 @@ describe('LastYearSuggestionsService', () => {
       expect(eventsOff.rows.rows.map((row) => row.kind)).toEqual(['task']);
     });
 
+    it('reads no events for a member who can add one but not edit events (#4549)', async () => {
+      const { run, rows, events } = build({ events: LAST_YEAR.slice(0, 1) });
+      await expect(run(MEMBER)).resolves.toEqual({ proposed: 0, withdrawn: 0 });
+      expect(events.findByChapter).not.toHaveBeenCalled();
+      expect(rows.rows).toEqual([]);
+    });
+
     it('fails without reading anything when the president has turned Ask off', async () => {
       const { run, events, tasks } = build({ events: LAST_YEAR, askOn: false });
       await expect(run()).rejects.toMatchObject({
@@ -708,7 +714,6 @@ describe('LastYearSuggestionsService', () => {
   describe('who sees and decides one', () => {
     it('lists an event suggestion for an officer who can edit events, and not for a member who can only add one (#4549)', async () => {
       const { run, suggestions } = build({
-        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -724,7 +729,6 @@ describe('LastYearSuggestionsService', () => {
 
     it('refuses a member who can only add events, so the planners’ list is theirs to clear (#4549)', async () => {
       const { run, rows, suggestions } = build({
-        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -743,7 +747,6 @@ describe('LastYearSuggestionsService', () => {
 
     it('accepting an event records the event the officer added, and makes none', async () => {
       const { run, rows, suggestions, state, tasks } = build({
-        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -776,7 +779,6 @@ describe('LastYearSuggestionsService', () => {
 
     it('refuses to record an event someone else added, and leaves the suggestion waiting', async () => {
       const { run, rows, suggestions, state } = build({
-        permissions: CALENDAR_PERMISSIONS,
         events: LAST_YEAR.slice(0, 1),
       });
       await run();
@@ -798,7 +800,6 @@ describe('LastYearSuggestionsService', () => {
 
     it('accepting a task makes it through the task service, with who and when from the officer', async () => {
       const { run, rows, suggestions, tasks } = build({
-        permissions: CALENDAR_PERMISSIONS,
         tasks: [
           aTask(LAST_CONTRACT, 'Submit the housing contract', '2026-03-20'),
         ],
