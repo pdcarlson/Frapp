@@ -11,12 +11,15 @@ import { localIsoDate, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import {
-  isAllDaySpan,
-  layoutDay,
-  MINUTES_PER_DAY,
+  blockGeometry,
+  endsWithinDay,
+  GRID_HOURS as HOURS,
+  HOUR_HEIGHT,
+  hourLabel,
   minuteOfDay,
-  spanWithinDay,
-  type TimedSpan,
+  OPEN_AT_HOUR,
+  timeGridColumns,
+  TWO_LINE_MIN_HEIGHT,
 } from "@repo/hooks/calendar-time-grid";
 import { SignetTokens } from "@repo/theme/signet";
 import { CalendarTaskChip } from "@/components/events/calendar-tasks";
@@ -25,20 +28,7 @@ import { formatEventClock } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** One hour row, as web's grid and Google Calendar's default density. */
-export const HOUR_HEIGHT = 48;
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-/** Where the grid opens scrolled to: 8 AM, as web's does. */
-export const OPEN_AT_HOUR = 8;
-/** Below this block height there's room for the name alone, not the time. */
-const TWO_LINE_MIN = 36;
 const GUTTER = 44;
-
-function hourLabel(hour: number): string {
-  return new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, {
-    hour: "numeric",
-  });
-}
 
 function longDay(day: Date): string {
   return day.toLocaleDateString(undefined, {
@@ -93,31 +83,10 @@ export function EventsTimeGrid({
   const todayKey = localIsoDate(now);
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
-  const columns = useMemo(() => {
-    const parsed = events.flatMap((event) => {
-      const start = parseInstant(event.start_time);
-      if (!start) return [];
-      return [{ event, start, end: parseInstant(event.end_time) }];
-    });
-    return days.map((day) => {
-      const key = localIsoDate(day);
-      const allDay: EventRow[] = [];
-      const timed: TimedSpan<EventRow>[] = [];
-      for (const { event, start, end } of parsed) {
-        const span = spanWithinDay(start, end, day);
-        if (!span) continue;
-        if (isAllDaySpan(start, end)) allDay.push(event);
-        else timed.push({ item: event, ...span });
-      }
-      return {
-        day,
-        key,
-        allDay,
-        tasks: tasksByDay.get(key) ?? [],
-        placed: layoutDay(timed),
-      };
-    });
-  }, [days, events, tasksByDay]);
+  const columns = useMemo(
+    () => timeGridColumns(days, events, tasksByDay),
+    [days, events, tasksByDay],
+  );
 
   const hasStrip = columns.some(
     (column) => column.allDay.length > 0 || column.tasks.length > 0,
@@ -306,18 +275,13 @@ export function EventsTimeGrid({
 
                 {placed.map((span) => {
                   const event = span.item;
-                  const top = (span.startMinute / 60) * HOUR_HEIGHT;
-                  const height = Math.max(
-                    ((span.endMinute - span.startMinute) / 60) * HOUR_HEIGHT,
-                    HOUR_HEIGHT / 2,
-                  );
+                  const { top, height } = blockGeometry(span);
                   const startLabel = formatEventClock(
                     parseInstant(event.start_time),
                   );
-                  const endLabel =
-                    span.endMinute < MINUTES_PER_DAY
-                      ? formatEventClock(parseInstant(event.end_time))
-                      : "";
+                  const endLabel = endsWithinDay(span)
+                    ? formatEventClock(parseInstant(event.end_time))
+                    : "";
                   const clock = endLabel
                     ? `${startLabel} – ${endLabel}`
                     : startLabel;
@@ -343,7 +307,7 @@ export function EventsTimeGrid({
                       <Text numberOfLines={1} style={styles.blockName}>
                         {event.name}
                       </Text>
-                      {height >= TWO_LINE_MIN && clock ? (
+                      {height >= TWO_LINE_MIN_HEIGHT && clock ? (
                         <Text numberOfLines={1} style={styles.blockTime}>
                           {clock}
                         </Text>

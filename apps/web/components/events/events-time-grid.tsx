@@ -5,30 +5,22 @@ import { Repeat } from "lucide-react";
 import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
+import { formatTimeOfDay, localIsoDate } from "@repo/formatting";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import {
-  isAllDaySpan,
-  layoutDay,
+  blockGeometry,
+  endsWithinDay,
+  GRID_HOURS as HOURS,
+  HOUR_HEIGHT,
+  hourLabel,
   minuteOfDay,
-  spanWithinDay,
-  type TimedSpan,
+  OPEN_AT_HOUR,
+  timeGridColumns,
+  TWO_LINE_MIN_HEIGHT,
 } from "@repo/hooks/calendar-time-grid";
 import { CalendarTaskChip } from "@/components/events/calendar-tasks";
 
 type EventRow = Record<string, unknown>;
-
-/** One hour row, as Google Calendar's default density. */
-const HOUR_PX = 48;
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-/**
- * Where the grid opens scrolled to: 8 AM, as Google Calendar and Outlook open
- * a work day. A chapter's evening meetings (the editor's default start is
- * 6 PM) are then on screen without scrolling at the grid's height.
- */
-const OPEN_AT_HOUR = 8;
-/** Below this block height there's room for the name alone, not the time. */
-const TWO_LINE_MIN_PX = 36;
 
 export type CalendarEventFacts = {
   eventId: string;
@@ -56,12 +48,6 @@ type EventsTimeGridProps = {
   createDescribedBy?: string;
   createTitle?: string;
 };
-
-function hourLabel(hour: number): string {
-  return new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, {
-    hour: "numeric",
-  });
-}
 
 /** The current time, moved on each minute, for the now line. */
 function useNow(): Date {
@@ -105,33 +91,10 @@ export function EventsTimeGrid({
   // column on every minute's render.
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
-  const columns = useMemo(() => {
-    const parsed = events.flatMap((event) => {
-      const start = parseInstant(event.start_time);
-      if (!start) return [];
-      return [{ event, start, end: parseInstant(event.end_time) }];
-    });
-    return days.map((day) => {
-      const key = localIsoDate(day);
-      const allDay: EventRow[] = [];
-      const timed: TimedSpan<EventRow>[] = [];
-      for (const { event, start, end } of parsed) {
-        const span = spanWithinDay(start, end, day);
-        if (!span) continue;
-        // A day-long or longer event sits in the strip on every day it
-        // covers, as calendar apps draw a multi-day event.
-        if (isAllDaySpan(start, end)) allDay.push(event);
-        else timed.push({ item: event, ...span });
-      }
-      return {
-        day,
-        key,
-        allDay,
-        tasks: tasksByDay.get(key) ?? [],
-        placed: layoutDay(timed),
-      };
-    });
-  }, [days, events, tasksByDay]);
+  const columns = useMemo(
+    () => timeGridColumns(days, events, tasksByDay),
+    [days, events, tasksByDay],
+  );
 
   const hasStrip = columns.some(
     (column) => column.allDay.length > 0 || column.tasks.length > 0,
@@ -146,7 +109,7 @@ export function EventsTimeGrid({
   const scrollRef = (node: HTMLDivElement | null) => {
     if (!node || scrolled.current) return;
     // A little above the hour, so its label isn't cut by the edge.
-    node.scrollTop = OPEN_AT_HOUR * HOUR_PX - 8;
+    node.scrollTop = OPEN_AT_HOUR * HOUR_HEIGHT - 8;
     scrolled.current = true;
   };
 
@@ -253,14 +216,14 @@ export function EventsTimeGrid({
       >
         <div
           className="relative grid"
-          style={{ ...gridColumns, height: HOURS.length * HOUR_PX }}
+          style={{ ...gridColumns, height: HOURS.length * HOUR_HEIGHT }}
         >
           <div aria-hidden="true" className="relative bg-background">
             {HOURS.slice(1).map((hour) => (
               <span
                 key={hour}
                 className="absolute right-1.5 -translate-y-1/2 text-caption tabular-nums text-muted-foreground"
-                style={{ top: hour * HOUR_PX }}
+                style={{ top: hour * HOUR_HEIGHT }}
               >
                 {hourLabels[hour]}
               </span>
@@ -285,7 +248,10 @@ export function EventsTimeGrid({
                     "absolute inset-x-0",
                     hour > 0 && "border-t border-border",
                   );
-                  const style = { top: hour * HOUR_PX, height: HOUR_PX };
+                  const style = {
+                    top: hour * HOUR_HEIGHT,
+                    height: HOUR_HEIGHT,
+                  };
                   if (!canCreate) {
                     return (
                       <div
@@ -322,15 +288,10 @@ export function EventsTimeGrid({
 
                 {placed.map((span) => {
                   const facts = factsOf(span.item);
-                  const top = (span.startMinute / 60) * HOUR_PX;
-                  const height = Math.max(
-                    ((span.endMinute - span.startMinute) / 60) * HOUR_PX,
-                    HOUR_PX / 2,
-                  );
-                  const endLabel =
-                    span.endMinute < 24 * 60
-                      ? formatTimeOfDay(span.item.end_time)
-                      : null;
+                  const { top, height } = blockGeometry(span);
+                  const endLabel = endsWithinDay(span)
+                    ? formatTimeOfDay(span.item.end_time)
+                    : null;
                   return (
                     <button
                       key={`${facts.eventId}-${key}`}
@@ -357,7 +318,7 @@ export function EventsTimeGrid({
                         <SeriesMark facts={facts} />
                         <span className="truncate">{facts.eventName}</span>
                       </span>
-                      {height >= TWO_LINE_MIN_PX && facts.clockLabel ? (
+                      {height >= TWO_LINE_MIN_HEIGHT && facts.clockLabel ? (
                         <span className="truncate tabular-nums text-muted-foreground">
                           {facts.clockLabel}
                           {endLabel ? ` – ${endLabel}` : ""}
@@ -372,7 +333,7 @@ export function EventsTimeGrid({
                     aria-hidden="true"
                     data-testid="time-grid-now"
                     className="pointer-events-none absolute inset-x-0 z-20 h-0.5 bg-destructive"
-                    style={{ top: (minuteOfDay(now) / 60) * HOUR_PX - 1 }}
+                    style={{ top: (minuteOfDay(now) / 60) * HOUR_HEIGHT - 1 }}
                   >
                     <span className="absolute -left-1 -top-[3px] h-2 w-2 rounded-full bg-destructive" />
                   </div>
