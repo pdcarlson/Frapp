@@ -1179,6 +1179,8 @@ export class AskService {
               detail: source.detail,
               date: source.date,
               target: source.target,
+              // What the chip showed, so a report holds what was seen.
+              ...(source.author ? { author: source.author } : {}),
             })),
             left_out_messages: answer.left_out_messages,
             unverified_citations: answer.unverified_citations,

@@ -69,6 +69,8 @@ export interface AskReceiptShown {
      * sealed before #4713, which can be reported but not posted.
      */
     target?: unknown;
+    /** Whose message a chat chip said it was. Absent on any other chip. */
+    author?: string;
   }>;
   left_out_messages: number;
   unverified_citations: number;
