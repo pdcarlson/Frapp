@@ -15,8 +15,8 @@ import {
 export type ActivityRowActionState = "idle" | "busy" | "done";
 
 /**
- * Whether Activity's rows carry their one-press asks (Confirm, Approve;
- * `activityRowAction` in `@repo/hooks`) as buttons (#4437). They are
+ * Whether Activity's rows carry their one-press asks (Confirm, Approve,
+ * Check in; `activityRowAction` in `@repo/hooks`) as buttons (#4437, #4427). They are
  * paid-chapter writes, so while the chapter's plan refuses them no row draws
  * one and each opens its sheet, whose card puts the refusal into words, as
  * web's rows follow `activityRowActionGate`.

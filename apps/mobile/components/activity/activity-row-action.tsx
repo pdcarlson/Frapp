@@ -14,6 +14,7 @@ import {
 import { useConnection } from "@/lib/connection/use-connection";
 import {
   CHECK_IN_LOCATION_DENIED_COPY,
+  needsLocationRefusal,
   needsScannedCode,
 } from "@/lib/events/check-in-outcome";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
@@ -36,6 +37,14 @@ const DONE: Record<ActivityRowAction, string> = {
   "check-in": "Checked in",
 };
 
+/**
+ * A row check-in answered 409: the member already has an attendance row,
+ * a check-in or an officer's mark, so it says no more than that (web's
+ * `useSelfCheckIn` says the same, "Already on the list").
+ */
+export const ALREADY_ON_LIST_COPY =
+  "You're already on the attendance list for this event.";
+
 /** What the screen hands its rows, or `null` while those writes are refused. */
 export interface ActivityRowActions {
   stateOf: (key: string) => ActivityRowActionState;
@@ -54,12 +63,16 @@ export interface ActivityRowActions {
  * the chat event card's (`rowActionFailure`). Web's twin is
  * `apps/web/components/activity/activity-row-action.tsx`.
  *
- * Check in is on every open event's row, a zoned one included (#4427): the
- * phone can supply the location web can't, so the press asks for it, as the
- * chat event card does, only when the event has a zone. A 409 is the member
- * already on the list, which settles the row as a check-in does. Once an
- * officer's screen has shown the code the server wants it (#4532), and the
- * alert offers s18 to point the camera at it or type it.
+ * Check in is on the row of any event the member can check in to now, a
+ * zoned one included (#4427): the phone can supply the location web can't,
+ * so the press asks for it, as the chat event card does, only when the read
+ * says the event has a zone. Otherwise it sends the plain check-in, and if
+ * the server answers that the event needs a location (a zone drawn since the
+ * read, or a read from before the field) it asks then and sends once more.
+ * A 409 is a row the member already has, which may be an officer's mark, so
+ * the alert says only that and the screen re-reads. Once an officer's screen
+ * has shown the code the server wants it (#4532), and the alert offers s18
+ * to point the camera at it or type it.
  *
  * Held by the screen, not by each row, so where an item's write stands
  * outlives the row drawing it. A row drawn again (Show all, a chip) still
@@ -144,17 +157,22 @@ export function useActivityRowActions({
     event: Extract<ActivityRow, { kind: "event" }>["event"],
   ) => {
     // Coordinates only, as the card sends them: an API from before #4532
-    // refuses an `accuracy_meters` it doesn't declare. A read that doesn't
-    // say counts as zoned, so the press never sends a zoned event nothing.
-    const position =
-      event.check_in_needs_location !== false
+    // refuses an `accuracy_meters` it doesn't declare.
+    const send = async (withLocation: boolean) => {
+      const position = withLocation
         ? latLngOf(await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY))
         : {};
-    try {
       await checkIn.mutateAsync({ eventId: event.id, ...position });
+    };
+    const zoned = event.check_in_needs_location === true;
+    try {
+      await send(zoned);
     } catch (error) {
-      // Already on the list: nothing left to do on the row.
-      if (statusOf(error) !== 409) throw error;
+      // A zone drawn since the read, or a read from before the field: the
+      // server says the event needs a location, which the phone can send,
+      // so ask once now rather than show a refusal written for web.
+      if (zoned || !needsLocationRefusal(error)) throw error;
+      await send(true);
     }
   };
 
@@ -174,6 +192,14 @@ export function useActivityRowActions({
       setState(key, "idle");
       const failure = rowActionFailure(action, error);
       if (failure.gate) setRefused(true);
+      if (action === "check-in" && statusOf(error) === 409) {
+        // A row already exists, which may be an officer's excused or
+        // absent mark rather than a check-in, so say only that and re-read:
+        // the row then shows which.
+        Alert.alert(row.title, ALREADY_ON_LIST_COPY);
+        onActed(row);
+        return;
+      }
       if (
         action === "check-in" &&
         row.kind === "event" &&

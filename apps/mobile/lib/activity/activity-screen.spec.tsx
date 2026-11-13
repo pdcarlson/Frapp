@@ -328,6 +328,8 @@ describe("Activity screen (#3897)", () => {
     chapter.isPending = false;
     writes.confirm.mockReset().mockResolvedValue(undefined);
     writes.review.mockReset().mockResolvedValue(undefined);
+    writes.checkIn.mockReset().mockResolvedValue(undefined);
+    writes.fix.mockReset();
     writes.writeBlockedReason = null;
     activity.value = {
       data: read(),
@@ -1272,8 +1274,42 @@ describe("Activity screen (#3897)", () => {
       expect(button(tree, "Formal").props.disabled).toBe(true);
     });
 
-    it("settles the row when the member was already on the list", async () => {
+    it("says only that a row exists on a 409, and re-reads so the row shows which (#4427)", async () => {
+      // A 409 may be an officer's excused or absent mark, not a check-in.
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
       writes.checkIn.mockRejectedValue({ status: 409 });
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            { ...openEvent("ev-plain", "Chapter", false), unread: true },
+          ],
+        }),
+      };
+      links.markRead.mockClear();
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledWith(
+        "Chapter",
+        "You're already on the attendance list for this event.",
+      );
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "event", item_id: "ev-plain" },
+      ]);
+      alert.mockRestore();
+    });
+
+    it("asks for the position and sends again when the server says the event now needs one", async () => {
+      // A zone drawn since the read, or a read from before the field.
+      const { CHECK_IN_NEEDS_LOCATION_MESSAGES } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValueOnce({
+        status: 400,
+        message: CHECK_IN_NEEDS_LOCATION_MESSAGES[0],
+      });
+      writes.fix.mockResolvedValue({ lat: 3, lng: 4, accuracy: 5 });
       activity.value = {
         ...activity.value,
         data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
@@ -1282,7 +1318,71 @@ describe("Activity screen (#3897)", () => {
       await act(async () => {
         button(tree, "Chapter").props.onPress();
       });
+      expect(writes.checkIn.mock.calls).toEqual([
+        [{ eventId: "ev-plain" }],
+        [{ eventId: "ev-plain", lat: 3, lng: 4 }],
+      ]);
       expect(button(tree, "Chapter").props.disabled).toBe(true);
+    });
+
+    it("says a refused location in the card's words, and leaves the button to try again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_LOCATION_DENIED_COPY } =
+        await import("@/lib/events/check-in-outcome");
+      const { MemberFacingError } = await import("@repo/hooks/error-copy");
+      // What `requireForegroundFix` throws when permission is refused.
+      writes.fix.mockRejectedValue(
+        new MemberFacingError(CHECK_IN_LOCATION_DENIED_COPY),
+      );
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-zoned", "Formal", true)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.checkIn).not.toHaveBeenCalled();
+      expect(alert).toHaveBeenCalledWith(
+        "Formal",
+        CHECK_IN_LOCATION_DENIED_COPY,
+      );
+      expect(button(tree, "Formal").props.disabled).toBe(false);
+      alert.mockRestore();
+    });
+
+    it("offers Enter code, opening s18 on the event, once an officer's screen wants the code", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_NEEDS_CODE_MESSAGE } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValue({
+        status: 403,
+        message: CHECK_IN_NEEDS_CODE_MESSAGE,
+      });
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      const buttons = alert.mock.calls.at(-1)![2] as {
+        text: string;
+        onPress?: () => void;
+      }[];
+      expect(buttons.map((each) => each.text)).toEqual([
+        "Not now",
+        "Enter code",
+      ]);
+      buttons[1]!.onPress!();
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/check-in",
+        params: { eventId: "ev-plain" },
+      });
+      alert.mockRestore();
     });
 
     it("is offered to a screen reader as the row's named action", async () => {

@@ -48,5 +48,15 @@ describe("rowActionFailure for a check-in", () => {
       text: checkInFailure(refusal).message,
       gate: false,
     });
+    // What `requireForegroundFix` throws when the member refuses location.
+    const { MemberFacingError } = await import("@repo/hooks/error-copy");
+    const { CHECK_IN_LOCATION_DENIED_COPY } =
+      await import("@/lib/events/check-in-outcome");
+    expect(
+      rowActionFailure(
+        "check-in",
+        new MemberFacingError(CHECK_IN_LOCATION_DENIED_COPY),
+      ).text,
+    ).toBe(CHECK_IN_LOCATION_DENIED_COPY);
   });
 });

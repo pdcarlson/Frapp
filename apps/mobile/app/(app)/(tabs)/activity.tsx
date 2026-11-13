@@ -217,7 +217,7 @@ export default function ActivityScreen() {
     setOpened(row);
     setOpenedKey(row.key);
   };
-  // Confirm and Approve on the row (#4437), while the chapter's plan allows
+  // Confirm, Approve and Check in on the row (#4437, #4427), while the chapter's plan allows
   // them; acting there reads the item, as opening it does, and re-reads so
   // the row leaves Needs you.
   const { actions: rowActions, stateOf: rowActionStateOf } =

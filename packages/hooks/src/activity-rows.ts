@@ -196,8 +196,10 @@ export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
  * for a client that can supply one (`canSupplyLocation`, the phone). On web a
  * zoned event's row opens its panel, which says to use the phone
  * (`spec/behavior/events.md` § Check-In). An API read from before the field
- * existed doesn't say, so its event counts as zoned: no button beats one that
- * fails.
+ * existed doesn't say, so web counts its event as zoned and draws no button.
+ * The read doesn't say whether an officer's screen has made the code
+ * required, so a web press can still be refused for that, in the words the
+ * card uses (#4808).
  */
 export type ActivityRowAction = "confirm" | "approve" | "check-in";
 
