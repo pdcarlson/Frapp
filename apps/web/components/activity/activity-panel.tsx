@@ -43,6 +43,7 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   event: "Event",
   hours: "Service hours",
   link: "Link",
+  card: "Sign-up",
 };
 
 /**
@@ -164,6 +165,9 @@ function PanelCard({
       );
     case "link":
       // A sign-up link row opens the link, not the panel.
+      return null;
+    case "card":
+      // A sign-up or form row opens its message in chat, not the panel.
       return null;
   }
 }

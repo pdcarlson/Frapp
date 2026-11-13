@@ -38,6 +38,20 @@ export class SupabaseChatFormResponseRepository implements IChatFormResponseRepo
     return data;
   }
 
+  async findAnsweredMessageIds(
+    messageIds: string[],
+    userId: string,
+  ): Promise<string[]> {
+    if (messageIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_form_responses')
+      .select('message_id')
+      .eq('user_id', userId)
+      .in('message_id', messageIds);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.message_id);
+  }
+
   async save(
     messageId: string,
     userId: string,

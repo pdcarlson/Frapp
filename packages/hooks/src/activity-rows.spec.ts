@@ -82,6 +82,21 @@ const link = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const card = (overrides: Record<string, unknown> = {}) => ({
+  kind: "signup",
+  message_id: "card-1",
+  channel_id: "channel-1",
+  channel_name: "general",
+  channel_type: "PUBLIC",
+  sender_id: "olive",
+  title: "Sober drivers",
+  item_count: 4,
+  closes_at: null,
+  created_at: "2026-11-10T15:00:00.000Z",
+  unread: false,
+  ...overrides,
+});
+
 const activity = (overrides: Partial<Record<string, unknown>> = {}) =>
   ({
     needs_you: {
@@ -110,6 +125,127 @@ const rowsOf = (
       ),
     ]),
   );
+
+describe("sign-up and form cards (#3926 step 4)", () => {
+  const NOW = new Date("2026-11-13T12:00:00.000Z");
+  const withCards = (
+    cards: Record<string, unknown>[],
+    extra: Record<string, unknown> = {},
+  ) =>
+    activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+        cards,
+      },
+      ...extra,
+    });
+
+  it("lists each under Needs you with its ask, kind and channel, and a read under its own kind", () => {
+    const groups = activityGroups(
+      withCards([
+        card({ message_id: "sheet" }),
+        card({
+          message_id: "head",
+          kind: "headcount",
+          title: "Formal",
+          item_count: 2,
+        }),
+        card({
+          message_id: "form",
+          kind: "form",
+          title: "Room picks",
+          item_count: 1,
+          channel_type: "DM",
+        }),
+      ]),
+      "all",
+      NOW,
+    );
+    const rows = groups[0]!.rows;
+    expect(
+      rows.map((row) => [row.title, row.detail, row.badge?.label, row.glyph]),
+    ).toEqual([
+      ["Sober drivers", "Sign-up · 4 slots · #general", "Sign up", "signup"],
+      ["Formal", "Headcount · #general", "Answer", "signup"],
+      ["Room picks", "Form · 1 question · Direct message", "Fill out", "form"],
+    ]);
+    expect(rows.map((row) => row.readRef)).toEqual([
+      { kind: "signup", item_id: "sheet" },
+      { kind: "signup", item_id: "head" },
+      { kind: "form", item_id: "form" },
+    ]);
+    expect(rows.every((row) => activityBadgeIsAsk(row))).toBe(true);
+    // Answered on the card in chat: nothing to do on the row itself.
+    expect(rows.map((row) => activityRowAction(row))).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(rows[0]!.faceId).toBe("olive");
+  });
+
+  it("is Now within a day of closing, says so in the warning phrase, and leaves once closed", () => {
+    const soon = card({
+      message_id: "soon",
+      closes_at: "2026-11-13T15:00:00.000Z",
+    });
+    const later = card({
+      message_id: "later",
+      closes_at: "2026-11-20T15:00:00.000Z",
+    });
+    const gone = card({
+      message_id: "gone",
+      closes_at: "2026-11-13T11:00:00.000Z",
+    });
+    const data = withCards([soon, later, gone], { needs_you_count: 3 });
+    const needs = activityGroups(data, "all", NOW)[0]!;
+
+    expect(needs.rows.map((row) => row.readRef.item_id)).toEqual([
+      "soon",
+      "later",
+    ]);
+    expect(needs.rows[0]!.soon).toBe("closes in 3 hours");
+    expect(activityRowIsNow(needs.rows[0]!, NOW)).toBe(true);
+    expect(activityRowIsNow(needs.rows[1]!, NOW)).toBe(false);
+    expect(needs.parts.map((part) => part.label)).toEqual(["Now", "Later"]);
+    // The one that closed since the read no longer counts.
+    expect(
+      activitySummary(
+        data,
+        {
+          canConfirmTasks: false,
+          canApproveHours: false,
+        },
+        NOW,
+      ).needsYou,
+    ).toBe(2);
+  });
+
+  it("names the section when it couldn't load, under All and Needs you only", () => {
+    const data = withCards([], { unavailable: ["cards"] });
+    expect(activityGroups(data, "all", NOW)[0]!.unavailable).toEqual(["cards"]);
+    expect(activityGroups(data, "waiting", NOW)[0]!.unavailable).toEqual([
+      "cards",
+    ]);
+    expect(activityGroups(data, "poll", NOW)[0]!.unavailable).toEqual([]);
+    expect(
+      activitySummary(data, { canConfirmTasks: false, canApproveHours: false })
+        .incomplete,
+    ).toBe(true);
+  });
+
+  it("reads a cached read from before cards were served as none", () => {
+    expect(activityGroups(activity(), "all", NOW)[0]!.rows).toEqual([]);
+  });
+
+  it("draws the sign-up and form glyphs from the shared set", () => {
+    expect(NAV_GLYPHS[ACTIVITY_GLYPH_NAV.signup]).toBeDefined();
+    expect(NAV_GLYPHS[ACTIVITY_GLYPH_NAV.form]).toBeDefined();
+  });
+});
 
 describe("activityGroups", () => {
   it("draws the four groups in order, Needs you first", () => {
