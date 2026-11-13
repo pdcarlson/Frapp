@@ -66,16 +66,21 @@ const excuse = (status: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-function renderMine(required = true) {
-  return render(
+function mine(required = true, writeAsk = 0) {
+  return (
     <MyExcuse
       eventId="e1"
       required={required}
       start={start.toISOString()}
       end={end.toISOString()}
       opensMinutes={15}
-    />,
+      writeAsk={writeAsk}
+    />
   );
+}
+
+function renderMine(required = true, writeAsk = 0) {
+  return render(mine(required, writeAsk));
 }
 
 beforeEach(() => {
@@ -100,6 +105,21 @@ describe("MyExcuse", () => {
       eventId: "e1",
       reason: "Away game",
     });
+  });
+
+  it("opens the line on arrival when the chat card asked (#4660)", () => {
+    renderMine(true, 1);
+    expect(screen.getByRole("textbox")).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Can't make it" })).toBeNull();
+  });
+
+  it("opens it again for a new ask while already showing (#4660)", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderMine(true, 1);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    rerender(mine(true, 2));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("offers nothing on an event that doesn't require the viewer", () => {

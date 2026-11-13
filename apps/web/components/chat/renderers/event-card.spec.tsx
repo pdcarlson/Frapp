@@ -10,9 +10,9 @@ import type { ChatMessage } from "@repo/chat-core/types";
 
 const mockUseAttendance = vi.fn();
 const mockUseMyPermissions = vi.fn();
-const mockEventCardExcuse = vi.fn(
-  (_payload: unknown) => ({ kind: "none" }) as unknown,
-);
+const mockEventCardExcuse = vi.fn<(payload: unknown) => unknown>(() => ({
+  kind: "none",
+}));
 const checkIn = vi.fn().mockResolvedValue(undefined);
 
 const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
@@ -131,6 +131,13 @@ describe("EventCard", () => {
   it("offers nothing to a member the event doesn't require", () => {
     render(<EventCard message={makeMessage()} isConfirmed />);
     expect(screen.queryByText("Can't make it")).not.toBeInTheDocument();
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(mockEventCardExcuse).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: "evt-1", is_mandatory: false }),
+    );
   });
 
   it("falls back to the content string on a malformed payload", () => {

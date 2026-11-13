@@ -381,19 +381,28 @@ export interface ExcuseCardEvent extends EventAttendanceFields {
   start_time: string;
   end_time: string;
   check_in_opens_minutes: number;
+  /**
+   * The server's own answer for this viewer, when the card has one (the
+   * Activity page's built message); it wins over the role fields.
+   */
+  viewer_required?: boolean;
 }
 
 /**
  * The excuse view for a chat event card (#4660): {@link myExcuseView} over
  * the card's snapshot, so the card offers Can't make it, or says where an
- * excuse stands, exactly when the event page would.
+ * excuse stands, as the event page would while the excuse window is open.
+ * Once it closes the card says nothing more about excuses (the event page
+ * still shows a sent one), so an old card in a long history never reads.
  *
- * A channel holds many cards, so this reads nothing for most of them. Whether
- * the event requires the viewer comes from the card itself (its role fields;
- * a card posted before them goes by `is_mandatory`), and the two reads the
- * view needs (the viewer's excuse and attendance row) run only for a card that
- * requires them, until its excuse window closes. Every other card costs no
- * request. Pass `null` for a card whose payload didn't read.
+ * A channel holds many cards, so whether the event requires the viewer comes
+ * from the card itself: `viewer_required` when it carries one, else its role
+ * fields through {@link useRequiredOfViewer} (a card posted before them goes
+ * by `is_mandatory`). That rule reads the viewer's memberships and the
+ * chapter's roles, one shared cached read each, not one per card. The two
+ * reads the view needs (the viewer's excuse and attendance row) run only for
+ * a card that requires them, until its excuse window closes. Pass `null` for
+ * a card whose payload didn't read.
  */
 export function useEventCardExcuse(
   card: ExcuseCardEvent | null,
@@ -405,7 +414,8 @@ export function useEventCardExcuse(
     !!end &&
     !isNaN(end.getTime()) &&
     now.getTime() <= eventExcuseClosesAt(end).getTime();
-  const required = !!card && windowOpen && requiredOf(card);
+  const required =
+    !!card && windowOpen && (card.viewer_required ?? requiredOf(card));
   const eventId = required ? card.event_id : "";
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId, { enabled: required });

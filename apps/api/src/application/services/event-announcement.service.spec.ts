@@ -450,6 +450,31 @@ describe('EventAnnouncementService', () => {
       expect(arg.content).toContain('Chapter Meeting');
     });
 
+    it("carries the event's own role lists, so the card can tell whom it requires (#4660)", async () => {
+      // Everyone is invited (a card is refused otherwise); one role is
+      // required and another optional on top of that.
+      mockEventRepo.create.mockResolvedValue({
+        ...baseEvent,
+        required_role_ids: ['role-new'],
+        optional_role_ids: ['role-alumni'],
+        excluded_role_ids: [],
+        others_invited: true,
+      });
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Alice' },
+      ]);
+
+      await service.create(chatInput);
+
+      const arg = mockChatService.sendMessage.mock.calls[0][0];
+      expect(arg.payload).toMatchObject({
+        required_role_ids: ['role-new'],
+        optional_role_ids: ['role-alumni'],
+        excluded_role_ids: [],
+        others_invited: true,
+      });
+    });
+
     it('does not post a card for a dashboard create (no chat fields)', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 

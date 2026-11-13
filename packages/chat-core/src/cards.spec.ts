@@ -143,17 +143,35 @@ describe("readEventPayload role fields (#4660)", () => {
     });
   });
 
-  it("reads none when a card predates them or one is malformed", () => {
+  it("reads none when a card predates them", () => {
     expect(readEventPayload(withPayload(EVENT))).toEqual(EVENT);
+  });
+
+  it("reads them as the event sheet does, dropping only what is malformed", () => {
+    // `attendanceFieldsOf`'s rule: a bad id is dropped, not the whole list.
     expect(
       readEventPayload(
-        withPayload({ ...EVENT, ...ROLES, required_role_ids: [7] }),
+        withPayload({ ...EVENT, ...ROLES, required_role_ids: ["r1", 7] }),
       ),
-    ).toEqual(EVENT);
+    ).toEqual({ ...EVENT, ...ROLES, required_role_ids: ["r1"] });
+    const withoutOthers = {
+      required_role_ids: ROLES.required_role_ids,
+      optional_role_ids: ROLES.optional_role_ids,
+      excluded_role_ids: ROLES.excluded_role_ids,
+    };
     expect(
       readEventPayload(
-        withPayload({ ...EVENT, ...ROLES, others_invited: undefined }),
+        withPayload({ ...EVENT, ...ROLES, others_invited: "yes" }),
       ),
+    ).toEqual({ ...EVENT, ...withoutOthers });
+  });
+
+  it("reads the Activity page's answer for the viewer", () => {
+    expect(
+      readEventPayload(withPayload({ ...EVENT, viewer_required: true })),
+    ).toEqual({ ...EVENT, viewer_required: true });
+    expect(
+      readEventPayload(withPayload({ ...EVENT, viewer_required: "yes" })),
     ).toEqual(EVENT);
   });
 });

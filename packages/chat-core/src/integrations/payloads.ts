@@ -145,14 +145,21 @@ export interface EventPayload {
   is_mandatory: boolean;
   /**
    * Who the event asks for by role, as `events` holds it, so the card can tell
-   * whether it requires the viewer without reading the event (#4660). Absent
-   * on a card posted before the fields existed: `readEventPayload` leaves them
-   * out, and the card then goes by `is_mandatory` alone.
+   * whether it requires the viewer without reading the event (#4660). Null on
+   * a card posted before the fields existed, which then reads as it did then
+   * (`eventOthersInvited`): by `is_mandatory` alone.
    */
-  required_role_ids?: string[];
-  optional_role_ids?: string[];
-  excluded_role_ids?: string[];
-  others_invited?: boolean;
+  required_role_ids?: readonly string[] | null;
+  optional_role_ids?: readonly string[] | null;
+  excluded_role_ids?: readonly string[] | null;
+  others_invited?: boolean | null;
+  /**
+   * Whether the event requires *this* viewer, already decided by the server.
+   * Only the Activity page's built message carries it (its row holds the
+   * member's own answer, alumni rule included, rather than the role lists);
+   * a posted card never does, since one row serves every viewer.
+   */
+  viewer_required?: boolean;
   /**
    * Minutes before `start_time` that check-in opens. Cards posted before the
    * field existed carry none; `readEventPayload` gives them the default

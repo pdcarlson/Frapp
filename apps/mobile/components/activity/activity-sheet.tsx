@@ -360,7 +360,11 @@ function EventSheet({
   if (!payload) return null;
   return (
     <>
-      <EventCard {...frameFor(message, viewerId)} payload={payload} />
+      <EventCard
+        {...frameFor(message, viewerId)}
+        payload={payload}
+        onNavigate={onNavigate}
+      />
       <CardActions>
         <CardButton
           label="Open event"

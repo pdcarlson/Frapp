@@ -35,6 +35,7 @@ const state = vi.hoisted(() => ({
   mine: undefined as unknown,
   mineIds: [] as string[],
   excuse: { kind: "none" } as unknown,
+  excuseArgs: [] as unknown[],
 }));
 const checkIn = vi.hoisted(() => vi.fn());
 const requireForegroundFix = vi.hoisted(() => vi.fn());
@@ -64,7 +65,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   // The rule is the hook's own spec in @repo/hooks (#4660).
-  useEventCardExcuse: () => state.excuse,
+  useEventCardExcuse: (card: unknown) => {
+    state.excuseArgs.push(card);
+    return state.excuse;
+  },
   useCurrentChapter: () => ({
     data:
       state.enabledModules === undefined
@@ -152,7 +156,11 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 function render(
-  options: { payload?: EventPayload; isConfirmed?: boolean } = {},
+  options: {
+    payload?: EventPayload;
+    isConfirmed?: boolean;
+    onNavigate?: () => void;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -163,6 +171,7 @@ function render(
           payload={options.payload ?? PAYLOAD}
           viewerId="viewer-1"
           isConfirmed={options.isConfirmed ?? true}
+          onNavigate={options.onNavigate}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -230,6 +239,7 @@ beforeEach(() => {
   state.mine = { attendance: null };
   state.mineIds = [];
   state.excuse = { kind: "none" };
+  state.excuseArgs = [];
   checkIn.mockReset().mockResolvedValue({});
   requireForegroundFix.mockReset();
   refetchEvent.mockReset().mockResolvedValue({ data: undefined });
@@ -619,5 +629,45 @@ describe("EventCard — Can't make it (#4660)", () => {
   it("offers nothing to a member the event doesn't require", () => {
     const tree = render();
     expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render();
+    expect(state.excuseArgs).toContainEqual(PAYLOAD);
+  });
+
+  it("offers nothing while the events module is off", () => {
+    state.enabledModules = { events: false };
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("closes the Activity sheet before it leaves", async () => {
+    const onNavigate = vi.fn();
+    const push = vi.mocked(expoRouter.useRouter)().push;
+    vi.mocked(push).mockClear();
+    state.excuse = { kind: "offer" };
+    const tree = render({ onNavigate });
+    await press(tree, "Can't make it");
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(push).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("says an approved excuse once while check-in shows the mark", () => {
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    state.excuse = {
+      kind: "sent",
+      status: "APPROVED",
+      reason: "Away game",
+      title: "Excused",
+      detail: null,
+      canWithdraw: false,
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(screenText(tree)).not.toMatch(/\bExcused\b/);
   });
 });

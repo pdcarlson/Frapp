@@ -1,7 +1,8 @@
 /**
  * `useEventCardExcuse` (#4660): a chat event card offers Can't make it only
- * when the card's own role fields say the event requires the viewer, and a
- * channel of cards that don't costs no request.
+ * when the card's own role fields (or the Activity page's `viewer_required`)
+ * say the event requires the viewer, and a card that doesn't reads no excuse
+ * or attendance row.
  */
 import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -92,6 +93,36 @@ describe("useEventCardExcuse (#4660)", () => {
     const { result } = render(card({ is_mandatory: true }));
 
     await waitFor(() => expect(result.current).toEqual({ kind: "offer" }));
+  });
+
+  test("goes by the Activity page's answer for an alumnus held by role", async () => {
+    // An alumnus: the default alone never holds them, and the Activity row
+    // has no role lists to show the role that does. The server already said.
+    vi.mocked(useRoles).mockReturnValue({
+      data: [{ id: "role-alumni", name: "Alumni", system_key: "ALUMNI" }],
+    } as unknown as ReturnType<typeof useRoles>);
+    vi.mocked(useListChapters).mockReturnValue({
+      data: [{ chapter_id: "ch-1", role_ids: ["role-alumni"] }],
+    } as unknown as ReturnType<typeof useListChapters>);
+
+    // Without the answer, the default alone doesn't hold an alumnus.
+    expect(render(card({ is_mandatory: true })).result.current).toEqual({
+      kind: "none",
+    });
+
+    const { result } = render(
+      card({ is_mandatory: true, viewer_required: true }),
+    );
+    await waitFor(() => expect(result.current).toEqual({ kind: "offer" }));
+  });
+
+  test("an Activity card that says not required reads nothing", () => {
+    const { result } = render(
+      card({ is_mandatory: true, viewer_required: false }),
+    );
+
+    expect(result.current).toEqual({ kind: "none" });
+    expect(get).not.toHaveBeenCalled();
   });
 
   test("reads nothing for an optional event", () => {

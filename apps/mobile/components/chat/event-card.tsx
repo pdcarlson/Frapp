@@ -87,8 +87,16 @@ import { LocationGlyph } from "./location-glyph";
  */
 export function EventCard({
   payload,
+  onNavigate,
   ...frame
-}: ChatCardFrameProps & { payload: EventPayload }) {
+}: ChatCardFrameProps & {
+  payload: EventPayload;
+  /**
+   * Runs before the card leaves for another screen: the Activity sheet passes
+   * its close, since a pushed screen opens underneath the sheet.
+   */
+  onNavigate?: () => void;
+}) {
   const { tokens } = useFrappTheme();
   const now = useNowDate();
   const open =
@@ -195,11 +203,13 @@ export function EventCard({
   const disabled =
     !frame.isConfirmed || submitting || zoneUnknown || blockedReason !== null;
 
-  const openExcuse = () =>
+  const openExcuse = () => {
+    onNavigate?.();
     router.push({
       pathname: "/event-details",
       params: { id: payload.event_id, excuse: "1" },
     });
+  };
   const excuseButton =
     excuse.kind === "offer" && !eventsOff ? (
       <CardButton
@@ -282,12 +292,13 @@ export function EventCard({
               <CardButton
                 label="Scan code"
                 variant="primary"
-                onPress={() =>
+                onPress={() => {
+                  onNavigate?.();
                   router.push({
                     pathname: "/check-in",
                     params: { eventId: payload.event_id },
-                  })
-                }
+                  });
+                }}
                 disabled={blockedReason !== null}
               />
             ) : (
@@ -320,7 +331,12 @@ export function EventCard({
       {!showCheckIn && excuseButton ? (
         <CardActions>{excuseButton}</CardActions>
       ) : null}
-      {excuse.kind === "sent" ? <CardNote text={excuse.title} /> : null}
+      {/* An approved excuse already reads "Marked excused" above while
+          check-in is open; the same fact twice would stack two notes. */}
+      {excuse.kind === "sent" &&
+      !(open && !eventsOff && marked === "EXCUSED") ? (
+        <CardNote text={excuse.title} />
+      ) : null}
     </ChatCardShell>
   );
 }
