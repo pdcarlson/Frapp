@@ -168,9 +168,12 @@ describeIntegration(
       expect(rows.map((row) => row.id)).toEqual([pollId]);
     });
 
-    it('findPollCardsByChapter returns only the chapter’s own polls, without the join', async () => {
+    it('findCardsByChapter returns only the chapter’s own polls, without the join', async () => {
       const repo = new SupabaseChatMessageRepository(supabase);
-      const rows = await repo.findPollCardsByChapter(chapterId, { limit: 10 });
+      const rows = await repo.findCardsByChapter(chapterId, {
+        kind: 'poll',
+        limit: 10,
+      });
       expect(rows.map((row) => row.id)).toEqual([pollId]);
       expect(rows[0]).not.toHaveProperty('chat_channels');
     });

@@ -514,6 +514,50 @@ describe("Activity screen (#3897)", () => {
     );
   });
 
+  it("opens a sign-up or form row on its card in chat, reading it, with no sheet (#3926)", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+          cards: [
+            {
+              kind: "form",
+              message_id: "m-form",
+              channel_id: "chan-rush",
+              channel_name: "rush",
+              channel_type: "PUBLIC",
+              sender_id: "u-2",
+              title: "Room picks",
+              item_count: 3,
+              closes_at: null,
+              created_at: "2026-11-01T00:00:00.000Z",
+              unread: true,
+            },
+          ],
+        },
+      }),
+    };
+    links.markRead.mockClear();
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+
+    act(() => row(tree, "Room picks").props.onPress());
+
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "chan-rush", focusMessageId: "m-form" },
+    });
+    expect(links.markRead).toHaveBeenCalledWith([
+      { kind: "form", item_id: "m-form" },
+    ]);
+    expect(sheet.props?.row ?? null).toBeNull();
+  });
+
   describe("summary", () => {
     it("says how much is waiting, with a tile per kind of ask", () => {
       const tree = render();

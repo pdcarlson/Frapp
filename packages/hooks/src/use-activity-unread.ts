@@ -44,6 +44,11 @@ export function markActivityItemsRead(
         (row) => `hours_entry:${row.id}`,
       ),
       polls: clear(activity.needs_you.polls, (row) => `poll:${row.message_id}`),
+      // A read cached before cards were served has none.
+      cards: clear(
+        activity.needs_you.cards ?? [],
+        (row) => `${row.kind === "form" ? "form" : "signup"}:${row.message_id}`,
+      ),
     },
     coming_up: clear(activity.coming_up, (row) => `event:${row.id}`),
     links: clear(activity.links, (row) => `link:${row.id}`),

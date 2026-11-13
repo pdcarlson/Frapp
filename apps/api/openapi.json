@@ -14365,7 +14365,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -26561,6 +26561,82 @@
           "message"
         ]
       },
+      "ActivityCardDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "signup",
+              "headcount",
+              "form"
+            ],
+            "description": "`signup` for a sign-up sheet of slots, `headcount` for a Going / Can’t make it sign-up, `form` for a form card. Its read is recorded as `signup` for the first two and `form` for a form."
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The chat message that is the card. A client opens it in chat, where it is answered."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_name": {
+            "type": "string",
+            "description": "The channel’s name. A direct message’s is server-generated, so label those from `channel_type`."
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED",
+              "DM",
+              "GROUP_DM"
+            ]
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "item_count": {
+            "type": "number",
+            "description": "How many slots a sign-up sheet has, or questions a form asks; 2 for a headcount."
+          },
+          "closes_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When it stops taking answers. Null for a card with no end time."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
+          }
+        },
+        "required": [
+          "kind",
+          "message_id",
+          "channel_id",
+          "channel_name",
+          "channel_type",
+          "sender_id",
+          "title",
+          "item_count",
+          "closes_at",
+          "created_at",
+          "unread"
+        ]
+      },
       "ActivityNeedsYouDto": {
         "type": "object",
         "properties": {
@@ -26591,13 +26667,21 @@
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
             }
+          },
+          "cards": {
+            "description": "Open sign-up sheets, headcounts and forms from other members, in channels the caller can read, that the caller hasn’t answered: no slot held on a sheet, neither answer on a headcount, no saved form response. Soonest closing first, then newest; one with no end time last.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityCardDto"
+            }
           }
         },
         "required": [
           "tasks",
           "task_confirmations",
           "hours_approvals",
-          "polls"
+          "polls",
+          "cards"
         ]
       },
       "ActivityEventDto": {
@@ -26867,6 +26951,7 @@
                 "tasks",
                 "hours_approvals",
                 "polls",
+                "cards",
                 "coming_up",
                 "made_events",
                 "links"
@@ -27062,9 +27147,11 @@
               "hours_entry",
               "poll",
               "event",
-              "link"
+              "link",
+              "signup",
+              "form"
             ],
-            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`."
+            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`)."
           },
           "item_id": {
             "type": "string",

@@ -15,6 +15,7 @@ import {
   type RepeatDraft,
   type RepeatEditSeries,
 } from "@repo/validation";
+import { formatPoints } from "@repo/formatting";
 import { parsePointReward } from "@/lib/tasks/create-task";
 
 /**
@@ -364,9 +365,11 @@ export function moreOptionsSummary(
   const pointsText = !setsRequirements
     ? null
     : points.kind === "value"
-      ? `${points.points} pts`
+      ? // Written out, and "No points" for none, as web's editor summary
+        // says it (`pointsLabel`; #4135).
+        formatPoints(points.points)
       : points.kind === "omit"
-        ? "0 pts"
+        ? "No points"
         : "Points need a fix";
   const repeat = repeatSummary(draft.repeat, start, series);
   const opens = parseCheckInOpens(draft.checkInOpensInput);

@@ -365,7 +365,7 @@ describe("Activity sheet (#3897)", () => {
       expect(poll.value.close).not.toHaveBeenCalled();
     });
 
-    it("opens the poll's channel from Open in chat", () => {
+    it("opens the poll in its channel from Open in chat", () => {
       const tree = render(rowOf("poll"));
       const push = vi.mocked(useRouter().push);
       act(() => {
@@ -373,7 +373,7 @@ describe("Activity sheet (#3897)", () => {
       });
       expect(push).toHaveBeenCalledWith({
         pathname: "/chat-thread",
-        params: { channelId: "chan-1" },
+        params: { channelId: "chan-1", focusMessageId: "msg-1" },
       });
       // The sheet goes first, or it would sit over the thread.
       expect(dismiss).toHaveBeenCalledTimes(1);

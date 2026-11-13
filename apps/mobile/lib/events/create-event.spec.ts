@@ -197,10 +197,12 @@ describe("the More options summary", () => {
         (id) => (id === "a" ? "Alumni" : undefined),
         local(10, 20),
       ),
-    ).toBe("10 pts · Alumni optional, everyone else required · Every 2 weeks");
+    ).toBe(
+      "10 points · Alumni optional, everyone else required · Every 2 weeks",
+    );
     expect(
       moreOptionsSummary(emptyEventDraft(), () => undefined, local(10, 20)),
-    ).toBe("10 pts · Optional for everyone · Doesn't repeat");
+    ).toBe("10 points · Optional for everyone · Doesn't repeat");
   });
 
   it("says a check-in lead only when it isn't the default", () => {
@@ -211,7 +213,7 @@ describe("the More options summary", () => {
         local(10, 20),
       );
     expect(summary("30")).toBe(
-      "10 pts · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
+      "10 points · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
     );
     expect(summary("0")).toContain("Check-in opens at the start");
     expect(summary("")).not.toContain("Check-in");

@@ -16,7 +16,11 @@ import {
   type MemberAvatarTint,
 } from "@repo/hooks";
 import { useRouter } from "expo-router";
-import { can } from "@repo/validation";
+import {
+  can,
+  DIRECTORY_COPY,
+  directoryNoSearchMatches,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
 import { StatusDot } from "@/components/account/status-dot";
@@ -444,7 +448,7 @@ export default function DirectoryScreen() {
     if (activeQuery.isError && activeQuery.data === undefined) {
       return (
         <ErrorState
-          title="Couldn't load the directory"
+          title={DIRECTORY_COPY.loadError}
           body={describeLoadFailure(activeQuery.error)}
           onRetry={() => void activeQuery.refetch()}
           isRetrying={activeQuery.isFetching}
@@ -458,7 +462,7 @@ export default function DirectoryScreen() {
         <InlineNote
           action={{ label: "Clear search", onPress: () => setQuery("") }}
         >
-          {`Nobody matches “${deferredQuery}”.`}
+          {directoryNoSearchMatches(deferredQuery)}
         </InlineNote>
       );
     }
@@ -471,7 +475,7 @@ export default function DirectoryScreen() {
               setAlumniFilterInputs({ gradYear: "", city: "", company: "" }),
           }}
         >
-          No alumni match these filters.
+          {DIRECTORY_COPY.alumniNoFilterMatches}
         </InlineNote>
       );
     }
@@ -483,15 +487,15 @@ export default function DirectoryScreen() {
             onPress: () => setActivesFilterPicks(NO_ACTIVES_FILTER),
           }}
         >
-          No actives match these filters.
+          {DIRECTORY_COPY.activesNoFilterMatches}
         </InlineNote>
       );
     }
     return (
       <InlineNote>
         {tab === "actives"
-          ? "No actives yet."
-          : "No alumni yet. Graduated members appear here."}
+          ? DIRECTORY_COPY.activesEmpty
+          : DIRECTORY_COPY.alumniEmpty}
       </InlineNote>
     );
   }
