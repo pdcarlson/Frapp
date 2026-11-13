@@ -16774,6 +16774,163 @@
         ]
       }
     },
+    "/v1/ai/ask/{ask_id}/feedback": {
+      "put": {
+        "description": "Sets the caller’s thumbs on an answer they were given, replacing an earlier one. A `down` may carry one of four reasons. Nothing of the question or the answer is sent or kept: to send those, the member reports the answer (`POST /v1/ai/reports`). Kept with the answer’s trace, for at most 90 days.",
+        "operationId": "AskFeedbackController_rate_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAskFeedbackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskFeedbackDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A reason sent with a thumbs up (`ai.ask.feedback.reason_needs_down`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rate an answer: thumbs up or down",
+        "tags": [
+          "AI"
+        ]
+      },
+      "delete": {
+        "description": "Succeeds whether or not there was one.",
+        "operationId": "AskFeedbackController_clear_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a thumbs back",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/ai/ask/{ask_id}/signals": {
+      "post": {
+        "description": "One tap under an answer the caller was given: Try again, Think harder, a source opened, a proposed card confirmed or dismissed. Counted as an analytics event; nothing is stored.",
+        "operationId": "AskFeedbackController_signal_v1",
+        "parameters": [
+          {
+            "name": "ask_id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskSignalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Say what the member did with an answer",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/catch-up": {
       "post": {
         "description": "Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.",
@@ -29948,6 +30105,87 @@
         "required": [
           "posted",
           "restricted"
+        ]
+      },
+      "SetAskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true,
+            "description": "With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before."
+          }
+        },
+        "required": [
+          "rating"
+        ]
+      },
+      "AskFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "ask_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong",
+              "missed",
+              "too_long",
+              "other"
+            ],
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "ask_id",
+          "rating",
+          "reason",
+          "updated_at"
+        ]
+      },
+      "AskSignalDto": {
+        "type": "object",
+        "properties": {
+          "signal": {
+            "type": "string",
+            "enum": [
+              "retried",
+              "think_harder",
+              "source_opened",
+              "card_confirmed",
+              "card_dismissed"
+            ],
+            "description": "What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`."
+          }
+        },
+        "required": [
+          "signal"
         ]
       },
       "ChatCatchUpUnreadDto": {

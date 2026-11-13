@@ -521,6 +521,22 @@ It is sent once the member has passed the checks that can refuse a question outr
 
 Posting an answer to a channel ([`ai.md` § Posting an answer to the channel](ai.md#posting-an-answer-to-the-channel), #4713) sends `ai-answer-posted` from `AskPostController`, once per message written (a repeat of the same post to the same channel is refused and sends nothing), attributed to the member. Its one property is `warned`: whether the asker posted past a list of sources not everyone in the channel could open. No question, answer, source name, channel id or message id is on it. The share of answers members make public is this event over `ai-question-asked` with `door = chat_private`.
 
+## AI answer events
+
+What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). None is sent until the agent loop (#4899) calls `AskTraceService.record` (2026-11-13).
+
+| Event | Sent when | Properties |
+| --- | --- | --- |
+| `ai-answer-finished` | A turn ends, however it ends (`AskTraceService.record`) | `ask_id`, `door`, `prompt_version`, `model`, `effort`, `outcome`, `limit_kind`, `error_kind`, `is_follow_up`, `is_rephrase`, `read_chat`, `truncated`, and counts: `rounds`, `tool_calls`, `tool_failures`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_micro_usd`, `duration_ms`, `sources_read`, `citations_kept`, `citations_dropped`, `left_out_messages`, `proposals` |
+| `ai-answer-tool-called` | Once per tool call in that turn | `ask_id`, `tool`, `outcome`, `round`, `duration_ms`, `arg_bytes`, `result_chars`, `result_sources` |
+| `ai-answer-rated` | The asker sets or changes their thumbs (the same thumbs sent again sends nothing) | `ask_id`, `rating`, `reason`, and the turn's `door`, `prompt_version`, `model`, `effort`, `outcome` |
+| `ai-answer-rating-cleared` | The asker takes their thumbs back | `ask_id` and the turn's five codes |
+| `ai-answer-signal` | A tap under an answer | `ask_id`, `signal` (`retried`, `think_harder`, `source_opened`, `card_confirmed`, `card_dismissed`; `ASK_SIGNALS` in `@repo/validation`), and the turn's five codes |
+
+`outcome` is how the turn ended: `answered`, `not_found`, `refused`, `limit`, `unavailable`, `proposal`, `stopped` or `error`. A tool's `outcome` is `ok`, `empty`, `invalid_args`, `denied`, `unknown_tool`, `over_limit`, `stopped` or `error`; `tool` is the registered name of a tool the loop offered, and is null when the model named one it was not offered. `is_rephrase` is true when the same member asked again within a minute of their last question. `ask_id` is a random id that ties a turn's events together and says nothing about the question. The model rounds of a turn are not sent again here: the gateway already sends `ai-call-finished` for each provider call.
+
+`ask-trace.service.spec.ts` and `ask-feedback.service.spec.ts` run every event through `assertContentFreeProperties`, and `ask-observe.invariant.spec.ts` hands the recorder a turn with text in every code field and reads the events for it.
+
 ## AI Suggestion Events
 
 AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run, or by the save of posted minutes ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks), #4313), and expired by an hourly sweep, none of which is a request to the suggestion routes, so they are not feature events. `AiSuggestionService` sends five events itself, through `AnalyticsService`:
