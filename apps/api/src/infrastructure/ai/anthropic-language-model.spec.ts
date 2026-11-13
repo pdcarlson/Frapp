@@ -474,6 +474,18 @@ describe('AnthropicLanguageModel', () => {
       ]);
     });
 
+    it('takes the tools away for a round that must answer, without forcing a choice', async () => {
+      const { create, model } = clientReturning(message({ content: [] }));
+
+      await model.generate({ ...agent, mustAnswer: true });
+
+      const [params] = create.mock.calls[0] as [
+        { tool_choice: unknown; tools: unknown[] },
+      ];
+      expect(params.tool_choice).toEqual({ type: 'none' });
+      expect(params.tools).toHaveLength(1);
+    });
+
     it('runs no call from a turn cut off at the ceiling', async () => {
       const { model } = clientReturning(
         message({ content: calling, stop_reason: 'max_tokens' }),

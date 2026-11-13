@@ -309,6 +309,11 @@ function agentParams(
             input_schema: tool.inputSchema as Anthropic.Tool.InputSchema,
           })),
         }),
+    // `none` is not a forced choice, which current models reject: it only
+    // takes the tools away for a round.
+    ...(request.mustAnswer && request.tools.length > 0
+      ? { tool_choice: { type: 'none' as const } }
+      : {}),
     output_config: {
       ...(request.effort === undefined ? {} : { effort: request.effort }),
     },

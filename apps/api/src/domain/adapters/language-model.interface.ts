@@ -148,6 +148,12 @@ export interface AgentLanguageModelRequest extends LanguageModelRequestBase {
   /** The rounds already run for this turn, oldest first. */
   rounds: LanguageModelAgentRound[];
   /**
+   * The model may call nothing this round and must write the answer: the
+   * caller's limits are spent. The tools stay listed, because the rounds
+   * before this one name them.
+   */
+  mustAnswer?: boolean;
+  /**
    * Let the provider reuse the unchanged start of the request (the tools,
    * the system text, the rounds so far) from its cache. So `system` and
    * `tools` must be the same bytes from round to round.

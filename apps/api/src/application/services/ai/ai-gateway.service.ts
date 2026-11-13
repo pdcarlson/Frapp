@@ -135,6 +135,8 @@ export interface AiAgentPrompt extends AiPrompt {
   context: LanguageModelSource[];
   /** The rounds already run, oldest first. */
   rounds: LanguageModelAgentRound[];
+  /** The caller's limits are spent: this round writes the answer. */
+  mustAnswer?: boolean;
 }
 
 export type AiEmbeddingResult =
@@ -384,6 +386,7 @@ export class AiGatewayService {
       tools: prompt.tools,
       context: prompt.context,
       rounds: prompt.rounds,
+      ...(prompt.mustAnswer ? { mustAnswer: true } : {}),
       cache: true,
     };
     yield* this.streamed(admitted, request, 'agent', (result) =>

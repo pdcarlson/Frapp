@@ -1,0 +1,549 @@
+import { z } from 'zod';
+import type { LanguageModelToolCall } from '#domain/adapters/language-model.interface';
+import type {
+  AiAgentPrompt,
+  AiAgentRoundResult,
+  AiAgentStreamEvent,
+} from '../../ai/ai-gateway.service';
+import {
+  AGENT_MAX_CALLS,
+  AGENT_MAX_ROUNDS,
+  AGENT_READ_BUDGET_MS,
+  AgentLoopService,
+  type AgentLoopEvent,
+  type AgentLoopInput,
+  type AgentLoopOutcome,
+} from './agent-loop.service';
+import {
+  AGENT_RESULT_MAX_CHARS,
+  AGENT_RESULT_MAX_SOURCES,
+  type AgentReadTool,
+  type AgentSource,
+  type AgentToolResult,
+} from './agent-tool';
+
+jest.mock(
+  '../../../../infrastructure/observability/report-caught-failure',
+  () => ({ reportCaughtFailure: jest.fn() }),
+);
+
+const CHAPTER = 'chapter-1';
+const USER = 'user-1';
+
+const source = (over: Partial<AgentSource> = {}): AgentSource => ({
+  id: 'message:m1',
+  kind: 'chat',
+  title: '#general',
+  detail: 'Sam Park',
+  date: '2026-11-10T15:00:00.000Z',
+  target: { type: 'message', channel_id: 'c1', message_id: 'm1' },
+  text: 'Sam Park: dues are $450',
+  chat: true,
+  authorIds: ['sam'],
+  ...over,
+});
+
+const found = (over: Partial<AgentToolResult> = {}): AgentToolResult => ({
+  chapterId: CHAPTER,
+  sources: [source()],
+  entities: [{ type: 'member', id: 'sam', name: 'Sam Park' }],
+  note: null,
+  leftOutMessages: 0,
+  ...over,
+});
+
+function tool(
+  name: string,
+  run: AgentReadTool<{ query: string }>['run'] = () => Promise.resolve(found()),
+): AgentReadTool<{ query: string }> & { run: jest.Mock } {
+  return {
+    name,
+    description: `Reads ${name}.`,
+    permission: 'members:view',
+    module: null,
+    effect: 'read',
+    input: z.object({ query: z.string().describe('What to look for.') }),
+    reading: `Reading ${name}`,
+    run: jest.fn(run),
+  };
+}
+
+const call = (
+  name: string,
+  input: unknown = { query: 'dues' },
+  id = `call-${name}`,
+): LanguageModelToolCall => ({ id, name, input });
+
+const round = (
+  over: Partial<Extract<AiAgentRoundResult, { status: 'ok' }>> = {},
+): AiAgentRoundResult => ({
+  status: 'ok',
+  text: '',
+  citations: [],
+  droppedCitations: 0,
+  toolCalls: [],
+  replay: { n: Math.random() },
+  truncated: false,
+  usage: { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 },
+  ...over,
+});
+
+/** A gateway whose rounds are scripted, in order; the last one repeats. */
+function build(
+  script: (AiAgentRoundResult | { text: string[]; then: AiAgentRoundResult })[],
+) {
+  const prompts: AiAgentPrompt[] = [];
+  const gateway = {
+    streamAgentRound: jest.fn(async function* (
+      _task: string,
+      prompt: AiAgentPrompt,
+    ): AsyncGenerator<AiAgentStreamEvent> {
+      // The loop reuses the array, so a round is kept as it was sent.
+      prompts.push({ ...prompt, rounds: [...prompt.rounds] });
+      const next = script[Math.min(prompts.length - 1, script.length - 1)];
+      await Promise.resolve();
+      if ('then' in next) {
+        for (const delta of next.text) yield { type: 'text', delta };
+        yield { type: 'end', result: next.then };
+      } else yield { type: 'end', result: next };
+    }),
+  };
+  return { loop: new AgentLoopService(gateway as never), gateway, prompts };
+}
+
+function input(over: Partial<AgentLoopInput> = {}): AgentLoopInput {
+  return {
+    task: 'ask.agent',
+    promptVersion: 'ask.agent@v1',
+    system: 'You are Ask Frapp.',
+    messages: [{ role: 'user', content: 'What do I owe?' }],
+    context: [],
+    tools: [tool('search_messages')],
+    toolContext: {
+      chapterId: CHAPTER,
+      userId: USER,
+      now: new Date('2026-11-13T12:00:00.000Z'),
+      timeZone: 'America/New_York',
+      permissions: new Set(['members:view']),
+      enabledModules: null,
+    },
+    call: { chapterId: CHAPTER, actingUserId: USER },
+    titleOf: (found) => `Chat message in ${found.title}`,
+    ...over,
+  };
+}
+
+async function run(loop: AgentLoopService, given: AgentLoopInput) {
+  const events: AgentLoopEvent[] = [];
+  for await (const event of loop.run(given)) events.push(event);
+  const end = events.find((event) => event.type === 'end');
+  return {
+    events,
+    outcome: (end as { outcome: AgentLoopOutcome } | undefined)?.outcome,
+  };
+}
+
+describe('AgentLoopService', () => {
+  it('runs what the model asks for, hands the result back as sources, and ends on the answer', async () => {
+    const search = tool('search_messages');
+    const answer = round({
+      text: 'You owe $450.',
+      citations: [{ sourceId: 'message:m1', quote: 'dues are $450' }],
+    });
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('search_messages')], replay: 'turn-1' }),
+      answer,
+    ]);
+
+    const { events, outcome } = await run(loop, input({ tools: [search] }));
+
+    expect(search.run).toHaveBeenCalledWith(
+      { query: 'dues' },
+      expect.objectContaining({ chapterId: CHAPTER, userId: USER }),
+    );
+    // The tool's schema is what the model was shown.
+    expect(prompts[0].tools).toEqual([
+      {
+        name: 'search_messages',
+        description: 'Reads search_messages.',
+        inputSchema: expect.objectContaining({
+          type: 'object',
+          required: ['query'],
+        }) as unknown,
+      },
+    ]);
+    expect(prompts[0].rounds).toEqual([]);
+    expect(prompts[1].rounds).toEqual([
+      {
+        replay: 'turn-1',
+        results: [
+          {
+            callId: 'call-search_messages',
+            sources: [
+              {
+                id: 'message:m1',
+                title: 'Chat message in #general',
+                text: 'Sam Park: dues are $450',
+              },
+            ],
+            note: null,
+          },
+        ],
+      },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(['tool', 'end']);
+    expect(events[0]).toEqual({
+      type: 'tool',
+      name: 'search_messages',
+      reading: 'Reading search_messages',
+    });
+    expect(outcome).toMatchObject({
+      stop: 'answered',
+      result: { status: 'ok', text: 'You owe $450.' },
+      sources: [{ id: 'message:m1' }],
+      entities: [{ type: 'member', id: 'sam', name: 'Sam Park' }],
+      rounds: [
+        { calls: [{ tool: 'search_messages', outcome: 'ok', sources: 1 }] },
+        { calls: [] },
+      ],
+    });
+  });
+
+  it('forwards words as they are written, and says so when they were not the answer', async () => {
+    const { loop } = build([
+      {
+        text: ['Let me ', 'look.'],
+        then: round({ toolCalls: [call('search_messages')] }),
+      },
+      { text: ['You owe ', '$450.'], then: round({ text: 'You owe $450.' }) },
+    ]);
+
+    const { events } = await run(loop, input());
+
+    expect(events.map((event) => event.type)).toEqual([
+      'text',
+      'text',
+      'discard',
+      'tool',
+      'text',
+      'text',
+      'end',
+    ]);
+  });
+
+  describe('what it refuses to run', () => {
+    it('a tool that was not offered, whatever it is called', async () => {
+      const search = tool('search_messages');
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('give_points'), call('chapter_tasks')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { events, outcome } = await run(loop, input({ tools: [search] }));
+
+      expect(search.run).not.toHaveBeenCalled();
+      expect(events.some((event) => event.type === 'tool')).toBe(false);
+      expect(prompts[1].rounds[0].results).toEqual([
+        {
+          callId: 'call-give_points',
+          sources: [],
+          note: 'That tool is not available.',
+          failed: true,
+        },
+        {
+          callId: 'call-chapter_tasks',
+          sources: [],
+          note: 'That tool is not available.',
+          failed: true,
+        },
+      ]);
+      // The trace never repeats a name the model made up.
+      expect(outcome?.rounds[0].calls).toEqual([
+        expect.objectContaining({
+          tool: '(not offered)',
+          outcome: 'unknown_tool',
+        }),
+        expect.objectContaining({
+          tool: '(not offered)',
+          outcome: 'unknown_tool',
+        }),
+      ]);
+    });
+
+    it('a tool that is not a read, even when it was offered', async () => {
+      const writer = { ...tool('post_message'), effect: 'propose' as const };
+      const { loop } = build([
+        round({ toolCalls: [call('post_message')] }),
+        round({ text: 'done' }),
+      ]);
+
+      await run(loop, input({ tools: [writer as never] }));
+
+      expect(writer.run).not.toHaveBeenCalled();
+    });
+
+    it('arguments that fail the tool’s schema, without repeating them', async () => {
+      const search = tool('search_messages');
+      const { loop, prompts } = build([
+        round({
+          toolCalls: [
+            call('search_messages', { query: 7, chapter_id: 'other-chapter' }),
+          ],
+        }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(loop, input({ tools: [search] }));
+
+      expect(search.run).not.toHaveBeenCalled();
+      const [result] = prompts[1].rounds[0].results;
+      expect(result).toMatchObject({ failed: true, sources: [] });
+      expect(result.note).toContain('query');
+      expect(result.note).not.toContain('other-chapter');
+      expect(outcome?.rounds[0].calls[0]).toMatchObject({
+        tool: 'search_messages',
+        outcome: 'bad_arguments',
+      });
+    });
+
+    it('a result read from another chapter', async () => {
+      const leaky = tool('search_messages', () =>
+        Promise.resolve(found({ chapterId: 'chapter-2' })),
+      );
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(loop, input({ tools: [leaky] }));
+
+      expect(prompts[1].rounds[0].results[0]).toMatchObject({
+        failed: true,
+        sources: [],
+      });
+      expect(outcome?.sources).toEqual([]);
+      expect(outcome?.entities).toEqual([]);
+      expect(outcome?.rounds[0].calls[0].outcome).toBe('foreign_chapter');
+    });
+  });
+
+  it('goes on without a tool that throws', async () => {
+    const broken = tool('search_messages', () =>
+      Promise.reject(new Error('the treasurer owes $900')),
+    );
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'done' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [broken] }));
+
+    expect(prompts[1].rounds[0].results[0]).toEqual({
+      callId: 'call-search_messages',
+      sources: [],
+      note: 'The read failed.',
+      failed: true,
+    });
+    expect(outcome?.stop).toBe('answered');
+    expect(outcome?.rounds[0].calls[0].outcome).toBe('failed');
+  });
+
+  describe('its limits', () => {
+    it(`makes at most ${AGENT_MAX_ROUNDS} model calls, the last one told to answer`, async () => {
+      const { loop, prompts } = build([
+        // A model that never stops asking.
+        round({ toolCalls: [call('search_messages')] }),
+      ]);
+
+      const { outcome } = await run(loop, input());
+
+      expect(prompts).toHaveLength(AGENT_MAX_ROUNDS);
+      expect(prompts.map((prompt) => prompt.mustAnswer ?? false)).toEqual([
+        ...Array<boolean>(AGENT_MAX_ROUNDS - 1).fill(false),
+        true,
+      ]);
+      expect(outcome?.stop).toBe('round_limit');
+      // What the last round asked for is not run, and not handed on.
+      expect(outcome?.result).toMatchObject({ status: 'ok', toolCalls: [] });
+    });
+
+    it(`runs at most ${AGENT_MAX_CALLS} tool calls, then tells the model to answer`, async () => {
+      const search = tool('search_messages');
+      const many = Array.from({ length: AGENT_MAX_CALLS + 2 }, (_, index) =>
+        call('search_messages', { query: 'dues' }, `call-${index}`),
+      );
+      const { loop, prompts } = build([
+        round({ toolCalls: many }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(loop, input({ tools: [search] }));
+
+      expect(search.run).toHaveBeenCalledTimes(AGENT_MAX_CALLS);
+      expect(prompts[1].rounds[0].results.slice(-2)).toEqual([
+        expect.objectContaining({
+          failed: true,
+          note: 'The limit on reads was reached.',
+        }),
+        expect.objectContaining({
+          failed: true,
+          note: 'The limit on reads was reached.',
+        }),
+      ]);
+      expect(prompts[1].mustAnswer).toBe(true);
+      expect(outcome?.stop).toBe('call_limit');
+    });
+
+    it('tells the model to answer once the read budget is spent', async () => {
+      let now = 0;
+      const slow = tool('search_messages', () => {
+        now += AGENT_READ_BUDGET_MS;
+        return Promise.resolve(found());
+      });
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(
+        loop,
+        input({ tools: [slow], clock: () => now }),
+      );
+
+      expect(prompts[1].mustAnswer).toBe(true);
+      expect(outcome?.stop).toBe('time_limit');
+    });
+
+    it('cuts a result to the source and size caps, whole sources only, and says so', async () => {
+      const big = tool('search_messages', () =>
+        Promise.resolve(
+          found({
+            sources: [
+              source({
+                id: 'a',
+                text: 'a'.repeat(AGENT_RESULT_MAX_CHARS - 10),
+              }),
+              source({ id: 'b', text: 'b'.repeat(100) }),
+              source({ id: 'c', text: 'short' }),
+            ],
+          }),
+        ),
+      );
+      const crowd = tool('roster', () =>
+        Promise.resolve(
+          found({
+            sources: Array.from(
+              { length: AGENT_RESULT_MAX_SOURCES + 5 },
+              (_, index) => source({ id: `m${index}`, text: `line ${index}` }),
+            ),
+          }),
+        ),
+      );
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages'), call('roster')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(loop, input({ tools: [big, crowd] }));
+
+      const [first, second] = prompts[1].rounds[0].results;
+      expect(first.sources.map((found) => found.id)).toEqual(['a']);
+      expect(first.note).toContain('more than fits');
+      expect(second.sources).toHaveLength(AGENT_RESULT_MAX_SOURCES);
+      expect(second.note).toContain('more than fits');
+      expect(outcome?.rounds[0].calls.map((made) => made.cut)).toEqual([
+        true,
+        true,
+      ]);
+    });
+  });
+
+  it('keeps one text per source id for the whole turn', async () => {
+    let reads = 0;
+    const search = tool('search_messages', () => {
+      reads += 1;
+      return Promise.resolve(
+        found({
+          sources: [
+            source({
+              text:
+                reads === 1
+                  ? 'Sam Park: dues are $450'
+                  : 'Sam Park (edited): dues are $900',
+            }),
+          ],
+        }),
+      );
+    });
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'done' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [search] }));
+
+    const texts = prompts[2].rounds.map(
+      (made) => made.results[0].sources[0].text,
+    );
+    expect(texts).toEqual([
+      'Sam Park: dues are $450',
+      'Sam Park: dues are $450',
+    ]);
+    expect(outcome?.sources).toHaveLength(1);
+  });
+
+  it('adds up the messages left out, and says nothing found for an empty read', async () => {
+    const empty = tool('search_messages', () =>
+      Promise.resolve(found({ sources: [], entities: [], leftOutMessages: 3 })),
+    );
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'done' }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [empty] }));
+
+    expect(prompts[1].rounds[0].results[0].note).toBe('Nothing found.');
+    expect(outcome?.leftOutMessages).toBe(6);
+  });
+
+  it('ends the turn when a round is not made', async () => {
+    const capped: AiAgentRoundResult = {
+      status: 'unavailable',
+      reason: 'spend_cap',
+      detail: 'member_cap',
+    };
+    const { loop } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      capped,
+    ]);
+
+    const { outcome } = await run(loop, input());
+
+    expect(outcome).toMatchObject({ stop: 'unavailable', result: capped });
+    // What was read before the cap is still reported.
+    expect(outcome?.sources).toHaveLength(1);
+  });
+
+  it('reads and writes nothing more for a member who left', async () => {
+    const controller = new AbortController();
+    const search = tool('search_messages', () => {
+      controller.abort();
+      return Promise.resolve(found());
+    });
+    const { loop, prompts } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'done' }),
+    ]);
+
+    const { outcome } = await run(
+      loop,
+      input({ tools: [search], signal: controller.signal }),
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(outcome).toBeUndefined();
+  });
+});
