@@ -587,6 +587,48 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
+  it("links a sign-up or form row to its message in chat, reading it, with no panel (#3926)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+          cards: [
+            {
+              kind: "form",
+              message_id: "m-form",
+              channel_id: "c-rush",
+              channel_name: "rush",
+              channel_type: "PUBLIC",
+              sender_id: "officer",
+              title: "Room picks",
+              item_count: 3,
+              closes_at: null,
+              created_at: "2026-11-01T00:00:00.000Z",
+              unread: true,
+            },
+          ],
+        },
+        needs_you_count: 1,
+      }),
+    );
+    render(<ActivityPage />);
+
+    const row = screen.getByRole("link", { name: /Room picks/ });
+    expect(row).toHaveTextContent("Form · 3 questions · #rush");
+    expect(row).toHaveTextContent("Fill out");
+    expect(row.getAttribute("href")).toContain("c-rush");
+    expect(row.getAttribute("href")).toContain("m-form");
+    fireEvent.click(row);
+
+    expect(mockMarkRead).toHaveBeenCalledWith([
+      { kind: "form", item_id: "m-form" },
+    ]);
+    expect(screen.queryByText("panel:Room picks")).not.toBeInTheDocument();
+  });
+
   it("re-reads before opening a review notification's task, under any chip, and again on a later click", async () => {
     // The read in hand predates the submission; only the re-read holds it.
     window.localStorage.setItem("frapp.activity.filter.me", "poll");

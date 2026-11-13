@@ -7,7 +7,10 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
+import type {
+  ChatCardKind,
+  IChatMessageRepository,
+} from '#domain/repositories/chat.repository.interface';
 import {
   ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
@@ -285,9 +288,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data || [];
   }
 
-  async findPollCardsByChapter(
+  async findCardsByChapter(
     chapterId: string,
-    options: { senderId?: string; limit: number },
+    options: { kind: ChatCardKind; senderId?: string; limit: number },
   ): Promise<ChatMessage[]> {
     // Chapter scope through the channel join, as `findPollsByChapter` does:
     // `chat_messages` carries no `chapter_id` of its own.
@@ -296,7 +299,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select(
         `${CHAT_MESSAGE_COLUMNS}, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)`,
       )
-      .eq('kind', 'poll')
+      .eq('kind', options.kind)
       .eq('is_deleted', false)
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: false });

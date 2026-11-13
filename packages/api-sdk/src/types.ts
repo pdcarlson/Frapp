@@ -4177,7 +4177,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -8425,6 +8425,38 @@ export interface components {
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
+        ActivityCardDto: {
+            /**
+             * @description `signup` for a sign-up sheet of slots, `headcount` for a Going / Can’t make it sign-up, `form` for a form card. Its read is recorded as `signup` for the first two and `form` for a form.
+             * @enum {string}
+             */
+            kind: "signup" | "headcount" | "form";
+            /**
+             * Format: uuid
+             * @description The chat message that is the card. A client opens it in chat, where it is answered.
+             */
+            message_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string;
+            /** @enum {string} */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+            /** Format: uuid */
+            sender_id: string | null;
+            title: string;
+            /** @description How many slots a sign-up sheet has, or questions a form asks; 2 for a headcount. */
+            item_count: number;
+            /**
+             * Format: date-time
+             * @description When it stops taking answers. Null for a card with no end time.
+             */
+            closes_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
+            unread: boolean;
+        };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
             tasks: components["schemas"]["ActivityTaskDto"][];
@@ -8434,6 +8466,8 @@ export interface components {
             hours_approvals: components["schemas"]["ActivityHoursEntryDto"][];
             /** @description Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first. */
             polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Open sign-up sheets, headcounts and forms from other members, in channels the caller can read, that the caller hasn’t answered: no slot held on a sheet, neither answer on a headcount, no saved form response. Soonest closing first, then newest; one with no end time last. */
+            cards: components["schemas"]["ActivityCardDto"][];
         };
         ActivityEventDto: {
             /** Format: uuid */
@@ -8540,7 +8574,7 @@ export interface components {
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
@@ -8595,10 +8629,10 @@ export interface components {
         };
         ActivityItemRefDto: {
             /**
-             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
              * @enum {string}
              */
-            kind: "task" | "hours_entry" | "poll" | "event" | "link";
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
             /** Format: uuid */
             item_id: string;
         };

@@ -31,6 +31,7 @@ import type {
   StandingStudy,
 } from '../../application/services/activity-standing.service';
 import type {
+  ActivityCard,
   ActivityEvent,
   ActivityHoursEntry,
   ActivityPoll,
@@ -249,6 +250,64 @@ export class ActivityPollDto implements ActivityPoll {
   message: ActivityPoll['message'];
 }
 
+export class ActivityCardDto implements ActivityCard {
+  @ApiProperty({
+    enum: ['signup', 'headcount', 'form'],
+    description:
+      '`signup` for a sign-up sheet of slots, `headcount` for a Going / Can’t make it sign-up, `form` for a form card. Its read is recorded as `signup` for the first two and `form` for a form.',
+  })
+  kind: ActivityCard['kind'];
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The chat message that is the card. A client opens it in chat, where it is answered.',
+  })
+  message_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    description:
+      'The channel’s name. A direct message’s is server-generated, so label those from `channel_type`.',
+  })
+  channel_name: string;
+
+  @ApiProperty({ enum: ACTIVITY_CHANNEL_TYPES })
+  channel_type: ChannelType;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  sender_id: string | null;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty({
+    description:
+      'How many slots a sign-up sheet has, or questions a form asks; 2 for a headcount.',
+  })
+  item_count: number;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When it stops taking answers. Null for a card with no end time.',
+  })
+  closes_at: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
+  })
+  unread: boolean;
+}
+
 export class ActivityEventDto implements ActivityEvent {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -414,7 +473,7 @@ export class ActivityItemRefDto implements ActivityItemRef {
   @ApiProperty({
     enum: ACTIVITY_ITEM_KINDS,
     description:
-      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.',
+      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).',
   })
   @IsIn(ACTIVITY_ITEM_KINDS)
   kind: ActivityItemKind;
@@ -467,6 +526,13 @@ export class ActivityNeedsYouDto {
       'Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first.',
   })
   polls: ActivityPollDto[];
+
+  @ApiProperty({
+    type: [ActivityCardDto],
+    description:
+      'Open sign-up sheets, headcounts and forms from other members, in channels the caller can read, that the caller hasn’t answered: no slot held on a sheet, neither answer on a headcount, no saved form response. Soonest closing first, then newest; one with no end time last.',
+  })
+  cards: ActivityCardDto[];
 }
 
 export class ActivityMadeByYouDto {

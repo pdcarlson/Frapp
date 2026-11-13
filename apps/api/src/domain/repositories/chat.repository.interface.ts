@@ -234,6 +234,9 @@ export interface IChatCategoryRepository {
   ): Promise<string[]>;
 }
 
+/** The chat card kinds Activity lists (`findCardsByChapter`). */
+export type ChatCardKind = 'poll' | 'signup' | 'form';
+
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
   /**
@@ -283,17 +286,19 @@ export interface IChatMessageRepository {
     options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   /**
-   * Newest-first poll **cards** (`kind = 'poll'`, the format every client
-   * posts) across the chapter, deleted rows left out. `senderId` keeps one
+   * Newest-first chat **cards** of one kind across the chapter: poll cards
+   * (`kind = 'poll'`, the format every client posts), sign-up sheets and
+   * headcounts (`'signup'`) or forms (`'form'`), deleted rows left out.
+   * `senderId` keeps one
    * member's. Whether a card is still open is not decided here: its deadline
    * is an ISO string inside `payload`, and comparing those as text is wrong
    * across offsets, so the caller parses it. Every channel's rows come back,
    * readable or not; the caller filters by access, as with
    * {@link findPollsByChapter}.
    */
-  findPollCardsByChapter(
+  findCardsByChapter(
     chapterId: string,
-    options: { senderId?: string; limit: number },
+    options: { kind: ChatCardKind; senderId?: string; limit: number },
   ): Promise<ChatMessage[]>;
   /**
    * Locate an already-persisted message by its idempotency triple. Used by
@@ -418,6 +423,17 @@ export interface IChatMessageActionRepository {
     userId: string,
     actionType: string,
   ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
+  /**
+   * Every member's `actionType` rows on `messageIds`, for Activity's
+   * sign-up sheets (#3926): whether the caller holds a slot, and whether a
+   * sheet is full. Only for action types the whole channel already reads
+   * (a sign-up claim names its holder on the card); never for anything
+   * private. The caller passes ids it has already scoped and authorized.
+   */
+  findAllActionsOnMessages(
+    messageIds: string[],
+    actionType: string,
+  ): Promise<Pick<ChatMessageAction, 'message_id' | 'user_id' | 'payload'>[]>;
   /**
    * Set this member's slots on a sign-up card (#3926) in one atomic step:
    * the `claim_signup_slots` RPC locks the card's message row, refuses a slot

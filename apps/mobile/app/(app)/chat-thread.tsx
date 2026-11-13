@@ -258,6 +258,7 @@ function ChannelThreadScreen() {
   const params = useLocalSearchParams<{
     channelId?: string | string[];
     landing?: string | string[];
+    focusMessageId?: string | string[];
   }>();
   const channelId = useMemo(() => {
     const raw = params.channelId;
@@ -693,6 +694,18 @@ function ChannelThreadScreen() {
     markImportantSeen([nextImportant.id]);
     jumpToImportant(nextImportant.id);
   }, [nextImportant, markImportantSeen, jumpToImportant]);
+  // A row elsewhere that names one message opens the channel on it:
+  // Activity's sign-up and form rows (#3926), whose card is answered here.
+  // Once per message, after the first rows are in, paging older history for
+  // it as the Important strip's jump does.
+  const focusMessageId = firstParam(params.focusMessageId);
+  const focusedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusMessageId || focusedOn.current === focusMessageId) return;
+    if (inverted.length === 0) return;
+    focusedOn.current = focusMessageId;
+    jumpToImportant(focusMessageId);
+  }, [focusMessageId, inverted.length, jumpToImportant]);
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
   // only on a channel a summary may read: never a DM, a group DM or the

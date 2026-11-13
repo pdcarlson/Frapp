@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/activity/activity-filter";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 import { cn } from "@/lib/utils";
 import { can } from "@repo/validation";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
@@ -175,6 +177,35 @@ function PanelRow({
           />
         </span>
       ) : null}
+    </li>
+  );
+}
+
+/**
+ * A sign-up sheet, headcount or form the member hasn't answered (#3926 step
+ * 4). It is answered on the card itself, so the row goes to the message in
+ * chat rather than a panel, as a link row goes to its link; opening it reads
+ * it.
+ */
+function CardRow({
+  row,
+  onOpen,
+}: {
+  row: Extract<ActivityRow, { kind: "card" }>;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  return (
+    <li>
+      <Link
+        href={chatDeepLink({
+          channelId: row.card.channel_id,
+          messageId: row.card.message_id,
+        })}
+        className={ROW_CLASS}
+        onClick={() => onOpen(row)}
+      >
+        <RowContent row={row} />
+      </Link>
     </li>
   );
 }
@@ -346,6 +377,8 @@ function GroupPart({
               actions={linkActions}
               onOpen={onOpen}
             />
+          ) : row.kind === "card" ? (
+            <CardRow key={row.key} row={row} onOpen={onOpen} />
           ) : (
             <PanelRow
               key={row.key}
@@ -451,8 +484,8 @@ export function ActivityPage() {
   const { markRead } = useActivityUnread(activity.data);
   const openFromList = (row: ActivityRow) => {
     if (row.unread) markRead([row.readRef]);
-    // A link opens in a new tab and has no panel.
-    if (row.kind !== "link") setOpened(row);
+    // A link opens in a new tab, and a sign-up or form in chat: no panel.
+    if (row.kind !== "link" && row.kind !== "card") setOpened(row);
   };
   // `/activity?review=<taskId>`: a "submitted a task" notification
   // (`deepLinkFor` in the bell). Opens that task's panel once the read has
