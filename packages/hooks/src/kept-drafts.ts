@@ -112,7 +112,9 @@ export function useKeptDraftKeys(): {
  *
  * `hold()` when a save starts: the draft leaves the store, so the page coming
  * back mid-save doesn't offer the same form to send again. `release()` when
- * it fails puts it back; `drop()` when it lands.
+ * it fails puts it back; `drop()` when it lands. A form that stays open after
+ * a save (the Members panel's invites) calls `rebase()` after `drop()`, so
+ * what it is left showing isn't kept as a new draft.
  *
  * `form` is `null` for a use that keeps nothing (the same form opened from
  * chat, which keeps its own drafts per channel).
@@ -204,6 +206,7 @@ export function useKeptFormDraft<T>(
   }, [open, key, settles, signature, whole]);
 
   const drop = useCallback(() => {
+    held.current = false;
     if (key !== null) dropKeptDraft(key);
     setRestored(false);
   }, [key]);

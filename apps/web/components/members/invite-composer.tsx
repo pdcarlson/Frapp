@@ -15,6 +15,11 @@ import {
   type EmailChip,
 } from "@/components/members/email-chips-input";
 
+/** The addresses being written: the chips, and what is still being typed. */
+export type InviteAddresses = { chips: EmailChip[]; draft: string };
+
+export const NO_ADDRESSES: InviteAddresses = { chips: [], draft: "" };
+
 /** How long the Copy link button reads "Copied". */
 const COPIED_MS = 2000;
 
@@ -57,6 +62,10 @@ export async function copyWhenReady(text: Promise<string>): Promise<void> {
  * `role` is the role name to invite as; leave it undefined for the chapter's
  * default. `roleControl` sits left of Send when the caller lets the sender
  * pick one.
+ *
+ * A caller that keeps the addresses as a draft (the Members panel, #4593)
+ * holds them itself through `addresses`, and hears when a send starts and
+ * when it fails, so a draft being sent isn't offered to send again.
  */
 export function InviteComposer({
   role,
@@ -64,6 +73,10 @@ export function InviteComposer({
   disabled = false,
   gate,
   onInvited,
+  addresses,
+  onAddressesChange,
+  onSendStart,
+  onSendFailed,
 }: {
   role?: string;
   roleControl?: ReactNode;
@@ -73,14 +86,28 @@ export function InviteComposer({
   gate?: SubscriptionGate;
   /** Called after invites go out, with how many and how. */
   onInvited?: (how: "email" | "link", count: number) => void;
+  /** The addresses, for a caller that holds them. */
+  addresses?: InviteAddresses;
+  /** A change to them, as a patch over the latest. */
+  onAddressesChange?: (patch: Partial<InviteAddresses>) => void;
+  /** A send is on its way. */
+  onSendStart?: () => void;
+  /** The send failed outright; the addresses are still there. */
+  onSendFailed?: () => void;
 }) {
   const fieldId = useId();
   const problemId = useId();
   const { toast } = useToast();
   const emailInvites = useEmailInvites();
   const createInvite = useCreateInvite();
-  const [chips, setChips] = useState<EmailChip[]>([]);
-  const [draft, setDraft] = useState("");
+  const [own, setOwn] = useState<InviteAddresses>(NO_ADDRESSES);
+  const { chips, draft } = addresses ?? own;
+  function change(patch: Partial<InviteAddresses>) {
+    if (onAddressesChange) onAddressesChange(patch);
+    else setOwn((current) => ({ ...current, ...patch }));
+  }
+  const setChips = (next: EmailChip[]) => change({ chips: next });
+  const setDraft = (next: string) => change({ draft: next });
   const [tooMany, setTooMany] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -111,6 +138,7 @@ export function InviteComposer({
       return;
     }
     const emails = pending.map((chip) => chip.value);
+    onSendStart?.();
     try {
       const result = await emailInvites.mutateAsync({ role, emails });
       const failed = new Set(
@@ -133,8 +161,12 @@ export function InviteComposer({
               : `${sent} invites sent`,
         });
         onInvited?.("email", sent);
+      } else {
+        // Nothing went out: the addresses are still the draft.
+        onSendFailed?.();
       }
     } catch (error) {
+      onSendFailed?.();
       toast({
         title: "Couldn't send invites",
         description: getErrorMessage(error, "Try again in a moment."),

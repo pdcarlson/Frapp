@@ -1,6 +1,7 @@
 "use client";
 
 import React, {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -15,6 +16,12 @@ import {
   useRequestDocumentUploadUrls,
 } from "@repo/hooks";
 import { MemberFacingError } from "@repo/hooks/error-copy";
+import {
+  readKeptPanel,
+  useKeptDraftKeys,
+  writeKeptPanel,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { MAX_UPLOAD_LABEL, acceptAttribute } from "@repo/validation";
 import {
   BulkDropZone,
@@ -86,6 +93,11 @@ const NONE = "__none__";
  * retry for any that fail. Google Drive and Dropbox both keep a dropped
  * folder's structure; Frapp's folders are one level deep, so the structure
  * becomes a suggestion of the Documents folder each file goes into.
+ *
+ * A review left unfinished is kept (#4593): going back or leaving Documents
+ * keeps the files and every change made to them, and the panel opens on them
+ * again, saying so. Documents left with the panel open reopens it. Cancel
+ * gives the review up.
  */
 export function FolderImportPanel({
   gate,
@@ -162,12 +174,61 @@ export function FolderImportPanel({
     (it) => it.status === "waiting" || it.status === "finishing",
   ).length;
 
+  // Whether this opening came back to a review left unfinished (#4593).
+  const [restored, setRestored] = useState(false);
+  const reviewing =
+    run !== null &&
+    !view.applied &&
+    (view.rows.length > 0 || view.leftOut.length > 0);
+
+  function open() {
+    setRestored(reviewing);
+    dialog.setOpen(true);
+  }
+
+  /** Cancel, or Done once filed: a finished or never-started import goes. */
   function close() {
     dialog.setOpen(false);
-    // A finished or never-started import is cleared; one still uploading
-    // keeps going behind the page and is there when the panel reopens.
+    setRestored(false);
+    // One still uploading keeps going behind the page and is there when the
+    // panel reopens.
     if (run && pending === 0) setFolderImport(chapterId, null);
   }
+
+  /** Back or Escape: a review is kept for next time, a finished import goes. */
+  function back() {
+    if (reviewing) dialog.setOpen(false);
+    else close();
+  }
+
+  /** Discard: the review goes, and the panel is ready for another folder. */
+  function discard() {
+    setRestored(false);
+    if (run && pending === 0) setFolderImport(chapterId, null);
+  }
+
+  // Documents left with a review open comes back to it, once the officer may
+  // open the panel again; until then the mark that says so stays.
+  const keptKeys = useKeptDraftKeys();
+  const panelKey = keptKeys.panel("documents-import");
+  const [leftOpen, setLeftOpen] = useState(
+    () => readKeptPanel(panelKey) === true,
+  );
+  useEffect(() => {
+    if (!leftOpen || !gate.allowed) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- reopen, once, the review the page was left with */
+    setLeftOpen(false);
+    if (reviewing) {
+      setRestored(true);
+      dialog.setOpen(true);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [leftOpen, gate.allowed, reviewing, dialog]);
+  const panelOpen = dialog.dialogProps.open;
+  useEffect(() => {
+    if (leftOpen && !panelOpen) return;
+    writeKeptPanel(panelKey, panelOpen && reviewing ? true : null);
+  }, [panelKey, panelOpen, reviewing, leftOpen]);
 
   return (
     <>
@@ -175,14 +236,14 @@ export function FolderImportPanel({
         variant="secondary"
         size="toolbar"
         className="gap-2"
-        onClick={() => dialog.setOpen(true)}
+        onClick={open}
         {...gate.controlProps()}
       >
         <FolderUp className="h-4 w-4" /> Import a folder
       </Button>
       <Panel
         open={dialog.dialogProps.open}
-        onOpenChange={(next) => (next ? dialog.setOpen(true) : close())}
+        onOpenChange={(next) => (next ? open() : back())}
         docked
         backLabel="Back to documents"
       >
@@ -209,6 +270,7 @@ export function FolderImportPanel({
               typeOptions={context.typeOptions}
               gate={gate}
               onCancel={close}
+              onDiscard={restored ? discard : undefined}
             />
           )}
         </PanelContent>
@@ -250,6 +312,7 @@ function ImportReview({
   typeOptions,
   gate,
   onCancel,
+  onDiscard,
 }: {
   view: ImportView;
   run: FolderImport;
@@ -257,6 +320,8 @@ function ImportReview({
   typeOptions: readonly string[];
   gate: SubscriptionGate;
   onCancel: () => void;
+  /** The review was kept from before; set to say so and offer a fresh start. */
+  onDiscard?: () => void;
 }) {
   const duplicates = useMemo(
     () => duplicateReasons(view.rows, view.queue),
@@ -414,6 +479,7 @@ function ImportReview({
         ))}
       </PanelBody>
       <PanelFooter>
+        {onDiscard ? <KeptDraftNote onDiscard={onDiscard} /> : null}
         <Button variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
