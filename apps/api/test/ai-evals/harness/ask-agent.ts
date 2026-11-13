@@ -209,11 +209,12 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
           getEffectivePermissions: () => Promise.resolve(caller.permissions),
           findByChapter: () => Promise.resolve([]),
         } as never,
-        // The cases name no asker, so Ask answers without one, as it does
-        // when the profile read fails.
+        // The cases name no asker yet, so Ask answers without one, as it
+        // does when that read fails (#4890).
         {
-          findProfileByUserId: () => Promise.reject(new Error('no profile')),
+          findByUserAndChapter: () => Promise.reject(new Error('no asker')),
         } as never,
+        { findDisplayIdentitiesByIds: () => Promise.resolve([]) } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
       );

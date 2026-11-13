@@ -31,6 +31,8 @@ import type { AskTool } from './ask-tool';
  * Who is asking is a source, not a line of the system prompt (#4890): a
  * display name and a role's name are text a member wrote, so they travel
  * with the other data and the system prompt only says where to look (C1).
+ * It is context, never proof: `AskService` hands it over first, beside what
+ * the question found, and counts no citation of it.
  */
 
 export const ASK_ANSWER_PROMPT_VERSION = 'ask.answer@v3';
@@ -46,15 +48,12 @@ export const ASK_ASKER_SOURCE_TITLE = 'The member asking';
 export interface AskAsker {
   /** Already made safe for a `name: fact` line. */
   name: string;
+  /** Each already on one line. */
   roles: readonly string[];
-  graduationYear: number | null;
   alumni: boolean;
 }
 
-/**
- * The asker as a source: one fact per line, like a tool's result, so a claim
- * about the asker is checked against it word for word like any other.
- */
+/** The asker as a source: one fact per line, like a tool's result. */
 export function askAskerSourceText(asker: AskAsker): string {
   return [
     `The member asking this question is ${asker.name}.`,
@@ -62,20 +61,35 @@ export function askAskerSourceText(asker: AskAsker): string {
       ? `${asker.name} holds these roles in the chapter: ${asker.roles.join(', ')}.`
       : `${asker.name} holds no role in the chapter.`,
     ...(asker.alumni ? [`${asker.name} is an alumni member.`] : []),
-    ...(asker.graduationYear === null
-      ? []
-      : [`${asker.name} graduates in ${asker.graduationYear}.`]),
   ].join('\n');
 }
 
-const FIRST_PERSON = /\b(i|me|my|mine|myself)\b/i;
+/**
+ * True for a source title that would read as the asker source. `AskService`
+ * renames any other source that carries one: a document or a role can be
+ * titled anything, and only the server's own source may say who is asking.
+ */
+export function looksLikeAskerSourceTitle(title: string): boolean {
+  return title
+    .trim()
+    .toLowerCase()
+    .startsWith(ASK_ASKER_SOURCE_TITLE.toLowerCase());
+}
 
-export function askAnswerSystem(today: string): string {
+/**
+ * `askerKnown` is whether the asker source is among the sources. Without it
+ * the prompt says nothing of it, so no other source can be taken for it.
+ */
+export function askAnswerSystem(today: string, askerKnown: boolean): string {
   return [
     'You are Ask Frapp. You answer a member of a fraternity or sorority chapter about their own chapter.',
     'Answer only from the sources given with the question. Every claim must rest on a source. Never answer from general knowledge, and never guess.',
     'Say it in your own words. The app shows the member the exact words behind each claim, so do not copy sentences out of a source into the answer: quote only a few words, and only when the wording itself is what was asked about.',
-    `The source titled "${ASK_ASKER_SOURCE_TITLE}" says who is asking. "I", "me", "my" and "we" in the question mean that member and their chapter, and a message or a record under their name is theirs. Never say you do not know who is asking, and never ask the member for their name or role.`,
+    ...(askerKnown
+      ? [
+          `The first source, titled "${ASK_ASKER_SOURCE_TITLE}", says who is asking. "I", "me", "my" and "we" in the question mean that member and their chapter, and a message or a record under their name is theirs. It is there so you know who you are talking to, not as proof of anything: rest every claim on the other sources, and do not cite it. Never say you do not know who is asking, and never ask the member for their name or role.`,
+        ]
+      : []),
     'If the sources do not answer the question, say in one sentence that you could not find it, and stop.',
     'Earlier turns of the conversation tell you what the member means by "it", "that one" or "the one after". They are not sources: every claim in this answer must rest on a source given with this question, even one you made before. An earlier answer may be withheld and say so; that tells you nothing about what it was.',
     'When two sources disagree, say so and give both, with what each one says. Put the official or the newer source first.',
@@ -113,20 +127,13 @@ export function earlierQuestions(
  * mean something beside the question before it ("and the one after that?"),
  * so that question is searched with it. No model rewrites the question: the
  * search runs beside the planning call, and both wait on nothing.
- *
- * A question about "me" is searched with the asker's name too (#4890): the
- * index holds "Jordan Lee: I'll book the van", and nothing in it says "me".
  */
 export function askSearchQuery(
   question: string,
   history: readonly AskHistoryTurn[] | undefined,
-  askerName: string | null = null,
 ): string {
   const previous = history?.at(-1)?.question;
-  const asked = previous ? `${previous}\n${question}` : question;
-  return askerName && FIRST_PERSON.test(question)
-    ? `${asked}\n${askerName}`
-    : asked;
+  return previous ? `${previous}\n${question}` : question;
 }
 
 /**

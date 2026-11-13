@@ -65,7 +65,6 @@ const CALLS = new Set([
   'invoices.findByUser',
   'meetings.listPostedSince',
   'members.findByUserAndChapter',
-  'members.findProfileByUserId',
   'members.findProfilesByChapter',
   'members.findRosterByChapter',
   'points.getLeaderboard',
@@ -75,6 +74,7 @@ const CALLS = new Set([
   'retrieval.retrieve',
   'roles.findByChapterAndSystemKey',
   'tasks.list',
+  'users.findDisplayIdentitiesByIds',
   // Consent, permission and the lanes' own plumbing.
   'act.availableActions',
   'actService.act',

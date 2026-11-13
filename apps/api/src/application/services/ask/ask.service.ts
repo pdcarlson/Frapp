@@ -14,6 +14,11 @@ import {
   type LanguageModelSource,
 } from '#domain/adapters/language-model.interface';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '#domain/repositories/user.repository.interface';
 import { sealAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { placeCitations } from '#domain/utils/citation-placement';
 import { aiStoredTextKeyRing } from '../../../config/ai-stored-text-config';
@@ -48,6 +53,7 @@ import {
   askPlanMessage,
   askSearchQuery,
   earlierQuestions,
+  looksLikeAskerSourceTitle,
 } from './ask-prompt';
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
@@ -60,6 +66,26 @@ import { nameInLine } from './ask-lines';
 
 /** The id of the source that says who is asking. */
 const ASKER_SOURCE_ID = 'asker';
+
+/** The role a chapter's alumni hold (`RbacService.getAlumniRoleId`). */
+const ALUMNI_SYSTEM_KEY = 'ALUMNI';
+
+/**
+ * What the model is handed: who is asking first, when that is known, then
+ * what was read. Only the asker source may carry its title, so any other
+ * source that would read as it is renamed here.
+ */
+function sourcesForModel(
+  asker: LanguageModelSource | null,
+  entries: readonly AskSourceEntry[],
+): LanguageModelSource[] {
+  const read = entries.map(({ model }) =>
+    looksLikeAskerSourceTitle(model.title)
+      ? { ...model, title: `Chapter source: ${model.title}` }
+      : model,
+  );
+  return asker ? [asker, ...read] : read;
+}
 
 /** Passages asked of retrieval for one question. */
 const PASSAGE_LIMIT = 8;
@@ -256,7 +282,10 @@ function passageEntry(
  * 4. **The answer, streamed.** The gateway gets the question as the user
  *    turn, after the conversation's earlier turns when the client sent
  *    them, and the sources as sources: live data first, then official
- *    passages, then chat, labelled as chat (C1, C8). Words are forwarded as
+ *    passages, then chat, labelled as chat (C1, C8). Ahead of them all goes
+ *    one source that says who is asking (#4890), for a member who may read
+ *    the roster. It is context, not proof: it is never shown as a source
+ *    and a citation of it backs nothing. Words are forwarded as
  *    they are written. An earlier turn is context, never a source: the
  *    answer still stands only on quotes found in this question's sources.
  * 5. **No answer without a source.** When the model stops, the gateway has
@@ -286,6 +315,7 @@ export class AskService {
     private readonly consent: AiConsentService,
     private readonly rbac: RbacService,
     private readonly members: MemberService,
+    @Inject(USER_REPOSITORY) private readonly users: IUserRepository,
     private readonly diagnostics: AskDiagnosticsService,
     @Inject(ASK_TOOLS) private readonly tools: readonly AskTool[],
   ) {}
@@ -320,20 +350,19 @@ export class AskService {
     yield this.step('searching');
 
     const context = { chapterId: input.chapterId, actingUserId: input.userId };
-    const [offered, asker] = await Promise.all([
-      this.offeredTools(input),
-      this.asker(input),
-    ]);
+    const held = new Set(
+      await this.rbac.getEffectivePermissions(input.chapterId, input.userId),
+    );
+    const offered = this.offeredTools(input, held);
+    // Read beside the search and the plan, which do not wait for it. It
+    // never rejects.
+    const askerRead = this.asker(input, held);
     const [retrieved, planned] = await Promise.all([
       this.retrieval.retrieve(
         {
           chapterId: input.chapterId,
           actingUserId: input.userId,
-          query: askSearchQuery(
-            input.question,
-            input.history,
-            asker?.name ?? null,
-          ),
+          query: askSearchQuery(input.question, input.history),
           limit: PASSAGE_LIMIT,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
@@ -373,13 +402,14 @@ export class AskService {
     // The last of chat's three consent checks (#4314): a member who said No
     // since the search ran has their words dropped here, before any text
     // leaves Frapp. Their messages join the left-out count, never by name.
-    const [toolEntries, allowed] = await Promise.all([
+    const [toolEntries, allowed, asker] = await Promise.all([
       this.runTools(planned, input, now),
       chatPassagesStillAllowed(
         retrieved.passages,
         input.chapterId,
         this.consent,
       ),
+      askerRead,
     ]);
     // Nor is anything written or kept for one who left while it read.
     if (input.signal?.aborted) return;
@@ -389,14 +419,11 @@ export class AskService {
     );
     // Live data is canon, then the official record, then chat, each in the
     // order retrieval ranked it.
-    const read = [
+    const entries = [
       ...toolEntries,
       ...passages.filter((entry) => !entry.chat),
       ...passages.filter((entry) => entry.chat),
     ];
-    // Who is asking goes first, and only beside something that was found:
-    // it says who "me" is, and is never by itself a reason to write (C7).
-    const entries = read.length > 0 && asker ? [asker.entry, ...read] : read;
 
     if (entries.length === 0) {
       const answer = emptyAnswer('not_found', { left_out_messages: leftOut });
@@ -414,6 +441,12 @@ export class AskService {
       return;
     }
 
+    // Who is asking goes first, and only beside something that was found:
+    // it says who "me" is, and is never a reason to write (C7). It is not
+    // among `entries`, so a citation of it backs nothing and it is never
+    // shown as a source.
+    const given = sourcesForModel(asker, entries);
+
     // "Writing" is said at the first word, not before the model has been
     // asked: until then it is still reading what it was handed.
     let writing = false;
@@ -422,9 +455,9 @@ export class AskService {
       'ask.answer',
       {
         promptVersion: ASK_ANSWER_PROMPT_VERSION,
-        system: askAnswerSystem(longDate(now, input.timeZone)),
+        system: askAnswerSystem(longDate(now, input.timeZone), asker !== null),
         messages: askAnswerMessages(input.question, input.history),
-        sources: entries.map((entry) => entry.model),
+        sources: given,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       },
       context,
@@ -456,6 +489,7 @@ export class AskService {
       entries,
       planned,
       now,
+      given,
     );
     yield this.done(answer);
   }
@@ -516,59 +550,47 @@ export class AskService {
 
   /**
    * Who is asking, as a source (#4890): their name, the roles they hold and
-   * their year, read as their own profile page reads them. Nothing else from
-   * the profile reaches a model: it also carries an email, a phone number, a
-   * city and an employer (`ai.md` § Live structured data). A read that fails
-   * means an answer that does not know the asker, not no answer.
+   * whether they are an alum, which is what the roster shows of them. So it
+   * is read only for a member who may open the roster, and nothing else
+   * about them reaches a model (`ai.md` § Live structured data). A read that
+   * fails means an answer that does not know the asker, not no answer.
    */
   private async asker(
     input: AskInput,
-  ): Promise<{ name: string; entry: AskSourceEntry } | null> {
+    held: ReadonlySet<string>,
+  ): Promise<LanguageModelSource | null> {
+    if (!held.has(WILDCARD) && !held.has(SystemPermissions.MEMBERS_VIEW)) {
+      return null;
+    }
     try {
-      const [profile, roles] = await Promise.all([
-        this.members.findProfileByUserId(
-          input.userId,
-          input.chapterId,
-          input.userId,
-        ),
+      const [member, users, roles] = await Promise.all([
+        this.members.findByUserAndChapter(input.userId, input.chapterId),
+        this.users.findDisplayIdentitiesByIds([input.userId]),
         this.rbac.findByChapter(input.chapterId),
       ]);
-      const name = nameInLine(profile.display_name);
+      const name = nameInLine(users[0]?.display_name);
       if (!name) return null;
-      const roleName = new Map(roles.map((role) => [role.id, role.name]));
-      const held = [...new Set(profile.role_ids)]
-        .map((id) => roleName.get(id))
-        .filter((role): role is string => Boolean(role))
-        .map(nameInLine)
-        .filter(Boolean);
+      // Role ids are compared lower-cased, as `RbacService` compares them:
+      // a member's list can carry an id in another case, or a role since
+      // deleted.
+      const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+      const mine = [
+        ...new Set((member.role_ids ?? []).map((id) => id.toLowerCase())),
+      ].flatMap((id) => byId.get(id) ?? []);
       return {
-        name,
-        entry: {
-          chat: false,
-          authorIds: [],
-          model: {
-            id: ASKER_SOURCE_ID,
-            title: ASK_ASKER_SOURCE_TITLE,
-            text: askAskerSourceText({
-              name,
-              roles: held,
-              graduationYear: profile.graduation_year,
-              alumni: profile.is_alumni,
-            }),
-          },
-          view: {
-            id: ASKER_SOURCE_ID,
-            kind: 'roster',
-            title: 'Your profile',
-            detail: null,
-            date: null,
-            target: { type: 'page', page: 'members' },
-          },
-        },
+        id: ASKER_SOURCE_ID,
+        title: ASK_ASKER_SOURCE_TITLE,
+        text: askAskerSourceText({
+          name,
+          // The commas between roles are this line's own, so a role's name
+          // loses the characters that would read as another role or line.
+          roles: mine.map((role) => nameInLine(role.name)).filter(Boolean),
+          alumni: mine.some((role) => role.system_key === ALUMNI_SYSTEM_KEY),
+        }),
       };
     } catch (error) {
       this.logger.warn(
-        `Ask: the asker's profile could not be read (${
+        `Ask: who is asking could not be read (${
           error instanceof Error ? error.name : 'unknown'
         }); answering without it`,
       );
@@ -581,12 +603,8 @@ export class AskService {
    * held, its module on, and read-only. Ask never offers, and never runs, a
    * tool that changes anything.
    */
-  private async offeredTools(input: AskInput): Promise<AskTool[]> {
+  private offeredTools(input: AskInput, held: ReadonlySet<string>): AskTool[] {
     const readOnly = this.tools.filter((tool) => tool.effect === 'read');
-    if (readOnly.length === 0) return [];
-    const held = new Set(
-      await this.rbac.getEffectivePermissions(input.chapterId, input.userId),
-    );
     return toolsMemberMayUse(readOnly, held, input.enabledModules);
   }
 
@@ -755,6 +773,8 @@ export class AskService {
     entries: readonly AskSourceEntry[],
     planned: readonly AskTool[],
     now: Date,
+    /** What the model was handed, when it was handed anything. */
+    given: readonly LanguageModelSource[] = [],
   ): string | null {
     if (answer.status === 'unavailable') return null;
     try {
@@ -784,10 +804,7 @@ export class AskService {
             unverified_citations: answer.unverified_citations,
             truncated: answer.truncated,
           },
-          given: entries.map((source) => ({
-            title: source.model.title,
-            text: source.model.text,
-          })),
+          given: given.map(({ title, text }) => ({ title, text })),
           tools: planned.map((tool) => tool.name),
           model: entry.model,
           prompt_version: ASK_ANSWER_PROMPT_VERSION,

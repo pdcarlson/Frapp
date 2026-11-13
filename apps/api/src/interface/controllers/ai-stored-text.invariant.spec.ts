@@ -114,6 +114,7 @@ const CANARY = {
   chat: 'canarychat4315',
   tool: 'canarytool4315',
   answer: 'canaryans4315',
+  asker: 'canaryasker4890',
 } as const;
 const CANARIES = Object.values(CANARY);
 
@@ -327,11 +328,18 @@ function build(model: ILanguageModel, captured: Captured) {
     {
       getEffectivePermissions: () =>
         Promise.resolve([SystemPermissions.MEMBERS_VIEW]),
-      findByChapter: () => Promise.resolve([]),
+      // Who is asking reaches the model too (#4890), under its own canary.
+      findByChapter: () =>
+        Promise.resolve([
+          { id: 'role-1', name: `${CANARY.asker} chair`, system_key: null },
+        ]),
     } as never,
-    // The asker's profile is not read here: Ask answers without it.
     {
-      findProfileByUserId: () => Promise.reject(new Error('no profile')),
+      findByUserAndChapter: () => Promise.resolve({ role_ids: ['role-1'] }),
+    } as never,
+    {
+      findDisplayIdentitiesByIds: () =>
+        Promise.resolve([{ id: USER, display_name: `Sam ${CANARY.asker}` }]),
     } as never,
     diagnostics,
     [roster],

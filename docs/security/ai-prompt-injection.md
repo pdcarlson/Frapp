@@ -179,12 +179,14 @@ underlying surface. Corpus content is passed as delimited source material in a u
 (document content blocks where the provider has them), never concatenated into the system prompt.
 
 Who is asking follows the same rule (#4890, 2026-11-13). Ask tells the answering call the asker's
-display name, the roles they hold, whether they are an alumni member and their graduation year, so
-"me" and "my" mean someone. A display name and a role's name are text a member wrote, so they are
-given as a source titled "The member asking", with the name's separators removed the way a roster
-line removes them, and the system prompt only says that this source names the asker. The planning
-call is not shown it. It is added only beside something that was found, so it is never by itself a
-reason to write (C7). No contact detail is in it.
+display name, the roles they hold and whether they are an alumni member, so "me" and "my" mean
+someone. A display name and a role's name are text a member wrote, so they are given as a source
+titled "The member asking", each with its separators removed the way a roster line removes them, and
+the system prompt only says that the first source names the asker. Any other source whose title
+would read as that one is renamed before the model sees it. It is what the roster shows of the
+asker, so it is read only for a member who holds `members:view` (C2). The planning call is not shown
+it. It is added only beside something that was found, a citation of it backs nothing, and it is
+never shown as a source, so it is never a reason to write (C6, C7). No contact detail is in it.
 
 **C2 — Every tool call runs under the caller's permissions, never the service's.** The agent must
 resolve authority through the same `ChapterGuard` / permission-decorator path as every other route.
@@ -426,7 +428,7 @@ Mapping of control to enforcement:
 | C2 caller's permissions | `authority-ceiling`, on tool calls the product made; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED` (`AskService.offeredTools`; `ActService.offered`, and again at Confirm in `AiSuggestionService.accept`) |
 | C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached. The acting agent's planner is shown the officer's request, their own earlier messages in the conversation (since #4699) and the offered actions only (`act-agent.eval-spec.ts`, `act.service.spec.ts`) |
 | C4 chapter scoping | `chapter-scoping` (citations and tool calls); `act-agent.eval-spec.ts` (a name, id or roster line outside the chapter resolves to nobody) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
-| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown) | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. The v2 prompts have not been graded against a real provider yet (#4707) |
+| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown) | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. The prompts (`ask.plan@v3`, `ask.answer@v3` since #4890) have not been graded against a real provider yet (#4707) |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding` | yes, behind `AI_ENABLED` (the gateway) |
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer) |
 | C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450) |
