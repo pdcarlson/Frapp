@@ -166,7 +166,7 @@ export type AskProposalResolution =
  * was asked, as well as in Ask's thread. It is never a message: nothing
  * about it is sent to the channel.
  */
-export interface AskOrigin {
+interface AskOrigin {
   channelId: string;
   /** When it was asked (ISO), which is where it sits among the messages. */
   at: string;

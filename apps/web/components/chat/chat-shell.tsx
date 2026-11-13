@@ -85,6 +85,7 @@ import {
 } from "@repo/chat-core/channel-preview";
 import { TypingLine } from "./typing-line";
 import {
+  askMentionQuestion,
   can,
   canAll,
   isAnnouncementChannel,
@@ -94,6 +95,7 @@ import {
   isDirectChannel,
   type MentionCandidate,
   type MentionChipTargets,
+  spacedMentionNames,
 } from "@repo/validation";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, SquarePen, X } from "lucide-react";
@@ -1358,6 +1360,18 @@ export function ChatShell({
         : null,
     [channelAsk, activeChannelId, newestRowKey],
   );
+  // A thread's reply box can't ask Frapp (the answer is drawn in the channel),
+  // so it refuses a reply that would have been a question, by the same
+  // reading the composer makes.
+  const hasAsk = channelAsk !== null;
+  const replyAsksFrapp = useMemo(() => {
+    if (!hasAsk) return undefined;
+    const names = spacedMentionNames(
+      membersQuery.data ?? [],
+      (mentionRoles.data ?? []).map((role) => role.name),
+    );
+    return (text: string) => askMentionQuestion(text, names) !== null;
+  }, [hasAsk, membersQuery.data, mentionRoles.data]);
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
   const { requestUnblock, reloadMaskedCopies } = unblockFlow;
@@ -3212,6 +3226,7 @@ export function ChatShell({
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
           jumpTo={threadJump}
+          asksFrapp={replyAsksFrapp}
         />
       </MentionChipTargetsContext.Provider>
     ) : null;

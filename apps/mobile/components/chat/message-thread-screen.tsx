@@ -44,7 +44,9 @@ import {
   useAuthorAvatars,
   useBlockedUserIds,
   useChannel,
+  useChapterRoster,
   useMemberDisplayNames,
+  useMentionRoles,
   usePermissionList,
   useRosterCatchUp,
   useViewerUserId,
@@ -53,10 +55,13 @@ import { can } from "@repo/validation";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  ASK_COPY,
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_MIN_MESSAGES,
   CHAT_CATCH_UP_OFFER_AT,
+  askMentionQuestion,
   chatCatchUpThreadOfferLine,
+  spacedMentionNames,
   type ChatCatchUpPoint,
 } from "@repo/validation";
 import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
@@ -321,6 +326,23 @@ export function MessageThreadScreen({
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const { send, retry, emitTyping } = thread;
+  // `@Frapp` in a reply (#4713), for a member with Ask. Frapp answers in the
+  // channel, for the asker alone, and a thread has no place to draw that. So
+  // the reply is refused, not posted: a member who expects a private answer
+  // must not find their question in the thread for everyone. Read as the
+  // channel's composer reads it, so a member named "Frapp Fan" is still
+  // that member.
+  const hasAsk = useAiSurfaces().ask;
+  const mentionRoster = useChapterRoster().data;
+  const mentionRoles = useMentionRoles().data;
+  const asksFrapp = useMemo(() => {
+    if (!hasAsk) return null;
+    const names = spacedMentionNames(
+      mentionRoster ?? [],
+      (mentionRoles ?? []).map((role) => role.name),
+    );
+    return (text: string) => askMentionQuestion(text, names) !== null;
+  }, [hasAsk, mentionRoster, mentionRoles]);
   // The thread's send is optimistic: the row is in the list at once and a
   // failure stays there with Retry and Delete (rule 6), the line over the
   // composer saying why. So the composer clears on the tap.
@@ -328,6 +350,11 @@ export function MessageThreadScreen({
     (content: string, options?: SendOptions) => {
       const body = content.trim();
       if (!body) return Promise.resolve(false);
+      if (asksFrapp?.(body)) {
+        // The words stay in the composer, to be moved to the channel.
+        setSendError(ASK_COPY.not_in_reply);
+        return Promise.resolve(false);
+      }
       setDraft("");
       setSendError(null);
       void send(body, undefined, options?.mentionPicks ?? undefined).then(
@@ -335,7 +362,7 @@ export function MessageThreadScreen({
       );
       return Promise.resolve(true);
     },
-    [send],
+    [send, asksFrapp],
   );
   const { edit } = writes;
   // Edit opens in this composer, as it does in the channel's: the same strip,
@@ -357,6 +384,8 @@ export function MessageThreadScreen({
   const onChangeText = useCallback(
     (next: string) => {
       stagingChangeText(next);
+      // The refusal above is about the words as they were.
+      setSendError((error) => (error === ASK_COPY.not_in_reply ? null : error));
       if (next.trim() && !isEditing) emitTyping();
     },
     [stagingChangeText, isEditing, emitTyping],

@@ -297,6 +297,20 @@ officer's typed request into a proposal they confirm
   still cite a source word for word. So the most a hostile name can do is bend one member's own
   answer, which the same name could already attempt from inside a source. No test or eval covers a
   hostile name in the question turn yet (#4707).
+- **A question asked from a channel carries nothing of the channel** (added in #4713 by pdcarlson,
+  2026-11-13). A member with Ask can name `@Frapp` in a channel's message box and be answered there,
+  alone ([`ai.md` § Asking from a channel](../../spec/behavior/ai.md#asking-from-a-channel)). The
+  request is the one Ask's own screen sends: the member's typed words with the handle taken out,
+  the earlier turns of their own conversation, and a closed `door` value for counting. No channel
+  id, no message the answer sits under, no staged reply and no channel history is in it, so being
+  typed in a channel gives no channel text a way into the planner or the acting planner (C1, C3).
+  Channel messages can still come back from the search as labelled sources, under the same consent
+  and access rules as for a question typed in Ask (§ 3.3). And asking writes nothing to chat:
+  the route and the two lanes import no module that can write a chat message or a notification
+  (`ask-posts-nothing.spec.ts` reads their sources), so a hostile source cannot turn a private
+  answer into a post. Posting an answer to the channel is a separate step that is not built; Paul's
+  rule for it (2026-11-13) is that it may draw on what the asker can open, with a warning to the
+  asker before posting when others in the channel could not open a source.
 - **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
   it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
   questions and requests the member typed earlier in the sitting (the last three), so "make it 10"

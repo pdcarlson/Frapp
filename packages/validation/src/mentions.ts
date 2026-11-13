@@ -444,6 +444,9 @@ function pickedTargets(
     if (!member) continue;
     const folded = fold(pick.label);
     if (folded.length === 0 || fold(member.display_name) !== folded) continue;
+    // `@Frapp` is the assistant's for every sender (#4713), a pick included:
+    // the label is claimed, so it reaches nobody, as the name tiers have it.
+    if (folded === ASK_FOLDED) continue;
     ids.push(member.user_id);
   }
   return targets;
@@ -768,6 +771,8 @@ export function draftWithMention(
   // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
   // wouldn't read as a mention reaches nobody.
   if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
+  // `@Frapp` is the assistant's (#4713): it would reach nobody, or be asked.
+  if (isAskHandle(label)) return null;
   const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
   return `${draft}${gap}@${label} `;
 }

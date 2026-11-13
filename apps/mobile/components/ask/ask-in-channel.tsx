@@ -202,7 +202,7 @@ export function AskTurnsUnder({
  * theirs is there to show what was asked. Dismiss takes it out of the
  * channel; it stays in Ask.
  */
-export function AskChannelTurn({
+function AskChannelTurn({
   exchange,
   reply,
   sourceFailed = false,

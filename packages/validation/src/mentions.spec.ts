@@ -1360,6 +1360,20 @@ describe("@Frapp, the assistant's handle (#4713)", () => {
       expect(resolveMentions("@Frapp", roster, [role])).toEqual([]);
     });
 
+    it("reaches nobody by a pick either, and a menu's Mention does not write it", () => {
+      // The picked-id door (#3835) is not a way round the reserved handle.
+      expect(
+        resolveMentions(
+          "@Frapp what's quorum",
+          [JANE, FRAPP],
+          [],
+          [{ user_id: FRAPP.user_id, label: "Frapp" }],
+        ),
+      ).toEqual([]);
+      expect(draftWithMention("", "Frapp")).toBeNull();
+      expect(draftWithMention("", "Frapp Fan")).toBe("@Frapp Fan ");
+    });
+
     it("leaves a member with a longer name reachable by that name", () => {
       expect(resolveMentions("@Frapp Fan hi", [JANE, FRAPP_FAN])).toEqual([
         FRAPP_FAN.user_id,

@@ -44,6 +44,7 @@ import {
   type MessageTimelineProps,
 } from "./message-timeline";
 import {
+  ASK_COPY,
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_MIN_MESSAGES,
   type MentionPick,
@@ -147,6 +148,12 @@ export interface ThreadPanelProps extends Pick<
    */
   jumpTo?: { messageId: string; nonce: number } | null;
   /**
+   * Whether a reply's text is a question for Frapp (#4713), for a member with
+   * Ask; absent for everyone else. Such a reply is refused, since Frapp
+   * answers in the channel and a thread has nowhere to draw it.
+   */
+  asksFrapp?: (text: string) => boolean;
+  /**
    * Drawn beside the chat on a wide window (#4297) rather than over it: the
    * channel stays in view, so the header closes the thread (X) rather than
    * going back to it.
@@ -224,6 +231,7 @@ export function ThreadPanel({
   onClosePanel,
   onCatchUp,
   jumpTo,
+  asksFrapp,
   beside = false,
   className,
 }: ThreadPanelProps) {
@@ -299,6 +307,14 @@ export function ThreadPanel({
   async function submit() {
     const content = draft.trim();
     if (!content) return;
+    // `@Frapp` in a reply (#4713). Frapp answers in the channel, for the
+    // asker alone, and a thread has no place to draw that. Refused, not
+    // posted: a member who expects a private answer must not find their
+    // question in the thread for everyone. The words stay to be moved.
+    if (asksFrapp?.(content)) {
+      toast({ title: ASK_COPY.not_in_reply });
+      return;
+    }
     setDraft("");
     const { error } = await thread.send(content);
     notSent(error);

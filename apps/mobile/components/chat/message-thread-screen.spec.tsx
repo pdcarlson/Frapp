@@ -204,6 +204,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => permissions,
   useActiveChapterId: () => "chapter-1",
+  useChapterRoster: () => ({
+    data: [{ user_id: "u-fan", display_name: "Frapp Fan" }],
+  }),
+  useMentionRoles: () => ({ data: [] }),
   useMemberDisplayNames: () => ({
     byId: {},
     nameFor: (id: string) => NAMES[id] ?? null,
@@ -235,6 +239,8 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 
 /** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
+  /** Whether this member has Ask (`useAiSurfaces().ask`). */
+  ask: false,
   surface: false,
   waiting: false,
   active: false,
@@ -244,7 +250,7 @@ const catchUp = vi.hoisted(() => ({
   options: undefined as { onOpenPoint: (point: unknown) => void } | undefined,
 }));
 vi.mock("@/lib/ai/availability", () => ({
-  useAiSurfaces: () => ({ catchUp: catchUp.surface }),
+  useAiSurfaces: () => ({ catchUp: catchUp.surface, ask: catchUp.ask }),
 }));
 vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
   ...(await importOriginal<
@@ -470,6 +476,49 @@ describe("MessageThreadScreen (#3785)", () => {
     expect(composer().props.value).toBe("");
     expect(composer().props.disabledHint).toBe("Slow down");
     expect(composer().props.hintTone).toBe("error");
+    act(() => tree.unmount());
+  });
+
+  it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {
+    catchUp.ask = true;
+    thread = threadState();
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText("@Frapp who is driving"));
+    await act(async () => composer().props.onSend());
+    // Nothing is posted to the thread, where everyone would read it.
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(composer().props.value).toBe("@Frapp who is driving");
+    expect(composer().props.disabledHint).toBe(
+      "Ask Frapp from the channel, not from a reply.",
+    );
+    expect(composer().props.hintTone).toBe("error");
+    // The line is about the words as they were.
+    act(() => composer().props.onChangeText("who is driving"));
+    expect(composer().props.disabledHint).toBeNull();
+    // A member whose name starts with the handle is still that member.
+    act(() => composer().props.onChangeText("@Frapp Fan are you in"));
+    await act(async () => composer().props.onSend());
+    expect(thread.send).toHaveBeenCalledWith(
+      "@Frapp Fan are you in",
+      undefined,
+      [],
+    );
+    catchUp.ask = false;
+    act(() => tree.unmount());
+  });
+
+  it("posts @Frapp as ordinary text for a member without Ask", async () => {
+    thread = threadState();
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText("@Frapp who is driving"));
+    await act(async () => composer().props.onSend());
+    expect(thread.send).toHaveBeenCalledWith(
+      "@Frapp who is driving",
+      undefined,
+      [],
+    );
     act(() => tree.unmount());
   });
 

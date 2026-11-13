@@ -5,6 +5,7 @@ import {
   ASK_STREAM_VERSION,
   assertContentFreeProperties,
   createAskStreamReader,
+  type AnalyticsProperties,
   type AskStreamEvent,
 } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
@@ -258,7 +259,7 @@ describe('AskController', () => {
       .calls[0] as unknown as [
       string,
       string,
-      { chapterId: string; properties: Record<string, unknown> },
+      { chapterId: string; properties: AnalyticsProperties },
     ];
     expect(name).toBe(ASK_QUESTION_EVENT);
     expect(userId).toBe('user-1');

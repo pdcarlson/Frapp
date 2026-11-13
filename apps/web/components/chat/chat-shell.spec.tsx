@@ -1521,11 +1521,17 @@ vi.mock("./thread-panel", () => ({
     onClose,
     onCatchUp,
     beside,
+    asksFrapp,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
       aria-label="Thread"
       data-testid="thread-panel"
       data-beside={String(!!beside)}
+      data-refuses-frapp={
+        asksFrapp
+          ? `${asksFrapp("@Frapp who is driving")},${asksFrapp("see you there")}`
+          : "none"
+      }
     >
       {onCatchUp ? (
         <button data-testid="thread-catch-up" onClick={onCatchUp}>
@@ -2732,6 +2738,23 @@ describe("ChatShell carries @Frapp to the composer and the timeline (#4713)", ()
     channelAskState.ask = { busy: true, send: vi.fn() };
     render(<ChatShell initialChannelId="chan-general" />);
     expect((await screen.findByTestId("composer")).dataset.ask).toBe("busy");
+  });
+
+  it("has a thread refuse a reply that is a question for Frapp, for a member with Ask", async () => {
+    channelAskState.ask = { busy: false, send: vi.fn() };
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "true,false",
+    );
+  });
+
+  it("leaves @Frapp as ordinary text in a thread for a member without Ask", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "none",
+    );
   });
 
   it("hands the timeline the turns asked in the open channel", async () => {
