@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useChannels } from "@repo/hooks";
 import { askEntityParts, type AskNamedEntity } from "@repo/validation";
@@ -23,8 +23,23 @@ export function AskChannelOpens({
 }) {
   const channels = useChannels().data;
   return children((channelId) =>
-    asArray<{ id: string }>(channels).some((channel) => channel.id === channelId),
+    asArray<{ id: string }>(channels).some(
+      (channel) => channel.id === channelId,
+    ),
   );
+}
+
+/**
+ * Runs on a click that follows the link here. A click that opens it in a new
+ * tab or window leaves this page, and so the conversation, as it was.
+ */
+export function onPlainClick(run: (() => void) | undefined) {
+  if (!run) return undefined;
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+    run();
+  };
 }
 
 /**
@@ -70,7 +85,7 @@ export function AskEntityText({
           <Link
             key={position}
             href={chatDeepLink({ channelId: part.id })}
-            onClick={onFollow}
+            onClick={onPlainClick(onFollow)}
             className={cn(
               MENTION_CHIP,
               "underline-offset-2 hover:underline",

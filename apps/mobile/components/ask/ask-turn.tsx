@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type TextStyle,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import type { AskExchange } from "@repo/hooks";
+import { useChannels, type AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
@@ -30,6 +32,7 @@ import {
 import { CheckGlyph, CopyGlyph, FlagGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectChannels } from "@/lib/chat/channel-list";
 import { selectionHaptic } from "@/lib/haptics";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -90,7 +93,6 @@ export function AskTurn({
   onRetry,
   onAnswerConsent,
   report,
-  canOpenChannel,
   onOpenChannel,
 }: {
   exchange: AskExchange;
@@ -116,11 +118,9 @@ export function AskTurn({
    */
   report?: { reported: boolean; onPress: () => void } | null;
   /**
-   * Whether the reader has a channel the answer names (#4904). Left out, or
-   * false for a channel, its name is the plain words it was written as.
+   * Opens a channel the answer names (#4904), offered only for a channel the
+   * reader has. Left out, a channel's name is the plain words.
    */
-  canOpenChannel?: (channelId: string) => boolean;
-  /** Opens a channel the answer names. */
   onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -147,7 +147,6 @@ export function AskTurn({
         onRetry={onRetry}
         onAnswerConsent={onAnswerConsent}
         report={report}
-        canOpenChannel={canOpenChannel}
         onOpenChannel={onOpenChannel}
       />
     </View>
@@ -173,7 +172,6 @@ export function AskReply({
   onRetry,
   onAnswerConsent,
   report,
-  canOpenChannel,
   onOpenChannel,
 }: AskReplyProps) {
   const { tokens } = useFrappTheme();
@@ -218,7 +216,6 @@ export function AskReply({
             onOpenSource={onOpenSource}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
-            canOpenChannel={canOpenChannel}
             onOpenChannel={onOpenChannel}
           />
         ) : null}
@@ -336,7 +333,6 @@ function AnswerBody({
   onOpenSource,
   busy,
   onAnswerConsent,
-  canOpenChannel,
   onOpenChannel,
 }: {
   answer: AskAnswer;
@@ -347,7 +343,6 @@ function AnswerBody({
   onOpenSource: (source: AskSource) => void;
   busy: boolean;
   onAnswerConsent: () => void;
-  canOpenChannel?: (channelId: string) => boolean;
   onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -381,40 +376,49 @@ function AnswerBody({
   }
 
   const entities = askAnswerEntities(answer);
+  const words = (canOpenChannel: (channelId: string) => boolean) => (
+    <Text style={styles.answer}>
+      {askAnswerSegments(answer).map((segment, position) => {
+        if (segment.type === "text") {
+          return (
+            <EntityText
+              key={position}
+              text={segment.text}
+              entities={entities}
+              mentionStyle={styles.mention}
+              canOpenChannel={canOpenChannel}
+              onOpenChannel={onOpenChannel}
+            />
+          );
+        }
+        const source = answer.sources[segment.citation.source];
+        if (!source) return null;
+        const number = segment.citation.source + 1;
+        const opens = canOpen(source);
+        return (
+          <Text
+            key={position}
+            accessibilityRole={opens ? "link" : undefined}
+            accessibilityLabel={`Source ${number}: ${source.title}`}
+            onPress={opens ? () => onOpenSource(source) : undefined}
+            style={styles.marker}
+          >
+            {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
+            {`\u00A0${number}\u00A0`}
+          </Text>
+        );
+      })}
+    </Text>
+  );
 
   return (
     <>
-      <Text style={styles.answer}>
-        {askAnswerSegments(answer).map((segment, position) => {
-          if (segment.type === "text") {
-            return (
-              <EntityText
-                key={position}
-                text={segment.text}
-                entities={entities}
-                canOpenChannel={canOpenChannel}
-                onOpenChannel={onOpenChannel}
-              />
-            );
-          }
-          const source = answer.sources[segment.citation.source];
-          if (!source) return null;
-          const number = segment.citation.source + 1;
-          const opens = canOpen(source);
-          return (
-            <Text
-              key={position}
-              accessibilityRole={opens ? "link" : undefined}
-              accessibilityLabel={`Source ${number}: ${source.title}`}
-              onPress={opens ? () => onOpenSource(source) : undefined}
-              style={styles.marker}
-            >
-              {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
-              {`\u00A0${number}\u00A0`}
-            </Text>
-          );
-        })}
-      </Text>
+      {/* The reader's channel list is only read for an answer that names one. */}
+      {onOpenChannel && entities.some((entity) => entity.type === "channel") ? (
+        <ChannelOpens>{words}</ChannelOpens>
+      ) : (
+        words(() => false)
+      )}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
@@ -449,16 +453,16 @@ function AnswerBody({
 function EntityText({
   text,
   entities,
+  mentionStyle,
   canOpenChannel,
   onOpenChannel,
 }: {
   text: string;
   entities: readonly AskNamedEntity[];
-  canOpenChannel?: (channelId: string) => boolean;
+  mentionStyle: StyleProp<TextStyle>;
+  canOpenChannel: (channelId: string) => boolean;
   onOpenChannel?: (channelId: string) => void;
 }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   return (
     <>
       {askEntityParts(text, entities).map((part, position) => {
@@ -467,12 +471,12 @@ function EntityText({
         }
         if (part.type === "member") {
           return (
-            <Text key={position} style={styles.mention}>
+            <Text key={position} style={mentionStyle}>
               {part.text}
             </Text>
           );
         }
-        if (!onOpenChannel || !canOpenChannel?.(part.id)) {
+        if (!onOpenChannel || !canOpenChannel(part.id)) {
           return <Text key={position}>{part.text}</Text>;
         }
         return (
@@ -480,7 +484,7 @@ function EntityText({
             key={position}
             accessibilityRole="link"
             onPress={() => onOpenChannel(part.id)}
-            style={styles.mention}
+            style={mentionStyle}
           >
             {part.text}
           </Text>
@@ -488,6 +492,24 @@ function EntityText({
       })}
     </>
   );
+}
+
+/**
+ * Which channels in an answer this reader can open: the ones in their own
+ * channel list. Drawn only around an answer that names a channel, so no
+ * other answer reads the list. Web's twin is `AskChannelOpens`.
+ */
+function ChannelOpens({
+  children,
+}: {
+  children: (canOpenChannel: (channelId: string) => boolean) => ReactNode;
+}) {
+  const channels = useChannels().data;
+  const mine = useMemo(
+    () => new Set(selectChannels(channels).map((channel) => channel.id)),
+    [channels],
+  );
+  return children((channelId) => mine.has(channelId));
 }
 
 /**

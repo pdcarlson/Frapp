@@ -30,7 +30,10 @@ export type AskEntityPart =
   | { type: "member" | "channel"; id: string; name: string; text: string };
 
 /** `@` leads a member's name and `#` a channel's. */
-const SIGIL: Record<AskNamedEntity["type"], string> = { member: "@", channel: "#" };
+const SIGIL: Record<AskNamedEntity["type"], string> = {
+  member: "@",
+  channel: "#",
+};
 
 /**
  * The entities an answer came with, or none. An answer from a server that
@@ -67,7 +70,8 @@ const WORD = /[\p{L}\p{N}_]/u;
  *   leftover surname.
  * - **A name must stand alone.** The sigil cannot follow a letter or digit
  *   (`paul@Sam` is an address, not a mention) and the name cannot run into
- *   one (`@Samuel` is not `@Sam`).
+ *   one (`@Samuel` is not `@Sam`), nor into a hyphen that joins more of a
+ *   name (`#rush-week` is not `#rush`).
  * - **Exact spelling and case.** The server wrote the name into the text, so
  *   anything that differs is not that name.
  *
@@ -93,8 +97,11 @@ export function askEntityParts(
       (char === "@" || char === "#") && !WORD.test(before ?? "")
         ? known.find(({ token }) => {
             if (!text.startsWith(token, at)) return false;
-            const after = text[at + token.length] ?? "";
-            return !WORD.test(after);
+            const end = at + token.length;
+            const after = text[end] ?? "";
+            if (WORD.test(after)) return false;
+            // A hyphen joins a longer name: `#rush-week` is not `#rush`.
+            return !(after === "-" && WORD.test(text[end + 1] ?? ""));
           })
         : undefined;
     if (!hit) {

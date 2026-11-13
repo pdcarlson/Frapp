@@ -6,8 +6,16 @@ import {
 } from "./ask-entities";
 
 const sam: AskNamedEntity = { type: "member", id: "m-sam", name: "Sam" };
-const samA: AskNamedEntity = { type: "member", id: "m-sama", name: "Sam Abernathy" };
-const general: AskNamedEntity = { type: "channel", id: "c-gen", name: "general" };
+const samA: AskNamedEntity = {
+  type: "member",
+  id: "m-sama",
+  name: "Sam Abernathy",
+};
+const general: AskNamedEntity = {
+  type: "channel",
+  id: "c-gen",
+  name: "general",
+};
 
 describe("askEntityParts", () => {
   it("leaves text with no listed name as one plain part", () => {
@@ -51,7 +59,11 @@ describe("askEntityParts", () => {
   });
 
   it("matches a name with punctuation in it, at the end of the text", () => {
-    const obrien: AskNamedEntity = { type: "member", id: "m-ob", name: "Pat O'Brien" };
+    const obrien: AskNamedEntity = {
+      type: "member",
+      id: "m-ob",
+      name: "Pat O'Brien",
+    };
     expect(askEntityParts("Thanks @Pat O'Brien", [obrien])).toEqual([
       { type: "text", text: "Thanks " },
       { type: "member", id: "m-ob", name: "Pat O'Brien", text: "@Pat O'Brien" },
@@ -87,5 +99,17 @@ describe("askAnswerEntities", () => {
         ],
       }),
     ).toEqual([sam]);
+  });
+
+  it("does not take the front of a longer hyphenated name", () => {
+    const rush = [{ type: "channel" as const, id: "c1", name: "rush" }];
+    expect(askEntityParts("See #rush-week.", rush)).toEqual([
+      { type: "text", text: "See #rush-week." },
+    ]);
+    // A hyphen with nothing joined to it still ends the name.
+    expect(askEntityParts("#rush - then", rush)[0]).toMatchObject({
+      type: "channel",
+      text: "#rush",
+    });
   });
 });
