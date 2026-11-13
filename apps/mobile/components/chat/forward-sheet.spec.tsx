@@ -97,8 +97,8 @@ import {
   FORWARD_SEARCH_PLACEHOLDER,
   FORWARD_SHEET_TITLE,
   FORWARD_UNAVAILABLE_BODY,
-  type ForwardTarget,
-} from "@/lib/chat/forward";
+} from "@repo/hooks/forward-destinations";
+import { type ForwardTarget } from "@repo/chat-core/forward";
 
 const TARGET: ForwardTarget = {
   messageId: "m1",

@@ -227,6 +227,8 @@ import {
   ReportMessageDialog,
   type ReportTarget,
 } from "./report-message-dialog";
+import { ForwardMessageDialog } from "./forward-message-dialog";
+import { forwardTargetOf, type ForwardTarget } from "@repo/chat-core/forward";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { useIsDesktopShell } from "@/components/layout/shell-layout";
 import {
@@ -1426,6 +1428,20 @@ export function ChatShell({
     [activeChapterId, isMember, nameFor, requestBlock],
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  // The message the Forward dialog is open on (#4907), or null.
+  const [forwardTarget, setForwardTarget] = useState<ForwardTarget | null>(
+    null,
+  );
+  const handleForward = useCallback(
+    (message: ChatMessage) => {
+      // The row offered Forward (`canForwardMessage`), so this is always a
+      // target; the copy is what the card will draw, masked as the row's is.
+      setForwardTarget(
+        forwardTargetOf(message, true, blockState, userId ?? null) ?? null,
+      );
+    },
+    [blockState, userId],
+  );
   // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
   // row of the member list opens the directory's own sheet by `users.id`, as
   // mobile's thread does. The id outlives the close so the sheet keeps its
@@ -3222,6 +3238,7 @@ export function ChatShell({
           canManageChannel={canManageChannel}
           onReport={handleReport}
           onBlock={handleBlock}
+          onForward={handleForward}
           onOpenProfile={openProfile}
           isMember={isMember}
           canReply={channelAllowsThreadReplies(activeChannel)}
@@ -3908,6 +3925,7 @@ export function ChatShell({
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}
+                  onForward={handleForward}
                   onOpenProfile={openProfile}
                   isMember={isMember}
                 />
@@ -4160,6 +4178,17 @@ export function ChatShell({
         target={reportTarget}
         onClose={() => setReportTarget(null)}
       />
+      {/* Mounted only while open: its channel and roster reads have no
+          work to do for a closed dialog. */}
+      {forwardTarget ? (
+        <ForwardMessageDialog
+          key={forwardTarget.messageId}
+          target={forwardTarget}
+          nameFor={nameFor}
+          viewerId={userId ?? null}
+          onClose={() => setForwardTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

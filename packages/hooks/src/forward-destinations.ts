@@ -1,29 +1,26 @@
 /**
- * The Forward picker's pure parts (#4864, `spec/behavior/chat/README.md`
- * § Forward): what the copy will look like, which conversations it can go
- * to, how the search narrows them, and what a failure says.
- *
- * In `lib/` so they are testable apart from the sheet, as the rest of the
- * thread's logic is.
+ * The Forward picker's destination rules and copy (#4864, #4907,
+ * `spec/behavior/chat/README.md` § Forward): which conversations a forward can
+ * go to, how the search narrows them, and what a failure says. Shared by the
+ * phone's Forward to sheet and web's Forward dialog, so the two pickers offer
+ * the same conversations and say the same things.
  */
 
 import { statusOf } from "@repo/api-sdk";
-import { hiddenForwardedText, type BlockState } from "@repo/chat-core/blocks";
-import type { ChatMessage, ForwardedFrom } from "@repo/chat-core/types";
-import { normalizeDmSearchText, type DisplayNameMap } from "@repo/hooks";
+import { isDirectChannel } from "@repo/validation";
 import {
-  displayChannelName,
-  isDirectChannel,
-  listedChannels,
-  type ChannelSummary,
-} from "./channel-list";
+  directChannelDisplayName,
+  type DirectChannelNameInput,
+  type DisplayNameMap,
+} from "./display-names";
+import { normalizeDmSearchText } from "./dm-search";
 
 /** The picker's title. */
 export const FORWARD_SHEET_TITLE = "Forward to";
 export const FORWARD_SEARCH_PLACEHOLDER = "Search channels and people";
 export const FORWARD_COMMENT_PLACEHOLDER = "Add a message (optional)";
 export const FORWARD_SEND_LABEL = "Send";
-/** Said to VoiceOver and TalkBack once the forward lands. */
+/** Said to a screen reader once the forward lands. */
 export const FORWARD_DONE_ANNOUNCEMENT = "Forwarded";
 export const FORWARD_FAILED_TITLE = "Couldn't forward";
 /** A refusal (403 / 404): the destination or the message is out of reach. */
@@ -49,53 +46,18 @@ export function forwardFailureBody(error: unknown): string {
   return FORWARD_RETRY_BODY;
 }
 
-/**
- * The copy a forward of `message` will carry, for the picker's preview: what
- * the server snapshots (`ChatService.forwardMessage`). A forward with no
- * comment passes its own copy on, so cards never nest; anything else is
- * copied as itself.
- */
-export function forwardPreviewOf(
-  message: Pick<
-    ChatMessage,
-    | "id"
-    | "channel_id"
-    | "sender_id"
-    | "author_name"
-    | "content"
-    | "gif"
-    | "attachment_count"
-    | "created_at"
-    | "forwarded_from"
-  >,
-): ForwardedFrom {
-  const inner = message.forwarded_from;
-  if (inner && message.content.trim().length === 0) return inner;
-  return {
-    message_id: message.id,
-    channel_id: message.channel_id,
-    sender_id: message.sender_id,
-    author_name: message.author_name,
-    content: message.content,
-    gif: message.gif ?? null,
-    attachment_count: message.attachment_count,
-    created_at: message.created_at,
-    deleted: false,
-    sender_blocked: false,
-  };
-}
-
-/** The message the picker forwards, as its preview draws it. */
-export interface ForwardTarget {
-  /** The original's server id, which the API forwards. */
-  messageId: string;
-  /** The copy the forward will carry (`forwardPreviewOf`). */
-  preview: ForwardedFrom;
-  /**
-   * The block placeholder for a copy whose author the viewer blocked
-   * (`hiddenForwardedText`), or `null` to draw it.
-   */
-  hidden: string | null;
+/** What the picker reads off a channel-list row. */
+export interface ForwardableChannel extends Omit<
+  DirectChannelNameInput,
+  "member_ids"
+> {
+  id: string;
+  /** Web's list may leave it unset on a channel that isn't a DM. */
+  member_ids?: readonly string[] | null;
+  /** A DM the member hid from their list. */
+  hidden?: boolean;
+  can_post?: boolean;
+  is_audit_log?: boolean;
 }
 
 /** One conversation the picker offers. */
@@ -114,16 +76,21 @@ export interface ForwardDestination {
  * member hid from their list, as the Messages list leaves it out.
  */
 export function forwardDestinations(
-  channels: ChannelSummary[],
+  channels: readonly ForwardableChannel[],
   viewerId: string | null,
   names: DisplayNameMap,
 ): ForwardDestination[] {
-  const postable = listedChannels(channels).filter(
-    (channel) => channel.can_post !== false && !channel.is_audit_log,
+  const postable = channels.filter(
+    (channel) =>
+      !channel.hidden && channel.can_post !== false && !channel.is_audit_log,
   );
   const rows = postable.map((channel) => {
     const direct = isDirectChannel(channel);
-    const name = displayChannelName(channel, viewerId, names);
+    const name = directChannelDisplayName(
+      { ...channel, member_ids: [...(channel.member_ids ?? [])] },
+      viewerId,
+      names,
+    );
     return { id: channel.id, label: direct ? name : `#${name}`, direct };
   });
   const byLabel = (a: ForwardDestination, b: ForwardDestination) =>
@@ -147,26 +114,4 @@ export function filterForwardDestinations(
   return rows.filter((row) =>
     normalizeDmSearchText(row.label.replace(/^#/, "")).includes(needle),
   );
-}
-
-/**
- * What the actions sheet hands the Forward picker for `message` (#4864), or
- * `undefined` where `messageActionsFor` says it can't be forwarded: the copy
- * it will carry, and the block placeholder when that copy is a forward's
- * whose author the viewer blocked.
- */
-export function forwardTargetOf(
-  message: Parameters<typeof forwardPreviewOf>[0] &
-    Pick<ChatMessage, "_blockEvaluated">,
-  canForward: boolean,
-  blockState: BlockState,
-  viewerId: string | null,
-): ForwardTarget | undefined {
-  if (!canForward) return undefined;
-  const preview = forwardPreviewOf(message);
-  return {
-    messageId: message.id,
-    preview,
-    hidden: hiddenForwardedText(preview, message, blockState, viewerId),
-  };
 }

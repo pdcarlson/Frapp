@@ -70,8 +70,8 @@ import {
   filterForwardDestinations,
   forwardDestinations,
   forwardFailureBody,
-  type ForwardTarget,
-} from "@/lib/chat/forward";
+} from "@repo/hooks/forward-destinations";
+import { type ForwardTarget } from "@repo/chat-core/forward";
 import { useConnection } from "@/lib/connection/use-connection";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
