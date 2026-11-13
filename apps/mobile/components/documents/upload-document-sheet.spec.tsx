@@ -475,6 +475,72 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(screenText(third)).toContain("IMG_2041.jpg");
   });
 
+  it("keeps the bytes a failed upload sent after the screen was left, for the retry", async () => {
+    let settle: (result: DocumentUploadResult) => void = () => {};
+    uploadDocumentPhoto.mockReturnValue(
+      new Promise<DocumentUploadResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    await pressUpload(first);
+    act(() => first.unmount());
+    await act(async () => {
+      settle({
+        status: "refused",
+        reason: "offline",
+        final: false,
+        sent: SENT,
+      });
+    });
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    // Title and folder hold still for the retry, and the sheet says why.
+    expect(titleInput(second).props.editable).toBe(false);
+    expect(screenText(second)).toContain(RETRY_KEEPS_DRAFT);
+    uploadDocumentPhoto.mockResolvedValue({ status: "uploaded", title: "x" });
+    await pressUpload(second);
+    expect(uploadDocumentPhoto.mock.calls.at(-1)![3]).toMatchObject({
+      uploaded: SENT.uploaded,
+    });
+  });
+
+  it("leaves a later visit's draft alone when an upload from before lands or fails", async () => {
+    for (const outcome of [
+      { status: "uploaded", title: "IMG_2041.jpg" },
+      { status: "refused", reason: "offline", final: false },
+    ] as DocumentUploadResult[]) {
+      let settle: (result: DocumentUploadResult) => void = () => {};
+      uploadDocumentPhoto.mockReturnValue(
+        new Promise<DocumentUploadResult>((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const first = render(null, { keptDraft: "documents-upload" });
+      await choose(first);
+      await pressUpload(first);
+      act(() => first.unmount());
+
+      const second = render(null, { keptDraft: "documents-upload" });
+      await choose(second);
+      act(() => {
+        titleInput(second).props.onChangeText("Agenda");
+      });
+      act(() => second.unmount());
+      await act(async () => {
+        settle(outcome);
+      });
+
+      const third = render(null, { keptDraft: "documents-upload" });
+      expect(titleInput(third).props.value).toBe("Agenda");
+      act(() => {
+        pressable(third, "Cancel").props.onPress();
+      });
+      act(() => third.unmount());
+    }
+  });
+
   it("drops the draft on Cancel", async () => {
     const tree = render();
     await choose(tree);

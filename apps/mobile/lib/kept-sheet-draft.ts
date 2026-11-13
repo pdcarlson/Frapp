@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  hasKeptDraft,
   readKeptDraft,
   useKeptDraftKeys,
   useKeptFormDraft,
+  writeKeptDraft,
 } from "@repo/hooks/kept-drafts";
 
 /**
@@ -21,7 +23,14 @@ import {
  * the draft;
  * `clear()` where the sheet gives it up (Cancel, a save that lands);
  * `hold()` when a save starts, so a screen reopened mid-save doesn't offer
- * the same entry again, and `release()` when it fails.
+ * the same entry again, and `release()` when it fails, with anything the
+ * failure added that the sheet hasn't drawn yet (`patch`).
+ *
+ * A save that settles after the screen was left (an upload awaited in the
+ * sheet, not a `mutate` callback, which doesn't run then) comes from a sheet
+ * that is gone, while a later visit may have written a draft of its own. A
+ * landed save then clears nothing, since its draft was held out of the store
+ * already; a failed one puts its draft back only where no later one stands.
  */
 export function useKeptSheetOpening<T>(name: string | null): T | undefined {
   const keys = useKeptDraftKeys();
@@ -40,18 +49,41 @@ export function useKeptSheetDraft<T>(
 ): {
   clear: () => void;
   hold: () => void;
-  release: () => void;
+  release: (patch?: Partial<T>) => void;
 } {
+  const keys = useKeptDraftKeys();
+  const key = name === null ? null : keys.draft(name);
   const kept = useKeptFormDraft<T>(name, true, value, {
     signature,
     restoredAtMount: opening !== undefined,
   });
   const { drop, rebase, hold, release } = kept;
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+    };
+  }, []);
   // What the sheet is left showing (blank, or what failed to send) is not a
   // new draft.
   const clear = useCallback(() => {
+    if (gone.current) return;
     drop();
     rebase();
   }, [drop, rebase]);
-  return useMemo(() => ({ clear, hold, release }), [clear, hold, release]);
+  const releaseWith = useCallback(
+    (patch?: Partial<T>) => {
+      if (key === null) return;
+      if (gone.current && hasKeptDraft(key)) return;
+      release();
+      const now = readKeptDraft<T>(key);
+      if (patch && now !== undefined) writeKeptDraft(key, { ...now, ...patch });
+    },
+    [key, release],
+  );
+  return useMemo(
+    () => ({ clear, hold, release: releaseWith }),
+    [clear, hold, releaseWith],
+  );
 }

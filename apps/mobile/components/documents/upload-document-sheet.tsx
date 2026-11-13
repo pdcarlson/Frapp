@@ -35,10 +35,7 @@ import {
   type SentUpload,
 } from "@/lib/more/document-upload";
 import type { DocumentFolder } from "@/lib/more/documents";
-import {
-  useKeptSheetDraft,
-  useKeptSheetOpening,
-} from "@/lib/kept-sheet-draft";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -338,7 +335,9 @@ export const UploadDocumentSheet = forwardRef<
       return;
     }
     if (result.sent) setStored(result.sent);
-    kept.release();
+    // With the bytes it left, which this render hasn't drawn yet: a sheet
+    // that has gone keeps them for the next visit's retry.
+    kept.release(result.sent ? { stored: result.sent } : undefined);
     // Kept for the visit the pending row reopens, which is how the member
     // hears of it: the sheet closed when Upload was tapped.
     if (result.final) setRefusal(result.reason);
@@ -453,7 +452,9 @@ export const UploadDocumentSheet = forwardRef<
             {failure}
           </Text>
         ) : null}
-        {failure && stored ? (
+        {stored ? (
+          // Also on a visit opened on a kept draft, whose failure went with
+          // the last screen: it says why title and folder hold still.
           <Text style={styles.note}>{RETRY_KEEPS_DRAFT}</Text>
         ) : null}
 
