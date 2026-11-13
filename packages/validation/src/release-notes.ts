@@ -154,6 +154,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Private channels now show a lock in your channel list, so you can tell which ones not everyone can see.",
       "A muted channel's mark is now a crossed-out speaker, the same as on the web, so it no longer looks like the notifications bell.",
       "You can now post a form in chat from the + menu and answer it on its own page, where your answers stay private and can be changed until the form closes.",
+      "The + beside the tab bar now lays its shortcuts out three to a row, and you can keep up to nine of them.",
     ],
   },
   {
