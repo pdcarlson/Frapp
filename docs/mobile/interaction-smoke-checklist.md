@@ -130,7 +130,7 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 | Chat thread | Compose and send while offline | The composer stays **enabled**, with no offline line of its own; the pill's sentence (tap "Offline") reads "You're offline. Messages you send go out when you reconnect. Photos and files need a connection." The message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
 | Chat thread | Offline, or a slow connection | Exactly one connection indicator on screen: the pill. No band under the thread header and no hint line in the composer. A slow connection reads "Slow connection", never "Slow connection" plus "Reconnecting…" |
 | Service hours (s20 sheet) | Submit while offline | Submit is disabled, "Reconnect to make changes." is shown **and** read out as the button's hint. There is no queue here — a lost submit would be silent |
-| Check-in (s18) | Manual code submit while offline | Same: disabled with the reason stated. The camera keeps scanning — reading a QR code is local, and a latched read the member can retry beats a dead viewfinder |
+| Check-in (s18) | Manual code submit while offline | Same: disabled with the reason stated. There is no in-app camera (the phone's own camera app opens the check-in link, #4762) |
 
 ## 5) Push notifications — **not verifiable in Expo Go**
 

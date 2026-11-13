@@ -327,10 +327,12 @@ test("the camera note fails on any of the calls that would open the camera", () 
     const sources = [
       { file: "apps/mobile/lib/chat/take-photo.ts", text: "await ImagePicker.launchCameraAsync({});" },
       { file: "apps/mobile/lib/avatar.ts", text: "await ImagePicker.requestCameraPermissionsAsync();" },
+      { file: "apps/mobile/lib/scan.tsx", text: "const [status, ask] = ImagePicker.useCameraPermissions();" },
     ];
     assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources }), [
       "NSCameraUsageDescription: apps/mobile/lib/chat/take-photo.ts calls launchCameraAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
       "NSCameraUsageDescription: apps/mobile/lib/avatar.ts calls requestCameraPermissionsAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
+      "NSCameraUsageDescription: apps/mobile/lib/scan.tsx calls useCameraPermissions, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
     ]);
   } finally {
     pod.cleanup();

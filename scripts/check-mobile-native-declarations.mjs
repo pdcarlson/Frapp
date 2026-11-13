@@ -153,12 +153,12 @@ export const IOS_PURPOSE_STRINGS = new Map([
     // (ITMS-90683), the way it rejected build 8 for the motion key.
     "NSCameraUsageDescription",
     {
-      text: "Frapp never uses the camera. iOS requires this note because the photo picker Frapp uses can open it.",
+      text: "Frapp never uses the camera. iOS requires this note because a photo library Frapp uses can open it.",
       requestedBy: null,
       linkedBy: {
         packageName: "expo-image-picker",
         symbol: "AVCaptureDevice",
-        requestCall: ["requestCameraPermissionsAsync(", "launchCameraAsync("],
+        requestCall: ["requestCameraPermissionsAsync(", "useCameraPermissions(", "launchCameraAsync("],
       },
     },
   ],
