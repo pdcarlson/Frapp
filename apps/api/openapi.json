@@ -18522,7 +18522,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "description": "Must contain something besides whitespace."
           },
           "permissions": {
             "type": "array",
@@ -18572,7 +18573,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "description": "Must contain something besides whitespace."
           },
           "permissions": {
             "type": "array",

@@ -249,3 +249,4 @@ Custom member fields declare a `visibility` of `self` / `chapter` / `exec` / `pr
 - If a chapter has only one member (the President), that member cannot remove themselves or cancel the presidency.
 - Role names must be unique within a chapter. Attempting to create a duplicate returns 409 Conflict.
 - Role names are capped at **100 characters** (409's sibling failure: a longer name returns 400). Role names are chapter-authored strings that render in member lists and the role picker.
+- A role name must contain something besides whitespace: create and rename refuse an empty or whitespace-only name with 400, and the database holds the same rule (`roles_name_not_blank`, #4749). The API refuses a blank tier name the same way.

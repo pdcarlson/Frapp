@@ -5561,6 +5561,7 @@ export interface components {
             scope: "chapter";
         };
         CreateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name: string;
             permissions: string[];
             display_order?: number;
@@ -5578,6 +5579,7 @@ export interface components {
             tier_id?: string | null;
         };
         UpdateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name?: string;
             permissions?: string[];
             display_order?: number;
