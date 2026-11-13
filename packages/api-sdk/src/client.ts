@@ -1,6 +1,9 @@
 import createClient, { Middleware } from "openapi-fetch";
 import { createFirstScreenBatchMiddleware } from "./first-screen-batch";
-import { randomClientId } from "./random-id";
+import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
+
+// Re-exported: callers have always imported these from the client.
+export { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
 import type { paths } from "./types";
 
 export interface FrappClientConfig {
@@ -43,8 +46,6 @@ export interface FrappClientConfig {
   batchFirstScreenReads?: boolean;
 }
 
-export const REQUEST_ID_HEADER = "x-request-id";
-
 /**
  * Matches the API's `TIME_ZONE_HEADER`. The API records it per member so a
  * push can name an event's time the way the member's phone shows it.
@@ -63,14 +64,6 @@ const runtimeTimeZone = (): string | null => {
 
 /** Matches the API's `CLIENT_VERSION_HEADER` (`#domain/constants/client-version`). */
 export const CLIENT_VERSION_HEADER = "x-client-version";
-
-/**
- * Opaque request-correlation id. Not a Sentry/OTEL trace id, not a credential.
- *
- * Minted through {@link randomClientId}, never a bare `crypto.randomUUID()`:
- * React Native has no `crypto` global (`./random-id.ts`, #937).
- */
-export const mintRequestId = (): string => `req_${randomClientId()}`;
 
 /**
  * Ensure `x-request-id` is present. Honours a caller-supplied value.

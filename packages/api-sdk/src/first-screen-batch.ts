@@ -1,7 +1,5 @@
 import type { Middleware } from "openapi-fetch";
-// A cycle with `./client`, which installs this middleware; both names are
-// read only when a batch is sent, long after either module has loaded.
-import { mintRequestId, REQUEST_ID_HEADER } from "./client";
+import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
 import type { components } from "./types";
 
 /** A section `GET /v1/bootstrap` can answer. */
