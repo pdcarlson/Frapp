@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isConfirmedByThisSignIn, isEmailOnlyAccount } from "@repo/validation";
 import {
   CHAPTERS_READ_TIMEOUT_MS,
-  isConfirmedByThisSignIn,
-  isEmailOnlyAccount,
   isNewAccount,
   isNewEmailAccount,
 } from "./new-account-detection";

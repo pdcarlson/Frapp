@@ -201,6 +201,12 @@ A user who hasn't accepted the current Terms sees the shared Terms checkbox ther
 A house-gold `‹ Back` row, and Android's back button, step back one view: confirm to the field (the invite kept), then the field to the question; from an offered invite's confirm step, straight back to the question, with whatever invite the field held before the offer put back.
 The board draws the invite field as the whole screen, with `Join chapter` under it; the question in front of it, and the confirm step after it (with `Continue` on the field), are owner-approved (2026-11-04, #3348 and #3352), not drift.
 Every view shows `Signed in as <email>` with `Sign out` under its header (#3782), and a destructive **Delete account** control sits in the Account menu in the top corner, on every view: this is the screen a zero-membership account is pinned to, and the only surface reachable in that state that offers deletion (`/create-chapter` and `/chapter-picker` are also permitted while the gate reads `join`, but neither deletes an account), so it is where Apple 5.1.1(v) is satisfied for that state (#2295, [`../../behavior/data-retention.md`](../../behavior/data-retention.md)).
+When the sign-in that brought the account here just created it (#4769, the phone's web `/new-account`), a card under `Signed in as` says so first: `New account created`, the account's address, and `Sign out` (one tap, back to sign-in, keeping an invite that opened the screen for the next sign-in, as web keeps `next`) or `Continue with the new account`, which puts the card away for the rest of the session; Continue leads when an invite link opened the screen.
+"Just created" is `@repo/validation`'s `new-account` rule, asked only about a sign-in made in this app run (a link or provider return, or a native Google or Apple sign-in), never a session restored on a cold start, and read off the session's user with no API call: a first Google or Apple sign-in (`created_at` within five minutes of `last_sign_in_at`), or the sign-in screen's tagged magic link (`intent=sign-in-link`) landing in an email-only account that link confirmed.
+The third rule, no chapter, is the gate's: only an account whose chapters read answered `[]` is sent here, and a chapters read that fails sends no one here, so the notice falls open with it.
+A member who opens Join from the picker never sees it.
+A cold start forgets the sign-in, and the card with it.
+Copy: [`writing.md` § New account](../design-system/writing.md#new-account-pre-auth).
 
 ### s03 First-run + notifications
 

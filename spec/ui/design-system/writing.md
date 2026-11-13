@@ -1231,6 +1231,8 @@ Also shown, with the same wording, after a sign-in **magic link** that created a
 | Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
 | Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
 
+The phone shows the same title, line and actions, for the same two cases (a first Google or Apple sign-in, and the sign-in magic link for an address that had no account), as a card at the top of s02, the screen a new account with no chapter lands on (#4769, 2026-11-13; [`screens.md`](../mobile/screens.md) s02). Both surfaces take the title and line from `@repo/validation` (`NEW_ACCOUNT_TITLE`, `newAccountDescription`). The phone has no sign-out-failed line: its sign-out always ends the local session.
+
 ### Onboarding wizard (dashboard overlay)
 
 | State | Title | Description |
