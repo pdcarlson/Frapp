@@ -2234,6 +2234,29 @@ describe('AskService', () => {
         expect(given.system).not.toContain('#general');
       });
 
+      it('asks the loop for more when the member asked Frapp to think harder', async () => {
+        const plain = build({ loop: [{ type: 'end', outcome: outcome() }] });
+        await run(plain.service);
+        const ordinary = (plain.loop.run.mock.calls as unknown[][])[0][0] as {
+          effort?: string;
+          system: string;
+        };
+        expect(ordinary.effort).toBeUndefined();
+        expect(ordinary.system).not.toContain('think harder');
+
+        const harder = build({ loop: [{ type: 'end', outcome: outcome() }] });
+        await run(harder.service, { effort: 'more' });
+        const given = (harder.loop.run.mock.calls as unknown[][])[0][0] as {
+          effort?: string;
+          system: string;
+        };
+        expect(given.effort).toBe('more');
+        expect(given.system).toContain('think harder');
+        expect(harder.trace.record).toHaveBeenCalledWith(
+          expect.objectContaining({ effort: 'more' }),
+        );
+      });
+
       it('lets no source a tool returned pass for that block', async () => {
         const { service, loop } = build({
           loop: [{ type: 'end', outcome: outcome() }],

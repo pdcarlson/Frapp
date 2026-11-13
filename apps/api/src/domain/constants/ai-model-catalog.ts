@@ -37,6 +37,11 @@ export interface GenerationCatalogEntry extends CatalogEntryBase {
   kind: 'structured' | 'cited' | 'agent';
   maxOutputTokens: number;
   effort: LanguageModelEffort;
+  /**
+   * The effort when the member asks the task to think harder. Only a task
+   * that offers that has one; without it the task always runs at `effort`.
+   */
+  effortMore?: LanguageModelEffort;
   inputUsdPerMillionTokens: number;
   outputUsdPerMillionTokens: number;
 }
@@ -125,6 +130,8 @@ export const AI_MODEL_CATALOG = {
     kind: 'agent',
     maxOutputTokens: 4_000,
     effort: 'medium',
+    // "Think harder" (`AskEffort` `more`), with the loop's wider bounds.
+    effortMore: 'high',
   },
   /**
    * An officer's request, read into one action and its details (#718). It is

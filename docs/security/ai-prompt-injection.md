@@ -304,7 +304,9 @@ or writes. `AgentLoopService` holds every rule below in code.
 >    what fails never reaches the tool. The model is told which field failed and the schema's own
 >    word for why, never what it sent.
 > 4. **A turn is bounded:** six model calls, ten tool calls, a size cap on each result and a read
->    budget of 45 seconds, past which no read is waited for. When one is spent the tools are taken away (`tool_choice: none`) and the model answers
+>    budget of 45 seconds, past which no read is waited for (ten, sixteen and 75 seconds when the
+>    member asked Frapp to think harder, which only the member's own button sets; `AGENT_LIMITS`).
+>    When one is spent the tools are taken away (`tool_choice: none`) and the model answers
 >    with what it has. Each model call is admitted against the spend caps and recorded on its own,
 >    so a planted "keep searching" costs at most one turn's limits.
 > 5. **A result is data** (C1): sources and one line the tool wrote. Nothing a tool returned reaches

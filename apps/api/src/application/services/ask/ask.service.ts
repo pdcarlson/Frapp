@@ -754,16 +754,18 @@ export class AskService {
     const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
-      system: askAgentSystem(longDate(now, input.timeZone), {
-        asker: asker !== null,
-        from: openAt.length > 0,
-      }),
+      system: askAgentSystem(
+        longDate(now, input.timeZone),
+        { asker: asker !== null, from: openAt.length > 0 },
+        input.effort === 'more',
+      ),
       messages: askAnswerMessages(input.question, input.history),
       context,
       tools: offered,
       toolContext,
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
     try {

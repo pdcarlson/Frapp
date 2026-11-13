@@ -749,6 +749,25 @@ describe('AiGatewayService', () => {
       ]);
     });
 
+    it('runs a round the member asked more thought of at the catalog’s higher effort', async () => {
+      const h = harness({
+        'ask.agent': () => ({ text: '', toolCalls: [CALL] }),
+      });
+      await agentEvents(
+        h.gateway.streamAgentRound(
+          'ask.agent',
+          { ...QUESTION, more: true },
+          CONTEXT,
+        ),
+      );
+      // Which effort that is stays the catalog's to say, not the caller's.
+      expect(h.requests[0]).toMatchObject({
+        model: 'claude-sonnet-5-5',
+        effort: 'high',
+        maxOutputTokens: 4_000,
+      });
+    });
+
     it('checks a citation against what the rounds returned, and nothing else', async () => {
       const h = harness({
         'ask.agent': () => ({

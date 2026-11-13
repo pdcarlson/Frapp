@@ -137,6 +137,11 @@ export interface AiAgentPrompt extends AiPrompt {
   rounds: LanguageModelAgentRound[];
   /** The caller's limits are spent: this round writes the answer. */
   mustAnswer?: boolean;
+  /**
+   * The member asked for more thought: the round runs at the task's
+   * `effortMore`, when its catalog entry has one.
+   */
+  more?: boolean;
 }
 
 export type AiEmbeddingResult =
@@ -386,6 +391,9 @@ export class AiGatewayService {
 
     const request: LanguageModelRequest = {
       ...this.baseRequest(admitted, prompt),
+      ...(prompt.more && admitted.entry.effortMore
+        ? { effort: admitted.entry.effortMore }
+        : {}),
       kind: 'agent',
       tools: prompt.tools,
       context: prompt.context,
