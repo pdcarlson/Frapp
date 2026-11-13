@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
+import { DisclosureGlyph } from "@/components/control-glyphs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   EVENTS_VIEW_STORAGE_KEY,
@@ -432,29 +433,37 @@ describe("Events after the first", () => {
     const weekday = at(2).toLocaleDateString(undefined, { weekday: "long" });
     expect(text).toMatch(new RegExp(`^${weekday}$`, "m"));
     expect(text.indexOf("Event b")).toBeGreaterThan(text.indexOf(weekday));
-    expect(text).toMatch(/Library · 15 pts/);
+    // A count read as text is written out, as web writes it (#4135).
+    expect(text).toMatch(/Library · 15 points/);
     expect(text).not.toContain("+15 pts");
-    // Day 20 is past the horizon: one Later row offers it, folded.
+    // Day 20 is past the horizon: one Later row offers it, folded, with
+    // web's count beside it (#4135).
     expect(text).toContain("Later");
-    expect(text).toContain("Show 1");
+    expect(text).toContain("1 event");
     expect(text).not.toContain("Event d");
 
     const later = tree.root.find(
       (node) =>
         typeof node.props.onPress === "function" &&
-        node.props.accessibilityLabel === "Show 1 later event",
+        node.props.accessibilityLabel === "Later, 1 event",
     );
+    expect(later.props.accessibilityState).toEqual({ expanded: false });
     act(() => later.props.onPress());
     text = screenText(tree);
     expect(text).toContain("Event d");
-    expect(text).toContain("Hide");
+    // Open now, to a screen reader and to the eye: the chevron turns down.
+    expect(later.props.accessibilityState).toEqual({ expanded: true });
+    expect(
+      later.findAll((node) => (node.type as unknown) === DisclosureGlyph)[0]
+        ?.props.direction,
+    ).toBe("down");
   });
 
   it("says when nothing falls in the next two weeks", () => {
     events = [make("far", 30)];
     const text = screenText(render());
     expect(text).toContain("Nothing in the next two weeks.");
-    expect(text).toContain("Show 1");
+    expect(text).toContain("1 event");
   });
 
   it('draws a weekly series once, as "Chapter · Every …" (#3823)', () => {

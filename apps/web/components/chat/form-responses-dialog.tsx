@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExportMenu } from "@/components/shared/export-menu";
-import { NestedError, NestedLoading } from "@/components/shared/nested-states";
+import { NestedError } from "@/components/shared/nested-states";
+import { Skeleton } from "@/components/shared/async-states";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -219,7 +221,7 @@ function ResponsesBody({
         {data ? (
           <ResponsesTabs payload={payload} data={data} labelOf={labelOf} />
         ) : query.isPending ? (
-          <NestedLoading message="Loading responses…" sole />
+          <ResponsesSkeleton payload={payload} />
         ) : (
           <NestedError
             sole
@@ -371,5 +373,44 @@ function ResponsesTabs({
         </section>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The Summary tab's shape while the responses load: the two tabs, then each
+ * question's title and count line over its option bars (or a text answer's
+ * block), from the form's own questions, so nothing moves when they land.
+ */
+function ResponsesSkeleton({ payload }: { payload: FormPayload }) {
+  return (
+    <SectionSkeleton label="Loading responses…" className="space-y-6">
+      <div
+        aria-hidden="true"
+        className="flex gap-6 border-b border-border pb-3"
+      >
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-20" />
+      </div>
+      {payload.questions.slice(0, 4).map((question) => {
+        const options =
+          question.type === "yes_no" ? 2 : (question.options?.length ?? 0);
+        return (
+          <div key={question.id} aria-hidden="true" className="space-y-3">
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-3 w-24" />
+            {options > 0 ? (
+              Array.from({ length: Math.min(options, 5) }, (_, index) => (
+                <div key={index} className="space-y-2">
+                  <Skeleton className="h-3 w-1/3" />
+                  <Skeleton className="h-1.5 w-full" />
+                </div>
+              ))
+            ) : (
+              <Skeleton className="h-10 w-full rounded-md" />
+            )}
+          </div>
+        );
+      })}
+    </SectionSkeleton>
   );
 }

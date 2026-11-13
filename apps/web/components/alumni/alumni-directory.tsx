@@ -1,5 +1,6 @@
 "use client";
 
+import { DIRECTORY_COPY } from "@repo/validation";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { SearchGlyph } from "@/components/members/directory-glyphs";
@@ -269,13 +270,13 @@ export function AlumniDirectory() {
         // One line where the rows go (empty-states plan rule 7).
         filtered ? (
           <InlineNote>
-            No alumni match these filters.{" "}
+            {DIRECTORY_COPY.alumniNoFilterMatches}{" "}
             <InlineNoteAction onClick={clearFilters}>
               Clear filters
             </InlineNoteAction>
           </InlineNote>
         ) : (
-          <InlineNote>No alumni yet. Graduated members appear here.</InlineNote>
+          <InlineNote>{DIRECTORY_COPY.alumniEmpty}</InlineNote>
         )
       ) : (
         /*

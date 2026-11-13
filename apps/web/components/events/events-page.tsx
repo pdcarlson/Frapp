@@ -49,6 +49,8 @@ import {
   canAll,
   EVENT_CREATE_PERMISSIONS,
   eventSetsRolesApart,
+  EVENTS_COPY,
+  eventsCount,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -170,10 +172,6 @@ function eventIdOf(event: EventRow): string {
 
 function startMsOf(event: EventRow): number | null {
   return parseInstant(event.start_time)?.getTime() ?? null;
-}
-
-function eventsLabel(count: number): string {
-  return `${count} event${count === 1 ? "" : "s"}`;
 }
 
 /**
@@ -1028,7 +1026,7 @@ export function EventsPage() {
                 count={
                   selecting
                     ? `${selectedVisibleIds.length} selected`
-                    : eventsLabel(soonEntries.length)
+                    : eventsCount(soonEntries.length)
                 }
               >
                 {TIME_FILTER_LABELS[timeFilter]}
@@ -1139,10 +1137,10 @@ export function EventsPage() {
                     )}
                   >
                     <span className={`${EYEBROW} text-muted-foreground`}>
-                      Later
+                      {EVENTS_COPY.later}
                     </span>
                     <span className="text-caption text-muted tabular-nums">
-                      {eventsLabel(laterEntries.length)}
+                      {eventsCount(laterEntries.length)}
                     </span>
                     <ChevronDown
                       aria-hidden="true"

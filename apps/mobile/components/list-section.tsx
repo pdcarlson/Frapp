@@ -48,9 +48,10 @@ export function SectionHeader({
   /**
    * How many rows the section holds, drawn after the caption as a separate
    * muted count, as web's `SectionLabel` draws it, rather than inside the
-   * caption's own text. Omit it (or pass `null`) for nothing to count.
+   * caption's own text: a number, or a counted phrase ("3 events") where web
+   * names the noun. Omit it (or pass `null`) for nothing to count.
    */
-  count?: number | null;
+  count?: number | string | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -76,7 +77,7 @@ export function SectionHeader({
  * one; a smaller heading inside a section (Activity's "Now" and "Later")
  * draws its own with this, so the count's tone and size live in one place.
  */
-export function SectionCount({ count }: { count: number }) {
+export function SectionCount({ count }: { count: number | string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return <Text style={styles.sectionHeaderCount}>{String(count)}</Text>;

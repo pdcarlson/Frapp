@@ -1,9 +1,10 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
+import { EVENTS_COPY, eventsCount } from "@repo/validation";
 import {
   useActiveChapterId,
   useCalendarTasks,
@@ -46,7 +47,10 @@ import { EventsCalendar } from "@/components/events/events-calendar";
 import { SuggestedEventsEntry } from "@/components/events/suggested-events-entry";
 import { CalendarLayerChips } from "@/components/events/calendar-tasks";
 import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
-import { CalendarPlusGlyph } from "@/components/control-glyphs";
+import {
+  CalendarPlusGlyph,
+  DisclosureGlyph,
+} from "@/components/control-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import {
   selectAllEventRows,
@@ -60,7 +64,7 @@ import {
   useEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * s06 — Events (`canvas-screens.dc.html:195`), as a List or a Calendar.
@@ -220,9 +224,11 @@ export default function EventsScreen() {
   // One line where the rows would be, not a card (`writing.md` § 4, rule 7):
   // the fact, and for a creator the way to change it, which is the tab bar's
   // + (New event) rather than a button of the screen's own.
+  // The fact is web's line too (#4135); the how is the phone's own, since
+  // web has no tab bar +.
   const nothingScheduled = canCreateEvents
-    ? "Nothing scheduled yet. Tap + to add the first event."
-    : "Nothing scheduled yet.";
+    ? `${EVENTS_COPY.empty} Tap + to add the first event.`
+    : EVENTS_COPY.empty;
 
   function renderList() {
     const { soon, later } = list;
@@ -240,25 +246,29 @@ export default function EventsScreen() {
         {soon.length > 0 ? (
           renderDayGroups(soon, true)
         ) : (
-          <InlineNote>Nothing in the next two weeks.</InlineNote>
+          <InlineNote>{EVENTS_COPY.noneSoon}</InlineNote>
         )}
         {laterCount > 0 ? (
           <View style={styles.dayGroup}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={
-                showLater
-                  ? "Hide later events"
-                  : `Show ${laterCount} later ${laterCount === 1 ? "event" : "events"}`
-              }
+              accessibilityLabel={`${EVENTS_COPY.later}, ${eventsCount(laterCount)}`}
               accessibilityState={{ expanded: showLater }}
               onPress={() => setShowLater((shown) => !shown)}
               style={styles.laterToggle}
             >
-              <SectionHeader>Later</SectionHeader>
-              <Text style={styles.laterAction}>
-                {showLater ? "Hide" : `Show ${laterCount}`}
-              </Text>
+              {/* Web's words for the fold (#4135): the label and its count,
+                  then a chevron drawn the way the phone's other folds draw
+                  one (right folded, down open), rather than Show N / Hide. */}
+              <SectionHeader count={eventsCount(laterCount)}>
+                {EVENTS_COPY.later}
+              </SectionHeader>
+              <View style={styles.laterChevron}>
+                <DisclosureGlyph
+                  color={tokens.color.text.mutedForeground}
+                  direction={showLater ? "down" : "right"}
+                />
+              </View>
             </Pressable>
             {showLater ? renderDayGroups(later, false) : null}
           </View>
@@ -282,7 +292,7 @@ export default function EventsScreen() {
       // error still needs one of the two.
       return (
         <ErrorState
-          title="Couldn't load events"
+          title={EVENTS_COPY.loadError}
           body={describeLoadFailure(eventsQuery.error)}
           onRetry={() => void eventsQuery.refetch()}
           isRetrying={eventsQuery.isFetching}
@@ -466,18 +476,15 @@ function createStyles(tokens: SignetTokens) {
     dayGroup: {
       gap: tokens.spacing.sm,
     },
+    // The caption keeps its top margin, so the row sits on its baseline at
+    // the bottom, the way an uncounted Later header sat.
     laterToggle: {
       flexDirection: "row",
       alignItems: "flex-end",
-      justifyContent: "space-between",
       minHeight: tokens.touch.minimum,
     },
-    laterAction: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.semibold,
-      }),
-      color: tokens.color.text.mutedForeground,
+    laterChevron: {
+      marginLeft: "auto",
     },
   });
 }

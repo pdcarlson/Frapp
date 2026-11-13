@@ -28,7 +28,12 @@ import {
 } from "@repo/hooks";
 import type { LiveTaskPhoto, TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
+import {
+  formatDayTime,
+  formatPointsChip,
+  formatWeekdayDay,
+  nextUpLine,
+} from "@repo/formatting";
 import {
   can,
   taskNeedsSignOff,
@@ -809,7 +814,7 @@ function TaskCard({
           />
         ) : null}
         {task.point_reward ? (
-          <Badge className="ml-1">+{task.point_reward} pts</Badge>
+          <Badge className="ml-1">{formatPointsChip(task.point_reward)}</Badge>
         ) : null}
         {task.proof_kind &&
         task.proof_kind !== "none" &&
