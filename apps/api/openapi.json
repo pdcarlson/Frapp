@@ -4596,7 +4596,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatMessageDto"
+                  "$ref": "#/components/schemas/ForwardResultDto"
                 }
               }
             }
@@ -21247,6 +21247,201 @@
           "channel_id"
         ]
       },
+      "ForwardResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_avatar_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TEXT",
+              "POLL"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "rush",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement",
+              "signup",
+              "form",
+              "ask_answer"
+            ],
+            "nullable": true,
+            "description": "Null on rows written before the column existed; read as 'text'."
+          },
+          "payload": {
+            "type": "object",
+            "nullable": true,
+            "description": "Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575)."
+          },
+          "client_message_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "reply_to_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
+          },
+          "is_pinned": {
+            "type": "boolean"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "flag": {
+            "type": "string",
+            "enum": [
+              "important",
+              "funny",
+              "interesting",
+              "question",
+              "hype",
+              "fyi"
+            ],
+            "nullable": true,
+            "description": "The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag."
+          },
+          "flagged_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld."
+          },
+          "flagged_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "edited_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "mentions": {
+            "nullable": true,
+            "description": "`users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline."
+          },
+          "thread_reply_count": {
+            "type": "number",
+            "description": "On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row."
+          },
+          "thread_last_reply_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "thread_recent_sender_ids": {
+            "description": "On a thread parent: up to three recent repliers, newest first.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thread_last_reply": {
+            "nullable": true,
+            "description": "On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatThreadLastReplyDto"
+              }
+            ]
+          },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`."
+          },
+          "deduplicated": {
+            "type": "boolean",
+            "description": "True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one."
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "sender_id",
+          "content",
+          "type",
+          "reply_to_id",
+          "metadata",
+          "is_pinned",
+          "pinned_at",
+          "edited_at",
+          "is_deleted",
+          "created_at",
+          "sender_blocked",
+          "deduplicated"
+        ]
+      },
       "SetMessageFlagDto": {
         "type": "object",
         "properties": {
@@ -21547,6 +21742,16 @@
             "nullable": true,
             "description": "The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row."
           },
+          "forwarded_from": {
+            "nullable": true,
+            "description": "Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForwardedMessageDto"
+              }
+            ]
+          },
           "sender_blocked": {
             "type": "boolean",
             "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
@@ -21560,6 +21765,7 @@
           "is_deleted",
           "created_at",
           "thread_root_id",
+          "forwarded_from",
           "sender_blocked"
         ]
       },

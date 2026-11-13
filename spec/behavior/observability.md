@@ -660,6 +660,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | --- | --- | --- |
 | `message-sent` | Any message is sent, a retry on the same `client_message_id` excepted. `kind` is the stored message kind. This is the count of sends; the web outbox events measure delivery | `kind`, `is_reply`, `attachment_count` |
 | `announcement-posted` | An `/announce` message is sent (feature `announcements`) | — |
+| `message-forwarded` | A member forwards a message to a channel or DM ([chat § Forward](chat/README.md)). Not counted in `message-sent`, which is the send route's. A retry on the same `client_message_id` answers `deduplicated: true` and records nothing | `has_comment` |
 | `message-reacted` | A member adds a reaction. The emoji is never sent; a repeat is deduplicated, and removing one doesn't reach the API | — |
 | `message-flagged` | A member puts a flag on a message, or replaces one ([chat § Message flags](chat/README.md#message-flags)). Setting the flag a message already carries counts again; removing one sends nothing | `flag` (which of the six flags) |
 | `dm-opened` | A member opens a 1-on-1 DM. Get-or-create, so reopening one counts again | — |

@@ -240,6 +240,25 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'ChatController.forwardMessage': {
+    'message-forwarded': [
+      [
+        'a forward with a comment',
+        { result: { content: 'look at this', deduplicated: false } },
+        { has_comment: true },
+      ],
+      [
+        'a forward with only whitespace for a comment',
+        { result: { content: '  ', deduplicated: false } },
+        { has_comment: false },
+      ],
+      [
+        'a retry that answered the forward already made',
+        { result: { content: 'look at this', deduplicated: true } },
+        null,
+      ],
+    ],
+  },
   'ChatController.sendMessage': {
     'message-sent': [
       [

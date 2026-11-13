@@ -1,4 +1,7 @@
-import { SupabaseChatMessageBookmarkRepository } from './supabase-chat-message-bookmark.repository';
+import {
+  BOOKMARK_MESSAGE_COLUMNS,
+  SupabaseChatMessageBookmarkRepository,
+} from './supabase-chat-message-bookmark.repository';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -106,6 +109,31 @@ const seed = () => ({
       message: message(MESSAGE_B_OTHER_USER),
     }),
   ],
+});
+
+/**
+ * The harness ignores `select()`, so the projection itself is pinned here: it
+ * is the third copy of the `BookmarkedMessage` field list (the entity and
+ * `BookmarkedMessageDto` are the others), less the per-viewer `sender_blocked`.
+ * Dropping `forwarded_from` (#4875) would leave every other spec green while
+ * saved forwards previewed as "Message" again.
+ */
+describe('BOOKMARK_MESSAGE_COLUMNS', () => {
+  it('selects exactly the bookmark projection', () => {
+    expect(BOOKMARK_MESSAGE_COLUMNS.split(', ').sort()).toEqual([
+      'author_avatar_path',
+      'author_external_id',
+      'author_name',
+      'channel_id',
+      'content',
+      'created_at',
+      'forwarded_from',
+      'id',
+      'is_deleted',
+      'sender_id',
+      'thread_root_id',
+    ]);
+  });
 });
 
 describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {

@@ -704,8 +704,8 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — a ten-field projection,
- * not a whole {@link ChatMessage}.
+ * The message as the bookmarks endpoint serves it — a narrow projection, not a
+ * whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
  * size optimization: `ChatService.deleteMessage` blanked `content` and
@@ -732,6 +732,13 @@ export interface BookmarkedMessage {
    * never in the channel's timeline.
    */
   thread_root_id: string | null;
+  /**
+   * A forward's copy of its original (#4864), so a saved forward with no
+   * comment previews as "Forwarded: ..." (#4875). Null on every other row.
+   * Masked like the timeline's copy when the caller blocked the original's
+   * author, and dropped from a row whose channel access was lost.
+   */
+  forwarded_from: ChatForwardedMessage | null;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *
