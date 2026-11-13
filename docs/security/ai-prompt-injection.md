@@ -196,6 +196,29 @@ that is *asked* not to cross chapters has already lost; it must not be given the
 **C5 — Mutating tools are opt-in per turn and confirmed.** A question is not authorisation to act.
 Read-only Q&A turns must have no mutating tool available at all.
 
+> **Changed in #4699 by pdcarlson, 2026-11-13 (one conversation; Paul asked for one field with no
+> Ask and Do sides).** What "opt-in per turn" rests on moved, and the rule's substance is kept
+> another way. Before, the officer opted in by switching the panel to Do, and a question and a
+> request went to separate routes. Now both are typed in one field and sent to one route, so the
+> switch is no longer the opt-in. What holds instead:
+>
+> 1. **The call that writes an answer still has no mutating tool, and no tool at all.** It is the
+>    same `AskService` call as before, and it is the only call that reads retrieved text.
+> 2. **A request is read by a separate call** (`ActService`, the acting agent below) that is shown
+>    only what the member typed, in this turn and earlier in the conversation, and the actions they
+>    may take. It is never shown an answer, a source or anything retrieved. The two calls share no
+>    context and neither sees the other's output.
+> 3. **The request reading runs only for a member who holds `ai:act`**, in a client that says it
+>    draws cards (`actions` on the request). For everyone else a turn is a question and nothing
+>    else.
+> 4. **Nothing is changed by typing.** The most a turn can produce is a proposal only the asker can
+>    open, and the opt-in to the change itself is their Confirm on a card that states the action,
+>    its size and every member, with the action's permission checked again at that moment.
+>
+> So a question from a member with `ai:act` is now also read as a possible request, which it was
+> not before. What that costs is one small planning call a turn, and a card the member did not
+> expect if a question is misread as a request; it cannot cost a change they did not confirm.
+
 **C6 — Citations are checked by Frapp's server, and grounded.** The model returns each cited claim
 with a quote and the id of its source, and the server keeps the citation only when the quote occurs
 word for word in that source (spec §13 Citation protocol). The check runs in Frapp's code after the
@@ -251,6 +274,31 @@ officer's typed request into a proposal they confirm
   and the actions that officer may take. No chat, document, roster, event title or retrieved text is
   in it, so there is no injector whose ceiling could apply (C3). An answer naming an action that was
   not offered, or that does not exist, is treated as no action.
+- **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
+  it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
+  questions and requests the member typed earlier in the sitting (the last three), so "make it 10"
+  can finish "give Ana 5 points". It never hands it Frapp's answers, which were written from
+  retrieved text, nor any source. The earlier turns arrive from the member's own client
+  (`history` on `POST /v1/ai/ask`), so they are the caller's input like the question itself: a
+  member who forges them is injecting into their own session, with their own permissions, and
+  still has to confirm the card. The planner is told to act only on the newest message and to use
+  earlier ones only to fill in what it leaves out.
+- **The answer call sees earlier answers, the planner never does.** The same `history` gives the
+  answer call the earlier turns as conversation, so a follow-up reads in context. They are context,
+  not sources: every claim must still quote a source retrieved for this question, and the server
+  checks each quote (C6). An earlier answer that drew on chat is not sent again at all: the server
+  marks an answer whose sources included chat (`read_chat`, whether or not a chat source was
+  cited), and the client sends that turn's question only, which keeps members' chat out of a second
+  request (§ chat as a source, above). The answer call is told the earlier answer is withheld, in a
+  fixed line the server writes. This is the client's own rule about its own earlier answers: a
+  member who sends an answer back anyway is sending text they were already shown.
+- **A turn that ends in a card has already searched.** The two lanes start together, so by the time
+  the request lane has a card the answer lane may have embedded the question, searched the index
+  and made its own planning call. It is stopped there: its first step past searching is held until
+  the request lane has spoken, so no tool runs and no answer is written for that turn, and nothing
+  it found reaches the request lane.
+- **Cards are asked for on `ai:act` alone.** The client sets `actions` for any member who holds the
+  permission, without waiting for the list of actions; the server decides whether anything fits.
 - **Details are resolved by the server, as the officer, in their chapter.** The model writes names;
   the server looks them up in this chapter's roster and nowhere else (C4). Attendance is read only
   for an officer who holds the attendance route's permission (C2).
@@ -320,9 +368,9 @@ Mapping of control to enforcement:
 | --- | --- | --- |
 | C1 system-channel instructions | `ask-agent.eval-spec.ts` (what the planner and the answer call are shown) | yes, behind `AI_ENABLED`: the question is the user turn, everything found is a source |
 | C2 caller's permissions | `authority-ceiling`, on tool calls the product made; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED` (`AskService.offeredTools`; `ActService.offered`, and again at Confirm in `AiSuggestionService.accept`) |
-| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached. The acting agent's planner is shown the officer's request and the offered actions only (`act-agent.eval-spec.ts`) |
+| C3 caller ∩ injector ceiling | `authority-ceiling` + the per-case escalation invariant; `ask-agent.eval-spec.ts` (the planner never sees retrieved text) | yes, behind `AI_ENABLED`: nothing retrieved can cause a tool call, so the injector's ceiling is never reached. The acting agent's planner is shown the officer's request, their own earlier messages in the conversation (since #4699) and the offered actions only (`act-agent.eval-spec.ts`, `act.service.spec.ts`) |
 | C4 chapter scoping | `chapter-scoping` (citations and tool calls); `act-agent.eval-spec.ts` (a name, id or roster line outside the chapter resolves to nobody) | yes, behind `AI_ENABLED`; the SQL filter is proven by the PGlite tiers |
-| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts` | yes, behind `AI_ENABLED`: Ask has no mutating tool and refuses to run one. A change is asked for on separate routes (`/v1/ai/act`, #718) that need `ai:act`, and the answer is a proposal the asker confirms |
+| C5 mutating tools opt-in | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown) | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. The v2 prompts have not been graded against a real provider yet (#4707) |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding` | yes, behind `AI_ENABLED` (the gateway) |
 | C7 refusal on silence | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention` | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer) |
 | C8 chat rules | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450) |

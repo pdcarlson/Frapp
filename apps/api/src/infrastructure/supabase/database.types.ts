@@ -34,6 +34,7 @@ import type {
   ChapterWorkflow,
   ChatChannel,
   ChatChannelCategory,
+  ChatFormResponse,
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
@@ -176,6 +177,7 @@ export interface Database {
       chapters: TableDefinition<Chapter>;
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
+      chat_form_responses: TableDefinition<ChatFormResponse>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
@@ -457,6 +459,15 @@ export interface Database {
         Returns: EventExcuse[];
       };
       /**
+       * `20261113053718` (#3642). Clears a document type from its documents
+       * (by `document_type_key`) and deletes it, in one transaction; false
+       * when the chapter has no such type.
+       */
+      delete_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string };
+        Returns: boolean;
+      };
+      /**
        * `20261105220000`. Deletes the channel groups a `purging` import
        * created that now hold no channel, and returns their ids. A no-op for
        * any other status.
@@ -537,24 +548,6 @@ export interface Database {
        * `20261112165000` (#4310) — the run for (chapter, kind, dedupe key),
        * new or existing; `returns setof ai_runs`.
        */
-      /**
-       * `20261113040011` (#3642). Clears a document type from its documents
-       * (by `document_type_key`) and deletes it, in one transaction; false
-       * when the chapter has no such type.
-       */
-      /**
-       * `20261113040011` (#3642). Renames a document type and every document
-       * of it (by `document_type_key`) in one transaction; no row when the
-       * chapter has no such type, unique_violation when the name is taken.
-       */
-      rename_chapter_document_type: {
-        Args: { p_chapter_id: string; p_type_id: string; p_name: string };
-        Returns: ChapterDocumentType[];
-      };
-      delete_chapter_document_type: {
-        Args: { p_chapter_id: string; p_type_id: string };
-        Returns: boolean;
-      };
       enqueue_ai_run: {
         Args: {
           p_chapter_id: string;
@@ -848,6 +841,15 @@ export interface Database {
         };
         Returns: string[];
       };
+      /**
+       * `20261113053718` (#3642). Renames a document type and every document
+       * of it (by `document_type_key`) in one transaction; no row when the
+       * chapter has no such type, unique_violation when the name is taken.
+       */
+      rename_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string; p_name: string };
+        Returns: ChapterDocumentType[];
+      };
       /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
       reorder_chapter_pledge_classes: {
         Args: { p_chapter_id: string; p_ids: string[] };
@@ -941,6 +943,15 @@ export interface Database {
           p_member_role_id: string;
         };
         Returns: SemesterArchive;
+      };
+      /** `20261113040011`. Raises `form_card_missing` or `form_closed`. */
+      save_chat_form_response: {
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_answers: Json;
+        };
+        Returns: ChatFormResponse;
       };
       /**
        * `20261106190000` (#585). Backwork search over title, course,

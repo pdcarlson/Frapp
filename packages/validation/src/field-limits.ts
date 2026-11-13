@@ -125,7 +125,7 @@ export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
  * Document types (#3642, piece 4). The name bound mirrors the CHECK
- * constraint in `20261113040011_chapter_document_types.sql` (and the old
+ * constraint in `20261113053718_chapter_document_types.sql` (and the old
  * free-text `document_type` limit, so every stored value fits); the count is
  * an API-side cap on one chapter's list, which the upload form shows whole.
  */
@@ -136,7 +136,7 @@ export const DOCUMENT_TYPES_MAX = 50;
  * The key two spellings of one document type share: lowercased, with
  * everything but letters and digits removed, so "By-Laws", "bylaws" and
  * " BYLAWS " are one type. The same rule as the database's
- * `document_type_key` (`20261113040011_chapter_document_types.sql`), which the
+ * `document_type_key` (`20261113053718_chapter_document_types.sql`), which the
  * unique index, rename and delete match on; "" for a name with no letter or
  * digit, which no type may have.
  */
@@ -226,6 +226,45 @@ export const HEADCOUNT_SLOTS: readonly {
  * form isn't refused by a clock a little ahead on the server.
  */
 export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
+
+/**
+ * A form card in chat (`kind: 'form'`, #3926 step 3): a questionnaire posted
+ * as a card that opens a full-page form, like Google Forms. The chat send
+ * route checks the card against these (`normalizeFormCard` in the API), the
+ * answer route checks every answer, and the builders on both clients stop at
+ * the same numbers. A form ends at a set time on the sign-up's limit,
+ * {@link SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS}.
+ */
+export const FORM_TITLE_MAX_LENGTH = 200;
+export const FORM_DESCRIPTION_MAX_LENGTH = 2_000;
+export const FORM_QUESTIONS_MAX = 40;
+export const FORM_QUESTION_TITLE_MAX_LENGTH = 300;
+export const FORM_OPTIONS_MAX = 30;
+export const FORM_OPTION_LABEL_MAX_LENGTH = 200;
+/** The longest answer to a short-answer question. */
+export const FORM_SHORT_ANSWER_MAX_LENGTH = 300;
+/** The longest answer to a paragraph question. */
+export const FORM_PARAGRAPH_ANSWER_MAX_LENGTH = 4_000;
+/**
+ * The kinds of question a form asks. `multiple_choice` and `dropdown` take one
+ * option, `checkboxes` any number, `yes_no` a yes or a no, and the two text
+ * kinds a line or a paragraph.
+ */
+export const FORM_QUESTION_TYPES = [
+  "short_answer",
+  "paragraph",
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+  "yes_no",
+] as const;
+export type FormQuestionType = (typeof FORM_QUESTION_TYPES)[number];
+/** The question types that list options a member picks from. */
+export const FORM_CHOICE_QUESTION_TYPES: readonly FormQuestionType[] = [
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+];
 
 /**
  * Pledge classes and a member's order number (#3939). The name and number

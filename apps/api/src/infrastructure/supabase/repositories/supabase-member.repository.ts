@@ -8,7 +8,7 @@ import type {
 import { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
-import { readOncePerRequest } from '../request-reads';
+import { readOncePerRequest, readSharedInBurst } from '../request-reads';
 
 /**
  * The caller's membership row in one chapter. `ChapterGuard` and the access
@@ -21,16 +21,19 @@ export function readMemberByUserAndChapter(
   userId: string,
   chapterId: string,
 ): Promise<Member | null> {
-  return readOncePerRequest(memberReadKey(userId, chapterId), async () => {
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return data;
-  });
+  const key = memberReadKey(userId, chapterId);
+  return readOncePerRequest(key, () =>
+    readSharedInBurst(key, async () => {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('chapter_id', chapterId)
+        .maybeSingle();
+      if (error) throw new SupabaseQueryError(error);
+      return data;
+    }),
+  );
 }
 
 /** The request-store key `readMemberByUserAndChapter` reads under. */

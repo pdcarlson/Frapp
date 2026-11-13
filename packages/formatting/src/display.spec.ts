@@ -13,6 +13,7 @@ import {
   formatPointsChip,
   formatRelativeDayTime,
   formatSentLabel,
+  formatActedLabel,
   formatTimestampFull,
   formatWeekdayDay,
   isDueOverdue,
@@ -144,6 +145,15 @@ describe("house date shapes", () => {
   });
 });
 
+describe("formatActedLabel", () => {
+  it("leads with the verb it is given", () => {
+    expect(
+      formatActedLabel("Submitted", "2026-11-04T08:46:00-08:00", NOW),
+    ).toBe("Submitted today at 8:46 AM");
+    expect(formatActedLabel("Resubmitted", "nope", NOW)).toBeNull();
+  });
+});
+
 describe("formatSentLabel", () => {
   it("says when, in words", () => {
     expect(formatSentLabel("2026-11-04T08:46:00-08:00", NOW)).toBe(
@@ -240,9 +250,9 @@ describe("formatEventWindow (#4135)", () => {
         NOW,
       ),
     ).toBe("Fri, Nov 20 · 6:00 – 7:00 PM");
-    expect(
-      formatEventWindow(pt("2027-01-08T18:00:00-08:00"), "", NOW),
-    ).toBe("Fri, Jan 8, 2027 · 6:00 PM");
+    expect(formatEventWindow(pt("2027-01-08T18:00:00-08:00"), "", NOW)).toBe(
+      "Fri, Jan 8, 2027 · 6:00 PM",
+    );
   });
 
   it("keeps both day periods when the event crosses noon", () => {

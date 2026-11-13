@@ -8,6 +8,17 @@
  */
 export const EVENT_PARAM = "event";
 
-export function eventDeepLink(eventId: string): string {
-  return `/events?${new URLSearchParams({ [EVENT_PARAM]: eventId }).toString()}`;
+/**
+ * `&excuse=1` also opens the sheet's Can't make it line: the chat event
+ * card's button (#4660). Only the Events page reads it.
+ */
+export const EXCUSE_PARAM = "excuse";
+
+export function eventDeepLink(
+  eventId: string,
+  options: { excuse?: boolean } = {},
+): string {
+  const params = new URLSearchParams({ [EVENT_PARAM]: eventId });
+  if (options.excuse) params.set(EXCUSE_PARAM, "1");
+  return `/events?${params.toString()}`;
 }

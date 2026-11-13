@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { act } from "react";
+import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActResponse, AskProposalResolution } from "@repo/hooks";
 import {
   ACT_COPY,
   AI_REPORT_COPY,
@@ -11,18 +11,16 @@ import {
   actNoteLine,
   actPointsDoneLine,
   actPointsHeadline,
-  actUnavailableLine,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * The Do side of Ask on the phone (#718): an officer says what to do, sees
- * exactly what would happen and to whom, and nothing changes until they press
- * Confirm. The sheet around it is `ask-sheet.spec.tsx`'s.
+ * A proposal in the Ask conversation on the phone (#718): an officer says
+ * what to do, sees exactly what would happen and to whom, and nothing changes
+ * until they press Confirm. The sheet around it is `ask-sheet.spec.tsx`'s.
  */
 const hooks = vi.hoisted(() => ({
-  request: vi.fn(),
   audience: vi.fn(),
   accept: vi.fn(),
   dismiss: vi.fn(),
@@ -30,7 +28,6 @@ const hooks = vi.hoisted(() => ({
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActRequest: () => ({ mutateAsync: hooks.request }),
   useActEventAudience: () => ({ mutateAsync: hooks.audience }),
   useAcceptAiSuggestion: () => ({
     mutateAsync: hooks.accept,
@@ -64,7 +61,7 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
-import { ActBody, AskModeSwitch, useActSession, type ActLink } from "./act-pane";
+import { AskProposal, type ActLink, type KeptTargets } from "./ask-proposal";
 
 const reporting = {
   offered: true,
@@ -72,40 +69,42 @@ const reporting = {
   report: vi.fn(),
   reportSheet: null,
 };
-const ensureConsent = vi.fn<() => Promise<boolean>>();
 const onOpen = vi.fn<(link: ActLink) => void>();
-let session!: ReturnType<typeof useActSession>;
 
-const keep = (value: ReturnType<typeof useActSession>) => {
-  session = value;
-};
-function Harness({
-  onValue,
-  shown = true,
-}: {
-  onValue: typeof keep;
-  shown?: boolean;
-}) {
-  const value = useActSession(ensureConsent);
-  onValue(value);
-  // The sheet holds the session; the body comes and goes with the Do side.
+/**
+ * The turn around the card, as the sheet holds it: the proposal, how it
+ * ended, and the members left on it. The card itself comes and goes with the
+ * sheet (`shown`).
+ */
+function Turn({ first, shown = true }: { first: unknown; shown?: boolean }) {
+  const [proposal, setProposal] = useState(first as ActResponse);
+  const [resolution, setResolution] = useState<AskProposalResolution | null>(
+    null,
+  );
+  const [kept, setKept] = useState<KeptTargets>({});
   if (!shown) return null;
   return (
-    <ActBody
-      session={value}
-      actions={["give_points", "create_task"]}
+    <AskProposal
+      proposal={proposal}
+      resolution={resolution}
+      kept={kept}
+      onKeep={(id, targets) =>
+        setKept((current) => ({ ...current, [id]: targets }))
+      }
       report={reporting as never}
+      onProposal={setProposal}
+      onResolved={setResolution}
       onOpen={onOpen}
     />
   );
 }
 
-function render(): ReactTestRenderer {
+function show(proposal: unknown): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <Harness onValue={keep} />
+        <Turn first={proposal} />
       </FrappThemeProvider>,
     );
   });
@@ -117,12 +116,6 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
       (node.type as unknown) === "Pressable" &&
       node.props.accessibilityLabel === label,
   )[0];
-async function say(tree: ReactTestRenderer, text: string) {
-  await act(async () => {
-    session.submit(text);
-  });
-  return tree;
-}
 
 const BASE = {
   action: null,
@@ -174,38 +167,24 @@ const TASK = {
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.seed = undefined;
-  ensureConsent.mockResolvedValue(true);
-  hooks.request.mockResolvedValue(POINTS);
   hooks.accept.mockResolvedValue({
     result: { outcome: { adjusted: 2, skipped: 0 } },
   });
   hooks.dismiss.mockResolvedValue({});
 });
 
-describe("the Do side of Ask", () => {
-  it("opens on examples of only what this member can ask for", () => {
-    const text = screenText(render());
-    expect(text).toContain(ACT_COPY.empty_title);
-    expect(text).toContain(ACT_COPY.examples.give_points);
-    expect(text).toContain(ACT_COPY.examples.create_task);
-    expect(text).not.toContain(ACT_COPY.examples.create_event);
-  });
+const MISSING_WHO = {
+  ...TASK,
+  suggestion: {
+    ...TASK.suggestion,
+    task: { ...TASK.suggestion.task, assignee_id: null },
+  },
+};
 
-  it("sends nothing for a member who hasn't said yes, and offers the sheet again", async () => {
-    ensureConsent.mockResolvedValue(false);
-    const tree = await say(render(), "Give Ana 5 points");
-    expect(hooks.request).not.toHaveBeenCalled();
-    expect(screenText(tree)).toContain(actUnavailableLine("consent_required"));
-
-    ensureConsent.mockResolvedValue(true);
-    await act(async () => byLabel(tree, ACT_COPY.consent_action).props.onPress());
-    expect(hooks.request).toHaveBeenCalledWith("Give Ana 5 points");
-  });
-
+describe("a proposal in the Ask conversation", () => {
   it("says exactly what will happen and to whom, and changes nothing until Confirm", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     const text = screenText(tree);
-    expect(text).toContain("Give Ana and Jordan 5 points");
     expect(text).toContain(actPointsHeadline(5, 2));
     expect(text).toContain("Came to chapter");
     expect(text).toContain("Ana Ruiz");
@@ -216,11 +195,17 @@ describe("the Do side of Ask", () => {
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     // Nothing was changed on the card, so nothing is sent but the yes.
     expect(hooks.accept).toHaveBeenCalledWith({ id: "sg-1" });
-    expect(screenText(tree)).toContain(actPointsDoneLine(5, 2, 0));
+    const after = screenText(tree);
+    // One line in the card's place: what it was about, and what happened.
+    expect(after).toContain("Came to chapter");
+    expect(after).toContain(actPointsDoneLine(5, 2, 0));
+    expect(byLabel(tree, ACT_COPY.confirm)).toBeUndefined();
+    // The phone has no points page to open.
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("removes a member, adds one from the roster, and confirms the list as it stands", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     act(() =>
       byLabel(tree, `${ACT_COPY.remove_member} Jordan Lee`).props.onPress(),
     );
@@ -245,7 +230,7 @@ describe("the Do side of Ask", () => {
   });
 
   it("won't confirm points for nobody", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     for (const name of ["Ana Ruiz", "Jordan Lee"]) {
       act(() =>
         byLabel(tree, `${ACT_COPY.remove_member} ${name}`).props.onPress(),
@@ -260,50 +245,69 @@ describe("the Do side of Ask", () => {
     hooks.accept.mockResolvedValue({
       result: { outcome: { adjusted: 1, skipped: 1 } },
     });
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     expect(screenText(tree)).toContain(actPointsDoneLine(5, 1, 1));
   });
 
-  it("keeps the card, and says why, when Confirm is refused", async () => {
-    hooks.accept.mockRejectedValue({ code: "ai.suggestion.decided" });
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
-    const text = screenText(tree);
-    expect(text).toContain(ACT_COPY.gone);
-    expect(text).toContain(actPointsHeadline(5, 2));
-  });
+  it.each([
+    "ai.suggestion.decided",
+    "ai.suggestion.expired",
+    "ai.suggestion.not_found",
+  ])(
+    "says a card is no longer waiting when Confirm finds it gone (%s), with no buttons left",
+    async (code) => {
+      hooks.accept.mockRejectedValue({ code });
+      const tree = show(POINTS);
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      const text = screenText(tree);
+      expect(text).toContain(ACT_COPY.gone);
+      expect(text).not.toContain(ACT_COPY.cancelled);
+      expect(byLabel(tree, ACT_COPY.confirm)).toBeUndefined();
+      expect(byLabel(tree, ACT_COPY.cancel)).toBeUndefined();
+    },
+  );
 
   it("uses the shared words for a refusal the server names", async () => {
     const code = "ai.act.partial";
     const line = actConfirmRefusalLine(code);
     hooks.accept.mockRejectedValue({ code });
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     // Whatever the shared map says for a code, or the plain failure line.
     expect(screenText(tree)).toContain(line ?? ACT_COPY.failed);
   });
 
   it("cancels a proposal, and treats one already gone as cancelled", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     await act(async () => byLabel(tree, ACT_COPY.cancel).props.onPress());
     expect(hooks.dismiss).toHaveBeenCalledWith("sg-1");
     expect(screenText(tree)).toContain(ACT_COPY.cancelled);
 
     hooks.dismiss.mockRejectedValue({ code: "ai.suggestion.expired" });
-    const again = await say(render(), "Give Ana and Jordan 5 points");
+    const again = show(POINTS);
     await act(async () => byLabel(again, ACT_COPY.cancel).props.onPress());
     expect(screenText(again)).toContain(ACT_COPY.cancelled);
   });
 
+  it("does not say cancelled for a card decided somewhere else: it may have been confirmed", async () => {
+    hooks.dismiss.mockRejectedValue({ code: "ai.suggestion.decided" });
+    const tree = show(POINTS);
+    await act(async () => byLabel(tree, ACT_COPY.cancel).props.onPress());
+    const text = screenText(tree);
+    expect(text).toContain(ACT_COPY.gone);
+    expect(text).not.toContain(ACT_COPY.cancelled);
+  });
+
   it("confirms a complete task, and links to Tasks", async () => {
-    hooks.request.mockResolvedValue(TASK);
-    const tree = await say(render(), "Make a task for Jordan to book the bus");
+    const tree = show(TASK);
     expect(screenText(tree)).toContain("Book the bus");
     expect(screenText(tree)).toContain("Jordan Lee");
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     expect(hooks.accept).toHaveBeenCalledWith({ id: "sg-2" });
-    expect(screenText(tree)).toContain(ACT_COPY.done_task);
+    const text = screenText(tree);
+    expect(text).toContain("Book the bus");
+    expect(text).toContain(ACT_COPY.done_task);
     act(() => byLabel(tree, ACT_COPY.open_tasks).props.onPress());
     expect(onOpen).toHaveBeenCalledWith({
       href: "/tasks",
@@ -312,14 +316,7 @@ describe("the Do side of Ask", () => {
   });
 
   it("opens the task form, not a task, when who or when is missing", async () => {
-    hooks.request.mockResolvedValue({
-      ...TASK,
-      suggestion: {
-        ...TASK.suggestion,
-        task: { ...TASK.suggestion.task, assignee_id: null },
-      },
-    });
-    const tree = await say(render(), "Make a task to book the bus");
+    const tree = show(MISSING_WHO);
     expect(screenText(tree)).toContain(ACT_COPY.pick_member);
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     expect(hooks.accept).not.toHaveBeenCalled();
@@ -327,7 +324,7 @@ describe("the Do side of Ask", () => {
   });
 
   it("confirms an event proposal, and links to Events", async () => {
-    hooks.request.mockResolvedValue({
+    const tree = show({
       ...BASE,
       status: "proposed",
       action: "create_event",
@@ -347,7 +344,6 @@ describe("the Do side of Ask", () => {
         },
       },
     });
-    const tree = await say(render(), "Put a study night on the calendar");
     const text = screenText(tree);
     expect(text).toContain("Study night");
     expect(text).toContain("Library");
@@ -361,30 +357,26 @@ describe("the Do side of Ask", () => {
     });
   });
 
-  it("says which names it couldn't place, above the control that adds them", async () => {
-    hooks.request.mockResolvedValue({
+  it("says which names it couldn't place, above the control that adds them", () => {
+    const tree = show({
       ...POINTS,
       notes: [
         { type: "unmatched_name", name: "Jordy" },
         { type: "ambiguous_name", name: "Sam" },
       ],
     });
-    const tree = await say(render(), "Give Ana, Jordy and Sam 5 points");
     const text = screenText(tree);
-    expect(text).toContain(actNoteLine({ type: "unmatched_name", name: "Jordy" }));
-    expect(text).toContain(actNoteLine({ type: "ambiguous_name", name: "Sam" }));
+    expect(text).toContain(
+      actNoteLine({ type: "unmatched_name", name: "Jordy" }),
+    );
+    expect(text).toContain(
+      actNoteLine({ type: "ambiguous_name", name: "Sam" }),
+    );
     expect(byLabel(tree, ACT_COPY.add_member)).toBeDefined();
   });
 
   it("accepts a task finished in the form with what the officer set there", async () => {
-    hooks.request.mockResolvedValue({
-      ...TASK,
-      suggestion: {
-        ...TASK.suggestion,
-        task: { ...TASK.suggestion.task, assignee_id: null },
-      },
-    });
-    const tree = await say(render(), "Make a task to book the bus");
+    const tree = show(MISSING_WHO);
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     const seed = hooks.seed as { accept: (form: unknown) => Promise<void> };
     await act(async () =>
@@ -403,25 +395,20 @@ describe("the Do side of Ask", () => {
   });
 
   it("keeps the members an officer left on the card through a close and reopen", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     act(() =>
       byLabel(tree, `${ACT_COPY.remove_member} Jordan Lee`).props.onPress(),
     );
-    // The sheet closes, or the officer looks at the Ask side: the pane goes.
-    act(() =>
-      tree.update(
-        <FrappThemeProvider>
-          <Harness onValue={keep} shown={false} />
-        </FrappThemeProvider>,
-      ),
-    );
-    act(() =>
-      tree.update(
-        <FrappThemeProvider>
-          <Harness onValue={keep} />
-        </FrappThemeProvider>,
-      ),
-    );
+    // The sheet closes: the card goes, and the sheet's state stays.
+    for (const shown of [false, true]) {
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <Turn first={POINTS} shown={shown} />
+          </FrappThemeProvider>,
+        ),
+      );
+    }
     expect(screenText(tree)).toContain(actPointsHeadline(5, 1));
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     expect(hooks.accept).toHaveBeenCalledWith({
@@ -430,29 +417,28 @@ describe("the Do side of Ask", () => {
     });
   });
 
-  it("sends nothing else while a Confirm is out", async () => {
+  it("holds the card's controls while a Confirm is out", async () => {
     let land!: (value: unknown) => void;
     hooks.accept.mockReturnValue(
       new Promise((resolve) => {
         land = resolve;
       }),
     );
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+    const tree = show(POINTS);
     await act(async () => {
       void byLabel(tree, ACT_COPY.confirm).props.onPress();
     });
-    expect(session.working).toBe(true);
-    expect(session.submit("Give Sam 2 points")).toBe(false);
-    expect(hooks.request).toHaveBeenCalledTimes(1);
+    expect(byLabel(tree, ACT_COPY.confirm).props.disabled).toBe(true);
+    expect(byLabel(tree, ACT_COPY.cancel).props.disabled).toBe(true);
     await act(async () =>
       land({ result: { outcome: { adjusted: 2, skipped: 0 } } }),
     );
-    expect(session.working).toBe(false);
     expect(screenText(tree)).toContain(actPointsDoneLine(5, 2, 0));
   });
 
-  it("asks which event, and sends the pick with the amount and reason it had", async () => {
-    hooks.request.mockResolvedValue({
+  it("asks which event, and sends the pick so the thread's other cards stay", async () => {
+    hooks.audience.mockResolvedValue(POINTS);
+    const tree = show({
       ...BASE,
       status: "needs_event",
       event_choice: {
@@ -463,8 +449,6 @@ describe("the Do side of Ask", () => {
         ],
       },
     });
-    hooks.audience.mockResolvedValue(POINTS);
-    const tree = await say(render(), "Give 5 points to everyone at chapter");
     expect(screenText(tree)).toContain(ACT_COPY.pick_event);
     const choice = tree.root.findAll(
       (node) =>
@@ -476,31 +460,44 @@ describe("the Do side of Ask", () => {
       eventId: "e1",
       amount: 5,
       reason: "Came to chapter",
+      keepEarlier: true,
     });
     expect(screenText(tree)).toContain(actPointsHeadline(5, 2));
   });
 
-  it("says what it still needs for a request it couldn't place", async () => {
-    hooks.request.mockResolvedValue({
+  it("says a pick didn't go through, and keeps the choices", async () => {
+    hooks.audience.mockRejectedValue(new Error("Network request failed"));
+    const tree = show({
       ...BASE,
-      status: "unclear",
-      missing: "members",
+      status: "needs_event",
+      event_choice: {
+        amount: 5,
+        reason: "",
+        events: [
+          { id: "e1", name: "Chapter", start_time: "2026-11-09T23:00:00Z" },
+        ],
+      },
     });
-    const tree = await say(render(), "Give points");
+    const choice = () =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.accessibilityLabel).startsWith("Chapter."),
+      )[0]!;
+    await act(async () => choice().props.onPress());
+    expect(
+      tree.root.findAll((node) => node.props.accessibilityRole === "alert"),
+    ).not.toHaveLength(0);
+    expect(choice().props.disabled).toBe(false);
+  });
+
+  it("says what it still needs for a request it couldn't place", () => {
+    const tree = show({ ...BASE, status: "unclear", missing: "members" });
     expect(screenText(tree)).toContain(actMissingLine("members" as never));
   });
 
-  it("says a request failed, with Try again", async () => {
-    hooks.request.mockRejectedValue(new Error("Network request failed"));
-    const tree = await say(render(), "Give Ana 5 points");
-    hooks.request.mockResolvedValue(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.try_again).props.onPress());
-    expect(hooks.request).toHaveBeenCalledTimes(2);
-    expect(screenText(tree)).toContain(actPointsHeadline(5, 2));
-  });
-
-  it("reports a proposal by its suggestion id", async () => {
-    const tree = await say(render(), "Give Ana and Jordan 5 points");
+  it("reports a proposal by its suggestion id", () => {
+    const tree = show(POINTS);
     act(() =>
       byLabel(
         tree,
@@ -511,26 +508,5 @@ describe("the Do side of Ask", () => {
       subject: "ai_suggestion",
       subjectId: "sg-1",
     });
-  });
-});
-
-describe("AskModeSwitch", () => {
-  it("is a two-way radio group that reports only a change", () => {
-    const onChange = vi.fn();
-    let tree!: ReactTestRenderer;
-    act(() => {
-      tree = create(
-        <FrappThemeProvider>
-          <AskModeSwitch mode="ask" onChange={onChange} />
-        </FrappThemeProvider>,
-      );
-    });
-    const ask = byLabel(tree, ACT_COPY.mode_ask);
-    const doSide = byLabel(tree, ACT_COPY.mode_do);
-    expect(ask.props.accessibilityState).toEqual({ checked: true });
-    act(() => ask.props.onPress());
-    expect(onChange).not.toHaveBeenCalled();
-    act(() => doSide.props.onPress());
-    expect(onChange).toHaveBeenCalledWith("do");
   });
 });

@@ -8,6 +8,7 @@ import {
   needsAccessHolder,
   type ChannelAccessHolder,
   type ChannelAccessRecord,
+  type ChannelOperation,
 } from './channel-access';
 
 const EXEC_TIER = '00000000-0000-4000-8000-0000000000e1';
@@ -67,7 +68,7 @@ const channel = (
 const check = (
   record: ChannelAccessRecord,
   holder: ChannelAccessHolder,
-  operation?: 'read' | 'post' | 'vote' | 'thread' | 'close',
+  operation?: ChannelOperation,
   extra: { userId?: string; isChapterMember?: boolean } = {},
 ) =>
   canAccessChannel({
@@ -276,6 +277,12 @@ describe('canAccessChannel', () => {
       expect(needsAccessHolder(channel(), 'close')).toBe(false);
     });
 
+    // #3926: a form posted in an announcement channel is for every reader.
+    it('lets any reader answer a form, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'answer')).toBe(true);
+      expect(needsAccessHolder(announcements, 'answer')).toBe(false);
+    });
+
     it('still refuses a close to someone who cannot see the channel', () => {
       const hidden = channel({
         type: 'ROLE_GATED',
@@ -296,7 +303,7 @@ describe('canAccessChannel', () => {
       expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread', 'close'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s even from the wildcard and with no post list',
       (operation) => {
         expect(
@@ -321,7 +328,7 @@ describe('canAccessChannel', () => {
       expect(check(archived, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread', 'close'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s from anyone',
       (operation) => {
         expect(check(archived, holding(roles.president), operation)).toBe(

@@ -34,6 +34,8 @@ const state = vi.hoisted(() => ({
   eventIds: [] as string[],
   mine: undefined as unknown,
   mineIds: [] as string[],
+  excuse: { kind: "none" } as unknown,
+  excuseArgs: [] as unknown[],
 }));
 const checkIn = vi.hoisted(() => vi.fn());
 const requireForegroundFix = vi.hoisted(() => vi.fn());
@@ -62,6 +64,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: id ? state.mine : undefined };
   },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  // The rule is the hook's own spec in @repo/hooks (#4660).
+  useEventCardExcuse: (card: unknown) => {
+    state.excuseArgs.push(card);
+    return state.excuse;
+  },
   useCurrentChapter: () => ({
     data:
       state.enabledModules === undefined
@@ -149,7 +156,11 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 function render(
-  options: { payload?: EventPayload; isConfirmed?: boolean } = {},
+  options: {
+    payload?: EventPayload;
+    isConfirmed?: boolean;
+    onNavigate?: () => void;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -160,6 +171,7 @@ function render(
           payload={options.payload ?? PAYLOAD}
           viewerId="viewer-1"
           isConfirmed={options.isConfirmed ?? true}
+          onNavigate={options.onNavigate}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -226,6 +238,8 @@ beforeEach(() => {
   state.eventIds = [];
   state.mine = { attendance: null };
   state.mineIds = [];
+  state.excuse = { kind: "none" };
+  state.excuseArgs = [];
   checkIn.mockReset().mockResolvedValue({});
   requireForegroundFix.mockReset();
   refetchEvent.mockReset().mockResolvedValue({ data: undefined });
@@ -516,7 +530,10 @@ describe("EventCard — already on the list", () => {
     // Scanned at the door, another device, or this card before it scrolled
     // away and remounted: the local outcome is gone, the server's row isn't.
     state.mine = {
-      attendance: { status: "PRESENT", check_in_time: "2026-11-05T23:10:00.000Z" },
+      attendance: {
+        status: "PRESENT",
+        check_in_time: "2026-11-05T23:10:00.000Z",
+      },
     };
     const tree = render();
     expect(button(tree, "Checked in").props.disabled).toBe(true);
@@ -533,7 +550,10 @@ describe("EventCard — already on the list", () => {
   it("shows an officer's mark, not Checked in, when the tap's 409 was the mark", async () => {
     // The row read before the officer marked the member; the server refuses
     // the check-in for any existing row, and the re-read row says which.
-    checkIn.mockRejectedValue({ statusCode: 409, message: "Already checked in" });
+    checkIn.mockRejectedValue({
+      statusCode: 409,
+      message: "Already checked in",
+    });
     const tree = render();
     await press(tree, "Check in");
     state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
@@ -548,7 +568,10 @@ describe("EventCard — already on the list", () => {
     await press(tree, "Check in");
     const failure = screenText(tree);
     state.mine = {
-      attendance: { status: "PRESENT", check_in_time: "2026-11-05T23:10:00.000Z" },
+      attendance: {
+        status: "PRESENT",
+        check_in_time: "2026-11-05T23:10:00.000Z",
+      },
     };
     act(() => tree.update(rerenderCard()));
     expect(button(tree, "Checked in").props.disabled).toBe(true);
@@ -565,5 +588,86 @@ describe("EventCard — already on the list", () => {
     state.now = new Date("2026-11-04T12:00:00.000Z");
     render();
     expect(state.mineIds.every((id) => id === "")).toBe(true);
+  });
+});
+
+describe("EventCard — Can't make it (#4660)", () => {
+  it("offers it beside Check in and opens Event details with the line open", async () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).toContain("Check in");
+    await press(tree, "Can't make it");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-1", excuse: "1" },
+    });
+  });
+
+  it("offers it before the check-in window opens", () => {
+    state.now = new Date("2026-11-04T12:00:00.000Z");
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).toContain("Can't make it");
+    expect(screenText(tree)).not.toContain("Check in");
+  });
+
+  it("says where a sent excuse stands instead", () => {
+    state.excuse = {
+      kind: "sent",
+      status: "APPROVED",
+      reason: "Away game",
+      title: "Excused",
+      detail: null,
+      canWithdraw: true,
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Excused");
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("offers nothing to a member the event doesn't require", () => {
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render();
+    expect(state.excuseArgs).toContainEqual(PAYLOAD);
+  });
+
+  it("offers nothing while the events module is off", () => {
+    state.enabledModules = { events: false };
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("closes the Activity sheet before it leaves", async () => {
+    const onNavigate = vi.fn();
+    const push = vi.mocked(expoRouter.useRouter)().push;
+    vi.mocked(push).mockClear();
+    state.excuse = { kind: "offer" };
+    const tree = render({ onNavigate });
+    await press(tree, "Can't make it");
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(push).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("says an approved excuse once while check-in shows the mark", () => {
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    state.excuse = {
+      kind: "sent",
+      status: "APPROVED",
+      reason: "Away game",
+      title: "Excused",
+      detail: null,
+      canWithdraw: false,
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(screenText(tree)).not.toMatch(/\bExcused\b/);
   });
 });

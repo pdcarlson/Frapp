@@ -15,11 +15,11 @@ import {
 } from '#domain/utils/poll-vote-rules';
 import {
   isHeadcountCard,
-  isSignupCardClosed,
   SIGNUP_ACTION_TYPE,
   signupClaimNote,
   signupClaimSlotIds,
 } from '#domain/utils/signup-card-rules';
+import { isCardClosed } from '#domain/utils/card-closing';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
@@ -280,7 +280,7 @@ export class ChatReactionService {
     if ('error' in note) throw new BadRequestException(note.error);
     // The RPC decides this again under its lock; this spares the round trip
     // for a card that was closed when it was read.
-    if (isSignupCardClosed(message.payload)) {
+    if (isCardClosed(message.payload)) {
       throw new BadRequestException(SIGNUPS_CLOSED);
     }
     try {

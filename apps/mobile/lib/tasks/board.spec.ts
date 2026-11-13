@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { selectTaskRows } from "./board";
+import {
+  rowIsSentBack,
+  rowNeedsSignOff,
+  selectTaskRows,
+  toTaskRow,
+} from "./board";
 
 function at(year: number, month: number, day: number, hour = 12): Date {
   return new Date(year, month - 1, day, hour, 0, 0, 0);
@@ -51,6 +56,55 @@ describe("selectTaskRows — identity", () => {
   });
 });
 
+describe("toTaskRow — photos, proof and send-back (#4635)", () => {
+  it("carries the new fields off the wire", () => {
+    const row = toTaskRow(
+      task({
+        status: "IN_PROGRESS",
+        stored_status: "IN_PROGRESS",
+        proof_kind: "link",
+        proof_link: "https://example.com",
+        sent_back_at: "2026-08-16T12:00:00Z",
+        sent_back_reason: "Floor is still sticky",
+        completion_note: "",
+        photos: [
+          { id: "p1", kind: "reference", storage_path: "a/1.jpg", position: 0 },
+          { id: "bad", kind: "other", storage_path: "a/2.jpg" },
+        ],
+      }),
+    )!;
+    expect(row).toMatchObject({
+      proofKind: "link",
+      proofLink: "https://example.com",
+      sentBackAt: "2026-08-16T12:00:00Z",
+      sentBackReason: "Floor is still sticky",
+      completionNote: null,
+      photos: [{ id: "p1", kind: "reference", storage_path: "a/1.jpg" }],
+    });
+    expect(rowIsSentBack(row)).toBe(true);
+    expect(rowNeedsSignOff(row)).toBe(true);
+  });
+
+  it("reads a pre-#4635 row as asking for nothing, never sent back", () => {
+    const row = toTaskRow(task({ point_reward: null }))!;
+    expect(row.proofKind).toBe("none");
+    expect(row.photos).toEqual([]);
+    expect(rowIsSentBack(row)).toBe(false);
+    expect(rowNeedsSignOff(row)).toBe(false);
+  });
+
+  it("stops reading Needs changes once it is marked done again", () => {
+    const row = toTaskRow(
+      task({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        sent_back_at: "2026-08-16T12:00:00Z",
+      }),
+    )!;
+    expect(rowIsSentBack(row)).toBe(false);
+  });
+});
+
 describe("selectTaskRows — narrowing", () => {
   it("survives a payload that is not a list", () => {
     for (const value of [null, undefined, {}, "rows", 7]) {
@@ -75,7 +129,13 @@ describe("selectTaskRows — narrowing", () => {
     // The server derives OVERDUE in UTC; a local recomputation would disagree
     // with it every evening west of Greenwich.
     const board = selectTaskRows(
-      [task({ status: "OVERDUE", stored_status: "TODO", due_date: "2026-08-15" })],
+      [
+        task({
+          status: "OVERDUE",
+          stored_status: "TODO",
+          due_date: "2026-08-15",
+        }),
+      ],
       ME,
       NOW,
     );
@@ -116,8 +176,18 @@ describe("selectTaskRows — grouping", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Today", due_date: "2026-08-17" }),
-        task({ id: "b", title: "Late", due_date: "2026-08-16", status: "OVERDUE" }),
-        task({ id: "c", title: "Latest", due_date: "2026-07-20", status: "OVERDUE" }),
+        task({
+          id: "b",
+          title: "Late",
+          due_date: "2026-08-16",
+          status: "OVERDUE",
+        }),
+        task({
+          id: "c",
+          title: "Latest",
+          due_date: "2026-07-20",
+          status: "OVERDUE",
+        }),
       ],
       ME,
       NOW,
@@ -251,7 +321,14 @@ describe("selectTaskRows — completed rows", () => {
   it("keeps a finished task whose completion time cannot be read", () => {
     // Retiring on a timestamp this module never saw is the worse failure.
     const board = selectTaskRows(
-      [done({ id: "a", title: "Undated", due_date: "2026-07-01", completed_at: null })],
+      [
+        done({
+          id: "a",
+          title: "Undated",
+          due_date: "2026-07-01",
+          completed_at: null,
+        }),
+      ],
       ME,
       NOW,
     );

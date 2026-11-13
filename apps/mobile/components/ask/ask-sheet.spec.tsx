@@ -18,23 +18,29 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * Ask Frapp's sheet on the phone (#450, #451): what a member sees for each
- * way a question can end, and that nothing is sent before they have said yes.
- * The card's own states are in `answer-card.spec.tsx`.
+ * Ask Frapp's sheet on the phone (#450, #451, #718): one conversation in one
+ * field, what a member sees for each way a turn can end, and what is sent
+ * with a question. A turn's own states are in `ask-turn.spec.tsx`, a card's
+ * in `ask-proposal.spec.tsx`.
  */
 
 const hooks = vi.hoisted(() => ({
-  exchange: null as unknown,
+  exchanges: [] as unknown[],
   ask: vi.fn(),
+  retry: vi.fn(),
+  setProposal: vi.fn(),
+  resolveProposal: vi.fn(),
+  stop: vi.fn(),
   reset: vi.fn(),
   statusEnabled: [] as boolean[],
   savedUntil: null as string | null,
   download: vi.fn(),
   actions: [] as string[],
   actEnabled: [] as boolean[],
-  actRequest: vi.fn(),
+  mayAct: false,
 }));
 vi.mock("@/lib/ai/availability", () => ({
+  useMayAct: () => hooks.mayAct,
   useActActions: (options: { enabled: boolean }) => {
     hooks.actEnabled.push(options.enabled);
     return hooks.actions;
@@ -43,8 +49,15 @@ vi.mock("@/lib/ai/availability", () => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useAsk: () => ({
-    exchange: hooks.exchange,
+    exchanges: hooks.exchanges,
+    working: (hooks.exchanges as { phase: string }[]).some(
+      (exchange) => exchange.phase === "working",
+    ),
     ask: hooks.ask,
+    retry: hooks.retry,
+    setProposal: hooks.setProposal,
+    resolveProposal: hooks.resolveProposal,
+    stop: hooks.stop,
     reset: hooks.reset,
   }),
   useAskStatus: (options: { enabled: boolean }) => {
@@ -54,8 +67,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
-  useActRequest: () => ({ mutateAsync: hooks.actRequest }),
   useActEventAudience: () => ({ mutateAsync: vi.fn() }),
+  useAcceptAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDismissAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChapterRoster: () => ({
+    data: [{ user_id: "u1", display_name: "Ana Ruiz" }],
+    isSuccess: true,
+    isPending: false,
+  }),
+  useCurrentUser: () => ({ data: { id: "me" } }),
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -110,9 +130,7 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
 const open = (tree: ReactTestRenderer) =>
   act(() => sheet(tree).props.onAnimate(-1, 0));
 async function askExample(tree: ReactTestRenderer) {
-  await act(async () =>
-    byLabel(tree, ASK_COPY.examples[0])[0].props.onPress(),
-  );
+  await act(async () => byLabel(tree, ASK_COPY.examples[0])[0].props.onPress());
 }
 
 const DOCUMENT = {
@@ -147,14 +165,63 @@ function answered(): AskExchange {
     saved: false,
   };
   return {
+    id: "turn-1",
     question: "What is quorum?",
     phase: "done",
     step: null,
     preview: "",
     answer,
+    proposal: null,
+    resolution: null,
     failure: null,
   };
 }
+const working = (): AskExchange => ({
+  ...answered(),
+  id: "turn-2",
+  question: "And for elections?",
+  phase: "working",
+  answer: null,
+});
+const POINTS_CARD = {
+  status: "proposed",
+  action: "give_points",
+  suggestion: {
+    id: "sg-1",
+    kind: "points",
+    points: {
+      amount: 5,
+      reason: "Came to chapter",
+      target_user_ids: ["u1"],
+      event_name: null,
+      event_start_time: null,
+    },
+    task: null,
+    new_event: null,
+  },
+  notes: [],
+  event_choice: null,
+  missing: null,
+  reason: null,
+  available_actions: [],
+};
+const proposed = (): AskExchange => ({
+  ...answered(),
+  id: "turn-3",
+  question: "Give Ana 5 points",
+  answer: null,
+  proposal: POINTS_CARD as never,
+});
+const field = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) => (node.type as unknown) === "BottomSheetTextInput",
+  )[0]!;
+/** What a question is sent with, for a member who can only ask. */
+const ASKING = {
+  savedNoticeShown: false,
+  actions: false,
+  gate: expect.any(Function),
+};
 const sourceRow = (tree: ReactTestRenderer, number: number) =>
   tree.root.findAll(
     (node) =>
@@ -164,21 +231,12 @@ const sourceRow = (tree: ReactTestRenderer, number: number) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  hooks.exchange = null;
+  hooks.exchanges = [];
   hooks.statusEnabled = [];
   hooks.savedUntil = null;
   hooks.actions = [];
   hooks.actEnabled = [];
-  hooks.actRequest.mockResolvedValue({
-    status: "refused",
-    action: null,
-    suggestion: null,
-    notes: [],
-    event_choice: null,
-    missing: null,
-    reason: null,
-    available_actions: [],
-  });
+  hooks.mayAct = false;
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -188,71 +246,96 @@ beforeEach(() => {
 });
 
 describe("AskSheet", () => {
-  it("opens on example questions, and says it answers one at a time", () => {
-    const text = screenText(render());
+  it("opens on what Frapp answers from and things to try, with no word about one question at a time", () => {
+    const tree = render();
+    const text = screenText(tree);
     expect(text).toContain(ASK_COPY.name);
+    expect(text).toContain(ASK_COPY.empty_title);
     expect(text).toContain(ASK_COPY.empty_body);
     for (const example of ASK_COPY.examples) expect(text).toContain(example);
-    expect(text).toContain(ASK_COPY.single_shot);
+    expect(text).not.toContain("answered on its own");
+    expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
+    // Nothing to clear yet.
+    expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(0);
   });
 
   it("asks nothing of the server until the sheet is actually open", () => {
     const tree = render();
     expect(hooks.statusEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(hooks.actEnabled.every((enabled) => !enabled)).toBe(true);
     open(tree);
     expect(hooks.statusEnabled.at(-1)).toBe(true);
+    expect(hooks.actEnabled.at(-1)).toBe(true);
   });
 
-  it("sends a question once the member has said yes", async () => {
+  it("sends what was typed with the consent gate, and clears the field", () => {
     const tree = render();
-    await askExample(tree);
-    expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
-    expect(hooks.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
-      savedNoticeShown: false,
-    });
+    act(() => field(tree).props.onChangeText("What is quorum?"));
+    act(() => byLabel(tree, ASK_COPY.send)[0].props.onPress());
+    expect(hooks.ask).toHaveBeenCalledWith("What is quorum?", ASKING);
+    // The gate is the AI sheet's: the hook runs it once the turn is on screen.
+    expect(hooks.ask.mock.calls[0]![1].gate).toBe(gate.ensureConsent);
+    expect(field(tree).props.value).toBe("");
   });
 
   it("says questions are saved, and only then tells the server it said so", async () => {
     hooks.savedUntil = "2026-11-26T12:00:00Z";
     const tree = render();
+    expect(screenText(tree)).not.toContain(askSavedLine("November 26, 2026"));
     open(tree);
-    const text = screenText(tree);
-    expect(text).toContain(askSavedLine("November 26, 2026"));
-    expect(text).not.toContain(ASK_COPY.single_shot);
+    expect(screenText(tree)).toContain(askSavedLine("November 26, 2026"));
     await askExample(tree);
     expect(hooks.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
+      ...ASKING,
       savedNoticeShown: true,
     });
   });
 
-  it("sends nothing for a member who hasn't said yes, and offers the sheet again", async () => {
-    gate.ensureConsent.mockResolvedValue(false);
-    const tree = render();
-    await askExample(tree);
-    expect(hooks.ask).not.toHaveBeenCalled();
-    const text = screenText(tree);
-    expect(text).toContain(ASK_COPY.examples[0]);
-    expect(text).toContain(askUnavailableLine("consent_required"));
-
-    gate.ensureConsent.mockResolvedValue(true);
-    await act(async () =>
-      byLabel(tree, ASK_COPY.consent_action)[0].props.onPress(),
+  it("keeps every turn of the conversation on screen, oldest first", () => {
+    hooks.exchanges = [answered(), working()];
+    const text = screenText(render());
+    expect(text).toContain("What is quorum?");
+    expect(text).toContain("Quorum is half.");
+    expect(text).toContain("And for elections?");
+    expect(text.indexOf("What is quorum?")).toBeLessThan(
+      text.indexOf("And for elections?"),
     );
-    expect(hooks.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
-      savedNoticeShown: false,
-    });
+    expect(text).not.toContain(ASK_COPY.empty_body);
   });
 
-  it("says it couldn't check, with Try again, when the member's answer can't be read", async () => {
-    gate.ensureConsent.mockRejectedValue(new Error("Network request failed"));
+  it("starts a new conversation from the header", () => {
+    hooks.exchanges = [answered()];
     const tree = render();
-    await askExample(tree);
-    expect(hooks.ask).not.toHaveBeenCalled();
-    expect(byLabel(tree, ASK_COPY.try_again)).toHaveLength(1);
+    act(() => byLabel(tree, ASK_COPY.new_conversation)[0].props.onPress());
+    expect(hooks.reset).toHaveBeenCalledTimes(1);
   });
 
-  it("opens a document over the sheet, so the answer is still there", async () => {
-    hooks.exchange = answered();
+  it("asks a refused or failed turn again in its place", () => {
+    hooks.exchanges = [
+      {
+        ...answered(),
+        answer: {
+          ...answered().answer!,
+          status: "unavailable",
+          reason: "consent_required",
+        },
+      },
+      {
+        ...working(),
+        phase: "failed",
+        failure: { message: "Couldn't reach Frapp.", retryable: true },
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain(askUnavailableLine("consent_required"));
+    act(() => byLabel(tree, ASK_COPY.consent_action)[0].props.onPress());
+    expect(hooks.retry).toHaveBeenLastCalledWith("turn-1", ASKING);
+    act(() => byLabel(tree, ASK_COPY.try_again)[0].props.onPress());
+    expect(hooks.retry).toHaveBeenLastCalledWith("turn-2", ASKING);
+  });
+
+  it("opens a document over the sheet, so the thread is still there", async () => {
+    hooks.exchanges = [answered()];
     hooks.download.mockResolvedValue({
       downloadUrl: "https://files.example/d1",
     });
@@ -266,7 +349,7 @@ describe("AskSheet", () => {
   });
 
   it("says a document didn't open rather than doing nothing", async () => {
-    hooks.exchange = answered();
+    hooks.exchanges = [answered()];
     hooks.download.mockRejectedValue(new Error("gone"));
     const tree = render();
     await act(async () => sourceRow(tree, 1).props.onPress());
@@ -275,7 +358,7 @@ describe("AskSheet", () => {
   });
 
   it("closes and opens the minutes screen for a minutes source", async () => {
-    hooks.exchange = answered();
+    hooks.exchanges = [answered()];
     const tree = render();
     await act(async () => sourceRow(tree, 2).props.onPress());
     expect(modal.dismiss).toHaveBeenCalled();
@@ -286,7 +369,7 @@ describe("AskSheet", () => {
 
   it("tells its host when it closed for a source, and only that once", async () => {
     const onClosed = vi.fn();
-    hooks.exchange = answered();
+    hooks.exchanges = [answered()];
     const tree = render(onClosed);
     await act(async () => sourceRow(tree, 2).props.onPress());
     act(() => sheet(tree).props.onDismiss());
@@ -295,27 +378,30 @@ describe("AskSheet", () => {
     expect(onClosed).toHaveBeenLastCalledWith(false);
   });
 
-  it("drops a question still being answered when the sheet closes, and keeps a finished one", () => {
+  it("drops a question still being answered when the sheet closes, and keeps the thread", () => {
     const onClosed = vi.fn();
-    hooks.exchange = { ...answered(), phase: "working", answer: null };
-    const working = render(onClosed);
-    act(() => sheet(working).props.onDismiss());
-    expect(hooks.reset).toHaveBeenCalledTimes(1);
+    hooks.exchanges = [answered(), working()];
+    const busy = render(onClosed);
+    act(() => sheet(busy).props.onDismiss());
+    expect(hooks.stop).toHaveBeenCalledTimes(1);
+    expect(hooks.reset).not.toHaveBeenCalled();
     expect(onClosed).toHaveBeenCalledWith(false);
 
-    hooks.reset.mockClear();
-    hooks.exchange = answered();
+    hooks.stop.mockClear();
+    hooks.exchanges = [answered()];
     const done = render();
     act(() => sheet(done).props.onDismiss());
-    expect(hooks.reset).not.toHaveBeenCalled();
+    expect(hooks.stop).not.toHaveBeenCalled();
   });
 
   it("reports an answer by the ask's id, with the receipt exactly as it came", () => {
-    hooks.exchange = {
-      ...answered(),
-      askId: "ask-1",
-      answer: { ...answered().answer!, report_receipt: "sealed" },
-    };
+    hooks.exchanges = [
+      {
+        ...answered(),
+        askId: "ask-1",
+        answer: { ...answered().answer!, report_receipt: "sealed" },
+      },
+    ];
     const tree = render();
     act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
     expect(reporting.report).toHaveBeenCalledWith({
@@ -326,9 +412,9 @@ describe("AskSheet", () => {
   });
 
   it("offers no report to a member who can't send one, or before the ask has an id", () => {
-    hooks.exchange = answered();
+    hooks.exchanges = [answered()];
     expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
-    hooks.exchange = { ...answered(), askId: "ask-1" };
+    hooks.exchanges = [{ ...answered(), askId: "ask-1" }];
     reporting.offered = false;
     expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
   });
@@ -337,63 +423,104 @@ describe("AskSheet", () => {
     const empty = render();
     expect(byLabel(empty, ASK_COPY.send)[0].props.disabled).toBe(true);
 
-    hooks.exchange = { ...answered(), phase: "working", answer: null };
-    const working = render();
-    const field = working.root.findAll(
-      (node) => (node.type as unknown) === "BottomSheetTextInput",
-    )[0];
-    act(() => field.props.onChangeText("Another?"));
-    expect(byLabel(working, ASK_COPY.send)[0].props.disabled).toBe(true);
+    hooks.exchanges = [working()];
+    const busy = render();
+    act(() => field(busy).props.onChangeText("Another?"));
+    expect(byLabel(busy, ASK_COPY.send)[0].props.disabled).toBe(true);
+    act(() => field(busy).props.onSubmitEditing());
+    expect(hooks.ask).not.toHaveBeenCalled();
   });
 
-  describe("the Do side (#718)", () => {
-    const field = (tree: ReactTestRenderer) =>
-      tree.root.findAll(
-        (node) => (node.type as unknown) === "BottomSheetTextInput",
-      )[0]!;
-
-    it("is not offered to a member the server lists no actions for", () => {
+  describe("asking for something to be done (#718)", () => {
+    it("is one field for everyone: no switch, and no request example for a member who can't act", () => {
       const tree = render();
-      expect(byLabel(tree, ACT_COPY.mode_do)).toHaveLength(0);
-      expect(field(tree).props.placeholder).not.toBe(ACT_COPY.placeholder);
-    });
-
-    it("asks what the member can do only once the sheet is open", () => {
-      const tree = render();
-      expect(hooks.actEnabled.every((enabled) => !enabled)).toBe(true);
-      open(tree);
-      expect(hooks.actEnabled.at(-1)).toBe(true);
-    });
-
-    it("switches the field to a request, and sends it as one, never as a question", async () => {
-      hooks.actions = ["give_points"];
-      const tree = render();
-      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
       const text = screenText(tree);
-      expect(text).toContain(ACT_COPY.empty_title);
-      expect(text).toContain(ACT_COPY.footnote);
-      expect(text).not.toContain(ASK_COPY.empty_body);
-      expect(field(tree).props.placeholder).toBe(ACT_COPY.placeholder);
-
-      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
-      await act(async () => byLabel(tree, ACT_COPY.send)[0]!.props.onPress());
-      expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
-      expect(hooks.actRequest).toHaveBeenCalledWith("Give Ana 5 points");
-      expect(hooks.ask).not.toHaveBeenCalled();
-      expect(field(tree).props.value).toBe("");
-      expect(screenText(tree)).toContain(ACT_COPY.refused);
+      expect(text).not.toContain(ASK_COPY.empty_body_act);
+      expect(text).not.toContain(ACT_COPY.examples.give_points);
+      expect(
+        tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
+      ).toHaveLength(0);
     });
 
-    it("keeps what the Do side showed through a look at the Ask side", async () => {
-      hooks.actions = ["give_points"];
+    it("asks for a card on the permission alone: a request typed before the list of actions has loaded is still read as one", () => {
+      hooks.mayAct = true;
       const tree = render();
-      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
+      // The list only picks the opening example.
+      expect(screenText(tree)).not.toContain(ASK_COPY.empty_body_act);
       act(() => field(tree).props.onChangeText("Give Ana 5 points"));
-      await act(async () => byLabel(tree, ACT_COPY.send)[0]!.props.onPress());
-      act(() => byLabel(tree, ACT_COPY.mode_ask)[0]!.props.onPress());
-      expect(screenText(tree)).toContain(ASK_COPY.empty_body);
-      act(() => byLabel(tree, ACT_COPY.mode_do)[0]!.props.onPress());
-      expect(screenText(tree)).toContain(ACT_COPY.refused);
+      act(() => field(tree).props.onSubmitEditing());
+      expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
+        ...ASKING,
+        actions: true,
+      });
+    });
+
+    it("holds Try again on an earlier turn while another is being answered: asking again would drop it", () => {
+      hooks.exchanges = [
+        {
+          ...working(),
+          id: "turn-1",
+          phase: "failed",
+          failure: { message: "Couldn't reach Frapp.", retryable: true },
+        },
+        working(),
+      ];
+      const tree = render();
+      expect(byLabel(tree, ASK_COPY.try_again)[0].props.disabled).toBe(true);
+    });
+
+    it("tells a member Frapp can act for, offers one request, and says so with each question", async () => {
+      hooks.mayAct = true;
+      hooks.actions = ["give_points", "create_task"];
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain(ASK_COPY.empty_body_act);
+      expect(text).toContain(ACT_COPY.examples.give_points);
+      expect(text).not.toContain(ACT_COPY.examples.create_task);
+      expect(
+        tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
+      ).toHaveLength(0);
+
+      await act(async () =>
+        byLabel(tree, ACT_COPY.examples.give_points)[0].props.onPress(),
+      );
+      expect(hooks.ask).toHaveBeenCalledWith(ACT_COPY.examples.give_points, {
+        ...ASKING,
+        actions: true,
+      });
+    });
+
+    it("shows a proposal as a card in the thread, and records how it ended on its turn", async () => {
+      hooks.mayAct = true;
+      hooks.actions = ["give_points"];
+      hooks.exchanges = [answered(), proposed()];
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("Quorum is half.");
+      expect(text).toContain("Give Ana 5 points");
+      expect(text).toContain("Came to chapter");
+      expect(text).toContain("Ana Ruiz");
+      await act(async () => byLabel(tree, ACT_COPY.cancel)[0].props.onPress());
+      expect(hooks.resolveProposal).toHaveBeenCalledWith("turn-3", {
+        kind: "cancelled",
+      });
+    });
+
+    it("leaves for the screen a confirmed change shows on", () => {
+      hooks.exchanges = [
+        {
+          ...proposed(),
+          resolution: { kind: "done", line: ACT_COPY.done_task, page: "tasks" },
+        },
+      ];
+      const onClosed = vi.fn();
+      const tree = render(onClosed);
+      expect(screenText(tree)).toContain(ACT_COPY.done_task);
+      act(() => byLabel(tree, ACT_COPY.open_tasks)[0].props.onPress());
+      expect(modal.dismiss).toHaveBeenCalled();
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
+      act(() => sheet(tree).props.onDismiss());
+      expect(onClosed).toHaveBeenLastCalledWith(true);
     });
   });
 });

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   actOnCard,
   closePoll as closePollAction,
-  closeSignup as closeSignupAction,
+  closeCard as closeCardAction,
   deleteMessage,
   editMessage,
   react as reactAction,
@@ -246,7 +246,7 @@ export function useThreadRowWrites({
         messageId,
         withFailureMessage(
           (onError) =>
-            closeSignupAction(
+            closeCardAction(
               { ...ctx, onError },
               { channelId, messageId, threadRootId: targetOf(messageId) },
             ),

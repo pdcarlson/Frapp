@@ -74,8 +74,13 @@ export interface ChannelAccessRecord {
  *   decides who may close (the poll's creator, or `channels:manage`), and a
  *   creator dropped from a read-only channel's posters must still be able to
  *   end their own poll.
+ * - `answer`: fill in something already readable that every reader may
+ *   answer (a form card's answers, #3926). Archive and the audit log apply,
+ *   as for `close`, but not who can post nor the Alumni rule: a form posted
+ *   in an announcement channel is for everyone who can read it.
  */
-export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread' | 'close';
+export type ChannelOperation =
+  'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer';
 
 /**
  * What a member holds that a list can name, resolved from a TRUSTED read of
@@ -242,6 +247,7 @@ export function needsAccessHolder(
   switch (operation) {
     case 'read':
     case 'close':
+    case 'answer':
       return false;
     case 'vote':
       return channel.who_can_post !== null;
@@ -327,8 +333,9 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // stays with who can post; its threads do not.
   if (operation === 'thread') return true;
 
-  // Who may close is the caller's rule (`PollService.close`), not the list's.
-  if (operation === 'close') return true;
+  // Who may close is the caller's rule (`PollService.close`), not the list's;
+  // a form's answers are open to every reader.
+  if (operation === 'close' || operation === 'answer') return true;
 
   // A DM or group DM has no who-can-post list. A private channel does only
   // when someone made it read-only before #3722 (migration 20261111233000).

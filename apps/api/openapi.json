@@ -4480,7 +4480,7 @@
     },
     "/v1/channels/messages/{messageId}/close": {
       "post": {
-        "operationId": "ChatController_closeSignup_v1",
+        "operationId": "ChatController_closeCard_v1",
         "parameters": [
           {
             "name": "messageId",
@@ -4518,7 +4518,7 @@
             "bearer": []
           }
         ],
-        "summary": "Close a sign-up card early (its creator, or channels:manage); claims already made stay",
+        "summary": "Close a sign-up or form card early (its creator, or channels:manage); answers already made stay",
         "tags": [
           "Chat"
         ]
@@ -5030,6 +5030,106 @@
           }
         ],
         "summary": "Set the caller's notification level for a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/form-response": {
+      "get": {
+        "operationId": "ChatFormController_getOwnResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnFormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own answers to a form card, or null before they answer",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatFormController_saveResponse_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFormResponseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the caller's answers to a form card, replacing their last ones (until the form closes)",
         "tags": [
           "Chat"
         ]
@@ -16040,7 +16140,7 @@
         ]
       },
       "post": {
-        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.",
+        "description": "The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.",
         "operationId": "AskController_ask_v1",
         "parameters": [],
         "requestBody": {
@@ -16183,7 +16283,7 @@
     },
     "/v1/ai/act": {
       "get": {
-        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.",
+        "description": "The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.",
         "operationId": "ActController_status_v1",
         "parameters": [],
         "responses": {
@@ -19549,7 +19649,8 @@
               "rush",
               "system_audit",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -19604,7 +19705,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -20029,7 +20131,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -20268,7 +20371,8 @@
               "imported",
               "loading",
               "announcement",
-              "signup"
+              "signup",
+              "form"
             ]
           },
           "gif": {
@@ -20443,6 +20547,74 @@
         },
         "required": [
           "level"
+        ]
+      },
+      "FormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "answers",
+          "updated_at"
+        ]
+      },
+      "OwnFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormResponseDto"
+              }
+            ]
+          }
+        }
+      },
+      "SaveFormResponseDto": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "description": "Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed."
+          }
+        },
+        "required": [
+          "answers"
         ]
       },
       "BookmarkedMessageDto": {
@@ -28099,6 +28271,25 @@
           "diagnostics"
         ]
       },
+      "AskHistoryTurnDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "What the member typed in that turn.",
+            "maxLength": 1000
+          },
+          "answer": {
+            "type": "string",
+            "description": "What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages).",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ]
+      },
       "AskRequestDto": {
         "type": "object",
         "properties": {
@@ -28111,6 +28302,18 @@
           "saved_notice_shown": {
             "type": "boolean",
             "description": "True when the client showed the \"answers are being saved\" line before sending. An exchange is kept by the beta diagnostics window only when this is true."
+          },
+          "history": {
+            "maxItems": 6,
+            "description": "The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskHistoryTurnDto"
+            }
+          },
+          "actions": {
+            "type": "boolean",
+            "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
           }
         },
         "required": [
@@ -28301,6 +28504,10 @@
             "type": "string",
             "maxLength": 500,
             "description": "As the `needs_event` answer carried it. Empty names the event instead."
+          },
+          "keep_earlier": {
+            "type": "boolean",
+            "description": "True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them."
           }
         },
         "required": [

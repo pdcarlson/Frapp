@@ -62,6 +62,23 @@ describe("resolveNotificationTarget", () => {
     ).toEqual({ pathname: "/tasks" });
   });
 
+  it("opens a submitted task's review, and the reader's own task on their board", () => {
+    // "Shawn submitted: Clean his room" goes to the officer who assigned it;
+    // their board lists only their own tasks, so the review opens on Activity.
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "tasks", taskId: "t1", view: "review" }),
+      ),
+    ).toEqual({ pathname: "/activity", params: { review: "t1" } });
+    // Assigned, confirmed, sent back: the reader's own task, opened.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", taskId: "t1" })),
+    ).toEqual({ pathname: "/tasks", params: { task: "t1" } });
+    expect(
+      notificationHref({ pathname: "/activity", params: { review: "t1" } }),
+    ).toBe("/activity?review=t1");
+  });
+
   it("sends points to the task board, which absorbed it", () => {
     // C3 folded points into s08; there is no points route to send anyone to.
     expect(resolveNotificationTarget(payload({ screen: "points" }))).toEqual({

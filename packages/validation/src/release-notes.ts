@@ -120,6 +120,31 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-13",
+    title: "New in this update",
+    changes: [
+      "Ask Frapp now keeps the conversation going, so a follow-up question picks up where the last one left off.",
+      "Asking Frapp to do something happens in the same box as asking it a question, with no Ask and Do tabs to switch between.",
+      "Moving a repeating event to a new time keeps the excuses members already sent, and anyone whose meeting is no longer on the calendar gets a note to send theirs again.",
+      "A task with no points and nothing to prove counts as done as soon as you mark it done.",
+      "When someone submits a task you gave them, the notification says who submitted what, and tapping it opens a review with their proof up front. With several waiting, Confirm moves on to the next.",
+      "Can't make it is now on a required event's chat card too, and opens the event with your excuse ready to write.",
+    ],
+    web: [
+      "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
+      "In Direct messages, a search box at the top finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the New message pencil opens it too.",
+      "Service hours now opens on your own approved and pending hours and your full log, with a chapter leaderboard you can switch between this semester and all time.",
+      "Officers can ask for a photo or a link as proof on a task, add up to six photos, and say what needs to change when they send a task back.",
+    ],
+    phone: [
+      "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
+      "The rows on the You tab lead with coloured icons, Up next on Chat home is a card you can read at a glance, and the buttons at the top of each screen look like buttons.",
+      "Cards and lists are a shade darker, so they sit more quietly on the black behind them.",
+      "Chat home shows you the swipe to Messages the first time you rest on it, and the screen now gives under your finger as you swipe.",
+      "Tasks can now carry photos, you can mark a task done with a photo or a link as proof, and officers can see that proof and say what needs to change when they send a task back.",
+    ],
+  },
+  {
     date: "2026-11-12",
     title: "New in this update",
     changes: [

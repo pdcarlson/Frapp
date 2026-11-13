@@ -42,7 +42,26 @@ export interface ActMember {
   signal?: AbortSignal;
 }
 
-export interface ActInput extends ActMember {
+/**
+ * A request that arrives inside a conversation (`AskConversationService`),
+ * where each proposal stays on screen as its own card.
+ */
+interface ActConversation {
+  /**
+   * What the member typed earlier in the conversation, oldest first: their
+   * own words only, never an answer. It lets "5, for cleaning the kitchen"
+   * finish "give Jordan points".
+   */
+  earlier?: readonly string[];
+  /**
+   * Leave the member's earlier unconfirmed proposals waiting. Without it a
+   * new proposal replaces them, which is what a client that shows one
+   * request at a time expects.
+   */
+  keepEarlier?: boolean;
+}
+
+export interface ActInput extends ActMember, ActConversation {
   request: string;
 }
 
@@ -88,17 +107,20 @@ export type ActOutcome =
  *    route's permission held and its module on. `ai:act` adds no authority
  *    of its own.
  * 2. **The action is chosen from the member's words alone.** One planning
- *    call sees the request and the offered actions, and nothing else: no
- *    chat, no document, no roster, no retrieval. So no text another person
- *    wrote is in front of a model when the action is picked, and a planted
- *    message cannot cause one. An action that was not offered, or was made
- *    up, is nothing.
+ *    call sees the request, what the member typed earlier when the request
+ *    is part of a conversation, and the offered actions, and nothing else:
+ *    no answer, no chat, no document, no roster, no retrieval. So no text
+ *    another person wrote is in front of a model when the action is picked,
+ *    and a planted message cannot cause one. An action that was not offered,
+ *    or was made up, is nothing.
  * 3. **The details are looked up as the member, in their chapter.** Names
  *    resolve against this chapter's roster only; "everyone who came" reads
  *    attendance only for a member who may read attendance.
  * 4. **A proposal, not a change.** The draft is saved as a suggestion
  *    sourced from the member's own request, which only they can open, and
- *    which is gone in a day. Asking again replaces it.
+ *    which is gone in a day. On the request route, asking again replaces
+ *    it; in a conversation each card stays until it is confirmed, dismissed
+ *    or a day old.
  * 5. **Confirm commits.** Accepting re-checks the action's permission, at
  *    that moment, and goes through the ordinary service with its ordinary
  *    record (the points ledger, the task's and the event's creator).
@@ -171,7 +193,7 @@ export class ActService {
       planned.value,
       this.toolContext(input, held, now),
     );
-    return this.settle(tool, draft, input);
+    return this.settle(tool, draft, input, input.keepEarlier === true);
   }
 
   /**
@@ -185,6 +207,7 @@ export class ActService {
       eventId: string;
       amount: number;
       reason: string | null;
+      keepEarlier?: boolean;
     },
     now: Date = new Date(),
   ): Promise<ActOutcome> {
@@ -202,13 +225,14 @@ export class ActService {
       { eventId: input.eventId, amount: input.amount, reason: input.reason },
       this.toolContext(input, held, now),
     );
-    return this.settle(tool, draft, input);
+    return this.settle(tool, draft, input, input.keepEarlier === true);
   }
 
   private async settle(
     tool: ActTool,
     draft: ActDraft,
     member: ActMember,
+    keepEarlier: boolean,
   ): Promise<ActOutcome> {
     if (draft.status === 'unclear') {
       return { status: 'unclear', action: tool.name, missing: draft.missing };
@@ -224,8 +248,11 @@ export class ActService {
     }
 
     const source = { type: 'request' as const, id: member.userId };
-    // One live proposal per member: what they asked before is replaced.
-    await this.suggestions.withdrawSource(member.chapterId, source);
+    // Outside a conversation, one live proposal per member: what they asked
+    // before is replaced.
+    if (!keepEarlier) {
+      await this.suggestions.withdrawSource(member.chapterId, source);
+    }
     const { created } = await this.suggestions.proposeBatch({
       chapterId: member.chapterId,
       batchId: randomUUID(),
@@ -257,10 +284,6 @@ export class ActService {
   }
 
   /**
-   * The actions this member may be offered, and what they hold. `ai:act`
-   * first: without it there is no acting at all, whatever else they hold.
-   */
-  /**
    * The one planning call. A provider that fails (a timeout, an overload) is
    * an ordinary "not available right now", not a server error; null says so.
    */
@@ -278,7 +301,10 @@ export class ActService {
           // The member's own words and the actions they may take. Nothing
           // anyone else wrote is ever added to this call.
           messages: [
-            { role: 'user', content: actPlanMessage(input.request, offered) },
+            {
+              role: 'user',
+              content: actPlanMessage(input.request, offered, input.earlier),
+            },
           ],
           schema: ActPlanSchema,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
@@ -294,13 +320,26 @@ export class ActService {
     }
   }
 
+  /**
+   * The actions this member may be offered, and what they hold. `ai:act`
+   * first: without it there is no acting at all, whatever else they hold.
+   * `members:view` with it, as the request route's guard requires (a card
+   * names members), because the conversation reaches this without that
+   * guard.
+   */
   private async offered(
     member: ActMember,
   ): Promise<{ offered: ActTool[]; held: ReadonlySet<string> }> {
     const held = new Set(
       await this.rbac.getEffectivePermissions(member.chapterId, member.userId),
     );
-    if (!held.has(WILDCARD) && !held.has(SystemPermissions.AI_ACT)) {
+    if (
+      !held.has(WILDCARD) &&
+      !(
+        held.has(SystemPermissions.AI_ACT) &&
+        held.has(SystemPermissions.MEMBERS_VIEW)
+      )
+    ) {
       throw new ForbiddenException({
         code: 'ai.act.forbidden',
         message: 'You do not have permission to have Ask take actions.',

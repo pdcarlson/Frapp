@@ -119,8 +119,14 @@ export default function EventDetailsScreen() {
   const requiredOf = useRequiredOfViewer();
   const viewerId = useViewerUserId();
   const canDecideExcuses = can("events:update", usePermissionList());
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    excuse?: string | string[];
+  }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
+  // `excuse=1`: the chat card's Can't make it, which opens the line (#4660).
+  const startExcuse =
+    (Array.isArray(params.excuse) ? params.excuse[0] : params.excuse) === "1";
 
   const eventQuery = useEvent(eventId);
   const event = useMemo(
@@ -255,6 +261,7 @@ export default function EventDetailsScreen() {
           end={event.end_time}
           opensMinutes={event.check_in_opens_minutes}
           now={now}
+          startWriting={startExcuse}
         />
 
         {/* The event's creator receives its excuses; an events:update

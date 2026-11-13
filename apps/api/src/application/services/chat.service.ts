@@ -18,10 +18,9 @@ import {
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
 import { stampCardClosed } from './card-close';
-import {
-  isSignupCardClosed,
-  normalizeSignupCard,
-} from '#domain/utils/signup-card-rules';
+import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
+import { isCardClosed } from '#domain/utils/card-closing';
+import { normalizeFormCard } from '#domain/utils/form-card-rules';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -236,8 +235,39 @@ function withoutServerPollFields(
 }
 
 /**
+ * `ChatService.closeCard`'s refusals for each kind it closes. The sign-up
+ * wording is step 2's, which `@repo/validation`'s member copy keys on.
+ */
+const CLOSE_COPY: Readonly<
+  Record<
+    'signup' | 'form',
+    {
+      deleted: string;
+      forbidden: string;
+      malformed: string;
+      alreadyClosed: string;
+    }
+  >
+> = {
+  signup: {
+    deleted: 'Cannot close a deleted sign-up',
+    forbidden:
+      'Only the sign-up’s creator or a member who manages channels can close it',
+    malformed: 'Malformed sign-up card',
+    alreadyClosed: 'Sign-ups are already closed',
+  },
+  form: {
+    deleted: 'Cannot close a deleted form',
+    forbidden:
+      'Only the form’s creator or a member who manages channels can close it',
+    malformed: 'Malformed form card',
+    alreadyClosed: 'This form is already closed',
+  },
+};
+
+/**
  * The card payload a client's send stores. A poll card drops the fields only
- * `PollService.close` writes. A sign-up card (#3926) is checked and rebuilt
+ * `PollService.close` writes. A sign-up or form card (#3926) is checked and rebuilt
  * from its known fields, because `claim_signup_slots` trusts its slots' ids
  * and limits on every claim; a card that can't be read is refused with a 400
  * rather than stored as a card nobody can sign up on.
@@ -248,6 +278,13 @@ function cardPayloadForSend(
 ): Record<string, any> | null {
   if (kind === 'signup') {
     const checked = normalizeSignupCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  // A form card (#3926 step 3) the same way: the answer route checks every
+  // answer against its questions.
+  if (kind === 'form') {
+    const checked = normalizeFormCard(payload);
     if ('error' in checked) throw new BadRequestException(checked.error);
     return { ...checked.card };
   }
@@ -1466,6 +1503,15 @@ export class ChatService {
       throw new BadRequestException('Cannot edit a deleted message');
     }
 
+    // A card's body is its payload, and its `content` is the line a push,
+    // the channel preview and search read for it (a form's or sign-up's
+    // title, a poll's question): not the member's words to edit. The clients
+    // hide Edit on every card (`CARD_KINDS` in `@repo/chat-core`); this is the
+    // rule, so an edit can't make that line disagree with the card.
+    if ((message.kind ?? 'text') !== 'text') {
+      throw new BadRequestException('A card cannot be edited');
+    }
+
     // A GIF message is the GIF, with no text to change (#4631); the clients
     // hide Edit on it (`canEditMessage`), and this is the rule.
     if (message.metadata && 'gif' in message.metadata) {
@@ -1833,20 +1879,21 @@ export class ChatService {
   // ── Sign-up cards (#3926) ────────────────────────────────────────────
 
   /**
-   * Close a sign-up card early (#3926 step 2), as `PollService.closeCard`
-   * closes a poll card: its creator may, whatever their permissions now, and
-   * so may a `channels:manage` holder (`canModerate`, asked only when the
-   * caller isn't the creator). Channel access is a `close`: read access, with
-   * archive and the audit log refusing it, but not who can post, so a card
-   * whose creator lost post rights can still be closed.
+   * Close a sign-up card (#3926 step 2) or a form card (step 3) early, as
+   * `PollService.closeCard` closes a poll card: its creator may, whatever
+   * their permissions now, and so may a `channels:manage` holder
+   * (`canModerate`, asked only when the caller isn't the creator). Channel
+   * access is a `close`: read access, with archive and the audit log refusing
+   * it, but not who can post, so a card whose creator lost post rights can
+   * still be closed.
    *
    * Stamps `payload.closed_at` / `closed_by`, which `ChatService.sendMessage`
-   * never takes from a client (`normalizeSignupCard` rebuilds the card). The
-   * row update reaches every open card as a Realtime UPDATE, and
-   * `claim_signup_slots` refuses every claim once it is set. Claims already
-   * made stay.
+   * never takes from a client (`normalizeSignupCard` and `normalizeFormCard`
+   * rebuild the card). The row update reaches every open card as a Realtime
+   * UPDATE; `claim_signup_slots` and `ChatFormService.saveResponse` refuse
+   * every answer once it is set. Answers already made stay.
    */
-  async closeSignup(
+  async closeCard(
     messageId: string,
     chapterId: string,
     userId: string,
@@ -1860,30 +1907,29 @@ export class ChatService {
       userId,
       'close',
     );
-    if (message.kind !== 'signup') {
-      throw new BadRequestException('Message is not a sign-up card');
+    const copy = CLOSE_COPY[message.kind as 'signup' | 'form'];
+    if (!copy) {
+      throw new BadRequestException('Message is not a sign-up or form card');
     }
     if (message.is_deleted) {
-      throw new BadRequestException('Cannot close a deleted sign-up');
+      throw new BadRequestException(copy.deleted);
     }
     if (message.sender_id !== userId && !(await canModerate())) {
-      throw new ForbiddenException(
-        'Only the sign-up’s creator or a member who manages channels can close it',
-      );
+      throw new ForbiddenException(copy.forbidden);
     }
     const payload = message.payload;
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new BadRequestException('Malformed sign-up card');
+      throw new BadRequestException(copy.malformed);
     }
-    if (isSignupCardClosed(payload)) {
-      throw new BadRequestException('Sign-ups are already closed');
+    if (isCardClosed(payload)) {
+      throw new BadRequestException(copy.alreadyClosed);
     }
     return stampCardClosed(
       this.messageRepo,
       message,
       payload as Record<string, unknown>,
       userId,
-      'Cannot close a deleted sign-up',
+      copy.deleted,
     );
   }
 

@@ -275,11 +275,13 @@ export class TaskController {
   )
   async rejectCompletion(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: RejectTaskCompletionDto,
   ) {
     return this.taskService.rejectCompletion(id, chapterId, dto.comment, {
       requirePhoto: dto.require_photo,
+      actorUserId: userId,
     });
   }
 

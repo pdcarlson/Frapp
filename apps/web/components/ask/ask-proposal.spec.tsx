@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActResponse, AskProposalResolution } from "@repo/hooks";
 import { ACT_COPY } from "@repo/validation";
 
 /**
- * The Do side of Ask (#718): a request is answered with a card, and nothing
- * is sent to be done until Confirm.
+ * A proposal in the Ask conversation (#718): something the member asked to
+ * have done is answered with a card, and nothing is sent to be done until
+ * Confirm.
  */
 
 const ME = "22222222-2222-4222-8222-222222222222";
@@ -14,11 +17,9 @@ const JACOB = "44444444-4444-4444-8444-444444444444";
 const SAM = "55555555-5555-4555-8555-555555555555";
 
 const state = vi.hoisted(() => ({
-  request: vi.fn(),
   audience: vi.fn(),
   accept: vi.fn(),
   dismiss: vi.fn(),
-  consent: vi.fn(),
 }));
 
 vi.mock("@/components/ai/report-ai", () => ({
@@ -27,8 +28,10 @@ vi.mock("@/components/ai/report-ai", () => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActRequest: () => ({ mutateAsync: state.request }),
-  useActEventAudience: () => ({ mutateAsync: state.audience }),
+  useActEventAudience: () => ({
+    mutateAsync: state.audience,
+    isPending: false,
+  }),
   useAcceptAiSuggestion: () => ({
     mutateAsync: state.accept,
     isPending: false,
@@ -49,7 +52,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-const { ActPane, useActSession } = await import("./act-pane");
+const { AskProposal, AskCardEditsContext } = await import("./ask-proposal");
+type AskCardEditsStore = import("./ask-proposal").AskCardEditsStore;
 
 const base = {
   status: "proposed",
@@ -62,10 +66,7 @@ const base = {
   available_actions: [],
 };
 
-function suggestion(
-  kind: "points" | "task" | "new_event",
-  payload: unknown,
-) {
+function suggestion(kind: "points" | "task" | "new_event", payload: unknown) {
   return {
     id: "suggestion-1",
     kind,
@@ -99,54 +100,33 @@ const pointsCard = (targets: string[], notes: unknown[] = []) => ({
   }),
 });
 
-/** The panel: it holds the session, and shows the pane only on the Do side. */
-function Panel({ doing }: { doing: boolean }) {
-  const session = useActSession();
-  return doing ? (
-    <ActPane
-      session={session}
-      actions={["give_points"]}
-      ensureConsent={state.consent}
+/** The turn that holds the card: its proposal, and how it ended. */
+function Turn({ proposal: first }: { proposal: ActResponse }) {
+  const [proposal, setProposal] = useState(first);
+  const [resolution, setResolution] = useState<AskProposalResolution | null>(
+    null,
+  );
+  return (
+    <AskProposal
+      proposal={proposal}
+      resolution={resolution}
+      onProposal={setProposal}
+      onResolved={setResolution}
     />
-  ) : (
-    <p>Ask side</p>
   );
 }
 
-const open = (actions = ["give_points", "create_task", "create_event"]) =>
-  render(<ActPane actions={actions} ensureConsent={state.consent} />);
+/** The card as the thread shows it once the server answered with `proposal`. */
+const show = (proposal: unknown) =>
+  render(<Turn proposal={proposal as ActResponse} />);
 
-async function say(text: string) {
-  await userEvent.type(screen.getByPlaceholderText(ACT_COPY.placeholder), text);
-  await userEvent.click(screen.getByRole("button", { name: ACT_COPY.send }));
-}
-
-describe("ActPane", () => {
+describe("AskProposal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    state.consent.mockResolvedValue(true);
-  });
-
-  it("offers an example only for what the member can ask for", () => {
-    open(["create_task"]);
-    expect(screen.getByText(ACT_COPY.examples.create_task)).toBeDefined();
-    expect(screen.queryByText(ACT_COPY.examples.give_points)).toBeNull();
-  });
-
-  it("still shows a waiting card after a look at the Ask side", async () => {
-    state.request.mockResolvedValue(pointsCard([JORDAN]));
-    const view = render(<Panel doing />);
-    await say("give Jordan 5 points for cleanup");
-    await screen.findByRole("button", { name: ACT_COPY.confirm });
-    view.rerender(<Panel doing={false} />);
-    expect(screen.queryByRole("button", { name: ACT_COPY.confirm })).toBeNull();
-    view.rerender(<Panel doing />);
-    expect(screen.getByRole("button", { name: ACT_COPY.confirm })).toBeDefined();
-    expect(state.request).toHaveBeenCalledTimes(1);
   });
 
   it("says whose attendance a points change was read from", async () => {
-    state.request.mockResolvedValue({
+    show({
       ...base,
       action: "give_points",
       suggestion: suggestion("points", {
@@ -158,30 +138,16 @@ describe("ActPane", () => {
         event_start_time: "2026-11-12T23:00:00.000Z",
       }),
     });
-    open();
-    await say("give 5 points to everyone who came to chapter");
     expect(
       await screen.findByText(/marked present or late at Chapter Meeting/),
     ).toBeDefined();
   });
 
-  it("asks consent before a request leaves, and sends nothing on No", async () => {
-    state.consent.mockResolvedValue(false);
-    open();
-    await say("give Jordan 5 points for cleanup");
-    expect(state.request).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText(ACT_COPY.unavailable.consent_required),
-    ).toBeDefined();
-  });
-
   it("shows a points change with its size in words, and does nothing until Confirm", async () => {
-    state.request.mockResolvedValue(pointsCard([JORDAN, JACOB]));
     state.accept.mockResolvedValue({
       result: { kind: "points", id: "t", outcome: { adjusted: 2, skipped: 0 } },
     });
-    open();
-    await say("give 5 points to everyone who came tonight");
+    show(pointsCard([JORDAN, JACOB]));
 
     const card = await screen.findByRole("region", {
       name: ACT_COPY.card_points_title_give,
@@ -210,10 +176,8 @@ describe("ActPane", () => {
   });
 
   it("sends the members as the officer left them when one is taken off", async () => {
-    state.request.mockResolvedValue(pointsCard([JORDAN, JACOB]));
     state.accept.mockResolvedValue({ result: null });
-    open();
-    await say("give 5 points to Jordan and Jacob");
+    show(pointsCard([JORDAN, JACOB]));
     await userEvent.click(
       await screen.findByRole("button", {
         name: `${ACT_COPY.remove_member} Jacob Miller`,
@@ -230,11 +194,7 @@ describe("ActPane", () => {
   });
 
   it("will not confirm a points change with nobody on it, and says what was not found", async () => {
-    state.request.mockResolvedValue(
-      pointsCard([], [{ type: "unmatched_name", name: "Jake" }]),
-    );
-    open();
-    await say("give Jake 5 points for cleanup");
+    show(pointsCard([], [{ type: "unmatched_name", name: "Jake" }]));
     expect(
       await screen.findByText(
         'Nobody in the chapter matched "Jake". Add them below if they should be included.',
@@ -248,14 +208,12 @@ describe("ActPane", () => {
   });
 
   it("names the member a short name was read as", async () => {
-    state.request.mockResolvedValue(
+    show(
       pointsCard(
         [JACOB],
         [{ type: "matched_name", name: "Jake", user_ids: [JACOB] }],
       ),
     );
-    open();
-    await say("give Jake 5 points for cleanup");
     expect(
       await screen.findByText(
         '"Jake" was read as Jacob Miller. Check that is who you meant.',
@@ -264,10 +222,8 @@ describe("ActPane", () => {
   });
 
   it("cancels a card without changing anything", async () => {
-    state.request.mockResolvedValue(pointsCard([JORDAN]));
     state.dismiss.mockResolvedValue({});
-    open();
-    await say("give Jordan 5 points for cleanup");
+    show(pointsCard([JORDAN]));
     await userEvent.click(
       await screen.findByRole("button", { name: ACT_COPY.cancel }),
     );
@@ -277,7 +233,6 @@ describe("ActPane", () => {
   });
 
   it("keeps the card when Confirm is refused, and says why", async () => {
-    state.request.mockResolvedValue(pointsCard([JORDAN]));
     // The shape the API client throws for the 429: without words of its own
     // this code reads "wait a minute", which never helps.
     state.accept.mockRejectedValue({
@@ -286,8 +241,7 @@ describe("ActPane", () => {
       message:
         "This changes points for 60 members, and your chapter allows 50 point adjustments an hour.",
     });
-    open();
-    await say("give Jordan 5 points for cleanup");
+    show(pointsCard([JORDAN]));
     await userEvent.click(
       await screen.findByRole("button", { name: ACT_COPY.confirm }),
     );
@@ -299,8 +253,84 @@ describe("ActPane", () => {
     ).toBeDefined();
   });
 
+  it.each([
+    ["decided somewhere else", "ai.suggestion.decided"],
+    ["a day old", "ai.suggestion.expired"],
+    ["withdrawn", "ai.suggestion.not_found"],
+  ])(
+    "says a card that is %s is no longer waiting when Confirm finds out, with no buttons left",
+    async (_name, code) => {
+      state.accept.mockRejectedValue({ status: 409, code });
+      show(pointsCard([JORDAN]));
+      await userEvent.click(
+        await screen.findByRole("button", { name: ACT_COPY.confirm }),
+      );
+      expect(await screen.findByText(ACT_COPY.gone)).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: ACT_COPY.confirm }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: ACT_COPY.cancel }),
+      ).toBeNull();
+      expect(screen.queryByText(ACT_COPY.cancelled)).toBeNull();
+    },
+  );
+
+  it("does not say cancelled for a card that was decided somewhere else: it may have been confirmed", async () => {
+    state.dismiss.mockRejectedValue({
+      status: 409,
+      code: "ai.suggestion.decided",
+    });
+    show(pointsCard([JORDAN]));
+    await userEvent.click(
+      await screen.findByRole("button", { name: ACT_COPY.cancel }),
+    );
+    expect(await screen.findByText(ACT_COPY.gone)).toBeDefined();
+    expect(screen.queryByText(ACT_COPY.cancelled)).toBeNull();
+  });
+
+  it("says cancelled for a card that was already gone: that is what Cancel wanted", async () => {
+    state.dismiss.mockRejectedValue({
+      status: 404,
+      code: "ai.suggestion.not_found",
+    });
+    show(pointsCard([JORDAN]));
+    await userEvent.click(
+      await screen.findByRole("button", { name: ACT_COPY.cancel }),
+    );
+    expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
+  });
+
+  it("keeps a member taken off a card when the panel takes the thread off the page and puts it back", async () => {
+    state.accept.mockResolvedValue({ result: null });
+    const edits: AskCardEditsStore = new Map();
+    const thread = (
+      <AskCardEditsContext.Provider value={edits}>
+        <Turn proposal={pointsCard([JORDAN, JACOB]) as ActResponse} />
+      </AskCardEditsContext.Provider>
+    );
+    const first = render(thread);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: `${ACT_COPY.remove_member} Jacob Miller`,
+      }),
+    );
+    // The panel closes: the card is gone from the page, not from the thread.
+    first.unmount();
+    render(thread);
+    expect(await screen.findByText("Give 5 points to 1 member")).toBeDefined();
+    expect(screen.queryByText("Jacob Miller")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: ACT_COPY.confirm }),
+    );
+    expect(state.accept).toHaveBeenCalledWith({
+      id: "suggestion-1",
+      points: { target_user_ids: [JORDAN] },
+    });
+  });
+
   it("asks who a task is for before it can be confirmed", async () => {
-    state.request.mockResolvedValue({
+    show({
       ...base,
       action: "create_task",
       suggestion: suggestion("task", {
@@ -312,8 +342,6 @@ describe("ActPane", () => {
         subtasks: [],
       }),
     });
-    open();
-    await say("make a task to book the bus by Friday");
     expect(await screen.findByText("Book the bus")).toBeDefined();
     await userEvent.click(
       screen.getByRole("button", { name: ACT_COPY.confirm }),
@@ -323,7 +351,8 @@ describe("ActPane", () => {
   });
 
   it("shows an event written out in full", async () => {
-    state.request.mockResolvedValue({
+    state.accept.mockResolvedValue({ result: { kind: "new_event", id: "e" } });
+    show({
       ...base,
       action: "create_event",
       suggestion: suggestion("new_event", {
@@ -336,9 +365,6 @@ describe("ActPane", () => {
         is_mandatory: false,
       }),
     });
-    state.accept.mockResolvedValue({ result: { kind: "new_event", id: "e" } });
-    open();
-    await say("put a study night on the calendar for Tuesday at 7");
     expect(
       await screen.findByText("Tuesday, November 17, 7:00 PM to 8:00 PM"),
     ).toBeDefined();
@@ -352,7 +378,8 @@ describe("ActPane", () => {
   });
 
   it("asks which event, and sends the pick with the amount it was given", async () => {
-    state.request.mockResolvedValue({
+    state.audience.mockResolvedValue(pointsCard([JORDAN]));
+    show({
       ...base,
       status: "needs_event",
       action: "give_points",
@@ -369,9 +396,6 @@ describe("ActPane", () => {
         ],
       },
     });
-    state.audience.mockResolvedValue(pointsCard([JORDAN]));
-    open();
-    await say("give 5 points to everyone who came tonight");
     expect(await screen.findByText(ACT_COPY.pick_event)).toBeDefined();
     await userEvent.click(
       screen.getByRole("button", { name: /Chapter Meeting/ }),
@@ -380,43 +404,85 @@ describe("ActPane", () => {
       eventId: "e1",
       amount: 5,
       reason: "",
+      // The thread's other cards stay waiting.
+      keepEarlier: true,
     });
     expect(await screen.findByText("Give 5 points to 1 member")).toBeDefined();
   });
 
   it("says what it can do when the request is not one of them", async () => {
-    state.request.mockResolvedValue({
+    show({
       ...base,
       status: "no_action",
       available_actions: ["create_task", "something_new"],
     });
-    open();
-    await say("delete the chapter");
     expect(await screen.findByText(ACT_COPY.no_action)).toBeDefined();
     expect(screen.getByText(ACT_COPY.action_labels.create_task)).toBeDefined();
   });
 
   it("says what was left out of an unclear request", async () => {
-    state.request.mockResolvedValue({
+    show({
       ...base,
       status: "unclear",
       action: "give_points",
       missing: "amount",
     });
-    open();
-    await say("give Jordan points");
     expect(await screen.findByText(ACT_COPY.missing.amount)).toBeDefined();
   });
 
-  it("offers to try again when the request fails", async () => {
-    state.request.mockRejectedValueOnce(new Error("network"));
-    state.request.mockResolvedValue({ ...base, status: "refused" });
-    open();
-    await say("give Jordan 5 points for cleanup");
+  it("becomes one line once dismissed, and a pick that fails keeps the choices", async () => {
+    state.audience.mockRejectedValue(new Error("network"));
+    show({
+      ...base,
+      status: "needs_event",
+      action: "give_points",
+      event_choice: {
+        amount: 5,
+        reason: "",
+        events: [
+          {
+            id: "e1",
+            name: "Chapter Meeting",
+            start_time: "2026-11-12T19:00:00",
+          },
+        ],
+      },
+    });
     await userEvent.click(
-      await screen.findByRole("button", { name: ACT_COPY.try_again }),
+      screen.getByRole("button", { name: /Chapter Meeting/ }),
     );
-    expect(await screen.findByText(ACT_COPY.refused)).toBeDefined();
-    expect(state.request).toHaveBeenCalledTimes(2);
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      ACT_COPY.failed,
+    );
+    expect(
+      screen.getByRole("button", { name: /Chapter Meeting/ }),
+    ).toBeDefined();
+  });
+
+  it("names what a confirmed card was about beside what happened", async () => {
+    state.accept.mockResolvedValue({ result: { kind: "task", id: "t" } });
+    show({
+      ...base,
+      action: "create_task",
+      suggestion: suggestion("task", {
+        title: "Book the bus",
+        description: null,
+        assignee_id: JORDAN,
+        due_date: "2099-11-13",
+        due_at: null,
+        subtasks: [],
+      }),
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: ACT_COPY.confirm }),
+    );
+    expect(await screen.findByText(ACT_COPY.done_task)).toBeDefined();
+    expect(screen.getByText("Book the bus")).toBeDefined();
+    expect(screen.queryByRole("button", { name: ACT_COPY.confirm })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: ACT_COPY.open_tasks })
+        .getAttribute("href"),
+    ).toBe("/tasks");
   });
 });

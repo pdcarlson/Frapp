@@ -109,7 +109,7 @@ export function AskPill({ className }: { className?: string }) {
   }
   if (!settings.data?.ask || !can("ai:use", permissions ?? [])) return null;
   // Viewing as a role (#4072): asking is a POST, which the preview refuses,
-  // so the pill (and Do, inside its panel) stays off rather than failing on
+  // so the pill (and the cards inside its panel) stays off rather than failing on
   // the first question (#4504).
   if (previewing) return null;
   return (
