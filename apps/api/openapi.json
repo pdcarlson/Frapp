@@ -26960,6 +26960,23 @@
           "unread"
         ]
       },
+      "ActivityProgressDto": {
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "number",
+            "description": "How many have answered: voted, or checked in."
+          },
+          "total": {
+            "type": "number",
+            "description": "Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`."
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ]
+      },
       "ActivityPollDto": {
         "type": "object",
         "properties": {
@@ -27015,6 +27032,16 @@
           "has_voted": {
             "type": "boolean"
           },
+          "progress": {
+            "nullable": true,
+            "description": "In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityProgressDto"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -27044,6 +27071,7 @@
           "closed_at",
           "is_closed",
           "has_voted",
+          "progress",
           "created_at",
           "unread",
           "message"
@@ -27231,6 +27259,16 @@
             "nullable": true,
             "description": "Who made it. Null for an event made before makers were recorded (2026-11-11)."
           },
+          "progress": {
+            "nullable": true,
+            "description": "In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityProgressDto"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -27254,6 +27292,7 @@
           "check_in_needs_code",
           "checked_in",
           "created_by",
+          "progress",
           "created_at",
           "unread"
         ]

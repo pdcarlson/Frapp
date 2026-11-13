@@ -126,6 +126,7 @@ Top to bottom:
   With nothing at all it says "Nothing to do right now."
 - **Waiting on others**, then **Links**: what the member made (the polls they posted, the events they made, the tasks they assigned, by kind, three of each then "Show all N", with Archived polls behind its button) and the sign-up links posted for them, from the shared `activityGroups`.
   "Waiting on others" is the old "Made by you" renamed for what the member wants from it, on web too.
+  A poll the member posted, while open, and an event they made, once its check-in opens, carry how far along they are under the detail: a thin bar on the week card's line recipe and "41 of 60", said with the title ("41 of 60 voted"), as Google Forms counts responses on its list and GitHub says "2 of 3 approvals" ([#4792](https://github.com/pdcarlson/Frapp/issues/4792); counts in [`activity.md` § Progress](../../behavior/activity.md#progress)). The groove is the card step, not the meter's `--background`, since these rows sit on the screen's floor; a finished count is the success hue. No count, no bar: never "0 of 0".
   Each is left out when it holds nothing, rather than drawn as an empty line, and both step back while the list is narrowed.
 - **Gone from the phone, and from web** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles (#4173), the filter chips and the Needs you chip (#4402), the Now and Later split, and the Coming up group, whose events are now on their days in To do.
   "Needs you" as a name went with them (Paul: not a fan of it).

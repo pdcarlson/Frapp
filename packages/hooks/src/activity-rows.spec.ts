@@ -224,6 +224,61 @@ describe("sign-up and form cards (#3926 step 4)", () => {
 });
 
 describe("activityGroups", () => {
+  it("carries how far along a poll or event the member made is, and nothing else does (#4792)", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll({ message_id: "theirs", progress: null })],
+      },
+      made_by_you: {
+        polls: [
+          poll({ message_id: "mine", progress: { done: 41, total: 60 } }),
+          // A read from before the field has no count.
+          poll({ message_id: "old" }),
+          // Nobody else can answer: no bar, never "0 of 0".
+          poll({ message_id: "alone", progress: { done: 0, total: 0 } }),
+        ],
+        tasks: [],
+        events: [event({ id: "mine", progress: { done: 60, total: 60 } })],
+      },
+    });
+    const made = activityGroups(data)[0]!.rows;
+    expect(made.map((row) => row.progress)).toEqual([
+      { done: 41, total: 60, label: "41 of 60", spoken: "41 of 60 voted" },
+      null,
+      null,
+      {
+        done: 60,
+        total: 60,
+        label: "60 of 60",
+        spoken: "60 of 60 checked in",
+      },
+    ]);
+    expect(todoRows(data).every((row) => row.progress === null)).toBe(true);
+  });
+
+  it("stops drawing a poll's count on the tick it closes", () => {
+    const data = activity({
+      made_by_you: {
+        polls: [
+          poll({
+            closes_at: "2026-11-10T18:00:00.000Z",
+            progress: { done: 3, total: 5 },
+          }),
+        ],
+        tasks: [],
+        events: [],
+      },
+    });
+    const archived = activityGroups(
+      data,
+      new Date("2026-11-10T18:00:01.000Z"),
+    )[0]!.archive?.rows;
+    expect(archived?.map((row) => row.progress)).toEqual([null]);
+  });
+
   it("draws Waiting on others, then Links", () => {
     expect(activityGroups(activity()).map((group) => group.label)).toEqual([
       "Waiting on others",

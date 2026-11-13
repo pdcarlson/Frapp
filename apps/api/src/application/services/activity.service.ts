@@ -35,7 +35,15 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type { ChannelType, ChatMessage } from '#domain/entities/chat.entity';
+import type {
+  ChannelType,
+  ChatChannelView,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
+import {
+  canAccessChannel,
+  listsNameGroups,
+} from '#domain/utils/channel-access';
 import type { Event } from '#domain/entities/event.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
@@ -60,12 +68,25 @@ import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
 import { ChatService } from './chat.service';
+import { toPredicateChannel } from './channel-access.service';
 import { EventService } from './event.service';
 import { attendanceFor } from './event-role-targeting';
 import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
 import { TaskService } from './task.service';
+
+/**
+ * A channel as the polls section reads it: chat's own list rows, which carry
+ * what decides who reads each one, so the caller's polls can be counted
+ * against it (#4792) without reading the channels again.
+ */
+type PollChannel = ChatChannelView;
+
+/** Chat's reads with the channels whole, as `getActivity` reads them. */
+type PollChatReads = Omit<ChatReads, 'channels'> & {
+  channels: PollChannel[];
+};
 
 /** The sections of the read, as `unavailable` names them. */
 export const ACTIVITY_SECTIONS = [
@@ -137,9 +158,20 @@ export interface ActivityHoursEntry {
 }
 
 /**
+ * How far along something the caller made is (#4792): how many have
+ * answered, of how many can (`spec/behavior/activity.md` § Progress).
+ * `total` is never 0 (a row with nobody to answer has no progress) and
+ * `done` never passes it.
+ */
+export interface ActivityProgress {
+  done: number;
+  total: number;
+}
+
+/**
  * A poll card, as a pointer to its chat message plus what a list row shows.
  *
- * No tallies: a client draws chat's own poll card from the message itself,
+ * No tallies by option: a client draws chat's own poll card from the message itself,
  * which it reads the way chat does (so the same access rule and the same live
  * updates apply), and the card counts the votes.
  */
@@ -158,6 +190,12 @@ export interface ActivityPoll {
   closed_at: string | null;
   is_closed: boolean;
   has_voted: boolean;
+  /**
+   * In `made_by_you` only: how many of the members who can read its channel
+   * have voted (#4792). `null` everywhere else, when nobody but the poster can
+   * read it, and when the count could not be read.
+   */
+  progress: ActivityProgress | null;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
@@ -246,6 +284,13 @@ export interface ActivityEvent {
    * (`spec/behavior/events.md` § Event Creation).
    */
   created_by: string | null;
+  /**
+   * In `made_by_you` only, once its check-in has opened: how many of the
+   * members it invites, and who can check in, have checked in (#4792).
+   * `null` before check-in opens, everywhere else, when it invites nobody
+   * who can check in, and when the count could not be read.
+   */
+  progress: ActivityProgress | null;
   /** When the event was made, which is when it appeared on Activity. */
   created_at: string;
   /**
@@ -578,7 +623,7 @@ export class ActivityService {
     // Chat's channel list and the caller's block list, read once and shared
     // by the two sections that list chat messages (polls and links), and only
     // when one of them runs.
-    let chatRead: Promise<ChatReads> | null = null;
+    let chatRead: Promise<PollChatReads> | null = null;
     const chatReads = () =>
       (chatRead ??= Promise.all([
         this.chatService.getChannels(chapterId, userId),
@@ -1091,7 +1136,7 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     now: number,
-    chatReads: () => Promise<ChatReads>,
+    chatReads: () => Promise<PollChatReads>,
     weekStart: number,
   ): Promise<{
     unvoted: ActivityPoll[];
@@ -1182,6 +1227,8 @@ export class ActivityService {
         closed_at: card.closed_at,
         is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
+        // Set on the caller's open polls below (`withPollProgress`).
+        progress: null,
         created_at: message.created_at,
         unread: false,
         // Through the mask every chat read uses, with the block list read
@@ -1193,21 +1240,114 @@ export class ActivityService {
     const rowsOf = (messages: ChatMessage[]): ActivityPoll[] =>
       messages.map(toRow).filter((row): row is ActivityPoll => row !== null);
 
+    const mineRows = rowsOf(mine);
     return {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
       // Newest first, as read: the open ones, then the closed, 25 of each.
       mine: [
-        ...rowsOf(mine)
-          .filter((row) => !row.is_closed)
-          .slice(0, LIST_LIMIT),
-        ...rowsOf(mine)
-          .filter((row) => row.is_closed)
-          .slice(0, LIST_LIMIT),
+        ...(await this.withPollProgress(
+          chapterId,
+          userId,
+          mineRows.filter((row) => !row.is_closed).slice(0, LIST_LIMIT),
+          channelById,
+        )),
+        ...mineRows.filter((row) => row.is_closed).slice(0, LIST_LIMIT),
       ].sort(byNewest),
       votedThisWeek,
     };
+  }
+
+  /**
+   * How many have voted on each of the caller's open polls, of the other
+   * members who can read its channel (#4792). Two reads for the whole list,
+   * whatever its length: the chapter's members with what they hold (the
+   * resolve chat's member list uses), and every vote row on these polls. None
+   * when the caller has no open poll, which is most members on most opens.
+   *
+   * A closed poll waits on nobody, so it gets no count. Best effort: a failed
+   * read leaves every row without one rather than failing the section.
+   */
+  private async withPollProgress(
+    chapterId: string,
+    userId: string,
+    rows: ActivityPoll[],
+    channelById: Map<string, PollChannel>,
+  ): Promise<ActivityPoll[]> {
+    if (rows.length === 0) return rows;
+    const channels = [...new Set(rows.map((row) => row.channel_id))]
+      .map((id) => channelById.get(id))
+      .filter((channel): channel is PollChannel => !!channel);
+    try {
+      const [members, votes] = await Promise.all([
+        this.rbacService.getChapterMemberAccess(
+          chapterId,
+          channels.some((channel) =>
+            listsNameGroups(toPredicateChannel(channel)),
+          ),
+        ),
+        this.actionRepo.findAllActionsOnMessages(
+          rows.map((row) => row.message_id),
+          CARD_VOTE_ACTION_TYPE,
+        ),
+      ]);
+      // Who could vote: whoever can read the channel, which is what a vote
+      // is checked against (`ChatReactionService`). The poster is left out:
+      // the row says what waits on others.
+      const readersOf = new Map(
+        channels.map((channel) => {
+          const predicate = toPredicateChannel(channel);
+          return [
+            channel.id,
+            new Set(
+              members
+                .filter(
+                  (member) =>
+                    member.user_id !== userId &&
+                    canAccessChannel({
+                      channel: predicate,
+                      userId: member.user_id,
+                      isChapterMember: true,
+                      holder: member.channel_access,
+                      operation: 'read',
+                    }),
+                )
+                .map((member) => member.user_id),
+            ),
+          ] as const;
+        }),
+      );
+      // A vote row with no picks is a cleared vote (#3793), as above.
+      const votersOf = new Map<string, Set<string>>();
+      for (const vote of votes) {
+        if (cardVoteSelection(vote.payload ?? undefined).length === 0) continue;
+        const voters = votersOf.get(vote.message_id) ?? new Set<string>();
+        voters.add(vote.user_id);
+        votersOf.set(vote.message_id, voters);
+      }
+      return rows.map((row) => {
+        const readers = readersOf.get(row.channel_id);
+        // Nobody else can read it: no count, never "0 of 0".
+        if (!readers || readers.size === 0) return row;
+        // Only voters who can still read it, so `done` never passes `total`.
+        const voters = [...(votersOf.get(row.message_id) ?? [])].filter(
+          (voter) => readers.has(voter),
+        );
+        return {
+          ...row,
+          progress: { done: voters.length, total: readers.size },
+        };
+      });
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-poll-progress',
+        message: `Activity could not count votes on polls in chapter ${chapterId}`,
+        error,
+      });
+      return rows;
+    }
   }
 
   /**
@@ -1496,10 +1636,82 @@ export class ActivityService {
       seenSeries.add(series);
       return true;
     });
-    return this.toEventRows(userId, now, nextOfEach, viewer, {
+    const rows = await this.toEventRows(userId, now, nextOfEach, viewer, {
       startsBefore: Number.POSITIVE_INFINITY,
       limit: LIST_LIMIT,
     });
+    return this.withEventProgress(chapterId, userId, now, rows, nextOfEach);
+  }
+
+  /**
+   * How many have checked in to each event the caller made whose check-in
+   * has opened, of the other members it invites who can check in (#4792).
+   * Before check-in opens nobody can, and a bar at nothing says nothing, so
+   * those rows get no count; rarely is more than one open at once. Three
+   * reads for the whole list (the roster, the Alumni role, every attendance
+   * row on these events), and none when no event is open.
+   *
+   * Who counts is who check-in admits: the event invites them
+   * (`attendanceFor`), and an alumnus only through a role the event names,
+   * as `AttendanceService.checkIn` has it. Excused members are left out of
+   * both sides, as the week leaves them out. Best effort, like
+   * {@link withPollProgress}.
+   */
+  private async withEventProgress(
+    chapterId: string,
+    userId: string,
+    now: number,
+    rows: ActivityEvent[],
+    events: Event[],
+  ): Promise<ActivityEvent[]> {
+    const eventById = new Map(events.map((event) => [event.id, event]));
+    const open = rows
+      .map((row) => eventById.get(row.id))
+      .filter((event): event is Event => {
+        const window = event ? this.checkInWindowOf(event) : null;
+        return window !== null && window.opensAt <= now;
+      });
+    if (open.length === 0) return rows;
+    try {
+      const [members, alumniRoleId, attendance] = await Promise.all([
+        this.memberRepo.findByChapter(chapterId),
+        this.rbacService.getAlumniRoleId(chapterId),
+        this.attendanceRepo.findByEvents(open.map((event) => event.id)),
+      ]);
+      const statusOf = new Map(
+        attendance.map((row) => [`${row.event_id}:${row.user_id}`, row.status]),
+      );
+      const progressOf = new Map<string, ActivityProgress>();
+      for (const event of open) {
+        let done = 0;
+        let total = 0;
+        for (const member of members) {
+          if (member.user_id === userId) continue;
+          const answer = attendanceFor(event, member.role_ids);
+          if (answer.status === 'not_invited') continue;
+          const alumnus =
+            alumniRoleId !== null && member.role_ids.includes(alumniRoleId);
+          if (alumnus && !answer.byRole) continue;
+          const status = statusOf.get(`${event.id}:${member.user_id}`);
+          if (status === 'EXCUSED') continue;
+          total += 1;
+          if (status === 'PRESENT' || status === 'LATE') done += 1;
+        }
+        if (total > 0) progressOf.set(event.id, { done, total });
+      }
+      return rows.map((row) => {
+        const progress = progressOf.get(row.id);
+        return progress ? { ...row, progress } : row;
+      });
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-event-progress',
+        message: `Activity could not count check-ins in chapter ${chapterId}`,
+        error,
+      });
+      return rows;
+    }
   }
 
   /**
@@ -1583,6 +1795,8 @@ export class ActivityService {
           check_in_needs_code: needsCode,
           checked_in: checkedIn,
           created_by: event.created_by,
+          // Set on the caller's own events (`withEventProgress`).
+          progress: null,
           created_at: event.created_at,
           // Set for Coming up once the caller's reads are in
           // (`withUnread`); an event in Made by you is never unread.

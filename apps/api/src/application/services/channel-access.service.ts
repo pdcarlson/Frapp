@@ -37,7 +37,17 @@ import { RbacService } from './rbac.service';
  * and wiring it into only one call site would let the list admit a channel the
  * single read denies, which is precisely the asymmetry #1001 was.
  */
-function toPredicateChannel(channel: ChatChannel) {
+export function toPredicateChannel(
+  channel: Pick<
+    ChatChannel,
+    | 'type'
+    | 'member_ids'
+    | 'who_can_see'
+    | 'who_can_post'
+    | 'archived_at'
+    | 'is_audit_log'
+  >,
+) {
   return {
     type: channel.type,
     member_ids: channel.member_ids,

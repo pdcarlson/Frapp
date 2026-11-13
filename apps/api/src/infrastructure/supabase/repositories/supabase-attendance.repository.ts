@@ -62,6 +62,20 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     return rows;
   }
 
+  async findByEvents(eventIds: readonly string[]): Promise<EventAttendance[]> {
+    const ids = [...new Set(eventIds)];
+    const rows: EventAttendance[] = [];
+    for (let start = 0; start < ids.length; start += IN_CHUNK) {
+      const { data, error } = await this.supabase
+        .from('event_attendance')
+        .select('*')
+        .in('event_id', ids.slice(start, start + IN_CHUNK));
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data ?? []));
+    }
+    return rows;
+  }
+
   async createMany(
     rows: TablesInsert<'event_attendance'>[],
   ): Promise<EventAttendance[]> {
