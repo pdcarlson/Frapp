@@ -9,6 +9,7 @@ import {
   type LanguageModelRequest,
   type LanguageModelResult,
   type LanguageModelStreamEvent,
+  type LanguageModelToolCall,
 } from '#domain/adapters/language-model.interface';
 import { estimateTokens } from '#domain/utils/token-estimate';
 import { abortableSleep } from './abortable-sleep';
@@ -22,8 +23,10 @@ export type ScriptedReply =
       text: string;
       /** For a `structured` request: the value the model "returned". */
       object?: unknown;
-      /** For a `cited` request: what the model "quoted", unchecked. */
+      /** For a `cited` or `agent` request: what the model "quoted", unchecked. */
       citations?: LanguageModelCitation[];
+      /** For an `agent` request: the calls the model "asks for" this round. */
+      toolCalls?: LanguageModelToolCall[];
       truncated?: boolean;
     }
   | { refuse: { category: string | null } }
@@ -127,7 +130,15 @@ export class ScriptedLanguageModel implements ILanguageModel {
       outcome: 'completed',
       text: scripted.text,
       ...(request.kind === 'structured' ? { object: scripted.object } : {}),
-      citations: request.kind === 'cited' ? (scripted.citations ?? []) : [],
+      citations:
+        request.kind === 'structured' ? [] : (scripted.citations ?? []),
+      ...(request.kind === 'agent'
+        ? {
+            toolCalls: scripted.toolCalls ?? [],
+            // What a later round is handed back: the calls it made.
+            replay: { text: scripted.text, calls: scripted.toolCalls ?? [] },
+          }
+        : {}),
       truncated: scripted.truncated ?? false,
       usage: {
         inputTokens,
@@ -160,6 +171,17 @@ function requestText(request: LanguageModelRequest): string {
     ...request.messages.map((message) => message.content),
     ...(request.kind === 'cited'
       ? request.sources.map((source) => source.text)
+      : []),
+    ...(request.kind === 'agent'
+      ? [
+          ...request.context.map((source) => source.text),
+          ...request.rounds.flatMap((round) =>
+            round.results.flatMap((result) => [
+              result.note ?? '',
+              ...result.sources.map((source) => source.text),
+            ]),
+          ),
+        ]
       : []),
   ].join('\n');
 }

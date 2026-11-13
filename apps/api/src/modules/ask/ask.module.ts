@@ -1,4 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AgentLoopService } from '../../application/services/ask/agent/agent-loop.service';
+import {
+  AGENT_READ_TOOLS,
+  type AgentReadTool,
+} from '../../application/services/ask/agent/agent-tool';
+import {
+  SearchChapterAgentTool,
+  agentToolFromAskTool,
+} from '../../application/services/ask/agent/interim-tools';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import {
   ASK_TOOLS,
@@ -84,6 +93,23 @@ import { TaskModule } from '../task/task.module';
       provide: ASK_TOOLS,
       useFactory: (...tools: AskTool[]) => tools,
       inject: [...ASK_TOOL_CLASSES],
+    },
+    // The tool loop (epic #4898), off unless `ASK_AGENT=on`. Until the tool
+    // slices land it reads with the search and the same six live reads.
+    AgentLoopService,
+    SearchChapterAgentTool,
+    {
+      provide: AGENT_READ_TOOLS,
+      useFactory: (
+        search: SearchChapterAgentTool,
+        tools: AskTool[],
+      ): AgentReadTool[] => [
+        search,
+        ...tools
+          .filter((tool) => tool.effect === 'read')
+          .map((tool) => agentToolFromAskTool(tool) as AgentReadTool),
+      ],
+      inject: [SearchChapterAgentTool, ASK_TOOLS],
     },
     {
       provide: ASK_DIAGNOSTICS_REPOSITORY,

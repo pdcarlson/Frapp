@@ -23,12 +23,15 @@ import {
   type EmbeddingPurpose,
   type ILanguageModel,
   type ILanguageModelRegistry,
+  type LanguageModelAgentRound,
   type LanguageModelCitation,
   type LanguageModelErrorKind,
   type LanguageModelMessage,
   type LanguageModelRequest,
   type LanguageModelResult,
   type LanguageModelSource,
+  type LanguageModelTool,
+  type LanguageModelToolCall,
   type LanguageModelUsage,
 } from '#domain/adapters/language-model.interface';
 import {
@@ -36,6 +39,7 @@ import {
   aiCostMicroUsd,
   type AiCatalogEntry,
   type AiTokenCatalogEntry,
+  type AiAgentTaskName,
   type AiCitedTaskName,
   type AiEmbeddingTaskName,
   type AiStructuredTaskName,
@@ -101,6 +105,39 @@ export type AiCitedResult =
 
 export type AiCitedStreamEvent =
   { type: 'text'; delta: string } | { type: 'end'; result: AiCitedResult };
+
+/** One round of a tool loop (#4899). */
+export type AiAgentRoundResult =
+  | {
+      status: 'ok';
+      /** The answer when `toolCalls` is empty; otherwise words to drop. */
+      text: string;
+      /** Only citations whose quote is word for word in a source a round returned. */
+      citations: LanguageModelCitation[];
+      droppedCitations: number;
+      /** What the model wants run before it goes on. Unchecked. */
+      toolCalls: LanguageModelToolCall[];
+      /** Handed back, unchanged, in the next round's `rounds`. */
+      replay: unknown;
+      truncated: boolean;
+      usage: LanguageModelUsage;
+    }
+  | AiRefused
+  | AiUnavailable;
+
+export type AiAgentStreamEvent =
+  { type: 'text'; delta: string } | { type: 'end'; result: AiAgentRoundResult };
+
+/** What one round of a tool loop brings beyond its prompt. */
+export interface AiAgentPrompt extends AiPrompt {
+  tools: LanguageModelTool[];
+  /** Read beside the question, never quoted. */
+  context: LanguageModelSource[];
+  /** The rounds already run, oldest first. */
+  rounds: LanguageModelAgentRound[];
+  /** The caller's limits are spent: this round writes the answer. */
+  mustAnswer?: boolean;
+}
 
 export type AiEmbeddingResult =
   | { status: 'ok'; vectors: number[][]; model: string; dimensions: number }
@@ -299,7 +336,83 @@ export class AiGatewayService {
       return;
     }
 
-    const request = this.citedRequest(admitted, prompt);
+    yield* this.streamed(
+      admitted,
+      this.citedRequest(admitted, prompt),
+      'cited',
+      (result) => citedOutcome(result, prompt.sources),
+    );
+  }
+
+  /**
+   * One round of a tool loop the caller owns (#4899): the model is offered
+   * `tools` and either asks for some to be run or writes the answer, as
+   * `text` events and then one `end`. The gateway runs no tool. The caller
+   * runs the calls it accepts and asks again with their results appended to
+   * `rounds`, so every round passes the consent check and the spend caps on
+   * its own and has its own ledger row; a turn can never spend past a cap
+   * because an earlier round was admitted.
+   *
+   * A citation is kept only when its quote is word for word in a source some
+   * round's result returned. Text written before a call is streamed like any
+   * other: the caller knows only at `end` whether it was the answer.
+   */
+  async *streamAgentRound(
+    task: AiAgentTaskName,
+    prompt: AiAgentPrompt,
+    context: AiCallContext,
+  ): AsyncGenerator<AiAgentStreamEvent, void, void> {
+    const returned = prompt.rounds.flatMap((round) =>
+      round.results.flatMap((result) => result.sources),
+    );
+    const admitted = await this.admit(task, 'agent', prompt, context, [
+      ...prompt.context.map(titled),
+      ...returned.map(titled),
+      ...prompt.rounds.flatMap((round) => [
+        // The model's own earlier turn goes back in whole: what it wrote,
+        // what it asked for, and its reasoning. Its shape is the provider's,
+        // so it is sized as the text it serialises to.
+        { text: JSON.stringify(round.replay ?? '') },
+        ...round.results.map((result) => ({ text: result.note ?? '' })),
+      ]),
+      ...prompt.tools.map((tool) => ({
+        text: `${tool.description}\n${JSON.stringify(tool.inputSchema)}`,
+      })),
+    ]);
+    if ('status' in admitted) {
+      yield { type: 'end', result: admitted };
+      return;
+    }
+
+    const request: LanguageModelRequest = {
+      ...this.baseRequest(admitted, prompt),
+      kind: 'agent',
+      tools: prompt.tools,
+      context: prompt.context,
+      rounds: prompt.rounds,
+      ...(prompt.mustAnswer ? { mustAnswer: true } : {}),
+      cache: true,
+    };
+    yield* this.streamed(admitted, request, 'agent', (result) =>
+      agentOutcome(result, returned),
+    );
+  }
+
+  /**
+   * Steps 4 to 6 for a call whose prose is read as it is written. The
+   * reservation is settled however the stream ends: at its end, on a
+   * failure, or when the reader stops reading.
+   */
+  private async *streamed<R>(
+    admitted: Admitted<GenerationCatalogEntry>,
+    request: LanguageModelRequest,
+    kind: 'cited' | 'agent',
+    finish: (result: LanguageModelResult) => Finished<R>,
+  ): AsyncGenerator<
+    { type: 'text'; delta: string } | { type: 'end'; result: R },
+    void,
+    void
+  > {
     const startedAt = Date.now();
     let final: LanguageModelResult | null = null;
     let settled = false;
@@ -315,7 +428,7 @@ export class AiGatewayService {
       }
     } catch (error) {
       settled = true;
-      await this.settle(admitted, startedAt, failure(error, 'cited', true));
+      await this.settle(admitted, startedAt, failure(error, kind, true));
       throw sanitized(error, admitted.entry);
     } finally {
       // The consumer stopped reading (a closed connection) before the end.
@@ -328,7 +441,7 @@ export class AiGatewayService {
           errorKind: 'aborted',
           usage: NO_USAGE,
           shape: {
-            kind: 'cited',
+            kind,
             streamed: true,
             citationsKept: 0,
             citationsDropped: 0,
@@ -345,11 +458,11 @@ export class AiGatewayService {
       }
     }
 
-    const { value, ...summary } = citedOutcome(final, prompt.sources);
+    const { value, ...summary } = finish(final);
     await this.settle(admitted, startedAt, {
       ...summary,
       errorKind: null,
-      shape: shapeOf('cited', value, true),
+      shape: shapeOf(kind, value, true),
     });
     yield { type: 'end', result: value };
   }
@@ -586,17 +699,41 @@ function citedOutcome(
   };
 }
 
+/** Step 5 for a round of a tool loop: the same quote check, over what the rounds returned. */
+function agentOutcome(
+  result: LanguageModelResult,
+  returned: readonly LanguageModelSource[],
+): Finished<AiAgentRoundResult> {
+  if (result.outcome === 'refused') return refusal(result);
+  const { kept, dropped } = verifyCitations(result.citations, returned);
+  return {
+    value: {
+      status: 'ok',
+      text: result.text,
+      citations: kept,
+      droppedCitations: dropped,
+      toolCalls: result.toolCalls ?? [],
+      replay: result.replay,
+      truncated: result.truncated,
+      usage: result.usage,
+    },
+    outcome: 'completed',
+    usage: result.usage,
+  };
+}
+
 function shapeOf(
   kind: GatewayCallKind,
   value: unknown,
   streamed = false,
 ): AiCallShape {
   const cited = value as Partial<Extract<AiCitedResult, { status: 'ok' }>>;
+  const cites = kind === 'cited' || kind === 'agent';
   return {
     kind,
     streamed,
-    citationsKept: kind === 'cited' ? (cited.citations?.length ?? 0) : 0,
-    citationsDropped: kind === 'cited' ? (cited.droppedCitations ?? 0) : 0,
+    citationsKept: cites ? (cited.citations?.length ?? 0) : 0,
+    citationsDropped: cites ? (cited.droppedCitations ?? 0) : 0,
   };
 }
 
@@ -624,4 +761,9 @@ function sanitized(error: unknown, entry: AiCatalogEntry): LanguageModelError {
   return error instanceof LanguageModelError
     ? error
     : new LanguageModelError('unknown', entry.provider);
+}
+
+/** A source as it is sized for a reservation: its title is sent too. */
+function titled(source: LanguageModelSource): { text: string } {
+  return { text: `${source.title}\n${source.text}` };
 }

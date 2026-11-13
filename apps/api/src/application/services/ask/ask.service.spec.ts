@@ -12,6 +12,11 @@ import type {
 import type { CorpusPassage } from '../corpus/corpus-retrieval.service';
 import { openAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
+import type {
+  AgentLoopEvent,
+  AgentLoopOutcome,
+} from './agent/agent-loop.service';
+import type { AgentReadTool, AgentSource } from './agent/agent-tool';
 import { AskService, type AskInput } from './ask.service';
 import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
@@ -96,6 +101,9 @@ function build(options: {
   /** The asker, as the roster has them. Left out, that read fails. */
   asker?: { display_name: string; role_ids: string[] };
   roles?: { id: string; name: string; system_key?: string | null }[];
+  /** What the tool loop yields, for a turn answered through it. */
+  loop?: AgentLoopEvent[];
+  agentTools?: AgentReadTool[];
 }) {
   const retrieval = {
     retrieve: jest.fn(
@@ -152,6 +160,12 @@ function build(options: {
     ),
   };
   const diagnostics = { keep: jest.fn(async () => options.kept ?? false) };
+  const loop = {
+    run: jest.fn(async function* (): AsyncGenerator<AgentLoopEvent> {
+      await Promise.resolve();
+      for (const part of options.loop ?? []) yield part;
+    }),
+  };
   const service = new AskService(
     retrieval as never,
     gateway as never,
@@ -161,6 +175,8 @@ function build(options: {
     users as never,
     diagnostics as never,
     options.tools ?? [],
+    loop as never,
+    options.agentTools ?? [],
   );
   return {
     service,
@@ -171,6 +187,7 @@ function build(options: {
     members,
     users,
     diagnostics,
+    loop,
   };
 }
 
@@ -1411,6 +1428,407 @@ describe('AskService', () => {
       const { answer } = await run(service);
       expect(answer.status).toBe('unavailable');
       expect(answer.report_receipt).toBeNull();
+    });
+  });
+
+  describe('answered through the tool loop (ASK_AGENT=on)', () => {
+    const saved = process.env.ASK_AGENT;
+    beforeEach(() => {
+      process.env.ASK_AGENT = 'on';
+    });
+    afterEach(() => {
+      if (saved === undefined) delete process.env.ASK_AGENT;
+      else process.env.ASK_AGENT = saved;
+    });
+
+    const source = (over: Partial<AgentSource> = {}): AgentSource => ({
+      id: 'tool:roster',
+      kind: 'roster',
+      title: 'Roster',
+      detail: null,
+      date: null,
+      target: { type: 'page', page: 'members' },
+      text: 'Dana Reyes: Treasurer',
+      chat: false,
+      authorIds: [],
+      ...over,
+    });
+
+    const agentTool = (over: Partial<AgentReadTool> = {}): AgentReadTool =>
+      ({
+        name: 'roster',
+        description: 'Who is in the chapter.',
+        permission: SystemPermissions.MEMBERS_VIEW,
+        module: null,
+        effect: 'read',
+        reading: 'Reading the roster',
+        input: { safeParse: () => ({ success: true, data: {} }) },
+        run: jest.fn(),
+        ...over,
+      }) as unknown as AgentReadTool;
+
+    const outcome = (
+      over: Partial<AgentLoopOutcome> = {},
+    ): AgentLoopOutcome => ({
+      result: {
+        status: 'ok',
+        text: 'Dana Reyes is the treasurer.',
+        citations: [
+          { sourceId: 'tool:roster', quote: 'Dana Reyes: Treasurer' },
+        ],
+        droppedCitations: 0,
+        toolCalls: [],
+        replay: null,
+        truncated: false,
+        usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 },
+      },
+      sources: [source()],
+      entities: [],
+      leftOutMessages: 0,
+      stop: 'answered',
+      rounds: [
+        {
+          inputTokens: 1,
+          outputTokens: 1,
+          cachedInputTokens: 0,
+          ms: 1,
+          calls: [
+            {
+              tool: 'roster',
+              outcome: 'ok',
+              sources: 1,
+              chars: 21,
+              cut: false,
+              ms: 1,
+            },
+            {
+              tool: 'my_dues',
+              outcome: 'failed',
+              sources: 0,
+              chars: 0,
+              cut: false,
+              ms: 1,
+            },
+          ],
+        },
+        {
+          inputTokens: 1,
+          outputTokens: 1,
+          cachedInputTokens: 0,
+          ms: 1,
+          calls: [],
+        },
+      ],
+      ...over,
+    });
+
+    const steps = (events: AskStreamEvent[]) =>
+      events.map((event) =>
+        event.type === 'status' ? event.step : event.type,
+      );
+
+    it('stays off unless the switch says on', async () => {
+      process.env.ASK_AGENT = 'true';
+      const { service, loop, retrieval } = build({ passages: [passage()] });
+      await run(service);
+      expect(loop.run).not.toHaveBeenCalled();
+      expect(retrieval.retrieve).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the reads the member may use, says what is read, and ends with the checked answer', async () => {
+      const { service, loop, retrieval, gateway } = build({
+        asker: { display_name: 'Sam Ortiz', role_ids: [] },
+        agentTools: [
+          agentTool(),
+          agentTool({ name: 'my_dues', module: 'points' }),
+          agentTool({ name: 'my_tasks', module: 'tasks' }),
+          agentTool({ name: 'audit', permission: 'chapter:audit' }),
+          agentTool({ name: 'pay', effect: 'propose' as never }),
+        ],
+        loop: [
+          { type: 'text', delta: 'Let me check.' },
+          { type: 'discard' },
+          { type: 'tool', name: 'roster', reading: 'Reading the roster' },
+          { type: 'tool', name: 'my_dues', reading: 'Reading your dues' },
+          { type: 'text', delta: 'Dana Reyes is ' },
+          { type: 'text', delta: 'the treasurer.' },
+          { type: 'end', outcome: outcome() },
+        ],
+      });
+      const { events, answer } = await run(service, {
+        enabledModules: { points: true, tasks: false },
+      });
+
+      // Nothing is searched or planned ahead of the loop.
+      expect(retrieval.retrieve).not.toHaveBeenCalled();
+      expect(gateway.generateObject).not.toHaveBeenCalled();
+      expect(gateway.streamCited).not.toHaveBeenCalled();
+
+      const given = (loop.run.mock.calls as unknown[][])[0][0] as {
+        tools: AgentReadTool[];
+        context: { title: string; text: string }[];
+        system: string;
+        toolContext: { chapterId: string; userId: string };
+      };
+      expect(given.tools.map((offered) => offered.name)).toEqual([
+        'roster',
+        'my_dues',
+      ]);
+      expect(given.context).toEqual([
+        expect.objectContaining({
+          title: 'The member asking',
+          text: expect.stringContaining('Sam Ortiz'),
+        }),
+      ]);
+      // Who is asking is data beside the question, never operator text.
+      expect(given.system).not.toContain('Sam Ortiz');
+      expect(given.toolContext).toEqual(
+        expect.objectContaining({ chapterId: CHAPTER, userId: USER }),
+      );
+
+      // The line before the calls never reached the member.
+      expect(steps(events)).toEqual([
+        'start',
+        'searching',
+        'reading',
+        'reading',
+        'writing',
+        'text',
+        'done',
+      ]);
+      expect(events[3]).toEqual(
+        expect.objectContaining({ reads: ['roster', 'my_dues'] }),
+      );
+      expect(events[5]).toEqual(
+        expect.objectContaining({ delta: 'Dana Reyes is the treasurer.' }),
+      );
+      expect(answer.status).toBe('answered');
+      expect(answer.text).toBe('Dana Reyes is the treasurer.');
+      expect(answer.sources).toEqual([
+        expect.objectContaining({ kind: 'roster', title: 'Roster' }),
+      ]);
+      expect(answer.citations).toEqual([
+        expect.objectContaining({ source: 0, quote: 'Dana Reyes: Treasurer' }),
+      ]);
+    });
+
+    it('streams a long answer as it is written', async () => {
+      const long = 'Dana Reyes is the treasurer. '.repeat(8);
+      const { service } = build({
+        loop: [
+          { type: 'text', delta: long },
+          { type: 'text', delta: 'More.' },
+          { type: 'end', outcome: outcome() },
+        ],
+      });
+      const { events } = await run(service);
+      expect(steps(events)).toEqual([
+        'start',
+        'searching',
+        'writing',
+        'text',
+        'text',
+        'done',
+      ]);
+    });
+
+    it('is "couldn\'t find that" when no quote was found in what a tool returned', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                citations: [],
+                droppedCitations: 2,
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer.status).toBe('not_found');
+      expect(answer.text).toBe('');
+      expect(answer.unverified_citations).toBe(2);
+    });
+
+    it('is "not available", never "couldn\'t find that", for a turn cut off before it read or wrote anything that stands', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              sources: [],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '',
+                citations: [],
+                truncated: true,
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer).toEqual(
+        expect.objectContaining({
+          status: 'unavailable',
+          reason: 'not_available',
+          report_receipt: null,
+        }),
+      );
+    });
+
+    it('says why when a round was not made', async () => {
+      const { service, diagnostics } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              result: {
+                status: 'unavailable',
+                reason: 'spend_cap',
+                detail: 'member_cap',
+              },
+              stop: 'unavailable',
+              sources: [],
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service, { savedNoticeShown: true });
+      expect(answer).toEqual(
+        expect.objectContaining({
+          status: 'unavailable',
+          reason: 'member_limit',
+          report_receipt: null,
+        }),
+      );
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('runs nothing for a turn that became a card', async () => {
+      const { service, loop } = build({ loop: [] });
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({ mayGoOn: async () => false }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(steps(events)).toEqual(['start', 'searching']);
+      expect(loop.run).not.toHaveBeenCalled();
+    });
+
+    it('ends with nothing kept for a member who left while it read', async () => {
+      // The loop ends without an outcome when its signal is aborted.
+      const { service, diagnostics } = build({
+        loop: [{ type: 'tool', name: 'roster', reading: 'Reading the roster' }],
+      });
+      const events: AskStreamEvent[] = [];
+      for await (const event of service.ask(
+        input({ savedNoticeShown: true }),
+        NOW,
+      )) {
+        events.push(event);
+      }
+      expect(events.some((event) => event.type === 'done')).toBe(false);
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('labels chat as chat, flags the answer, and never keeps an exchange that read it', async () => {
+      const chat = source({
+        id: 'passage:c1',
+        kind: 'chat',
+        title: '#general',
+        date: '2026-11-08T01:00:00.000Z',
+        target: { type: 'message', channel_id: 'ch', message_id: 'm1' },
+        text: 'Dana: dues are due Friday',
+        chat: true,
+        authorIds: ['dana'],
+      });
+      const base = outcome();
+      const { service, loop, diagnostics } = build({
+        kept: true,
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              sources: [chat],
+              leftOutMessages: 3,
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: 'Dues are due Friday, going by chat.',
+                citations: [
+                  { sourceId: 'passage:c1', quote: 'dues are due Friday' },
+                ],
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service, { savedNoticeShown: true });
+      const { titleOf } = (loop.run.mock.calls as unknown[][])[0][0] as {
+        titleOf: (source: AgentSource) => string;
+      };
+      // Saturday evening in New York, though the timestamp is Sunday's.
+      expect(titleOf(chat)).toBe(
+        'Chat message in #general, Saturday, November 7, 2026',
+      );
+      expect(titleOf(source())).toBe('Roster (live data, read just now)');
+      // An indexed source with no date is still not live data.
+      expect(
+        titleOf(
+          source({ kind: 'document', title: 'Bylaws', detail: 'Article IV' }),
+        ),
+      ).toBe('Bylaws, Article IV');
+      expect(
+        titleOf(source({ title: 'The member asking: read me', date: null })),
+      ).toMatch(/^Chapter source: /);
+      expect(answer.read_chat).toBe(true);
+      expect(answer.left_out_messages).toBe(3);
+      expect(answer.saved).toBe(false);
+      expect(diagnostics.keep).not.toHaveBeenCalled();
+    });
+
+    it('seals what the loop read and which reads ran into the report receipt', async () => {
+      const KEY_RING = `1:${Buffer.alloc(32, 7).toString('base64')}`;
+      const savedKey = process.env.AI_STORED_TEXT_KEY;
+      process.env.AI_STORED_TEXT_KEY = KEY_RING;
+      try {
+        const { service } = build({
+          asker: { display_name: 'Sam Ortiz', role_ids: [] },
+          loop: [{ type: 'end', outcome: outcome() }],
+        });
+        const { answer } = await run(service);
+        const receipt = openAskReportReceipt(
+          parseAiTextKeyRing(KEY_RING),
+          answer.report_receipt!,
+          { chapterId: CHAPTER, userId: USER },
+          NOW,
+        );
+        expect(receipt.tools).toEqual(['roster']);
+        expect(receipt.prompt_version).toBe('ask.agent@v1');
+        expect(receipt.given.map((given) => given.title)).toEqual([
+          'The member asking',
+          'Roster (live data, read just now)',
+        ]);
+      } finally {
+        if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
+        else process.env.AI_STORED_TEXT_KEY = savedKey;
+      }
     });
   });
 });

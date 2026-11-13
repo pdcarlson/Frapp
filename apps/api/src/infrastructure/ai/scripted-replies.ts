@@ -1,5 +1,9 @@
 import { scriptedActMatch, scriptedActPlan } from './scripted-act';
-import { scriptedAskAnswer, scriptedAskPlan } from './scripted-ask';
+import {
+  scriptedAskAgent,
+  scriptedAskAnswer,
+  scriptedAskPlan,
+} from './scripted-ask';
 import { scriptedChatCatchUp } from './scripted-chat-catch-up';
 import type { ScriptedReplies } from './scripted-language-model';
 import { scriptedMemberNudge } from './scripted-member-nudge';
@@ -20,6 +24,7 @@ import { scriptedMinutesDraft } from './scripted-minutes-draft';
 export const SCRIPTED_REPLIES: ScriptedReplies = {
   'act.plan': scriptedActPlan,
   'act.match': scriptedActMatch,
+  'ask.agent': scriptedAskAgent,
   'ask.plan': scriptedAskPlan,
   'ask.answer': scriptedAskAnswer,
   'chat.catch-up': scriptedChatCatchUp,
