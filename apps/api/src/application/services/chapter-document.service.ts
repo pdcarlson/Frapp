@@ -45,6 +45,11 @@ import {
 
 const DOCUMENTS_BUCKET = 'documents';
 
+/** Ids one `GET /documents/previews` may sign (#4647). */
+export const MAX_PREVIEW_IDS = 100;
+/** A preview link's life: an hour, as the viewer's links. */
+const PREVIEW_URL_TTL_SECONDS = 60 * 60;
+
 export interface RequestUploadUrlInput {
   chapterId: string;
   filename: string;
@@ -259,6 +264,39 @@ export class ChapterDocumentService {
       );
 
     return { ...document, downloadUrl, forcedDownloadUrl };
+  }
+
+  /**
+   * Inline links for the web Documents grid's previews (#4647): one signed
+   * URL per document, signed in one batch, for at most
+   * {@link MAX_PREVIEW_IDS} ids of the caller's chapter. Ids outside the
+   * chapter, or gone, are left out, as is a path storage couldn't sign; the
+   * tile then shows its type glyph. Unlike {@link findById} it records no
+   * `document-viewed` event (the controller's), because a tile coming into
+   * view is not a member opening the file. Links last an hour, as the
+   * viewer's do.
+   */
+  async previewUrls(
+    ids: string[],
+    chapterId: string,
+  ): Promise<{ id: string; url: string }[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length > MAX_PREVIEW_IDS) {
+      throw new BadRequestException(
+        `At most ${MAX_PREVIEW_IDS} documents per request`,
+      );
+    }
+    const documents = await this.documentRepo.findByIds(unique, chapterId);
+    if (documents.length === 0) return [];
+    const signed = await this.storageProvider.getSignedDownloadUrls(
+      DOCUMENTS_BUCKET,
+      documents.map((doc) => doc.storage_path),
+      PREVIEW_URL_TTL_SECONDS,
+    );
+    return documents.flatMap((doc) => {
+      const url = signed[doc.storage_path];
+      return url ? [{ id: doc.id, url }] : [];
+    });
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

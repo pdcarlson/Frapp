@@ -3672,6 +3672,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inline preview links for up to 100 documents at once */
+        get: operations["ChapterDocumentController_previewUrls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/folders": {
         parameters: {
             query?: never;
@@ -7910,6 +7927,11 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+        };
+        DocumentPreviewUrlDto: {
+            id: string;
+            /** @description Inline signed URL, valid for an hour */
+            url: string;
         };
         DocumentFolderDto: {
             id: string;
@@ -17585,6 +17607,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_previewUrls_v1: {
+        parameters: {
+            query: {
+                /** @description Document ids, at most 100: the parameter repeated, or one comma-separated value */
+                ids: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPreviewUrlDto"][];
+                };
             };
             /** @description Error */
             default: {

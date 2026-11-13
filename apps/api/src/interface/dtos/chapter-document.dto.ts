@@ -201,3 +201,10 @@ export class DocumentFolderDto {
   })
   pinned_at: string | null;
 }
+
+/** One grid preview link (#4647): the document and its inline signed URL. */
+export class DocumentPreviewUrlDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ description: 'Inline signed URL, valid for an hour' })
+  url: string;
+}
