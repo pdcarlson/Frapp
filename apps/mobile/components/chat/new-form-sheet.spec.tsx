@@ -68,9 +68,10 @@ describe("New form sheet (#3926 step 3)", () => {
     expect(postButton(tree).props.disabled).toBe(true);
     type(tree, "Title", "Formal housing");
     type(tree, "Question 1", "Which room?");
-    // A multiple-choice question with no option is refused, by name.
+    // A multiple-choice question with no option yet is held, but not
+    // marked wrong before the member has reached its options.
     expect(postButton(tree).props.disabled).toBe(true);
-    expect(screenText(tree)).toContain(
+    expect(screenText(tree)).not.toContain(
       "Give this question at least one option.",
     );
     type(tree, "Question 1, option 1", "Room 1");

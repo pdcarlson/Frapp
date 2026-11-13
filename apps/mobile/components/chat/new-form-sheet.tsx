@@ -108,9 +108,21 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
 
     const check = useMemo(() => checkFormDraft(draft), [draft]);
     const canPost = check.ok && !posting;
-    const problem = failure ?? (check.ok ? null : check.problem);
+    // A choice question written before any of its options is unfinished,
+    // not wrong: Post stays held and its hint says why, but the question
+    // isn't marked until the member has typed an option.
+    const unfinished =
+      !check.ok &&
+      !!check.questionKey &&
+      draft.questions.some(
+        (row) =>
+          row.key === check.questionKey &&
+          isChoiceQuestion(row.type) &&
+          row.options.every((option) => option.label.trim() === ""),
+      );
+    const problem = failure ?? (check.ok || unfinished ? null : check.problem);
     const problemQuestion =
-      !failure && !check.ok ? check.questionKey : undefined;
+      !failure && !check.ok && !unfinished ? check.questionKey : undefined;
 
     const edit = useCallback((next: (current: FormDraft) => FormDraft) => {
       setDraft(next);
@@ -258,7 +270,11 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
                       disabled={posting || index === 0}
                     >
                       <DisclosureGlyph
-                        color={tokens.color.text.mutedForeground}
+                        color={
+                          posting || index === 0
+                            ? tokens.color.text.muted
+                            : tokens.color.text.mutedForeground
+                        }
                         direction="up"
                       />
                     </IconButton>
@@ -272,7 +288,11 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
                       disabled={posting || index === count - 1}
                     >
                       <DisclosureGlyph
-                        color={tokens.color.text.mutedForeground}
+                        color={
+                          posting || index === count - 1
+                            ? tokens.color.text.muted
+                            : tokens.color.text.mutedForeground
+                        }
                         direction="down"
                       />
                     </IconButton>
@@ -292,7 +312,7 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
                   </View>
                 </View>
 
-                <View style={ring(question.key, invalid)}>
+                <View style={ring(question.key)}>
                   <BottomSheetTextInput
                     value={question.title}
                     onChangeText={(title) =>
@@ -489,7 +509,9 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
             disabled={!canPost}
             busy={posting}
             accessibilityHint={
-              check.ok ? undefined : "Add a title and write one question."
+              check.ok
+                ? undefined
+                : "Add a title and write one question, with an option for a choice question."
             }
             accent={brand.accent}
             onAccent={tokens.color.gold.onHouse}
