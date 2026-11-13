@@ -375,15 +375,42 @@ function isThreadPaneEntry(state: unknown): boolean {
   );
 }
 
+/**
+ * Marks the entry a pick's entry was pushed over (#3836). A Back from `lg` up
+ * that lands on it has just left the pick's entry, which changes nothing on
+ * screen there, so it carries on one more entry.
+ */
+const UNDER_THREAD_PANE_HISTORY_KEY = "frappChatUnderThreadPane";
+
+function isUnderThreadPaneEntry(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[UNDER_THREAD_PANE_HISTORY_KEY] ===
+      THREAD_PANE_DOCUMENT_TOKEN
+  );
+}
+
+/** Takes the under-a-pick marker off the current entry, keeping the rest. */
+function unmarkUnderThreadPaneEntry(): void {
+  const rest = { ...(window.history.state as Record<string, unknown>) };
+  delete rest[UNDER_THREAD_PANE_HISTORY_KEY];
+  window.history.replaceState(rest, "");
+}
+
 /** Pushes this document's marked, same-URL entry for an opened thread. */
 function pushThreadPaneEntry(): void {
-  // The spread keeps Next's own `__NA` state, so its patched `pushState`
-  // passes the entry straight through.
+  // The spreads keep Next's own `__NA` state, so its patched `replaceState`
+  // and `pushState` pass the entries straight through.
+  const current = window.history.state as Record<string, unknown> | null;
+  window.history.replaceState(
+    { ...current, [UNDER_THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN },
+    "",
+  );
+  const rest: Record<string, unknown> = { ...current };
+  delete rest[UNDER_THREAD_PANE_HISTORY_KEY];
   window.history.pushState(
-    {
-      ...(window.history.state as object | null),
-      [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
-    },
+    { ...rest, [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN },
     "",
   );
 }
@@ -859,8 +886,13 @@ export function ChatShell({
     restores the same route for the same URL.
 
     From `lg` up the list is on screen beside the thread, so a pick pushes
-    nothing and `Esc` does nothing. An entry pushed below `lg` that outlives a widening past it
-    costs one Back press that changes nothing on screen.
+    nothing and `Esc` does nothing. An entry pushed below `lg` can outlive a
+    widening past it (a tablet turned to landscape, a resized window), and
+    there the Back that pops it would change nothing on screen (#3836). So the
+    pick also marks the entry it pushed over, and a `popstate` landing on that
+    entry from `lg` up unmarks it and goes back once more, past the same-URL
+    pair. Any landing on it unmarks it, so a later page pushed from it is never
+    skipped, and narrowing before the Back keeps the pick's Back step.
   */
   const openThreadPane = useCallback(() => {
     setNarrowPane("thread");
@@ -888,8 +920,29 @@ export function ChatShell({
       window.history.back();
     }
   }, []);
+  // Read by the `popstate` listener, which subscribes once.
+  const isDesktopShellRef = useRef(isDesktopShell);
+  useEffect(() => {
+    isDesktopShellRef.current = isDesktopShell;
+  }, [isDesktopShell]);
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      const ownBack = backPending.current;
+      if (isUnderThreadPaneEntry(event.state)) {
+        unmarkUnderThreadPaneEntry();
+        if (
+          !ownBack &&
+          !openAfterBack.current &&
+          isDesktopShellRef.current
+        ) {
+          // The browser's Back left a below-`lg` pick's entry from `lg` up,
+          // where the list was already on screen: finish the press (#3836).
+          onThreadEntry.current = false;
+          setNarrowPane("channels");
+          window.history.back();
+          return;
+        }
+      }
       backPending.current = false;
       if (openAfterBack.current) {
         openAfterBack.current = false;
