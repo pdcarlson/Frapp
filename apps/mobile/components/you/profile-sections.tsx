@@ -343,8 +343,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      // The Details list's tone (`card`, as every grouped list since
-      // 2026-11-05), as s15 draws both in one.
+      // The Details list's tone (a screen's card step, `lib/surfaces.ts`), as
+      // s15 draws both in one.
       backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       alignItems: "center",

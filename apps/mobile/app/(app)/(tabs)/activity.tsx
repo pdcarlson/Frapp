@@ -65,6 +65,7 @@ import {
   storeActivityFilter,
   useStoredActivityFilter,
 } from "@/lib/activity/activity-filter";
+import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -604,7 +605,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: 18,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
+      // The header round's fill (`HeaderButton`), in a worded capsule.
+      backgroundColor: pageSurfaces(tokens).card,
       justifyContent: "center",
     },
     boardLinkText: {

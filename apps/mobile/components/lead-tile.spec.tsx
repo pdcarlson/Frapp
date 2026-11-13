@@ -2,8 +2,9 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { View } from "react-native";
+import { useBottomSheetInternal } from "@gorhom/bottom-sheet";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { flatStyle } from "@/test/flat-style";
 import { memberAvatarTint } from "@repo/hooks";
@@ -50,6 +51,17 @@ describe("LeadTile", () => {
     expect(tileStyle({ on: "card" }).style.backgroundColor).toBe(
       signetDarkTokens.color.surface.card,
     );
+  });
+
+  it("keeps `popover` on a sheet's card, which is `card`", () => {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      expect(tileStyle({ on: "card" }).style.backgroundColor).toBe(
+        signetDarkTokens.color.surface.popover,
+      );
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
   });
 
   it("is 32pt on a one-line row and 40pt on a two-line row", () => {

@@ -201,8 +201,9 @@ function createStyles(tokens: SignetTokens) {
     list: {
       gap: tokens.spacing.sm,
     },
-    // The board's card: `card` fill at radius 14 with a hairline, as
-    // `ListSection` draws its grouped list, one card per item.
+    // The board's card: a screen's card fill (`lib/surfaces.ts`) at radius 14
+    // with a hairline, as `ListSection` draws its grouped list, one card per
+    // item.
     card: {
       flexDirection: "row",
       alignItems: "center",

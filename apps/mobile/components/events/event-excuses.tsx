@@ -148,7 +148,9 @@ export function MyExcuseCard({
               returnKeyType="send"
               onSubmitEditing={() => void submit()}
               accessibilityLabel="Reason"
-              style={field.field}
+              // On the card, so a step above it: the field's own input step
+              // is the card's fill on a screen (`lib/surfaces.ts`).
+              style={[field.field, styles.fieldOnCard]}
             />
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <SheetPrimaryButton
@@ -403,6 +405,9 @@ function DecisionButton({
 function createStyles(tokens: SignetTokens) {
   const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
+    fieldOnCard: {
+      backgroundColor: surfaces.raised,
+    },
     card: {
       borderRadius: tokens.radius.card,
       borderWidth: 1,

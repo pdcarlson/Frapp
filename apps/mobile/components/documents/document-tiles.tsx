@@ -143,8 +143,8 @@ function createStyles(tokens: SignetTokens) {
     grid: {
       gap: tokens.spacing.sm,
     },
-    // The PINNED card's shape (`marked-cards.tsx`): `card` fill, card radius,
-    // a hairline, stood on end.
+    // The PINNED card's shape (`marked-cards.tsx`): a screen's card fill
+    // (`lib/surfaces.ts`), card radius, a hairline, stood on end.
     tile: {
       flex: 1,
       gap: tokens.spacing.xs,

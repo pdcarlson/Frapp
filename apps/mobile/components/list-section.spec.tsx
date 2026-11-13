@@ -13,6 +13,7 @@ import {
   ListRow,
   listRowHint,
   type ListRowProps,
+  ListSection,
   PressableRow,
   type PressFeedback,
   usePressFeedback,
@@ -229,6 +230,40 @@ describe("ListRow — detail", () => {
   });
 });
 
+describe("ListSection", () => {
+  function fill() {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListSection>
+            <ListRow label="Documents" onPress={vi.fn()} />
+          </ListSection>
+        </FrappThemeProvider>,
+      );
+    });
+    const section = tree.root.findAll(
+      (node) => (node.type as unknown) === "View",
+    )[0]!;
+    return Object.assign({}, ...[section.props.style].flat(Infinity))
+      .backgroundColor as string;
+  }
+
+  // #4682: a list on a screen sat two steps above the page.
+  it("is one step above the page on a screen", () => {
+    expect(fill()).toBe(signetDarkTokens.color.surface.surface1);
+  });
+
+  it("keeps `card` in a sheet, one step under the sheet's own fill", () => {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      expect(fill()).toBe(signetDarkTokens.color.surface.card);
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
+  });
+});
+
 describe("usePressFeedback", () => {
   function feedbackOn(
     os: string,
@@ -375,6 +410,14 @@ describe("PressableRow", () => {
       renderRow({ onControl: true }).props.style({ pressed: true }),
     ).toContainEqual({
       backgroundColor: signetDarkTokens.color.surface.card,
+    });
+    // A chip on a card is filled with `card`, so it lifts one more.
+    expect(
+      renderRow({ onControl: true, onCard: true }).props.style({
+        pressed: true,
+      }),
+    ).toContainEqual({
+      backgroundColor: signetDarkTokens.color.surface.popover,
     });
   });
 

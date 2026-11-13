@@ -400,8 +400,8 @@ function createStyles(tokens: SignetTokens) {
       // of it.
       ...gutterBleed(tokens, { rounded: false }),
     },
-    // Documents' tile shape (`documents/document-tiles.tsx`): `card` fill,
-    // card radius, a hairline. Its own padding, since it doesn't bleed.
+    // Documents' tile shape (`documents/document-tiles.tsx`): a screen's card
+    // fill, card radius, a hairline. Its own padding, since it doesn't bleed.
     tile: {
       flex: 1,
       gap: tokens.spacing.xs,

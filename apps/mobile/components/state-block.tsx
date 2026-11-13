@@ -92,8 +92,9 @@ type StateBlockProps = {
  * `screen-skeletons.spec.tsx` holds the few places still on it.
  *
  * The card takes the shape of what it turns into, so a screen doesn't change
- * when its content lands. Both tones sit on `card`, the fill of the empty and
- * error cards and of a grouped list: `card` (the default) where the skeleton
+ * when its content lands. Both tones sit on the card step for where they are
+ * drawn (`useRaisedSurfaces`), the fill of the error card and of a grouped
+ * list: `card` (the default) where the skeleton
  * stands in for cards (the next-event card, the Ask answer) or a flush list,
  * `list` where it stands in for a `ListSection`, whose smaller `radius.card`
  * corners it takes.
@@ -568,8 +569,10 @@ function createStyles(tokens: SignetTokens) {
       // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
       // is the nearest token; a raw 6 would be a hard-coded value, which
       // foundations.md bans.
-      // Its fill is the step above the card it loads into
-      // (`useRaisedSurfaces`), so a loading screen is as quiet as a loaded one.
+      // Its fill is the step above a card where it is drawn
+      // (`useRaisedSurfaces`), so a loading screen is as quiet as a loaded
+      // one. Bars drawn straight on a sheet's own fill have no step above it
+      // (the channel member sheet's rows, #4690).
       borderRadius: tokens.radius.chip,
     },
   });

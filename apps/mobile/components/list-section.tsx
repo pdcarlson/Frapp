@@ -220,7 +220,9 @@ export function listRowHint(
  * passes `onCard` and lifts to the step above the card instead: a card lifted
  * to its own colour shows nothing. A control that is filled with the input
  * step wherever it is drawn (a filter chip) passes `onControl` and lifts to
- * `surface.card`, the step above that fill, for the same reason.
+ * `surface.card`, the step above that fill, for the same reason. A chip drawn
+ * on a card passes both: its fill is the step above the card, so it lifts to
+ * `surface.popover`, the one above that.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
@@ -239,7 +241,9 @@ export function usePressFeedback({
         ? null
         : {
             backgroundColor: onControl
-              ? tokens.color.surface.card
+              ? onCard
+                ? tokens.color.surface.popover
+                : tokens.color.surface.card
               : onCard
                 ? surfaces.raised
                 : surfaces.card,

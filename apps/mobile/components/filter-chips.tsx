@@ -13,6 +13,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { SearchGlyph } from "@/components/control-glyphs";
 import { PressableRow } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useRaisedSurfaces } from "@/lib/surfaces";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -75,7 +76,9 @@ export interface FilterChip {
  *
  * On: the chapter's solid accent with its own label colour, as components.md
  * §3 paints a control that stays on. Off: `surface1` with a hairline, the
- * tone of the lists below. Pressing an off chip ripples on Android and lifts
+ * input step; a chip drawn on a card passes `onCard` and takes the step above
+ * that card instead (`lib/surfaces.ts`), since `surface1` on a screen's card
+ * is the card's own fill. Pressing an off chip ripples on Android and lifts
  * a step on iOS (`usePressFeedback`, through `PressableRow`). An on chip ripples on Android and holds
  * still on iOS: its fill is the state, and the lift would paint over it.
  */
@@ -91,6 +94,7 @@ export function Chip({
   onLongPress,
   longPressLabel,
   onLayout,
+  onCard = false,
 }: {
   label: string;
   on: boolean;
@@ -104,8 +108,11 @@ export function Chip({
   longPressLabel?: string;
   /** Where the chip landed, for a row that scrolls to its lit chip. */
   onLayout?: (event: LayoutChangeEvent) => void;
+  /** The chip is drawn on a card, not on a screen or a sheet's own fill. */
+  onCard?: boolean;
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
   const slop = (tokens.touch.minimum - CHIP_HEIGHT) / 2;
@@ -135,13 +142,20 @@ export function Chip({
             }
           : undefined
       }
-      // The idle chip's own fill is the input step, on a screen and in a sheet.
+      // The idle chip's own fill is the input step, on a screen and in a
+      // sheet, and the step above the card when it is drawn on one.
       onControl
+      onCard={onCard}
       lifts={!on}
       style={[
         styles.chip,
         mark ? styles.chipWithMark : null,
-        on ? { backgroundColor: accentPrimary } : styles.chipIdle,
+        on
+          ? { backgroundColor: accentPrimary }
+          : [
+              styles.chipIdle,
+              onCard ? { backgroundColor: surfaces.raised } : null,
+            ],
       ]}
     >
       {mark}

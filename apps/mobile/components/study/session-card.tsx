@@ -145,6 +145,7 @@ export function SessionCard({
         <View style={styles.options}>
           {onToggleFocus ? (
             <Chip
+              onCard
               label="Focus timer"
               on={focus !== null}
               onPress={onToggleFocus}
@@ -155,6 +156,7 @@ export function SessionCard({
           ) : null}
           {onToggleKeepScreenOn ? (
             <Chip
+              onCard
               label="Keep screen on"
               on={keepScreenOn}
               onPress={onToggleKeepScreenOn}

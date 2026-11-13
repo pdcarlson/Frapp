@@ -81,6 +81,14 @@ describe("useRaisedSurfaces", () => {
     expect(read()).toEqual(pageSurfaces(signetDarkTokens));
   });
 
+  // Without `true` the sheet library throws outside a sheet ("cannot be used
+  // out of the BottomSheet"), which is every screen that draws a list.
+  it("asks the sheet library for null, not a throw, outside a sheet", () => {
+    vi.mocked(useBottomSheetInternal).mockClear();
+    read();
+    expect(useBottomSheetInternal).toHaveBeenCalledWith(true);
+  });
+
   it("gives a sheet's steps to anything drawn inside one", () => {
     vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
     expect(read()).toEqual(sheetSurfaces(signetDarkTokens));
