@@ -2,6 +2,7 @@ import {
   createContext,
   type ReactElement,
   useContext,
+  useSyncExternalStore,
 } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { screenErrorLayout } from "@/components/route-error";
@@ -28,6 +29,21 @@ export const FLOATING_TAB_BAR = {
    */
   actionButton: 62,
   actionGap: 10,
+} as const;
+
+/**
+ * The Ask Frapp bar: a glass capsule the width of the tab bar and its +,
+ * sitting just above them on the four tab screens (#4702, Paul 2026-11-13:
+ * "in a bar above the normal liquid glass bottom, not only when you open the
+ * plus menu"). Only a member who has Ask gets one (`useAiSurfaces`), so
+ * everything that floats above the tab bar asks {@link useAskBarLift} how far
+ * up to move rather than assuming it is there.
+ */
+export const FLOATING_ASK_BAR = {
+  /** The Default control step, fully round. */
+  height: 48,
+  /** Between the bar and the tab bar under it. */
+  gap: 8,
 } as const;
 
 /**
@@ -61,16 +77,61 @@ export function useFloatingChrome(): FloatingChrome {
   return useContext(FloatingChromeContext);
 }
 
+/*
+ * Whether the Ask Frapp bar is on screen. The tab bar draws it and is a
+ * sibling of the tab screens, not a parent, so this is a tiny store rather
+ * than context: the tab bar writes it, the screens read it.
+ */
+let askBarShown = false;
+const askBarListeners = new Set<() => void>();
+
+/** Called by the tab bar when the bar appears or goes. */
+export function setAskBarShown(shown: boolean): void {
+  if (askBarShown === shown) return;
+  askBarShown = shown;
+  for (const listener of askBarListeners) listener();
+}
+
+function subscribeAskBar(listener: () => void): () => void {
+  askBarListeners.add(listener);
+  return () => askBarListeners.delete(listener);
+}
+
+const readAskBarShown = (): boolean => askBarShown;
+
+/**
+ * How far the Ask Frapp bar raises whatever floats above the tab bar on this
+ * screen: the bar and its gap for a member who has Ask, on a tab screen, and
+ * 0 anywhere else.
+ */
+export function useAskBarLift(): number {
+  const { tabBar } = useFloatingChrome();
+  const shown = useSyncExternalStore(
+    subscribeAskBar,
+    readAskBarShown,
+    readAskBarShown,
+  );
+  return tabBar && shown
+    ? FLOATING_ASK_BAR.height + FLOATING_ASK_BAR.gap
+    : 0;
+}
+
 /**
  * Bottom padding a scrolling screen adds inside its safe area so its last row
- * clears the floating bar. 0 where no bar floats: any screen pushed over the
- * tabs, or anything outside them.
+ * clears the floating bar, and the Ask Frapp bar above it where there is
+ * one. 0 where no bar floats: any screen pushed over the tabs, or anything
+ * outside them.
  */
 export function useTabBarClearance(): number {
   const { tabBar } = useFloatingChrome();
   const { bottom } = useSafeAreaInsets();
+  const askLift = useAskBarLift();
   if (!tabBar) return 0;
-  return Math.max(floatingTabBarTop(bottom) - bottom, 0) + FLOATING_TAB_BAR.gap;
+  return (
+    Math.max(floatingTabBarTop(bottom) - bottom, 0) +
+    askLift +
+    FLOATING_TAB_BAR.gap
+  );
 }
 
 /** What a tab screen is told: the floating bar sits over all four. */

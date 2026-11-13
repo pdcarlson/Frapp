@@ -23,6 +23,8 @@ import {
   CHANNEL_ACCESS_LIST_MAX,
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  MAX_MENTION_LABEL_LENGTH,
+  MAX_MENTION_PICKS,
   CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
   type ChatChapterLevel,
@@ -534,6 +536,25 @@ export class MessageGifDto {
   token: string;
 }
 
+/**
+ * A member a mention picker wrote into the body (#3835): their id, and the
+ * label it wrote after the `@`. A token spelling the label exactly reaches
+ * that member, or nobody when they have left the chapter or no longer go by
+ * that name; it never falls back to another member by name. The body itself
+ * stays `@Name`, so every reader draws it as before.
+ */
+export class MentionPickDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  user_id: string;
+
+  @ApiProperty({ minLength: 1, maxLength: MAX_MENTION_LABEL_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MAX_MENTION_LABEL_LENGTH)
+  label: string;
+}
+
 export class SendMessageDto {
   /**
    * Client-generated idempotency key. The server dedupes on
@@ -629,6 +650,19 @@ export class SendMessageDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835). Left
+   * out (every client before it, and a hand-typed mention), `@Name` resolves
+   * by name as it always has.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 /**
@@ -661,6 +695,18 @@ export class EditMessageDto {
   @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  /**
+   * Members picked while editing (#3835), as on a send. The picks the message
+   * was sent with are kept server-side, so an edit needn't repeat them.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 export class SetMessageFlagDto {

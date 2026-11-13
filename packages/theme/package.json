@@ -10,7 +10,8 @@
     "./glass": "./src/glass.ts",
     "./nav-glyphs": "./src/nav-glyphs.ts",
     "./signature": "./src/signature.ts",
-    "./chat-backgrounds": "./src/chat-backgrounds.ts"
+    "./chat-backgrounds": "./src/chat-backgrounds.ts",
+    "./crest": "./src/crest.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

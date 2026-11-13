@@ -18,6 +18,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomClientId } from "@repo/api-sdk";
+import type { MentionPick } from "@repo/validation";
 import { firstName } from "./channel-preview";
 import { replyPreviewText } from "./reply-preview";
 import {
@@ -310,6 +311,8 @@ export interface SendThreadReplyArgs {
   rootId: string;
   senderId: string;
   content: string;
+  /** The members the `@` picker wrote into `content` (#3835). */
+  mentionPicks?: readonly MentionPick[] | null;
   /** Reuse the failed row's id for Retry, so the server dedupes. */
   clientMessageId?: string;
 }
@@ -346,6 +349,9 @@ export async function sendThreadReply(
         content: args.content,
         kind: "text",
         thread_root_id: args.rootId,
+        mention_picks: args.mentionPicks?.length
+          ? [...args.mentionPicks]
+          : undefined,
       },
     });
     if (error || !data) throw apiError(error, "Couldn't send reply");

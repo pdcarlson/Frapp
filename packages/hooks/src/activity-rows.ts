@@ -2,7 +2,6 @@ import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
-  dayDelta,
   formatDueLabel,
   formatMinutesRounded,
   formatRelativeDayTime,
@@ -22,64 +21,6 @@ export type ActivityCard = components["schemas"]["ActivityCardDto"];
 export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
-
-/**
- * The filter chips: everything, only what is waiting on the member (the
- * Needs you group, #4402), or one kind of thing.
- */
-export const ACTIVITY_FILTERS = [
-  { value: "all", label: "All" },
-  { value: "waiting", label: "Needs you" },
-  { value: "task", label: "Tasks" },
-  { value: "poll", label: "Polls" },
-  { value: "event", label: "Events" },
-  { value: "hours", label: "Hours" },
-  { value: "link", label: "Links" },
-] as const;
-export type ActivityKind = Exclude<
-  (typeof ACTIVITY_FILTERS)[number]["value"],
-  "all" | "waiting"
->;
-/**
- * A chip's value, or `confirm`: what the To confirm tile narrows to (the
- * tasks waiting on the member's confirm), which has no chip of its own
- * since the Tasks chip already covers it (#4173).
- */
-export type ActivityFilter = "all" | "waiting" | ActivityKind | "confirm";
-
-/** The chapter module each kind belongs to; Links and Needs you belong to none. */
-const FILTER_MODULE: Partial<Record<ActivityFilter, string>> = {
-  task: "tasks",
-  confirm: "tasks",
-  poll: "polls",
-  event: "events",
-  hours: "hours",
-};
-
-/**
- * Whether a filter can show anything in this chapter: not a kind whose
- * module the chapter has off (#4402). A client leaves that chip out, as the
- * summary leaves out its tile, and opens on All rather than on a stored
- * chip for it. With the module switch unknown, everything is available.
- */
-export function activityFilterAvailable(
-  filter: ActivityFilter,
-  isModuleEnabled?: (module: string) => boolean,
-): boolean {
-  const module = FILTER_MODULE[filter];
-  return !module || (isModuleEnabled?.(module) ?? true);
-}
-
-/**
- * The chip a member last picked, as stored on their device (#4402), or
- * `null` for anything that isn't one. The To confirm tile's narrowing is a
- * moment's shortcut and isn't remembered.
- */
-export function parseActivityFilter(raw: unknown): ActivityFilter | null {
-  return ACTIVITY_FILTERS.some((option) => option.value === raw)
-    ? (raw as ActivityFilter)
-    : null;
-}
 
 /** How many rows each list of the read carries at most (`activity.md`). */
 export const ACTIVITY_LIST_LIMIT = 25;
@@ -158,7 +99,7 @@ interface RowBase {
    * it (#4402, item 4): the poster of a poll or link, whoever assigned a task
    * to the member, the member whose completion or hours wait on them. `null`
    * when there is no one else to show (an event, a task the member set
-   * themselves, Made by you), and the row leads with its glyph. A client that
+   * themselves, Waiting on others), and the row leads with its glyph. A client that
    * can't resolve the id on the roster (they have left) draws the glyph too.
    */
   faceId: string | null;
@@ -174,7 +115,7 @@ interface RowBase {
   /**
    * Whether the member hasn't opened it from Activity since it started
    * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
-   * dot. Never on a Made by you row.
+   * dot. Never on a Waiting on others row.
    */
   unread: boolean;
   /** The item `POST /v1/activity/reads` records when the row is opened. */
@@ -234,27 +175,22 @@ export type ActivityRow = RowBase &
   );
 
 /**
- * A run of rows inside a group, under its own small heading: "Now" and
- * "Later" under Needs you, one per kind under Made by you (#4173). A group
- * with one part draws it with no heading.
+ * A run of rows inside a group, under its own small heading: one per kind
+ * under Waiting on others (#4173). A group with one part draws it with no
+ * heading.
  */
 export interface ActivityPart {
   id: string;
   /** `null` when the part is the whole group, so the group label says it. */
   label: string | null;
   rows: ActivityRow[];
-  /**
-   * How many rows to draw before a "Show all" (`null`: all of them). Lifted
-   * under a chip, where the member asked for that kind.
-   */
+  /** How many rows to draw before a "Show all" (`null`: all of them). */
   limit: number | null;
 }
 
 export interface ActivityGroup {
-  id: "needs-you" | "coming-up" | "links" | "made-by-you";
+  id: "made-by-you" | "links";
   label: string;
-  /** Said in place of the rows when the group has none. */
-  empty: string;
   /** Every row of the group, in order: the parts' rows end to end. */
   rows: ActivityRow[];
   /** The rows split for drawing. Empty parts are left out. */
@@ -264,8 +200,8 @@ export interface ActivityGroup {
   /**
    * Rows kept off the group behind one control, which a client draws closed
    * under the group: the member's closed polls, newest closed first, under
-   * Made by you (#4258). `null` when there are none. Not in `rows`, and not
-   * counted in the group's count.
+   * Waiting on others (#4258). `null` when there are none. Not in `rows`,
+   * and not counted in the group's count.
    */
   archive: ActivityPart | null;
 }
@@ -696,49 +632,8 @@ export function activityDetailParts(
   };
 }
 
-/** How many rows a part of Needs you draws before "Show all". */
-const ACTIVITY_NEEDS_YOU_LIMIT = 5;
-/** How many of each kind Made by you draws before "Show all". */
+/** How many of each kind Waiting on others draws before "Show all". */
 const ACTIVITY_MADE_BY_YOU_LIMIT = 3;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Whether a "Needs you" row is for now rather than later (#4173): an event
- * the member can check in to, anything waiting on their confirm or approval,
- * a task overdue or due today or tomorrow, and a poll closing within a day.
- * A poll with no closing time, and a task due later, is later.
- */
-export function activityRowIsNow(row: ActivityRow, now: Date): boolean {
-  switch (row.kind) {
-    case "event":
-    case "hours":
-      return true;
-    case "task": {
-      if (row.glyph === "confirm" || row.task.status === "OVERDUE") {
-        return true;
-      }
-      const due = parseInstantOrBareLocalNoon(
-        row.task.due_at ?? row.task.due_date,
-      );
-      return due === null || dayDelta(now, due) <= 1;
-    }
-    case "poll": {
-      const closes = row.poll.closes_at
-        ? parseInstant(row.poll.closes_at)
-        : null;
-      return closes !== null && closes.getTime() - now.getTime() <= DAY_MS;
-    }
-    case "card": {
-      const closes = row.card.closes_at
-        ? parseInstant(row.card.closes_at)
-        : null;
-      return closes !== null && closes.getTime() - now.getTime() <= DAY_MS;
-    }
-    default:
-      return false;
-  }
-}
 
 function part(
   id: string,
@@ -750,193 +645,72 @@ function part(
 }
 
 /**
- * The page's four groups, in the order it draws them, already narrowed to
- * one kind when a chip is set.
+ * The groups the page draws under the To do list, in order (#4766): Waiting
+ * on others, which is what the member made (the polls they posted, the
+ * events they made, the tasks they assigned), one part per kind and a few
+ * rows each, so one busy kind doesn't bury the others; then Links. A client
+ * leaves out a group with no rows, no archive and nothing that failed.
  *
- * "Needs you" lists an event the member can check in to right now, then
- * tasks, confirmations, approvals, polls, then sign-ups and forms (#3926),
- * each in the order the read
- * serves it; its parts split that into Now and Later (`activityRowIsNow`),
- * so a client that draws the parts leads with what is pressing, and one that
- * draws `rows` keeps the read's order. An event that needs a check-in is listed under
- * "Needs you" and not again under "Coming up". "Made by you" draws one part
- * per kind, a few rows each, so one busy kind doesn't bury the others.
+ * The member's own things are the To do list (`activityToDos`), and what
+ * waits on their review is the To review card (`activityReviewRows`). Until
+ * #4766 this also built "Needs you" (split into Now and Later) and "Coming
+ * up", narrowed by a row of filter chips.
  */
 export function activityGroups(
   activity: Activity,
-  filter: ActivityFilter,
   now: Date = new Date(),
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
-  const filtered = filter !== "all";
-  // Needs you narrows by group, not kind: its rows are all kept, and every
-  // other group is emptied below.
-  const waiting = filter === "waiting";
-  const keep = (rows: ActivityRow[]) =>
-    !filtered || waiting
-      ? rows
-      : filter === "confirm"
-        ? rows.filter((row) => row.glyph === "confirm")
-        : rows.filter((row) => row.kind === filter);
-  // The confirmations come from the tasks read.
-  const kindFilter = filter === "confirm" ? "task" : filter;
-  const downFor = (sections: ActivitySection[], kinds: ActivityKind[]) =>
-    sections.filter(
-      (section, index) =>
-        down.has(section) &&
-        (!filtered || waiting || kindFilter === kinds[index]),
-    );
-  // Under a chip the member asked for that kind, so nothing is held back.
-  const cap = (limit: number) => (filtered ? null : limit);
-
-  const checkInNow = activity.coming_up.filter(activityEventNeedsCheckIn);
-  const later = activity.coming_up.filter(
-    (event) => !activityEventNeedsCheckIn(event),
-  );
-
-  const needs = keep([
-    ...checkInNow.map((event) => eventRow(event, "needs", now)),
-    ...activity.needs_you.tasks.map((task) =>
-      taskRow(task, "needs", "mine", now),
-    ),
-    ...activity.needs_you.task_confirmations.map((task) =>
-      taskRow(task, "needs-confirm", "confirm", now),
-    ),
-    ...activity.needs_you.hours_approvals.map(hoursRow),
-    // Open only: a poll whose time ran out since the read leaves at once.
-    ...activity.needs_you.polls
-      .filter((poll) => activityPollIsOpen(poll, now))
-      .map((poll) => pollRow(poll, "needs", now)),
-    // Sign-ups, headcounts and forms: open only, as polls are.
-    ...activityCards(activity)
-      .filter((card) => activityCardIsOpen(card, now))
-      .map((card) => cardRow(card, now)),
-  ]);
-  const needsNow = needs.filter((row) => activityRowIsNow(row, now));
-  const needsLater = needs.filter((row) => !activityRowIsNow(row, now));
-
-  const coming = keep(later.map((event) => eventRow(event, "coming", now)));
-  const links = keep(activity.links.map((link) => linkRow(link, now)));
+  const downFor = (sections: ActivitySection[]) =>
+    sections.filter((section) => down.has(section));
+  const links = activity.links.map((link) => linkRow(link, now));
 
   // A closed poll, by time or by hand, leaves the list for the archive.
-  const madePolls = keep(
-    activity.made_by_you.polls
-      .filter((poll) => activityPollIsOpen(poll, now))
-      .map((poll) => pollRow(poll, "made", now)),
+  const madePolls = activity.made_by_you.polls
+    .filter((poll) => activityPollIsOpen(poll, now))
+    .map((poll) => pollRow(poll, "made", now));
+  const archivedPolls = activity.made_by_you.polls
+    .filter((poll) => !activityPollIsOpen(poll, now))
+    .sort((a, b) => pollClosedAt(b) - pollClosedAt(a))
+    .map((poll) =>
+      // The same key as when it was listed, so a panel open on the
+      // poll keeps finding it after it closes.
+      pollRow(poll, "made", now),
+    );
+  const madeEvents = activity.made_by_you.events.map((event) =>
+    eventRow(event, "made", now),
   );
-  const archivedPolls = keep(
-    activity.made_by_you.polls
-      .filter((poll) => !activityPollIsOpen(poll, now))
-      .sort((a, b) => pollClosedAt(b) - pollClosedAt(a))
-      .map((poll) =>
-        // The same key as when it was listed, so a panel open on the
-        // poll keeps finding it after it closes.
-        pollRow(poll, "made", now),
-      ),
-  );
-  const madeEvents = keep(
-    activity.made_by_you.events.map((event) => eventRow(event, "made", now)),
-  );
-  const madeTasks = keep(
-    activity.made_by_you.tasks.map((task) =>
-      taskRow(task, "made", "assigned", now),
-    ),
+  const madeTasks = activity.made_by_you.tasks.map((task) =>
+    taskRow(task, "made", "assigned", now),
   );
 
-  const groups: ActivityGroup[] = [
+  return [
     {
-      id: "needs-you",
-      label: "Needs you",
-      empty: "Nothing is waiting on you.",
-      rows: needs,
-      // One part draws with no heading: "Now" over every row says nothing.
-      parts:
-        needsNow.length > 0 && needsLater.length > 0
-          ? [
-              ...part("now", "Now", needsNow, cap(ACTIVITY_NEEDS_YOU_LIMIT)),
-              ...part(
-                "later",
-                "Later",
-                needsLater,
-                cap(ACTIVITY_NEEDS_YOU_LIMIT),
-              ),
-            ]
-          : // The lone part keeps the id of the side it holds, so a client
-            // that keys its Show all state by part id keeps it open when
-            // the other side empties (the last Now row acted on) or fills.
-            part(
-              needsNow.length > 0 ? "now" : "later",
-              null,
-              [...needsNow, ...needsLater],
-              cap(ACTIVITY_NEEDS_YOU_LIMIT),
-            ),
-      unavailable: [
-        ...downFor(
-          ["tasks", "hours_approvals", "polls", "coming_up"],
-          ["task", "hours", "poll", "event"],
-        ),
-        // Cards have no chip of their own: named under All and Needs you.
-        ...(down.has("cards") && (!filtered || waiting)
-          ? (["cards"] as const)
-          : []),
-      ],
-      archive: null,
-    },
-    {
-      id: "coming-up",
-      label: "Coming up",
-      empty: "No events in the next two weeks.",
-      rows: coming,
-      parts: part("all", null, coming, null),
-      unavailable: downFor(["coming_up"], ["event"]),
-      archive: null,
-    },
-    {
-      // Their own group, not "Needs you": a link may or may not be for this
-      // member, and Frapp can't see one filled in (spec § Links).
-      id: "links",
-      label: "Links",
-      empty:
-        "Sign-up forms, sheets and booking links posted in your channels show up here.",
-      rows: links,
-      parts: part("all", null, links, null),
-      unavailable: downFor(["links"], ["link"]),
-      archive: null,
-    },
-    {
+      // What the member made, listed for what it still waits on.
       id: "made-by-you",
-      label: "Made by you",
-      empty:
-        "Open polls you post, events you make and tasks you assign show up here.",
+      label: "Waiting on others",
       rows: [...madePolls, ...madeEvents, ...madeTasks],
       parts: [
         ...part(
           "polls",
           "Polls you posted",
           madePolls,
-          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+          ACTIVITY_MADE_BY_YOU_LIMIT,
         ),
         ...part(
           "events",
           "Events you made",
           madeEvents,
-          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+          ACTIVITY_MADE_BY_YOU_LIMIT,
         ),
         ...part(
           "tasks",
           "Tasks you assigned",
           madeTasks,
-          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+          ACTIVITY_MADE_BY_YOU_LIMIT,
         ),
       ],
-      // To confirm narrows to Needs you's confirmations: nothing here is one.
-      unavailable:
-        filter === "confirm"
-          ? []
-          : downFor(
-              ["polls", "made_events", "tasks"],
-              ["poll", "event", "task"],
-            ),
+      unavailable: downFor(["polls", "made_events", "tasks"]),
       archive:
         archivedPolls.length === 0
           ? null
@@ -947,15 +721,17 @@ export function activityGroups(
               limit: null,
             },
     },
+    {
+      // Their own group, not the To do list: a link may or may not be for
+      // this member, and Frapp can't see one filled in (spec § Links).
+      id: "links",
+      label: "Links",
+      rows: links,
+      parts: part("all", null, links, null),
+      unavailable: downFor(["links"]),
+      archive: null,
+    },
   ];
-  // Under Needs you only that group stays; the page leaves out the rest.
-  return waiting
-    ? groups.map((group) =>
-        group.id === "needs-you"
-          ? group
-          : { ...group, rows: [], parts: [], unavailable: [], archive: null },
-      )
-    : groups;
 }
 
 /** One of the member's own to-dos, with when it falls. */
@@ -978,8 +754,9 @@ export interface ActivityToDo {
 /**
  * The member's own to-dos (#4766): their events, their open tasks, and the
  * polls, sign-ups and forms they haven't answered, in the read's order. Never
- * what waits on their review (`activityReviewRows`). Each row keeps the key
- * `activityGroups` gives it, so a sheet opened on one finds it in either.
+ * what waits on their review (`activityReviewRows`). A row's key is its
+ * record's (`needs:task:<id>`, `needs:poll:<id>`), the same on every re-read,
+ * so a sheet opened on one finds it again.
  */
 export function activityToDos(
   activity: Activity,
@@ -1063,205 +840,31 @@ export function activityReviewRows(
   ];
 }
 
-/** One count tile at the top of the page (#4173). */
-export interface ActivityTile {
-  id: "check-in" | "tasks" | "confirm" | "approve" | "polls";
-  label: string;
-  /**
-   * What the tile draws: the count, `25+` when its list reached the read's
-   * cap (the read cuts each list at 25, so more may be waiting), or `null`
-   * when its section could not be read, which a client draws as unknown,
-   * never as 0.
-   */
-  count: string | null;
-  /** Whether nothing of this kind is waiting, so the tile can dim. */
-  zero: boolean;
-  /** The filter a tap on the tile sets. Each tile's is its own. */
-  filter: ActivityFilter;
-}
-
-export interface ActivitySummary {
-  /** Everything waiting on the member, counted before the list cap. */
-  needsYou: number;
-  /**
-   * A section behind Needs you could not be read, so `needsYou` may
-   * undercount: the page must not say the member is caught up.
-   */
-  incomplete: boolean;
-  tiles: ActivityTile[];
-  /** The soonest event still ahead, for "Next up". */
-  nextEvent: ActivityEvent | null;
-}
-
-function tileCount(
-  rows: readonly unknown[],
-  down: boolean,
-): Pick<ActivityTile, "count" | "zero"> {
-  if (down) return { count: null, zero: false };
-  return {
-    count:
-      rows.length >= ACTIVITY_LIST_LIMIT
-        ? `${ACTIVITY_LIST_LIMIT}+`
-        : String(rows.length),
-    zero: rows.length === 0,
-  };
-}
-
-/**
- * The top of the page: how much is waiting, a tile per kind of ask, and the
- * next event (#4173; Apple Reminders' count tiles, Linear's inbox zero).
- *
- * The confirm and approve tiles show only to a member who can confirm tasks
- * or approve hours, since nobody else is ever asked to; a module the chapter
- * has off shows no tile. The check-in tile shows only while an event is open
- * for check-in, since it is rare and time-bound.
- */
-export function activitySummary(
-  activity: Activity,
-  options: {
-    canConfirmTasks: boolean;
-    canApproveHours: boolean;
-    /** The chapter's module switch; omit while it is unknown to show all. */
-    isModuleEnabled?: (module: string) => boolean;
-  },
-  now: Date = new Date(),
-): ActivitySummary {
-  const on = (module: string) => options.isModuleEnabled?.(module) ?? true;
-  const down = new Set(activity.unavailable);
-  // Open only, as the list draws them: a poll whose time ran out since the
-  // read no longer waits on the member (#4258).
-  const openPolls = activity.needs_you.polls.filter((poll) =>
-    activityPollIsOpen(poll, now),
-  );
-  const closedCards = activityCards(activity).filter(
-    (card) => !activityCardIsOpen(card, now),
-  ).length;
-  const checkIn = activity.coming_up.filter(activityEventNeedsCheckIn);
-  const tiles: ActivityTile[] = [];
-  if (checkIn.length > 0) {
-    tiles.push({
-      id: "check-in",
-      label: "Check in now",
-      ...tileCount(checkIn, false),
-      filter: "event",
-    });
-  }
-  if (on("tasks")) {
-    tiles.push({
-      id: "tasks",
-      label: "Your tasks",
-      ...tileCount(activity.needs_you.tasks, down.has("tasks")),
-      filter: "task",
-    });
-    if (options.canConfirmTasks) {
-      tiles.push({
-        id: "confirm",
-        label: "To confirm",
-        ...tileCount(activity.needs_you.task_confirmations, down.has("tasks")),
-        filter: "confirm",
-      });
-    }
-  }
-  if (on("hours") && options.canApproveHours) {
-    tiles.push({
-      id: "approve",
-      label: "Hours to approve",
-      ...tileCount(
-        activity.needs_you.hours_approvals,
-        down.has("hours_approvals"),
-      ),
-      filter: "hours",
-    });
-  }
-  if (on("polls")) {
-    tiles.push({
-      id: "polls",
-      label: "Polls to vote on",
-      ...tileCount(openPolls, down.has("polls")),
-      filter: "poll",
-    });
-  }
-  const nextEvent =
-    activity.coming_up.find((event) => {
-      const start = parseInstant(event.start_time);
-      return start !== null && start.getTime() > now.getTime();
-    }) ?? null;
-  const incomplete = (
-    ["tasks", "hours_approvals", "polls", "cards", "coming_up"] as const
-  ).some((section) => down.has(section));
-  return {
-    // The read's count, less the polls and cards that closed since it was
-    // taken.
-    needsYou: Math.max(
-      0,
-      activity.needs_you_count -
-        (activity.needs_you.polls.length - openPolls.length) -
-        closedCards,
-    ),
-    incomplete,
-    tiles,
-    nextEvent,
-  };
-}
-
-/**
- * The line under the headline: "Next up: Exec Board Sync · Tomorrow · 5:00
- * PM", or `null` when nothing is ahead.
- */
-export function activityNextUpLine(
-  summary: Pick<ActivitySummary, "nextEvent">,
-  now: Date = new Date(),
-): string | null {
-  const next = summary.nextEvent;
-  if (!next) return null;
-  const when = formatRelativeDayTime(next.start_time, now);
-  return ["Next up:", next.name, when ? `· ${when}` : null]
-    .filter(Boolean)
-    .join(" ");
-}
-
-/**
- * The page's headline: "8 things need you", "1 thing needs you", "You're
- * all caught up" at zero, and never that while part of Needs you could not
- * be read, since a failed read must not look like an empty one.
- */
-export function activityNeedsYouHeadline(
-  summary: Pick<ActivitySummary, "needsYou" | "incomplete">,
-): string {
-  const { needsYou, incomplete } = summary;
-  if (needsYou === 0) {
-    return incomplete
-      ? "Some of what needs you couldn't load"
-      : "You're all caught up";
-  }
-  const words =
-    needsYou === 1 ? "1 thing needs you" : `${needsYou} things need you`;
-  return incomplete ? `At least ${words}` : words;
-}
-
 /**
  * The row a task's review push opens (`target.view === "review"`): the task
- * wherever the feed has it, read with every chip off so the one the member
- * last picked can't hide it. Needs you comes first, so a task waiting on the
- * viewer opens as the thing to act on. Null when the feed no longer has it,
- * such as a completion confirmed from another device.
+ * wherever the feed has it. What waits on the viewer's review comes first,
+ * so a completion opens as the thing to act on, then their own to-dos, then
+ * what they assigned. Null when the feed no longer has it, such as a
+ * completion confirmed from another device.
  */
 export function findActivityTaskRow(
   activity: Activity,
   taskId: string,
   now: Date = new Date(),
 ): ActivityRow | null {
-  for (const group of activityGroups(activity, "all", now)) {
-    for (const row of [...group.rows, ...(group.archive?.rows ?? [])]) {
-      if (row.kind === "task" && row.task.id === taskId) return row;
-    }
-  }
-  return null;
+  const rows = [
+    ...activityReviewRows(activity, now),
+    ...activityToDos(activity, now).map((todo) => todo.dated),
+    ...activityGroups(activity, now).flatMap((group) => group.rows),
+  ];
+  return (
+    rows.find((row) => row.kind === "task" && row.task.id === taskId) ?? null
+  );
 }
 
 /**
  * The tasks waiting on the viewer's sign-off, longest waiting first, as the
- * To confirm tile lists them: the queue a review steps through (#4693).
+ * To review card lists them: the queue a review steps through (#4693).
  * Confirm or Send back on one opens the next, the way Classroom's grader
  * moves to the next student's work, so twenty-five Sunday-night chores are
  * one sitting rather than twenty-five trips back to the list.
@@ -1270,9 +873,7 @@ export function activityReviewQueue(
   activity: Activity,
   now: Date = new Date(),
 ): ActivityRow[] {
-  return activityGroups(activity, "confirm", now).flatMap((group) =>
-    [...group.rows, ...(group.archive?.rows ?? [])].filter(
-      (row) => row.kind === "task" && row.glyph === "confirm",
-    ),
+  return activityReviewRows(activity, now).filter(
+    (row) => row.kind === "task" && row.glyph === "confirm",
   );
 }

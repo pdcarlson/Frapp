@@ -466,7 +466,7 @@ describe("MessageThreadScreen (#3785)", () => {
     act(() => composer().props.onChangeText("On my way"));
     expect(thread.emitTyping).toHaveBeenCalled();
     await act(async () => composer().props.onSend());
-    expect(thread.send).toHaveBeenCalledWith("On my way");
+    expect(thread.send).toHaveBeenCalledWith("On my way", undefined, []);
     expect(composer().props.value).toBe("");
     expect(composer().props.disabledHint).toBe("Slow down");
     expect(composer().props.hintTone).toBe("error");
@@ -842,7 +842,7 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     // An edit isn't typing a reply.
     expect(thread.emitTyping).not.toHaveBeenCalled();
     await act(async () => composer().props.onSend());
-    expect(writes.edit).toHaveBeenCalledWith("r2", "Me too, at 6");
+    expect(writes.edit).toHaveBeenCalledWith("r2", "Me too, at 6", []);
     expect(thread.send).not.toHaveBeenCalled();
     expect(composer().props.context).toBeNull();
     act(() => tree.unmount());

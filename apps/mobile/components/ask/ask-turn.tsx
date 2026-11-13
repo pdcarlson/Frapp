@@ -1,5 +1,12 @@
-import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import * as Clipboard from "expo-clipboard";
 import type { AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -7,12 +14,17 @@ import {
   ASK_COPY,
   askAnswerSegments,
   askLeftOutLine,
+  askReadLine,
   askSourceMetaLine,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
+import { CheckGlyph, CopyGlyph, FlagGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectionHaptic } from "@/lib/haptics";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -40,13 +52,24 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * thread of several answers stays short.
  *
  * **Nothing above moves while it works.** The step line ("Searching your
- * chapter's sources") sits under the text, where the sources go when the
- * answer lands, so words stream in above it. The streamed text is a preview:
- * the server decides what stands once the model stops, and that replaces it
- * (`ask.ts`).
+ * chapter's sources") sits under the text, so words stream in above it. The
+ * streamed text is a preview: the server decides what stands once the model
+ * stops, and that replaces it (`ask.ts`).
  *
- * **Fixed gold, never the chapter accent** (§11): nothing here reaches
- * `useChapterBranding()`.
+ * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
+ * just needs to be better hierarchy", "report shouldn't be so obvious", and
+ * the conversation "should feel more agentic"). Under the words, in the step
+ * line's place and tone, a line says what Frapp read to write them ("Read
+ * the events calendar and 3 sources"), as ChatGPT keeps "Thought for 12s"
+ * and Perplexity its count of sources. Then the source chips. Last, two
+ * small muted icons, Copy and Report, the row of quiet icons ChatGPT, Claude
+ * and Gemini end an answer with. The words "Report this" stood there alone
+ * and read as the thing to do next.
+ *
+ * **The member's bubble is the chapter's colour; Frapp's marks are gold.**
+ * The bubble takes the solid accent and its contrast-checked text colour
+ * (Paul, 2026-11-13; `ask-sheet.tsx`). The markers and the number on a source
+ * chip keep Ask's fixed gold (§11) and never read the chapter's colour.
  *
  * A refusal, "couldn't find that" and "not available" are the product working
  * as designed, not errors, so they read as plain answers.
@@ -86,12 +109,16 @@ export function AskTurn({
   report?: { reported: boolean; onPress: () => void } | null;
 }) {
   const { tokens } = useFrappTheme();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
 
   return (
     <View style={styles.turn}>
-      <View style={styles.bubble}>
-        <Text accessibilityRole="header" style={styles.answer}>
+      <View style={[styles.bubble, { backgroundColor: accentPrimary }]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.answer, { color: accentOnPrimary }]}
+        >
           {exchange.question}
         </Text>
       </View>
@@ -127,6 +154,7 @@ export function AskTurn({
         {exchange.phase === "done" && exchange.answer ? (
           <AnswerBody
             answer={exchange.answer}
+            readLine={askReadLine(exchange.read)}
             canOpen={canOpen}
             openingSourceId={openingSourceId ?? null}
             onOpenSource={onOpenSource}
@@ -135,40 +163,115 @@ export function AskTurn({
           />
         ) : null}
 
-        {/* Anything Ask wrote, or chose not to, can be reported. An answer
-            that was never attempted has nothing AI-made in it. Last in the
-            turn, so it turning into "Reported" moves nothing. */}
-        {report &&
-        exchange.phase === "done" &&
+        {/* Anything Ask wrote, or chose not to, can be reported; what it
+            wrote can be copied. An answer that was never attempted has
+            nothing AI-made in it. Last in the turn, so Copy turning into
+            Copied and Report into Reported move nothing. */}
+        {exchange.phase === "done" &&
         exchange.answer &&
-        exchange.answer.status !== "unavailable" &&
-        exchange.askId ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action
+        exchange.answer.status !== "unavailable" ? (
+          <AnswerActions
+            text={
+              exchange.answer.status === "answered" ? exchange.answer.text : null
             }
-            accessibilityState={report.reported ? { disabled: true } : undefined}
-            disabled={report.reported}
-            hitSlop={12}
-            onPress={report.onPress}
-            style={({ pressed }) => [
-              styles.report,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.note}>
-              {report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
-            </Text>
-          </Pressable>
+            report={exchange.askId ? (report ?? null) : null}
+          />
         ) : null}
       </View>
     </View>
   );
 }
 
+/** How long Copy reads "Copied" before it goes back: web's `COPIED_RESET_MS`. */
+const COPIED_RESET_MS = 2000;
+
+/** The glyph in the row under an answer: smaller than a header's 20pt. */
+const ACTION_GLYPH_SIZE = 16;
+
+/**
+ * The row under an answer: Copy, then Report. Glyphs alone in the muted text
+ * tone, each with the icon button's 44pt touch area, so nothing here competes
+ * with the answer above it.
+ */
+function AnswerActions({
+  text,
+  report,
+}: {
+  /** The answer's words, without the markers, or null when there are none to copy. */
+  text: string | null;
+  report: { reported: boolean; onPress: () => void } | null;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const color = tokens.color.text.mutedForeground;
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
+
+  if (!text && !report) return null;
+  const copy = () => {
+    if (!text) return;
+    void Clipboard.setStringAsync(text).then(
+      () => {
+        if (!mounted.current) return;
+        selectionHaptic();
+        AccessibilityInfo.announceForAccessibility(ASK_COPY.copied_answer);
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          setCopied(false);
+        }, COPIED_RESET_MS);
+      },
+      // Nothing was copied, so the control goes on reading Copy.
+      () => undefined,
+    );
+  };
+  return (
+    <View style={styles.actions}>
+      {text ? (
+        <IconButton
+          label={copied ? ASK_COPY.copied_answer : ASK_COPY.copy_answer}
+          onPress={copy}
+        >
+          {copied ? (
+            <CheckGlyph color={color} size={ACTION_GLYPH_SIZE} />
+          ) : (
+            <CopyGlyph color={color} size={ACTION_GLYPH_SIZE} />
+          )}
+        </IconButton>
+      ) : null}
+      {report ? (
+        <IconButton
+          // Named for what it reports, as web's icon is: there are no
+          // words beside it to say so.
+          label={
+            report.reported
+              ? AI_REPORT_COPY.reported
+              : AI_REPORT_COPY.titles.ask_answer
+          }
+          disabled={report.reported}
+          onPress={report.onPress}
+        >
+          <View style={report.reported ? styles.dimmed : null}>
+            <FlagGlyph color={color} size={ACTION_GLYPH_SIZE} />
+          </View>
+        </IconButton>
+      ) : null}
+    </View>
+  );
+}
+
 function AnswerBody({
   answer,
+  readLine,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -176,6 +279,8 @@ function AnswerBody({
   onAnswerConsent,
 }: {
   answer: AskAnswer;
+  /** What Frapp read to write it (`askReadLine`), or null. */
+  readLine: string | null;
   canOpen: (source: AskSource) => boolean;
   openingSourceId: string | null;
   onOpenSource: (source: AskSource) => void;
@@ -237,6 +342,8 @@ function AnswerBody({
           );
         })}
       </Text>
+      {/* Where the step line was while it worked, in the same tone. */}
+      {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>
@@ -376,7 +483,6 @@ function createStyles(tokens: SignetTokens) {
       maxWidth: "85%",
       borderRadius: 18,
       borderBottomRightRadius: 6,
-      backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: 14,
       paddingVertical: tokens.spacing.sm,
     },
@@ -443,8 +549,12 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    report: {
-      alignSelf: "flex-start",
+    actions: {
+      flexDirection: "row",
+      alignItems: "center",
+      // Two 20pt boxes, each reaching 44pt by slop: this keeps the two
+      // touch areas from overlapping.
+      gap: tokens.spacing.xl,
     },
     pressed: {
       opacity: 0.7,

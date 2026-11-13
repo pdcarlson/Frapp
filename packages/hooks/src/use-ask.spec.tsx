@@ -122,6 +122,25 @@ describe("applyAskEvent", () => {
     ).toBeNull();
   });
 
+  it("remembers what was read for the finished answer, through the steps after it", () => {
+    let exchange = applyAskEvent(WORKING, {
+      v,
+      type: "status",
+      step: "reading",
+      reads: ["events"],
+      found: 2,
+    });
+    exchange = applyAskEvent(exchange, { v, type: "status", step: "writing" });
+    exchange = applyAskEvent(exchange, { v, type: "done", answer: ANSWER });
+    // The step line is gone with the work; what was read stays with the turn.
+    expect(exchange.stepDetail).toBeNull();
+    expect(exchange.read).toEqual({ reads: ["events"], found: 2 });
+    // A turn the server never named a read for has none.
+    expect(
+      applyAskEvent(WORKING, { v, type: "done", answer: ANSWER }).read,
+    ).toBeUndefined();
+  });
+
   it("replaces the preview with the checked answer on done", () => {
     const streaming = { ...WORKING, preview: "Quorum is three people, I think" };
     expect(

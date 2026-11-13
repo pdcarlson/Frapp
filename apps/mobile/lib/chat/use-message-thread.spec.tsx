@@ -175,6 +175,53 @@ describe("useMessageThread's parent and retry on the phone", () => {
     expect(mocks.sendThreadReply).not.toHaveBeenCalled();
   });
 
+  it("keeps a failed reply's picks for its Retry (#3835)", async () => {
+    mocks.fetchThread.mockResolvedValue({
+      root: ROOT,
+      follow_state: "following",
+      last_read_at: null,
+    });
+    const { queryClient, wrapper } = setup();
+    queryClient.setQueryData(
+      chatThreadRepliesKey("c1", "root"),
+      cacheFromPage(
+        [
+          {
+            ...ROOT,
+            id: "r9",
+            client_message_id: "c-r9",
+            content: "@Jane Doe hi",
+            thread_root_id: "root",
+          } as RawChatMessage,
+        ],
+        [],
+      ),
+    );
+    const { result } = renderHook(() => useMessageThread("c1", "root", "me"), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    const picks = [{ user_id: "u-jane", label: "Jane Doe" }];
+    mocks.sendThreadReply.mockResolvedValueOnce({
+      error: "Offline",
+    } as unknown as { error: null });
+    await act(async () => {
+      await result.current.send("@Jane Doe hi", "c-r9", picks);
+    });
+    mocks.sendThreadReply.mockClear();
+    await act(async () => {
+      await result.current.retry("c-r9");
+    });
+    expect(mocks.sendThreadReply).toHaveBeenCalledWith(
+      queryClient,
+      {},
+      expect.objectContaining({
+        clientMessageId: "c-r9",
+        mentionPicks: picks,
+      }),
+    );
+  });
+
   it("reads the channel cache's copy of a message, and follows it", async () => {
     const { queryClient, wrapper } = setup();
     const { result } = renderHook(() => useHeldChannelMessage("c1", "root"), {

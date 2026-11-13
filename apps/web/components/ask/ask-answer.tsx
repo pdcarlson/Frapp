@@ -1,6 +1,8 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import Link from "next/link";
+import { Check, Copy } from "lucide-react";
 import type {
   ActResponse,
   AskExchange,
@@ -10,6 +12,7 @@ import {
   ASK_COPY,
   askAnswerSegments,
   askLeftOutLine,
+  askReadLine,
   askSourceMetaLine,
   askStepLine,
   askUnavailableLine,
@@ -18,9 +21,14 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { IconButton } from "@/components/ui/icon-button";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 import { AskProposal } from "@/components/ask/ask-proposal";
-import { askSourceHref } from "@/components/ask/ask-source-link";
+import {
+  askSourceHref,
+  askSourceIsMessage,
+} from "@/components/ask/ask-source-link";
 import { ReportAiButton } from "@/components/ai/report-ai";
 
 /**
@@ -43,28 +51,42 @@ import { ReportAiButton } from "@/components/ai/report-ai";
  * the message in its channel, or the page live data came from.
  *
  * **Nothing above the fold moves while it works.** The step line ("Searching
- * your chapter's sources") sits under the text, in the place the notes and
- * sources take when the answer lands, so text streams in above it and the
- * question never shifts. The streamed text is a preview: the server decides
- * what stands after the model stops, and `done` replaces it (`ask.ts`).
+ * your chapter's sources") sits under the text, so text streams in above it
+ * and the question never shifts. The streamed text is a preview: the server
+ * decides what stands after the model stops, and `done` replaces it
+ * (`ask.ts`).
+ *
+ * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
+ * just needs to be better hierarchy", "report shouldn't be so obvious", and
+ * the conversation "should feel more agentic"). Under the words, in the step
+ * line's place and in its quiet tone, a line says what Frapp read to write
+ * them ("Read the events calendar and 3 sources"), the way ChatGPT keeps
+ * "Thought for 12s" and Perplexity its count of sources. Then the source
+ * chips. Last, two small muted icons, Copy and Report, as ChatGPT, Claude and
+ * Gemini end an answer with a row of quiet icons. "Report this" was a
+ * labelled button there, the only control under every answer, and read as
+ * the thing to do next.
  */
 export function AskTurn({
   exchange,
   busy = false,
+  onFollowMessage,
   onRetry,
   onAnswerConsent,
-  onFollowSource,
   onProposal,
   onResolved,
 }: {
   exchange: AskExchange;
   /**
+   * A source that is a chat message was followed. Its "page" is the thread
+   * the conversation is drawn over, so the caller gets out of the way.
+   */
+  onFollowMessage?: () => void;
+  /**
    * Another turn is being answered. Asking this one again would abandon it,
    * so this turn's Try again and consent buttons wait.
    */
   busy?: boolean;
-  /** A link out of the panel was followed, for a panel that then gets out of the way. */
-  onFollowSource?: () => void;
   /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
   /** Opens the AI sheet, for a turn refused because it is unanswered. */
@@ -76,7 +98,7 @@ export function AskTurn({
 }) {
   return (
     <article className="space-y-3">
-      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-surface-1 px-3.5 py-2 text-sm font-normal text-foreground">
+      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2 text-sm font-normal text-primary-foreground">
         {exchange.question}
       </h3>
       <div aria-live="polite" className="space-y-3">
@@ -118,23 +140,29 @@ export function AskTurn({
             resolution={exchange.resolution}
             onProposal={onProposal}
             onResolved={onResolved}
-            onLeave={onFollowSource}
           />
         ) : null}
         {exchange.phase === "done" && exchange.answer ? (
           <>
             <AskAnswerBody
               answer={exchange.answer}
+              readLine={askReadLine(exchange.read)}
               busy={busy}
               onAnswerConsent={onAnswerConsent}
-              onFollowSource={onFollowSource}
+              onFollowMessage={onFollowMessage}
             />
             {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
             {exchange.answer.status !== "unavailable" && exchange.askId ? (
-              <div className="-ml-2 flex">
+              <div className="-ml-2 flex items-center">
+                {exchange.answer.status === "answered" &&
+                exchange.answer.text ? (
+                  <CopyAnswer text={exchange.answer.text} />
+                ) : null}
                 <ReportAiButton
                   key={exchange.askId}
+                  iconOnly
+                  className={QUIET_ACTION}
                   target={{
                     subject: "ask_answer",
                     subjectId: exchange.askId,
@@ -150,16 +178,47 @@ export function AskTurn({
   );
 }
 
+/**
+ * The row under an answer: small, muted, and lit only under the pointer, so
+ * the answer above it stays the thing being read. 32px to a mouse, 44 to a
+ * finger.
+ */
+const QUIET_ACTION =
+  "h-8 w-8 text-muted-foreground/70 hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11";
+
+/** Copies the answer's words, without the markers. */
+function CopyAnswer({ text }: { text: string }) {
+  const { copied, copy } = useCopyToClipboard(
+    "Select the answer and copy it manually.",
+  );
+  return (
+    <IconButton
+      label={copied ? ASK_COPY.copied_answer : ASK_COPY.copy_answer}
+      className={QUIET_ACTION}
+      onClick={() => void copy(text)}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
+    </IconButton>
+  );
+}
+
 function AskAnswerBody({
   answer,
+  readLine,
   busy,
   onAnswerConsent,
-  onFollowSource,
+  onFollowMessage,
 }: {
   answer: AskAnswer;
+  /** What Frapp read to write it (`askReadLine`), or null. */
+  readLine: string | null;
   busy: boolean;
-  onFollowSource?: () => void;
   onAnswerConsent: () => void;
+  onFollowMessage?: () => void;
 }) {
   if (answer.status === "unavailable") {
     return (
@@ -207,11 +266,15 @@ function AskAnswerBody({
               number={segment.citation.source + 1}
               source={answer.sources[segment.citation.source]}
               quote={segment.citation.quote}
-              onFollow={onFollowSource}
+              onFollowMessage={onFollowMessage}
             />
           ),
         )}
       </p>
+      {/* Where the step line was while it worked, in the same tone. */}
+      {readLine ? (
+        <p className="text-caption text-muted-foreground">{readLine}</p>
+      ) : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
@@ -220,7 +283,7 @@ function AskAnswerBody({
               key={source.id}
               number={index + 1}
               source={source}
-              onFollow={onFollowSource}
+              onFollowMessage={onFollowMessage}
             />
           ))}
         </ol>
@@ -249,8 +312,22 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
 }
 
 /**
- * Ask's fixed gold, as the pill: the marker is Ask speaking, never the
- * chapter accent (`components.md` §7).
+ * Runs on a click that follows the link here. A click that opens it in a new
+ * tab or window leaves this page, and so the conversation, as it was.
+ */
+function onPlainClick(run: (() => void) | undefined) {
+  if (!run) return undefined;
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+    run();
+  };
+}
+
+/**
+ * Ask's fixed gold: the marker is Frapp's, so it never takes the chapter
+ * accent, as the member's own bubble, send and Confirm do
+ * (`components.md` §11).
  */
 const MARKER =
   "mx-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[6px] border border-gold-ask-border bg-gold-ask-fill px-1 align-[1px] text-caption font-bold leading-none text-gold-ask-text no-underline";
@@ -259,12 +336,12 @@ function CitationMarker({
   number,
   source,
   quote,
-  onFollow,
+  onFollowMessage,
 }: {
   number: number;
   source: AskSource | undefined;
   quote: string;
-  onFollow?: () => void;
+  onFollowMessage?: () => void;
 }) {
   if (!source) return null;
   const href = askSourceHref(source);
@@ -285,7 +362,9 @@ function CitationMarker({
       className={cn(MARKER, "hover:bg-gold-ask-border/30", FOCUS_RING)}
       aria-label={label}
       title={title}
-      onClick={onFollow}
+      onClick={
+        askSourceIsMessage(source) ? onPlainClick(onFollowMessage) : undefined
+      }
     >
       {number}
     </Link>
@@ -300,11 +379,11 @@ function CitationMarker({
 function SourceChip({
   number,
   source,
-  onFollow,
+  onFollowMessage,
 }: {
   number: number;
   source: AskSource;
-  onFollow?: () => void;
+  onFollowMessage?: () => void;
 }) {
   const href = askSourceHref(source);
   const meta = askSourceMetaLine(source);
@@ -331,9 +410,13 @@ function SourceChip({
       {href ? (
         <Link
           href={href}
-          onClick={onFollow}
           aria-label={name}
           title={meta}
+          onClick={
+            askSourceIsMessage(source)
+              ? onPlainClick(onFollowMessage)
+              : undefined
+          }
           className={cn(
             chip,
             "transition-colors hover:bg-card-hover",

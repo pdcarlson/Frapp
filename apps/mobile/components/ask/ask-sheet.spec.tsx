@@ -106,6 +106,17 @@ vi.mock("@/components/ai/report-ai-sheet", () => ({
   }),
 }));
 
+// A purple chapter. The header's crest, the member's bubble and the send
+// button take it (#4702); Frapp's source markers keep Ask's fixed gold.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#8B5CF6",
+    accentPrimary: "#7C3AED",
+    accentOnPrimary: "#FFFFFF",
+  }),
+}));
+
+import { FrappCrest } from "@/components/frapp-crest";
 import { AskSheet } from "./ask-sheet";
 
 const modal = { present: vi.fn(), dismiss: vi.fn() };
@@ -461,7 +472,7 @@ describe("AskSheet", () => {
       },
     ];
     const tree = render();
-    act(() => byLabel(tree, AI_REPORT_COPY.action)[0]!.props.onPress());
+    act(() => byLabel(tree, AI_REPORT_COPY.titles.ask_answer)[0]!.props.onPress());
     expect(reporting.report).toHaveBeenCalledWith({
       subject: "ask_answer",
       subjectId: "ask-1",
@@ -471,10 +482,10 @@ describe("AskSheet", () => {
 
   it("offers no report to a member who can't send one, or before the ask has an id", () => {
     hooks.exchanges = [answered()];
-    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
     hooks.exchanges = [{ ...answered(), askId: "ask-1" }];
     reporting.offered = false;
-    expect(byLabel(render(), AI_REPORT_COPY.action)).toHaveLength(0);
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
   });
 
   it("can't send an empty question or a second one while the first is answered", () => {
@@ -574,5 +585,66 @@ describe("AskSheet", () => {
       act(() => sheet(tree).props.onDismiss());
       expect(onClosed).toHaveBeenLastCalledWith(true);
     });
+  });
+});
+
+/**
+ * The conversation is the app's tall sheet since #4702 (it was 78%): the bar
+ * a member taps is drawn as this sheet's own field, so the tap lands in a
+ * conversation, not a drawer over the tab.
+ */
+describe("the sheet itself (#4702)", () => {
+  const flat = (style: unknown): Record<string, unknown> =>
+    Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+
+  it("opens at full height, with dynamic sizing off so a short thread does not open it short", () => {
+    const props = sheet(render()).props;
+    expect(props.snapPoints).toEqual(["100%"]);
+    expect(props.enableDynamicSizing).toBe(false);
+    // Stops under the status bar, so the screen behind still shows.
+    expect(props.topInset).toBeGreaterThan(0);
+  });
+
+  it("carries a close in its header, because at full height no scrim is left to tap", () => {
+    modal.dismiss.mockClear();
+    const tree = render();
+    const close = byLabel(tree, ASK_COPY.close);
+    expect(close).toHaveLength(1);
+    act(() => close[0].props.onPress());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the close beside New conversation once there is a thread", () => {
+    hooks.exchanges = [
+      { id: "e1", question: "Who is treasurer?", phase: "done", answer: null },
+    ];
+    const tree = render();
+    expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.close)).toHaveLength(1);
+    hooks.exchanges = [];
+  });
+
+  it("draws the crest and the send button in the chapter's colour", () => {
+    const tree = render();
+    expect(tree.root.findByType(FrappCrest).props.color).toBe("#8B5CF6");
+    const send = byLabel(tree, ASK_COPY.send)[0];
+    const style = flat(
+      typeof send.props.style === "function"
+        ? send.props.style({ pressed: false })
+        : send.props.style,
+    );
+    // The solid accent pair, as web's send button always was.
+    expect(style.backgroundColor).toBe("#7C3AED");
+  });
+
+  it("is drawn on the page's background, not the sheet grey", () => {
+    const tree = render();
+    const background = flat(
+      sheet(tree)!.props.backgroundStyle,
+    );
+    // `surface.background`; a sheet's own fill is `surface.popover`.
+    expect(String(background.backgroundColor)).toBe("#050505");
+    // Still a sheet's shape.
+    expect(background.borderTopLeftRadius).toBeGreaterThan(0);
   });
 });

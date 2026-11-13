@@ -20442,6 +20442,24 @@
           "token"
         ]
       },
+      "MentionPickDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "user_id",
+          "label"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -20494,6 +20512,12 @@
           },
           "metadata": {
             "type": "object"
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
           }
         },
         "required": [
@@ -20524,6 +20548,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 10000
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
           }
         },
         "required": [

@@ -2,11 +2,14 @@
 import React from "react";
 import { act } from "react";
 import { create } from "react-test-renderer";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  FLOATING_ASK_BAR,
   floatingScreenLayout,
   floatingTabBarBottom,
   floatingTabBarTop,
+  setAskBarShown,
+  useAskBarLift,
   useTabBarClearance,
 } from "./floating-chrome";
 
@@ -67,5 +70,56 @@ describe("useTabBarClearance", () => {
       create(<Probe />);
     });
     expect(seen).toBe(0);
+  });
+});
+
+/**
+ * The Ask Frapp bar sits above the tab bar for a member who has Ask (#4702).
+ * The tab bar says when it is there; a tab screen's last row, the create
+ * button and the undo bar all move up by it, and a pushed screen never does.
+ */
+describe("the Ask Frapp bar's room", () => {
+  type Seen = { lift: number; clearance: number };
+  function Probe({ seen }: { seen: Seen }) {
+    seen.lift = useAskBarLift();
+    seen.clearance = useTabBarClearance();
+    return null;
+  }
+  function onATab(seen: Seen) {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(
+        floatingScreenLayout({
+          route: { name: "index" },
+          navigation: { addListener: () => () => {} },
+          children: <Probe seen={seen} />,
+        }),
+      );
+    });
+    return tree;
+  }
+  afterEach(() => act(() => setAskBarShown(false)));
+
+  it("is the bar's 48pt and its 8pt gap", () => {
+    expect(FLOATING_ASK_BAR).toEqual({ height: 48, gap: 8 });
+  });
+
+  it("lifts a tab screen's clearance by the bar once the tab bar shows it, without a remount", () => {
+    const seen: Seen = { lift: -1, clearance: -1 };
+    onATab(seen);
+    expect(seen).toEqual({ lift: 0, clearance: 12 + 62 + 14 });
+    act(() => setAskBarShown(true));
+    expect(seen).toEqual({ lift: 56, clearance: 12 + 62 + 56 + 14 });
+    act(() => setAskBarShown(false));
+    expect(seen).toEqual({ lift: 0, clearance: 12 + 62 + 14 });
+  });
+
+  it("never lifts a screen pushed over the tabs, which the bar is not drawn on", () => {
+    act(() => setAskBarShown(true));
+    const seen: Seen = { lift: -1, clearance: -1 };
+    act(() => {
+      create(<Probe seen={seen} />);
+    });
+    expect(seen).toEqual({ lift: 0, clearance: 0 });
   });
 });

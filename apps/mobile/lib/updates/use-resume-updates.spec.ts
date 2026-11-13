@@ -103,7 +103,7 @@ describe("expoUpdatesPort", () => {
     await expoUpdatesPort().reload();
     expect(state.updates.reloadAsync).toHaveBeenCalledWith({
       reloadScreenOptions: expect.objectContaining({
-        backgroundColor: "#0A0A0A",
+        backgroundColor: "#050505",
         spinner: { enabled: false },
       }),
     });

@@ -8,6 +8,7 @@ import {
   reservedMentionName,
   resolveMentions,
   sendMentionReading,
+  type MentionPick,
   type MentionRole,
 } from '@repo/validation';
 import {
@@ -131,9 +132,10 @@ export class ChatMentionService {
     senderId: string,
     content: string,
     replyTo: ReplyTarget | null = null,
+    picks: readonly MentionPick[] = [],
   ): Promise<string[]> {
     return withMention(
-      await this.resolveBody(chapterId, senderId, content, 'read'),
+      await this.resolveBody(chapterId, senderId, content, 'read', picks),
       replyPingTarget(senderId, replyTo),
     );
   }
@@ -153,6 +155,9 @@ export class ChatMentionService {
    * `@here` is not re-read on an edit: it keeps the members the previous
    * body's `@here` reached, so an edit never pings someone who came online
    * since, and one that adds `@here` pings nobody new, as on Discord.
+   *
+   * `picks` are the members picked into the previous body and the new one
+   * (#3835), each read with its own.
    */
   async resolveForEdit(
     chapterId: string,
@@ -161,11 +166,15 @@ export class ChatMentionService {
     previousMentions: readonly string[],
     quotedAuthorId: string | null | undefined,
     previousContent: string = '',
+    picks: EditPicks = { previous: [], next: [] },
   ): Promise<string[]> {
-    const body = await this.resolveBody(chapterId, senderId, content, {
-      previousContent,
-      previousMentions,
-    });
+    const body = await this.resolveBody(
+      chapterId,
+      senderId,
+      content,
+      { previousContent, previousMentions, previousPicks: picks.previous },
+      picks.next,
+    );
     if (quotedAuthorId === undefined) {
       return previousMentions.reduce(withMention, body);
     }
@@ -187,6 +196,7 @@ export class ChatMentionService {
     senderId: string,
     content: string,
     here: HereSource,
+    picks: readonly MentionPick[] = [],
   ): Promise<string[]> {
     // Parse before querying. `content.includes('@')` admits every email
     // address, every `@here`, and every `user@host` in a pasted log, all of
@@ -227,7 +237,7 @@ export class ChatMentionService {
       const named = new Set(
         extractMentionTokens(
           content,
-          sendMentionReading(candidates, views),
+          sendMentionReading(candidates, views, picks),
         ).map(foldMentionName),
       );
       const needsOfficer = views.some(
@@ -255,7 +265,7 @@ export class ChatMentionService {
             : reachedByHere(here, candidates, allowed);
       }
 
-      return resolveMentions(content, candidates, allowed);
+      return resolveMentions(content, candidates, allowed, picks);
     } catch (error) {
       // `error`: the message still sends, but everyone it named goes
       // unpinged and is never pinged later, so a fault here (a broken query,
@@ -299,7 +309,19 @@ export class ChatMentionService {
 
 /** Where `@here`'s members come from: read now (a send), or an edit's earlier body. */
 type HereSource =
-  'read' | { previousContent: string; previousMentions: readonly string[] };
+  | 'read'
+  | {
+      previousContent: string;
+      previousMentions: readonly string[];
+      /** The picks the earlier body was read with (#3835). */
+      previousPicks?: readonly MentionPick[];
+    };
+
+/** An edit's picks: the ones its earlier body was read with, and the new body's. */
+export interface EditPicks {
+  previous: readonly MentionPick[];
+  next: readonly MentionPick[];
+}
 
 /**
  * The members an edited message's earlier `@here` reached: its mentions less
@@ -322,6 +344,7 @@ function reachedByHere(
       edit.previousContent,
       candidates,
       views.filter((view) => view.name !== HERE_MENTION_NAME),
+      edit.previousPicks ?? [],
     ),
   );
   return edit.previousMentions.filter((id) => !named.has(id));

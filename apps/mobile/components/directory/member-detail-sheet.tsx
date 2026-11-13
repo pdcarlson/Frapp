@@ -25,9 +25,9 @@ import {
 import { can, resolveRoleChips, roleColorOrNull } from "@repo/validation";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
-import { StatusDot } from "@/components/account/status-dot";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
 import { presenceLabel } from "@repo/hooks/presence-status";
-import { useChapterPresence } from "@/lib/presence/presence-store";
+import { usePresenceOf } from "@/lib/presence/presence-store";
 import {
   confirmBlockMember,
   confirmUnblockMember,
@@ -196,10 +196,7 @@ export const MemberDetailSheet = forwardRef<
   const rolesQuery = useRoles();
   // Their dot and custom line (#3917), off chapter presence: nothing until it
   // has synced, never a stand-in Offline.
-  const presence = useChapterPresence();
-  const status = presence.isReady && userId ? presence.statusOf(userId) : null;
-  const statusLine =
-    presence.isReady && userId ? presence.lineOf(userId) : null;
+  const { status, line: statusLine } = usePresenceOf(userId);
 
   const permissions = usePermissionList();
 
@@ -443,7 +440,11 @@ export const MemberDetailSheet = forwardRef<
           {detail ? (
             <>
               <View style={styles.identity}>
-                <View>
+                <AvatarWithPresence
+                  status={status}
+                  avatarSize={DETAIL_AVATAR_SIZE}
+                  ring={tokens.color.surface.popover}
+                >
                   <MemberAvatar
                     uri={detail.avatarUrl}
                     initials={detail.initials}
@@ -452,17 +453,7 @@ export const MemberDetailSheet = forwardRef<
                     style={styles.avatar}
                     textStyle={styles.avatarText}
                   />
-                  {status ? (
-                    <View pointerEvents="none" style={styles.presenceDot}>
-                      <StatusDot
-                        testID={`member-presence-${status}`}
-                        status={status}
-                        size={PRESENCE_DOT_SIZE}
-                        ring={tokens.color.surface.popover}
-                      />
-                    </View>
-                  ) : null}
-                </View>
+                </AvatarWithPresence>
                 <Text
                   style={styles.name}
                   accessibilityRole="header"
@@ -744,8 +735,6 @@ export const MemberDetailSheet = forwardRef<
 
 /** The identity block's avatar diameter. */
 const DETAIL_AVATAR_SIZE = 80;
-/** The status dot on the 80pt avatar. */
-const PRESENCE_DOT_SIZE = 16;
 
 function createStyles(tokens: SignetTokens) {
   const avatarSize = DETAIL_AVATAR_SIZE;
@@ -782,12 +771,6 @@ function createStyles(tokens: SignetTokens) {
     name: {
       ...typeRole(tokens.typography.role.headline),
       color: tokens.color.text.foreground,
-    },
-    // Bottom-right on the avatar, ringed in the sheet's fill, as the rows draw it.
-    presenceDot: {
-      position: "absolute",
-      bottom: 0,
-      right: 0,
     },
     statusLine: {
       ...typeRole(tokens.typography.role.caption),

@@ -53,6 +53,8 @@ export const stateMicrocopy = {
     calendarFirstEventCompact:
       "Pick a day, then New event to schedule the first event.",
     // The compact month's day list, for a picked day with nothing on it.
+    // Week and Day (#4818): pressing an empty hour makes an event then.
+    calendarFirstEventHours: "Press an hour to schedule the first event.",
     calendarDayEmpty: "Nothing on this day.",
     calendarNothingYet: "Nothing on the calendar yet.",
     offlineTitle: "Events workspace unavailable offline",

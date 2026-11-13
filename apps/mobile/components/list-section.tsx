@@ -58,7 +58,7 @@ export function SectionHeader({
   if (count == null)
     return <Text style={styles.sectionHeader}>{children}</Text>;
   return (
-    // One element to a screen reader, "Needs you, 8", as the caption and its
+    // One element to a screen reader, "To do, 8", as the caption and its
     // count were when the count was part of the caption's text.
     <View
       accessible

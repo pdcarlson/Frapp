@@ -46,6 +46,7 @@ import {
 import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_MIN_MESSAGES,
+  type MentionPick,
 } from "@repo/validation";
 
 /**
@@ -71,6 +72,8 @@ export interface ThreadRowWrites {
     messageId: string,
     content: string,
     threadRootId: string | null,
+    /** Members picked while editing (#3835). */
+    mentionPicks?: readonly MentionPick[],
   ) => Promise<void>;
   /** Settles once the member has answered the confirm and the write is done. */
   delete: (messageId: string, threadRootId: string | null) => Promise<void>;
@@ -371,9 +374,13 @@ export function ThreadPanel({
   );
   const { edit } = writes;
   const editRow = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       // Rejects on failure, so the row stays in edit mode with the draft.
-      await edit(messageId, content, targetOf(messageId));
+      await edit(messageId, content, targetOf(messageId), mentionPicks);
       if (messageId === rootId && parentUnheld) refreshRoot();
     },
     [edit, targetOf, rootId, parentUnheld, refreshRoot],

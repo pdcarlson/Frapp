@@ -1017,6 +1017,11 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
     consentDialog: null,
   }),
 }));
+// Where Ask Frapp's conversation is drawn (#4702). Who gets one is the
+// host's question (`ask-host.spec.tsx`); here it only has to be in place.
+vi.mock("@/components/ask/ask-host", () => ({
+  AskSlot: () => <div data-testid="ask-slot" />,
+}));
 // The Important strip (#4186): the hook is the server's answer, so the shell
 // test drives it directly.
 const importantState = vi.hoisted(() => ({
@@ -1627,6 +1632,23 @@ beforeEach(() => {
 // announcements channel (#3414); the shell tells the composer so, from that
 // channel's `can_post`, and only that: a chapter with no announcements channel
 // leaves `/announce` to dispatch, which says the channel is missing.
+/**
+ * Ask Frapp opens over the chat, rising from the composer (#4702, Paul
+ * 2026-11-13: "the ask for app either pops up on top of that"). The chat
+ * column gives it the place: directly above the composer, in the column, so
+ * the card is the thread's width and moves with the composer as a draft
+ * grows.
+ */
+describe("ChatShell gives Ask Frapp its place (#4702)", () => {
+  it("puts the slot directly above the composer, inside the chat column", () => {
+    render(<ChatShell />);
+    const slot = screen.getByTestId("ask-slot");
+    const composer = screen.getByTestId("composer");
+    expect(slot.nextElementSibling).toBe(composer);
+    expect(slot.parentElement).toBe(composer.parentElement);
+  });
+});
+
 describe("ChatShell /announce gate (#3414)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
@@ -4281,6 +4303,131 @@ describe("ChatShell narrow viewports (#2142)", () => {
       back.mockRestore();
       window.history.replaceState(null, "");
     }
+  });
+
+  describe("after widening past lg (#3836)", () => {
+    const realMatchMedia = window.matchMedia;
+    let width = 800;
+    const listeners = new Set<() => void>();
+
+    function resize(px: number) {
+      width = px;
+      act(() => listeners.forEach((listener) => listener()));
+    }
+
+    beforeEach(() => {
+      width = 800;
+      listeners.clear();
+      window.matchMedia = ((query: string) => ({
+        get matches() {
+          return width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0);
+        },
+        media: query,
+        onchange: null,
+        addEventListener: (_: string, listener: () => void) =>
+          listeners.add(listener),
+        removeEventListener: (_: string, listener: () => void) =>
+          listeners.delete(listener),
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      window.history.replaceState(null, "");
+    });
+
+    async function pickBelowLg() {
+      window.history.replaceState(null, "");
+      render(<ChatShell />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => {
+        expect(columns().channels.className).not.toContain("max-lg:hidden");
+      });
+      fireEvent.click(screen.getByTestId("pick-random"));
+      expect(window.history.state).toMatchObject({
+        frappChatThreadPane: expect.any(String),
+      });
+    }
+
+    it("leaves Chat on the first Back, not after one press that changes nothing", async () => {
+      await pickBelowLg();
+      resize(1440);
+      const back = vi.spyOn(window.history, "back");
+      try {
+        // The member's own Back pops the pick's entry; the list is already on
+        // screen, so the same press carries on past the entry under it.
+        window.history.back();
+        await waitFor(() => expect(back).toHaveBeenCalledTimes(2));
+      } finally {
+        back.mockRestore();
+      }
+    });
+
+    it("never skips a later page's entry that shares the URL (#3836)", async () => {
+      await pickBelowLg();
+      resize(1440);
+      // Pages visited after the pick with chat still mounted beside them:
+      // a tool page, then chat alone again at the same URL, then another tool.
+      window.history.pushState({ page: "events" }, "");
+      window.history.pushState({ page: "chat-alone" }, "");
+      window.history.pushState({ page: "tasks" }, "");
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(window.history.state).toMatchObject({ page: "chat-alone" });
+        });
+        // Give a wrongly chained Back the time to land.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(back).toHaveBeenCalledTimes(1);
+        expect(window.history.state).toMatchObject({ page: "chat-alone" });
+      } finally {
+        back.mockRestore();
+      }
+    });
+
+    it("goes back once to an entry the arrow already returned to (#3836)", async () => {
+      await pickBelowLg();
+      // The arrow goes back through the pick's entry while still narrow.
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => {
+        expect(window.history.state).not.toMatchObject({
+          frappChatThreadPane: expect.any(String),
+        });
+      });
+      resize(1440);
+      window.history.pushState({ page: "events" }, "");
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(window.history.state).not.toMatchObject({ page: "events" });
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(back).toHaveBeenCalledTimes(1);
+      } finally {
+        back.mockRestore();
+      }
+    });
+
+    it("keeps the Back step when the window narrows again first", async () => {
+      await pickBelowLg();
+      resize(1440);
+      resize(800);
+      const back = vi.spyOn(window.history, "back");
+      try {
+        window.history.back();
+        await waitFor(() => {
+          expect(columns().channels.className).not.toContain("max-lg:hidden");
+        });
+        expect(back).toHaveBeenCalledTimes(1);
+      } finally {
+        back.mockRestore();
+      }
+    });
   });
 });
 

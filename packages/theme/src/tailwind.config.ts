@@ -173,7 +173,7 @@ const config: Partial<Config> = {
          * two homes were pure duplication.
          *
          * What stays app-local, and why it is not an oversight: the `gold`
-         * family is an `apps/web` treatment (the Ask pill), and the
+         * family is an `apps/web` treatment (Ask's source markers), and the
          * landing's three marketing type roles sit deliberately ABOVE the
          * locked six (`foundations.md` §7 amendment). Promoting either
          * would claim a treatment the other surface does not implement.

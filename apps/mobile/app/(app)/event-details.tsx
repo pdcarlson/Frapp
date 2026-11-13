@@ -65,6 +65,7 @@ import {
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
@@ -725,9 +726,7 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs,
     },
     sectionLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
     },
     sectionBody: {

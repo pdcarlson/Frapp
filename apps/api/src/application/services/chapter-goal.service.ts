@@ -33,7 +33,7 @@ const NO_GOALS = (): GoalSet => ({ everyone: null, roles: [] });
  * Chapter goals (#1062, `spec/behavior/activity.md` § Goals): what a chapter
  * holds its members to for points and service hours this semester and study
  * hours this week. Officers set them on each module's settings page; every
- * member sees a bar toward theirs in Activity's "This semester" block.
+ * member sees a ring toward theirs in Activity's "This semester" block.
  *
  * A measure has a goal for everyone and, optionally, a different goal for
  * some roles (Discord's role overrides, the way Who's coming reads by role).

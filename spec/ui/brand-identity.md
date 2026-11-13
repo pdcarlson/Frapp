@@ -52,6 +52,8 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
+> **One exception, Paul's, 2026-11-13: the crest on Ask Frapp's front doors takes the chapter accent.** Changed in #4702 by pdcarlson, 2026-11-13 (Paul's pick on the Ask redesign, default 2 on #4698: "it should show up with the logo"). The crest's outline is drawn as a one-colour glyph in the chapter's accent in three places and nowhere else: the Ask Frapp button in the web chat composer, the Ask Frapp bar above the phone's tab bar, and the header of the conversation each opens. There it is an icon for Ask, always beside the words "Ask Frapp", not the brand's signature: the mark everywhere else (the app icon, sign-in, the landing, the What's new sheet, every raster) stays the fixed gold on charcoal above, and `check:brand-assets` still holds the rasters to it. The glyph's one path is `FRAPP_CREST_PATH` in `packages/theme/src/crest.ts`, held to the brand vector by `crest.spec.ts`.
+
 ### Banned logo vocabulary
 
 Binding constraints (research-derived) for any future mark exploration:
