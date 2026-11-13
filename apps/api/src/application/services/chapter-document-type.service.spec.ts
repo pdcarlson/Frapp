@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { DOCUMENT_TYPES_MAX } from '@repo/validation';
 import type { IChapterDocumentTypeRepository } from '#domain/repositories/chapter-document-type.repository.interface';
-import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocumentType } from '#domain/entities/chapter-document.entity';
 import {
   ChapterDocumentTypeService,
@@ -26,9 +25,6 @@ const type = (
 
 describe('ChapterDocumentTypeService', () => {
   let typeRepo: jest.Mocked<IChapterDocumentTypeRepository>;
-  let documentRepo: jest.Mocked<
-    Pick<IChapterDocumentRepository, 'renameType' | 'clearType'>
-  >;
   let service: ChapterDocumentTypeService;
 
   beforeEach(() => {
@@ -37,14 +33,11 @@ describe('ChapterDocumentTypeService', () => {
       findById: jest.fn().mockResolvedValue(null),
       findByName: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+      setSortOrder: jest.fn(),
+      rename: jest.fn(),
+      deleteWithDocuments: jest.fn().mockResolvedValue(true),
     };
-    documentRepo = { renameType: jest.fn(), clearType: jest.fn() };
-    service = new ChapterDocumentTypeService(
-      typeRepo,
-      documentRepo as unknown as IChapterDocumentRepository,
-    );
+    service = new ChapterDocumentTypeService(typeRepo);
   });
 
   describe('create', () => {
@@ -93,61 +86,67 @@ describe('ChapterDocumentTypeService', () => {
   });
 
   describe('update', () => {
-    it('renames the type on its documents before renaming the row', async () => {
-      const order: string[] = [];
+    it('renames the row and its documents in one call to the database', async () => {
       typeRepo.findById.mockResolvedValue(type('Mins'));
-      documentRepo.renameType.mockImplementation(async () => {
-        order.push('documents');
-      });
-      typeRepo.update.mockImplementation(async () => {
-        order.push('type');
-        return type('Minutes');
-      });
+      typeRepo.rename.mockResolvedValue(type('Minutes'));
 
-      await service.update('t-Mins', 'ch-1', { name: 'Minutes' });
+      await expect(
+        service.update('t-Mins', 'ch-1', { name: ' Minutes ' }),
+      ).resolves.toMatchObject({ name: 'Minutes' });
 
-      expect(documentRepo.renameType).toHaveBeenCalledWith(
-        'Mins',
-        'Minutes',
-        'ch-1',
-      );
-      expect(order).toEqual(['documents', 'type']);
+      expect(typeRepo.rename).toHaveBeenCalledWith('ch-1', 't-Mins', 'Minutes');
     });
 
-    it('lets a type change only its case', async () => {
+    it('lets a type change only its spelling', async () => {
       typeRepo.findById.mockResolvedValue(type('bylaws'));
-      typeRepo.update.mockResolvedValue(type('Bylaws'));
+      typeRepo.rename.mockResolvedValue(type('By-Laws'));
 
-      await service.update('t-bylaws', 'ch-1', { name: 'Bylaws' });
+      await service.update('t-bylaws', 'ch-1', { name: 'By-Laws' });
 
       expect(typeRepo.findByName).not.toHaveBeenCalled();
-      expect(documentRepo.renameType).toHaveBeenCalledWith(
-        'bylaws',
-        'Bylaws',
+      expect(typeRepo.rename).toHaveBeenCalledWith(
         'ch-1',
+        't-bylaws',
+        'By-Laws',
       );
     });
 
-    it('refuses a rename onto another type', async () => {
+    it('refuses a rename onto another type before writing anything', async () => {
       typeRepo.findById.mockResolvedValue(type('Mins'));
       typeRepo.findByName.mockResolvedValue(type('Minutes'));
       await expect(
         service.update('t-Mins', 'ch-1', { name: 'minutes' }),
       ).rejects.toThrow(ConflictException);
-      expect(documentRepo.renameType).not.toHaveBeenCalled();
+      expect(typeRepo.rename).not.toHaveBeenCalled();
     });
 
-    it('moves without touching documents, and treats {} as a no-op', async () => {
+    it('reports a rename that lost a race as a conflict (the database changed nothing)', async () => {
+      typeRepo.findById.mockResolvedValue(type('Agenda'));
+      typeRepo.rename.mockResolvedValue(null);
+      await expect(
+        service.update('t-Agenda', 'ch-1', { name: 'Schedule' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('refuses a name with no letter or number', async () => {
+      typeRepo.findById.mockResolvedValue(type('Agenda'));
+      await expect(
+        service.update('t-Agenda', 'ch-1', { name: '***' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('moves without renaming, and treats {} as a no-op', async () => {
       const row = type('Form', 6);
       typeRepo.findById.mockResolvedValue(row);
-      typeRepo.update.mockResolvedValue({ ...row, sort_order: 0 });
+      typeRepo.setSortOrder.mockResolvedValue({ ...row, sort_order: 0 });
 
       await service.update(row.id, 'ch-1', { sort_order: 0 });
-      expect(documentRepo.renameType).not.toHaveBeenCalled();
+      expect(typeRepo.rename).not.toHaveBeenCalled();
+      expect(typeRepo.setSortOrder).toHaveBeenCalledWith(row.id, 'ch-1', 0);
 
-      typeRepo.update.mockClear();
+      typeRepo.setSortOrder.mockClear();
       await expect(service.update(row.id, 'ch-1', {})).resolves.toBe(row);
-      expect(typeRepo.update).not.toHaveBeenCalled();
+      expect(typeRepo.setSortOrder).not.toHaveBeenCalled();
     });
 
     it('is a 404 for another chapter’s type', async () => {
@@ -158,18 +157,19 @@ describe('ChapterDocumentTypeService', () => {
   });
 
   describe('delete', () => {
-    it('clears the type from its documents, then deletes it', async () => {
-      typeRepo.findById.mockResolvedValue(type('Agenda'));
+    it('clears and deletes in one call to the database', async () => {
       await service.delete('t-Agenda', 'ch-1');
-      expect(documentRepo.clearType).toHaveBeenCalledWith('Agenda', 'ch-1');
-      expect(typeRepo.delete).toHaveBeenCalledWith('t-Agenda', 'ch-1');
+      expect(typeRepo.deleteWithDocuments).toHaveBeenCalledWith(
+        'ch-1',
+        't-Agenda',
+      );
     });
 
     it('is a 404 for a type not in the chapter', async () => {
+      typeRepo.deleteWithDocuments.mockResolvedValue(false);
       await expect(service.delete('t-x', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
-      expect(documentRepo.clearType).not.toHaveBeenCalled();
     });
   });
 
@@ -211,8 +211,9 @@ describe('ChapterDocumentTypeService', () => {
     });
   });
 
-  it('normalizeTypeName trims and collapses whitespace', () => {
+  it('normalizeTypeName trims and collapses whitespace, and has no name for punctuation alone', () => {
     expect(normalizeTypeName('  Meeting \t minutes ')).toBe('Meeting minutes');
+    expect(normalizeTypeName('*')).toBeNull();
     expect(normalizeTypeName(null)).toBeNull();
   });
 });

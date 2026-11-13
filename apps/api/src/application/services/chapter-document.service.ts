@@ -191,17 +191,18 @@ export class ChapterDocumentService {
     // allowed — it is how every folder came into being before folders were
     // first-class. Register it so it shows up in the folder list and can be
     // renamed, reordered, and deleted like any other.
-    if (folder !== null) {
-      await this.ensureFolder(folder, input.chapter_id);
-    }
-
     // The type is stored in the chapter's own spelling, and a type the
     // chapter doesn't have yet joins its list, as a new folder does
-    // (`spec/behavior/chapter-docs.md` § Document types).
+    // (`spec/behavior/chapter-docs.md` § Document types). Resolved before the
+    // folder, so a refusal (a full list) leaves no folder behind.
     const documentType = await this.typeService.resolveForUpload(
       input.chapter_id,
       input.document_type,
     );
+
+    if (folder !== null) {
+      await this.ensureFolder(folder, input.chapter_id);
+    }
 
     const document = await this.documentRepo.create({
       chapter_id: input.chapter_id,

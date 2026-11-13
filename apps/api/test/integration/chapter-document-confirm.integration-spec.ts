@@ -67,7 +67,7 @@ describeIntegration(
         unused,
         unused,
         unused,
-        new ChapterDocumentTypeService(unused, unused),
+        new ChapterDocumentTypeService(unused),
       );
 
       assertOk(

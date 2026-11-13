@@ -13,8 +13,8 @@ export interface ChapterDocument {
   byte_size: number | null;
   /**
    * The name of one of the chapter's document types
-   * (`ChapterDocumentType`), in the list's spelling, or null. Older rows may
-   * hold a spelling that differs from the list's only in case.
+   * (`ChapterDocumentType`), or null. Rows filed before the list may hold
+   * another spelling of a type (by key), which rename and delete still match.
    */
   document_type: string | null;
   /**
@@ -51,8 +51,10 @@ export interface ChapterDocumentFolder {
  * One of a chapter's document types (#3642, piece 4). Like folders,
  * `ChapterDocument.document_type` stores the type's `name`, so renaming a type
  * renames it on its documents and deleting one clears it from them
- * (`ChapterDocumentService.updateType` / `deleteType`). Names are unique per
- * chapter ignoring case and outer whitespace.
+ * (`ChapterDocumentTypeService.update` / `delete`, through the database's
+ * `rename_chapter_document_type` / `delete_chapter_document_type`). Names are
+ * unique per chapter by key (`documentTypeKey`: case and everything but
+ * letters and digits ignored).
  */
 export interface ChapterDocumentType {
   id: string;
