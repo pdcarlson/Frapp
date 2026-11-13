@@ -99,6 +99,7 @@ Top to bottom:
   - **A part couldn't load:** its line draws a dash, the headline says "At least N left this week", and a warning line names the part.
     A failed read is never a zero and never a finished week.
   - **An API from before `week`:** no ring; the card is only Next.
+- **The nudge card** (`components/activity/nudge-card.tsx`, 2026-11-13, [#4781](https://github.com/pdcarlson/Frapp/issues/4781); rules in [`../../behavior/ai.md` § Nudges](../../behavior/ai.md#nudges)). At most one, under the week card, and only for a member who has Ask: an eyebrow "From Frapp" in the fixed house gold, a title, one or two sentences, and "A place to start" set off by a gold rule. Bevel's daily insight card and Duolingo's streak line are the comparables. Two outlined buttons, "See the task" (opens the task's sheet) and "Ask about this" (opens Ask with a question in the box); neither is filled, because Next holds the screen's one filled action. "More" offers Not now, Show fewer of these and Turn these off. A word of thanks has no starting point, no More, and one button, "Thanks". No card is the usual state, and it leaves no gap, no skeleton and no empty state. Preferences, Account, carries its switch ("Nudges on Activity") once the member has said yes to AI.
 - **A line of the week card narrows the To do list** to that kind, and reads as selected (accent text; `selected` to a screen reader).
   Pressing it again, or the list's "Show everything", clears it.
   The narrowing is never stored: it lasts while the app stays open and a fresh launch shows everything.
@@ -435,7 +436,8 @@ the title with the person's name in their role colour and the time beside it; th
 A mention is not a tinted row: the list stays flat.
 The unread dot is `--foreground`, as on web (it was the chapter accent until #4346), and a read row's title drops to regular weight and the body's tone.
 The category word that sat under each row until #4346 was derived from `data.target.screen`; the badge and the row's spoken label carry it now.
-A tap marks the row read **and** deep-links: the destination comes from `lib/notifications/targets.ts`, the same resolver the push handler uses, so an in-app tap and a push tap cannot name different screens.
+Since 2026-11-13 (#3948) a conversation's rows are one row, its newest, with how many messages it stands for under the preview ("14 messages") and in its spoken label, and an All / Unread segmented control spans the top of the list (shown once there is a row, and kept under Unread when it empties the list, so All is a tap away); [`notifications.md` § The in-app list](../../behavior/notifications.md#the-in-app-list) owns the rules.
+A tap marks the row read (every unread row a conversation's row stands for) **and** deep-links: the destination comes from `lib/notifications/targets.ts`, the same resolver the push handler uses, so an in-app tap and a push tap cannot name different screens.
 An unrecognized target resolves to this screen, so the row marks itself read and stays put rather than guessing
 
 ### s15 Profile (on the You tab)

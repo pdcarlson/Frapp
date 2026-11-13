@@ -88,6 +88,7 @@ export * from "./use-important-messages";
 export * from "./use-invites";
 export * from "./use-invoices";
 export * from "./use-meetings";
+export * from "./use-member-nudge";
 export * from "./use-members";
 export * from "./use-notifications";
 export * from "./use-now";

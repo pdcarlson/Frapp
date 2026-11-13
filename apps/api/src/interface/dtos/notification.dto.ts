@@ -128,6 +128,9 @@ const NOTIFICATION_SCREEN_REGEX = /^[a-z][a-z_]{0,39}$/;
 /** Most screens one "seen" call may name; a client screen covers one or two. */
 const MARK_READ_SCREENS_MAX = 10;
 
+/** Most rows one call may name: a client lists 50. */
+const MARK_READ_IDS_MAX = 100;
+
 export class MarkNotificationsReadDto {
   @ApiPropertyOptional({
     description:
@@ -142,6 +145,20 @@ export class MarkNotificationsReadDto {
   @ArrayMaxSize(MARK_READ_SCREENS_MAX)
   @Matches(NOTIFICATION_SCREEN_REGEX, { each: true })
   screens?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      "Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both.",
+    type: [String],
+    format: 'uuid',
+    maxItems: MARK_READ_IDS_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MARK_READ_IDS_MAX)
+  @IsUUID('all', { each: true })
+  ids?: string[];
 }
 
 export class MarkNotificationsReadResultDto {

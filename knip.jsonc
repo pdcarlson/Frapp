@@ -39,6 +39,11 @@
       // a spec.
       "ignoreDependencies": ["@supabase/realtime-js", "@supabase/storage-js"],
     },
+    "apps/desktop": {
+      // The preload, which Electron loads by path (package.json `main` covers the rest).
+      "entry": ["src/preload/index.ts"],
+      "eslint": { "config": ["eslint.config.mjs"] },
+    },
     "apps/mobile": {
       // Metro picks a platform file by suffix, which knip can't follow.
       "entry": ["**/*.{native,web,ios,android}.{ts,tsx}"],

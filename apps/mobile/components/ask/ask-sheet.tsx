@@ -175,8 +175,14 @@ export const AskSheet = forwardRef<
      * navigate over it.
      */
     onClosed?: (leftForSource: boolean) => void;
+    /**
+     * A question to open with, in the box for the member to send or change
+     * (a nudge card's "Ask about this", #4781). Never sent on its own. Read
+     * once, when the sheet mounts: a host gives each question its own `key`.
+     */
+    initialDraft?: string;
   }
->(function AskSheet({ onClosed }, ref) {
+>(function AskSheet({ onClosed, initialDraft }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
@@ -213,7 +219,7 @@ export const AskSheet = forwardRef<
   const mayAct = useMayAct();
   const { suggestions } = useAskSuggestions({ enabled: shownOpen });
 
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const leftForSource = useRef(false);
   const scroller = useRef<BottomSheetScrollViewMethods>(null);
   // Whether the member is reading the newest words: only then does the

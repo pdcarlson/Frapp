@@ -67,7 +67,7 @@ The repo is mid-rebuild (legacy Frapp → the Signet design system; the product 
 
 ## Project overview
 
-Turborepo + npm workspaces: 4 apps, 13 shared packages. Product and architecture: `spec/`. Developer guides: [`docs/guides/`](docs/guides/README.md). Documentation map: [`docs/README.md`](docs/README.md).
+Turborepo + npm workspaces: 5 apps, 13 shared packages. Product and architecture: `spec/`. Developer guides: [`docs/guides/`](docs/guides/README.md). Documentation map: [`docs/README.md`](docs/README.md).
 
 ## Branch model
 

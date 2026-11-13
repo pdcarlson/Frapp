@@ -67,6 +67,7 @@ export interface INotificationRepository {
     chapterId: string,
     readThrough: string,
     screens?: readonly string[],
+    ids?: readonly string[],
   ): Promise<number>;
   /**
    * Replace the body of the rows in the chapter that quote chat message

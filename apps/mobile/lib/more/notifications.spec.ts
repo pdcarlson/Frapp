@@ -198,3 +198,40 @@ describe("selectReadNonChatIds", () => {
     expect(selectReadNonChatIds(undefined).size).toBe(0);
   });
 });
+
+describe("selectNotificationGroups: one entry per conversation (#3948)", () => {
+  const chat = (id: string, hour: number, read = false) =>
+    row({
+      id,
+      created_at: iso(at(2026, 8, 17, hour)),
+      read_at: read ? iso(at(2026, 8, 17, 19)) : null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u1" },
+    });
+
+  it("collapses a channel's rows into its newest, unread while any is", () => {
+    const [today] = selectNotificationGroups(
+      [chat("old", 10), row({ id: "event" }), chat("new", 19, true)],
+      NOW,
+    );
+    expect(today?.rows.map((r) => r.id)).toEqual(["new", "event"]);
+    expect(today?.rows[0]).toMatchObject({
+      isUnread: true,
+      count: "2 messages",
+    });
+    expect(today?.rows[1]?.count).toBeNull();
+  });
+
+  it("under unread, lists only what is still new", () => {
+    const [today] = selectNotificationGroups(
+      [
+        chat("old", 10),
+        chat("new", 19, true),
+        row({ id: "event", read_at: iso(NOW) }),
+      ],
+      NOW,
+      "unread",
+    );
+    expect(today?.rows.map((r) => r.id)).toEqual(["old"]);
+    expect(today?.rows[0]?.count).toBeNull();
+  });
+});

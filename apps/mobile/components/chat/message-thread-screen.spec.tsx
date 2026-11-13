@@ -195,6 +195,13 @@ const rosterCatchUp = vi.hoisted(() =>
   vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
 );
 
+// Save (#3723): the viewer has saved r2; writes are seen, not sent.
+const save = vi.hoisted(() => ({
+  savedIds: new Set<string>(["r2"]),
+  setSaved: vi.fn(),
+}));
+vi.mock("@/lib/chat/save-message", () => ({ useSaveMessage: () => save }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
@@ -894,6 +901,10 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
       canStartThread: false,
       canMention: false,
     });
+    // Save is here as on web's thread panel, read from the viewer's saves.
+    expect(target.save).toEqual({ saved: true });
+    act(() => sheet(tree).props.onSetSaved("r2", false));
+    expect(save.setSaved).toHaveBeenCalledWith("r2", false);
     // Not offered here: the channel timeline's Reply, Start thread, Mention
     // and Important.
     expect(sheet(tree).props.onReply).toBeUndefined();

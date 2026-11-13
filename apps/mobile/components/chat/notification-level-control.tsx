@@ -61,6 +61,9 @@ export const NOTIFICATION_LEVEL_OPTIONS: {
 
 /** The trigger, when its menu holds channel actions and no level is known. */
 export const CHANNEL_MENU_LABEL = "Channel menu";
+/** Said on a locked level row when no write-blocked reason applies. */
+export const LEVEL_UNAVAILABLE_HINT =
+  "Notification level unavailable. Try again in a moment.";
 /** Said after the level, so the actions in the menu can be found by ear. */
 const CHANNEL_MENU_HINT = "Also holds this channel's actions.";
 
@@ -115,8 +118,17 @@ export type NotificationLevelMenuState = {
   fromChapterLevel: boolean;
   /** Queueless-write reason from connection-state.md; `null` when the control may write. */
   writeBlockedReason: string | null;
-  /** The control cannot write: disabled, level unknown, or writes blocked. */
+  /**
+   * The trigger can't open: no channel, or nothing in the menu it could act
+   * on (the level rows locked and no channel actions beside them).
+   */
   blocked: boolean;
+  /**
+   * The level rows can't write: no channel, the level unknown (a pick would
+   * write over a level never read), or writes blocked. The channel's own
+   * actions stay usable (#3723): Pinned and Saved only read.
+   */
+  levelLocked: boolean;
   /** The menu holds channel actions besides the levels. */
   hasActions: boolean;
   /** The menu is on screen. */
@@ -145,10 +157,8 @@ export function useNotificationLevelMenu({
 }): NotificationLevelMenuState {
   const [isOpen, setIsOpen] = useState(false);
 
-  const blocked =
-    disabled ||
-    Boolean(writeBlockedReason) ||
-    (level === null && !hasActions);
+  const levelLocked = disabled || Boolean(writeBlockedReason) || level === null;
+  const blocked = disabled || (levelLocked && !hasActions);
   // Close, don't just hide (#2034). The trigger is disabled while blocked, so a
   // menu merely hidden then could not be dismissed, and it came back by itself
   // once writes unblocked: over the whole screen, taking the member's next tap.
@@ -175,6 +185,7 @@ export function useNotificationLevelMenu({
     fromChapterLevel,
     writeBlockedReason,
     blocked,
+    levelLocked,
     hasActions,
     visible,
     toggle,
@@ -342,8 +353,16 @@ export function NotificationLevelMenu({
               key={option.level}
               accessibilityRole="button"
               accessibilityLabel={`${label}. ${option.description}`}
-              accessibilityState={{ selected, disabled: isSaving }}
-              disabled={isSaving}
+              accessibilityState={{
+                selected,
+                disabled: isSaving || menu.levelLocked,
+              }}
+              accessibilityHint={
+                menu.levelLocked
+                  ? (menu.writeBlockedReason ?? LEVEL_UNAVAILABLE_HINT)
+                  : undefined
+              }
+              disabled={isSaving || menu.levelLocked}
               onPress={() => {
                 if (!selected) onChange(option.level);
                 menu.close();
@@ -351,6 +370,7 @@ export function NotificationLevelMenu({
               style={({ pressed }) => [
                 styles.option,
                 index > 0 ? styles.optionDivided : null,
+                menu.levelLocked ? styles.optionLocked : null,
                 pressed ? styles.pressed : null,
               ]}
             >
@@ -394,6 +414,10 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.6,
+    },
+    /** A level row that can't write now, drawn as a disabled control. */
+    optionLocked: {
+      opacity: 0.4,
     },
     /** The overlay, and the backdrop inside it. */
     fill: {

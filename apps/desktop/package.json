@@ -1,0 +1,31 @@
+{
+  "name": "desktop",
+  "productName": "Frapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Frapp desktop app: an Electron shell around the hosted web app (ADR-29).",
+  "author": "Frapp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pdcarlson/Frapp.git",
+    "directory": "apps/desktop"
+  },
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && npx --yes electron-builder@26.18.1 --publish never",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/theme": "*",
+    "@repo/typescript-config": "*",
+    "electron": "45.3.1",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
+  }
+}
