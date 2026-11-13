@@ -642,8 +642,30 @@ describe("thumbs under an answer (#4904)", () => {
       onSend: vi.fn(),
     });
     expect(screenText(reported)).not.toContain(ASK_FEEDBACK_COPY.send.action);
-    // The reasons stay: the rating is still the member's to explain.
+    // Reported before the thumbs: the rating is still the member's to explain.
     expect(screenText(reported)).toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("fold to the thanks line once a report goes in from the offer", () => {
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <AskTurn
+            exchange={traced}
+            canOpen={() => false}
+            {...handlers()}
+            report={{ reported: true, onPress: vi.fn(), onSend: vi.fn() }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
   });
 
   it("say so when a rating did not send", () => {

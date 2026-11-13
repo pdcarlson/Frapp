@@ -25,8 +25,10 @@ const NONE: AskThumbsState = { rating: null, reason: null };
  *
  * A tap shows at once and is sent after. If the send fails the thumbs go back
  * to what the server last took and `failed` is set until the next tap, so a
- * member never reads a rating the team did not get. Only the newest tap's
- * outcome is applied: an older one landing late changes nothing.
+ * member never reads a rating the team did not get. Taps are sent one after
+ * another, in the order they were made, so the server ends on the last one
+ * and "what the server last took" is never an older tap landing late. Only
+ * the newest tap's failure is shown: an older one failing changes nothing.
  *
  * It sends a rating and a reason against the answer's id, never a word of
  * the question or the answer. It is kept for as long as the answer stays on
@@ -45,6 +47,7 @@ export function useAskThumbs(askId: string | null | undefined): {
   const taken = useRef<AskThumbsState>(NONE);
   const shown = useRef<AskThumbsState>(NONE);
   const tap = useRef(0);
+  const queue = useRef<Promise<void>>(Promise.resolve());
 
   const send = useCallback(
     (next: AskThumbsState) => {
@@ -54,7 +57,7 @@ export function useAskThumbs(askId: string | null | undefined): {
       setState(next);
       setFailed(false);
       const path = { ask_id: askId };
-      const request =
+      const request = () =>
         next.rating === null
           ? client.DELETE("/v1/ai/ask/{ask_id}/feedback", { params: { path } })
           : client.PUT("/v1/ai/ask/{ask_id}/feedback", {
@@ -64,7 +67,8 @@ export function useAskThumbs(askId: string | null | undefined): {
                 ...(next.reason ? { reason: next.reason } : {}),
               },
             });
-      void Promise.resolve(request)
+      queue.current = queue.current
+        .then(() => request())
         .then((result) => throwUnlessOk(result))
         .then(
           () => {

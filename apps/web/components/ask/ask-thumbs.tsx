@@ -69,7 +69,8 @@ export function AskThumbButtons({
  * The offer is made only for an answer that came with a receipt: without one
  * a report keeps none of the answer, so "send this answer" would not be true.
  *
- * "Not now" and a sent report both fold it back to the thanks line. It is
+ * "Not now" and a sent report both fold it back to the thanks line, the
+ * report once its own sheet has said so and been closed. It is
  * keyed by the rating where it is used, so a change of thumb starts it over.
  */
 export function AskThumbsFollowUp({
@@ -77,7 +78,13 @@ export function AskThumbsFollowUp({
   failed,
   onReason,
   target,
+  reported = false,
+  onReported,
 }: {
+  /** The answer is already reported, so there is nothing left to offer. */
+  reported?: boolean;
+  /** A report went in from here, for the row's flag to read "Reported". */
+  onReported?: () => void;
   state: AskThumbsState;
   failed: boolean;
   onReason: (reason: AskFeedbackReason) => void;
@@ -85,6 +92,7 @@ export function AskThumbsFollowUp({
 }) {
   const [sending, setSending] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [sentHere, setSentHere] = useState(false);
 
   if (failed) {
     return (
@@ -94,7 +102,7 @@ export function AskThumbsFollowUp({
     );
   }
   if (state.rating === null) return null;
-  if (state.rating === "up" || closed) {
+  if (state.rating === "up" || closed || (sentHere && !sending)) {
     return (
       <p role="status" className="text-caption text-muted-foreground">
         {ASK_FEEDBACK_COPY.thanks}
@@ -125,7 +133,7 @@ export function AskThumbsFollowUp({
           </Button>
         ))}
       </div>
-      {target.receipt ? (
+      {target.receipt && (!reported || sending) ? (
         <p className="text-caption text-muted-foreground">
           {ASK_FEEDBACK_COPY.send.line}{" "}
           <button
@@ -150,7 +158,10 @@ export function AskThumbsFollowUp({
           target={target}
           initialReason={askFeedbackReportReason(state.reason)}
           onClose={() => setSending(false)}
-          onReported={() => setClosed(true)}
+          onReported={() => {
+            setSentHere(true);
+            onReported?.();
+          }}
         />
       ) : null}
     </div>

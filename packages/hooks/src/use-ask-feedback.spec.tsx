@@ -21,6 +21,7 @@ describe("useAskThumbs", () => {
     const { result } = renderHook(() => useAskThumbs("ask-1"));
     act(() => result.current.rate("up"));
     expect(result.current.state).toEqual({ rating: "up", reason: null });
+    await act(async () => {});
     expect(client.PUT).toHaveBeenCalledWith("/v1/ai/ask/{ask_id}/feedback", {
       ...PATH,
       body: { rating: "up" },
@@ -32,6 +33,7 @@ describe("useAskThumbs", () => {
     act(() => result.current.rate("up"));
     act(() => result.current.rate("up"));
     expect(result.current.state.rating).toBeNull();
+    await act(async () => {});
     expect(client.DELETE).toHaveBeenCalledWith(
       "/v1/ai/ask/{ask_id}/feedback",
       PATH,
@@ -39,6 +41,7 @@ describe("useAskThumbs", () => {
     act(() => result.current.rate("down"));
     act(() => result.current.giveReason("missed"));
     expect(result.current.state).toEqual({ rating: "down", reason: "missed" });
+    await act(async () => {});
     expect(client.PUT).toHaveBeenLastCalledWith(
       "/v1/ai/ask/{ask_id}/feedback",
       { ...PATH, body: { rating: "down", reason: "missed" } },
@@ -74,6 +77,25 @@ describe("useAskThumbs", () => {
     await act(async () => fail());
     expect(result.current.state.rating).toBe("down");
     expect(result.current.failed).toBe(false);
+  });
+
+  it("sends taps in order, so a failed newer tap falls back to the older one the server took", async () => {
+    let land!: () => void;
+    client.PUT.mockReturnValueOnce(
+      new Promise((resolve) => {
+        land = () => resolve(ok);
+      }),
+    ).mockResolvedValueOnce(down);
+    const { result } = renderHook(() => useAskThumbs("ask-1"));
+    act(() => result.current.rate("up"));
+    act(() => result.current.rate("down"));
+    // The second waits for the first.
+    await act(async () => {});
+    expect(client.PUT).toHaveBeenCalledTimes(1);
+    await act(async () => land());
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(client.PUT).toHaveBeenCalledTimes(2);
+    expect(result.current.state).toEqual({ rating: "up", reason: null });
   });
 
   it("sends nothing for an answer with no id", () => {

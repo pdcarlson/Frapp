@@ -54,8 +54,14 @@ export function ReportAiButton({
   className,
   iconOnly = false,
   name,
+  reported: reportedElsewhere = false,
 }: {
   target: AiReportTarget;
+  /**
+   * Already reported by another way in (the send offer under a thumbs down,
+   * `ask-thumbs.tsx`), so this reads "Reported" too.
+   */
+  reported?: boolean;
   className?: string;
   /**
    * The flag alone, for a row that already carries its own icon actions
@@ -66,7 +72,8 @@ export function ReportAiButton({
   name?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [reported, setReported] = useState(false);
+  const [reportedHere, setReported] = useState(false);
+  const reported = reportedHere || reportedElsewhere;
   const permissions = useMyPermissions().data?.permissions;
   const label = reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action;
   // The report route asks for `ai:use`, as Ask does. A member without it

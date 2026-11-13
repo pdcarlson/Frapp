@@ -34,12 +34,18 @@ vi.mock("@/components/ai/report-ai", async (importOriginal) => ({
   ReportAiDialog: (props: {
     initialReason?: string | null;
     onReported: () => void;
+    onClose: () => void;
   }) => {
     reportDialog.opened(props.initialReason);
     return (
-      <button type="button" onClick={props.onReported}>
-        fake report sent
-      </button>
+      <>
+        <button type="button" onClick={props.onReported}>
+          fake report sent
+        </button>
+        <button type="button" onClick={props.onClose}>
+          fake report closed
+        </button>
+      </>
     );
   },
 }));
@@ -653,10 +659,20 @@ describe("AskTurn", () => {
         screen.getByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
       );
       expect(reportDialog.opened).toHaveBeenCalledWith("wrong");
-      // Once it is sent the offer folds away.
+      // Once it is sent the sheet stays up to say so; closing it folds the
+      // offer away, and the row's flag reads Reported.
       await userEvent.click(
         screen.getByRole("button", { name: "fake report sent" }),
       );
+      expect(
+        screen.getByRole("button", { name: "fake report closed" }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: "fake report closed" }),
+      );
+      expect(
+        screen.getByRole("button", { name: AI_REPORT_COPY.reported }),
+      ).toBeDisabled();
       expect(
         screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
       ).toBeNull();

@@ -411,6 +411,7 @@ function AnswerActions({
           reason={thumbs.state.reason}
           failed={thumbs.failed}
           onReason={thumbs.giveReason}
+          reported={report?.reported ?? false}
           send={report && !report.reported ? (report.onSend ?? null) : null}
         />
       ) : null}
@@ -434,8 +435,9 @@ function RatedAnswerActions({
  * What a thumbs opens under the row. An up gets one line of thanks. A down
  * asks why in one tap, then says the rating carried none of the words and
  * offers to send the answer through Report this, which opens on the reason
- * already given. "Not now", and a report once sent (`send` goes null), fold
- * it back to the thanks line. Keyed by the rating, so a change of thumb
+ * already given. "Not now", and a report sent while it is open, fold it back
+ * to the thanks line; an answer reported before the thumbs still gets its
+ * reasons, without the offer. Keyed by the rating, so a change of thumb
  * starts it over.
  */
 function ThumbsFollowUp({
@@ -444,7 +446,10 @@ function ThumbsFollowUp({
   failed,
   onReason,
   send,
+  reported,
 }: {
+  /** The answer has been reported, from here or from the flag. */
+  reported: boolean;
   rating: "up" | "down" | null;
   reason: string | null;
   failed: boolean;
@@ -455,6 +460,7 @@ function ThumbsFollowUp({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const [closed, setClosed] = useState(false);
+  const [reportedBefore] = useState(reported);
 
   if (failed) {
     return (
@@ -464,7 +470,7 @@ function ThumbsFollowUp({
     );
   }
   if (rating === null) return null;
-  if (rating === "up" || closed) {
+  if (rating === "up" || closed || (reported && !reportedBefore)) {
     return (
       <Text accessibilityLiveRegion="polite" style={styles.note}>
         {ASK_FEEDBACK_COPY.thanks}

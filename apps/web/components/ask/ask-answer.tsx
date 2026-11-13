@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Check, Copy } from "lucide-react";
 import {
@@ -244,6 +245,8 @@ function AnswerActions({
     receipt: answer.report_receipt ?? null,
   };
   const thumbs = useAskThumbs(answer.ask_id);
+  // One answer, two ways to report it: the flag and a thumbs down's offer.
+  const [reported, setReported] = useState(false);
   return (
     <div className="space-y-2">
       <div className="-ml-2 flex items-center">
@@ -257,7 +260,12 @@ function AnswerActions({
             className={QUIET_ACTION}
           />
         ) : null}
-        <ReportAiButton iconOnly className={QUIET_ACTION} target={target} />
+        <ReportAiButton
+          iconOnly
+          className={QUIET_ACTION}
+          target={target}
+          reported={reported}
+        />
       </div>
       {answer.ask_id ? (
         <AskThumbsFollowUp
@@ -266,6 +274,8 @@ function AnswerActions({
           failed={thumbs.failed}
           onReason={thumbs.giveReason}
           target={target}
+          reported={reported}
+          onReported={() => setReported(true)}
         />
       ) : null}
     </div>
