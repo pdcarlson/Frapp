@@ -130,6 +130,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When someone submits a task you gave them, the notification says who submitted what, and tapping it opens a review with their proof up front. With several waiting, Confirm moves on to the next.",
       "Can't make it is now on a required event's chat card too, and opens the event with your excuse ready to write.",
       "Mandatory now shows only on the events that need you, as a quiet label instead of a red badge.",
+      "A sign-up sheet, headcount or form you haven't answered yet now shows under Needs you on Activity until you answer it or it closes, and tapping it takes you straight to it in chat.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
