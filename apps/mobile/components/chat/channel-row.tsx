@@ -20,6 +20,7 @@ import { type ChannelMark } from "@repo/hooks/channel-start";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
+  countsLookUnread,
   PIN_TO_TOP_LABEL,
   UNPIN_FROM_TOP_LABEL,
 } from "@repo/hooks";
@@ -180,12 +181,14 @@ export function ChannelRow({
     unreadCount,
     mentionCount,
   });
-  // A mention always implies an unread row even if the counts ever disagree —
-  // a red badge over a read-styled row would be a contradiction on screen.
-  const isUnread = unreadCount > 0 || hasMention;
   // Muted rows read as read unless they address the member: a mention gets
-  // past a mute, as it does for push.
-  const looksUnread = isUnread && (!isMuted || hasMention);
+  // past a mute, as it does for push. The same rule decides what a folded
+  // section header counts and what Unread only keeps (#3999).
+  const looksUnread = countsLookUnread(
+    isDirect,
+    { unreadCount, mentionCount },
+    isMuted,
+  );
 
   return (
     <PressableRow
