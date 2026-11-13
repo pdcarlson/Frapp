@@ -39,7 +39,7 @@
  */
 
 import { MARK_GLYPH_PATHS, NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { Svg, detail, markFillProps, stroke } from "@/components/ui/duotone";
+import { Svg, markFillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
@@ -72,24 +72,10 @@ export function FolderGlyph(props: ResourcesGlyphProps) {
 
 /**
  * A pin, for a folder or file an officer pinned for the whole chapter
- * (#3934). Chat's pin shape (`MARK_GLYPH_PATHS.pin`): pinning a message, a
- * channel and a document is one idea, so it is one shape. Drawn here rather
- * than re-exported because a pinned document's pin is solid (#4289,
- * `markFillProps`); the needle stays a stroke. #4292 brings chat's pin to the
- * same fill, after which this goes back to a re-export.
+ * (#3934): chat's `PinGlyph`, since pinning a message, a channel and a
+ * document is one idea. Solid while pinned (#4289, #4292).
  */
-export function PinGlyph({ className, active }: ResourcesGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path
-        d={MARK_GLYPH_PATHS.pin.body}
-        {...stroke}
-        {...markFillProps(active)}
-      />
-      <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
-    </Svg>
-  );
-}
+export { PinGlyph } from "@/components/chat/chat-glyphs";
 
 /**
  * A star, for a folder or file a member starred for themselves (#3934),

@@ -59,11 +59,11 @@ Rules:
    Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception,
    **Documents' Star and Pin** (§6.2.5). While on, the silhouette is solid in
    its hue; while off, it is the outline. Chat's channel pin and bookmark
-   (§6.2.2) are the same kind of toggle and still take the tinted fill until
-   [#4292](https://github.com/pdcarlson/Frapp/issues/4292). At 16–18% an on star read as the off outline in another
+   (§6.2.2) are the same kind of toggle and fill the same way since
+   [#4292](https://github.com/pdcarlson/Frapp/issues/4292) (2026-11-13). At 16–18% an on star read as the off outline in another
    colour, so the state rode on colour alone (Shawn: "it should fill in the
    star. It shouldn't just turn purple"). Same path data, filled, as Google
-   Drive, Gmail and Dropbox draw a star. Web: `markFillProps` in
+   Drive, Gmail and Dropbox draw a star (and Slack a saved item's ribbon). Web: `markFillProps` in
    `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
    `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
    selection and every other state still recolor only.
@@ -394,8 +394,8 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Semantic intent | Glyph |
 |---|---|
 | Pinned message | `PinGlyph` |
-| Pin a channel to the top of your own list (#2877), filled while pinned | `PinGlyph` |
-| Bookmarked message (personal) | `BookmarkGlyph` |
+| Pin a channel to the top of your own list (#2877), solid while pinned (#4292, §1 rule 1's exception) | `PinGlyph` |
+| Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
@@ -585,9 +585,9 @@ which is §1 rule 1's rule and the two preceding families' practice.
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 `PinGlyph` takes chat's pin shape (§6.2.2), since pinning a message, a
-channel and a document is one idea; until #4289 (2026-11-11) it was a
-re-export, and it is drawn here now because a document's pin fills solid
-while chat's keeps the tinted recipe. `StarGlyph` is drawn here, because no
+channel and a document is one idea, and it is a re-export of chat's again
+since #4292 (2026-11-13), when chat's pin took the same solid fill; from
+#4289 until then it was drawn here, because only a document's pin filled solid. `StarGlyph` is drawn here, because no
 set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
