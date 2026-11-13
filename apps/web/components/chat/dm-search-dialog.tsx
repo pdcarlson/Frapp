@@ -53,7 +53,7 @@ import type { ChatChannel } from "./channel-list";
  * and Instagram's new-message button opens a "To:" search.
  *
  * What it finds and who it offers are the shared rules in
- * `@repo/hooks/dm-search`, written to be the phone's too.
+ * `@repo/hooks/dm-search`, which the phone's Messages search runs too.
  *
  * A pick opens through the shell (`onOpenChannel`), the way a click on a row
  * of the list does, never through the URL: the shell applies a `?channel=`
