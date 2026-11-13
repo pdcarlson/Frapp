@@ -1618,12 +1618,16 @@ describe("ActivityPage", () => {
       for (const name of [
         "act:confirm:Sweep the porch",
         "act:approve:Food bank",
-        "act:check-in:Chapter meeting",
       ]) {
         expect(
           within(review).getByRole("button", { name }),
         ).toBeInTheDocument();
       }
+      // An event open for check-in sits on its day in To do, its Check in a
+      // button on the row there (#4427).
+      expect(
+        screen.getByRole("button", { name: "act:check-in:Chapter meeting" }),
+      ).toBeInTheDocument();
       // A zoned event needs the member's location, which the web can't give
       // (#4427): its Check in stays the row's ask and opens the panel, which
       // says to use the phone.
