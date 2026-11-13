@@ -18,9 +18,8 @@ import { SearchModule } from '../search/search.module';
  *
  * It provides and exports the tool classes of `CONVERSATION_AGENT_TOOLS`
  * and nothing else: no route, no table, no worker. The agent loop's module
- * imports this one and lists the classes under `AGENT_READ_TOOLS`
- * (`application/services/ask/agent/agent-tool.ts`). Until it does, no tool
- * here can be called by anything.
+ * (`AskModule`) imports this one and lists the classes under
+ * `AGENT_READ_TOOLS` (`application/services/ask/agent/agent-tool.ts`).
  *
  * Each import is the module of a service a tool reads through, the same
  * service the mirrored route calls.

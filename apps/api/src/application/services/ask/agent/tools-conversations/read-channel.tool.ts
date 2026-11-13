@@ -84,7 +84,7 @@ const NOTHING_THERE_NOTE =
  * the rest counted, and no thread under a recruitment candidate's card.
  * Nothing is marked read.
  *
- * **Why 20 messages a call.** One message is one source, so each can be
+ * **Why a call is capped.** One message is one source, so each can be
  * cited and opened, and a result holds at most `AGENT_RESULT_MAX_SOURCES`.
  * A busy channel moves a few hundred messages a week, so a week does not
  * fit one call and is not meant to: the model reads the newest stretch,

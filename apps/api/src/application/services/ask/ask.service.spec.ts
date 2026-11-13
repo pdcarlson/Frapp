@@ -1596,17 +1596,103 @@ describe('AskService', () => {
         expect(answer.ask_id).toBeUndefined();
       });
 
-      it('says a limit cut the turn short even when it then answered', async () => {
+      it('calls a turn that answered at the loop’s limit answered', async () => {
         const { service, trace } = build({
           agentTools: [agentTool()],
           loop: [{ type: 'end', outcome: outcome({ stop: 'call_limit' }) }],
         });
         const { answer } = await run(service);
         expect(answer.status).toBe('answered');
+        expect(traceOf(trace)).toMatchObject({ outcome: 'answered' });
+      });
+
+      it('calls a turn a spending cap refused a limit, by which cap', async () => {
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                result: {
+                  status: 'unavailable',
+                  reason: 'spend_cap',
+                  detail: 'member_cap',
+                },
+                sources: [],
+                stop: 'unavailable',
+                rounds: [],
+              }),
+            },
+          ],
+        });
+        await run(service);
         expect(traceOf(trace)).toMatchObject({
           outcome: 'limit',
-          limit: 'tool_calls',
+          limit: 'member_limit',
         });
+      });
+
+      it('keeps one step for the calls past the limit, however many', async () => {
+        const over = {
+          tool: 'roster',
+          outcome: 'over_limit' as const,
+          argBytes: 2,
+          sources: 0,
+          chars: 0,
+          cut: false,
+          ms: 0,
+        };
+        const rounds = outcome().rounds;
+        rounds[0].calls.push(...Array.from({ length: 40 }, () => over));
+        const { service, trace } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: outcome({ rounds }) }],
+        });
+        await run(service);
+        expect(
+          (traceOf(trace).steps as { outcome: string }[]).map(
+            (step) => step.outcome,
+          ),
+        ).toEqual(['ok', 'ok', 'error', 'over_limit', 'ok']);
+      });
+
+      it('closes the loop and records stopped when the reader stops mid-turn', async () => {
+        let closed = false;
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            try {
+              await Promise.resolve();
+              yield {
+                type: 'tool',
+                name: 'roster',
+                reading: 'Reading the roster',
+              };
+              yield { type: 'end', outcome: outcome() };
+            } finally {
+              closed = true;
+            }
+          },
+        );
+        for await (const event of service.ask(input(), NOW)) {
+          if (event.type === 'status' && event.step === 'reading') break;
+        }
+        expect(closed).toBe(true);
+        expect(trace.record).toHaveBeenCalledTimes(1);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped' });
+      });
+
+      it('records a call cut off by the member leaving as stopped, not failed', async () => {
+        const { service, trace, loop } = build({ agentTools: [agentTool()] });
+        loop.run.mockImplementation(
+          // eslint-disable-next-line require-yield
+          async function* (): AsyncGenerator<AgentLoopEvent> {
+            await Promise.resolve();
+            throw new LanguageModelError('aborted', 'anthropic', {});
+          },
+        );
+        await expect(run(service)).rejects.toBeInstanceOf(LanguageModelError);
+        expect(traceOf(trace)).toMatchObject({ outcome: 'stopped' });
       });
 
       it('records a turn the member left as stopped', async () => {
@@ -1762,6 +1848,39 @@ describe('AskService', () => {
       expect(answer.entities).toEqual([
         { type: 'member', id: 'u-dana', name: 'Dana Reyes' },
         { type: 'channel', id: 'c-gen', name: 'general' },
+      ]);
+    });
+
+    it('links a name only where it stands on its own, and never one two members share', async () => {
+      const base = outcome();
+      const { service } = build({
+        loop: [
+          {
+            type: 'end',
+            outcome: outcome({
+              entities: [
+                { type: 'member', id: 'u-sam', name: 'Sam' },
+                { type: 'member', id: 'u-sam-lee', name: 'Sam Lee' },
+                { type: 'member', id: 'u-chris-1', name: 'Chris Park' },
+                { type: 'member', id: 'u-chris-2', name: 'Chris Park' },
+                { type: 'channel', id: 'c-gen', name: 'general' },
+                { type: 'channel', id: 'c-rush', name: 'rush' },
+              ],
+              result: {
+                ...(base.result as Extract<
+                  AgentLoopOutcome['result'],
+                  { status: 'ok' }
+                >),
+                text: '@Sam Lee and @Chris Park posted it in #general-chat and #rush.',
+              },
+            }),
+          },
+        ],
+      });
+      const { answer } = await run(service);
+      expect(answer.entities).toEqual([
+        { type: 'member', id: 'u-sam-lee', name: 'Sam Lee' },
+        { type: 'channel', id: 'c-rush', name: 'rush' },
       ]);
     });
 

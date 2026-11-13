@@ -113,7 +113,8 @@ export const AskRequestSchema = z.object({
   door: z.enum(ASK_DOORS).optional(),
   /**
    * What the member had open ({@link AskFromSchema}), so "this channel" and
-   * "this event" mean something. Unlike `door` it is read. Left out by
+   * "this event" mean something. Unlike `door` it is meant to be read; the
+   * server takes it and does not read it yet (#4899). Left out by
    * builds before the tool loop (epic #4898), and by Ask's own screen.
    */
   from: AskFromSchema.nullish(),

@@ -9,11 +9,7 @@ import type {
   AskTraceToolStep,
   AskTurnTrace,
 } from '../observe/ask-trace';
-import type {
-  AgentCallTrace,
-  AgentLoopOutcome,
-  AgentStop,
-} from './agent-loop.service';
+import type { AgentCallTrace, AgentLoopOutcome } from './agent-loop.service';
 
 /** How a turn through the tool loop ended, for its trace. */
 export type AgentTurnEnd =
@@ -45,13 +41,6 @@ export interface AgentTurnFacts {
   /** The names of the tools the member was offered. */
   toolsOffered: readonly string[];
 }
-
-/** The loop's limits, as the trace's `limit` codes. */
-const LIMITS: Partial<Record<AgentStop, string>> = {
-  round_limit: 'rounds',
-  call_limit: 'tool_calls',
-  time_limit: 'time',
-};
 
 /** The gateway's caps, as the trace's `limit` codes. */
 const CAPS: Readonly<Record<string, string>> = {
@@ -97,7 +86,10 @@ function stepsOf(
       cachedInputTokens: round.cachedInputTokens,
       costMicroUsd: cost(round),
     },
-    ...round.calls.map((call): AskTraceToolStep => ({
+    // Every call past the turn's limit says the same thing, and a round
+    // can ask for any number of them: one is kept, so they cannot crowd
+    // the rounds after them out of the trace (`ASK_TRACE_MAX_STEPS`).
+    ...onePastTheLimit(round.calls).map((call): AskTraceToolStep => ({
       kind: 'tool',
       round: index,
       tool: call.outcome === 'unknown_tool' ? null : call.tool,
@@ -110,13 +102,25 @@ function stepsOf(
   ]);
 }
 
+function onePastTheLimit(calls: readonly AgentCallTrace[]): AgentCallTrace[] {
+  let past = false;
+  return calls.filter((call) => {
+    if (call.outcome !== 'over_limit') return true;
+    if (past) return false;
+    past = true;
+    return true;
+  });
+}
+
 /**
  * One turn of the tool loop as `AskTraceService.record` takes it (#4902):
  * names, sizes, counts and codes from the loop's own trace. Nothing the
  * member, a tool or the model wrote is read here, so none can be kept.
  *
- * A turn a limit cut short is `limit` even when the model then wrote an
- * answer with what it had: that is what says the limits are too tight.
+ * The outcome is what the member got. A turn the loop's own limits cut
+ * short still answers with what it had read, so it is `answered` (or
+ * `not_found`), and shows as a turn with every round or read used; `limit`
+ * is a spending cap that left no answer at all.
  */
 export function agentTurnTrace(
   facts: AgentTurnFacts,
@@ -156,7 +160,7 @@ export function agentTurnTrace(
     result.status === 'unavailable' && result.detail
       ? CAPS[result.detail]
       : undefined;
-  const limit = LIMITS[outcome.stop] ?? cap ?? null;
+  const limit = cap ?? null;
   const ended: AskTraceOutcome = limit !== null ? 'limit' : end.status;
   return {
     ...base,

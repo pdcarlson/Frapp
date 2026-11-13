@@ -624,9 +624,24 @@ describe('Stored AI text: an AI call with no report made keeps no text (#4315)',
       captured.database.filter((call) => call[1] === 'settle_ai_spend'),
     ).toHaveLength(2);
     // The turn's trace was written, steps and all, and the answer names it.
-    expect(captured.database).toContainEqual(['from', 'ai_ask_traces']);
     expect(captured.database).toContainEqual(['from', 'ai_ask_trace_steps']);
-    expect(body).toContain('"ask_id":"');
+    const frames = body
+      .split('\n\n')
+      .map((frame) => frame.replace(/^data: /, ''))
+      .filter((frame) => frame.startsWith('{'))
+      .map(
+        (frame) =>
+          JSON.parse(frame) as {
+            type: string;
+            ask_id?: string;
+            answer?: { ask_id?: string };
+          },
+      );
+    const started = frames.find((frame) => frame.type === 'start')?.ask_id;
+    expect(started).toEqual(expect.any(String));
+    expect(frames.find((frame) => frame.type === 'done')?.answer?.ask_id).toBe(
+      started,
+    );
 
     expect(leaks(captured)).toEqual([]);
   });

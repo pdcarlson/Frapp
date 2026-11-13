@@ -352,15 +352,47 @@ function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
  * so is a real name it did not mark.
  */
 function namedIn(text: string, entities: readonly AgentEntity[]): AskEntity[] {
-  const seen = new Set<string>();
-  return entities.flatMap((entity): AskEntity[] => {
+  // One name, one thing: two members called the same cannot be told apart
+  // by a name in the text, so neither is linked.
+  const byMark = new Map<string, AskEntity | null>();
+  for (const entity of entities) {
     const name = entity.name.trim();
+    if (!name) continue;
     const mark = `${entity.type === 'member' ? '@' : '#'}${name}`;
-    const key = `${entity.type}:${entity.id}`;
-    if (!name || seen.has(key) || !text.includes(mark)) return [];
-    seen.add(key);
-    return [{ type: entity.type, id: entity.id, name }];
-  });
+    const held = byMark.get(mark);
+    if (held === undefined) {
+      byMark.set(mark, { type: entity.type, id: entity.id, name });
+    } else if (held !== null && held.id !== entity.id) byMark.set(mark, null);
+  }
+  const marks = [...byMark.keys()];
+  return [...byMark].flatMap(([mark, entity]): AskEntity[] =>
+    entity !== null && marksText(text, mark, marks) ? [entity] : [],
+  );
+}
+
+/**
+ * Whether `text` has `mark` standing on its own: not running on into more
+ * of a word ("#general" in "#general-chat"), and not as the start of a
+ * longer mark the tools also named ("@Sam" in "@Sam Lee").
+ */
+function marksText(
+  text: string,
+  mark: string,
+  marks: readonly string[],
+): boolean {
+  const longer = marks.filter(
+    (other) => other.length > mark.length && other.startsWith(mark),
+  );
+  for (
+    let at = text.indexOf(mark);
+    at !== -1;
+    at = text.indexOf(mark, at + 1)
+  ) {
+    const rest = text.slice(at);
+    if (/^[\p{L}\p{N}_-]/u.test(rest.slice(mark.length))) continue;
+    if (!longer.some((other) => rest.startsWith(other))) return true;
+  }
+  return false;
 }
 
 /**
@@ -644,8 +676,10 @@ export class AskService {
     // What the turn's trace says of it beside what the loop did (#4902).
     // Every way out below this line records one, and none holds any text.
     const began = Date.now();
-    const traced = (end: AgentTurnEnd): Promise<boolean> =>
-      this.trace.record(
+    let recorded = false;
+    const traced = (end: AgentTurnEnd): Promise<boolean> => {
+      recorded = true;
+      return this.trace.record(
         agentTurnTrace(
           {
             askId,
@@ -663,6 +697,7 @@ export class AskService {
           end,
         ),
       );
+    };
     const reads: string[] = [];
     let pending = '';
     let writing = false;
@@ -687,51 +722,61 @@ export class AskService {
       titleOf,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
-    for (;;) {
-      let next: IteratorResult<AgentLoopEvent, void>;
-      try {
-        next = await turn.next();
-      } catch (error) {
-        await traced({
-          kind: 'error',
-          errorKind:
-            error instanceof LanguageModelError ? error.kind : 'unknown',
-        });
-        throw error;
-      }
-      if (next.done) break;
-      const part = next.value;
-      if (part.type === 'text') {
-        pending += part.delta;
-        if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
-          if (!writing) {
-            writing = true;
-            yield this.step('writing');
-          }
-          yield event({ type: 'text', delta: pending });
-          pending = '';
+    try {
+      for (;;) {
+        let next: IteratorResult<AgentLoopEvent, void>;
+        try {
+          next = await turn.next();
+        } catch (error) {
+          const kind =
+            error instanceof LanguageModelError ? error.kind : 'unknown';
+          // A call cut off because the member left did not fail.
+          await traced(
+            kind === 'aborted' || input.signal?.aborted
+              ? { kind: 'stopped' }
+              : { kind: 'error', errorKind: kind },
+          );
+          throw error;
         }
-      } else if (part.type === 'discard') {
-        // Words before a call were not the answer. Any that already went out
-        // are replaced by the final answer, as every streamed word is.
-        pending = '';
-        writing = false;
-      } else if (part.type === 'tool') {
-        if (!reads.includes(part.name)) reads.push(part.name);
-        yield event({
-          type: 'status',
-          step: 'reading',
-          reads: [...reads],
-          tool: part.name,
-          label: part.reading,
-        });
-      } else outcome = part.outcome;
+        if (next.done) break;
+        const part = next.value;
+        if (part.type === 'text') {
+          pending += part.delta;
+          if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
+            if (!writing) {
+              writing = true;
+              yield this.step('writing');
+            }
+            yield event({ type: 'text', delta: pending });
+            pending = '';
+          }
+        } else if (part.type === 'discard') {
+          // Words before a call were not the answer. Any that already went out
+          // are replaced by the final answer, as every streamed word is.
+          pending = '';
+          writing = false;
+        } else if (part.type === 'tool') {
+          if (!reads.includes(part.name)) reads.push(part.name);
+          yield event({
+            type: 'status',
+            step: 'reading',
+            reads: [...reads],
+            tool: part.name,
+            label: part.reading,
+          });
+        } else outcome = part.outcome;
+      }
+    } finally {
+      // Whoever was reading this stream stopped (the member left, or the
+      // turn became a card) while the loop was mid-round: close it, so the
+      // model call under it is settled, and say so in the trace.
+      if (outcome === null) {
+        await turn.return(undefined);
+        if (!recorded) await traced({ kind: 'stopped' });
+      }
     }
     // The loop ends with nothing for a member who left.
-    if (outcome === null) {
-      await traced({ kind: 'stopped' });
-      return;
-    }
+    if (outcome === null) return;
     if (pending && outcome.result.status === 'ok') {
       if (!writing) yield this.step('writing');
       yield event({ type: 'text', delta: pending });
