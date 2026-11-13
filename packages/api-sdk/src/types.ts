@@ -1582,6 +1582,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/form-responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it
+         * @description Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.
+         */
+        get: operations["ChatFormController_getResponses_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bookmarks": {
         parameters: {
             query?: never;
@@ -6315,6 +6335,29 @@ export interface components {
         };
         OwnFormResponseDto: {
             response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        FormResponseEntryDto: {
+            /** Format: uuid */
+            user_id: string;
+            answers: {
+                [key: string]: string | string[];
+            };
+            /**
+             * Format: date-time
+             * @description When they first answered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When they last changed their answers.
+             */
+            updated_at: string;
+        };
+        FormResponsesDto: {
+            /** @description Every saved response, first answered first. Names are joined from the roster; a member no longer on it has left. */
+            responses: components["schemas"]["FormResponseEntryDto"][];
+            /** @description Members who can read the form’s channel now and haven’t answered, the creator left out. */
+            not_responded: string[];
         };
         SaveFormResponseDto: {
             /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
@@ -12991,6 +13034,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getResponses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponsesDto"];
                 };
             };
             /** @description Error */

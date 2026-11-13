@@ -20,9 +20,10 @@ import type { ChatMessage } from "./types";
  * same way.
  *
  * Answers are private: they are never on the card or in
- * `chat_message_actions`. Each member's are one row the API reads back only
- * to them (`GET` / `PUT /v1/channels/messages/{id}/form-response`), and a
- * member may change them until the form closes. The API checks every answer
+ * `chat_message_actions`. Each member's are one row the API reads back to
+ * them (`GET` / `PUT /v1/channels/messages/{id}/form-response`) and to the
+ * form's creator, and to no one else (`GET …/form-responses`, #3926 step 4).
+ * A member may change them until the form closes. The API checks every answer
  * against the card (`form-card-rules.ts`); {@link formAnswerProblems} is the
  * same check, run in the form so a member sees what to fix before sending.
  */

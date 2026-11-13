@@ -5135,6 +5135,53 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/form-responses": {
+      "get": {
+        "description": "Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.",
+        "operationId": "ChatFormController_getResponses_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponsesDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/bookmarks": {
       "get": {
         "operationId": "ChatBookmarkController_listBookmarks_v1",
@@ -20634,6 +20681,71 @@
             ]
           }
         }
+      },
+      "FormResponseEntryDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When they first answered."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When they last changed their answers."
+          }
+        },
+        "required": [
+          "user_id",
+          "answers",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "FormResponsesDto": {
+        "type": "object",
+        "properties": {
+          "responses": {
+            "description": "Every saved response, first answered first. Names are joined from the roster; a member no longer on it has left.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormResponseEntryDto"
+            }
+          },
+          "not_responded": {
+            "description": "Members who can read the form’s channel now and haven’t answered, the creator left out.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "responses",
+          "not_responded"
+        ]
       },
       "SaveFormResponseDto": {
         "type": "object",
