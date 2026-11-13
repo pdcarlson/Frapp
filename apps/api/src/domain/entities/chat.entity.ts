@@ -810,8 +810,8 @@ export type StoredChatMessageBookmark = Omit<
  * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
  * indexes it: one row per link per message. `spec/behavior/activity.md`
  * § Links. Which hosts are gathered is decided by the database's
- * `activity_action_links`; the API's title read keeps its own copy of the
- * list (`isSignUpHost`) for what it may open.
+ * `activity_action_links`; the API's title read opens only what the
+ * TypeScript copy of the list (`signUpLinkKind` in `@repo/validation`) allows.
  */
 export interface ChatMessageLink {
   id: string;

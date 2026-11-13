@@ -336,14 +336,14 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
   Workspace account's `/a/<domain>` prefix, and `forms.gle`), Microsoft Forms
   (`forms.office.com`, `forms.microsoft.com`, `forms.cloud.microsoft`), Typeform, SignUpGenius and
-  Calendly. What is gathered is decided by `activity_action_links` in the database, which is
-  flagged for Paul to change or widen. Two copies of the list follow it, and a widening changes
-  all three. The page names each row's kind ("Google Form", "Calendly") from `activityLinkKind`
-  in `@repo/hooks`: a host added to the database alone is gathered and titled by its bare host
-  until it gets a name there. The name read below opens only what `isSignUpHost` in `apps/api`
-  allows: a link on a host added to the database alone is gathered, but its read is refused,
-  which is a definite answer, so a link posted before the API's copy catches up never gets a
-  name. Any other link is not gathered, and neither is a URL with a user name
+  Calendly (`calendly.com` itself, not a subdomain). What is gathered is decided by
+  `activity_action_links` in the database, which is flagged for Paul to change or widen. The list
+  has two copies: that SQL, and `signUpLinkKind` in `@repo/validation`, and a widening changes
+  both and adds a row to `packages/validation/sign-up-link-fixtures.json`, which both are tested
+  against (#4215). The TypeScript copy names each row's kind ("Google Form", "Calendly") on the
+  page and decides what the name read below may open. A host added to the database alone is
+  gathered and titled by its bare host, and its read is refused, which is a definite answer, so a
+  link posted before the TypeScript copy catches up never gets a name. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a

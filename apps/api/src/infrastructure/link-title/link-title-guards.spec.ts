@@ -1,43 +1,27 @@
-import {
-  fetchableUrl,
-  isPublicAddress,
-  isSignUpHost,
-} from './link-title-guards';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fetchableUrl, isPublicAddress } from './link-title-guards';
 
 describe('link title guards (#4187)', () => {
-  describe('isSignUpHost', () => {
-    it.each([
-      ['docs.google.com', '/forms/d/e/abc/viewform'],
-      ['docs.google.com', '/spreadsheets/d/abc/edit'],
-      ['docs.google.com', '/document/d/abc/edit'],
-      ['docs.google.com', '/a/rpi.edu/forms/d/abc/viewform'],
-      ['forms.gle', '/abc'],
-      ['forms.office.com', '/r/abc'],
-      ['forms.microsoft.com', '/r/abc'],
-      ['forms.cloud.microsoft', '/r/abc'],
-      ['typeform.com', '/to/abc'],
-      ['chapter.typeform.com', '/to/abc'],
-      ['signupgenius.com', '/go/abc'],
-      ['www2.signupgenius.com', '/go/abc'],
-      ['calendly.com', '/olive/rush'],
-    ])('allows %s%s', (host, path) => {
-      expect(isSignUpHost(host, path)).toBe(true);
-    });
+  describe('the sign-up list (#4215)', () => {
+    // The shared fixtures, through the API's real allowlist: the database
+    // gathers a URL exactly when its title read may open it.
+    const { fixtures } = JSON.parse(
+      readFileSync(
+        join(
+          __dirname,
+          '../../../../../packages/validation/sign-up-link-fixtures.json',
+        ),
+        'utf8',
+      ),
+    ) as { fixtures: { url: string; kind: string | null }[] };
 
-    it.each([
-      // Google's sign-in, where a private file redirects.
-      ['accounts.google.com', '/ServiceLogin'],
-      ['docs.google.com', '/presentation/d/abc'],
-      ['docs.google.com', '/'],
-      ['drive.google.com', '/file/d/abc'],
-      ['eviltypeform.com', '/to/abc'],
-      ['typeform.com.evil.example', '/to/abc'],
-      ['calendly.com.evil.example', '/'],
-      ['sub.calendly.com', '/'],
-      ['example.com', '/forms/'],
-    ])('refuses %s%s', (host, path) => {
-      expect(isSignUpHost(host, path)).toBe(false);
-    });
+    it.each(fixtures.map((f) => [f.url, f.kind !== null] as const))(
+      '%s is fetchable: %s',
+      (url, fetchable) => {
+        expect(fetchableUrl(url) !== null).toBe(fetchable);
+      },
+    );
   });
 
   describe('fetchableUrl', () => {

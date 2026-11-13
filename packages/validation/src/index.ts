@@ -183,6 +183,8 @@ export * from "./role-colors";
 export * from "./screen-copy";
 export * from "./service-points";
 export * from "./service-receipt";
+// The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).
+export * from "./sign-up-links";
 export * from "./signed-upload";
 export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle
