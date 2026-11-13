@@ -256,7 +256,7 @@ A second shape beside reply-with-quote, which stays exactly as above: **Start th
 
 - Any member can bookmark any message they can see. Bookmarks are **private to the bookmarker** — no one else (not even channel admins) can see who bookmarked what.
 - Bookmarked messages appear in a personal "Bookmarks" view, scoped per chapter.
-- On the phone (#3723), Save message / Remove from Saved on a message's long-press sheet, and the list is Saved messages in the thread header's menu (web's is Saved in the channel menu). A row opens its message in its channel; a row whose channel the viewer can no longer read does not open.
+- On the phone (#3723), Save message / Remove from Saved on a message's long-press sheet, and the list is Saved messages in the thread header's menu (web's is Saved in the channel menu). A row opens its message in its channel, or in its thread when it is a reply (`GET /v1/bookmarks` carries `thread_root_id` for that); a jump that can't reach it says why; a row whose channel the viewer can no longer read does not open. Save is also on a message thread's sheet, root and replies, as on web.
 - A bookmark does not affect the underlying message's lifecycle. If the original message is deleted, the bookmark surfaces a "[message deleted]" placeholder.
 - Bookmarks are the right answer for "I want to remember this myself" without elevating to chapter-wide visibility.
 

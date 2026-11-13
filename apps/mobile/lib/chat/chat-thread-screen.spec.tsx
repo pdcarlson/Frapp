@@ -488,7 +488,8 @@ const rosterCatchUp = vi.hoisted(() =>
   vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
 );
 
-const NO_SAVED: Set<string> = new Set();
+/** The viewer's saved message ids; cleared after each test that adds one. */
+const SAVED: Set<string> = new Set();
 const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
@@ -501,7 +502,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useGifAvailability: () => ({ available: false, provider: "" }),
   useActiveChapterId: () => "chapter-1",
   // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
-  useBookmarkedMessageIds: () => NO_SAVED,
+  useBookmarkedMessageIds: () => SAVED,
   useBookmarkMessage: () => bookmarkWrites.save,
   useUnbookmarkMessage: () => bookmarkWrites.unsave,
   useBookmarks: () => ({ data: [], isPending: false, isError: false }),
@@ -2624,6 +2625,117 @@ describe("message threads (#3785)", () => {
     const audit = render();
     expect(rows(audit)[0]!.props.onOpenThread).toBeUndefined();
     act(() => audit.unmount());
+  });
+});
+
+// Pin and Save (#3723): Pin only for a `channels:manage` holder, both read
+// live, and the Pinned and Saved lists open what they list.
+describe("chat thread Pin and Save from the actions sheet", () => {
+  const openSheetOn = (tree: ReturnType<typeof render>, index = 0) => {
+    const row = rows(tree)[index]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Pin only to a channels:manage holder, reading the pin live", () => {
+    channel = channelState({ messages: [message("m1")] });
+    let tree = render();
+    expect(openSheetOn(tree).props.target.pin).toBeUndefined();
+    act(() => tree.unmount());
+
+    permissionList = ["channels:manage"];
+    channel = channelState({ messages: [message("m1", { is_pinned: true })] });
+    tree = render();
+    expect(openSheetOn(tree).props.target.pin).toEqual({ pinned: true });
+    act(() => tree.unmount());
+  });
+
+  it("pins through the channel, and says so when the server refuses", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    const setPinned = vi.fn(async () => {
+      throw new Error("This channel already has 50 pinned messages.");
+    });
+    permissionList = ["channels:manage"];
+    channel = channelState({ messages: [message("m1")], setPinned });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    await act(async () => {
+      (sheet.props.onSetPinned as (id: string, p: boolean) => void)("m1", true);
+      await Promise.resolve();
+    });
+    expect(setPinned).toHaveBeenCalledWith("m1", true);
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't pin message",
+      expect.any(String),
+    );
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("reads Save from the viewer's saved messages, and saves or unsaves", () => {
+    SAVED.add("m1");
+    channel = channelState({ messages: [message("m1"), message("m2")] });
+    const tree = render();
+    let sheet = openSheetOn(tree, 0);
+    const savedTarget = sheet.props.target as {
+      messageId: string;
+      save: unknown;
+    };
+    const first = savedTarget.messageId;
+    expect(savedTarget.save).toEqual({ saved: SAVED.has(first) });
+    act(() =>
+      (sheet.props.onSetSaved as (id: string, s: boolean) => void)("m1", false),
+    );
+    expect(bookmarkWrites.unsave.mutateAsync).toHaveBeenCalledWith("m1");
+    sheet = openSheetOn(tree, 1);
+    const other = sheet.props.target as { messageId: string; save: unknown };
+    expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
+    expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
+    SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("opens a listed thread reply in its thread, and another channel's message there", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const list = tree.root.find(
+      (node) =>
+        typeof node.props.onOpen === "function" &&
+        typeof node.props.kind === "string",
+    );
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    act(() =>
+      (list.props.onOpen as (t: unknown) => void)({
+        channelId: "elsewhere",
+        messageId: "r1",
+        threadRootId: "root",
+      }),
+    );
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: {
+        channelId: "elsewhere",
+        threadRootId: "root",
+        focusMessageId: "r1",
+      },
+    });
+    act(() =>
+      (list.props.onOpen as (t: unknown) => void)({
+        channelId: "elsewhere",
+        messageId: "m9",
+        threadRootId: null,
+      }),
+    );
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "elsewhere", focusMessageId: "m9" },
+    });
+    act(() => tree.unmount());
   });
 });
 

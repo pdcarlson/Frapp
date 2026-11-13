@@ -94,6 +94,7 @@ const mocks = vi.hoisted(() => {
     editMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     deleteMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     setMessageFlag: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+    setMessagePinned: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
     listForChannel: vi.fn(async () => [] as unknown[]),
     draftLoad: vi.fn(async () => ""),
@@ -136,6 +137,7 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   editMessage: mocks.editMessage,
   deleteMessage: mocks.deleteMessage,
   setMessageFlag: mocks.setMessageFlag,
+  setMessagePinned: mocks.setMessagePinned,
 }));
 
 // The + sheet's Task and Service hours posts (#3865): chat-core's own calls,
@@ -1344,16 +1346,16 @@ describe("reply, edit and delete (#2775)", () => {
       await result.current.flag("m1", "funny");
       await result.current.flag("m1", null);
     });
-    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
-      1,
-      expect.anything(),
-      { channelId: CHANNEL, messageId: "m1", flag: "funny" },
-    );
-    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
-      2,
-      expect.anything(),
-      { channelId: CHANNEL, messageId: "m1", flag: null },
-    );
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(1, expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m1",
+      flag: "funny",
+    });
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(2, expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m1",
+      flag: null,
+    });
   });
 
   it("refuses to edit or delete without a runtime, rather than silently doing nothing", async () => {
@@ -2004,5 +2006,40 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
     });
     expect(outcome).toEqual({ ok: false, error: SIGNED_OUT_POST_COPY });
     expect(dispatchMocks.postTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("setPinned() (#3723)", () => {
+  it("pins through chat-core, then refetches the channel's pin list", async () => {
+    mocks.setMessagePinned.mockImplementation(async () => undefined);
+    const { result, queryClient } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    await act(async () => {
+      await result.current.setPinned("msg-1", true);
+    });
+
+    expect(mocks.setMessagePinned).toHaveBeenCalledWith(expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "msg-1",
+      pinned: true,
+    });
+    // `usePinnedMessages`' key.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["channels", CHANNEL, "pins"],
+    });
+  });
+
+  it("rejects with unpin wording when an unpin fails", async () => {
+    mocks.setMessagePinned.mockImplementation(async () => {
+      throw new Error("network");
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await expect(result.current.setPinned("msg-1", false)).rejects.toThrow(
+      /unpin/i,
+    );
   });
 });

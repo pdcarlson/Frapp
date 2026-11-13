@@ -226,8 +226,9 @@ export interface MessageActionsTarget {
   flag?: { current: ChatMessageFlag | null };
   /**
    * Pin message / Unpin message (#3723): whether it is pinned now, read from
-   * the cache on every render like `reactedWith`. Absent where the viewer may
-   * not pin (`channels:manage`, `canPinMessage`), which draws no row.
+   * the cache on every render like `reactedWith`. Absent where the viewer
+   * lacks `channels:manage`, the server's gate (the caller checks it), which
+   * draws no row.
    */
   pin?: { pinned: boolean };
   /**
@@ -948,7 +949,9 @@ export const MessageActionsSheet = forwardRef<
  * divider names it, then the time. The only place a phone shows a follow-on
  * row's time.
  */
-function sentAtLabel(sentAt: string): string {
+/** `Today at 9:41 PM`: when a message was sent, as the sheet's header line
+ * and the Pinned and Saved lists (`message-list-sheet.tsx`) say it. */
+export function sentAtLabel(sentAt: string): string {
   const day = dayDividerLabel(sentAt);
   const time = formatTimeOfDay(sentAt);
   return day && time ? `${day} at ${time}` : time;

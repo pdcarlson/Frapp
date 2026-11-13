@@ -33,7 +33,7 @@ import { omitColumns } from '../supabase.utils';
  * unpaginated for now.
  */
 const BOOKMARK_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id';
 
 const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
 

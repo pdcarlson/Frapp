@@ -63,10 +63,8 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
   useImportantMessages,
-  useBookmarkMessage,
-  useBookmarkedMessageIds,
-  useUnbookmarkMessage,
 } from "@repo/hooks";
+import { useSaveMessage } from "@/lib/chat/save-message";
 import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_OFFER_AT,
@@ -117,6 +115,7 @@ import {
   MessageListSheet,
   PINNED_TITLE,
   SAVED_TITLE,
+  type ListedMessage,
   type MessageListKind,
 } from "@/components/chat/message-list-sheet";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
@@ -173,7 +172,16 @@ import {
   type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
-import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
+import {
+  JUMP_MISS_COPY,
+  useJumpToImportant,
+  type JumpMissReason,
+} from "@/lib/chat/use-jump-to-important";
+
+/** A jump the member asked for by name couldn't reach its message (#3723). */
+function alertJumpMiss(reason: JumpMissReason) {
+  Alert.alert("Couldn't open that message", JUMP_MISS_COPY[reason]);
+}
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -715,7 +723,7 @@ function ChannelThreadScreen() {
     if (!focusMessageId || focusedOn.current === focusMessageId) return;
     if (inverted.length === 0) return;
     focusedOn.current = focusMessageId;
-    jumpToImportant(focusMessageId);
+    jumpToImportant(focusMessageId, { onMiss: alertJumpMiss });
   }, [focusMessageId, inverted.length, jumpToImportant]);
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
@@ -1014,36 +1022,33 @@ function ChannelThreadScreen() {
     [setPinned],
   );
   // Save message / Remove from Saved (#3723): the viewer's own bookmark.
-  const savedIds = useBookmarkedMessageIds();
-  const bookmarkMessage = useBookmarkMessage();
-  const unbookmarkMessage = useUnbookmarkMessage();
-  const handleSetSaved = useCallback(
-    (messageId: string, saved: boolean) => {
-      selectionHaptic();
-      const write = saved ? bookmarkMessage : unbookmarkMessage;
-      write.mutateAsync(messageId).catch((error: unknown) => {
-        Alert.alert(
-          saved ? "Couldn't save message" : "Couldn't remove from Saved",
-          errorCopy(error),
-        );
-      });
-    },
-    [bookmarkMessage, unbookmarkMessage],
-  );
-  // A Pinned or Saved row: this channel's scrolls to it, paging older history
-  // as the Important strip's jump does; another channel's opens on it.
+  const { savedIds, setSaved: handleSetSaved } = useSaveMessage();
+  // A Pinned or Saved row (#3723). A reply opens its thread, since it is never
+  // on the timeline. Otherwise this channel's scrolls to it, paging older
+  // history as the Important strip's jump does, and another channel's opens
+  // on it; either way a jump that can't reach it says why.
   const openListedMessage = useCallback(
-    (rowChannelId: string, messageId: string) => {
+    ({ channelId: rowChannelId, messageId, threadRootId }: ListedMessage) => {
+      if (threadRootId && rowChannelId === channelId) {
+        openThreadFor(threadRootId, messageId);
+        return;
+      }
       if (rowChannelId === channelId) {
-        jumpToImportant(messageId);
+        jumpToImportant(messageId, { onMiss: alertJumpMiss });
         return;
       }
       router.push({
         pathname: "/chat-thread",
-        params: { channelId: rowChannelId, focusMessageId: messageId },
+        params: threadRootId
+          ? {
+              channelId: rowChannelId,
+              threadRootId,
+              focusMessageId: messageId,
+            }
+          : { channelId: rowChannelId, focusMessageId: messageId },
       });
     },
-    [channelId, jumpToImportant, router],
+    [channelId, jumpToImportant, openThreadFor, router],
   );
 
   // A poll card's Close poll (#3794), asked first like Delete.

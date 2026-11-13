@@ -56,6 +56,8 @@ function redactBookmarkedMessage(
       author_external_id: null,
       content: BOOKMARK_REDACTED_CONTENT,
       is_deleted: false,
+      // The row can't be opened, so where it would open is withheld too.
+      thread_root_id: null,
       // Lost channel access is not a block, and saying otherwise would tell a
       // member they had blocked someone they had not. The two redactions are
       // deliberately separate signals; this one is `message_available: false`.

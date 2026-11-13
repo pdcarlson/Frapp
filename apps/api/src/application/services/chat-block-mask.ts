@@ -187,6 +187,7 @@ export function maskBlockedBookmarkMessage(
     content: BLOCKED_MESSAGE_CONTENT,
     is_deleted: message.is_deleted,
     created_at: message.created_at,
+    thread_root_id: message.thread_root_id,
     sender_blocked: true,
   };
 }

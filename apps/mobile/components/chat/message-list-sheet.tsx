@@ -7,12 +7,12 @@ import {
   usePinnedMessages,
   type NameResolver,
 } from "@repo/hooks";
-import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { replyPreviewText } from "@repo/chat-core/reply-preview";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
-import { formatTimeOfDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { sentAtLabel } from "./message-actions-sheet";
 import {
   ErrorState,
   SkeletonRegion,
@@ -44,13 +44,16 @@ import {
  *   would land on a channel the list does not hold. Each row has Remove, since
  *   a deleted message's bookmark has no long-press to unsave it from.
  *
- * A row opens its message in the channel (`onOpen`), which closes the sheet:
+ * A row opens its message in the channel, or in its thread when it is a
+ * reply (`onOpen`), which closes the sheet:
  * the jump is the confirmation. Discord's Pinned Messages and Slack's Saved
  * items both work this way.
  *
  * The reads live in {@link PinnedRows} and {@link SavedRows}, children of the
  * modal, because gorhom mounts a modal's children only while it is presented:
- * neither list is fetched until it is opened.
+ * the pins are not fetched until the list is opened. The Saved read is
+ * usually warm already, since the thread reads the same query
+ * (`useBookmarkedMessageIds`) for the Save row's label.
  */
 export type MessageListKind = "pinned" | "saved";
 
@@ -68,7 +71,7 @@ export interface MessageListSheetProps {
   channelId: string | null;
   nameFor: NameResolver;
   /** Open the message in its channel; the sheet closes first. */
-  onOpen: (channelId: string, messageId: string) => void;
+  onOpen: (target: ListedMessage) => void;
   /** Remove a Saved row's bookmark. Without it, Saved rows have no Remove. */
   onRemoveSaved?: (messageId: string) => void;
 }
@@ -85,9 +88,9 @@ export const MessageListSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const tallSheet = useTallSheetProps();
-  const open = (rowChannelId: string, messageId: string) => {
+  const open = (target: ListedMessage) => {
     closeSheet();
-    onOpen(rowChannelId, messageId);
+    onOpen(target);
   };
 
   return (
@@ -102,6 +105,7 @@ export const MessageListSheet = forwardRef<
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
         onAccessibilityEscape={closeSheet}
+        style={styles.scroll}
         contentContainerStyle={styles.body}
         stickyHeaderIndices={[0]}
       >
@@ -121,17 +125,16 @@ export const MessageListSheet = forwardRef<
   );
 });
 
-/** `Today at 9:41 PM`, the actions sheet's line for when a message was sent. */
-export function sentAtLabel(sentAt: string): string {
-  const day = dayDividerLabel(sentAt);
-  const time = formatTimeOfDay(sentAt);
-  return day && time ? `${day} at ${time}` : time;
-}
-
-interface ListRowModel {
-  key: string;
+/** Where a row opens: its channel, and its thread when it is a reply. */
+export interface ListedMessage {
   channelId: string;
   messageId: string;
+  /** The thread a reply is in (#3785): a reply is never on the timeline. */
+  threadRootId: string | null;
+}
+
+interface ListRowModel extends ListedMessage {
+  key: string;
   author: string;
   sentAt: string;
   preview: string;
@@ -148,7 +151,7 @@ export function PinnedRows({
 }: {
   channelId: string | null;
   nameFor: NameResolver;
-  onOpen: (channelId: string, messageId: string) => void;
+  onOpen: (target: ListedMessage) => void;
 }) {
   const query = usePinnedMessages(channelId ?? "");
   const rows = useMemo<ListRowModel[]>(() => {
@@ -162,6 +165,7 @@ export function PinnedRows({
         key: message.id,
         channelId: message.channel_id,
         messageId: message.id,
+        threadRootId: message.thread_root_id ?? null,
         author: resolveAuthorLabel(message, nameFor, null),
         sentAt: message.created_at,
         preview: blocked ? TOMBSTONE_TEXT : replyPreviewText(message),
@@ -175,7 +179,7 @@ export function PinnedRows({
     return (
       <ErrorState
         title="Couldn't load pinned messages"
-        body="This channel's pins couldn't reach the server."
+        body={describeLoadFailure(query.error)}
         onRetry={() => void query.refetch()}
         isRetrying={query.isFetching}
       />
@@ -191,7 +195,7 @@ export function SavedRows({
   onRemove,
 }: {
   nameFor: NameResolver;
-  onOpen: (channelId: string, messageId: string) => void;
+  onOpen: (target: ListedMessage) => void;
   onRemove?: (messageId: string) => void;
 }) {
   const query = useBookmarks();
@@ -200,16 +204,22 @@ export function SavedRows({
       (query.data ?? []).map((bookmark) => {
         // `!== false`: an older cached payload has no such field (web's rule).
         const available = bookmark.message_available !== false;
+        // A blocked member's message comes back masked, with a sentinel for
+        // its content: it reads as the thread's tombstone, as a pin does.
+        const blocked = bookmark.message.sender_blocked === true;
         return {
           key: bookmark.id,
           channelId: bookmark.message.channel_id,
           messageId: bookmark.message_id,
+          threadRootId: bookmark.message.thread_root_id ?? null,
           author: available
             ? resolveAuthorLabel(bookmark.message, nameFor, null)
             : SAVED_UNAVAILABLE,
           sentAt: bookmark.message.created_at,
-          preview: replyPreviewText(bookmark.message),
-          muted: bookmark.message.is_deleted || !available,
+          preview: blocked
+            ? TOMBSTONE_TEXT
+            : replyPreviewText(bookmark.message),
+          muted: blocked || bookmark.message.is_deleted || !available,
           openable: available,
         };
       }),
@@ -220,7 +230,7 @@ export function SavedRows({
     return (
       <ErrorState
         title="Couldn't load your saved messages"
-        body="Your saved messages couldn't reach the server."
+        body={describeLoadFailure(query.error)}
         onRetry={() => void query.refetch()}
         isRetrying={query.isFetching}
       />
@@ -240,7 +250,7 @@ function Rows({
 }: {
   rows: ListRowModel[];
   empty: string;
-  onOpen: (channelId: string, messageId: string) => void;
+  onOpen: (target: ListedMessage) => void;
   onRemove?: (messageId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -269,7 +279,13 @@ function Rows({
               <Pressable
                 accessibilityRole="button"
                 accessibilityHint="Opens this message in its channel."
-                onPress={() => onOpen(row.channelId, row.messageId)}
+                onPress={() =>
+                  onOpen({
+                    channelId: row.channelId,
+                    messageId: row.messageId,
+                    threadRootId: row.threadRootId,
+                  })
+                }
                 style={({ pressed }) => [
                   styles.rowBody,
                   pressed ? styles.pressed : null,
@@ -283,7 +299,7 @@ function Rows({
             {onRemove ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Remove ${row.author}'s message from Saved`}
+                accessibilityLabel={removeLabel(row)}
                 hitSlop={8}
                 onPress={() => onRemove(row.messageId)}
                 style={({ pressed }) => [
@@ -299,6 +315,13 @@ function Rows({
       })}
     </View>
   );
+}
+
+/** The Remove button's name: whose message, where the list can say it. */
+export function removeLabel(row: { author: string; openable: boolean }) {
+  return row.openable
+    ? `Remove ${row.author}'s message from Saved`
+    : "Remove this unavailable message from Saved";
 }
 
 function RowsSkeleton() {
@@ -319,7 +342,13 @@ function RowsSkeleton() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
+    // The member sheet's recipe: the side inset is the body's, so the title
+    // and the rows line up.
     body: {
+      paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
     },
     stickyHeader: {
@@ -334,7 +363,6 @@ function createStyles(tokens: SignetTokens) {
     rowBody: {
       flex: 1,
       gap: tokens.spacing.xs,
-      paddingHorizontal: tokens.spacing.lg,
       paddingVertical: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
     },
@@ -357,7 +385,7 @@ function createStyles(tokens: SignetTokens) {
     remove: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
+      paddingLeft: tokens.spacing.lg,
     },
     removeText: {
       ...typeRole(tokens.typography.role.label),
@@ -366,7 +394,6 @@ function createStyles(tokens: SignetTokens) {
     empty: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-      paddingHorizontal: tokens.spacing.lg,
       paddingVertical: tokens.spacing.xl,
     },
     pressed: {

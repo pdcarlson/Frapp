@@ -43,6 +43,8 @@ import {
   PINNED_EMPTY,
   SAVED_EMPTY,
   SAVED_UNAVAILABLE,
+  removeLabel,
+  type ListedMessage,
   type MessageListKind,
 } from "./message-list-sheet";
 
@@ -65,7 +67,7 @@ function message(over: Record<string, unknown>) {
 function render(
   kind: MessageListKind,
   handlers: {
-    onOpen?: (channelId: string, messageId: string) => void;
+    onOpen?: (target: ListedMessage) => void;
     onRemoveSaved?: (messageId: string) => void;
   } = {},
 ): ReactTestRenderer {
@@ -125,7 +127,11 @@ describe("Pinned messages (#3723)", () => {
     expect(shown.indexOf("New pin")).toBeLessThan(shown.indexOf("Old pin"));
     expect(shown).toContain("Casey");
     act(() => openButtons(tree)[0]!.props.onPress());
-    expect(onOpen).toHaveBeenCalledWith("c1", "new");
+    expect(onOpen).toHaveBeenCalledWith({
+      channelId: "c1",
+      messageId: "new",
+      threadRootId: null,
+    });
   });
 
   it("reads a blocked member's pin as the thread's tombstone, not their words", () => {
@@ -157,7 +163,11 @@ describe("Saved messages (#3723)", () => {
     const tree = render("saved", { onOpen, onRemoveSaved });
     expect(text(tree)).toContain("Dues due Friday");
     act(() => openButtons(tree)[0]!.props.onPress());
-    expect(onOpen).toHaveBeenCalledWith("c2", "m9");
+    expect(onOpen).toHaveBeenCalledWith({
+      channelId: "c2",
+      messageId: "m9",
+      threadRootId: null,
+    });
     const remove = tree.root.find(
       (node) =>
         typeof node.props.accessibilityLabel === "string" &&
@@ -181,6 +191,56 @@ describe("Saved messages (#3723)", () => {
     const tree = render("saved");
     expect(text(tree)).toContain(SAVED_UNAVAILABLE);
     expect(openButtons(tree)).toHaveLength(0);
+  });
+
+  it("opens a saved thread reply in its thread, since a reply is never on the timeline", () => {
+    reads.bookmarks.data = [
+      {
+        id: "b1",
+        message_id: "r1",
+        created_at: "2026-11-03T00:00:00Z",
+        message: message({
+          id: "r1",
+          channel_id: "c2",
+          thread_root_id: "root",
+        }),
+      },
+    ];
+    const onOpen = vi.fn();
+    const tree = render("saved", { onOpen });
+    act(() => openButtons(tree)[0]!.props.onPress());
+    expect(onOpen).toHaveBeenCalledWith({
+      channelId: "c2",
+      messageId: "r1",
+      threadRootId: "root",
+    });
+  });
+
+  it("reads a blocked member's saved message as the tombstone, not the server's sentinel", () => {
+    reads.bookmarks.data = [
+      {
+        id: "b1",
+        message_id: "m9",
+        created_at: "2026-11-03T00:00:00Z",
+        message: message({
+          id: "m9",
+          content: "[message from a blocked member]",
+          sender_blocked: true,
+        }),
+      },
+    ];
+    const shown = text(render("saved"));
+    expect(shown).toContain(TOMBSTONE_TEXT);
+    expect(shown).not.toContain("[message from a blocked member]");
+  });
+
+  it("names an unavailable row's Remove without calling it someone's message", () => {
+    expect(removeLabel({ author: SAVED_UNAVAILABLE, openable: false })).toBe(
+      "Remove this unavailable message from Saved",
+    );
+    expect(removeLabel({ author: "Blake", openable: true })).toBe(
+      "Remove Blake's message from Saved",
+    );
   });
 
   it("says when nothing is saved", () => {
