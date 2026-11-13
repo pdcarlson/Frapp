@@ -121,7 +121,8 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
   useFrappUser: () => ({ userId: "u-officer" }),
 }));
 
-const { NotificationsPopover } = await import("./notifications-popover");
+const { NotificationsPopover, deepLinkFor } =
+  await import("./notifications-popover");
 
 function notification(
   id: string,
@@ -755,5 +756,23 @@ describe("NotificationsPopover: what review caught (#4346)", () => {
     renderDrawer();
     const row = screen.getByRole("link", { name: /Task\.\s*Book the venue/ });
     expect(row.textContent).not.toContain("\uFFFC");
+  });
+});
+
+describe("deepLinkFor: task notifications", () => {
+  const task = (target: Record<string, string>) => ({
+    ...notification("n-task", "tasks", "2026-11-13T01:00:00Z"),
+    data: { target: { screen: "tasks", ...target } },
+  });
+
+  it("opens a submitted task's review in Activity", () => {
+    expect(deepLinkFor(task({ taskId: "t 1", view: "review" }))).toBe(
+      "/activity?review=t%201",
+    );
+  });
+
+  it("opens the board for every other task notification", () => {
+    expect(deepLinkFor(task({ taskId: "t1" }))).toBe("/tasks");
+    expect(deepLinkFor(task({ view: "review" }))).toBe("/tasks");
   });
 });
