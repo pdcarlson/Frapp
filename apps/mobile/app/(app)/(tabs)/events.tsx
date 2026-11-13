@@ -47,7 +47,7 @@ import {
   emptyEventDraft,
   type NewEventDraft,
 } from "@/lib/events/create-event";
-import { LEAD_TILE_SIZE } from "@/components/lead-tile";
+import { LeadTileSkeleton } from "@/components/lead-tile";
 import {
   createEventRowStyles,
   EventRowCard,
@@ -503,11 +503,7 @@ export function EventListSkeleton({
               index === 0 ? null : rowStyles.flatDivider,
             ]}
           >
-            <SkeletonBlock
-              width={LEAD_TILE_SIZE.lead}
-              height={LEAD_TILE_SIZE.lead}
-              radius={tokens.radius.chipLarge}
-            />
+            <LeadTileSkeleton />
             <View style={rowStyles.body}>
               <SkeletonText
                 role={label}

@@ -21,8 +21,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `apps/web/components/chat/channel-list.tsx`). They used to be two chips
  * above the list, the first thing on the screen for something rarely used.
  *
- * The trigger sits at the end of the list's first heading and shows a dot in
- * the chapter accent while a filter is on. The screen also prints a line
+ * The trigger sits on the list's first heading (before that heading's New
+ * channel + for someone who has one, and at its end otherwise, #4679) and
+ * shows a dot in the chapter accent while a filter is on. The screen also prints a line
  * under the heading saying so, so a shortened list never reads as a chapter
  * with fewer channels. Both filters are the member's synced preferences
  * (#2877), so the menu and web's agree.
@@ -40,6 +41,24 @@ const MENU_WIDTH = 264;
 const TRIGGER_GLYPH_SIZE = 20;
 const triggerGlyphInset = (tokens: SignetTokens) =>
   (tokens.touch.minimum - TRIGGER_GLYPH_SIZE) / 2;
+
+/**
+ * Where the menu opens for a trigger measured in the window: just under it,
+ * its right edge under the glyph's (the glyph sits inset in its 44pt
+ * target), and never off the screen's left.
+ */
+export function channelFilterMenuAnchor(
+  tokens: SignetTokens,
+  trigger: { x: number; y: number; width: number; height: number },
+): { top: number; left: number } {
+  return {
+    top: trigger.y + trigger.height + tokens.spacing.xs,
+    left: Math.max(
+      tokens.spacing.sm,
+      trigger.x + trigger.width - triggerGlyphInset(tokens) - MENU_WIDTH,
+    ),
+  };
+}
 
 export type ChannelFilterMenuState = {
   visible: boolean;
@@ -106,6 +125,20 @@ export function ChannelFilterButton({
   const styles = createStyles(tokens);
   const ref = useRef<View>(null);
 
+  const openUnderTrigger = () => {
+    const node = ref.current;
+    // No frame to measure (a renderer without layout): open at the gutter.
+    if (!node?.measureInWindow) {
+      return menu.open({ top: 0, left: tokens.spacing.sm });
+    }
+    node.measureInWindow((x, y, width, height) => {
+      // The menu's right edge under the glyph's, not the 44pt target's,
+      // which reaches past the gutter when the trigger is at the edge.
+      // Kept on screen.
+      menu.open(channelFilterMenuAnchor(tokens, { x, y, width, height }));
+    });
+  };
+
   return (
     <Pressable
       ref={ref}
@@ -115,25 +148,12 @@ export function ChannelFilterButton({
       }
       accessibilityState={{ expanded: menu.visible }}
       hitSlop={8}
-      onPress={() => {
-        if (menu.visible) return menu.close();
-        const node = ref.current;
-        // No frame to measure (a renderer without layout): open at the gutter.
-        if (!node?.measureInWindow) {
-          return menu.open({ top: 0, left: tokens.spacing.sm });
-        }
-        node.measureInWindow((x, y, width, height) => {
-          // The menu's right edge under the glyph's, not the 44pt target's,
-          // which reaches past the gutter when the trigger is at the edge.
-          // Kept on screen.
-          menu.open({
-            top: y + height + tokens.spacing.xs,
-            left: Math.max(
-              tokens.spacing.sm,
-              x + width - triggerGlyphInset(tokens) - MENU_WIDTH,
-            ),
-          });
-        });
+      onPress={() => (menu.visible ? menu.close() : openUnderTrigger())}
+      // A switch in the open menu can move the trigger: the list's first
+      // heading changes when a filter empties a section, and a heading with
+      // no + holds the trigger at its edge. Keep the menu under it.
+      onLayout={() => {
+        if (menu.visible) openUnderTrigger();
       }}
       style={({ pressed }) => [
         styles.trigger,

@@ -805,8 +805,8 @@ export default function ChatHomeScreen() {
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the
-            button at the end of the first heading, as web's rail keeps them
-            behind its Channels header; they used to be two chips above the
+            button on the first heading (before its +, #4679), as web's rail
+            keeps them behind its Channels header; they used to be two chips above the
             list.
           */}
           {arranged.sections.length === 0

@@ -8,8 +8,7 @@ import {
   type CalendarTaskState,
 } from "@repo/hooks/calendar-tasks";
 import { SignetTokens } from "@repo/theme/signet";
-import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
-import { ForwardGlyph } from "@/components/control-glyphs";
+import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { Chip } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
@@ -20,9 +19,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Tasks on the Events calendar (#4144), as web draws them: an event is a
  * row with its time, a task leads with a round mark that says where it
- * stands, in the lead tile an event's row has (#4679). An empty ring is still to do (red when overdue), a ring with a
- * check is done and waiting on an officer, a filled green check is
- * confirmed. Rules and words: `@repo/hooks/calendar-tasks`.
+ * stands, in the lead tile an event's row has (#4679). An empty ring is
+ * still to do (red when overdue), a ring with a check is done and waiting
+ * on an officer, a filled green check is confirmed. Rules and words:
+ * `@repo/hooks/calendar-tasks`.
  */
 
 function TaskMark({
@@ -145,14 +145,14 @@ export function CalendarTaskRow({
           </Text>
         </View>
         {canExpand ? (
-          <View
-            style={{ transform: [{ rotate: expanded ? "-90deg" : "90deg" }] }}
-          >
-            <ChevronGlyph
-              direction="right"
-              color={tokens.color.text.mutedForeground}
-            />
-          </View>
+          // It opens in place, so it draws the chevron that turns: right
+          // while the assignees are hidden, down while they show
+          // (`patterns.md` § Rows). Until #4679 it was the image viewer's
+          // chevron turned by hand, which pointed down while folded.
+          <DisclosureGlyph
+            direction={expanded ? "down" : "right"}
+            color={tokens.color.text.mutedForeground}
+          />
         ) : item.kind === "mine" ? (
           // It opens on Tasks, so it draws the chevron of a row that opens.
           <ForwardGlyph color={tokens.color.text.mutedForeground} />

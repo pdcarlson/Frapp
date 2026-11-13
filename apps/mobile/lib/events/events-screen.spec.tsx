@@ -12,7 +12,9 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
 import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
-import { LeadTile } from "@/components/lead-tile";
+import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
+import { NavGlyph } from "@/components/nav-glyph";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   CALENDAR_RANGE_STORAGE_KEY,
@@ -572,6 +574,13 @@ describe("Events after the first", () => {
     expect(styleOf(tree, "Event b").fontSize).toBe(
       signetDarkTokens.typography.role.label.size,
     );
+    // The tile holds the Events glyph, the one Activity leads an event with.
+    expect(tiles[0]!.findByType(NavGlyph).props.paths).toBe(NAV_GLYPHS.events);
+    // The tile row's frame: the tile sets the height, so the small padding
+    // step, which is what the loading rows stand on.
+    expect(
+      StyleSheet.flatten(row.props.style({ pressed: false })).paddingVertical,
+    ).toBe(signetDarkTokens.spacing.sm);
     // The next event's card is not a tile row: it keeps its own shape.
     expect(rowOf("Event a").findAllByType(LeadTile)).toHaveLength(0);
     expect(rowOf("Event a").findAllByType(ForwardGlyph)).toHaveLength(0);
@@ -824,12 +833,29 @@ describe("Tasks on the Calendar", () => {
         ForwardGlyph,
       ),
     ).toHaveLength(1);
-    // One that opens in place keeps its turning chevron instead.
-    expect(
-      pressable(tree, "Dues form, assigned by you, 1 of 2 done").findAllByType(
-        ForwardGlyph,
-      ),
-    ).toHaveLength(0);
+    // One that opens in place draws the chevron that turns instead, right
+    // while its assignees are hidden.
+    const assigned = pressable(tree, "Dues form, assigned by you, 1 of 2 done");
+    expect(assigned.findAllByType(ForwardGlyph)).toHaveLength(0);
+    expect(assigned.findByType(DisclosureGlyph).props.direction).toBe("right");
+    // Both stand on the event rows' frame, their names in the label role.
+    for (const label of [
+      "Dues form, assigned by you, 1 of 2 done",
+      "Clean the kitchen, your task, overdue",
+    ]) {
+      const host = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === label,
+      );
+      expect(
+        StyleSheet.flatten(host.props.style({ pressed: false }))
+          .paddingVertical,
+      ).toBe(signetDarkTokens.spacing.sm);
+    }
+    expect(styleOf(tree, "Dues form").fontSize).toBe(
+      signetDarkTokens.typography.role.label.size,
+    );
     // A ring marks the day, beside the event dot.
     expect(
       tree.root.findAll(
@@ -855,6 +881,25 @@ describe("Tasks on the Calendar", () => {
     const text = screenText(tree);
     expect(text).toContain("Ana Ruiz");
     expect(text).toContain("Waiting on an officer");
+    // The chevron turns down, and the names sit under the row's text
+    // column: past the 40pt tile and the row's gap (#4679).
+    expect(
+      pressable(tree, "Dues form, assigned by you, 1 of 2 done").findByType(
+        DisclosureGlyph,
+      ).props.direction,
+    ).toBe("down");
+    let list = tree.root
+      .findAllByType("Text" as never)
+      .find((node) => node.props.children === "Ana Ruiz")!.parent!;
+    while (
+      (list.type as unknown) !== "View" ||
+      StyleSheet.flatten(list.props.style).paddingLeft === undefined
+    ) {
+      list = list.parent!;
+    }
+    expect(StyleSheet.flatten(list.props.style).paddingLeft).toBe(
+      LEAD_TILE_SIZE.lead + signetDarkTokens.spacing.md,
+    );
   });
 
   it("turns a kind off from its chip and remembers it", () => {

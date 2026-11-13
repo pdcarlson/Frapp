@@ -312,6 +312,12 @@ describe("Screen skeletons sit on their screen's frames", () => {
             block.props.height === LEAD_TILE_SIZE.lead,
         ),
     ).toHaveLength(3);
+    // Each flat row's name bar is the label role's, the loaded row's name.
+    expect(
+      tree.root
+        .findAllByType(SkeletonText)
+        .filter((line) => line.props.role === tokens.typography.role.label),
+    ).toHaveLength(3);
     // Hairline-split: no rule above the first row.
     expect(flat.map((style) => style.borderTopWidth ?? 0)).toEqual([
       0,

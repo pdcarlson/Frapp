@@ -4,7 +4,11 @@ import { useRequiredOfViewer } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ForwardGlyph } from "@/components/control-glyphs";
-import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
+import {
+  LEAD_TILE_GLYPH,
+  LeadTile,
+  leadRowStyles,
+} from "@/components/lead-tile";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { NavGlyph } from "@/components/nav-glyph";
 import { AccentChip, HairlineChip } from "@/components/status-chip";
@@ -215,6 +219,7 @@ function EventLeadTile() {
 
 export function createEventRowStyles(tokens: SignetTokens) {
   const surfaces = pageSurfaces(tokens);
+  const lead = leadRowStyles(tokens);
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -240,33 +245,23 @@ export function createEventRowStyles(tokens: SignetTokens) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
     },
-    // A row that leads with a 40pt tile (`patterns.md` § Rows): Activity's
-    // row frame, so the tile sets the height and the padding is the small
-    // step, where a row of text alone takes the medium one.
+    // A row that leads with a 40pt tile (`patterns.md` § Rows): the frame
+    // Activity's row takes (`leadRowStyles`), where a row of text alone
+    // takes the medium padding step.
     leadRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.sm,
+      ...lead.row,
       ...gutterBleed(tokens, { rounded: false }),
     },
     // The row's title: the label role, as every tile row's is.
-    leadTitle: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
+    leadTitle: lead.title,
     // After the name, in the title's size at the regular weight (a weight is
     // its own Figtree family).
     cadence: {
       fontFamily: typeRole(tokens.typography.role.body).fontFamily,
       color: tokens.color.text.mutedForeground,
     },
-    body: {
-      flex: 1,
-      minWidth: 0,
-      gap: tokens.spacing.xs,
-    },
+    // The text column, on the card and beside a row's tile.
+    body: lead.text,
     titleRow: {
       flexDirection: "row",
       alignItems: "center",
