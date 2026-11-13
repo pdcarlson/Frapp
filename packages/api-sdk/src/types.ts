@@ -6258,6 +6258,11 @@ export interface components {
             /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
             token: string;
         };
+        MentionPickDto: {
+            /** Format: uuid */
+            user_id: string;
+            label: string;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
@@ -6271,6 +6276,7 @@ export interface components {
             /** Format: uuid */
             thread_root_id?: string;
             metadata?: Record<string, never>;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         ResolveAuthorAvatarsDto: {
             /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
@@ -6278,6 +6284,7 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         SetMessageFlagDto: {
             /**

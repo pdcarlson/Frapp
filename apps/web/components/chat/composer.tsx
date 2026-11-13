@@ -31,6 +31,7 @@ import {
   buildEditDoc,
   chatMentionExtension,
   chatText,
+  composerMentionPicks,
   chatTextKit,
   createKeymap,
   pasteAsLines,
@@ -62,6 +63,7 @@ import {
   isBetaOffModule,
   readPreviewUpload,
   readSignedUpload,
+  type MentionPick,
 } from "@repo/validation";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
 import { AskComposerButton } from "@/components/ask/ask-host";
@@ -461,6 +463,11 @@ interface ComposerBaseProps {
   onSend: (
     body: string,
     attachments: OutboxAttachment[],
+    /**
+     * The members the `@` list put in the body (#3835), so a picked name
+     * reaches that member or nobody, never another member by name.
+     */
+    mentionPicks: MentionPick[],
   ) => void | Promise<void>;
   /**
    * Send a GIF picked from the GIF button's picker as its own message
@@ -1121,6 +1128,8 @@ export function Composer({
     onUpdate({ editor }) {
       const text = chatText(editor);
       onChangeDraft(text);
+      // Held for the channel, so a remount from the text draft keeps them.
+      composerMentionPicks(channelId, editor);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
       // for four seconds under the message that had just landed.
@@ -1442,7 +1451,8 @@ export function Composer({
     const sentPending = pending;
     const sentReplyId = replyTo?.id ?? null;
     const sentUploads = uploadsStartedRef.current;
-    const sent = (async () => onSend(text, sentPending))();
+    const sentPicks = composerMentionPicks(channelId, editor);
+    const sent = (async () => onSend(text, sentPending, sentPicks))();
     editor.commands.clearContent(true);
     setPending([]);
     void sent.catch((error: unknown) => {
@@ -1480,6 +1490,7 @@ export function Composer({
       });
     });
   }, [
+    channelId,
     editor,
     onChangeDraft,
     onRestoreReply,

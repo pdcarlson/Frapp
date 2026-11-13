@@ -644,6 +644,7 @@ export class ChatController {
       metadata: dto.metadata,
       attachments: dto.attachments,
       gif,
+      mention_picks: dto.mention_picks,
       enabled_modules: enabledModules,
     });
     // Tells the provider what got sent, which tunes its results; never fails
@@ -721,6 +722,7 @@ export class ChatController {
       chapterId,
       userId,
       dto.content,
+      dto.mention_picks,
     );
   }
 
