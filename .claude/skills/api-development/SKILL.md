@@ -118,12 +118,13 @@ that layer. Each guard reads what the previous one set, so keep this order:
 
 ```text
 SupabaseAuthGuard      validates the JWT, sets request.supabaseUser
-→ AuthSyncInterceptor  (only where needed) syncs the users row, sets request.appUser
 → ChapterGuard         chapter from the JWT active_chapter_id claim, x-chapter-id only as a
                        fallback (a disagreement is 403 chapter.context.mismatch); checks
-                       membership, sets request.member and request.chapterId; gates writes on
-                       subscription status and @RequireModule
+                       membership, sets request.appUser, request.member and request.chapterId;
+                       gates writes on subscription status and @RequireModule
 → PermissionsGuard     checks @RequirePermissions against the member's roles
+→ AuthSyncInterceptor  (only where needed; Nest runs every guard before any interceptor)
+                       syncs the users row; sets request.appUser where no guard did
 → handler
 ```
 

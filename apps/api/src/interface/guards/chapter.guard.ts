@@ -48,6 +48,7 @@ import {
   keepForRequest,
   readOncePerRequest,
   requestReadsActive,
+  sharesBurstLookups,
 } from '../../infrastructure/supabase/request-reads';
 import type { Member } from '#domain/entities/member.entity';
 import type { Role } from '#domain/entities/role.entity';
@@ -82,9 +83,10 @@ type ChapterRow = {
  * subscription state and module toggles, on the guard's own reads. With a
  * chapter named, the prefetch gets both rows, the membership and the roles
  * from `get_request_context` (#3583), and that call is shared the same way
- * (`requestContextLookups`). A joiner's answer can predate its request by up
- * to `IN_FLIGHT_JOIN_WINDOW_MS`, the bound Paul accepted for membership and
- * roles on 2026-11-13 (#3752; spec/behavior/multi-tenancy.md and rbac.md).
+ * (`requestContextLookups`), for read requests only. A joiner's answer can
+ * predate its request by up to `IN_FLIGHT_JOIN_WINDOW_MS`, the bound Paul
+ * accepted for membership and roles on 2026-11-13 (#3752;
+ * spec/behavior/multi-tenancy.md and rbac.md).
  */
 const appUserLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<{ id: string }>
@@ -214,17 +216,22 @@ function readRequestContext(
   supabaseAuthId: string,
   chapterId: string,
 ): Promise<RequestContextAnswer | null> {
-  // `run` calls the client inside a promise, so a client that throws instead
-  // of answering an error still lands in the `catch` below. Shared by the requests of one burst with this user and chapter (#3752):
-  // each still records the answer in its own store below, and every reader
-  // gets its own copy from there (`readOncePerRequest`).
-  return requestContextLookups
-    .run(`${supabaseAuthId}:${chapterId}`, () =>
-      supabase.rpc('get_request_context', {
-        p_auth_id: supabaseAuthId,
-        p_chapter_id: chapterId,
-      }),
-    )
+  // Shared by the read requests of one burst with this user and chapter
+  // (#3752); a request that may write makes its own call. Each request still
+  // records the answer in its own store below, and every reader gets its own
+  // copy from there (`readOncePerRequest`). The call runs inside a promise
+  // either way, so a client that throws instead of answering an error still
+  // lands in the `catch` below.
+  const call = () =>
+    supabase.rpc('get_request_context', {
+      p_auth_id: supabaseAuthId,
+      p_chapter_id: chapterId,
+    });
+  return (
+    sharesBurstLookups()
+      ? requestContextLookups.run(`${supabaseAuthId}:${chapterId}`, call)
+      : Promise.resolve().then(call)
+  )
     .then(({ data, error }) => {
       if (error) throw new SupabaseQueryError(error);
       const answer = asRequestContext(data);

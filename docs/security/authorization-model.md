@@ -29,7 +29,9 @@ guards compose, in this order:
 Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, still a refusal ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md), #3143).
 
 Requests that arrive together share their guards' lookups (`InFlightLookups` in
-`infrastructure/supabase/in-flight-lookups.ts`, #3728, #3752). A request joins a lookup only within
+`infrastructure/supabase/in-flight-lookups.ts`, #3728, #3752). The session, `get_request_context`, membership and role
+lookups are shared only between `GET` and `HEAD` requests (`sharesBurstLookups`): a request that may write makes those
+checks itself, so a revocation stops it at once. A request joins a lookup only within
 `IN_FLIGHT_JOIN_WINDOW_MS` (250 ms) of its start, so its answer can predate the request by at most that. Paul accepted
 that bound for the session, membership and roles on 2026-11-13 (#3752; [`rbac.md`](../../spec/behavior/rbac.md),
 [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md)). What is shared, and under which key:
@@ -43,8 +45,8 @@ that bound for the session, membership and roles on 2026-11-13 (#3752; [`rbac.md
 | Membership row | App user id and chapter id | `readMemberByUserAndChapter` (`readSharedInBurst`) |
 | Roles by id | Chapter id and the sorted role ids | `readRolesByIds` (`readSharedInBurst`) |
 
-Each request gets its own copy of a shared answer. The membership and role reads are shared only while the request's
-store is live, so a write's handler, a worker or a cron always reads the database itself.
+Each request gets its own copy of a shared answer. A request that may write, a worker or a cron never joins the
+session, membership or role lookups of another request.
 
 *Within* one request those reads happen once (`infrastructure/supabase/request-reads.ts`, #3728). Every
 read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChapter`) and of roles by id

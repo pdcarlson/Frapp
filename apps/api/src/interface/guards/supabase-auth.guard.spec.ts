@@ -436,6 +436,7 @@ describe('SupabaseAuthGuard', () => {
       sub = `auth-burst-${caseNo}`;
     });
 
+    const inGet = <T>(fn: () => T): T => runWithRequestReads('GET', fn);
     const request = (
       bearer: string,
       controller: new () => unknown = AuthOnlyController,
@@ -458,7 +459,10 @@ describe('SupabaseAuthGuard', () => {
       const first = request(token);
       const second = request(token);
 
-      await Promise.all([guard.canActivate(first), guard.canActivate(second)]);
+      await Promise.all([
+        inGet(() => guard.canActivate(first)),
+        inGet(() => guard.canActivate(second)),
+      ]);
 
       expect(mockGetUser).toHaveBeenCalledTimes(1);
       const a = first.switchToHttp().getRequest().supabaseUser;
@@ -476,8 +480,22 @@ describe('SupabaseAuthGuard', () => {
       });
 
       await Promise.all([
-        guard.canActivate(request(token)),
-        guard.canActivate(request(`${token}-other`)),
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(`${token}-other`))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('checks the session itself in a request that may write', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+
+      await Promise.all([
+        inGet(() => guard.canActivate(request(token))),
+        runWithRequestReads('POST', () => guard.canActivate(request(token))),
       ]);
 
       expect(mockGetUser).toHaveBeenCalledTimes(2);
@@ -490,8 +508,8 @@ describe('SupabaseAuthGuard', () => {
       });
 
       const verdicts = await Promise.allSettled([
-        guard.canActivate(request(token)),
-        guard.canActivate(request(token)),
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(token))),
       ]);
 
       expect(mockGetUser).toHaveBeenCalledTimes(1);
@@ -505,8 +523,8 @@ describe('SupabaseAuthGuard', () => {
         data: { user: { id: sub } },
         error: null,
       });
-      const inChapter = (chapter: string) =>
-        runWithRequestReads('GET', () =>
+      const inChapter = (chapter: string, method = 'GET') =>
+        runWithRequestReads(method, () =>
           guard.canActivate(
             request(token, ChapterController, {
               sub,
@@ -519,6 +537,8 @@ describe('SupabaseAuthGuard', () => {
         inChapter(CHAPTER_A),
         inChapter(CHAPTER_A),
         inChapter(CHAPTER_B),
+        // A request that may write makes its own call.
+        inChapter(CHAPTER_B, 'PATCH'),
       ]);
 
       const calls = mockRpc.mock.calls.filter(
@@ -526,6 +546,7 @@ describe('SupabaseAuthGuard', () => {
       );
       expect(calls).toEqual([
         ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_A }],
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
         ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
       ]);
     });

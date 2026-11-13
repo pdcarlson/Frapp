@@ -9,9 +9,9 @@ export const IN_FLIGHT_JOIN_WINDOW_MS = 250;
  * Lets requests that arrive together share one lookup instead of each making
  * its own (#3728).
  *
- * A mobile app resuming from a push fires about seven requests at once, all
- * with the same token and chapter, and each ran the same guard lookups before
- * any handler started.
+ * A mobile app resuming from a push fires about seven requests at once, and
+ * a cold app open about seventy, all with the same token and chapter, and
+ * each ran the same guard lookups before any handler started.
  *
  * What a joiner gives up, and its bound: a request that joins gets an answer
  * whose query left up to `joinWindowMs` before the request arrived, so a
@@ -31,8 +31,10 @@ export const IN_FLIGHT_JOIN_WINDOW_MS = 250;
  * Results are shared by reference, so callers copy what they put on the
  * request (`structuredClone`) rather than hand two requests one object.
  *
- * `load` resolves to a `{ data, error }` result, never rejects in normal use;
- * a rejection is shared too, and each caller decides what to throw from it.
+ * A rejection is shared too: every joiner gets it. The guards' loads resolve
+ * to a `{ data, error }` result and decide per caller what to throw; the
+ * repository reads behind `readSharedInBurst` reject on a PostgREST error, so
+ * one failed read fails every request that joined it.
  */
 export class InFlightLookups<T> {
   private readonly pending = new Map<

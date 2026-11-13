@@ -13,6 +13,7 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 import { createHash } from 'node:crypto';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
+import { sharesBurstLookups } from '../../infrastructure/supabase/request-reads';
 import {
   authRejected,
   safeAuthErrorCode,
@@ -66,9 +67,12 @@ export class SupabaseAuthGuard implements CanActivate {
     // queue behind it. Nothing they read is used unless this check passes for
     // that same user. No second verifier runs here: the throttler's is the one
     // that bounds unknown `kid`s (`custom-throttler.guard.ts`).
-    const sessionCheck = sessionLookups.run(sessionLookupKey(token), () =>
-      this.supabase.auth.getUser(token),
-    );
+    // A read request may share it with the burst it arrived in (#3752); a
+    // request that may write checks its own session.
+    const checkSession = () => this.supabase.auth.getUser(token);
+    const sessionCheck = sharesBurstLookups()
+      ? sessionLookups.run(sessionLookupKey(token), checkSession)
+      : checkSession();
     const verified = request.throttlerVerifiedClaims;
     if (
       typeof verified?.sub === 'string' &&

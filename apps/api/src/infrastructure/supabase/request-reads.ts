@@ -18,12 +18,15 @@ import { InFlightLookups } from './in-flight-lookups';
  * roles recorded with `keepForRequest`.
  *
  * **Across requests, only a burst's in-flight reads.** The store is created
- * per request by `requestReadsMiddleware` and dies with it. Requests that
- * arrive together may also join a membership or role read another request
- * started at most `IN_FLIGHT_JOIN_WINDOW_MS` earlier (`readSharedInBurst`),
- * the bound Paul accepted on 2026-11-13 (#3752; `spec/behavior/rbac.md`
- * § Permission Check Algorithm, `spec/behavior/multi-tenancy.md`). A role
- * change or a removal takes effect on every request that arrives after that.
+ * per request by `requestReadsMiddleware` and dies with it. `GET` and `HEAD`
+ * requests that arrive together may also join a membership or role read (and
+ * the guards' session and `get_request_context` checks) that another such
+ * request started at most `IN_FLIGHT_JOIN_WINDOW_MS` earlier
+ * (`sharesBurstLookups`, `readSharedInBurst`), the bound Paul accepted on
+ * 2026-11-13 (#3752; `spec/behavior/rbac.md` § Permission Check Algorithm,
+ * `spec/behavior/multi-tenancy.md`). A request that may write makes every
+ * check itself, so a role change or a removal stops a write at once, and
+ * every read that arrives after the window sees it too.
  *
  * **A write's handler reads afresh.** A `GET` or `HEAD` keeps its store to the
  * end. Any other method keeps it only through the guards:
@@ -41,16 +44,16 @@ const burstReads = new InFlightLookups<unknown>();
 
 /**
  * Runs `read`, or joins the same `key`'s read that another request started at
- * most `IN_FLIGHT_JOIN_WINDOW_MS` ago (#3752). Only while this request's store
- * is live (`requestReadsActive`): a write's handler, a worker or a cron reads
- * the database itself. The answer is shared by reference, so call it inside
- * `readOncePerRequest`, which hands each caller a copy.
+ * most `IN_FLIGHT_JOIN_WINDOW_MS` ago (#3752). Only in a `GET` or `HEAD`
+ * request (`sharesBurstLookups`): a request that may write, a worker or a
+ * cron reads the database itself. The answer is shared by reference, so call
+ * it inside `readOncePerRequest`, which hands each caller a copy.
  */
 export function readSharedInBurst<T>(
   key: string,
   read: () => Promise<T>,
 ): Promise<T> {
-  if (!requestReadsActive()) return read();
+  if (!sharesBurstLookups()) return read();
   return burstReads.run(key, read) as Promise<T>;
 }
 
@@ -82,6 +85,17 @@ export function runWithRequestReads<T>(method: string, fn: () => T): T {
 export function sealRequestReadsForWrites(): void {
   const store = storage.getStore();
   if (store?.writes) store.sealed = true;
+}
+
+/**
+ * Whether this request may join a lookup another request already started
+ * (#3752): only a `GET` or `HEAD` request, inside its store. A request that
+ * may write checks its session, membership and roles itself, so a revocation
+ * committed a moment earlier still stops it.
+ */
+export function sharesBurstLookups(): boolean {
+  const store = storage.getStore();
+  return store !== undefined && !store.writes;
 }
 
 /** Whether a read made now would be kept for the rest of the request. */

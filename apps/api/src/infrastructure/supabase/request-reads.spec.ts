@@ -157,6 +157,17 @@ describe('request reads', () => {
       expect(read).toHaveBeenCalledTimes(2);
     });
 
+    it("shares nothing with a write request's guards", async () => {
+      const read = counting('row');
+
+      await Promise.all([
+        inRequest('GET', () => readSharedInBurst(key, read)),
+        inRequest('DELETE', () => readSharedInBurst(key, read)),
+      ]);
+
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
     it("shares nothing with a write's handler", async () => {
       const read = counting('row');
 
