@@ -765,6 +765,40 @@ describe('AskPostService', () => {
       });
     });
 
+    describe('the channel the question was asked from (#4899)', () => {
+      const askedFrom = (id: string): Given => ({
+        title: 'Where the member is asking from: a channel',
+        text: 'The member is asking from the channel #general.',
+        ref: { type: 'channel', id },
+        label: 'The channel you asked from',
+      });
+
+      it('holds nothing back when the answer goes to that channel', async () => {
+        const { post } = build();
+        await expect(
+          post(receipt({ given: [bylaws, askedFrom(CHANNEL)] })),
+        ).resolves.toEqual({ posted: true, restricted: [] });
+      });
+
+      it('warns when it goes to another, whose readers may not know that one', async () => {
+        const { post, messageRepo } = build();
+        const other = '99999999-9999-4999-8999-999999999999';
+        await expect(
+          post(receipt({ given: [bylaws, askedFrom(other)] })),
+        ).resolves.toEqual({
+          posted: false,
+          restricted: [
+            {
+              key: `channel:${other}`,
+              kind: 'document',
+              title: 'The channel you asked from',
+            },
+          ],
+        });
+        expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
+      });
+    });
+
     it('says when the answer was cut short', async () => {
       const { post, messageRepo } = build();
       await post(receipt({ shown: { ...receipt().shown, truncated: true } }));

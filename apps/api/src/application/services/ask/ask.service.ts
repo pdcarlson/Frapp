@@ -61,12 +61,15 @@ import {
   type AgentEntity,
   type AgentReadTool,
   type AgentSource,
+  type AgentToolContext,
 } from './agent/agent-tool';
 import {
   ASK_AGENT_PROMPT_VERSION,
+  ASK_FROM_SOURCE_TITLE,
   askAgentSystem,
 } from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
+import { AskFromService, type AskFromPart } from './agent/ask-from.service';
 import { AskTraceService } from './observe/ask-trace.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
@@ -81,6 +84,7 @@ import {
   askSearchQuery,
   earlierQuestions,
   looksLikeAskerSourceTitle,
+  titleStartsLike,
 } from './ask-prompt';
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
@@ -320,7 +324,11 @@ function agentSourceTitle(source: AgentSource, timeZone: string): string {
       : [source.title, source.detail, sourceDay(source.date, timeZone)]
           .filter(Boolean)
           .join(', ');
-  return looksLikeAskerSourceTitle(title) ? `Chapter source: ${title}` : title;
+  // Only the server's own blocks say who is asking or where from.
+  return looksLikeAskerSourceTitle(title) ||
+    titleStartsLike(title, ASK_FROM_SOURCE_TITLE)
+    ? `Chapter source: ${title}`
+    : title;
 }
 
 /**
@@ -486,6 +494,7 @@ export class AskService {
     @Inject(AGENT_READ_TOOLS)
     private readonly agentTools: readonly AgentReadTool[],
     private readonly trace: AskTraceService,
+    private readonly from: AskFromService,
   ) {}
 
   /**
@@ -695,7 +704,22 @@ export class AskService {
     if (input.mayGoOn && !(await input.mayGoOn())) return;
     if (input.signal?.aborted) return;
 
-    const context = asker ? [asker] : [];
+    const toolContext: AgentToolContext = {
+      chapterId: input.chapterId,
+      userId: input.userId,
+      now,
+      timeZone: input.timeZone,
+      permissions: held,
+      enabledModules: input.enabledModules,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    };
+    // What the member had open, each looked up as them (`AskFromService`).
+    const openAt = await this.from.read(input.from, toolContext);
+    if (input.signal?.aborted) return;
+    const context = [
+      ...(asker ? [asker] : []),
+      ...openAt.map(({ source }) => source),
+    ];
     const titleOf = (source: AgentSource) =>
       agentSourceTitle(source, input.timeZone);
     // What the turn's trace says of it beside what the loop did (#4902).
@@ -730,19 +754,14 @@ export class AskService {
     const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
-      system: askAgentSystem(longDate(now, input.timeZone), asker !== null),
+      system: askAgentSystem(longDate(now, input.timeZone), {
+        asker: asker !== null,
+        from: openAt.length > 0,
+      }),
       messages: askAnswerMessages(input.question, input.history),
       context,
       tools: offered,
-      toolContext: {
-        chapterId: input.chapterId,
-        userId: input.userId,
-        now,
-        timeZone: input.timeZone,
-        permissions: held,
-        enabledModules: input.enabledModules,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      },
+      toolContext,
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
@@ -850,6 +869,7 @@ export class AskService {
       run,
       now,
       [...context, ...entries.map((entry) => entry.model)],
+      openAt,
     );
     // An answer can be rated only when its trace was kept, so the id the
     // thumbs name goes out only then (`AskFeedbackService`).
@@ -1154,6 +1174,8 @@ export class AskService {
     now: Date,
     /** What the model was handed, when it was handed anything. */
     given: readonly LanguageModelSource[] = [],
+    /** What the member had open, which is in `given` beside the asker. */
+    openAt: readonly AskFromPart[] = [],
   ): string | null {
     if (answer.status === 'unavailable') return null;
     try {
@@ -1186,19 +1208,24 @@ export class AskService {
             unverified_citations: answer.unverified_citations,
             truncated: answer.truncated,
           },
-          // Who is asking is first when it was read, then `entries` in
-          // order (`sourcesForModel`). It is what the roster shows of the
-          // asker, so it is open to whoever may open the roster (#4713).
-          given: given.map(({ title, text }, index) => {
+          // Who is asking is first when it was read, then what they had
+          // open, then `entries` in order (`sourcesForModel`). Who is
+          // asking is what the roster shows of them, so it is open to
+          // whoever may open the roster (#4713).
+          given: given.map(({ id, title, text }, index) => {
             const source = entries[index - (given.length - entries.length)];
-            return source
-              ? {
-                  title,
-                  text,
-                  ref: source.ref,
-                  label: source.view.title,
-                  kind: source.view.kind,
-                }
+            if (source) {
+              return {
+                title,
+                text,
+                ref: source.ref,
+                label: source.view.title,
+                kind: source.view.kind,
+              };
+            }
+            const open = openAt.find((part) => part.source.id === id);
+            return open
+              ? { title, text, ref: open.ref, label: open.label }
               : { title, text, ref: ASKER_REF, label: 'Your name and roles' };
           }),
           tools: [...run.tools],
