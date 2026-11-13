@@ -64,6 +64,7 @@ import {
   useSetChannelNotificationLevel,
   useImportantMessages,
 } from "@repo/hooks";
+import { useSaveMessage } from "@/lib/chat/save-message";
 import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_OFFER_AT,
@@ -110,6 +111,13 @@ import {
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
+import {
+  MessageListSheet,
+  PINNED_TITLE,
+  SAVED_TITLE,
+  type ListedMessage,
+  type MessageListKind,
+} from "@/components/chat/message-list-sheet";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
@@ -164,7 +172,16 @@ import {
   type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
-import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
+import {
+  JUMP_MISS_COPY,
+  useJumpToImportant,
+  type JumpMissReason,
+} from "@/lib/chat/use-jump-to-important";
+
+/** A jump the member asked for by name couldn't reach its message (#3723). */
+function alertJumpMiss(reason: JumpMissReason) {
+  Alert.alert("Couldn't open that message", JUMP_MISS_COPY[reason]);
+}
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -334,6 +351,7 @@ function ChannelThreadScreen() {
     closePoll,
     closeCard,
     flag,
+    setPinned,
     react,
     unreact,
     act,
@@ -705,7 +723,7 @@ function ChannelThreadScreen() {
     if (!focusMessageId || focusedOn.current === focusMessageId) return;
     if (inverted.length === 0) return;
     focusedOn.current = focusMessageId;
-    jumpToImportant(focusMessageId);
+    jumpToImportant(focusMessageId, { onMiss: alertJumpMiss });
   }, [focusMessageId, inverted.length, jumpToImportant]);
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
@@ -798,12 +816,31 @@ function ChannelThreadScreen() {
     (arrival.unread ?? 0) >= CHAT_CATCH_UP_OFFER_AT
       ? chatCatchUpOfferLine(arrival.unread ?? 0)
       : null;
+  // Pinned and Saved (#3723), web's channel-menu panels: one tall sheet,
+  // retargeted per list, opened from the header's menu.
+  const listSheetRef = useRef<BottomSheetModal>(null);
+  const [listKind, setListKind] = useState<MessageListKind>("pinned");
+  const openList = useCallback((kind: MessageListKind) => {
+    Keyboard.dismiss();
+    setListKind(kind);
+    listSheetRef.current?.present();
+  }, []);
+  // Closed on a blur or a channel switch, for the member sheet's reason.
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => listSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
   const headerMenuActions = useMemo(
-    () =>
-      canCatchUpHere
+    () => [
+      ...(canCatchUpHere
         ? [{ label: CHAT_CATCH_UP_COPY.name, onPress: startChannelCatchUp }]
-        : undefined,
-    [canCatchUpHere, startChannelCatchUp],
+        : []),
+      { label: PINNED_TITLE, onPress: () => openList("pinned") },
+      { label: SAVED_TITLE, onPress: () => openList("saved") },
+    ],
+    [canCatchUpHere, startChannelCatchUp, openList],
   );
   // FlatList refuses a new `onViewableItemsChanged` after mount, so the pair
   // is made once and reads the latest report through a ref when it fires.
@@ -968,6 +1005,50 @@ function ChannelThreadScreen() {
       });
     },
     [flag],
+  );
+
+  // Pin message / Unpin message (#3723). The row reads Pinned when the
+  // server's answer lands; a 51st pin is the API's 400, said in the alert.
+  const handleSetPinned = useCallback(
+    (messageId: string, pinned: boolean) => {
+      selectionHaptic();
+      setPinned(messageId, pinned).catch((error: unknown) => {
+        Alert.alert(
+          pinned ? "Couldn't pin message" : "Couldn't unpin message",
+          errorCopy(error),
+        );
+      });
+    },
+    [setPinned],
+  );
+  // Save message / Remove from Saved (#3723): the viewer's own bookmark.
+  const { savedIds, setSaved: handleSetSaved } = useSaveMessage();
+  // A Pinned or Saved row (#3723). A reply opens its thread, since it is never
+  // on the timeline. Otherwise this channel's scrolls to it, paging older
+  // history as the Important strip's jump does, and another channel's opens
+  // on it; either way a jump that can't reach it says why.
+  const openListedMessage = useCallback(
+    ({ channelId: rowChannelId, messageId, threadRootId }: ListedMessage) => {
+      if (threadRootId && rowChannelId === channelId) {
+        openThreadFor(threadRootId, messageId);
+        return;
+      }
+      if (rowChannelId === channelId) {
+        jumpToImportant(messageId, { onMiss: alertJumpMiss });
+        return;
+      }
+      router.push({
+        pathname: "/chat-thread",
+        params: threadRootId
+          ? {
+              channelId: rowChannelId,
+              threadRootId,
+              focusMessageId: messageId,
+            }
+          : { channelId: rowChannelId, focusMessageId: messageId },
+      });
+    },
+    [channelId, jumpToImportant, openThreadFor, router],
   );
 
   // A poll card's Close poll (#3794), asked first like Delete.
@@ -1140,6 +1221,9 @@ function ChannelThreadScreen() {
         flag: canFlagMessage(message, viewerId, canManageChannel)
           ? { current: message.flag ?? null }
           : undefined,
+        // Read live in `sheetTarget`; here only whether to offer them (#3723).
+        // Pin is the server's `channels:manage` gate, chapter-wide.
+        pin: canManageChannel ? { pinned: !!message.is_pinned } : undefined,
       });
       actionsSheetRef.current?.present();
     },
@@ -1172,8 +1256,10 @@ function ChannelThreadScreen() {
         .map((group) => group.emoji),
       messageEmojis: groups.map((group) => group.emoji),
       flag: actionTarget.flag ? { current: current?.flag ?? null } : undefined,
+      pin: actionTarget.pin ? { pinned: !!current?.is_pinned } : undefined,
+      save: { saved: savedIds.has(actionTarget.messageId) },
     };
-  }, [actionTarget, byId, viewerId]);
+  }, [actionTarget, byId, viewerId, savedIds]);
 
   // A message deleted while its sheet is open (by its sender, a moderator, or
   // the viewer on another device) closes the sheet. A deleted message offers
@@ -1309,7 +1395,7 @@ function ChannelThreadScreen() {
     ),
     disabled: !channelId,
     writeBlockedReason,
-    hasActions: canCatchUpHere,
+    hasActions: true,
   });
   const [headerFrame, setHeaderFrame] = useState({ bottom: 0, width: 0 });
   const [muteTriggerRight, setMuteTriggerRight] = useState(0);
@@ -1843,6 +1929,16 @@ function ChannelThreadScreen() {
         onReact={handleReact}
         onUnreact={handleUnreact}
         onFlag={handleFlag}
+        onSetPinned={handleSetPinned}
+        onSetSaved={handleSetSaved}
+      />
+      <MessageListSheet
+        ref={listSheetRef}
+        kind={listKind}
+        channelId={channelId ?? null}
+        nameFor={nameFor}
+        onOpen={openListedMessage}
+        onRemoveSaved={(messageId) => handleSetSaved(messageId, false)}
       />
       {/*
         Last, so it is above the header, the thread, the composer and the mute

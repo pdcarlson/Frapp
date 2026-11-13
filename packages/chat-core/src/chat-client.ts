@@ -1237,6 +1237,40 @@ export async function setMessageFlag(
   );
 }
 
+export interface SetMessagePinnedArgs extends RowTarget {
+  messageId: string;
+  /** `true` pins the message for the channel, `false` unpins it. */
+  pinned: boolean;
+}
+
+/**
+ * Pin or unpin a message for everyone who can read its channel (#3723).
+ * `channels:manage` only, and at most 50 pins a channel: the API enforces
+ * both (`spec/behavior/chat/README.md` § Pinned messages), and a client
+ * offers the control only to a holder.
+ *
+ * Not optimistic, like `setMessageFlag`: the row the server returns carries
+ * `is_pinned` and `pinned_at`, and merging it is both the confirmation and the
+ * update, so the pinner's row reads Pinned even with Realtime down. Everyone
+ * else's timeline draws it from the Realtime UPDATE echo, which re-merges the
+ * same row as a no-op here.
+ */
+export async function setMessagePinned(
+  ctx: ChatActionContext,
+  args: SetMessagePinnedArgs,
+): Promise<void> {
+  const path = { params: { path: { messageId: args.messageId } } };
+  await writeHeldRow(
+    ctx,
+    args,
+    args.pinned ? "Couldn't pin message" : "Couldn't unpin message",
+    () =>
+      args.pinned
+        ? ctx.apiClient.POST("/v1/channels/messages/{messageId}/pin", path)
+        : ctx.apiClient.DELETE("/v1/channels/messages/{messageId}/pin", path),
+  );
+}
+
 export interface DeleteMessageArgs extends RowTarget {
   messageId: string;
 }

@@ -27,6 +27,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import {
   CHANNEL_MENU_LABEL,
+  LEVEL_UNAVAILABLE_HINT,
   NotificationLevelControl,
   NotificationLevelMenu,
   NOTIFICATION_LEVEL_OPTIONS,
@@ -349,9 +350,9 @@ describe("NotificationLevelControl", () => {
       `${NOTIFICATION_LEVEL_OPTIONS[0]!.label}. ${NOTIFICATION_LEVEL_OPTIONS[0]!.description}`,
     );
     expect(strokes(allRow)).toEqual([]);
-    expect(JSON.stringify(menu(tree).map((node) => node.props.style))).not.toContain(
-      "#251A33",
-    );
+    expect(
+      JSON.stringify(menu(tree).map((node) => node.props.style)),
+    ).not.toContain("#251A33");
   });
 
   it("is disabled when the caller says so", () => {
@@ -739,6 +740,53 @@ describe("the channel's own actions in the menu (#3946)", () => {
     expect(trigger.props.disabled).toBe(false);
     press(trigger);
     expect(menu(tree)).toHaveLength(1);
+  });
+
+  /** The three level rows, which are Pressables with the button role. */
+  function levelRows(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.accessibilityState?.selected === "boolean",
+    );
+  }
+
+  it("locks the level rows when the level can't be read, so a pick never writes over it (#3723)", () => {
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: null,
+      onChange,
+      actions: [{ label: "Pinned messages", onPress: vi.fn() }],
+    });
+    press(byLabel(tree, CHANNEL_MENU_LABEL));
+    const rows = levelRows(tree);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.props.disabled).toBe(true);
+      expect(row.props.accessibilityHint).toBe(LEVEL_UNAVAILABLE_HINT);
+    }
+  });
+
+  it("opens offline for its actions, with the level rows locked and saying why (#3723)", () => {
+    const onPress = vi.fn();
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: "all",
+      onChange,
+      writeBlockedReason: "Reconnect to make changes.",
+      actions: [{ label: "Saved messages", onPress }],
+    });
+    const trigger = byLabel(tree, TRIGGER);
+    expect(trigger.props.disabled).toBe(false);
+    press(trigger);
+    for (const row of levelRows(tree)) {
+      expect(row.props.disabled).toBe(true);
+      expect(row.props.accessibilityHint).toBe("Reconnect to make changes.");
+    }
+    press(byLabel(tree, "Saved messages"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("stays shut with no level and no actions, as before", () => {
