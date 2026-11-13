@@ -17,8 +17,6 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { serviceStatusKind } from "@/components/service/service-status";
-import { Badge } from "@/components/ui/badge";
 import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -39,12 +37,12 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import type { components } from "@repo/api-sdk";
-import { awardedPointsLabel, statusLabel } from "@repo/validation";
 import { formatDay, formatMinutesRounded } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 import { approvePointsPreview } from "@/components/service/service-points-preview";
 import { LogHoursDialog } from "@/components/service/log-hours-dialog";
 import { ServiceYours } from "@/components/service/service-yours";
+import { ServiceEntryRow } from "@/components/service/service-entry-row";
 import {
   ServiceLeaderboard,
   useServiceSemesterStart,
@@ -118,37 +116,6 @@ export function ServiceHoursPage() {
     [entries],
   );
 
-  // The viewer's own entries in every state, newest first: "Your service
-  // hours" at the top of the page (#4669). Filtered here whatever the role,
-  // because an approver's read above is the whole chapter's. That filter is
-  // also what keeps Withdraw, which sits on this list's pending rows, off
-  // anyone else's entry: `DELETE /v1/service-entries/:id` accepts
-  // `service:approve` as well as `service:log`, and the service only refuses a
-  // foreign entry when `!isAdmin`, so an approver's Withdraw on another
-  // member's row would succeed and purge their proof file. While the viewer
-  // id is still resolving this is empty rather than unfiltered.
-  const mine = useMemo(
-    () =>
-      viewerUserId === null
-        ? []
-        : entries
-            .filter((e) => e.user_id === viewerUserId)
-            .sort((a, b) =>
-              a.date === b.date
-                ? a.created_at < b.created_at
-                  ? 1
-                  : -1
-                : a.date < b.date
-                  ? 1
-                  : -1,
-            ),
-    [entries, viewerUserId],
-  );
-  const semester = useServiceSemesterStart();
-  const totals = useMemo(
-    () => ownServiceTotals(mine, semester.start),
-    [mine, semester.start],
-  );
   // The chapter's reviewed entries, every member's, for an approver's
   // "Chapter history" below the queue. A member without `service:approve`
   // doesn't see the section: their read is pinned to them, so it would only
@@ -179,6 +146,51 @@ export function ServiceHoursPage() {
   const pointsRate = useServicePointsRate({ enabled: canApprove });
   const minutesPerPoint = pointsRate.data?.minutes_per_point;
   const getProofUrl = useGetServiceProofUrl();
+
+  // The viewer's own entries, read scoped to their id (#4669). Not filtered
+  // out of the chapter-wide read above: for an approver that read is every
+  // member's, newest first and capped at the database's 1,000 rows, so an
+  // officer's older entries would fall off their own log and totals.
+  const ownQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
+    enabled: viewerUserId !== null,
+  });
+  // Without the viewer's id there is no scoped read. A member who can't
+  // approve still has an honest list, because the server pins their chapter
+  // read to them; an approver's (or an unread role's) is everyone's, so it
+  // stays withheld. Withdraw is off either way: it deletes by id.
+  const permissionsKnown = permissionsPayload !== undefined;
+  const pinnedFallback = viewerUnknown && permissionsKnown && !canApprove;
+  // Every state, newest first by service date, then by when it was logged.
+  // Still filtered to the viewer: that filter is what keeps Withdraw, which
+  // sits on this list's pending rows, off anyone else's entry, since `DELETE
+  // /v1/service-entries/:id` accepts `service:approve` and the service only
+  // refuses a foreign entry when `!isAdmin`.
+  const mine = useMemo(() => {
+    const rows = pinnedFallback
+      ? entries
+      : viewerUserId === null
+        ? []
+        : asArray<ServiceEntry>(ownQuery.data).filter(
+            (e) => e.user_id === viewerUserId,
+          );
+    return [...rows].sort((a, b) =>
+      a.date !== b.date
+        ? b.date.localeCompare(a.date)
+        : b.created_at.localeCompare(a.created_at),
+    );
+  }, [pinnedFallback, entries, viewerUserId, ownQuery.data]);
+  const ownState: "loading" | "error" | "ready" = pinnedFallback
+    ? "ready"
+    : ownQuery.isError
+      ? "error"
+      : ownQuery.data === undefined
+        ? "loading"
+        : "ready";
+  const semester = useServiceSemesterStart();
+  const totals = useMemo(
+    () => ownServiceTotals(mine, semester.start),
+    [mine, semester.start],
+  );
 
   async function viewProof(entry: ServiceEntry) {
     try {
@@ -305,7 +317,7 @@ export function ServiceHoursPage() {
         follow, for a `service:approve` holder.
       */}
       <div className="grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-        {viewerUnknown ? (
+        {viewerUnknown && !pinnedFallback ? (
           /* The viewer id is what scopes this section, so without it there is
              no honest list to show. Withholding the section silently would be
              the wrong half of §5 rule 4: a member whose `/v1/users/me` failed
@@ -331,6 +343,18 @@ export function ServiceHoursPage() {
             logControlProps={gate.controlProps()}
             withdrawControlProps={gate.controlProps()}
             onWithdraw={(entry) => void withdraw(entry)}
+            state={ownState}
+            onRetry={() => void ownQuery.refetch()}
+            errorDescription={
+              ownQuery.isError ? describeLoadFailure(ownQuery.error) : undefined
+            }
+            notice={
+              !pinnedFallback
+                ? undefined
+                : viewerLoading
+                  ? "Confirming your account…"
+                  : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."
+            }
           />
         )}
         <Can permission="members:view">
@@ -509,41 +533,18 @@ export function ServiceHoursPage() {
             <InlineNote>Nothing reviewed yet.</InlineNote>
           ) : (
             <ul className={denseListClassName}>
-              {history.map((entry) => {
-                const name =
-                  memberNameById.get(entry.user_id) ??
-                  memberFallbackLabel(entry.user_id);
-                const pointsLabel = awardedPointsLabel(entry);
-                return (
-                  <li
-                    key={entry.id}
-                    className="flex min-h-11 flex-col gap-1 py-2 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{name}</p>
-                      <p className="text-caption text-muted-foreground">
-                        {entryMeta(entry)}
-                      </p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        {entry.description}
-                      </p>
-                      {entry.review_comment ? (
-                        <p className="text-caption text-muted-foreground">
-                          Reviewer note: {entry.review_comment}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={serviceStatusKind(entry.status)}>
-                        {statusLabel("serviceEntry", entry.status)}
-                      </Badge>
-                      {pointsLabel ? (
-                        <Badge variant="outline">{pointsLabel}</Badge>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
+              {history.map((entry) => (
+                <ServiceEntryRow
+                  key={entry.id}
+                  entry={entry}
+                  title={
+                    memberNameById.get(entry.user_id) ??
+                    memberFallbackLabel(entry.user_id)
+                  }
+                  body={entry.description}
+                  meta={entryMeta(entry)}
+                />
+              ))}
             </ul>
           )}
         </section>

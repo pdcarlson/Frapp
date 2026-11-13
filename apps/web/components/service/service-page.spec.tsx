@@ -76,6 +76,22 @@ const leaderboardRows = vi.hoisted(() => ({
   }[],
 }));
 const mockLeaderboard = vi.hoisted(() => vi.fn());
+// The board's and the semesters' read states, for the section's own states.
+const leaderboardState = vi.hoisted(() => ({
+  current: { isPending: false, isError: false },
+}));
+const semestersError = vi.hoisted(() => ({ current: false }));
+// What the viewer's role holds. `Can` below honors it, so a section gated on
+// a permission disappears when the role lacks it. The default is an officer
+// who logs, approves and manages billing (the subscription notice's recovery
+// link is behind `billing:manage`); member-only cases narrow it.
+const OFFICER = [
+  "service:log",
+  "service:approve",
+  "members:view",
+  "billing:manage",
+];
+const permissionsList = vi.hoisted(() => ({ current: [] as string[] }));
 // `GET /v1/service-entries/points-rate`, or undefined while unread/failed.
 const pointsRate = vi.hoisted(() => ({
   current: undefined as { minutes_per_point: number } | undefined,
@@ -89,28 +105,47 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     formatServiceHours,
     serviceSemesterStartDate,
   }))(await importOriginal<typeof import("@repo/hooks")>()),
-  useSemesters: () => ({ data: semestersData.current, isError: false }),
+  useSemesters: () => ({
+    data: semestersData.current,
+    isError: semestersError.current,
+    refetch: vi.fn(),
+  }),
   useServiceLeaderboard: (...args: unknown[]) => {
     mockLeaderboard(...args);
     return {
-      data: leaderboardRows.current,
-      isPending: false,
-      isError: false,
+      data:
+        leaderboardState.current.isPending || leaderboardState.current.isError
+          ? undefined
+          : leaderboardRows.current,
+      ...leaderboardState.current,
+      error: leaderboardState.current.isError ? new Error("boom") : null,
       refetch: vi.fn(),
     };
   },
   useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({ data: { permissions: ["service:log"] } }),
+  useMyPermissions: () => ({
+    data: { permissions: permissionsList.current },
+  }),
+  // The server's behavior: a `userId` narrows the read to that member; none
+  // gives an approver every member's rows.
   useServiceEntries: (...args: unknown[]) => {
     mockServiceEntries(...args);
+    const [userId] = args as [string | undefined];
+    const rows = entriesEmpty.current
+      ? []
+      : [PENDING_ENTRY, APPROVED_ENTRY, ...entriesExtra.current];
     return entriesPending.current
-      ? { data: undefined, isPending: true, isError: false }
+      ? { data: undefined, isPending: true, isError: false, refetch: vi.fn() }
       : {
-          data: entriesEmpty.current
-            ? []
-            : [PENDING_ENTRY, APPROVED_ENTRY, ...entriesExtra.current],
+          data:
+            userId === undefined
+              ? rows
+              : rows.filter(
+                  (row) => (row as { user_id: string }).user_id === userId,
+                ),
           isPending: false,
           isError: false,
+          refetch: vi.fn(),
         };
   },
   useMembers: () => ({ data: [] }),
@@ -133,8 +168,20 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: React.ReactNode;
+    permission: string;
+  }) => (permissionsList.current.includes(permission) ? <>{children}</> : null),
 }));
+
+beforeEach(() => {
+  permissionsList.current = [...OFFICER];
+  leaderboardState.current = { isPending: false, isError: false };
+  semestersError.current = false;
+});
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
@@ -233,7 +280,7 @@ describe("ServiceHoursPage subscription gating", () => {
     expect(logTrigger()).toBeEnabled();
     expect(approveButton()).toBeEnabled();
     expect(rejectButton()).toBeEnabled();
-    // No Withdraw for this viewer: "Your pending entries" is scoped to the
+    // No Withdraw for this viewer: "Your log" is scoped to the
     // submitter, and `admin-9` did not submit `PENDING_ENTRY`. Its gating is
     // asserted in the submitter context below.
     expectNoWithdraw();
@@ -375,7 +422,7 @@ describe("ServiceHoursPage subscription gating", () => {
 });
 
 describe("ServiceHoursPage withdraw is the submitter's own", () => {
-  // The "Your pending entries" card is scoped to the viewer because its
+  // "Your log" (and the Withdraw on its pending rows) is scoped to the viewer because its
   // Withdraw deletes, and `DELETE /v1/service-entries/:id` accepts
   // `service:approve` as well as `service:log` — the service only refuses a
   // foreign entry when `!isAdmin`. Unfiltered, a reviewer could delete another
@@ -446,13 +493,30 @@ describe("ServiceHoursPage withdraw is the submitter's own", () => {
     // Still headed as the viewer's section, so the sentence has a subject.
     expect(screen.getByText(/your service hours/i)).toBeInTheDocument();
   });
+
+  it("keeps a member's own log, read-only, when only their id failed to load", () => {
+    // A member without `service:approve` has a chapter read the server pins
+    // to them, so their entries are honest without their id; only Withdraw,
+    // which deletes by id, goes.
+    permissionsList.current = ["service:log", "members:view"];
+    mockFrappUser.mockReturnValue({ userId: null, isLoading: false });
+    render(<ServiceHoursPage />);
+
+    const log = screen.getByRole("list", { name: "Your log" });
+    expect(within(log).getByText("Soup kitchen shift")).toBeInTheDocument();
+    expect(within(log).getByText("Highway cleanup")).toBeInTheDocument();
+    expectNoWithdraw();
+    expect(
+      screen.getByText(/couldn't confirm your account, so withdrawing/i),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("ServiceHoursPage review queue", () => {
   // The one deliberate unscoped caller of `GET /v1/service-entries`: an
   // approval queue exists to show every member's entries. Every mobile read is
   // scoped to the viewer instead (`apps/mobile/test/service-entry-reads.ts`),
-  // and so is this page's own "Your pending entries" card (above). If the queue
+  // and so is this page's own "Your log" (above). If the queue
   // ever moves onto the phone, that rule is the one to revisit.
   beforeEach(() => {
     vi.clearAllMocks();
@@ -460,13 +524,13 @@ describe("ServiceHoursPage review queue", () => {
     mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
   });
 
-  it("reads every member's entries, not the viewer's", () => {
+  it("reads every member's entries for the queue, and only the viewer's for their own", () => {
     render(<ServiceHoursPage />);
 
-    expect(mockServiceEntries).toHaveBeenCalled();
-    for (const [userId] of mockServiceEntries.mock.calls) {
-      expect(userId).toBeUndefined();
-    }
+    const scopes = new Set(mockServiceEntries.mock.calls.map(([id]) => id));
+    // The queue's read is unscoped; the only scoped read is the viewer's own
+    // (#4669), never another member's.
+    expect(scopes).toEqual(new Set([undefined, "admin-9"]));
     expect(screen.getByText(/soup kitchen shift/i)).toBeInTheDocument();
   });
 
@@ -963,9 +1027,9 @@ describe("ServiceHoursPage your own hours and the leaderboard (#4669)", () => {
     expect(within(mine).getByText("All time").nextSibling).toHaveTextContent(
       "2 h",
     );
-    expect(within(mine).getByText("Pending", { selector: "dt" }).nextSibling).toHaveTextContent(
-      /2 h\s*1 entry/,
-    );
+    expect(
+      within(mine).getByText("Pending", { selector: "dt" }).nextSibling,
+    ).toHaveTextContent(/2 h\s*1 entry/);
     const log = within(mine).getByRole("list", { name: "Your log" });
     // Every status, the viewer's alone.
     expect(within(log).getByText("Soup kitchen shift")).toBeInTheDocument();
@@ -1090,5 +1154,113 @@ describe("ServiceHoursPage your own hours and the leaderboard (#4669)", () => {
     expect(
       screen.getByText(/not on the board yet this semester/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ServiceHoursPage sections by role and state (#4669)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+  });
+
+  it("shows a member the leaderboard but neither the queue nor chapter history", () => {
+    permissionsList.current = ["service:log", "members:view"];
+    render(<ServiceHoursPage />);
+
+    expect(
+      screen.getByRole("region", { name: "Your service hours" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: /leaderboard/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /review queue/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /chapter history/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws no leaderboard for a role without members:view", () => {
+    permissionsList.current = ["service:log"];
+    render(<ServiceHoursPage />);
+
+    expect(
+      screen.queryByRole("region", { name: /leaderboard/i }),
+    ).not.toBeInTheDocument();
+    expect(mockLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it("lists the viewer's log newest first", () => {
+    entriesExtra.current = [
+      {
+        ...APPROVED_ENTRY,
+        id: "svc-old",
+        date: "2026-07-01",
+        description: "Oldest shift",
+      },
+      {
+        ...APPROVED_ENTRY,
+        id: "svc-new",
+        date: "2026-09-01",
+        description: "Newest shift",
+      },
+    ];
+    render(<ServiceHoursPage />);
+    entriesExtra.current = [];
+
+    const log = screen.getByRole("list", { name: "Your log" });
+    const titles = within(log)
+      .getAllByRole("listitem")
+      .map((row) => row.querySelector("p")?.textContent);
+    expect(titles[0]).toBe("Newest shift");
+    expect(titles[titles.length - 1]).toBe("Oldest shift");
+  });
+
+  it("says when the leaderboard couldn't load, with a way to retry", () => {
+    leaderboardState.current = { isPending: false, isError: true };
+    render(<ServiceHoursPage />);
+
+    const board = screen.getByRole("region", { name: /leaderboard/i });
+    expect(
+      within(board).getByText("Couldn't load the leaderboard"),
+    ).toBeInTheDocument();
+    expect(
+      within(board).getByRole("button", { name: /try again|retry/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a loading board while the leaderboard reads", () => {
+    leaderboardState.current = { isPending: true, isError: false };
+    render(<ServiceHoursPage />);
+
+    const board = screen.getByRole("region", { name: /leaderboard/i });
+    expect(
+      within(board).getByRole("status", { name: "Loading the leaderboard" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says so in one line when nobody has approved hours this semester", () => {
+    leaderboardRows.current = [];
+    render(<ServiceHoursPage />);
+
+    expect(
+      screen.getByText("No approved hours this semester yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("says the semester couldn't be found when its start didn't load", () => {
+    semestersData.current = undefined;
+    semestersError.current = true;
+    render(<ServiceHoursPage />);
+    semestersData.current = [];
+
+    const board = screen.getByRole("region", { name: /leaderboard/i });
+    expect(
+      within(board).getByText("Couldn't find this semester"),
+    ).toBeInTheDocument();
+    const mine = screen.getByRole("region", { name: "Your service hours" });
+    expect(within(mine).getByText("Couldn't load")).toBeInTheDocument();
   });
 });

@@ -63,7 +63,7 @@ export function useServiceSemesterStart(): {
  * them after a gap, as Strava's club leaderboard keeps your row in view and
  * Duolingo's league list highlights it.
  *
- * Rendered only for a `members:view` holder, which the route requires. Who is
+ * Rendered only for a `members:view` holder, which `GET /v1/service-entries/leaderboard` requires. Who is
  * on it is the endpoint's call: it ranks everyone with approved time in the
  * window, members who have since left included (#811, #543 hold whether they
  * should stay).

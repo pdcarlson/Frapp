@@ -2,13 +2,13 @@
 
 import type { ReactNode } from "react";
 import type { components } from "@repo/api-sdk";
-import { awardedPointsLabel, statusLabel } from "@repo/validation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { NestedError } from "@/components/shared/nested-states";
+import { SkeletonRows } from "@/components/shared/page-skeletons";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { serviceStatusKind } from "@/components/service/service-status";
+import { ServiceEntryRow } from "@/components/service/service-entry-row";
 import {
   hoursLabel,
   type OwnServiceTotals,
@@ -54,7 +54,13 @@ function Stat({
  * Withdraw stays on a pending row, and only here: `DELETE
  * /v1/service-entries/:id` lets a `service:approve` holder delete anyone's
  * pending entry and its proof, so the control lives on a list that holds
- * nothing but the viewer's own.
+ * nothing but the viewer's own. `notice` replaces it with a sentence when the
+ * list is the viewer's only because the server pinned it (their own id didn't
+ * load), so nothing here can be deleted by id.
+ *
+ * `state` is the viewer's own read: a skeleton while it loads, an error with a
+ * retry when it fails. The stats wait with the rows, so they never read 0 h
+ * before the entries arrive.
  */
 export function ServiceYours({
   entries,
@@ -66,6 +72,10 @@ export function ServiceYours({
   logControlProps,
   withdrawControlProps,
   onWithdraw,
+  state = "ready",
+  onRetry,
+  errorDescription,
+  notice,
 }: {
   /** The viewer's own entries, newest first. */
   entries: readonly ServiceEntry[];
@@ -77,36 +87,52 @@ export function ServiceYours({
   logControlProps: Record<string, unknown>;
   withdrawControlProps: Record<string, unknown>;
   onWithdraw: (entry: ServiceEntry) => void;
+  state?: "loading" | "error" | "ready";
+  onRetry?: () => void;
+  /** The load-failure line (`describeLoadFailure`) for the error state. */
+  errorDescription?: string;
+  /** Said under the label instead of offering Withdraw; see above. */
+  notice?: string;
 }) {
+  const ready = state === "ready";
   return (
     <section aria-labelledby="svc-mine-label" className="min-w-0 space-y-6">
       <div className="space-y-3">
         <SectionLabel id="svc-mine-label">Your service hours</SectionLabel>
+        {notice ? (
+          <p className="text-sm text-muted-foreground">{notice}</p>
+        ) : null}
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-4">
           <Stat
             label="This semester"
             value={
-              totals.semesterMinutes === null
+              !ready || totals.semesterMinutes === null
                 ? "–"
                 : hoursLabel(totals.semesterMinutes)
             }
             detail={
-              totals.semesterMinutes === null
-                ? semesterUnreadable
-                  ? "Couldn't load"
-                  : null
-                : "approved"
+              !ready
+                ? null
+                : totals.semesterMinutes === null
+                  ? semesterUnreadable
+                    ? "Couldn't load"
+                    : null
+                  : "approved"
             }
           />
           <Stat
             label="All time"
-            value={hoursLabel(totals.allTimeMinutes)}
-            detail="approved"
+            value={ready ? hoursLabel(totals.allTimeMinutes) : "–"}
+            detail={ready ? "approved" : null}
           />
           <Stat
             label="Pending"
-            value={hoursLabel(totals.pendingMinutes)}
-            detail={`${totals.pendingCount} ${totals.pendingCount === 1 ? "entry" : "entries"}`}
+            value={ready ? hoursLabel(totals.pendingMinutes) : "–"}
+            detail={
+              ready
+                ? `${totals.pendingCount} ${totals.pendingCount === 1 ? "entry" : "entries"}`
+                : null
+            }
           />
         </dl>
       </div>
@@ -115,14 +141,29 @@ export function ServiceYours({
         <SectionLabel
           id="svc-log-label"
           count={
-            entries.length > 0
+            ready && entries.length > 0
               ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`
               : null
           }
         >
           Your log
         </SectionLabel>
-        {entries.length === 0 ? (
+        {state === "loading" ? (
+          <div role="status" aria-label="Loading your service log">
+            <SkeletonRows
+              rows={3}
+              lines={2}
+              trailing={["w-20", "w-16"]}
+              trailingHeight="h-6"
+            />
+          </div>
+        ) : state === "error" ? (
+          <NestedError
+            title="Couldn't load your service hours"
+            description={errorDescription ?? ""}
+            onRetry={onRetry}
+          />
+        ) : entries.length === 0 ? (
           // One line where the rows go (empty-states plan rule 7); the first
           // entry starts from the line, through the toolbar's gated dialog.
           <InlineNote>
@@ -142,45 +183,26 @@ export function ServiceYours({
             aria-labelledby="svc-log-label"
             className={denseListClassName}
           >
-            {entries.map((entry) => {
-              const pointsLabel = awardedPointsLabel(entry);
-              return (
-                <li
-                  key={entry.id}
-                  className="flex min-h-11 flex-col gap-1 py-2 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{entry.description}</p>
-                    <p className="text-caption text-muted-foreground">
-                      {entryMeta(entry)}
-                    </p>
-                    {entry.review_comment ? (
-                      <p className="text-caption text-muted-foreground">
-                        Reviewer note: {entry.review_comment}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={serviceStatusKind(entry.status)}>
-                      {statusLabel("serviceEntry", entry.status)}
-                    </Badge>
-                    {pointsLabel ? (
-                      <Badge variant="outline">{pointsLabel}</Badge>
-                    ) : null}
-                    {entry.status === "PENDING" ? (
-                      <Button
-                        size="toolbar"
-                        variant="ghost"
-                        onClick={() => onWithdraw(entry)}
-                        {...withdrawControlProps}
-                      >
-                        Withdraw
-                      </Button>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
+            {entries.map((entry) => (
+              <ServiceEntryRow
+                key={entry.id}
+                entry={entry}
+                title={entry.description}
+                meta={entryMeta(entry)}
+                action={
+                  entry.status === "PENDING" && !notice ? (
+                    <Button
+                      size="toolbar"
+                      variant="ghost"
+                      onClick={() => onWithdraw(entry)}
+                      {...withdrawControlProps}
+                    >
+                      Withdraw
+                    </Button>
+                  ) : null
+                }
+              />
+            ))}
           </ul>
         )}
       </div>

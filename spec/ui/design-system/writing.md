@@ -369,7 +369,16 @@ Mobile's task board (s08, a tab until #4610, now pushed from Activity) is a pers
 | Empty queue | — | `Nothing waiting for review.` (one line) |
 | Queue row, points preview | — | `Approving awards {N} service point(s), at the chapter's current rate of 1 per {rate}.`; under the rate, `Approving awards no points: {duration} is under the chapter's current rate of 1 point per {rate}.` `{rate}` reads `hour` at the default 60 minutes, otherwise a duration (`30m`, `1h 30m`). No line when the rate can't be read (#3862) |
 | History row, points | — | On an approved entry, the points its approval recorded: `{N} points` / `1 point`, or `No points` for a sub-rate approval; `Points awarded` only when the entry carries no number. Web shows it as an outline badge beside the status, mobile ends the row's meta line with it (`3h · Aug 12 · 3 points`). Never recomputed from the current rate (#3868) |
-| Empty history | — | `No service logged yet.` then, for a viewer with `service:log`, a **Log the first hours** link that opens Log service (one line) |
+| Your service hours, stats | — | `This semester`, `All time` (each `{N} h` `approved`) and `Pending` (`{N} h` `{n} entry`/`entries`). A stat whose part isn't known yet reads `–`; This semester reads `–` `Couldn't load` when the semester's start didn't load (#4669) |
+| Empty log (Your log) | — | `You haven't logged any service yet.` then, for a viewer with `service:log`, a **Log your first hours** link that opens Log service (one line) |
+| Your log, error | `Couldn't load your service hours` | the load-failure line (§ copy rules) |
+| Your log, no account id | — | `Confirming your account…` while it loads, then `We couldn't confirm your account, so withdrawing is unavailable. Reload to try again.` A member who can't approve keeps their log beneath it, read-only; an approver gets the sentence alone, with `your hours and withdrawing are unavailable` in place of `withdrawing is unavailable` |
+| Empty chapter history (approvers) | — | `Nothing reviewed yet.` (one line) |
+| Leaderboard, empty | — | `No approved hours this semester yet.`, or under All time `No approved hours yet.` (one line) |
+| Leaderboard, viewer not on it | — | `You're not on the board yet this semester. Approved hours put you on it.` (under All time, without `this semester`) |
+| Leaderboard, error | `Couldn't load the leaderboard` | the load-failure line (§ copy rules) |
+| Leaderboard, semester unknown | `Couldn't find this semester` | `The semester's start date didn't load, so this board can't be counted yet. All time still works.` |
+| Leaderboard, offline | `Leaderboard unavailable offline` | `Reconnect to see the chapter's service hours.` |
 | Empty history, mobile | — | `No service logged yet.`; for a viewer with `service:log`, `No service logged yet. Tap + to log your first hours.`, the screen's own + (one line) |
 | Error | `Couldn't load service entries` | the load-failure line (§ copy rules) |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
