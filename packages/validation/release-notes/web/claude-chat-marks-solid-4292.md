@@ -1,1 +1,1 @@
-A pinned channel and a saved message now show a filled-in pin or ribbon, so you can tell at a glance which ones are on.
+Pinning a channel or saving a message now fills in its pin or ribbon, so it's clear which ones are on.

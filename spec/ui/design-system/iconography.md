@@ -59,14 +59,18 @@ Rules:
    Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception,
    **Documents' Star and Pin** (§6.2.5). While on, the silhouette is solid in
    its hue; while off, it is the outline. Chat's channel pin and bookmark
-   (§6.2.2) are the same kind of toggle and fill the same way since
-   [#4292](https://github.com/pdcarlson/Frapp/issues/4292) (2026-11-13). At 16–18% an on star read as the off outline in another
+   (§6.2.2) are the same kind of toggle and still take the tinted fill until
+   [#4292](https://github.com/pdcarlson/Frapp/issues/4292). At 16–18% an on star read as the off outline in another
    colour, so the state rode on colour alone (Shawn: "it should fill in the
    star. It shouldn't just turn purple"). Same path data, filled, as Google
-   Drive, Gmail and Dropbox draw a star (and Slack a saved item's ribbon). Web: `markFillProps` in
+   Drive, Gmail and Dropbox draw a star. Web: `markFillProps` in
    `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
    `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
    selection and every other state still recolor only.
+   Changed in #4292 by shawnatomklein-eng, 2026-11-13: the exception now
+   covers chat's pin (a pinned channel, a pinned message's marker) and its
+   bookmark ribbon too, as Slack fills a saved item's ribbon. Documents'
+   `PinGlyph` is chat's again.
 2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
    capsule (white at 8%) the full height of the pill's row, as iOS 26's own
    bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
@@ -393,7 +397,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 
 | Semantic intent | Glyph |
 |---|---|
-| Pinned message | `PinGlyph` |
+| Pinned message (the "Pinned" marker), solid (#4292) | `PinGlyph` |
 | Pin a channel to the top of your own list (#2877), solid while pinned (#4292, §1 rule 1's exception) | `PinGlyph` |
 | Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
@@ -559,7 +563,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph and the drawn `PinGlyph` and `StarGlyph` (both #3934, solid while on since #4289). The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, `PinGlyph` (chat's, re-exported) and the drawn `StarGlyph` (both #3934, solid while on since #4289). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -580,7 +584,8 @@ button, and the PDF a report exports to.
 
 Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice.
+which is §1 rule 1's rule and the two preceding families' practice, and a
+fourth, `PinGlyph`, re-exports chat's (#4292).
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.

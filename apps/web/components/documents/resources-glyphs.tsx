@@ -5,10 +5,10 @@
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
  * `spec/ui/design-system/iconography.md` §1.1) except three: the re-exported
- * `SearchGlyph`, which keeps the §1 stroke recipe until #3491; and `PinGlyph`
- * and `StarGlyph`, drawn here from `MARK_GLYPH_PATHS` (#3934) and filled solid
- * while on (#4289), because the set has no star and chat's pin keeps the
- * tinted recipe. The
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491; `PinGlyph`,
+ * chat's pin re-exported (#4292); and `StarGlyph`, drawn here from
+ * `MARK_GLYPH_PATHS` (#3934) because the set has no star. Pin and star fill
+ * solid while on (#4289, #4292). The
  * intent → glyph map lives in `iconography.md` §6.2.5 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
