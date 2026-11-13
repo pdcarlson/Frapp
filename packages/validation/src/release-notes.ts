@@ -145,6 +145,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A form opened while you're offline, or when it can't reach the server, now says its answers may not be the newest.",
       "Officers can only invite people into roles at or below their own, and the invite list shows only the invites they could have sent.",
       "Notifications now show one row per conversation with how many messages it holds, and an Unread switch hides what you've already read.",
+      "If your chapter has Ask Frapp on, type @Frapp and a question in any channel to ask it right there: nothing is posted and only you see the answer.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -181,6 +182,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Opening a form while you're offline no longer leaves its questions locked.",
       "Activity can now show a short note from Frapp about one of your tasks, with a suggested place to start, when your chapter has Ask on.",
       "Long-press a message to pin it for the channel or save it for yourself, and find both under Pinned messages and Saved messages in the channel's menu.",
+      "Events in the Calendar list now look like they do on Activity, with an arrow that shows each one opens, and the buttons beside each section name on the chat list line up.",
     ],
   },
   {
