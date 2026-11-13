@@ -84,7 +84,12 @@ describe('AskPostController', () => {
     expect(userId).toBe(USER);
     expect(options.chapterId).toBe(CHAPTER);
     expect(options.properties).toEqual({ warned: true });
-    expect(() => assertContentFreeProperties(options.properties)).not.toThrow();
+    expect(() =>
+      assertContentFreeProperties({
+        name: event,
+        properties: options.properties,
+      }),
+    ).not.toThrow();
   });
 
   it('counts nothing for a check, or for a post held back by a changed list', async () => {
