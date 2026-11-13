@@ -270,30 +270,6 @@ describe("where the rest go", () => {
     ]);
   });
 
-  it("checks straight in to the one event open now", () => {
-    data.events = [event("now", -10), event("later", 120)];
-    render();
-    run("checkIn");
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: "/check-in",
-      params: { eventId: "now" },
-    });
-  });
-
-  it("lets the member choose on Events when none or several are open", () => {
-    data.events = [event("later", 120)];
-    const tree = render();
-    run("checkIn");
-    data.events = [event("a", -10), event("b", -5)];
-    act(() => tree.update(<Harness />));
-    run("checkIn");
-    expect(router.push).not.toHaveBeenCalled();
-    expect(vi.mocked(router.navigate).mock.calls).toEqual([
-      ["/events"],
-      ["/events"],
-    ]);
-  });
-
   it("hosts the soonest event still open to check-in", () => {
     data.events = [event("later", 120), event("soon", 30)];
     render();

@@ -151,7 +151,9 @@ export function EventCard({
   const checkIn = useCheckIn();
   const [outcome, setOutcome] = useState<CheckInOutcome | null>(null);
   // Once an officer's screen has shown the code, the server wants it (#4532):
-  // the card's Check in turns into Scan code, which opens s18 on this event.
+  // the card's line says to point the phone's camera at it (the QR is a link
+  // that opens the app checking in, 2026-11-13), and Check in turns into
+  // Enter code, which opens s18 on this event for a camera that won't read it.
   const [scanInstead, setScanInstead] = useState(false);
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -290,8 +292,7 @@ export function EventCard({
               />
             ) : scanInstead ? (
               <CardButton
-                label="Scan code"
-                variant="primary"
+                label="Enter code"
                 onPress={() => {
                   onNavigate?.();
                   router.push({

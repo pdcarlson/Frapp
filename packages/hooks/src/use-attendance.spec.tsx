@@ -252,7 +252,7 @@ describe("useMintCheckInToken", () => {
   const MINTED = {
     token: "signed",
     manualCode: "4KQ-88",
-    qrPayload: "frapp-checkin:v1:event-123:signed",
+    qrPayload: "https://app.frapp.live/check-in?event=event-123&t=signed",
     expiresAt: "2026-11-05T12:00:30.000Z",
   };
 

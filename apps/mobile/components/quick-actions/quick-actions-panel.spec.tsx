@@ -16,7 +16,7 @@ type Node = ReactTestRenderer["root"];
 const OFFICER: QuickActionKey[] = [
   "newTask",
   "message",
-  "checkIn",
+  "invite",
   "hostCheckIn",
   "logHours",
   "study",
@@ -69,14 +69,14 @@ const byLabel = (root: Node, label: string) =>
 
 describe("the panel at rest", () => {
   it("draws each action as a button that runs it", () => {
-    const tree = render(["message", "checkIn", "logHours"]);
+    const tree = render(["message", "invite", "logHours"]);
     const labels = pressables(tree.root)
       .map((node) => node.props.accessibilityLabel)
       .filter(Boolean);
-    expect(labels).toEqual(["Message", "Check in", "Log hours"]);
+    expect(labels).toEqual(["Message", "Invite", "Log hours"]);
 
-    act(() => byLabel(tree.root, "Check in")!.props.onPress());
-    expect(props.onRun).toHaveBeenCalledWith("checkIn");
+    act(() => byLabel(tree.root, "Invite")!.props.onPress());
+    expect(props.onRun).toHaveBeenCalledWith("invite");
   });
 
   it("lays six out three to a row, in the same cells as editing", () => {
@@ -113,7 +113,7 @@ describe("the panel at rest", () => {
   });
 
   it("starts editing on a hold, on an action or between them", () => {
-    const tree = render(["message", "checkIn"]);
+    const tree = render(["message", "invite"]);
     act(() => byLabel(tree.root, "Message")!.props.onLongPress());
     expect(props.onEditingChange).toHaveBeenCalledWith(true);
     expect(haptic).toHaveBeenCalledTimes(1);
@@ -164,9 +164,9 @@ describe("the panel at rest", () => {
 
 describe("editing in place", () => {
   it("puts a remove control on each placed action", () => {
-    const tree = render(["message", "checkIn"], true);
+    const tree = render(["message", "invite"], true);
     act(() => byLabel(tree.root, "Remove Message")!.props.onPress());
-    expect(props.onSave).toHaveBeenCalledWith(["checkIn"]);
+    expect(props.onSave).toHaveBeenCalledWith(["invite"]);
   });
 
   it("adds from the Add row at the end", () => {
@@ -190,7 +190,7 @@ describe("editing in place", () => {
   });
 
   it("lets a screen reader remove and move, one place at a time", () => {
-    const tree = render(["message", "checkIn", "logHours"], true);
+    const tree = render(["message", "invite", "logHours"], true);
     const placed = (label: string) =>
       tree.root.findAll(
         (node) =>
@@ -203,7 +203,7 @@ describe("editing in place", () => {
         (action) => action.name,
       );
     expect(names("Message")).toEqual(["remove", "moveLater"]);
-    expect(names("Check in")).toEqual(["remove", "moveEarlier", "moveLater"]);
+    expect(names("Invite")).toEqual(["remove", "moveEarlier", "moveLater"]);
     expect(names("Log hours")).toEqual(["remove", "moveEarlier"]);
 
     const act11y = (label: string, actionName: string) =>
@@ -212,20 +212,20 @@ describe("editing in place", () => {
           nativeEvent: { actionName },
         }),
       );
-    act11y("Check in", "moveLater");
+    act11y("Invite", "moveLater");
     expect(props.onSave).toHaveBeenLastCalledWith([
       "message",
       "logHours",
-      "checkIn",
+      "invite",
     ]);
-    act11y("Check in", "moveEarlier");
+    act11y("Invite", "moveEarlier");
     expect(props.onSave).toHaveBeenLastCalledWith([
-      "checkIn",
+      "invite",
       "message",
       "logHours",
     ]);
     act11y("Log hours", "remove");
-    expect(props.onSave).toHaveBeenLastCalledWith(["message", "checkIn"]);
+    expect(props.onSave).toHaveBeenLastCalledWith(["message", "invite"]);
   });
 
   it("leaves editing on Done", () => {
@@ -235,7 +235,7 @@ describe("editing in place", () => {
   });
 
   it("moves an action to where it is dropped, and keeps that order", () => {
-    const tree = render(["message", "checkIn", "logHours"], true);
+    const tree = render(["message", "invite", "logHours"], true);
     const detectors = tree.root.findAll(
       (node) => (node.type as unknown) === "GestureDetector",
     );
@@ -251,7 +251,7 @@ describe("editing in place", () => {
     act(() => drag.onFinalize());
 
     expect(props.onSave).toHaveBeenCalledWith([
-      "checkIn",
+      "invite",
       "logHours",
       "message",
     ]);
@@ -292,7 +292,7 @@ describe("editing in place", () => {
   });
 
   it("saves nothing for a drag that ends where it started", () => {
-    const tree = render(["message", "checkIn"], true);
+    const tree = render(["message", "invite"], true);
     const [first] = tree.root.findAll(
       (node) => (node.type as unknown) === "GestureDetector",
     );

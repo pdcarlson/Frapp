@@ -27,6 +27,7 @@ import {
   purposeStringProblems,
   reactNativeCoreCategories,
   requesterProblems,
+  appVersionOf,
   requiredReasonCategories,
   requiredReasonProblems,
   scanPod,
@@ -167,7 +168,20 @@ test("every roster entry's requester call exists in the app today", () => {
       return null;
     }
   };
-  assert.deepEqual(requesterProblems(read), []);
+  assert.deepEqual(requesterProblems(read, undefined, appVersionOf(read)), []);
+});
+
+test("a retiring permission is excused only while expo.version is the one it ships in", () => {
+  // The camera's requester went with the in-app scanner (2026-11-13); its
+  // declarations leave with the next native version (#4763).
+  const gone = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : `requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync( ${RECORDER}`);
+  assert.deepEqual(requesterProblems(gone, undefined, "0.12.0"), []);
+  assert.deepEqual(requesterProblems(gone, undefined, "0.13.0"), [
+    "NSCameraUsageDescription: retiring with #4763, and expo.version moved past 0.12.0, so this native change is the one that drops the permission and its roster entry",
+    "android.permission.CAMERA: retiring with #4763, and expo.version moved past 0.12.0, so this native change is the one that drops the permission and its roster entry",
+  ]);
+  assert.equal(appVersionOf(() => '{"expo":{"version":"0.12.0"}}'), "0.12.0");
+  assert.equal(appVersionOf(() => "not json"), null);
 });
 
 test("a purpose string whose feature is gone fails", () => {

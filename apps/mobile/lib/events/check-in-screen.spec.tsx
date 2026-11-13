@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { AccessibilityInfo, Platform } from "react-native";
+import { AccessibilityInfo, Linking, Platform } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -13,30 +13,32 @@ import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
+import { FrappClientProvider } from "@repo/hooks";
 import {
-  CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
-  FrappClientProvider,
-} from "@repo/hooks";
-import {
+  ALREADY_CHECKED_IN_COPY,
   ALREADY_CHECKED_IN_TITLE,
   CHECK_IN_CODE_REFUSED_MESSAGE,
+  CHECK_IN_NEEDS_LOCATION_MESSAGES,
 } from "@/lib/events/check-in-outcome";
-import { requireForegroundFix, tryForegroundFix } from "@/lib/location";
+import {
+  getCheckInLocation,
+  type CheckInLocation,
+} from "@/lib/events/check-in-location";
 
 /**
- * s18's refusal wiring (#2297), rendered (#2416).
+ * s18, rendered (#2416), as the phone's camera opens it (2026-11-13).
  *
- * A subscription refusal is the one check-in failure that must not re-arm
- * anything: the chapter stays refused until an officer sorts out billing, so
- * a live scanner or manual field only invites a retry that cannot win. Every
- * other failure keeps both armed. And because the screen can stay mounted (under
- * another screen, in the background, or handed new params by a link),
- * the refusal has to clear when the member comes back, or the scanner stays
- * dead at the next event until a force-quit.
+ * The event's QR is an https link (`…/check-in?event=<id>&t=<token>`) the
+ * phone's own camera reads; tapping its banner opens this screen with the
+ * event and the token, and the check-in goes on its own once the event has
+ * loaded and the phone is online. Opened from the app with no token, the
+ * screen says to use the camera and offers the typed code.
  *
- * These replace source-string locks that proved a token was in the file, not
- * that the scanner was off. Reverting the catch to a plain `error` status
- * kept those green; it turns this suite red.
+ * Location is asked for in context (`lib/events/check-in-location.ts`, mocked
+ * here so each spec says what the phone gives): a zoned event with no
+ * location sends nothing and says what to change; an unzoned one sends
+ * without coordinates, and says what to change only when the server answers
+ * that it needed them.
  *
  * It renders `app/(app)/check-in.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -51,7 +53,18 @@ const REFUSED = {
   requestId: "req_refused",
 };
 
-/** Any failure that is not the subscription gate. */
+/**
+ * `ChapterGuard`'s refusal with `events` off, without its `code`: the
+ * message path, which installed builds and an API older than #1020 rely on.
+ */
+const MODULE_OFF = {
+  statusCode: 403,
+  error: "Forbidden",
+  message: moduleDisabledMessage("events"),
+  requestId: "req_module_off",
+};
+
+/** Any failure that is not a gate. */
 const FAILED = {
   statusCode: 500,
   error: "Internal Server Error",
@@ -60,6 +73,26 @@ const FAILED = {
 };
 /** What a member reads for {@link FAILED}: never the server's own text. */
 const FAILED_SHOWN = "Couldn't check you in.";
+
+/** The server's refusal of a check-in that carried no location. */
+const NEEDS_LOCATION = {
+  statusCode: 400,
+  error: "Bad Request",
+  message: CHECK_IN_NEEDS_LOCATION_MESSAGES[0],
+};
+
+/** A geofence refusal: a 400 that is not about a missing location. */
+const OUTSIDE_ZONE = {
+  statusCode: 400,
+  error: "Bad Request",
+  message: "Location is outside the geofence",
+};
+const OUTSIDE_ZONE_SHOWN =
+  "You're outside the zone. Move inside it and try again.";
+
+/** The shared copy for a refused typed code. */
+const TYPED_CODE_REFUSED_SHOWN =
+  "That code is wrong or has expired. Ask the host for the current one.";
 
 const EVENT = {
   id: "evt-1",
@@ -72,8 +105,21 @@ const EVENT = {
   check_in_zone: [],
 };
 
-/** The event the reused tab instance can move to mid check-in. */
+/** The same event with a drawn zone: no check-in goes without a location. */
+const ZONED = {
+  ...EVENT,
+  check_in_zone: [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 1 },
+    { lat: 1, lng: 1 },
+  ],
+};
+
+/** The event a second link can move the screen to in place. */
 const OTHER_EVENT = { ...EVENT, id: "evt-2", name: "Formal", point_value: 5 };
+
+/** The phone's position, when it gives one. */
+const FIX = { lat: 42.73, lng: -73.68, accuracy_meters: 12 };
 
 const checkIn = vi.fn();
 
@@ -82,8 +128,6 @@ const state = vi.hoisted(() => ({
   successHaptic: vi.fn(),
   /** Stands in for `useEvent` when set; reset by the specs that set it. */
   useEvent: null as null | ((id: string) => Record<string, unknown>),
-  /** Check-ins sent and not yet answered, for `useCheckIn`'s `isPending`. */
-  pendingCheckIns: 0,
   /**
    * The real `useCheckIn`, on the client `renderWithClient` provides, for a
    * spec that has to see what the hook makes of a response. Set for the life
@@ -109,23 +153,11 @@ const state = vi.hoisted(() => ({
       },
     },
   } as { isSuccess: boolean; data?: unknown },
+  openSettings: vi.fn(async () => undefined),
+  enableNetworkProvider: vi.fn(async () => undefined),
+  /** Every `AppState` "change" listener the screen has registered. */
+  appStateListeners: new Set<(next: string) => void>(),
 }));
-
-/**
- * `useCheckIn`'s `mutateAsync`: sends through `checkIn`, and counts what is
- * on its way so the mock's `isPending` is true while a check-in is, as
- * TanStack's is. A screen that read it would switch the next event's Check in
- * off while the last event's check-in is still on its way.
- */
-function sendCheckIn(variables: unknown) {
-  state.pendingCheckIns += 1;
-  const answer = Promise.resolve(checkIn(variables));
-  const settle = () => {
-    state.pendingCheckIns -= 1;
-  };
-  answer.then(settle, settle);
-  return answer;
-}
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -139,41 +171,60 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useCheckIn: () =>
       state.realCheckIn
         ? actual.useCheckIn()
-        : { mutateAsync: sendCheckIn, isPending: state.pendingCheckIns > 0 },
+        : {
+            mutateAsync: (variables: unknown) =>
+              Promise.resolve(checkIn(variables)),
+          },
   };
 });
 
-beforeEach(() => {
-  state.pendingCheckIns = 0;
-  state.warmFix = null;
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return {
+    ...reactNativeStub,
+    Linking: { openSettings: state.openSettings },
+    AppState: {
+      ...reactNativeStub.AppState,
+      addEventListener: (_type: string, listener: (next: string) => void) => {
+        state.appStateListeners.add(listener);
+        return { remove: () => state.appStateListeners.delete(listener) };
+      },
+    },
+  };
 });
+
+vi.mock("expo-location", () => ({
+  enableNetworkProviderAsync: () => state.enableNetworkProvider(),
+  hasServicesEnabledAsync: vi.fn(async () => true),
+  getForegroundPermissionsAsync: vi.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+  })),
+  requestForegroundPermissionsAsync: vi.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+  })),
+  getCurrentPositionAsync: vi.fn(),
+  getLastKnownPositionAsync: vi.fn(async () => null),
+  Accuracy: { Balanced: 3, High: 4 },
+}));
+
+// What the phone gives is each spec's to say; the copy for each blocker is
+// the real one.
+vi.mock("@/lib/events/check-in-location", async (importActual) => {
+  const actual =
+    await importActual<typeof import("@/lib/events/check-in-location")>();
+  return { ...actual, getCheckInLocation: vi.fn() };
+});
+
+vi.mock("@/lib/events/check-in-fix", () => ({
+  useWarmCheckInFix: () => () => state.warmFix,
+}));
 
 vi.mock("@/lib/haptics", () => ({
   successHaptic: () => state.successHaptic(),
 }));
 const { successHaptic } = state;
-
-vi.mock("expo-camera", () => ({
-  CameraView: "CameraView",
-  useCameraPermissions: () => [{ granted: true, canAskAgain: true }, vi.fn()],
-}));
-
-// The event has no zone, so the screen never asks for a fix; mocked only so
-// `expo-location` is not loaded.
-// No warm fix unless a spec gives one: the scan reads its own.
-vi.mock("@/lib/events/check-in-fix", () => ({
-  CHECK_IN_FIX_TIMEOUT_MS: 8_000,
-  useWarmCheckInFix: () => () => state.warmFix,
-}));
-
-vi.mock("@/lib/location", () => ({
-  requireForegroundFix: vi.fn(),
-  // No location unless a spec gives one: the scan goes without it.
-  tryForegroundFix: vi.fn(async () => ({
-    fix: null,
-    permission: { granted: false, canAskAgain: true },
-  })),
-}));
 
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: state.writeBlockedReason }),
@@ -183,12 +234,32 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import CheckInScreen from "@/app/(app)/check-in";
+import CheckInScreen, { CODE_CHANGED_COPY } from "@/app/(app)/check-in";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 /** "The member left this screen": the other half of `__refocus`. */
 const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
+
+const locate = vi.mocked(getCheckInLocation);
+
+/** The phone gives a position. */
+const located = (): CheckInLocation => ({ kind: "fix", fix: { ...FIX } });
+
+beforeEach(() => {
+  checkIn.mockReset();
+  checkIn.mockResolvedValue({});
+  locate.mockReset();
+  locate.mockImplementation(async () => located());
+  state.warmFix = null;
+  state.useEvent = null;
+  state.writeBlockedReason = null;
+  state.openSettings.mockClear();
+  state.enableNetworkProvider.mockReset();
+  state.enableNetworkProvider.mockResolvedValue(undefined);
+  successHaptic.mockClear();
+  vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+});
 
 /**
  * What the screen's `sheetRef` holds. The bottom-sheet mock is a host string,
@@ -197,6 +268,19 @@ const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
  * tell a dismiss from none.
  */
 const sheetHandle = { present: vi.fn(), dismiss: vi.fn() };
+
+/** The screen opened by the camera's link for `eventId`. */
+function openedByLink(eventId = "evt-1", token = "tok-1") {
+  vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+    event: eventId,
+    t: token,
+  });
+}
+
+/** The screen opened from the app's own button, with no token. */
+function openedFromApp(eventId = "evt-1") {
+  vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ eventId });
+}
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -243,6 +327,13 @@ function renderWithClient(client: unknown): ReactTestRenderer {
   return tree;
 }
 
+/** Lets every check-in on its way find its location and get its answer. */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 /** The screen as it renders after its params or its hooks changed. */
 function rerender(tree: ReactTestRenderer) {
   act(() =>
@@ -254,10 +345,20 @@ function rerender(tree: ReactTestRenderer) {
   );
 }
 
-/** The reused tab instance moves to another event. */
-function moveTo(tree: ReactTestRenderer, eventId: string) {
-  vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ eventId });
+/** A second link, or the app, hands the mounted screen another event. */
+function moveTo(tree: ReactTestRenderer, eventId: string, token?: string) {
+  vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue(
+    token ? { event: eventId, t: token } : { eventId },
+  );
   rerender(tree);
+}
+
+/** The phone comes back to the foreground (or leaves it). */
+async function appState(next: "active" | "background") {
+  await act(async () => {
+    for (const listener of [...state.appStateListeners]) listener(next);
+  });
+  await settle();
 }
 
 /** A check-in whose answer the spec decides when to deliver. */
@@ -296,16 +397,25 @@ const manualInput = (tree: ReactTestRenderer) =>
     (node) => node.props.accessibilityLabel === "Manual check-in code",
   );
 
+/** A control found by what it draws. */
+const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
+  tree.root.find(
+    (node) => node.type === ("Pressable" as never) && drawnText(node) === label,
+  );
+
+/** Every control drawing `label`, for a check that there is none. */
+const pressablesDrawing = (tree: ReactTestRenderer, label: string) =>
+  tree.root.findAll(
+    (node) => node.type === ("Pressable" as never) && drawnText(node) === label,
+  );
+
 /** Opens the manual sheet the way the member does, and lets it finish rising. */
 function openSheet(tree: ReactTestRenderer) {
-  act(() => pressableDrawing(tree, "Enter code manually").props.onPress());
+  act(() => pressableDrawing(tree, "Enter code instead").props.onPress());
   act(() =>
     tree.root.findByType("BottomSheetModal" as never).props.onAnimate(-1, 0),
   );
 }
-
-const camera = (tree: ReactTestRenderer) =>
-  tree.root.findByType("CameraView" as never);
 
 /** The manual sheet's "Check in" button (`SheetPrimaryButton`). */
 const manualSubmit = (tree: ReactTestRenderer) =>
@@ -316,176 +426,531 @@ const manualSubmit = (tree: ReactTestRenderer) =>
         node.type === ("Pressable" as never) && drawnText(node) === "Check in",
     );
 
-/** A control found by what it draws. */
-const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
-  tree.root.find(
-    (node) => node.type === ("Pressable" as never) && drawnText(node) === label,
-  );
-
 /** Types a plausible code and submits it, settling the async submit. */
-async function submitManualCode(tree: ReactTestRenderer) {
-  act(() => manualInput(tree).props.onChangeText("4KQ88"));
+async function submitManualCode(tree: ReactTestRenderer, code = "4KQ88") {
+  act(() => manualInput(tree).props.onChangeText(code));
   await act(async () => {
     manualSubmit(tree).props.onPress();
   });
+  await settle();
 }
 
-describe("Check-in on a subscription refusal (#2297)", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-  });
-
-  it("explains the refusal and switches the scanner and manual submit off", async () => {
-    checkIn.mockRejectedValue(REFUSED);
-    const tree = render();
-    await submitManualCode(tree);
-
-    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
-    // The server's own words are a purchase instruction, which the store
-    // declaration forbids inside the app.
-    expect(screenText(tree)).not.toContain(REFUSED.message);
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-    expect(manualSubmit(tree).props.disabled).toBe(true);
-    act(() => tree.unmount());
-  });
-
-  it("keeps the scanner and manual submit armed after an ordinary failure", async () => {
-    // The direction that got an earlier attempt at #2297 reverted: only a
-    // refusal may withdraw the retry.
-    checkIn.mockRejectedValue(FAILED);
-    const tree = render();
-    await submitManualCode(tree);
-
-    expect(screenText(tree)).toContain(FAILED_SHOWN);
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    expect(manualSubmit(tree).props.disabled).toBe(false);
-    act(() => tree.unmount());
-  });
-
-  it("clears the refusal when the member comes back to the screen", async () => {
-    checkIn.mockRejectedValue(REFUSED);
-    const tree = render();
-    await submitManualCode(tree);
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-
-    act(() => refocus());
-
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    expect(manualSubmit(tree).props.disabled).toBe(false);
-    act(() => tree.unmount());
-  });
-
-  it("re-arms the scanner after a check-in when the member comes back", async () => {
-    // The same instance serves the next event, and `success` swaps the
-    // scanner for its panel. Without the reset the member would arrive at the
-    // next event to "You're checked in" for the previous one, and no camera.
-    checkIn.mockResolvedValue({});
-    const tree = render();
-    await submitManualCode(tree);
-    expect(screenText(tree)).toContain("You're checked in");
-    // The success panel replaces the camera outright.
-    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
-
-    act(() => refocus());
-
-    expect(screenText(tree)).not.toContain("You're checked in");
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    act(() => tree.unmount());
-  });
-});
-
-describe("Check-in on a module-off refusal (#2393)", () => {
-  /**
-   * `ChapterGuard`'s refusal with `events` off, without its `code`: the
-   * message path, which installed builds and an API older than #1020 rely on.
-   */
-  const MODULE_OFF = {
-    statusCode: 403,
-    error: "Forbidden",
-    message: moduleDisabledMessage("events"),
-    requestId: "req_module_off",
-  };
-
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-  });
-
-  it("says it in the member's terms and switches the scanner and manual submit off", async () => {
-    checkIn.mockRejectedValue(MODULE_OFF);
-    const tree = render();
-    await submitManualCode(tree);
-
-    expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.checkIn);
-    // The guard's own words tell an officer to go to Settings → Modules.
-    expect(screenText(tree)).not.toContain(MODULE_OFF.message);
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-    expect(manualSubmit(tree).props.disabled).toBe(true);
-
-    act(() => refocus());
-
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    act(() => tree.unmount());
-  });
-});
-
-describe("Check-in's title (#2485)", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-  });
-
-  it("is the screen's heading, now that no navigator header names it", () => {
-    const tree = render();
-    const headings = textHeadings(tree);
-
-    expect(headings.map((node) => node.props.children)).toEqual(["Check in"]);
-  });
-});
-
-/** A scanned QR for `eventId`, as s22 draws it (`lib/events/check-in-code.ts`). */
-const qrFor = (eventId: string) => `frapp-checkin:v1:${eventId}:signed`;
-
-/** The camera reads a code. */
-async function scan(tree: ReactTestRenderer, data: string) {
+/** Presses a control by what it draws, and settles what it started. */
+async function press(tree: ReactTestRenderer, label: string) {
   await act(async () => {
-    camera(tree).props.onBarcodeScanned({ data });
+    pressableDrawing(tree, label).props.onPress();
   });
+  await settle();
 }
 
 const router = () => vi.mocked(expoRouter.useRouter)();
 
+/** Runs `body` with `Platform.OS` set, putting it back after. */
+async function onPlatform(os: "ios" | "android", body: () => Promise<void>) {
+  const platform = Platform as { OS: string };
+  const was = platform.OS;
+  platform.OS = os;
+  try {
+    await body();
+  } finally {
+    platform.OS = was;
+  }
+}
+
+describe("Check-in from the camera's link", () => {
+  beforeEach(() => openedByLink());
+
+  it("sends the token and the phone's position once the event has loaded, and only once", async () => {
+    const tree = render();
+    await settle();
+
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      token: "tok-1",
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+    expect(screenText(tree)).toContain("You're checked in");
+
+    // Re-renders, and a trip away and back, never send the same scan twice.
+    rerender(tree);
+    rerender(tree);
+    act(() => blur());
+    act(() => refocus());
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("sends nothing before the event has loaded, and sends once it has", async () => {
+    // Whether a location must go with it comes from the event's zone.
+    let loaded: Record<string, unknown> | undefined = undefined;
+    state.useEvent = () => ({ data: loaded });
+    const tree = render();
+    await settle();
+
+    expect(locate).not.toHaveBeenCalled();
+    expect(checkIn).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("Checking you in…");
+
+    loaded = EVENT;
+    rerender(tree);
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "evt-1", token: "tok-1" }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("sends nothing while offline, says why, and sends once the phone reconnects", async () => {
+    // Check-in has no outbox: a check-in sent with no network is lost.
+    state.writeBlockedReason = "Reconnect to make changes";
+    const tree = render();
+    await settle();
+
+    expect(checkIn).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("Reconnect to make changes");
+
+    state.writeBlockedReason = null;
+    rerender(tree);
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain("You're checked in");
+    act(() => tree.unmount());
+  });
+
+  it("uses the fix kept ready while the screen was up", async () => {
+    state.warmFix = { lat: 42.731, lng: -73.679, accuracy_meters: 9 };
+    const tree = render();
+    await settle();
+
+    expect(locate).toHaveBeenCalledWith(state.warmFix);
+    act(() => tree.unmount());
+  });
+
+  it("reads the first of a repeated parameter, as expo-router hands it over", async () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      event: ["evt-1", "evt-9"],
+      t: ["tok-1", "tok-9"],
+    });
+    const tree = render();
+    await settle();
+
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "evt-1", token: "tok-1" }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("sends a new scan of the same event: a new token is a new check-in", async () => {
+    checkIn.mockRejectedValueOnce(FAILED).mockResolvedValue({});
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain(FAILED_SHOWN);
+
+    moveTo(tree, "evt-1", "tok-2");
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(checkIn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ eventId: "evt-1", token: "tok-2" }),
+    );
+    expect(screenText(tree)).toContain("You're checked in");
+    act(() => tree.unmount());
+  });
+
+  it("sends a new scan that arrives while the last one is still under way, once it settles", async () => {
+    const answers = pendingCheckIns();
+    const tree = render();
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    moveTo(tree, "evt-1", "tok-2");
+    await settle();
+    // Not dropped by the latch: it waits.
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => answers[0]!.refuse(FAILED));
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(checkIn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ eventId: "evt-1", token: "tok-2" }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("names the event while it checks in, with no camera instruction", async () => {
+    pendingCheckIn();
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("Chapter meeting");
+    expect(text).toContain("Checking you in…");
+    expect(text).not.toContain("Point your camera at the code");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in opened from the app, with no token", () => {
+  beforeEach(() => openedFromApp());
+
+  it("says to use the camera, and sends nothing on its own", async () => {
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("Point your camera at the code");
+    expect(text).toContain("tap the Frapp link that appears");
+    expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(1);
+    expect(locate).not.toHaveBeenCalled();
+    expect(checkIn).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("sends a typed code from the sheet, with the phone's position", async () => {
+    const tree = render();
+    openSheet(tree);
+    expect(sheetHandle.present).toHaveBeenCalled();
+
+    await submitManualCode(tree);
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      manualCode: "4KQ88",
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says to use the camera when it has no event at all", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+    const tree = render();
+    expect(screenText(tree)).toContain(
+      "Point your phone's camera at the check-in code to check in.",
+    );
+    expect(tree.root.findAllByType("BottomSheetModal" as never)).toHaveLength(
+      0,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("keeps a typed code's submit off until the event has loaded", async () => {
+    state.useEvent = () => ({ data: undefined });
+    const tree = render();
+    act(() => manualInput(tree).props.onChangeText("4KQ88"));
+    expect(manualSubmit(tree).props.disabled).toBe(true);
+    expect(manualInput(tree).props.onSubmitEditing).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("says so, with a way to try again, when the event didn't load", () => {
+    const refetch = vi.fn();
+    state.useEvent = () => ({
+      data: undefined,
+      isError: true,
+      isFetching: false,
+      refetch,
+    });
+    const tree = render();
+    expect(screenText(tree)).toContain("Event didn't load");
+    act(() =>
+      tree.root
+        .find((node) => node.props.accessibilityLabel === "Try again")
+        .props.onPress(),
+    );
+    expect(refetch).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in at a zoned event with no location", () => {
+  beforeEach(() => {
+    openedByLink();
+    state.useEvent = () => ({ data: ZONED });
+  });
+
+  it("asks for location from Settings when it was refused for good, and sends nothing", async () => {
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("Allow location for Frapp");
+    expect(text).toContain("You must be at the event location.");
+    expect(checkIn).not.toHaveBeenCalled();
+    expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("opens Settings, and checks in when the member comes back", async () => {
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    const tree = render();
+    await settle();
+
+    // Coming back to the app before Settings was opened sends nothing.
+    await appState("active");
+    expect(locate).toHaveBeenCalledTimes(1);
+
+    await press(tree, "Open Settings");
+    expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+    expect(checkIn).not.toHaveBeenCalled();
+
+    // Leaving for Settings is not coming back.
+    await appState("background");
+    expect(locate).toHaveBeenCalledTimes(1);
+
+    locate.mockImplementation(async () => located());
+    await appState("active");
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      token: "tok-1",
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+    expect(screenText(tree)).toContain("You're checked in");
+
+    // Once only: the next return to the app sends nothing more.
+    await appState("active");
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes the typed code's sheet so what to change shows", async () => {
+    openedFromApp();
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    sheetHandle.dismiss.mockClear();
+    const tree = render();
+    openSheet(tree);
+
+    await submitManualCode(tree);
+    expect(checkIn).not.toHaveBeenCalled();
+    expect(sheetHandle.dismiss).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain("Allow location for Frapp");
+    act(() => tree.unmount());
+  });
+
+  it("names the zone the member has to be in", async () => {
+    state.useEvent = () => ({
+      data: { ...ZONED, check_in_zone_name: "Chapter house" },
+    });
+    locate.mockResolvedValue({ kind: "none", blocker: "no_fix" });
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("Couldn't find your location");
+    expect(text).toContain("You must be inside the Chapter house zone.");
+    act(() => tree.unmount());
+  });
+
+  it("asks again in place when the member said no this time", async () => {
+    locate.mockResolvedValueOnce({ kind: "none", blocker: "declined" });
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain("Allow location to check in");
+
+    await press(tree, "Allow location");
+    expect(Linking.openSettings).not.toHaveBeenCalled();
+    expect(locate).toHaveBeenCalledTimes(2);
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "tok-1", lat: 42.73 }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("offers Settings on iOS when Location Services are off", async () => {
+    await onPlatform("ios", async () => {
+      locate.mockResolvedValue({ kind: "none", blocker: "services_off" });
+      const tree = render();
+      await settle();
+      expect(screenText(tree)).toContain("Location is off");
+
+      await press(tree, "Open Settings");
+      expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+      expect(state.enableNetworkProvider).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+  });
+
+  it("asks Android to turn location on, and checks in when the member accepts", async () => {
+    await onPlatform("android", async () => {
+      locate.mockResolvedValueOnce({ kind: "none", blocker: "services_off" });
+      const tree = render();
+      await settle();
+      expect(screenText(tree)).toContain("Turn on location");
+      expect(checkIn).not.toHaveBeenCalled();
+
+      await press(tree, "Turn on location");
+      expect(state.enableNetworkProvider).toHaveBeenCalledTimes(1);
+      expect(Linking.openSettings).not.toHaveBeenCalled();
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      expect(checkIn).toHaveBeenCalledWith(
+        expect.objectContaining({ token: "tok-1", lat: 42.73, lng: -73.68 }),
+      );
+      expect(screenText(tree)).toContain("You're checked in");
+      act(() => tree.unmount());
+    });
+  });
+
+  it("stays put on Android when the member turns the dialog down", async () => {
+    await onPlatform("android", async () => {
+      locate.mockResolvedValue({ kind: "none", blocker: "services_off" });
+      state.enableNetworkProvider.mockRejectedValue(new Error("declined"));
+      const tree = render();
+      await settle();
+
+      await press(tree, "Turn on location");
+      expect(state.enableNetworkProvider).toHaveBeenCalledTimes(1);
+      expect(locate).toHaveBeenCalledTimes(1);
+      expect(screenText(tree)).toContain("Turn on location");
+      act(() => tree.unmount());
+    });
+  });
+});
+
+describe("Check-in at an unzoned event with no location", () => {
+  beforeEach(() => {
+    openedByLink();
+    locate.mockResolvedValue({ kind: "none", blocker: "no_fix" });
+  });
+
+  it("sends without coordinates: only the server knows whether it needed them", async () => {
+    const tree = render();
+    await settle();
+
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1", token: "tok-1" });
+    expect(screenText(tree)).toContain("You're checked in");
+    act(() => tree.unmount());
+  });
+
+  it("says what to change, not the server's refusal, when the server needed a location", async () => {
+    for (const message of CHECK_IN_NEEDS_LOCATION_MESSAGES) {
+      checkIn.mockReset();
+      checkIn.mockRejectedValueOnce({ ...NEEDS_LOCATION, message });
+      locate.mockReset();
+      locate.mockResolvedValueOnce({ kind: "none", blocker: "no_fix" });
+      locate.mockImplementation(async () => located());
+      const tree = render();
+      try {
+        await settle();
+        const text = screenText(tree);
+        expect(text).toContain("Couldn't find your location");
+        expect(text).not.toContain(message);
+
+        checkIn.mockResolvedValue({});
+        await press(tree, "Try again");
+        expect(checkIn).toHaveBeenCalledTimes(2);
+        expect(checkIn).toHaveBeenLastCalledWith(
+          expect.objectContaining({ token: "tok-1", lat: 42.73 }),
+        );
+        expect(screenText(tree)).toContain("You're checked in");
+      } finally {
+        act(() => tree.unmount());
+      }
+    }
+  });
+
+  it("offers Settings when the needed location was refused for good", async () => {
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    checkIn.mockRejectedValue(NEEDS_LOCATION);
+    const tree = render();
+    await settle();
+
+    expect(screenText(tree)).toContain("Allow location for Frapp");
+    await press(tree, "Open Settings");
+    expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("shows any other 400 as the error line", async () => {
+    checkIn.mockRejectedValue(OUTSIDE_ZONE);
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain(OUTSIDE_ZONE_SHOWN);
+    expect(text).not.toContain("Couldn't find your location");
+    expect(pressablesDrawing(tree, "Try again")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("relays a needs-location refusal as a line when the phone did send a position", async () => {
+    // The location state is for a phone that gave none; one that gave a
+    // position has nothing in Settings to change.
+    locate.mockImplementation(async () => located());
+    checkIn.mockRejectedValue(NEEDS_LOCATION);
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("This check-in needs your location.");
+    expect(text).not.toContain("Couldn't find your location");
+    expect(pressablesDrawing(tree, "Try again")).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in's refused code", () => {
+  it("says a scanned code changed, and to point the camera again", async () => {
+    openedByLink();
+    checkIn.mockRejectedValue({
+      statusCode: 403,
+      message: CHECK_IN_CODE_REFUSED_MESSAGE,
+    });
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain(CODE_CHANGED_COPY);
+    expect(text).not.toContain(TYPED_CODE_REFUSED_SHOWN);
+
+    // It is about that scan, so it says nothing about a code typed next.
+    openSheet(tree);
+    expect(screenText(tree)).not.toContain(CODE_CHANGED_COPY);
+    act(() => tree.unmount());
+  });
+
+  it("tells a typed code to ask the host for the current one", async () => {
+    openedFromApp();
+    checkIn.mockRejectedValue({
+      statusCode: 403,
+      message: CHECK_IN_CODE_REFUSED_MESSAGE,
+    });
+    const tree = render();
+    openSheet(tree);
+    await submitManualCode(tree);
+
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain(TYPED_CODE_REFUSED_SHOWN);
+    expect(screenText(tree)).not.toContain(CODE_CHANGED_COPY);
+    act(() => tree.unmount());
+  });
+});
+
 describe("Check-in's success moment", () => {
   beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-    vi.mocked(router().navigate).mockClear();
-    vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
-    successHaptic.mockClear();
+    openedByLink();
+    vi.mocked(router().dismissTo).mockClear();
     sheetHandle.dismiss.mockClear();
   });
 
-  it("replaces the scanner with a confirmation: the points, the event, and a way back", async () => {
-    checkIn.mockResolvedValue({});
+  it("shows the points, the event, and a way back", async () => {
     const tree = render();
-    await submitManualCode(tree);
+    await settle();
 
     const text = screenText(tree);
     expect(text).toContain("You're checked in");
     expect(text).toContain("+10 pts");
     expect(text).toContain("Chapter meeting");
-    // Nothing of the scanner is left to act on.
-    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
-    expect(text).not.toContain("Enter code manually");
+    expect(pressablesDrawing(tree, "Enter code instead")).toHaveLength(0);
     // VoiceOver hears the same sentence the chat event card shows.
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       "You're checked in. +10 pts",
@@ -502,18 +967,11 @@ describe("Check-in's success moment", () => {
   });
 
   it("taps once per check-in, not once per render", async () => {
-    checkIn.mockResolvedValue({});
     const tree = render();
-    await submitManualCode(tree);
+    await settle();
     expect(successHaptic).toHaveBeenCalledTimes(1);
 
-    act(() =>
-      tree.update(
-        <FrappThemeProvider>
-          <CheckInScreen />
-        </FrappThemeProvider>,
-      ),
-    );
+    rerender(tree);
     expect(successHaptic).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
@@ -522,11 +980,8 @@ describe("Check-in's success moment", () => {
     // TalkBack reads a change inside a live region it already knows; a region
     // that mounts with its content isn't reliably read. And announcing as
     // well would say it twice.
-    checkIn.mockResolvedValue({});
-    const platform = Platform as { OS: string };
-    const os = platform.OS;
-    platform.OS = "android";
-    try {
+    openedFromApp();
+    await onPlatform("android", async () => {
       const tree = render();
       const region = () =>
         tree.root.find(
@@ -548,13 +1003,11 @@ describe("Check-in's success moment", () => {
       ).toBe("You're checked in. +10 pts Chapter meeting");
       expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalled();
       act(() => tree.unmount());
-    } finally {
-      platform.OS = os;
-    }
+    });
   });
 
   it("closes the manual sheet when a typed code lands", async () => {
-    checkIn.mockResolvedValue({});
+    openedFromApp();
     const tree = render();
     openSheet(tree);
     await submitManualCode(tree);
@@ -563,9 +1016,139 @@ describe("Check-in's success moment", () => {
     act(() => tree.unmount());
   });
 
+  it("names the event the check-in was sent for, whatever the event becomes after", async () => {
+    // The event re-reads while the panel is up: an officer renamed it, or
+    // changed its points. The confirmation is of what was sent.
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain("Chapter meeting");
+
+    state.useEvent = () => ({
+      data: { ...EVENT, name: "Chapter meeting (moved)", point_value: 50 },
+    });
+    rerender(tree);
+    const text = screenText(tree);
+    expect(text).toContain("You're checked in");
+    expect(text).toContain("+10 pts");
+    expect(text).not.toContain("+50 pts");
+    expect(text).not.toContain("(moved)");
+    act(() => tree.unmount());
+  });
+});
+
+// #3703: a repeat check-in is the member already on the list, which is what
+// they came for, so it is the success panel in its own words, with no points
+// (none were awarded this time), not an error.
+describe("Check-in over a row the member already has (409)", () => {
+  const saved = state.ownRow;
+  beforeEach(() => {
+    openedByLink();
+    checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+  });
+  afterEach(() => {
+    state.ownRow = saved;
+  });
+
+  it("reads a PRESENT row as you're in, on the success panel", async () => {
+    state.ownRow = {
+      isSuccess: true,
+      data: { attendance: { status: "PRESENT", check_in_time: null } },
+    };
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain(ALREADY_CHECKED_IN_TITLE);
+    expect(text).toContain("Back to event");
+    expect(text).not.toMatch(/\+\d+ pts/);
+    act(() => tree.unmount());
+  });
+
+  it("says an officer's ABSENT mark, not you're in", async () => {
+    state.ownRow = {
+      isSuccess: true,
+      data: { attendance: { status: "ABSENT", check_in_time: null } },
+    };
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("An officer marked you absent for this event.");
+    expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
+    act(() => tree.unmount());
+  });
+
+  it("claims nothing about the row when reading it fails", async () => {
+    state.ownRow = { isSuccess: false };
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain(ALREADY_CHECKED_IN_COPY);
+    expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in on a gate's refusal (#2297, #2393)", () => {
+  beforeEach(() => openedFromApp());
+
+  it.each([
+    ["subscription", REFUSED, SUBSCRIPTION_REFUSAL_COPY.checkIn],
+    ["module", MODULE_OFF, MODULE_REFUSAL_COPY.checkIn],
+  ] as const)(
+    "explains a %s refusal in the member's terms and switches the typed code's submit off",
+    async (_gate, refusal, shown) => {
+      checkIn.mockRejectedValue(refusal);
+      const tree = render();
+      openSheet(tree);
+      await submitManualCode(tree);
+
+      expect(screenText(tree)).toContain(shown);
+      // The server's own words are a purchase instruction, which the store
+      // declaration forbids inside the app, or point an officer to Settings.
+      expect(screenText(tree)).not.toContain(refusal.message);
+      act(() => manualInput(tree).props.onChangeText("7XY12"));
+      expect(manualSubmit(tree).props.disabled).toBe(true);
+      act(() => tree.unmount());
+    },
+  );
+
+  it("shows a scanned link's refusal the same way", async () => {
+    openedByLink();
+    checkIn.mockRejectedValue(REFUSED);
+    const tree = render();
+    await settle();
+
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(screenText(tree)).not.toContain(REFUSED.message);
+    act(() => manualInput(tree).props.onChangeText("7XY12"));
+    expect(manualSubmit(tree).props.disabled).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the typed code's submit on after an ordinary failure", async () => {
+    // Only a gate refusal may withdraw the retry.
+    checkIn.mockRejectedValue(FAILED);
+    const tree = render();
+    openSheet(tree);
+    await submitManualCode(tree);
+
+    expect(screenText(tree)).toContain(FAILED_SHOWN);
+    expect(manualSubmit(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in keeps each event's state to itself", () => {
+  beforeEach(() => {
+    vi.mocked(router().dismissTo).mockClear();
+  });
+
   it("drops a check-in that lands after the screen moved to another event", async () => {
-    // The tab instance is reused, so the member can be on the next event's
-    // scanner by the time a slow check-in for the last one answers.
+    // A second link opened over this one hands the screen a new event in
+    // place, while the first check-in is still on its way.
+    openedFromApp();
     const answer = pendingCheckIn();
     const tree = render();
     await submitManualCode(tree);
@@ -574,24 +1157,75 @@ describe("Check-in's success moment", () => {
     );
 
     moveTo(tree, OTHER_EVENT.id);
+    // The new event starts clean: no typed code, nothing sending.
+    expect(manualInput(tree).props.value).toBe("");
+    expect(screenText(tree)).not.toContain("Checking you in");
     // A code the member types for the event they are on now.
     act(() => manualInput(tree).props.onChangeText("7XY12"));
     await act(async () => answer.land());
+    await settle();
 
     const text = screenText(tree);
     expect(text).not.toContain("You're checked in");
-    expect(text).not.toContain(OTHER_EVENT.name);
+    expect(text).not.toContain(EVENT.name);
     expect(successHaptic).not.toHaveBeenCalled();
-    // And the scanner for the event on screen is live again, with what the
-    // member typed for it left alone.
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     expect(manualInput(tree).props.value).toBe("7XY12");
+    expect(manualSubmit(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("drops a refusal, gate or not, that lands after the screen moved", async () => {
+    for (const refusal of [FAILED, REFUSED]) {
+      openedFromApp();
+      checkIn.mockReset();
+      const answer = pendingCheckIn();
+      const tree = render();
+      try {
+        await submitManualCode(tree);
+        moveTo(tree, OTHER_EVENT.id);
+        await act(async () => answer.refuse(refusal));
+        await settle();
+
+        const text = screenText(tree);
+        expect(text).not.toContain(FAILED_SHOWN);
+        expect(text).not.toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+        act(() => manualInput(tree).props.onChangeText("7XY12"));
+        expect(manualSubmit(tree).props.disabled).toBe(false);
+      } finally {
+        act(() => tree.unmount());
+      }
+    }
+  });
+
+  it("checks in to the second link's event and lands only its answer", async () => {
+    openedByLink("evt-1", "tok-a");
+    const answers = pendingCheckIns();
+    const tree = render();
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(1);
+
+    moveTo(tree, OTHER_EVENT.id, "tok-b");
+    await settle();
+    expect(checkIn).toHaveBeenCalledTimes(2);
+    expect(checkIn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ eventId: OTHER_EVENT.id, token: "tok-b" }),
+    );
+
+    await act(async () => answers[0].land());
+    await settle();
+    expect(screenText(tree)).not.toContain("You're checked in");
+    expect(screenText(tree)).toContain("Checking you in");
+
+    await act(async () => answers[1].land());
+    await settle();
+    expect(screenText(tree)).toContain("You're checked in");
+    expect(screenText(tree)).toContain(OTHER_EVENT.name);
+    expect(screenText(tree)).toContain("+5 pts");
     act(() => tree.unmount());
   });
 
   it("lands a check-in for the event the screen came back to", async () => {
-    // Left before it answered, and back: it is this event's, so it still
-    // shows as sending and its answer is drawn.
+    openedFromApp();
     const answer = pendingCheckIn();
     const tree = render();
     await submitManualCode(tree);
@@ -601,360 +1235,273 @@ describe("Check-in's success moment", () => {
     expect(screenText(tree)).toContain("Checking you in");
 
     await act(async () => answer.land());
+    await settle();
     expect(screenText(tree)).toContain("You're checked in");
     act(() => tree.unmount());
   });
 
-  it("drops a refusal that lands after the screen moved to another event", async () => {
-    const answer = pendingCheckIn();
+  it("puts the last event's confirmation and refusal away when the screen moves", async () => {
+    openedByLink();
     const tree = render();
-    await submitManualCode(tree);
-
-    moveTo(tree, OTHER_EVENT.id);
-    await act(async () => answer.refuse(FAILED));
-
-    expect(screenText(tree)).not.toContain(FAILED_SHOWN);
-    expect(
-      drawnText(tree.root.findByType("BottomSheetModal" as never)),
-    ).not.toContain(FAILED_SHOWN);
-    act(() => tree.unmount());
-  });
-
-  it("doesn't let a late gate refusal for the last event switch this one's scanner off", async () => {
-    // `blocked` disarms the camera and the manual field; for the wrong event
-    // it would leave the member a dead scanner at the right one.
-    const answer = pendingCheckIn();
-    const tree = render();
-    await submitManualCode(tree);
-
-    moveTo(tree, OTHER_EVENT.id);
-    await act(async () => answer.refuse(REFUSED));
-
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.checkIn);
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    act(() => manualInput(tree).props.onChangeText("7XY12"));
-    expect(manualSubmit(tree).props.disabled).toBe(false);
-    act(() => tree.unmount());
-  });
-
-  it("names the event the check-in was sent for, whatever the event becomes after", async () => {
-    // The event re-reads while the panel is up: an officer renamed it, or
-    // changed its points. The confirmation is of what was sent.
-    checkIn.mockResolvedValue({});
-    const tree = render();
-    await submitManualCode(tree);
-    expect(screenText(tree)).toContain("Chapter meeting");
-
-    state.useEvent = () => ({
-      data: { ...EVENT, name: "Chapter meeting (moved)", point_value: 50 },
-    });
-    try {
-      rerender(tree);
-      const text = screenText(tree);
-      expect(text).toContain("You're checked in");
-      expect(text).toContain("+10 pts");
-      expect(text).not.toContain("+50 pts");
-      expect(text).not.toContain("(moved)");
-    } finally {
-      state.useEvent = null;
-    }
-    act(() => tree.unmount());
-  });
-
-  it("puts the last event's confirmation away when the screen moves to another", async () => {
-    // A `frapp://` link can move the focused screen, which runs no focus
-    // reset: without this, event B would open on A's "You're checked in".
-    checkIn.mockResolvedValue({});
-    const tree = render();
-    await submitManualCode(tree);
+    await settle();
     expect(screenText(tree)).toContain("You're checked in");
 
     moveTo(tree, OTHER_EVENT.id);
     expect(screenText(tree)).not.toContain("You're checked in");
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
+    expect(screenText(tree)).toContain("Point your camera at the code");
+    act(() => tree.unmount());
+  });
+
+  it("leaves the last event's location state behind", async () => {
+    openedByLink();
+    state.useEvent = (id) => ({
+      data: id === OTHER_EVENT.id ? OTHER_EVENT : ZONED,
+    });
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain("Allow location for Frapp");
+
+    moveTo(tree, OTHER_EVENT.id);
+    expect(screenText(tree)).not.toContain("Allow location for Frapp");
+    act(() => tree.unmount());
+  });
+
+  it("doesn't send the last event's check-in again when the member comes back from Settings at another", async () => {
+    openedByLink();
+    state.useEvent = (id) => ({
+      data: id === OTHER_EVENT.id ? OTHER_EVENT : ZONED,
+    });
+    locate.mockResolvedValue({ kind: "none", blocker: "denied" });
+    const tree = render();
+    await settle();
+    await press(tree, "Open Settings");
+
+    moveTo(tree, OTHER_EVENT.id);
+    locate.mockImplementation(async () => located());
+    await appState("active");
+    expect(checkIn).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
 
-describe("Check-in keeps each event's state to itself", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
+describe("Check-in's typed code", () => {
+  beforeEach(() => openedFromApp());
+
+  it("is typed in a sheet field, which rises with the keyboard", () => {
+    // A plain `TextInput` at the foot of the screen sat under the keyboard on
+    // Android, where the app-wide provider stops the window resizing (#3354).
+    const tree = render();
+    expect(manualInput(tree).type).toBe("BottomSheetTextInput");
+    expect(tree.root.findAllByType("TextInput" as never)).toHaveLength(0);
+    act(() => tree.unmount());
   });
 
-  it("leaves the last event's refusal and typed code behind", async () => {
-    const REFUSED =
-      "That code is wrong or has expired. Ask the host for the current one.";
-    checkIn.mockRejectedValue({
-      statusCode: 403,
-      message: CHECK_IN_CODE_REFUSED_MESSAGE,
-    });
+  it("shows a failed code in the sheet, where the member is typing", async () => {
+    checkIn.mockRejectedValue(FAILED);
     const tree = render();
-    await scan(tree, qrFor("evt-1"));
-    expect(screenText(tree)).toContain(REFUSED);
-    act(() => manualInput(tree).props.onChangeText("4KQ88"));
-
-    moveTo(tree, OTHER_EVENT.id);
-
-    expect(screenText(tree)).not.toContain(REFUSED);
     openSheet(tree);
-    const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).not.toContain(REFUSED);
-    expect(manualInput(tree).props.value).toBe("");
-    act(() => tree.unmount());
-  });
-
-  it("leaves this event's scanner and Check in on while the last event's check-in is on its way", async () => {
-    // A slow venue network: the member left A's scanner, or a link moved it,
-    // before A answered. Nothing of A's may switch B off.
-    const answers = pendingCheckIns();
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-    expect(screenText(tree)).toContain("Checking you in");
-
-    moveTo(tree, OTHER_EVENT.id);
-    expect(screenText(tree)).not.toContain("Checking you in");
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    act(() => manualInput(tree).props.onChangeText("7XY12"));
-    expect(manualSubmit(tree).props.disabled).toBe(false);
-
-    await scan(tree, qrFor(OTHER_EVENT.id));
-    expect(checkIn).toHaveBeenCalledTimes(2);
-    expect(checkIn).toHaveBeenLastCalledWith(
-      expect.objectContaining({ eventId: OTHER_EVENT.id }),
-    );
-    expect(screenText(tree)).toContain("Checking you in");
-
-    await act(async () => answers[1].land());
-    expect(screenText(tree)).toContain("You're checked in");
-    expect(screenText(tree)).toContain(OTHER_EVENT.name);
-    act(() => tree.unmount());
-  });
-
-  it("keeps this event's check-in sending when the last event's settles, and sends it once", async () => {
-    // A was typed, so it never held the scanner. B's scan is on its way when
-    // A answers; A's answer must clear neither B's sending nor B's latch.
-    const answers = pendingCheckIns();
-    const tree = render();
     await submitManualCode(tree);
 
-    moveTo(tree, OTHER_EVENT.id);
-    // What the camera holds: it keeps handing over the code in frame.
-    const scanB = camera(tree).props.onBarcodeScanned;
-    await scan(tree, qrFor(OTHER_EVENT.id));
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain(FAILED_SHOWN);
+    act(() => tree.unmount());
+  });
+
+  it("keeps a link's refusal when the sheet opens: it is still true of a typed code", async () => {
+    openedByLink();
+    checkIn.mockRejectedValue(OUTSIDE_ZONE);
+    const tree = render();
+    await settle();
+    expect(screenText(tree)).toContain(OUTSIDE_ZONE_SHOWN);
+
+    openSheet(tree);
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain(OUTSIDE_ZONE_SHOWN);
+    act(() => tree.unmount());
+  });
+
+  it("shows the offline reason in the sheet and sends nothing", async () => {
+    state.writeBlockedReason = "Reconnect to make changes";
+    const tree = render();
+    openSheet(tree);
+    act(() => manualInput(tree).props.onChangeText("4KQ88"));
+
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain("Reconnect to make changes");
+    expect(manualSubmit(tree).props.disabled).toBe(true);
+    expect(manualInput(tree).props.onSubmitEditing).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("sends the next typed code after a failed one", async () => {
+    // The latch is released when the check-in fails as well as when it lands.
+    checkIn.mockRejectedValueOnce(FAILED).mockResolvedValue({});
+    const tree = render();
+    openSheet(tree);
+    await submitManualCode(tree);
+    expect(screenText(tree)).toContain(FAILED_SHOWN);
+
+    await submitManualCode(tree);
     expect(checkIn).toHaveBeenCalledTimes(2);
-
-    await act(async () => answers[0].land());
-    expect(screenText(tree)).toContain("Checking you in");
-    await act(async () => scanB({ data: qrFor(OTHER_EVENT.id) }));
-
-    moveTo(tree, "evt-3");
-    moveTo(tree, OTHER_EVENT.id);
-    expect(screenText(tree)).toContain("Checking you in");
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-    await act(async () => scanB({ data: qrFor(OTHER_EVENT.id) }));
-    expect(checkIn).toHaveBeenCalledTimes(2);
-
-    await act(async () => answers[1].land());
     expect(screenText(tree)).toContain("You're checked in");
     act(() => tree.unmount());
   });
 
-  it("leaves nothing sending at an event whose check-in settled while the screen was elsewhere, and sends again there", async () => {
-    // Its latch is released wherever the screen was when it answered. Held
-    // until the screen came back to it, every scan and typed code at that
-    // event would be dropped in silence, under controls that look armed.
-    for (const settle of [
-      (answer: ReturnType<typeof pendingCheckIn>) => answer.land(),
-      (answer: ReturnType<typeof pendingCheckIn>) => answer.refuse(FAILED),
-    ]) {
-      for (const sendAgain of [
-        (tree: ReactTestRenderer) => scan(tree, qrFor("evt-1")),
-        (tree: ReactTestRenderer) => submitManualCode(tree),
-      ]) {
-        checkIn.mockReset();
-        const answer = pendingCheckIn();
-        const tree = render();
-        try {
-          await submitManualCode(tree);
-          moveTo(tree, OTHER_EVENT.id);
-          await act(async () => settle(answer));
+  describe("the keyboard's Go key", () => {
+    /** The member presses Go with the code typed so far. */
+    async function pressGo(tree: ReactTestRenderer) {
+      await act(async () => {
+        manualInput(tree).props.onSubmitEditing?.();
+      });
+      await settle();
+    }
 
-          moveTo(tree, "evt-1");
-          expect(screenText(tree)).not.toContain("Checking you in");
-          expect(camera(tree).props.onBarcodeScanned).toEqual(
-            expect.any(Function),
-          );
-          act(() => manualInput(tree).props.onChangeText("4KQ88"));
-          expect(manualSubmit(tree).props.disabled).toBe(false);
+    it("sends a plausible code", async () => {
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ88"));
+      await pressGo(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
 
-          checkIn.mockResolvedValue({});
-          await sendAgain(tree);
-          expect(checkIn).toHaveBeenCalledTimes(2);
-          expect(checkIn).toHaveBeenLastCalledWith(
-            expect.objectContaining({ eventId: "evt-1" }),
-          );
-          expect(screenText(tree)).toContain("You're checked in");
-        } finally {
-          act(() => tree.unmount());
-        }
+    it("sends nothing for a code that can't be one", async () => {
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ"));
+      await pressGo(tree);
+      expect(checkIn).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+
+    it("sends one check-in for a double tap", async () => {
+      // Both presses land before the re-render that disables the button.
+      checkIn.mockReturnValue(new Promise(() => undefined));
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ88"));
+      const pressSubmit = manualSubmit(tree).props.onPress;
+      await act(async () => {
+        pressSubmit();
+        pressSubmit();
+      });
+      await settle();
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
+
+    it("sends nothing while a check-in is already on its way", async () => {
+      checkIn.mockReturnValue(new Promise(() => undefined));
+      const tree = render();
+      await submitManualCode(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+
+      await pressGo(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
+  });
+});
+
+/**
+ * What the real `useCheckIn` makes of a response the API never shaped. An
+ * edge's empty-bodied 5xx (during a deploy, say) is `error: undefined` or
+ * `""` to openapi-fetch 0.17, so a hook that trusted `error` would resolve,
+ * and the screen would confirm a check-in nothing wrote. Check-in has no
+ * outbox: the member would leave believing they were on the roster.
+ */
+describe("Check-in on an empty-bodied 5xx", () => {
+  beforeEach(() => {
+    openedByLink();
+    state.realCheckIn = true;
+  });
+  afterEach(() => {
+    state.realCheckIn = false;
+  });
+
+  it("says the check-in didn't go through", async () => {
+    for (const error of [undefined, ""] as const) {
+      const post = vi.fn(async () => ({
+        data: undefined,
+        error,
+        response: new Response(null, { status: 502 }),
+      }));
+      const tree = renderWithClient({ POST: post });
+      try {
+        await settle();
+        expect(post).toHaveBeenCalledTimes(1);
+
+        const text = screenText(tree);
+        expect(text).not.toContain("You're checked in");
+        expect(text).toContain("Couldn't check you in.");
+        expect(successHaptic).not.toHaveBeenCalled();
+        expect(
+          AccessibilityInfo.announceForAccessibility,
+        ).not.toHaveBeenCalled();
+      } finally {
+        act(() => tree.unmount());
       }
     }
   });
 
-  it("reports the last event's wrong code again at the next one", async () => {
-    const tree = render();
-    await scan(tree, qrFor("evt-other"));
-    expect(screenText(tree)).toContain("That code is for a different event.");
+  it("offers Try again, which sends the scanned link once more", async () => {
+    // Re-tapping the camera's banner hands over the same link, which the
+    // screen sent once already, so the retry has to be on the screen.
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: undefined,
+        response: new Response(null, { status: 502 }),
+      })
+      .mockResolvedValueOnce({
+        data: {},
+        error: undefined,
+        response: new Response(null, { status: 201 }),
+      });
+    const tree = renderWithClient({ POST: post });
+    try {
+      await settle();
+      expect(post).toHaveBeenCalledTimes(1);
+      await press(tree, "Try again");
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(screenText(tree)).toContain("You're checked in");
+      expect(pressablesDrawing(tree, "Try again")).toHaveLength(0);
+    } finally {
+      act(() => tree.unmount());
+    }
+  });
 
-    moveTo(tree, OTHER_EVENT.id);
-    expect(screenText(tree)).not.toContain(
-      "That code is for a different event.",
-    );
-    await scan(tree, qrFor("evt-other"));
-    expect(screenText(tree)).toContain("That code is for a different event.");
-    act(() => tree.unmount());
+  it("confirms a check-in the API answered with a 2xx", async () => {
+    // The same path, so the spec above fails for the right reason.
+    const post = vi.fn(async () => ({
+      data: {},
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    }));
+    const tree = renderWithClient({ POST: post });
+    try {
+      await settle();
+      expect(screenText(tree)).toContain("You're checked in");
+    } finally {
+      act(() => tree.unmount());
+    }
   });
 });
 
-describe("Check-in before its event has loaded", () => {
-  const ZONED = {
-    ...EVENT,
-    check_in_zone: [
-      { lat: 0, lng: 0 },
-      { lat: 0, lng: 1 },
-      { lat: 1, lng: 1 },
-    ],
-  };
-  let loaded: Record<string, unknown> | undefined;
-
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-    loaded = undefined;
-    state.useEvent = () => ({ data: loaded });
-  });
-  afterEach(() => {
-    state.useEvent = null;
-  });
-
-  it("sends nothing until it has, and then sends what a zoned event needs", async () => {
-    // Whether a location goes with the check-in comes from the event: sent
-    // before it loads, a zoned event's check-in would go without one and be
-    // refused while the member stands in the zone.
-    vi.mocked(requireForegroundFix).mockResolvedValue({ lat: 0.2, lng: 0.5 });
-    checkIn.mockResolvedValue({});
+describe("Check-in's title (#2485)", () => {
+  it("is the screen's heading, now that no navigator header names it", () => {
+    openedFromApp();
     const tree = render();
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-    act(() => manualInput(tree).props.onChangeText("4KQ88"));
-    expect(manualSubmit(tree).props.disabled).toBe(true);
-    await act(async () => {
-      manualInput(tree).props.onSubmitEditing?.();
-    });
-    expect(checkIn).not.toHaveBeenCalled();
+    const headings = textHeadings(tree);
 
-    loaded = ZONED;
-    rerender(tree);
-    await scan(tree, qrFor("evt-1"));
-
-    expect(checkIn).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "evt-1", lat: 0.2, lng: 0.5 }),
-    );
-    // And the panel has the event to name.
-    const text = screenText(tree);
-    expect(text).toContain("Chapter meeting");
-    expect(text).toContain("+10 pts");
-    act(() => tree.unmount());
-  });
-
-  it("sends the phone's position, accuracy and all, for the officer's screen to check (#4532)", async () => {
-    vi.mocked(requireForegroundFix).mockClear();
-    vi.mocked(tryForegroundFix).mockResolvedValueOnce({
-      fix: { lat: 42.73, lng: -73.68, accuracy_meters: 12 },
-      permission: { granted: true, canAskAgain: true },
-    });
-    checkIn.mockResolvedValue({});
-    loaded = { ...ZONED, check_in_zone: null };
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-
-    // Waiting at most the timeout, so the scanned code can't expire first.
-    expect(tryForegroundFix).toHaveBeenCalledWith("high", 8_000);
-    expect(requireForegroundFix).not.toHaveBeenCalled();
-    expect(checkIn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventId: "evt-1",
-        lat: 42.73,
-        lng: -73.68,
-        accuracy_meters: 12,
-      }),
-    );
-    act(() => tree.unmount());
-  });
-
-  it("sends the fix kept ready while the scanner was up, without waiting for another", async () => {
-    vi.mocked(tryForegroundFix).mockClear();
-    vi.mocked(requireForegroundFix).mockClear();
-    state.warmFix = { lat: 42.731, lng: -73.679, accuracy_meters: 9 };
-    checkIn.mockResolvedValue({});
-    loaded = ZONED;
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-
-    expect(tryForegroundFix).not.toHaveBeenCalled();
-    expect(requireForegroundFix).not.toHaveBeenCalled();
-    expect(checkIn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventId: "evt-1",
-        lat: 42.731,
-        lng: -73.679,
-        accuracy_meters: 9,
-      }),
-    );
-    act(() => tree.unmount());
-  });
-
-  it("still sends the code when the phone gives no position: the server says if it needed one", async () => {
-    checkIn.mockResolvedValue({});
-    loaded = { ...ZONED, check_in_zone: null };
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-
-    const sent = checkIn.mock.calls[0][0] as Record<string, unknown>;
-    expect(sent.eventId).toBe("evt-1");
-    expect(sent).not.toHaveProperty("lat");
-    act(() => tree.unmount());
-  });
-
-  it("says so, with a way to try again, when the event didn't load", () => {
-    const refetch = vi.fn();
-    state.useEvent = () => ({
-      data: undefined,
-      isError: true,
-      isFetching: false,
-      refetch,
-    });
-    const tree = render();
-    expect(screenText(tree)).toContain("Event didn't load");
-    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
-    act(() =>
-      tree.root
-        .find((node) => node.props.accessibilityLabel === "Try again")
-        .props.onPress(),
-    );
-    expect(refetch).toHaveBeenCalled();
+    expect(headings.map((node) => node.props.children)).toEqual(["Check in"]);
     act(() => tree.unmount());
   });
 });
 
 describe("Check-in's way out", () => {
   beforeEach(() => {
-    vi.mocked(router().navigate).mockClear();
     vi.mocked(router().dismissTo).mockClear();
+    vi.mocked(router().back).mockClear();
   });
 
   const close = (tree: ReactTestRenderer) =>
@@ -965,18 +1512,15 @@ describe("Check-in's way out", () => {
     );
 
   it("closes with the app's glass close, not a bare ✕ (#3703)", () => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
+    openedFromApp();
     const tree = render();
     expect(close(tree).props.testID).toBe("glass-close");
     act(() => tree.unmount());
   });
 
-  it("goes to the event's detail, where Scan QR opened it", () => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
+  it("goes to the event's detail, so a link from the camera lands on the event", () => {
+    openedByLink();
+    pendingCheckIn();
     const tree = render();
     act(() => close(tree).props.onPress());
     expect(router().dismissTo).toHaveBeenCalledWith({
@@ -988,9 +1532,7 @@ describe("Check-in's way out", () => {
   });
 
   it("pops back to the event detail it was opened from, as the swipe does", () => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
+    openedFromApp();
     const { element, navigation } = stackScreen(
       [{ name: "(tabs)" }, { name: "event-details" }],
       <FrappThemeProvider>
@@ -1017,443 +1559,10 @@ describe("Check-in's way out", () => {
     expect(router().dismissTo).toHaveBeenCalledWith("/events");
     act(() => tree.unmount());
   });
-});
-
-describe("Check-in's manual code", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-    state.writeBlockedReason = null;
-  });
-
-  it("is typed in a sheet field, which rises with the keyboard", () => {
-    // A plain `TextInput` at the foot of the screen sat under the keyboard on
-    // Android, where the app-wide provider stops the window resizing (#3354).
-    const tree = render();
-    const input = tree.root.find(
-      (node) => node.props.accessibilityLabel === "Manual check-in code",
-    );
-    expect(input.type).toBe("BottomSheetTextInput");
-    expect(tree.root.findAllByType("TextInput" as never)).toHaveLength(0);
-    act(() => tree.unmount());
-  });
-
-  it("switches the decoder off while the sheet is up, and back on when it closes", () => {
-    const tree = render();
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-
-    act(() => pressableDrawing(tree, "Enter code manually").props.onPress());
-    // A scan behind the scrim would send a second check-in under the member.
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
-
-    act(() =>
-      tree.root.findByType("BottomSheetModal" as never).props.onDismiss(),
-    );
-    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
-    act(() => tree.unmount());
-  });
-
-  it("shows a failed code in the sheet, where the member is typing", async () => {
-    checkIn.mockRejectedValue(FAILED);
-    const tree = render();
-    await submitManualCode(tree);
-
-    const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).toContain(FAILED_SHOWN);
-    act(() => tree.unmount());
-  });
-
-  it("keeps a scan's refusal when the sheet opens: it is still true of a typed code", async () => {
-    for (const [refusal, shown] of [
-      [
-        {
-          statusCode: 400,
-          error: "Bad Request",
-          message: "Location is outside the geofence",
-        },
-        "You're outside the zone. Move inside it and try again.",
-      ],
-      // No signing secret here: a typed code is refused the same way.
-      [
-        {
-          statusCode: 503,
-          error: "Service Unavailable",
-          message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
-        },
-        FAILED_SHOWN,
-      ],
-    ] as const) {
-      checkIn.mockRejectedValue(refusal);
-      const tree = render();
-      try {
-        await scan(tree, qrFor("evt-1"));
-        expect(screenText(tree)).toContain(shown);
-
-        openSheet(tree);
-        const sheet = tree.root.findByType("BottomSheetModal" as never);
-        expect(drawnText(sheet)).toContain(shown);
-      } finally {
-        act(() => tree.unmount());
-      }
-    }
-  });
-
-  // #3703: a repeat scan is the member already on the list, which is what
-  // they came for, so it is the success panel in its own words, with no
-  // points (none were awarded this time), not an error.
-  it("says an officer's mark, not you're in, when a 409 is over one", async () => {
-    const saved = state.ownRow;
-    state.ownRow = {
-      isSuccess: true,
-      data: { attendance: { status: "ABSENT", check_in_time: null } },
-    };
-    try {
-      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
-      const tree = render();
-      await scan(tree, qrFor("evt-1"));
-
-      const text = screenText(tree);
-      expect(text).toContain("An officer marked you absent for this event.");
-      expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
-      act(() => tree.unmount());
-    } finally {
-      state.ownRow = saved;
-    }
-  });
-
-  it("reads a hand-marked PRESENT row as you're in", async () => {
-    const saved = state.ownRow;
-    state.ownRow = {
-      isSuccess: true,
-      data: { attendance: { status: "PRESENT", check_in_time: null } },
-    };
-    try {
-      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
-      const tree = render();
-      await scan(tree, qrFor("evt-1"));
-      expect(screenText(tree)).toContain(ALREADY_CHECKED_IN_TITLE);
-      act(() => tree.unmount());
-    } finally {
-      state.ownRow = saved;
-    }
-  });
-
-  it("claims nothing when the own-row read after a 409 fails", async () => {
-    const saved = state.ownRow;
-    state.ownRow = { isSuccess: false };
-    try {
-      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
-      const tree = render();
-      await scan(tree, qrFor("evt-1"));
-
-      const text = screenText(tree);
-      expect(text).toContain("You're already checked in for this event.");
-      expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
-      act(() => tree.unmount());
-    } finally {
-      state.ownRow = saved;
-    }
-  });
-
-  it("reads a repeat scan (409) as you're in, on the success panel", async () => {
-    checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-
-    const text = screenText(tree);
-    expect(text).toContain(ALREADY_CHECKED_IN_TITLE);
-    expect(text).toContain("Back to event");
-    expect(text).not.toMatch(/\+\d+ pts/);
-    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
-    act(() => tree.unmount());
-  });
-
-  it("clears a refusal of the scanned code itself when the sheet opens", async () => {
-    // A stale, screenshotted or malformed QR says nothing about the code the
-    // member is about to type off the host's screen, and nor does a request
-    // that never got a real answer.
-    const TOKEN_TOO_LONG =
-      "token must be shorter than or equal to 256 characters";
-    for (const [refusal, shown] of [
-      [
-        { statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE },
-        "That code is wrong or has expired. Ask the host for the current one.",
-      ],
-      [{ statusCode: 400, message: [TOKEN_TOO_LONG] }, FAILED_SHOWN],
-      [
-        new TypeError("Network request failed"),
-        "Couldn't reach Frapp. Check your connection and try again.",
-      ],
-      [{ statusCode: 408, message: "Request Timeout" }, FAILED_SHOWN],
-    ] as const) {
-      checkIn.mockRejectedValue(refusal);
-      const tree = render();
-      try {
-        await scan(tree, qrFor("evt-1"));
-        expect(screenText(tree)).toContain(shown);
-
-        openSheet(tree);
-        expect(screenText(tree)).not.toContain(shown);
-      } finally {
-        act(() => tree.unmount());
-      }
-    }
-  });
-
-  it("drops the wrong-event line when the sheet opens, and reports that code again after", async () => {
-    const tree = render();
-    await scan(tree, qrFor("evt-other"));
-    expect(screenText(tree)).toContain("That code is for a different event.");
-
-    openSheet(tree);
-    expect(screenText(tree)).not.toContain(
-      "That code is for a different event.",
-    );
-
-    act(() =>
-      tree.root.findByType("BottomSheetModal" as never).props.onDismiss(),
-    );
-    // The same wrong code, held up again once the sheet is gone.
-    await scan(tree, qrFor("evt-other"));
-    expect(screenText(tree)).toContain("That code is for a different event.");
-    expect(checkIn).not.toHaveBeenCalled();
-    act(() => tree.unmount());
-  });
-
-  describe("the keyboard's Go key", () => {
-    /** The member presses Go with the code typed so far. */
-    async function pressGo(tree: ReactTestRenderer) {
-      await act(async () => {
-        manualInput(tree).props.onSubmitEditing?.();
-      });
-    }
-
-    it("sends a plausible code", async () => {
-      checkIn.mockResolvedValue({});
-      const tree = render();
-      act(() => manualInput(tree).props.onChangeText("4KQ88"));
-      await pressGo(tree);
-      expect(checkIn).toHaveBeenCalledTimes(1);
-      act(() => tree.unmount());
-    });
-
-    it("sends nothing for a code that can't be one", async () => {
-      const tree = render();
-      act(() => manualInput(tree).props.onChangeText("4KQ"));
-      await pressGo(tree);
-      expect(checkIn).not.toHaveBeenCalled();
-      act(() => tree.unmount());
-    });
-
-    it("sends nothing while offline", async () => {
-      // Check-in has no outbox, so a send with no network is lost.
-      state.writeBlockedReason = "Reconnect to make changes";
-      const tree = render();
-      act(() => manualInput(tree).props.onChangeText("4KQ88"));
-      await pressGo(tree);
-      expect(checkIn).not.toHaveBeenCalled();
-      act(() => tree.unmount());
-    });
-
-    it("sends one check-in for a double tap", async () => {
-      // Both presses land before the re-render that disables the button.
-      checkIn.mockReturnValue(new Promise(() => undefined));
-      const tree = render();
-      act(() => manualInput(tree).props.onChangeText("4KQ88"));
-      const press = manualSubmit(tree).props.onPress;
-      await act(async () => {
-        press();
-        press();
-      });
-      expect(checkIn).toHaveBeenCalledTimes(1);
-      act(() => tree.unmount());
-    });
-
-    it("sends nothing while a check-in is already on its way", async () => {
-      checkIn.mockReturnValue(new Promise(() => undefined));
-      const tree = render();
-      await submitManualCode(tree);
-      expect(checkIn).toHaveBeenCalledTimes(1);
-
-      await pressGo(tree);
-      expect(checkIn).toHaveBeenCalledTimes(1);
-      act(() => tree.unmount());
-    });
-  });
-});
-
-describe("Check-in after a failed attempt", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-  });
-
-  it("sends the same event's next scan, and its next typed code", async () => {
-    // The latch is released when the check-in fails as well as when it
-    // lands. Left held, the scanner would look armed and drop every code.
-    for (const attempt of [
-      (tree: ReactTestRenderer) => scan(tree, qrFor("evt-1")),
-      (tree: ReactTestRenderer) => submitManualCode(tree),
-    ]) {
-      checkIn.mockReset();
-      checkIn.mockRejectedValueOnce(FAILED).mockResolvedValue({});
-      const tree = render();
-      try {
-        await attempt(tree);
-        expect(screenText(tree)).toContain(FAILED_SHOWN);
-
-        await attempt(tree);
-        expect(checkIn).toHaveBeenCalledTimes(2);
-        expect(screenText(tree)).toContain("You're checked in");
-      } finally {
-        act(() => tree.unmount());
-      }
-    }
-  });
-});
-
-/**
- * What the real `useCheckIn` makes of a response the API never shaped. An
- * edge's empty-bodied 5xx (during a deploy, say) is `error: undefined` or
- * `""` to openapi-fetch 0.17, so a hook that trusted `error` would resolve,
- * and the screen would confirm a check-in nothing wrote. Check-in has no
- * outbox: the member would leave believing they were on the roster.
- */
-describe("Check-in on an empty-bodied 5xx", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    successHaptic.mockClear();
-    vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
-    state.realCheckIn = true;
-  });
-  afterEach(() => {
-    state.realCheckIn = false;
-  });
-
-  it("says the check-in didn't go through, and leaves the scanner armed to try again", async () => {
-    for (const error of [undefined, ""] as const) {
-      const post = vi.fn(async () => ({
-        data: undefined,
-        error,
-        response: new Response(null, { status: 502 }),
-      }));
-      const tree = renderWithClient({ POST: post });
-      try {
-        await scan(tree, qrFor("evt-1"));
-        expect(post).toHaveBeenCalledTimes(1);
-
-        const text = screenText(tree);
-        expect(text).not.toContain("You're checked in");
-        expect(text).toContain("Couldn't check you in.");
-        expect(successHaptic).not.toHaveBeenCalled();
-        expect(
-          AccessibilityInfo.announceForAccessibility,
-        ).not.toHaveBeenCalled();
-        expect(camera(tree).props.onBarcodeScanned).toEqual(
-          expect.any(Function),
-        );
-      } finally {
-        act(() => tree.unmount());
-      }
-    }
-  });
-
-  it("confirms a check-in the API answered with a 2xx", async () => {
-    // The same path, so the spec above fails for the right reason.
-    const post = vi.fn(async () => ({
-      data: {},
-      error: undefined,
-      response: new Response(null, { status: 201 }),
-    }));
-    const tree = renderWithClient({ POST: post });
-    try {
-      await scan(tree, qrFor("evt-1"));
-      expect(screenText(tree)).toContain("You're checked in");
-    } finally {
-      act(() => tree.unmount());
-    }
-  });
-});
-
-describe("Check-in's scanner while offline", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-    checkIn.mockReset();
-  });
-  afterEach(() => {
-    state.writeBlockedReason = null;
-  });
-
-  it("sends nothing for a scan, and scans again once the member reconnects", async () => {
-    // Check-in has no outbox. And a scan that claimed the latch with nothing
-    // sent would hold it for good, so every scan after reconnecting would be
-    // dropped.
-    checkIn.mockResolvedValue({});
-    state.writeBlockedReason = "Reconnect to make changes";
-    const tree = render();
-    await scan(tree, qrFor("evt-1"));
-    expect(checkIn).not.toHaveBeenCalled();
-
-    state.writeBlockedReason = null;
-    rerender(tree);
-    await scan(tree, qrFor("evt-1"));
-    expect(checkIn).toHaveBeenCalledTimes(1);
-    act(() => tree.unmount());
-  });
-});
-
-describe("Check-in's camera and torch", () => {
-  beforeEach(() => {
-    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      eventId: "evt-1",
-    });
-  });
-
-  const torch = (tree: ReactTestRenderer) =>
-    tree.root.find(
-      (node) =>
-        node.props.accessibilityLabel === "Flashlight" &&
-        node.type === ("Pressable" as never),
-    );
-
-  it("turns the torch on and off", () => {
-    const tree = render();
-    expect(camera(tree).props.enableTorch).toBe(false);
-
-    act(() => torch(tree).props.onPress());
-    expect(camera(tree).props.enableTorch).toBe(true);
-    expect(torch(tree).props.accessibilityState).toEqual({ checked: true });
-
-    act(() => torch(tree).props.onPress());
-    expect(camera(tree).props.enableTorch).toBe(false);
-    act(() => tree.unmount());
-  });
-
-  it("lets the camera, and the torch, go when the member leaves", () => {
-    // The screen stays mounted under anything pushed over it; a camera left
-    // mounted would keep running, torch and all, behind the next screen.
-    const tree = render();
-    act(() => torch(tree).props.onPress());
-    expect(camera(tree).props.enableTorch).toBe(true);
-
-    act(() => blur());
-    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
-
-    act(() => refocus());
-    expect(camera(tree).props.enableTorch).toBe(false);
-    act(() => tree.unmount());
-  });
 
   it("closes the manual sheet when the member leaves", () => {
     // It is portalled above the navigator, so it would float over the event.
+    openedFromApp();
     sheetHandle.dismiss.mockClear();
     const tree = render();
     openSheet(tree);

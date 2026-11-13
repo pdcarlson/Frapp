@@ -36,7 +36,6 @@ const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
   newTask: NAV_GLYPHS.tasks,
   invite: NAV_GLYPHS.invite,
   message: NAV_GLYPHS.chat,
-  checkIn: NAV_GLYPHS.checkIn,
   hostCheckIn: NAV_GLYPHS.hostCheckIn,
   logHours: NAV_GLYPHS.service,
   study: NAV_GLYPHS.study,
