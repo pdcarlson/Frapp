@@ -17,8 +17,6 @@ import {
   useSetChannelNotificationLevel,
   useUploadSignedUrl,
   useForwardMessage,
-  CHANNEL_LATEST_MESSAGES_KEY,
-  CHANNEL_UNREAD_COUNTS_KEY,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
 } from "./use-chat";
