@@ -118,11 +118,18 @@ export function groupChannelMembersByRole<T extends GroupableChannelMember>(
  */
 export const MEMBER_SEARCH_THRESHOLD = 12;
 
-/** Where a name splits into words: spaces, hyphens, apostrophes, periods. */
-const NAME_SEPARATORS = /[\s\-'\u2019.]+/;
+/**
+ * Where a name splits into words: spaces, hyphens, apostrophes, periods.
+ * Shared with the Direct messages people search (`dm-search.ts`), so a name
+ * splits the same way in both.
+ */
+export const NAME_SEPARATORS = /[\s\-'\u2019.]+/;
 
-/** Lowercased, accents dropped, so "jose" finds "José". */
-function foldForSearch(text: string): string {
+/**
+ * Lowercased, accents dropped, so "jose" finds "José". Shared with the Direct
+ * messages people search, so a name folds the same way in both.
+ */
+export function foldForSearch(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
