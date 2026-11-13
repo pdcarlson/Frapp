@@ -2,6 +2,8 @@
 
 A single search bar accessible from the top of the mobile and web app:
 
+> **Where it is today** (#4904, 2026-11-13). On web it is the top bar's find field and the Find dialog it opens. On the phone it is the field of the Ask Frapp sheet, opened from the bar above the tab bar, so only a member with Ask has it; a search for everyone on the phone is not built. Neither is at the top of the phone app.
+
 - Searches across: Backwork resources (title, department, course, professor, tags), chat messages (content), events (name, description), and members (name).
 - Results are grouped by domain (Backwork, Chat, Events, Members).
 - All results respect chapter scoping and permission checks. Chat-message results are filtered through the same `canAccessChannel` predicate the chat surface uses ([`chat/README.md`](chat/README.md)); vault content is never indexed ([`vault.md`](vault.md#search-indexing)); the member directory requires `members:view`; backwork hits come back only to a caller holding `backwork:upload` or `backwork:admin`, the same any-of gate as the library itself ([`backwork.md` § Taxonomy Admin](backwork.md#taxonomy-admin)), and are an empty array for anyone else (2026-11-05: before this the source checked nothing, which no client exposed until the web Find dialog listed backwork); event hits pass the same role-targeting filter as `GET /v1/events`.

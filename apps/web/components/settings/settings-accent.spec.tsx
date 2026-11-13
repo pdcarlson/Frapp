@@ -41,8 +41,8 @@ const settingsPage = readFileSync(
 // does. How the palette is derived and checked is the engine's business, and
 // the warnings below say so when it matters.
 const DESCRIPTION =
-  "Paints primary buttons, your own name in chat, the active nav item and " +
-  "the Ask Frapp button. The Frapp mark keeps its own color.";
+  "Paints primary buttons, your own name in chat and the active nav item. " +
+  "The Frapp mark keeps its own color.";
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 

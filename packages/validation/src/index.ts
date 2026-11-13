@@ -30,6 +30,7 @@ export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
+export * from "./ask-find";
 export * from "./ask-post";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
