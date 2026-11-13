@@ -12,7 +12,7 @@ import { InlineNote } from "@/components/shared/inline-note";
 // rail used to run down its side.
 //
 // **The fill is the chapter accent, not `--gold-ask-*`.** The board paints the
-// Ask pill and the active tab at the same hexes only because the demo tenant's
+// Ask family and the active tab at the same hexes only because the demo tenant's
 // seed and the house gold coincide — the trap `tokens.md` §L-01 names and
 // `pro-chip.tsx` already refused once in this lane. Ask is fixed; a settings
 // tab is product UI and retints.

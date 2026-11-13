@@ -1,3 +1,4 @@
+import type { MentionPick } from "@repo/validation";
 import type { OutgoingGif } from "./types";
 
 /**
@@ -76,6 +77,12 @@ export interface OutboxRow {
   attachments?: OutboxAttachment[] | null;
   /** The GIF this message is (#4631); optional, for rows older builds queued. */
   gif?: OutgoingGif | null;
+  /**
+   * The members the `@` picker wrote into `body` (#3835), so a flushed send
+   * reads its mentions as the live one would have. Optional, for rows older
+   * builds queued, which resolve by name.
+   */
+  mentionPicks?: MentionPick[] | null;
   attempts: number;
   queuedAt: number;
   status: OutboxStatus;

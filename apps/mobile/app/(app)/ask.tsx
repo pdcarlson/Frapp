@@ -7,9 +7,9 @@ import { useAiSurfaces } from "@/lib/ai/availability";
 /**
  * s17, Ask (`spec/ui/mobile/screens.md` s17).
  *
- * **Ask is a sheet, not a screen.** Its entry is the bar at the top of the
- * tab bar's + panel (`spec/ui/mobile/navigation.md` § Global entries). This
- * route hosts no UI of its own: it exists so a `frapp://ask` link lands
+ * **Ask is a sheet, not a screen.** Its entry is the Ask Frapp bar above the
+ * tab bar (`ask-bar.tsx`; `spec/ui/mobile/navigation.md` § Global entries).
+ * This route hosts no UI of its own: it exists so a `frapp://ask` link lands
  * somewhere real, and presents the same `AskSheet`.
  *
  * ## A member without Ask goes to Chat home

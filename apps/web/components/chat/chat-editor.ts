@@ -6,7 +6,12 @@ import StarterKit from "@tiptap/starter-kit";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { useChapterRoster, useMentionRoles } from "@repo/hooks";
-import { findMentionSpans, type MentionChipTest } from "@repo/validation";
+import {
+  findMentionSpans,
+  mentionPicksIn,
+  type MentionChipTest,
+  type MentionPick,
+} from "@repo/validation";
 import { MENTION_CHIP } from "./chip";
 import {
   createMentionSuggestion,
@@ -125,16 +130,89 @@ export function chatMentionExtension(
     // mobile's (`chat-composer.tsx`).
     let typed = false;
     suggestion.shouldShow = ({ transaction }) => {
-      if (!typed && transaction.docChanged && !transaction.getMeta("preventUpdate")) {
+      if (
+        !typed &&
+        transaction.docChanged &&
+        !transaction.getMeta("preventUpdate")
+      ) {
         typed = true;
       }
       return typed;
     };
   }
-  return Mention.configure({
+  return PickedMention.configure({
     HTMLAttributes: { class: MENTION_CHIP },
     suggestion,
   });
+}
+
+/**
+ * The mention node, plus the picked member's id (#3835). A pick from the `@`
+ * list spreads its row onto the node's attributes, so a member row's
+ * `memberId` lands here and a role row's `null` does; a chip loaded for an
+ * edit (`buildEditDoc`) carries none. Kept in the DOM as `data-member-id` so
+ * copying a chip within the editor keeps it.
+ */
+const PickedMention = Mention.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      memberId: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-member-id"),
+        renderHTML: (attributes: { memberId?: string | null }) =>
+          attributes.memberId ? { "data-member-id": attributes.memberId } : {},
+      },
+    };
+  },
+});
+
+/**
+ * The picks of each channel's unsent draft, for this tab (#3835). The draft
+ * itself is saved as text (`useChannelDraft`), so a composer rebuilt from it,
+ * after a channel switch remounts it, has chips with no member ids. These are
+ * the ids it had. Gone on a reload, when the draft sends as names.
+ */
+const draftPicks = new Map<string, MentionPick[]>();
+
+/**
+ * The picks a composer's text writes: those on its own chips first, then the
+ * ones its channel's draft held before it was rebuilt from text. Remembered
+ * for the channel, so a remount finds them.
+ */
+export function composerMentionPicks(
+  channelId: string,
+  editor: Pick<Editor, "getText"> & Partial<Pick<Editor, "state">>,
+): MentionPick[] {
+  const picks = mentionPicksIn(chatText(editor), [
+    ...editorMentionPicks(editor),
+    ...(draftPicks.get(channelId) ?? []),
+  ]);
+  if (picks.length > 0) draftPicks.set(channelId, picks);
+  else draftPicks.delete(channelId);
+  return picks;
+}
+
+/**
+ * The members picked into the editor's text (#3835): each mention node that
+ * carries a member's id, as the send's `mention_picks`, keeping only those
+ * the text still writes. The body stays `@Name`; the id beside it is what
+ * stops a stale name from reaching a different member.
+ */
+export function editorMentionPicks(
+  editor: Pick<Editor, "getText"> & Partial<Pick<Editor, "state">>,
+): MentionPick[] {
+  const picks: MentionPick[] = [];
+  editor.state?.doc.descendants((node) => {
+    if (node.type.name !== "mention") return;
+    const memberId: unknown = node.attrs.memberId;
+    const label: unknown = node.attrs.label;
+    if (typeof memberId === "string" && memberId && typeof label === "string") {
+      picks.push({ user_id: memberId, label });
+    }
+  });
+  return mentionPicksIn(chatText(editor), picks);
 }
 
 /**
@@ -184,9 +262,7 @@ export function buildEditDoc(
   text.split("\n").forEach((line, index) => {
     if (index > 0) content.push({ type: "hardBreak" });
     let at = 0;
-    const spans = chips
-      ? findMentionSpans(line, { names, accept: chips })
-      : [];
+    const spans = chips ? findMentionSpans(line, { names, accept: chips }) : [];
     for (const span of spans) {
       if (span.start > at) {
         content.push({ type: "text", text: line.slice(at, span.start) });
@@ -202,7 +278,9 @@ export function buildEditDoc(
   return {
     type: "doc",
     content: [
-      content.length > 0 ? { type: "paragraph", content } : { type: "paragraph" },
+      content.length > 0
+        ? { type: "paragraph", content }
+        : { type: "paragraph" },
     ],
   };
 }

@@ -26,6 +26,10 @@ describe("createMentionSuggestion — items()", () => {
     expect(result.some((item) => item.id === "u3")).toBe(false);
   });
 
+  it("carries a member row's id onto the pick, so the send names who was picked (#3835)", () => {
+    expect(itemsFor("jane")[0]?.memberId).toBe("u1");
+  });
+
   it("filters case-insensitively against display_name", () => {
     const result = itemsFor("jane");
     expect(result.map((item) => item.id)).toEqual(["u1"]);

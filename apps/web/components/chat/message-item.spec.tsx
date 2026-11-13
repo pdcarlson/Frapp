@@ -32,7 +32,10 @@ vi.mock("./inline-message-editor", async () => {
     chips?: unknown;
     resetKey?: number;
     disabled?: boolean;
-    onChange: (text: string) => void;
+    onChange: (
+      text: string,
+      picks: Array<{ user_id: string; label: string }>,
+    ) => void;
     onSave: () => void;
     onCancel: () => void;
   };
@@ -58,7 +61,14 @@ vi.mock("./inline-message-editor", async () => {
           disabled={props.disabled}
           onChange={(event) => {
             setText(event.target.value);
-            props.onChange(event.target.value);
+            // The real editor reports the members picked from its `@` list;
+            // the double treats a written "@Jane Doe" as one (#3835).
+            props.onChange(
+              event.target.value,
+              event.target.value.includes("@Jane Doe")
+                ? [{ user_id: "u-jane", label: "Jane Doe" }]
+                : [],
+            );
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -1047,7 +1057,10 @@ describe("MessageItem edited marker", () => {
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
     // A pinned message's pin is solid, as every on pin is (#4292).
-    expect(pinned.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
+    expect(pinned.querySelector("svg path")).toHaveAttribute(
+      "fill-opacity",
+      "1",
+    );
     // A marker, not an action: the trailing captions' muted tone, never the
     // chapter accent (`foundations.md` §6).
     expect(pinned.closest("span")!.className).not.toContain("accent");
@@ -1247,7 +1260,7 @@ describe("MessageItem edit and delete", () => {
     await user.type(textbox, "hello, edited");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited");
+    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited", []);
     // The editor closes once the save resolves.
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
@@ -1400,7 +1413,7 @@ describe("MessageItem edit and delete", () => {
     await user.type(screen.getByRole("textbox"), " world");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world");
+    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world", []);
     expect(screen.getByRole("textbox")).toHaveValue("hello world");
   });
 
@@ -1546,7 +1559,10 @@ describe("MessageItem bookmark toggle (#462)", () => {
     const button = screen.getByRole("button", { name: "Save" });
     expect(button).toHaveAttribute("aria-pressed", "true");
     // The ribbon reads as on: solid, not the outline (#4292).
-    expect(button.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
+    expect(button.querySelector("svg path")).toHaveAttribute(
+      "fill-opacity",
+      "1",
+    );
     expect(button).toHaveAttribute("title", "Saved");
   });
 
@@ -2120,7 +2136,16 @@ describe("MessageItem inline editor keyboard", () => {
 
     await user.keyboard("{Enter}");
 
-    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo");
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo", []);
+  });
+
+  it("saves the members picked in the edit beside the text (#3835)", async () => {
+    const { user, onEdit } = await openEditor();
+    await user.type(screen.getByRole("textbox"), " @Jane Doe");
+    await user.keyboard("{Enter}");
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello @Jane Doe", [
+      { user_id: "u-jane", label: "Jane Doe" },
+    ]);
   });
 });
 

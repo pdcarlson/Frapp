@@ -503,7 +503,12 @@ describe("ChatComposer @-mention picker", () => {
     ]);
     // Picking a role writes its folded name, which the server resolves.
     const onChangeText = vi.fn();
-    const { tree } = typed("cc @off", 7, { mentionRoles: roles, onChangeText });
+    const onPickMember = vi.fn();
+    const { tree } = typed("cc @off", 7, {
+      mentionRoles: roles,
+      onChangeText,
+      onPickMember,
+    });
     const row = tree.root.find(
       (node) =>
         node.props?.accessibilityLabel ===
@@ -512,6 +517,8 @@ describe("ChatComposer @-mention picker", () => {
     );
     act(() => row.props.onPress());
     expect(onChangeText).toHaveBeenCalledWith("cc @Officers ");
+    // A role is no member pick (#3835): it resolves by its name.
+    expect(onPickMember).not.toHaveBeenCalled();
   });
 
   it("offers everyone on a bare `@`", () => {
@@ -545,6 +552,16 @@ describe("ChatComposer @-mention picker", () => {
     const { tree, props } = typed("hi @pa");
     act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
     expect(props.onChangeText).toHaveBeenCalledWith("hi @Paul Carlson ");
+  });
+
+  it("reports a picked member's id beside the label, for the send (#3835)", () => {
+    const onPickMember = vi.fn();
+    const { tree } = typed("hi @pa", undefined, { onPickMember });
+    act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
+    expect(onPickMember).toHaveBeenCalledWith({
+      user_id: expect.any(String),
+      label: "Paul Carlson",
+    });
   });
 
   it("closes on blur", () => {

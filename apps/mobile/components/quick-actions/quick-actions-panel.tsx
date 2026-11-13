@@ -12,7 +12,6 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Path } from "react-native-svg";
 import { NAV_GLYPHS, type DuotoneGlyphPaths } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
-import { ASK_COPY } from "@repo/validation";
 import { GLASS_EDGE, GlassSurface } from "@/components/glass-surface";
 import { NavGlyph } from "@/components/nav-glyph";
 import { selectionHaptic } from "@/lib/haptics";
@@ -29,6 +28,7 @@ import {
   removeQuickAction,
 } from "@/lib/quick-actions";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 
 /** Each action's glyph: the nav-set shape of the place it leads. */
 const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
@@ -78,11 +78,6 @@ export type QuickActionsPanelProps = {
   onEditingChange: (editing: boolean) => void;
   onRun: (key: QuickActionKey) => void;
   onSave: (keys: readonly QuickActionKey[]) => void;
-  /**
-   * Opens Ask Frapp. Passed only for a member who has Ask
-   * (`useAiSurfaces().ask`); without it the panel is exactly as it was.
-   */
-  onAsk?: () => void;
 };
 
 /**
@@ -96,10 +91,9 @@ export type QuickActionsPanelProps = {
  * can use but hasn't placed. Every change is kept as it is made, so Done and
  * closing the panel both leave it as the member left it.
  *
- * Ask Frapp is a bar across the top, above the actions, for a member who has
- * it (`navigation.md` § Global entries). It is not one of the actions a
- * member places: it can't be removed or moved, so it is where they left it on
- * every tab, and it steps aside while the actions are being edited.
+ * Ask Frapp is not in here. It was a bar across the top of this panel until
+ * 2026-11-13, when it moved above the tab bar itself (`ask/ask-bar.tsx`,
+ * #4702), where a member sees it without opening anything.
  */
 export function QuickActionsPanel({
   shown,
@@ -110,7 +104,6 @@ export function QuickActionsPanel({
   onEditingChange,
   onRun,
   onSave,
-  onAsk,
 }: QuickActionsPanelProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -131,7 +124,6 @@ export function QuickActionsPanel({
         accessible={false}
         style={styles.body}
       >
-        {onAsk && !editing ? <AskBar onPress={onAsk} styles={styles} /> : null}
         {editing ? (
           <EditGrid
             shown={shown}
@@ -163,30 +155,6 @@ export function QuickActionsPanel({
 }
 
 const LONG_PRESS_MS = 400;
-
-/**
- * The Ask Frapp entry: Ask's fixed gold, never the chapter accent
- * (`spec/ui/design-system/components.md` §11).
- */
-function AskBar({ onPress, styles }: { onPress: () => void; styles: Styles }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={ASK_COPY.name}
-      accessibilityHint={ASK_COPY.entry_label}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.askBar,
-        pressed ? styles.askBarPressed : null,
-      ]}
-    >
-      <Text style={styles.askName}>{ASK_COPY.name}</Text>
-      <Text style={styles.askHint} numberOfLines={1}>
-        {ASK_COPY.empty_title}
-      </Text>
-    </Pressable>
-  );
-}
 
 /** One action at rest: a tap runs it, a hold starts editing. */
 function ActionButton({
@@ -672,10 +640,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     addHead: {
-      ...typeRole(tokens.typography.role.caption),
-      fontFamily: fontFamilyFor(600),
-      letterSpacing: 1.2,
-      textTransform: "uppercase",
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
       marginTop: 18,
       marginBottom: 12,
@@ -683,30 +648,6 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: 12,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
-    },
-    askBar: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      height: tokens.touch.button,
-      marginHorizontal: 8,
-      marginBottom: ROW_GAP,
-      paddingHorizontal: tokens.spacing.lg,
-      borderRadius: tokens.touch.button / 2,
-      borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-      backgroundColor: tokens.color.gold.askFill,
-    },
-    askBarPressed: { opacity: 0.7 },
-    askName: {
-      ...typeRole(tokens.typography.role.label),
-      fontFamily: fontFamilyFor(700),
-      color: tokens.color.gold.askText,
-    },
-    askHint: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
     },
     empty: {
       ...typeRole(tokens.typography.role.body),

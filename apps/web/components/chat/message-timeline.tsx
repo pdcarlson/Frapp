@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   forwardRef,
@@ -516,7 +516,11 @@ export interface MessageTimelineProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  onEdit?: (messageId: string, content: string) => Promise<void>;
+  onEdit?: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;

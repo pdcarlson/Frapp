@@ -96,7 +96,10 @@ describe("useComposerStaging — reply", () => {
     });
 
     act(() => result.current.submit());
-    expect(input.send).toHaveBeenCalledWith("the draft", { replyToId: "m1" });
+    expect(input.send).toHaveBeenCalledWith("the draft", {
+      mentionPicks: [],
+      replyToId: "m1",
+    });
     // Cleared as the send goes out, so it can't ride the next message.
     expect(result.current.context).toBeNull();
   });
@@ -105,7 +108,10 @@ describe("useComposerStaging — reply", () => {
     const { result, input } = setup();
     act(() => result.current.startReply("r1"));
     act(() => result.current.submit());
-    expect(input.send).toHaveBeenCalledWith("the draft", { replyToId: "m1" });
+    expect(input.send).toHaveBeenCalledWith("the draft", {
+      mentionPicks: [],
+      replyToId: "m1",
+    });
   });
 
   it("keeps the reply staged when the send didn't take it", async () => {
@@ -162,13 +168,19 @@ describe("useComposerStaging — reply", () => {
       await Promise.resolve();
     });
     act(() => result.current.submit());
-    expect(send).toHaveBeenLastCalledWith("the draft", { replyToId: "m3" });
+    expect(send).toHaveBeenLastCalledWith("the draft", {
+      mentionPicks: [],
+      replyToId: "m3",
+    });
   });
 
   it("sends an ordinary message with no reply target", () => {
     const { result, input } = setup();
     act(() => result.current.submit());
-    expect(input.send).toHaveBeenCalledWith("the draft", { replyToId: null });
+    expect(input.send).toHaveBeenCalledWith("the draft", {
+      mentionPicks: [],
+      replyToId: null,
+    });
   });
 
   it("belongs to the channel it was staged in", () => {
@@ -178,6 +190,7 @@ describe("useComposerStaging — reply", () => {
     expect(result.current.context).toBeNull();
     act(() => result.current.submit());
     expect(input.send).toHaveBeenLastCalledWith("the draft", {
+      mentionPicks: [],
       replyToId: null,
     });
     rerender({ ...input, channelId: "chan-1" });
@@ -228,7 +241,10 @@ describe("useComposerStaging — onSending", () => {
     rerender({ ...input, hasAttachments: true });
     act(() => result.current.submit());
     expect(onSending).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(" ", { replyToId: null });
+    expect(send).toHaveBeenCalledWith(" ", {
+      mentionPicks: [],
+      replyToId: null,
+    });
   });
 
   it("does not run for a resubmit while the staged reply is still in flight", async () => {
@@ -268,13 +284,21 @@ describe("useComposerStaging — onSending", () => {
         };
       });
     });
-    return { send, sendInFlight: () => inFlight, settle: (q: boolean) => settle(q) };
+    return {
+      send,
+      sendInFlight: () => inFlight,
+      settle: (q: boolean) => settle(q),
+    };
   }
 
   it("does not run while an earlier send is still in flight, and does once it settles", async () => {
     const { send, sendInFlight, settle } = heldSend();
     const onSending = vi.fn();
-    const { result, rerender, input } = setup({ onSending, send, sendInFlight });
+    const { result, rerender, input } = setup({
+      onSending,
+      send,
+      sendInFlight,
+    });
     act(() => result.current.submit());
     expect(onSending).toHaveBeenCalledTimes(1);
 
@@ -289,7 +313,10 @@ describe("useComposerStaging — onSending", () => {
     });
     act(() => result.current.submit());
     expect(onSending).toHaveBeenCalledTimes(2);
-    expect(send).toHaveBeenLastCalledWith("the next one", { replyToId: null });
+    expect(send).toHaveBeenLastCalledWith("the next one", {
+      mentionPicks: [],
+      replyToId: null,
+    });
   });
 
   it("runs once for a double tap inside one render", () => {
@@ -371,7 +398,7 @@ describe("useComposerStaging — edit", () => {
       result.current.submit();
       await Promise.resolve();
     });
-    expect(input.edit).toHaveBeenCalledWith("m2", "fixed text");
+    expect(input.edit).toHaveBeenCalledWith("m2", "fixed text", []);
     expect(input.send).not.toHaveBeenCalled();
     expect(result.current.isEditing).toBe(false);
     expect(result.current.value).toBe("the draft");
@@ -380,7 +407,9 @@ describe("useComposerStaging — edit", () => {
   it("keeps the edit open with the member's text when the save fails", async () => {
     const edit = vi
       .fn()
-      .mockRejectedValue(new MemberFacingError("Couldn't edit message. Try again."));
+      .mockRejectedValue(
+        new MemberFacingError("Couldn't edit message. Try again."),
+      );
     const { result } = setup({ edit });
     act(() => result.current.startEdit("m2"));
     act(() => result.current.onChangeText("fixed text"));
@@ -474,7 +503,7 @@ describe("useComposerStaging — edit", () => {
     act(() => result.current.onChangeText("dues fixed"));
     act(() => result.current.submit());
     expect(edit).toHaveBeenCalledTimes(2);
-    expect(edit).toHaveBeenLastCalledWith("d2", "dues fixed");
+    expect(edit).toHaveBeenLastCalledWith("d2", "dues fixed", []);
   });
 
   it("closes an unchanged edit without a request even when the message isn't loaded", () => {
@@ -597,6 +626,7 @@ describe("useComposerStaging — edit", () => {
     rerender({ ...input, byId, channelId: "chan-1" });
     act(() => result.current.submit());
     expect(input.send).toHaveBeenLastCalledWith("the draft", {
+      mentionPicks: [],
       replyToId: "m1",
     });
   });
@@ -609,5 +639,73 @@ describe("useComposerStaging — edit", () => {
     act(() => result.current.startReply("m1"));
     expect(result.current.context?.kind).toBe("reply");
     expect(result.current.isEditing).toBe(false);
+  });
+});
+
+describe("useComposerStaging — picked mentions (#3835)", () => {
+  it("sends the picks the draft still writes", () => {
+    const { result, input } = setup({ draft: "@Jane Doe hi" });
+    act(() => {
+      result.current.addMentionPick({ user_id: "u-jane", label: "Jane Doe" });
+      // Picked, then deleted from the text: not sent.
+      result.current.addMentionPick({ user_id: "u-bob", label: "Bob Stone" });
+    });
+    act(() => result.current.submit());
+    expect(input.send).toHaveBeenCalledWith("@Jane Doe hi", {
+      replyToId: null,
+      mentionPicks: [{ user_id: "u-jane", label: "Jane Doe" }],
+    });
+
+    // A send tried again (the first didn't go) still carries them.
+    act(() => result.current.submit());
+    expect(input.send).toHaveBeenLastCalledWith("@Jane Doe hi", {
+      replyToId: null,
+      mentionPicks: [{ user_id: "u-jane", label: "Jane Doe" }],
+    });
+  });
+
+  it("a re-pick of a label replaces the member it named", () => {
+    const { result, input } = setup({ draft: "@Chris Lee hi" });
+    act(() => {
+      result.current.addMentionPick({ user_id: "u-a", label: "Chris Lee" });
+      result.current.addMentionPick({ user_id: "u-b", label: "Chris Lee" });
+    });
+    act(() => result.current.submit());
+    expect(input.send).toHaveBeenCalledWith("@Chris Lee hi", {
+      replyToId: null,
+      mentionPicks: [{ user_id: "u-b", label: "Chris Lee" }],
+    });
+  });
+
+  it("keeps the draft's picks through saving an edit", async () => {
+    const { result, input } = setup({ draft: "@Jane Doe hi" });
+    act(() =>
+      result.current.addMentionPick({ user_id: "u-jane", label: "Jane Doe" }),
+    );
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("body m2, fixed"));
+    act(() => result.current.submit());
+    expect(input.edit).toHaveBeenCalledWith("m2", "body m2, fixed", []);
+    // The save lands and the edit closes, back to the draft.
+    await act(async () => {});
+    expect(result.current.isEditing).toBe(false);
+    act(() => result.current.submit());
+    expect(input.send).toHaveBeenLastCalledWith("@Jane Doe hi", {
+      replyToId: null,
+      mentionPicks: [{ user_id: "u-jane", label: "Jane Doe" }],
+    });
+  });
+
+  it("saves an edit with the picks made in it", () => {
+    const { result, input } = setup();
+    act(() => result.current.startEdit("m2"));
+    act(() => {
+      result.current.onChangeText("body m2 @Jane Doe");
+      result.current.addMentionPick({ user_id: "u-jane", label: "Jane Doe" });
+    });
+    act(() => result.current.submit());
+    expect(input.edit).toHaveBeenCalledWith("m2", "body m2 @Jane Doe", [
+      { user_id: "u-jane", label: "Jane Doe" },
+    ]);
   });
 });

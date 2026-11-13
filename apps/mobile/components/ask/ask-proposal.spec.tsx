@@ -26,6 +26,14 @@ const hooks = vi.hoisted(() => ({
   dismiss: vi.fn(),
   seed: undefined as unknown,
 }));
+// A purple chapter: Confirm takes its solid accent pair (#4702).
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#8B5CF6",
+    accentPrimary: "#7C3AED",
+    accentOnPrimary: "#FFFFFF",
+  }),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActEventAudience: () => ({ mutateAsync: hooks.audience }),
@@ -191,6 +199,15 @@ describe("a proposal in the Ask conversation", () => {
     expect(text).toContain("Jordan Lee");
     expect(text).toContain(ACT_COPY.mine_only);
     expect(hooks.accept).not.toHaveBeenCalled();
+
+    // Confirm is the chapter's solid accent, as web's is (#4702).
+    const confirmStyle: Record<string, unknown> = Object.assign(
+      {},
+      ...[byLabel(tree, ACT_COPY.confirm).props.style({ pressed: false })]
+        .flat(Infinity)
+        .filter(Boolean),
+    );
+    expect(confirmStyle.backgroundColor).toBe("#7C3AED");
 
     await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
     // Nothing was changed on the card, so nothing is sent but the yes.

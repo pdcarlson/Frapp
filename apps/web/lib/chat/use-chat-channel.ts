@@ -15,7 +15,7 @@
  * chat-core covers and what differs between the two, and why.
  */
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   useCallback,
   useContext,
@@ -143,7 +143,12 @@ export interface UseChatChannelResult {
   loadNewer: () => Promise<number | null>;
   send: (
     content: string,
-    opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
+    opts?: {
+      replyToId?: string | null;
+      attachments?: OutboxAttachment[];
+      /** The members the `@` list put in `content` (#3835). */
+      mentionPicks?: readonly MentionPick[];
+    },
   ) => Promise<void>;
   /** A GIF from the picker, as its own message (#4631). */
   sendGif: (
@@ -170,6 +175,8 @@ export interface UseChatChannelResult {
     messageId: string,
     content: string,
     threadRootId?: string | null,
+    /** Members picked while editing (#3835). */
+    mentionPicks?: readonly MentionPick[],
   ) => Promise<void>;
   /** Own message, or any message with `channels:manage` (server-enforced). */
   delete: (messageId: string, threadRootId?: string | null) => Promise<void>;
@@ -583,7 +590,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const send = useCallback(
     async (
       content: string,
-      opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
+      opts?: {
+        replyToId?: string | null;
+        attachments?: OutboxAttachment[];
+        mentionPicks?: readonly MentionPick[];
+      },
     ): Promise<void> => {
       // A message may be nothing but a file. Guarding on empty text alone would
       // silently drop an attachment-only send — the case the old
@@ -600,6 +611,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         content: content.trim(),
         replyToId: opts?.replyToId ?? null,
         attachments: opts?.attachments ?? null,
+        mentionPicks: opts?.mentionPicks ?? null,
       });
       // Clears only the text that was sent: anything typed while the POST
       // was out is the next message and stays in the composer (#4141).
@@ -647,6 +659,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       messageId: string,
       content: string,
       threadRootId?: string | null,
+      mentionPicks?: readonly MentionPick[],
     ) => {
       if (!channelId) return;
       await editMessageAction(ctx, {
@@ -654,6 +667,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         messageId,
         content,
         threadRootId,
+        mentionPicks: mentionPicks ?? null,
       });
     },
     [channelId, ctx],

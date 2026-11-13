@@ -90,11 +90,11 @@ interface CardEdits {
 }
 
 /**
- * Where a waiting card's edits are kept while the panel is closed. The panel
+ * Where a waiting card's edits are kept while the conversation is closed. It
  * takes its thread off the page when it closes, and a card drawn again from
  * the proposal alone would put back the member an officer took off, and
- * Confirm would then give them the points. The panel holds one of these for
- * the life of the conversation; a card outside a panel keeps its own.
+ * Confirm would then give them the points. `ask-card.tsx` holds one of these
+ * for the life of the conversation; a card outside it keeps its own.
  */
 export type AskCardEditsStore = Map<string, CardEdits>;
 export const AskCardEditsContext = createContext<AskCardEditsStore | null>(
@@ -106,7 +106,6 @@ export function AskProposal({
   resolution,
   onProposal,
   onResolved,
-  onLeave,
 }: {
   /** What the server answered the member's words with. */
   proposal: ActResponse;
@@ -115,20 +114,12 @@ export function AskProposal({
   /** The event pick answered with a new proposal for this turn. */
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
-  /** A link out of the panel was followed. */
-  onLeave?: () => void;
 }) {
   const audience = useActEventAudience();
   const [problem, setProblem] = useState<string | null>(null);
 
   if (resolution) {
-    return (
-      <ProposalReceipt
-        proposal={proposal}
-        resolution={resolution}
-        onLeave={onLeave}
-      />
-    );
+    return <ProposalReceipt proposal={proposal} resolution={resolution} />;
   }
 
   async function pickEvent(eventId: string) {
@@ -188,11 +179,9 @@ function resolutionLine(resolution: AskProposalResolution): string {
 function ProposalReceipt({
   proposal,
   resolution,
-  onLeave,
 }: {
   proposal: ActResponse;
   resolution: AskProposalResolution;
-  onLeave?: () => void;
 }) {
   const headline = proposalHeadline(proposal);
   const link =
@@ -210,9 +199,7 @@ function ProposalReceipt({
         </p>
         {link ? (
           <Button asChild variant="ghost" size="sm" className="-mr-2">
-            <Link href={link.href} onClick={onLeave}>
-              {link.label}
-            </Link>
+            <Link href={link.href}>{link.label}</Link>
           </Button>
         ) : null}
       </div>

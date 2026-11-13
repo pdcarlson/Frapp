@@ -128,7 +128,7 @@ describe("shouldOfferPrimer", () => {
   });
 
   // #2299. The step's only function is "Turn on", so in a build that cannot
-  // push it would render dead. It is skipped instead, like the Ask pill.
+  // push it would render dead. It is skipped instead, like Ask's entry.
   it("is omitted when push is unavailable, whatever push reads", () => {
     for (const push of [null, pushState()]) {
       expect(

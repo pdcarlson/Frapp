@@ -8,6 +8,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   FLOATING_TAB_BAR,
   floatingTabBarTop,
+  useAskBarLift,
   useFloatingChrome,
 } from "@/lib/floating-chrome";
 import { useFrappTheme } from "@/lib/theme";
@@ -45,9 +46,11 @@ export function FloatingCreateButton({ label, hint, onPress }: CreateAction) {
   const feedback = usePressFeedback({ onCard: true });
   const styles = createStyles(tokens);
 
-  // Above the floating bar where there is one, else clear of the inset.
+  // Above the floating bar where there is one (and the Ask Frapp bar over
+  // it, for a member who has Ask), else clear of the inset.
+  const askLift = useAskBarLift();
   const offset = tabBar
-    ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
+    ? floatingTabBarTop(bottom) + askLift + FLOATING_TAB_BAR.gap
     : bottom + tokens.spacing.lg;
 
   return (

@@ -9,9 +9,15 @@ import {
   orgDefaultAccent,
   orgProfileFor,
 } from "@repo/org-archetypes";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { FrappThemeProvider } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
-import { AccentPicker, parseTypedHex, type AccentPickerProps } from "./accent-picker";
+import {
+  AccentPicker,
+  parseTypedHex,
+  type AccentPickerProps,
+} from "./accent-picker";
 
 function render(props: Partial<AccentPickerProps> = {}) {
   const onChange = vi.fn();
@@ -75,6 +81,20 @@ describe("AccentPicker", () => {
       ...FIJI.map((swatch) => swatch.name),
       ...ACCENT_PRESETS.map((swatch) => swatch.name),
     ]);
+  });
+
+  // #4139: the group labels are the shared eyebrow, in web's tone.
+  it("labels each group with the eyebrow, as web's swatches do", () => {
+    const { tree } = render({ orgColors: FIJI });
+    const label = tree.root.find(
+      (node) =>
+        node.type === ("Text" as unknown) &&
+        node.props.children === "Your organization",
+    );
+    expect(flatStyle(label.props.style)).toMatchObject({
+      ...eyebrowStyle(signetDarkTokens),
+      color: signetDarkTokens.color.text.mutedForeground,
+    });
   });
 
   it("shows only the presets when the organization is unknown", () => {
