@@ -102,7 +102,7 @@ Top to bottom:
 - **A line of the week card narrows the To do list** to that kind, and reads as selected (accent text; `selected` to a screen reader).
   Pressing it again, or the list's "Show everything", clears it.
   The narrowing is never stored: it lasts while the app stays open and a fresh launch shows everything.
-  It ends for good when its line leaves the card (its last item done, a new week), so the list never narrows itself again when the line comes back.
+  It ends for good when its line leaves the card (its module turned off, or nothing of its kind left in the week's count, as on a new week), so the list never narrows itself again when the line comes back. Finishing the last item keeps the line, at "3 of 3", and the list says nothing of that kind is left; a list that is empty because its read failed never says that.
   This replaces the filter chips and the remembered chip (#4402): Changed in #4766 by `pdcarlson`, 2026-11-13.
 - **"This semester"** (`components/activity/semester-strip.tsx`; `activityStandingGauges`): the member's points, required events, service hours and study time as up to four gauges in one card, two across (four across cut "3h 57m of 4h" short at a phone's width), from [`../../behavior/activity.md` § Standing](../../behavior/activity.md#standing).
   It began as a card of four rows with meters (2026-11-12, Evan's dashboard idea); the gauges are that card in a third of the height.
@@ -114,6 +114,7 @@ Top to bottom:
   It is drawn only when something waits, so a member, and an officer with an empty queue, sees no card and no zero.
   The week ring never counts it.
   A queue of three or fewer is drawn open; a longer one opens on a press, five rows then "Show all N".
+  Open or closed is decided once, when the card first has rows, and after that only a press changes it, so a queue that grows past three mid-way does not close under the officer.
   Its rows carry `Confirm` and `Approve` as below.
 - **To do**: the member's own events, open tasks, and unanswered polls, sign-ups and forms, **by day**, as Things' Today and Todoist's Upcoming list them and as this app's Events lists do: Overdue (in the warning hue, never cut), then Today, Tomorrow, each weekday of the coming week, Later, and No deadline.
   A day draws three rows, then "Show N more", so the president's Saturday does not bury Sunday.

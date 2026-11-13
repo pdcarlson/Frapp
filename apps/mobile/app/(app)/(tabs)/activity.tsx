@@ -3,9 +3,12 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_SHOW_EVERYTHING,
+  ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityCouldNotLoad,
   activityGroups,
+  activityNarrowedNote,
   activityReview,
   activityWeekSummary,
   findActivityTaskRow,
@@ -28,7 +31,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
-import { can, isModuleEnabled, joinNames } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -62,13 +65,6 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** What the To do list says it is narrowed to, under a week line. */
-const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
-  events: "events",
-  tasks: "tasks",
-  answers: "polls and sign-ups",
-};
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -143,13 +139,15 @@ export default function ActivityScreen() {
 
   const permissions = useMyPermissions().data?.permissions;
   const summary = useMemo(
-    () => (activity.data ? activityWeekSummary(activity.data) : null),
-    [activity.data],
+    () => (activity.data ? activityWeekSummary(activity.data, now) : null),
+    [activity.data, now],
   );
   // The week line picked while the app is open. Never stored: a fresh launch
-  // opens on everything. A line that has left the card (its last item done,
-  // its module turned off, a new week) takes its narrowing with it for good,
-  // so the list doesn't narrow itself again when the line comes back.
+  // opens on everything. A line that has left the card (its module turned
+  // off, or nothing of its kind in the week's count any more, as on a new
+  // week) takes its narrowing with it for good, so the list doesn't narrow
+  // itself again when the line comes back. Finishing the last item keeps the
+  // line, at "3 of 3", and the list says nothing of that kind is left.
   const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
   const pickedLineGone =
     picked !== "all" &&
@@ -526,23 +524,21 @@ function ToDoSection({
     <View style={styles.group}>
       <SectionHeader count={count || null}>To do</SectionHeader>
       {filter !== "all" ? (
-        <InlineNote action={{ label: "Show everything", onPress: onShowAll }}>
-          {count === 0
-            ? `No ${FILTER_NOUN[filter]} left to do.`
-            : `Showing only ${FILTER_NOUN[filter]}.`}
+        <InlineNote
+          action={{ label: ACTIVITY_SHOW_EVERYTHING, onPress: onShowAll }}
+        >
+          {activityNarrowedNote(filter, count, unavailable.length > 0)}
         </InlineNote>
       ) : null}
       {unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty:
         // "nothing to do" must not be a failed read.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {count === 0 && filter === "all" && unavailable.length === 0 ? (
-        <InlineNote>Nothing to do right now.</InlineNote>
+        <InlineNote>{ACTIVITY_TO_DO_EMPTY}</InlineNote>
       ) : null}
       {days.map((day) => (
         <DaySection key={day.id} day={day} onOpen={onOpen} />
@@ -641,9 +637,7 @@ function GroupSection({
       {group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
-          {`Couldn't load ${joinNames(
-            group.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-          )}. Pull down to try again.`}
+          {`${activityCouldNotLoad(group.unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
       {group.parts.map((part) => (

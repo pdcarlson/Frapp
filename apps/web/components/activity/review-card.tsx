@@ -5,22 +5,18 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   ACTIVITY_GLYPH_NAV,
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_REVIEW_OPEN_LIMIT,
+  ACTIVITY_REVIEW_ROW_LIMIT,
+  activityCouldNotLoad,
   type ActivityReview,
   type ActivityRow,
 } from "@repo/hooks";
-import { joinNames } from "@repo/validation";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-
-/** A queue this short is drawn open; a longer one opens on a press. */
-const REVIEW_OPEN_LIMIT = 3;
-/** How many rows the open card draws before "Show all". */
-const REVIEW_ROW_LIMIT = 5;
 
 /**
  * "To review" on `/activity` (#4766): what waits on an officer's sign-off
@@ -50,18 +46,27 @@ export function ReviewCard({
   renderRow: (row: ActivityRow) => ReactNode;
 }) {
   // A short queue is open from the start, so its one-press Confirm stays
-  // one press; a long one waits behind its count. A press either way sticks.
-  const [picked, setPicked] = useState<boolean | null>(null);
-  const open = picked ?? review.rows.length <= REVIEW_OPEN_LIMIT;
+  // one press; a long one waits behind its count. Decided once, when the
+  // card first has rows: a queue that grows past the limit on a re-read must
+  // not close under the officer mid-way through it (and take the focus the
+  // one-press Confirm hands to the next row), nor a long one open itself as
+  // it shrinks. Only a press changes it after that.
+  const [decided, setDecided] = useState<boolean | null>(null);
+  // Adjusted while rendering, as React documents for state that follows a
+  // prop: no frame is drawn before the choice.
+  if (decided === null && review.rows.length > 0) {
+    setDecided(review.rows.length <= ACTIVITY_REVIEW_OPEN_LIMIT);
+  }
+  const open = decided ?? true;
   const [all, setAll] = useState(false);
-  const cappable = review.rows.length > REVIEW_ROW_LIMIT;
+  const cappable = review.rows.length > ACTIVITY_REVIEW_ROW_LIMIT;
   const rows =
-    cappable && !all ? review.rows.slice(0, REVIEW_ROW_LIMIT) : review.rows;
+    cappable && !all
+      ? review.rows.slice(0, ACTIVITY_REVIEW_ROW_LIMIT)
+      : review.rows;
   const failed =
     review.unavailable.length > 0
-      ? `Couldn't load ${joinNames(
-          review.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
-        )}. Try again in a moment.`
+      ? `${activityCouldNotLoad(review.unavailable)} Try again in a moment.`
       : null;
   const hasRows = review.rows.length > 0;
   const head = (
@@ -101,7 +106,7 @@ export function ReviewCard({
             aria-label={`To review, ${review.count}${
               review.detail ? `: ${review.detail}` : ""
             }`}
-            onClick={() => setPicked(!open)}
+            onClick={() => setDecided(!open)}
             data-testid="activity-review-toggle"
             className={cn(
               "flex min-h-14 w-full items-center gap-3 rounded-xl px-4 py-2 text-left transition-colors hover:bg-card-hover",

@@ -32,7 +32,7 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { cn } from "@/lib/utils";
-import { can, joinNames } from "@repo/validation";
+import { can } from "@repo/validation";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import {
   ActivityLinkRow,
@@ -53,8 +53,11 @@ import { ReviewCard } from "./review-card";
 import { SemesterStrip, SemesterStripSkeleton } from "./semester-strip";
 import { WeekCard } from "./week-card";
 import {
-  ACTIVITY_SECTION_NAMES,
+  ACTIVITY_SHOW_EVERYTHING,
+  ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityCouldNotLoad,
+  activityNarrowedNote,
   activityBadgeIsAsk,
   activityGroups,
   activityReview,
@@ -150,7 +153,7 @@ interface RowActions {
 
 /**
  * A row that opens its record in the panel. One whose ask is a single press
- * (Confirm, Approve, Check in; `activityRowAction`) carries it as a button
+ * (Confirm, Approve; `activityRowAction`) carries it as a button
  * where the ask was drawn, so the common case takes one click and the rest
  * of the row still opens the panel, as GitHub's notification rows carry
  * their quick actions.
@@ -262,13 +265,6 @@ function Row({
   );
 }
 
-/** What the To do list says it is narrowed to, under a week line. */
-const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
-  events: "events",
-  tasks: "tasks",
-  answers: "polls and sign-ups",
-};
-
 /** "Couldn't load tasks and polls. Try again in a moment." */
 function CouldNotLoad({
   sections,
@@ -279,9 +275,7 @@ function CouldNotLoad({
   // "nothing to do" must not be a failed read.
   return (
     <InlineNote className="text-warning">
-      {`Couldn't load ${joinNames(
-        sections.map((section) => ACTIVITY_SECTION_NAMES[section]),
-      )}. Try again in a moment.`}
+      {activityCouldNotLoad(sections)} Try again in a moment.
     </InlineNote>
   );
 }
@@ -320,17 +314,15 @@ function ToDoSection({
       </SectionLabel>
       {filter !== "all" ? (
         <InlineNote>
-          {count === 0
-            ? `No ${FILTER_NOUN[filter]} left to do.`
-            : `Showing only ${FILTER_NOUN[filter]}.`}{" "}
+          {activityNarrowedNote(filter, count, unavailable.length > 0)}{" "}
           <InlineNoteAction onClick={onShowAll}>
-            Show everything
+            {ACTIVITY_SHOW_EVERYTHING}
           </InlineNoteAction>
         </InlineNote>
       ) : null}
       {unavailable.length > 0 ? <CouldNotLoad sections={unavailable} /> : null}
       {count === 0 && filter === "all" && unavailable.length === 0 ? (
-        <InlineNote>Nothing to do right now.</InlineNote>
+        <InlineNote>{ACTIVITY_TO_DO_EMPTY}</InlineNote>
       ) : null}
       {days.map((day) => (
         <DaySection key={day.id} day={day} kit={kit} />
@@ -368,15 +360,19 @@ function DaySection({ day, kit }: { day: ActivityAgendaDay; kit: RowKit }) {
       aria-labelledby={labelId}
       data-testid={labelId}
     >
-      <h3
-        id={labelId}
-        className={cn("px-2 text-caption font-semibold", DAY_TONE[day.tone])}
-      >
-        {day.label}
-        <span className="ml-2 font-normal text-muted tabular-nums">
+      {/* The count beside the heading, not in it: the heading names the
+          group, and "Tomorrow5" is not a name. */}
+      <div className="flex items-baseline gap-2 px-2">
+        <h3
+          id={labelId}
+          className={cn("text-caption font-semibold", DAY_TONE[day.tone])}
+        >
+          {day.label}
+        </h3>
+        <span className="text-caption text-muted tabular-nums">
           {day.rows.length}
         </span>
-      </h3>
+      </div>
       <ul className={denseListClassName}>
         {rows.map((row) => (
           <Row key={row.key} row={row} kit={kit} />
@@ -511,15 +507,17 @@ function GroupPart({
       aria-labelledby={part.label ? labelId : undefined}
     >
       {part.label ? (
-        <h3
-          id={labelId}
-          className="px-2 text-caption font-semibold text-muted-foreground"
-        >
-          {part.label}
-          <span className="ml-2 font-normal text-muted tabular-nums">
+        <div className="flex items-baseline gap-2 px-2">
+          <h3
+            id={labelId}
+            className="text-caption font-semibold text-muted-foreground"
+          >
+            {part.label}
+          </h3>
+          <span className="text-caption text-muted tabular-nums">
             {part.rows.length}
           </span>
-        </h3>
+        </div>
       ) : null}
       <ul className={denseListClassName}>
         {rows.map((row) => (
@@ -621,13 +619,15 @@ export function ActivityPage() {
   const queryClient = useQueryClient();
   const isModuleEnabled = useChapterModuleGate();
   const summary = useMemo(
-    () => (activity.data ? activityWeekSummary(activity.data) : null),
-    [activity.data],
+    () => (activity.data ? activityWeekSummary(activity.data, now) : null),
+    [activity.data, now],
   );
   // The week line picked on this visit. Never stored: the page opens on
-  // everything. A line that has left the card (its last item done, its
-  // module turned off, a new week) takes its narrowing with it for good, so
-  // the list doesn't narrow itself again when the line comes back.
+  // everything. A line that has left the card (its module turned off, or
+  // nothing of its kind in the week's count any more, as on a new week)
+  // takes its narrowing with it for good, so the list doesn't narrow itself
+  // again when the line comes back. Finishing the last item keeps the line,
+  // at "3 of 3", and the list says nothing of that kind is left.
   const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
   const pickedLineGone =
     picked !== "all" &&
@@ -813,7 +813,14 @@ export function ActivityPage() {
               filter={filter}
               // The one thing left is already on the week card.
               onCard={agenda.next !== null}
-              onShowAll={() => setPicked("all")}
+              onShowAll={() => {
+                // The note and its button leave with the narrowing, so the
+                // week line that set it takes the focus they held.
+                document
+                  .getElementById(`activity-week-line-${filter}`)
+                  ?.focus();
+                setPicked("all");
+              }}
               kit={kit}
             />
           ) : null}

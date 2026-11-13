@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   activityAgenda,
+  activityCouldNotLoad,
+  activityNarrowedNote,
   activityReview,
   activityWeekSummary,
 } from "./activity-agenda";
@@ -131,6 +133,7 @@ describe("activityWeekSummary (#4766)", () => {
           cards: count(1, 1),
         }),
       }),
+      NOW,
     );
     expect(summary).toMatchObject({
       state: "open",
@@ -155,7 +158,7 @@ describe("activityWeekSummary (#4766)", () => {
   });
 
   it("says nothing is due, with no line and no zero, on an empty week", () => {
-    expect(activityWeekSummary(activity())).toMatchObject({
+    expect(activityWeekSummary(activity(), NOW)).toMatchObject({
       state: "clear",
       total: 0,
       progress: 0,
@@ -169,6 +172,7 @@ describe("activityWeekSummary (#4766)", () => {
     expect(
       activityWeekSummary(
         activity({ week: week({ events: count(3, 3), tasks: count(2, 2) }) }),
+        NOW,
       ),
     ).toMatchObject({
       state: "done",
@@ -183,6 +187,7 @@ describe("activityWeekSummary (#4766)", () => {
       activity({
         week: week({ events: count(1, 2), tasks: null, polls: null }),
       }),
+      NOW,
     );
     expect(summary.lines.map((line) => line.id)).toEqual(["events"]);
     expect(summary).toMatchObject({ incomplete: false, total: 2 });
@@ -197,6 +202,7 @@ describe("activityWeekSummary (#4766)", () => {
           unavailable: ["tasks"],
         }),
       }),
+      NOW,
     );
     expect(summary).toMatchObject({
       state: "open",
@@ -221,6 +227,7 @@ describe("activityWeekSummary (#4766)", () => {
           unavailable: ["polls", "cards"],
         }),
       }),
+      NOW,
     );
     expect(done).toMatchObject({
       state: "open",
@@ -236,6 +243,7 @@ describe("activityWeekSummary (#4766)", () => {
           unavailable: ["cards"],
         }),
       }),
+      NOW,
     );
     expect(half.lines).toEqual([
       expect.objectContaining({ id: "answers", done: 1, total: 1 }),
@@ -243,14 +251,96 @@ describe("activityWeekSummary (#4766)", () => {
     expect(half.state).toBe("open");
   });
 
+  it("draws a dash, never 0 of 0, when half a shared line failed and the other half has nothing", () => {
+    const summary = activityWeekSummary(
+      activity({
+        week: week({
+          events: count(3, 3),
+          polls: count(0, 0),
+          cards: null,
+          unavailable: ["cards"],
+        }),
+      }),
+      NOW,
+    );
+    expect(summary.lines.find((line) => line.id === "answers")).toEqual({
+      id: "answers",
+      label: "Polls and sign-ups",
+      done: null,
+      total: null,
+      spokenLabel: "Polls and sign-ups: couldn't load",
+    });
+    expect(summary).toMatchObject({
+      state: "open",
+      headline: "Some of your week couldn't load",
+    });
+  });
+
+  it("drops a poll or a sign-up that closed since the read, as the list does", () => {
+    const data = activity({
+      needs_you: needs({
+        polls: [
+          poll({ message_id: "gone", closes_at: at(0, 11) }),
+          poll({ message_id: "open", closes_at: at(0, 13) }),
+        ],
+        cards: [card({ message_id: "c-gone", closes_at: at(0, 11) })],
+      }),
+      week: week({ polls: count(1, 3), cards: count(0, 1) }),
+    });
+    // An hour earlier both were open: four answers owed, one given.
+    expect(
+      activityWeekSummary(data, new Date(2026, 10, 13, 10, 0)),
+    ).toMatchObject({ done: 1, total: 4, headline: "3 left this week" });
+    // At noon the poll and the sign-up have closed unanswered: the server
+    // leaves them out of the next read, so the ring leaves them out now.
+    const summary = activityWeekSummary(data, NOW);
+    expect(summary).toMatchObject({
+      done: 1,
+      total: 2,
+      headline: "1 left this week",
+    });
+    expect(summary.lines).toEqual([
+      expect.objectContaining({ id: "answers", done: 1, total: 2 }),
+    ]);
+    // The only thing owed closes: the line goes, and nothing is due.
+    expect(
+      activityWeekSummary(
+        activity({
+          needs_you: needs({
+            polls: [poll({ message_id: "gone", closes_at: at(0, 11) })],
+          }),
+          week: week({ polls: count(0, 1) }),
+        }),
+        NOW,
+      ),
+    ).toMatchObject({ state: "clear", lines: [], total: 0 });
+  });
+
   it("has no ring to draw against an API from before the week", () => {
     const old = activity();
     delete (old as { week?: unknown }).week;
-    expect(activityWeekSummary(old)).toMatchObject({
+    expect(activityWeekSummary(old, NOW)).toMatchObject({
       state: "unknown",
       lines: [],
       headline: "",
     });
+  });
+});
+
+describe("the page's shared sentences (#4766)", () => {
+  it("says what a narrowed list holds, and never calls a failed read finished", () => {
+    expect(activityNarrowedNote("tasks", 2, false)).toBe("Showing only tasks.");
+    expect(activityNarrowedNote("answers", 0, false)).toBe(
+      "No polls and sign-ups left to do.",
+    );
+    // Nothing listed because the read failed is not "No tasks left to do."
+    expect(activityNarrowedNote("tasks", 0, true)).toBe("Showing only tasks.");
+  });
+
+  it("names the parts that couldn't load", () => {
+    expect(activityCouldNotLoad(["tasks", "polls"])).toBe(
+      "Couldn't load tasks and polls.",
+    );
   });
 });
 
@@ -438,12 +528,24 @@ describe("activityAgenda (#4766)", () => {
       activity({
         needs_you: needs({
           polls: [
-            poll({ message_id: "gone", question: "Gone", closes_at: at(0, 11) }),
-            poll({ message_id: "open", question: "Open", closes_at: at(0, 13) }),
+            poll({
+              message_id: "gone",
+              question: "Gone",
+              closes_at: at(0, 11),
+            }),
+            poll({
+              message_id: "open",
+              question: "Open",
+              closes_at: at(0, 13),
+            }),
           ],
           cards: [
             card({ message_id: "c-gone", title: "Shut", closes_at: at(0, 11) }),
-            card({ message_id: "c-open", title: "Rides", closes_at: at(0, 14) }),
+            card({
+              message_id: "c-open",
+              title: "Rides",
+              closes_at: at(0, 14),
+            }),
           ],
         }),
       }),
@@ -583,11 +685,7 @@ describe("activityReview (#4766)", () => {
 
   it("is nothing with nothing waiting, for a member and for an officer", () => {
     expect(
-      activityReview(
-        activity(),
-        { canConfirmTasks: false },
-        NOW,
-      ),
+      activityReview(activity(), { canConfirmTasks: false }, NOW),
     ).toBeNull();
     expect(activityReview(activity(), officer, NOW)).toBeNull();
   });
@@ -595,11 +693,7 @@ describe("activityReview (#4766)", () => {
   it("shows what the read served before the permissions are known", () => {
     // The server lists these only for a member who may act on them.
     expect(
-      activityReview(
-        waiting(),
-        { canConfirmTasks: false },
-        NOW,
-      ),
+      activityReview(waiting(), { canConfirmTasks: false }, NOW),
     ).toMatchObject({ count: "3" });
   });
 

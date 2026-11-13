@@ -92,7 +92,7 @@ member's own answer, not the event's default:
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
 **`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
-phone's page. See [Week](#week).
+page on both clients. See [Week](#week).
 
 ## Rules
 
@@ -149,7 +149,14 @@ and nothing else in the read carries that. Both clients draw it as one ring
   `needs_you.cards` row, before its cap.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in
   `week.unavailable` (`events`, `tasks`, `polls`, `cards`). A client draws a failed part as
-  unknown and says "at least", never as zero and never as a finished week.
+  unknown and says "at least", never as zero and never as a finished week. Polls and cards share
+  a line on both clients, and when one of the two failed and the other has nothing this week the
+  line is unknown too: a dash, never "0 of 0".
+- **A client keeps the count current between reads.** A poll or a card the read listed as open
+  whose closing time has passed since leaves the client's To do list within a tick of its clock
+  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258)), and leaves the week's `total` on the
+  same tick (`activityWeekSummary` takes the clock), as the next read would leave it out. The ring
+  never says "1 left this week" over a list that says nothing is.
 - **It adds little to the read.** The week's events come from the one events read Coming up
   already makes, widened to reach back to the week's start. The rest is a count of finished
   tasks, the member's attendance on those events, one more read of the member's claims on

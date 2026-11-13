@@ -1,10 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type {
-  ActivityAgenda,
-  ActivityAgendaFilter,
-  ActivityRow,
-  ActivityWeekLine,
-  ActivityWeekSummary,
+import {
+  ACTIVITY_WEEK_HINT,
+  type ActivityAgenda,
+  type ActivityAgendaFilter,
+  type ActivityRow,
+  type ActivityWeekLine,
+  type ActivityWeekSummary,
 } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { eyebrowStyle } from "@/components/eyebrow";
@@ -112,9 +113,7 @@ export function WeekCard({
                 ))}
               </View>
             ) : summary.incomplete ? null : (
-              <Text style={styles.quiet}>
-                Your events, tasks and polls for the week count here.
-              </Text>
+              <Text style={styles.quiet}>{ACTIVITY_WEEK_HINT}</Text>
             )}
           </View>
         </View>

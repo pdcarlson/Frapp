@@ -331,7 +331,7 @@ function pollRow(
  * Whether a sign-up or form card still takes answers at `now`: the read
  * serves only open ones, so this is its end time not passed since.
  */
-function activityCardIsOpen(
+export function activityCardIsOpen(
   card: Pick<ActivityCard, "closes_at">,
   now: Date,
 ): boolean {
@@ -740,8 +740,9 @@ export interface ActivityToDo {
 /**
  * The member's own to-dos (#4766): their events, their open tasks, and the
  * polls, sign-ups and forms they haven't answered, in the read's order. Never
- * what waits on their review (`activityReviewRows`). Each row keeps the key
- * `activityGroups` gives it, so a sheet opened on one finds it in either.
+ * what waits on their review (`activityReviewRows`). A row's key is its
+ * record's (`needs:task:<id>`, `needs:poll:<id>`), the same on every re-read,
+ * so a sheet opened on one finds it again.
  */
 export function activityToDos(
   activity: Activity,

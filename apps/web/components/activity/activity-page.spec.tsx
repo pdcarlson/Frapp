@@ -37,7 +37,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
     // `activity-standing.ts`). Only the reads are stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
-    ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
+    ACTIVITY_REVIEW_OPEN_LIMIT: actual.ACTIVITY_REVIEW_OPEN_LIMIT,
+    ACTIVITY_REVIEW_ROW_LIMIT: actual.ACTIVITY_REVIEW_ROW_LIMIT,
+    ACTIVITY_SHOW_EVERYTHING: actual.ACTIVITY_SHOW_EVERYTHING,
+    ACTIVITY_TO_DO_EMPTY: actual.ACTIVITY_TO_DO_EMPTY,
+    ACTIVITY_WEEK_HINT: actual.ACTIVITY_WEEK_HINT,
+    activityCouldNotLoad: actual.activityCouldNotLoad,
+    activityNarrowedNote: actual.activityNarrowedNote,
     activityAgenda: actual.activityAgenda,
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
@@ -398,6 +404,9 @@ describe("ActivityPage", () => {
         within(toDo()).getByRole("button", { name: "Show everything" }),
       );
       expect(answers).toHaveAttribute("aria-pressed", "false");
+      // The note and its button are gone: the line that narrowed the list
+      // takes the focus, so a keyboard is not sent back to the page's top.
+      expect(answers).toHaveFocus();
       expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
       expect(screen.getByRole("region", { name: "Links" })).toBeInTheDocument();
 
@@ -423,6 +432,37 @@ describe("ActivityPage", () => {
         within(toDo()).getByText(/No events left to do\./),
       ).toBeInTheDocument();
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
+    });
+
+    it("never calls a narrowed kind finished when its read failed", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: nothingWaiting,
+          week: week({
+            events: count(1, 2),
+            tasks: null,
+            unavailable: ["tasks"],
+          }),
+          unavailable: ["tasks"],
+        }),
+      );
+      render(<ActivityPage />);
+
+      // The dash line still narrows the list.
+      fireEvent.click(
+        within(weekLines()).getByRole("button", {
+          name: "Tasks: couldn't load",
+        }),
+      );
+
+      expect(
+        within(toDo()).getByText(/Showing only tasks\./),
+      ).toBeInTheDocument();
+      expect(
+        within(toDo()).getByText("Couldn't load tasks. Try again in a moment."),
+      ).toBeInTheDocument();
+      // An empty list under a failed read is not "No tasks left to do."
+      expect(screen.queryByText(/left to do/)).toBeNull();
     });
 
     it("drops the narrowing for good when its line leaves the card", () => {
@@ -530,6 +570,108 @@ describe("ActivityPage", () => {
         within(toDo()).getByText("Couldn't load tasks. Try again in a moment."),
       ).toBeInTheDocument();
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
+    });
+
+    it("draws a dash in the ring, not the quiet check, when the only part of the week failed", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: nothingWaiting,
+          week: week({ tasks: null, unavailable: ["tasks"] }),
+          unavailable: ["tasks"],
+        }),
+      );
+      render(<ActivityPage />);
+
+      const card = weekCard();
+      expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
+        "Some of your week couldn't load",
+      );
+      // Nothing known to count is not "nothing due": the ring says unknown.
+      const ring = within(card).getByTestId("activity-week-ring");
+      expect(ring).toHaveTextContent("–");
+      expect(ring.querySelector("svg.lucide-check")).toBeNull();
+      expect(
+        screen.queryByText(
+          "Your events, tasks and polls for the week count here.",
+        ),
+      ).toBeNull();
+      expect(screen.queryByText(/0 of 0/)).toBeNull();
+    });
+
+    it("draws a dash for a shared line whose other half failed, never 0 of 0", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: nothingWaiting,
+          week: week({
+            events: count(3, 3),
+            polls: count(0, 0),
+            cards: null,
+            unavailable: ["cards"],
+          }),
+          unavailable: ["cards"],
+        }),
+      );
+      render(<ActivityPage />);
+
+      expect(
+        within(weekLines()).getByRole("button", {
+          name: "Polls and sign-ups: couldn't load",
+        }),
+      ).toHaveTextContent("Polls and sign-ups–");
+      expect(screen.queryByText(/0 of 0/)).toBeNull();
+    });
+
+    it("doesn't close the ring in the success hue while a part is missing", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: nothingWaiting,
+          week: week({
+            events: count(3, 3),
+            tasks: null,
+            unavailable: ["tasks"],
+          }),
+          unavailable: ["tasks"],
+        }),
+      );
+      render(<ActivityPage />);
+
+      const heading = within(weekCard()).getByRole("heading", { level: 2 });
+      expect(heading).toHaveTextContent("Some of your week couldn't load");
+      expect(heading).not.toHaveClass("text-success");
+      // Three of three known, and still not a finished week.
+      const ring = screen.getByTestId("activity-week-ring");
+      expect(ring).toHaveTextContent("3of 3");
+      expect(ring.querySelector("circle.text-success")).toBeNull();
+    });
+
+    it("drops a poll that closed while the page was open from the count, as the list drops it", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            ...nothingWaiting,
+            polls: [{ ...poll, closes_at: "2020-01-01T00:00:00.000Z" }],
+          },
+          week: week({ events: count(1, 1), polls: count(0, 1) }),
+        }),
+      );
+      render(<ActivityPage />);
+
+      // The read listed it as open; its time has passed since.
+      expect(
+        within(weekCard()).getByRole("heading", { level: 2 }),
+      ).toHaveTextContent("All done this week");
+      expect(screen.queryByText(/left this week/)).toBeNull();
+      expect(screen.queryByText("Formal venue?")).toBeNull();
+    });
+
+    it("draws no card at all against an older API with nothing next", () => {
+      mockActivity.mockReturnValue(loaded({ needs_you: nothingWaiting }));
+      render(<ActivityPage />);
+
+      expect(screen.queryByTestId("activity-week-card")).toBeNull();
+      expect(
+        within(toDo()).getByText("Nothing to do right now."),
+      ).toBeInTheDocument();
     });
 
     it("draws no ring against an API from before the week, only the next thing", () => {
@@ -739,6 +881,62 @@ describe("ActivityPage", () => {
       expect(within(card).queryByText("Sweep the porch")).toBeNull();
     });
 
+    const queue = (length: number) =>
+      loaded({
+        needs_you: {
+          ...nothingWaiting,
+          task_confirmations: Array.from({ length }, (_, index) =>
+            confirmation(`q${index + 1}`, `Finished ${index + 1}`),
+          ),
+        },
+      });
+
+    it("starts three open and four closed", () => {
+      officer();
+      mockActivity.mockReturnValue(queue(3));
+      const { unmount } = render(<ActivityPage />);
+      expect(screen.getByTestId("activity-review-toggle")).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      unmount();
+
+      mockActivity.mockReturnValue(queue(4));
+      render(<ActivityPage />);
+      expect(screen.getByTestId("activity-review-toggle")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
+
+    it("stays as it was when a re-read takes the queue across three, either way", () => {
+      officer();
+      mockActivity.mockReturnValue(queue(3));
+      const { rerender, unmount } = render(<ActivityPage />);
+      const toggle = () => screen.getByTestId("activity-review-toggle");
+      expect(toggle()).toHaveAttribute("aria-expanded", "true");
+
+      // Two more finish while the officer is part-way through: the card
+      // they are working in doesn't close under them.
+      mockActivity.mockReturnValue(queue(5));
+      rerender(<ActivityPage />);
+      expect(toggle()).toHaveAttribute("aria-expanded", "true");
+      expect(
+        within(screen.getByTestId("activity-review-card")).getAllByRole(
+          "listitem",
+        ),
+      ).toHaveLength(5);
+      unmount();
+
+      // And a long queue doesn't open itself as it shrinks.
+      mockActivity.mockReturnValue(queue(4));
+      const second = render(<ActivityPage />);
+      expect(toggle()).toHaveAttribute("aria-expanded", "false");
+      mockActivity.mockReturnValue(queue(2));
+      second.rerender(<ActivityPage />);
+      expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    });
+
     it("keeps a long queue behind its count, then five rows and Show all", () => {
       officer();
       mockActivity.mockReturnValue(
@@ -826,7 +1024,11 @@ describe("ActivityPage", () => {
       ).toHaveTextContent("Overdue");
       const overdue = within(toDo()).getByTestId("activity-day-overdue");
       const heading = within(overdue).getByRole("heading", { level: 3 });
-      expect(heading).toHaveTextContent("Overdue1");
+      // The count sits beside the heading, not in it: the day is named
+      // "Overdue", never "Overdue1".
+      expect(heading).toHaveTextContent(/^Overdue$/);
+      expect(overdue).toHaveAccessibleName("Overdue");
+      expect(heading.nextElementSibling).toHaveTextContent(/^1$/);
       expect(heading).toHaveClass("text-warning");
       const row = within(overdue).getByRole("button", {
         name: /Return the keys/,
@@ -839,7 +1041,7 @@ describe("ActivityPage", () => {
         within(toDo())
           .getAllByRole("heading", { level: 3 })
           .map((day) => day.textContent),
-      ).toEqual(["Overdue1", "Later1"]);
+      ).toEqual(["Overdue", "Later"]);
     });
 
     it("draws three of a busy day, and the rest behind Show more", () => {
@@ -859,9 +1061,9 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
 
       const day = within(toDo()).getByTestId("activity-day-day-1");
-      expect(within(day).getByRole("heading", { level: 3 })).toHaveTextContent(
-        "Tomorrow5",
-      );
+      const heading = within(day).getByRole("heading", { level: 3 });
+      expect(heading).toHaveTextContent(/^Tomorrow$/);
+      expect(heading.nextElementSibling).toHaveTextContent(/^5$/);
       expect(within(day).getAllByRole("listitem")).toHaveLength(3);
       fireEvent.click(within(day).getByRole("button", { name: "Show 2 more" }));
       expect(within(day).getAllByRole("listitem")).toHaveLength(5);
@@ -882,6 +1084,45 @@ describe("ActivityPage", () => {
       expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
     });
+  });
+
+  it("lays out by its own width, since it is usually a pane beside chat", () => {
+    mockActivity.mockReturnValue(
+      loaded({ week: week({ tasks: count(0, 1), polls: count(0, 1) }) }),
+    );
+    mockStanding.mockReturnValue({
+      isPending: false,
+      data: {
+        points: { total: 42, rank: 5, ranked: 58, goal: 60 },
+        required_events: { required: 8, attended: 6, excused: 0 },
+        service: {
+          approved_minutes: 270,
+          pending_minutes: 0,
+          goal_minutes: 600,
+        },
+        study: {
+          minutes: 125,
+          week_start: "2026-11-08T05:00:00.000Z",
+          goal_minutes: 360,
+        },
+        unavailable: [],
+      },
+    });
+    render(<ActivityPage />);
+
+    // The page is the container its parts measure, so a 480px pane in a wide
+    // window keeps the narrow layout. A window breakpoint (`lg:`, `md:`)
+    // on any of these would break that.
+    const card = weekCard();
+    expect(card.closest(".\\@container")).not.toBeNull();
+    const cardLayout = card.querySelector("section");
+    expect(cardLayout).toHaveClass("flex-col", "@3xl:flex-row");
+    const strip = screen.getByRole("region", { name: "This semester" });
+    const grid = strip.querySelector(".grid");
+    expect(grid).toHaveClass("grid-cols-2", "@3xl:grid-cols-4");
+    for (const element of [cardLayout, grid]) {
+      expect(element?.className).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/);
+    }
   });
 
   it("orders the page: the week, this semester, to review, to do, waiting on others, links", () => {
@@ -1471,8 +1712,9 @@ describe("ActivityPage", () => {
     );
     render(<ActivityPage />);
     const made = screen.getByRole("region", { name: "Waiting on others" });
+    // Named by its heading alone; the count sits beside it.
     const part = within(made).getByRole("group", {
-      name: /Tasks you assigned/,
+      name: "Tasks you assigned",
     });
     expect(within(part).getAllByRole("listitem")).toHaveLength(3);
     fireEvent.click(within(part).getByRole("button", { name: "Show all 5" }));

@@ -2,11 +2,12 @@
 
 import type { ReactNode } from "react";
 import { Check } from "lucide-react";
-import type {
-  ActivityAgenda,
-  ActivityAgendaFilter,
-  ActivityWeekLine,
-  ActivityWeekSummary,
+import {
+  ACTIVITY_WEEK_HINT,
+  type ActivityAgenda,
+  type ActivityAgendaFilter,
+  type ActivityWeekLine,
+  type ActivityWeekSummary,
 } from "@repo/hooks";
 import { Skeleton } from "@/components/shared/async-states";
 import {
@@ -124,7 +125,7 @@ export function WeekCard({
                   </div>
                 ) : summary.incomplete ? null : (
                   <p className="text-caption text-muted-foreground">
-                    Your events, tasks and polls for the week count here.
+                    {ACTIVITY_WEEK_HINT}
                   </p>
                 )}
               </div>
@@ -189,6 +190,7 @@ function WeekLine({
           : `Show only ${line.label.toLowerCase()} in the list`
       }
       onClick={onPress}
+      id={`activity-week-line-${line.id}`}
       data-testid={`activity-week-line-${line.id}`}
       className={cn(
         // One column each, so every line's bar starts and ends on the same

@@ -2,6 +2,9 @@ import { dayDelta, formatDayHeading } from "@repo/formatting";
 import { joinNames } from "@repo/validation";
 import {
   ACTIVITY_LIST_LIMIT,
+  ACTIVITY_SECTION_NAMES,
+  activityCardIsOpen,
+  activityPollIsOpen,
   activityReviewRows,
   activityToDos,
   type Activity,
@@ -82,8 +85,16 @@ const WEEK_PART_NAMES: Record<ActivityWeek["unavailable"][number], string> = {
  * A kind the chapter has off is served `null` and has no line. A kind with
  * nothing this week has none either: "Polls 0 of 0" is the zero tile again.
  * Polls and sign-ups share a line, since both are an answer the member owes.
+ *
+ * `now` is the page's clock. A poll or a sign-up whose time ran out since the
+ * read leaves the To do list within a tick (#4258), so it leaves the count
+ * here on the same tick: the card must not say "1 left this week" over a
+ * list that says nothing is.
  */
-export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
+export function activityWeekSummary(
+  activity: Activity,
+  now: Date,
+): ActivityWeekSummary {
   const week = activity.week;
   if (!week) {
     return {
@@ -110,7 +121,10 @@ export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
     const known = counts.filter((count) => count !== null);
     const done = known.reduce((sum, count) => sum + count.done, 0);
     const total = known.reduce((sum, count) => sum + count.total, 0);
-    if (down && known.length === 0) {
+    if (down && total === 0) {
+      // Nothing known to count, and a part of the line failed: a dash, never
+      // "0 of 0". That holds when one half of a shared line read as nothing
+      // this week and the other half could not be read.
       lines.push({
         id,
         label,
@@ -118,7 +132,7 @@ export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
         total: null,
         spokenLabel: `${label}: couldn't load`,
       });
-    } else if (total > 0 || down) {
+    } else if (total > 0) {
       lines.push({
         id,
         label,
@@ -129,13 +143,31 @@ export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
     }
     return { done, total };
   };
+  // What the read listed as open and has closed since, unanswered: the
+  // server drops it from `total` on the next read, so it is dropped here.
+  const closedSince = (
+    count: { done: number; total: number } | null,
+    closed: number,
+  ) =>
+    count === null
+      ? null
+      : { done: count.done, total: Math.max(count.done, count.total - closed) };
+  const closedPolls = activity.needs_you.polls.filter(
+    (poll) => !activityPollIsOpen(poll, now),
+  ).length;
+  const closedCards = (activity.needs_you.cards ?? []).filter(
+    (card) => !activityCardIsOpen(card, now),
+  ).length;
   const counted = [
     line("events", "Events", [week.events], failed.has("events")),
     line("tasks", "Tasks", [week.tasks], failed.has("tasks")),
     line(
       "answers",
       "Polls and sign-ups",
-      [week.polls, week.cards],
+      [
+        closedSince(week.polls, closedPolls),
+        closedSince(week.cards, closedCards),
+      ],
       failed.has("polls") || failed.has("cards"),
     ),
   ];
@@ -220,6 +252,55 @@ const FILTER_KINDS: Record<
   tasks: ["task"],
   answers: ["poll", "card"],
 };
+
+/** What the To do list says it is narrowed to, under a week line. */
+const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
+  events: "events",
+  tasks: "tasks",
+  answers: "polls and sign-ups",
+};
+
+/**
+ * The note over a To do list narrowed by a week line, the same words on
+ * both clients (`principles.md` P6.5). `failed`: a part behind the kind
+ * could not be read, and then an empty list is never called finished: a
+ * failed read is not "No tasks left to do."
+ */
+export function activityNarrowedNote(
+  filter: Exclude<ActivityAgendaFilter, "all">,
+  count: number,
+  failed: boolean,
+): string {
+  return count === 0 && !failed
+    ? `No ${FILTER_NOUN[filter]} left to do.`
+    : `Showing only ${FILTER_NOUN[filter]}.`;
+}
+
+/** The press that ends a narrowing, beside {@link activityNarrowedNote}. */
+export const ACTIVITY_SHOW_EVERYTHING = "Show everything";
+
+/** An empty To do list with nothing on the week card either. */
+export const ACTIVITY_TO_DO_EMPTY = "Nothing to do right now.";
+
+/** Under "Nothing due this week", where the lines would be. */
+export const ACTIVITY_WEEK_HINT =
+  "Your events, tasks and polls for the week count here.";
+
+/** A To review queue this short is drawn open; a longer one opens on a press. */
+export const ACTIVITY_REVIEW_OPEN_LIMIT = 3;
+/** How many rows an open To review card draws before "Show all". */
+export const ACTIVITY_REVIEW_ROW_LIMIT = 5;
+
+/**
+ * "Couldn't load tasks and polls." for the parts of a list the read could
+ * not load. Each client adds how to try again: a pull on the phone, a moment
+ * on web.
+ */
+export function activityCouldNotLoad(sections: ActivitySection[]): string {
+  return `Couldn't load ${joinNames(
+    sections.map((section) => ACTIVITY_SECTION_NAMES[section]),
+  )}.`;
+}
 
 const FILTER_SECTIONS: Record<ActivityAgendaFilter, ActivitySection[]> = {
   all: ["coming_up", "tasks", "polls", "cards"],
