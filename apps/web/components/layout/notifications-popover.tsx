@@ -41,6 +41,7 @@ import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { ROLE_NAME_CLASS, roleNameStyle } from "@/components/roles/role-name-paint";
 import {
   Popover,
   PopoverContent,
@@ -441,7 +442,7 @@ function NotificationRow({
       onClick={onOpen}
       data-notification-kind={look.kind}
       className={cn(
-        "grid grid-cols-[8px_36px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
+        "group/row grid grid-cols-[8px_36px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
         FOCUS_RING,
         "focus-visible:ring-inset",
       )}
@@ -475,7 +476,8 @@ function NotificationRow({
                 {title.before}
                 <span
                   data-person-name=""
-                  style={nameColor ? { color: nameColor } : undefined}
+                  className={nameColor ? ROLE_NAME_CLASS : undefined}
+                  style={nameColor ? roleNameStyle(nameColor) : undefined}
                 >
                   {title.name}
                 </span>

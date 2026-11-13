@@ -287,7 +287,8 @@ flow's verifier (auth-js 2.119 `retrievePKCEVerifier`). Any later flow in that b
 replaces it: a magic-link request, or a refused one, which deletes it. A different
 device or the mail app's own browser has none. So the link confirms the address and
 signs nobody in. Since this date web sends that case to `/sign-in` saying the email is
-confirmed (`intent=confirm`, `EMAIL_CONFIRMED_AUTH_ERROR` in
+confirmed (an email-link intent, `intent=confirm` or the sign-in magic link's
+`intent=sign-in-link`; `isEmailLinkIntent` and `EMAIL_CONFIRMED_AUTH_ERROR` in
 `apps/web/lib/auth/redirect.ts`). The template change below removes the case, as the
 Magic Link change did for magic links.
 
@@ -299,9 +300,9 @@ server-side confirm route (`token_hash={{ .TokenHash }}&type=email`, per Supabas
 
 Subject: `Confirm your Frapp account`
 
-`{{ .RedirectTo }}` already carries a `?` everywhere this email is sent from: web sign-up,
-Resend and the web magic link pass `/auth/callback?next=…&intent=confirm`, and mobile
-passes `frapp:///?`. GoTrue sends this template, not
+`{{ .RedirectTo }}` already carries a `?` everywhere this email is sent from: web sign-up
+and Resend pass `/auth/callback?next=…&intent=confirm`, the web sign-in magic link passes
+`/auth/callback?next=…&intent=sign-in-link` (#3801), and mobile passes `frapp:///?`. GoTrue sends this template, not
 Magic Link, to an address that isn't confirmed yet. `/auth/callback` (web) and
 `createSessionFromUrl` (mobile, `apps/mobile/lib/auth-session.tsx`) already verify a
 `token_hash` with `type=email` through `verifyOtp`, which needs no verifier. So the paste
