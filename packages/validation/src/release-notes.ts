@@ -148,6 +148,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can now post a form in chat from the + menu, with short answer, paragraph, multiple choice, checkbox, dropdown and yes or no questions. Your answers aren't posted in the chat, and you can change them until the form closes.",
       "Pinning a channel or saving a message now fills in its pin or ribbon, so it's clear which ones are on.",
       "If an email sign-in link opens a brand-new account instead of the one you already have, you're now told so and can sign out in one step.",
+      "When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them; a sign-up sheet's creator can export who signed up for what.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",

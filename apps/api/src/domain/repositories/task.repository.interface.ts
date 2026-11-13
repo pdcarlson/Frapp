@@ -34,6 +34,8 @@ export interface TaskListFilter {
   status?: TaskStatus;
   /** `true`: only confirmed tasks; `false`: only unconfirmed ones. */
   confirmed?: boolean;
+  /** Only tasks marked done at or after this instant (`completed_at`). */
+  completedSince?: string;
 }
 
 /**

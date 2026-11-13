@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, useImperativeHandle, forwardRef } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BackHandler } from "react-native";
+import { Alert, BackHandler } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
@@ -57,6 +57,35 @@ vi.mock("@repo/chat-core/forms", async () => {
   };
 });
 
+// The creator's read of every response (#3926 step 4).
+const responses = vi.hoisted(() => ({
+  result: null as unknown,
+  fail: null as Error | null,
+}));
+vi.mock("@repo/chat-core/form-responses", async () => {
+  const actual = await vi.importActual<
+    typeof import("@repo/chat-core/form-responses")
+  >("@repo/chat-core/form-responses");
+  return {
+    ...actual,
+    fetchFormResponses: async () => {
+      if (responses.fail) throw responses.fail;
+      return responses.result;
+    },
+  };
+});
+
+const exported = vi.hoisted(() => ({
+  calls: [] as { rows: Record<string, string>[]; prefix: string }[],
+  ok: true,
+}));
+vi.mock("@/lib/chat/share-csv", () => ({
+  shareCsv: async (rows: Record<string, string>[], prefix: string) => {
+    exported.calls.push({ rows, prefix });
+    return exported.ok;
+  },
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#DDB844",
@@ -72,6 +101,11 @@ beforeEach(() => {
   own.refetch.mockClear();
   save.calls = [];
   save.next = null;
+  responses.result = null;
+  responses.fail = null;
+  exported.calls = [];
+  exported.ok = true;
+  vi.mocked(Alert.alert).mockClear();
   vi.mocked(BackHandler.addEventListener).mockClear();
 });
 
@@ -124,8 +158,11 @@ const Host = forwardRef<FormFillState, { rows: Row[] }>(function Host(
 ) {
   const { state, message } = useFormFillHost(rows, "c1");
   useImperativeHandle(ref, () => state, [state]);
-  return <FormFillPage state={state} message={message} />;
+  return <FormFillPage state={state} message={message} nameFor={nameFor} />;
 });
+
+const NAMES: Record<string, string> = { u1: "Alex Kim", u2: "Sam Lee" };
+const nameFor = (id: string) => NAMES[id] ?? null;
 
 const visible = (m: ChatMessage): Row => ({
   message: m,
@@ -134,7 +171,9 @@ const visible = (m: ChatMessage): Row => ({
 
 function setup(rows: ChatMessage[]) {
   const ref: { current: FormFillState | null } = { current: null };
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const tree: { current: ReactTestRenderer | null } = { current: null };
   const draw = (next: (ChatMessage | Row)[]) => (
     <QueryClientProvider client={client}>
@@ -361,5 +400,116 @@ describe("FormFillPage (#3926 step 3)", () => {
     };
     act(() => router.__blur());
     expect(host().messageId).toBeNull();
+  });
+});
+
+describe("FormFillPage's Responses mode (#3926 step 4)", () => {
+  const flush = async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  };
+
+  beforeEach(() => {
+    responses.result = {
+      responses: [
+        {
+          user_id: "u1",
+          answers: { q1: "Alex", q2: "o1" },
+          created_at: "2026-11-12T10:00:00Z",
+          updated_at: "2026-11-12T10:00:00Z",
+        },
+        {
+          user_id: "u2",
+          answers: { q2: "o1" },
+          created_at: "2026-11-12T11:00:00Z",
+          updated_at: "2026-11-12T11:00:00Z",
+        },
+      ],
+      not_responded: ["u3"],
+    };
+  });
+
+  it("summarizes each question, names who hasn't answered, and exports the rows", async () => {
+    const { tree, host } = setup([form()]);
+    act(() => host().open("m1", "responses"));
+    await flush();
+    const shown = text(tree);
+    expect(shown).toContain("2 responses");
+    expect(shown).toContain("Room 1");
+    expect(byLabel(tree, "Room 1: 2, 100%")).toBeDefined();
+    // Someone the roster can't name gets the shared fallback label.
+    expect(shown).toContain("Not answered yet (1) Member u3");
+    // The form's own questions are not on the Responses page as fields.
+    expect(
+      tree.root.findAll((n) => (n.type as unknown) === "TextInput"),
+    ).toHaveLength(0);
+
+    await act(async () => {
+      pressable(tree, "Export").props.onPress();
+    });
+    expect(exported.calls).toHaveLength(1);
+    expect(exported.calls[0]!.prefix).toBe("form-formal-housing");
+    expect(exported.calls[0]!.rows.map((row) => row.Name)).toEqual([
+      "Alex Kim",
+      "Sam Lee",
+    ]);
+  });
+
+  it("lists each person's answers on Individual", async () => {
+    const { tree, host } = setup([form()]);
+    act(() => host().open("m1", "responses"));
+    await flush();
+    act(() => byLabel(tree, "Individual").props.onPress());
+    const shown = text(tree);
+    expect(shown).toContain("Alex Kim");
+    expect(shown).toContain("Sam Lee");
+    expect(shown).toContain("No answer");
+  });
+
+  it("offers a retry when the read fails, and closes when the form is deleted", async () => {
+    responses.fail = new Error("Network down");
+    const { tree, host, rerender } = setup([form()]);
+    act(() => host().open("m1", "responses"));
+    await flush();
+    expect(text(tree)).toContain("Network down");
+    expect(byLabel(tree, "Try again")).toBeDefined();
+    rerender([form("m1", {}, { is_deleted: true })]);
+    expect(host().messageId).toBeNull();
+  });
+
+  it("holds Export until someone answers, and says so when a share fails", async () => {
+    responses.result = { responses: [], not_responded: ["u1"] };
+    const empty = setup([form()]);
+    act(() => empty.host().open("m1", "responses"));
+    await flush();
+    expect(text(empty.tree)).toContain("No one has answered yet.");
+    expect(pressable(empty.tree, "Export").props.disabled).toBe(true);
+
+    responses.result = {
+      responses: [
+        {
+          user_id: "u1",
+          answers: { q1: "Alex" },
+          created_at: "2026-11-12T10:00:00Z",
+          updated_at: "2026-11-12T10:00:00Z",
+        },
+      ],
+      not_responded: [],
+    };
+    exported.ok = false;
+    const { tree, host } = setup([form()]);
+    act(() => host().open("m1", "responses"));
+    await flush();
+    expect(pressable(tree, "Export").props.disabled).toBe(false);
+    await act(async () => {
+      pressable(tree, "Export").props.onPress();
+    });
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Couldn't export",
+      "Try again in a moment.",
+    );
   });
 });

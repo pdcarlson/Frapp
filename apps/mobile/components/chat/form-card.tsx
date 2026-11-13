@@ -10,6 +10,10 @@ import {
   isFormClosed,
   readFormPayload,
 } from "@repo/chat-core/forms";
+import {
+  VIEW_RESPONSES_LABEL,
+  isFormCreator,
+} from "@repo/chat-core/form-responses";
 import { useMyPermissions, useNow } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -39,7 +43,9 @@ import { useOpenForm } from "./form-fill-page";
  * the card; whether the viewer has answered is their own read of the
  * form-response route. Reading and the words are `@repo/chat-core/forms`, so
  * the two cards can't disagree. Close form is its creator's or a
- * `channels:manage` holder's, as Close sign-ups is.
+ * `channels:manage` holder's, as Close sign-ups is. Its creator alone also
+ * gets Responses (#3926 step 4), which opens `FormResponsesPage` through the
+ * same host.
  */
 export interface FormCardProps extends ChatCardFrameProps {
   /** Close form; the caller confirms first (`confirmCloseCard`). */
@@ -111,6 +117,16 @@ export function FormCard(props: FormCardProps) {
           }
           onPress={() => openForm?.(message.id)}
         />
+        {isFormCreator(message, viewerId) ? (
+          <CardButton
+            label={VIEW_RESPONSES_LABEL}
+            disabled={!canOpen}
+            accessibilityHint={
+              isConfirmed ? undefined : "Opens once the form has posted."
+            }
+            onPress={() => openForm?.(message.id, "responses")}
+          />
+        ) : null}
       </CardActions>
       {showClose ? (
         <Pressable

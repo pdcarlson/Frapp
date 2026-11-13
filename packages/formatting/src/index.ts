@@ -26,6 +26,7 @@ export {
   formatDayTimeRange,
   formatClockShort,
   formatDueLabel,
+  formatEndsLabel,
   formatDueOn,
   formatEventWindow,
   formatPoints,
@@ -54,7 +55,10 @@ export {
 } from "./last-year";
 export {
   CURRENCY_AMOUNT,
+  exportFileName,
+  exportHeaders,
   neutralizeFormulaCell,
+  rowsToCsv,
   toCsvCell,
 } from "./spreadsheet-cell";
 export {

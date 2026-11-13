@@ -1,10 +1,18 @@
 import { useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import type { PendingPollPicks } from "@repo/chat-core/polls";
 import {
   CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
   canCloseSignup,
+  canExportSignup,
   castSignupClaim,
   headcountAnswerPayload,
   headcountNotePayload,
@@ -19,9 +27,11 @@ import {
   signupSlotAction,
   signupSlotPercent,
   signupSlotSpoken,
+  signupExportRows,
   signupSlotStatus,
   tallySignups,
 } from "@repo/chat-core/signups";
+import { cardExportFilenamePrefix } from "@repo/chat-core/form-responses";
 import {
   actorLabel,
   useMyPermissions,
@@ -35,6 +45,7 @@ import {
   type ChapterBranding,
 } from "@/lib/chapter-branding";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
+import { shareCsv } from "@/lib/chat/share-csv";
 import {
   CardEyebrow,
   CardTitle,
@@ -59,7 +70,9 @@ import {
  * A headcount (step 2) draws its two answers, Going and Can't make it, as
  * the same rows, with an optional note on the viewer's answer, shown after
  * their name. A closed card keeps its names and takes no taps; Close sign-ups
- * is its creator's or a `channels:manage` holder's.
+ * is its creator's or a `channels:manage` holder's, and so is Export (#3926
+ * step 4), which shares the list as a CSV, as SignUpGenius reports give an
+ * organizer theirs (`canExportSignup`, `signupExportRows`).
  */
 export interface SignupCardProps extends ChatCardFrameProps {
   /** The row's roster lookup, for the names on each slot. */
@@ -101,6 +114,7 @@ export function SignupCard(props: SignupCardProps) {
   );
   // The note being typed, or `null` while the field is shut.
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   if (!payload || !tally) {
     return (
@@ -121,7 +135,24 @@ export function SignupCard(props: SignupCardProps) {
   const showClose =
     !!onCloseSignup &&
     canCloseSignup(message, payload, viewerId, now, canManageChannels);
+  const showExport =
+    tally.people > 0 && canExportSignup(message, viewerId, canManageChannels);
   const deadline = signupDeadlineLine(payload, now);
+  const exportList = async () => {
+    if (exporting) return;
+    setExporting(true);
+    const ok = await shareCsv(
+      signupExportRows(
+        message,
+        payload,
+        (id) => actorLabel(id, nameFor) ?? "A member",
+      ),
+      cardExportFilenamePrefix("signup", payload.title),
+      "Export sign-ups",
+    );
+    setExporting(false);
+    if (!ok) Alert.alert("Couldn't export", "Try again in a moment.");
+  };
   const myNote = viewerId ? (tally.notes[viewerId] ?? "") : "";
   const claim = (slotId: string) => {
     if (!canClaim) return;
@@ -274,16 +305,36 @@ export function SignupCard(props: SignupCardProps) {
         {signupCardFooter(payload, tally)}
         {deadline ? ` · ${deadline}` : ""}
       </Text>
-      {showClose ? (
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={8}
-          accessibilityLabel={CLOSE_SIGNUP_LABEL}
-          onPress={() => onCloseSignup?.(message.id)}
-          style={styles.linkButton}
-        >
-          <Text style={styles.linkText}>{CLOSE_SIGNUP_LABEL}</Text>
-        </Pressable>
+      {showExport || showClose ? (
+        <View style={styles.links}>
+          {showExport ? (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              accessibilityLabel="Export"
+              accessibilityHint="Shares who signed up as a spreadsheet file."
+              accessibilityState={{ disabled: exporting, busy: exporting }}
+              disabled={exporting}
+              onPress={() => void exportList()}
+              style={styles.linkButton}
+            >
+              <Text style={styles.linkText}>
+                {exporting ? "Exporting…" : "Export"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {showClose ? (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              accessibilityLabel={CLOSE_SIGNUP_LABEL}
+              onPress={() => onCloseSignup?.(message.id)}
+              style={styles.linkButton}
+            >
+              <Text style={styles.linkText}>{CLOSE_SIGNUP_LABEL}</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
     </ChatCardShell>
   );
@@ -353,6 +404,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
+    },
+    links: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      columnGap: tokens.spacing.lg,
     },
     linkButton: {
       alignSelf: "flex-start",
