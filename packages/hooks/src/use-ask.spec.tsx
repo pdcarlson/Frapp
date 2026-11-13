@@ -257,6 +257,12 @@ describe("the Ask hooks", () => {
         question: "And to expel a member?",
         history: [{ question: "What is quorum?", answer: ANSWER.text }],
       });
+      // Only the second leaned on an earlier turn, which is what keeps its
+      // answer from being offered to a channel (#4713).
+      expect(result.current.exchanges.map((turn) => turn.followedUp)).toEqual([
+        undefined,
+        true,
+      ]);
     });
 
     it("sends an answer that drew on channel messages as its question only", async () => {

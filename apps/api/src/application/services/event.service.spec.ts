@@ -127,6 +127,44 @@ describe('EventService', () => {
       others_invited: false,
     };
 
+    describe('visibleToAll', () => {
+      const viewer = (permissions: string[], role_ids: string[] = []) => ({
+        permissions: new Set(permissions),
+        role_ids,
+      });
+
+      it('keeps an event only when every viewer could read it, by the list’s rule', async () => {
+        mockEventRepo.findByIds.mockResolvedValue([baseEvent, targetedEvent]);
+        const ids = [baseEvent.id, targetedEvent.id, 'evt-gone'];
+
+        // An officer by role and a holder of `events:update` both read the
+        // targeted event; a plain member does not.
+        await expect(
+          service.visibleToAll(ids, 'ch-1', [
+            viewer([], ['role-officer']),
+            viewer(['events:update']),
+            viewer(['*']),
+          ]),
+        ).resolves.toEqual(new Set([baseEvent.id, targetedEvent.id]));
+        await expect(
+          service.visibleToAll(ids, 'ch-1', [
+            viewer([], ['role-officer']),
+            viewer(['members:view'], ['role-member']),
+          ]),
+        ).resolves.toEqual(new Set([baseEvent.id]));
+        // One read however many viewers, scoped to the chapter.
+        expect(mockEventRepo.findByIds).toHaveBeenLastCalledWith(ids, 'ch-1');
+        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      });
+
+      it('reads nothing for no ids', async () => {
+        await expect(service.visibleToAll([], 'ch-1', [])).resolves.toEqual(
+          new Set(),
+        );
+        expect(mockEventRepo.findByIds).not.toHaveBeenCalled();
+      });
+    });
+
     describe('findCreatedBy', () => {
       it('reads only the maker’s events, from the given end, capped', async () => {
         mockEventRepo.findCreatedBy.mockResolvedValue([baseEvent]);

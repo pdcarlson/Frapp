@@ -11,6 +11,7 @@ import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
   isAnnouncementChannel,
+  isAskAnswerPostedBy,
   isDirectChannel,
   isModuleEnabled,
   mentionPicksIn,
@@ -224,6 +225,11 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   // policy, and it short-circuits the push worker. A client that could post one
   // would have a message that never notifies and never appears live.
   'imported',
+  // An Ask Frapp answer posted to the channel (#4713). Written only by
+  // `AskPostService`, from an answer the server itself sealed, under the
+  // Frapp sender. A client that could post one would be writing in Frapp's
+  // name with sources it made up.
+  'ask_answer',
 ]);
 
 /**
@@ -1397,7 +1403,10 @@ export class ChatService {
    *   Otherwise the source itself is copied and its own copy dropped.
    * - Files are not copied: the copy counts them (`attachment_count`).
    *
-   * Answers the new message masked for the caller, as a read would serve it.
+   * Answers the new message masked for the caller, as a read would serve it,
+   * with `deduplicated` set when a retry on the same `client_message_id`
+   * answered the forward already made (so its analytics event isn't counted
+   * twice, #4875).
    */
   async forwardMessage(input: {
     message_id: string;
@@ -1407,14 +1416,14 @@ export class ChatService {
     content?: string | null;
     client_message_id?: string | null;
     mention_picks?: readonly MentionPick[] | null;
-  }): Promise<MaskedChatMessage> {
+  }): Promise<MaskedChatMessage & { deduplicated: boolean }> {
     const source = await this.assertMessageAccess(
       input.message_id,
       input.chapter_id,
       input.sender_id,
     );
     const copy = await this.forwardedCopyOf(source);
-    const { message } = await this.sendMessage({
+    const { message, deduplicated } = await this.sendMessage({
       chapter_id: input.chapter_id,
       channel_id: input.channel_id,
       sender_id: input.sender_id,
@@ -1424,7 +1433,12 @@ export class ChatService {
       mention_picks: input.mention_picks ?? null,
       forwarded_from: copy,
     });
-    return this.maskOne(message, input.chapter_id, input.sender_id);
+    const masked = await this.maskOne(
+      message,
+      input.chapter_id,
+      input.sender_id,
+    );
+    return { ...masked, deduplicated };
   }
 
   /** The copy a forward of `source` carries, or a 400 when it can't be forwarded. */
@@ -1768,7 +1782,11 @@ export class ChatService {
       requesterId,
     );
 
-    if (message.sender_id !== requesterId && !hasManagePermission) {
+    if (
+      message.sender_id !== requesterId &&
+      !hasManagePermission &&
+      !isAskAnswerPostedBy(message, requesterId)
+    ) {
       throw new ForbiddenException(
         'You can only delete your own messages unless you have channels:manage permission',
       );

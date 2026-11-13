@@ -10,13 +10,16 @@ import type {
 } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_POST_COPY,
   askAnswerSegments,
   askLeftOutLine,
+  askPostedSourceTitle,
   askReadLine,
   askSourceMetaLine,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
+  type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -324,6 +327,78 @@ function AskAnswerBody({
         </ol>
       ) : null}
     </>
+  );
+}
+
+/**
+ * An answer its asker posted to a channel (#4713), for everyone who reads
+ * it: the same words, markers and chips the asker saw, so an answer reads
+ * one way wherever it is. What differs is what the channel is owed. A marker
+ * shows its source's name and not the quoted passage, which stays with the
+ * asker; the asker's own records are named as theirs and open nothing, since
+ * a reader's Tasks page is their own; and a line says so when some sources
+ * were not open to everyone when it was posted.
+ */
+export function AskPostedBody({
+  text,
+  posted,
+  askerName,
+}: {
+  /** The row's `content`: the answer's words, which the markers count into. */
+  text: string;
+  posted: AskPostedAnswer;
+  /** The asker's roster name, or null when the roster can't name them. */
+  askerName: string | null;
+}) {
+  const sources: AskSource[] = posted.sources.map((source, index) => ({
+    id: String(index),
+    kind: source.kind,
+    title: askPostedSourceTitle(source, askerName),
+    detail: source.detail,
+    date: source.date,
+    target: source.target,
+  }));
+  const segments = askAnswerSegments({
+    text,
+    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
+  });
+  const notes: string[] = [
+    ...(posted.truncated ? [ASK_COPY.truncated] : []),
+    ...(posted.sources.some((source) => source.limited)
+      ? [ASK_POST_COPY.limited]
+      : []),
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        {segments.map((segment, position) =>
+          segment.type === "text" ? (
+            <span key={position}>{segment.text}</span>
+          ) : (
+            <CitationMarker
+              key={position}
+              number={segment.citation.source + 1}
+              source={sources[segment.citation.source]}
+              quote=""
+            />
+          ),
+        )}
+      </p>
+      {sources.length > 0 ? (
+        <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
+          {sources.map((source, index) => (
+            <SourceChip key={source.id} number={index + 1} source={source} />
+          ))}
+        </ol>
+      ) : null}
+      {notes.length > 0 ? (
+        <ul className="space-y-1 text-caption text-muted-foreground">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

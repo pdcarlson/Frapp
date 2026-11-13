@@ -29,6 +29,7 @@ import { canOpenMessageActions } from "@repo/chat-core/message-actions";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { AnnouncementCard } from "./announcement-card";
+import { AskAnswerCard } from "./ask-answer-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
@@ -416,6 +417,10 @@ function cardFor(
           onCloseForm={(id) => row.onCloseCard(id, "form")}
         />
       );
+    case "ask_answer":
+      // An answer its asker posted (#4713). Never null: a payload this build
+      // can't read still draws the answer's words.
+      return <AskAnswerCard message={message} nameFor={row.nameFor} />;
     case "event": {
       const payload = readEventPayload(message);
       return payload ? <EventCard {...frame} payload={payload} /> : null;

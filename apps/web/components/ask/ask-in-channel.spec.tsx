@@ -18,6 +18,22 @@ const state = vi.hoisted(() => ({
   resolveProposal: vi.fn(),
   exchanges: [] as unknown[],
   permissions: ["ai:use"] as string[],
+  // The post steps (`useAskPostFlow`, tested in `@repo/hooks`): where the
+  // asker is, and what the row handed the hook.
+  post: {
+    stage: "idle" as string,
+    restricted: [] as { key: string; kind: string; title: string }[],
+    changed: false,
+    error: null as string | null,
+    start: vi.fn(),
+    confirm: vi.fn(),
+    cancel: vi.fn(),
+  },
+  posting: [] as {
+    channelId: string;
+    answer: unknown;
+    onPosted: () => void;
+  }[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -36,6 +52,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     reset: vi.fn(),
   }),
   useMyPermissions: () => ({ data: { permissions: state.permissions } }),
+  useAskPostFlow: (input: (typeof state.posting)[number]) => {
+    state.posting.push(input);
+    return state.post;
+  },
 }));
 
 vi.mock("@/components/ai/meet-frapp-ai", () => ({
@@ -124,6 +144,16 @@ beforeEach(() => {
   state.consent.mockReset().mockResolvedValue(true);
   state.exchanges = [];
   state.permissions = ["ai:use"];
+  Object.assign(state.post, {
+    stage: "idle",
+    restricted: [],
+    changed: false,
+    error: null,
+  });
+  state.post.start.mockReset();
+  state.post.confirm.mockReset();
+  state.post.cancel.mockReset();
+  state.posting = [];
   drew.mockClear();
 });
 
@@ -330,5 +360,162 @@ describe("AskChannelTurn", () => {
   it("draws nothing outside the bridge", () => {
     render(<AskChannelTurn id="turn-1" />);
     expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
+  });
+});
+
+describe("posting an answer for everyone here (#4713)", () => {
+  const SEALED = { ...DONE, answer: { ...DONE.answer, report_receipt: "r1" } };
+  const post = () => screen.queryByRole("button", { name: /^Post/ });
+
+  it("offers it under an answer the server sealed, beside Dismiss", async () => {
+    state.exchanges = [SEALED];
+    mount();
+    const action = screen.getByRole("button", {
+      name: "Post for everyone here",
+    });
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeVisible();
+    // The hook is handed this channel and this answer, nothing typed.
+    expect(state.posting.at(-1)).toMatchObject({
+      channelId: "chan-1",
+      answer: SEALED.answer,
+    });
+    await userEvent.setup().click(action);
+    expect(state.post.start).toHaveBeenCalledTimes(1);
+    expect(state.post.confirm).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an answer with no receipt", DONE],
+    [
+      "a turn with nothing found",
+      { ...SEALED, answer: { ...SEALED.answer, status: "not_found" } },
+    ],
+    // A request's card comes with no answer, so there is nothing sealed to
+    // post: a card stays with the member who asked for it.
+    ["a turn with no answer, as a card has", { ...SEALED, answer: null }],
+    [
+      "a failed turn",
+      {
+        ...SEALED,
+        phase: "failed",
+        answer: null,
+        failure: { message: "Couldn't reach Frapp.", retryable: true },
+      },
+    ],
+  ])("offers nothing to post for %s, only Dismiss", (_what, exchange) => {
+    state.exchanges = [exchange];
+    mount();
+    expect(post()).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeVisible();
+    expect(state.posting).toEqual([]);
+  });
+
+  it("says it is checking, in the action's place", () => {
+    state.exchanges = [SEALED];
+    state.post.stage = "checking";
+    mount();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Checking who can open the sources",
+    );
+    expect(post()).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeVisible();
+  });
+
+  it("says what posting does before it does it, with Post and Cancel", async () => {
+    state.exchanges = [SEALED];
+    state.post.stage = "confirm";
+    mount();
+    const step = screen.getByRole("group", { name: "Post for everyone here" });
+    expect(step).toHaveTextContent(
+      "Everyone here will see your question and this answer.",
+    );
+    expect(step).not.toHaveTextContent("Not everyone here can open");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Post" }));
+    expect(state.post.confirm).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(state.post.cancel).toHaveBeenCalledTimes(1);
+    // Dismiss waits while the asker is deciding.
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("names what not everyone here can open, and the button says it is posted anyway", () => {
+    state.exchanges = [SEALED];
+    Object.assign(state.post, {
+      stage: "confirm",
+      restricted: [
+        { key: "tool:my_tasks", kind: "tasks", title: "Your tasks" },
+        { key: "meeting:m1", kind: "minutes", title: "Exec minutes" },
+      ],
+    });
+    mount();
+    expect(
+      screen.getByRole("group", { name: "Post for everyone here" }),
+    ).toHaveTextContent(
+      "Not everyone here can open: Your tasks and Exec minutes.",
+    );
+    expect(screen.getByRole("button", { name: "Post anyway" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Post" })).toBeNull();
+  });
+
+  it("says so when the list changed under the asker", () => {
+    state.exchanges = [SEALED];
+    Object.assign(state.post, { stage: "confirm", changed: true });
+    mount();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Who can open the sources changed. Check the list again.",
+    );
+  });
+
+  it("holds both buttons while it posts", () => {
+    state.exchanges = [SEALED];
+    state.post.stage = "posting";
+    mount();
+    expect(screen.getByRole("button", { name: "Posting" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("says why it could not be posted, where the asker is looking", () => {
+    state.exchanges = [SEALED];
+    state.post.error = "That didn't post. Try again.";
+    mount();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That didn't post. Try again.",
+    );
+    // The action is still there to try again.
+    expect(post()).not.toBeNull();
+  });
+
+  it("offers no action for an answer that read chat, and says why in its place", () => {
+    state.exchanges = [
+      { ...SEALED, answer: { ...SEALED.answer, read_chat: true } },
+    ];
+    mount();
+    expect(post()).toBeNull();
+    expect(state.posting).toEqual([]);
+    expect(
+      screen.getByText("This answer read chat messages, so it stays with you."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("offers no action for a follow-up, whose answer leaned on earlier turns", () => {
+    state.exchanges = [{ ...SEALED, followedUp: true }];
+    mount();
+    expect(post()).toBeNull();
+    expect(
+      screen.getByText(
+        "This answer followed earlier questions, so it stays with you.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("takes the asker's own copy out of the channel once it is posted", () => {
+    state.exchanges = [SEALED];
+    mount();
+    state.posting.at(-1)!.onPosted();
+    expect(state.dismiss).toHaveBeenCalledWith("turn-1");
   });
 });

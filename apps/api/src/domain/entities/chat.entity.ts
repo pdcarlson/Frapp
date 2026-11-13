@@ -25,6 +25,7 @@ export const CHAT_MESSAGE_KINDS = [
   'announcement',
   'signup',
   'form',
+  'ask_answer',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -45,10 +46,15 @@ export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
  *   chapter for a card reconciled away seconds later, leaving a notification
  *   pointing at a message that no longer exists. It is internal machinery, not
  *   a category of message a member receives.
+ * - **`ask_answer`**: an Ask Frapp answer its asker posted to the channel
+ *   (#4713). It notifies nobody (`spec/behavior/ai.md` § Posting an answer to the channel):
+ *   the worker returns on it and `decidePush` refuses it, as for `imported`,
+ *   so a preference for it could never be consulted.
  */
 export const NON_SETTABLE_NOTIFICATION_KINDS = [
   'loading',
   'imported',
+  'ask_answer',
 ] as const satisfies readonly ChatMessageKind[];
 
 type NonSettableNotificationKind =
@@ -698,8 +704,8 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — a ten-field projection,
- * not a whole {@link ChatMessage}.
+ * The message as the bookmarks endpoint serves it — a narrow projection, not a
+ * whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
  * size optimization: `ChatService.deleteMessage` blanked `content` and
@@ -726,6 +732,13 @@ export interface BookmarkedMessage {
    * never in the channel's timeline.
    */
   thread_root_id: string | null;
+  /**
+   * A forward's copy of its original (#4864), so a saved forward with no
+   * comment previews as "Forwarded: ..." (#4875). Null on every other row.
+   * Masked like the timeline's copy when the caller blocked the original's
+   * author, and dropped from a row whose channel access was lost.
+   */
+  forwarded_from: ChatForwardedMessage | null;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *

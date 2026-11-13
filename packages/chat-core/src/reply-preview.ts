@@ -33,6 +33,9 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
   signup: "Sign-up",
   form: "Form",
   loading: "Card",
+  // Its `content` is the answer's words, which quote well, but the label
+  // says whose they are when the body is empty.
+  ask_answer: "Answer from Frapp",
 };
 
 /**
@@ -129,7 +132,7 @@ function flattenMarkdown(text: string): string {
  * the kind, for a card whose body lives in `payload`.
  *
  * The argument is a structural preview source, not `ChatMessage`, because
- * the Bookmarks panel serves a nine-field projection with no `kind` or
+ * the Bookmarks panel serves a narrow projection with no `kind` or
  * `attachment_count`.
  */
 export type MessagePreviewSource = {

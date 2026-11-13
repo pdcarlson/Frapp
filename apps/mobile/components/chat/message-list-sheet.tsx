@@ -225,7 +225,13 @@ export function SavedRows({
           sentAt: bookmark.message.created_at,
           preview: blocked
             ? TOMBSTONE_TEXT
-            : replyPreviewText(bookmark.message),
+            : // A forward with no comment previews its copy (#4875).
+              replyPreviewText({
+                ...bookmark.message,
+                forwarded_from: forwardedFromOf(
+                  bookmark.message.forwarded_from,
+                ),
+              }),
           muted: blocked || bookmark.message.is_deleted || !available,
           openable: available,
         };

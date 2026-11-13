@@ -6,6 +6,11 @@ import { join } from 'node:path';
  * (#4713, `spec/behavior/ai.md` § Asking from a channel): nothing is written
  * to the channel and nobody is notified, from any door.
  *
+ * The one place an answer does reach a channel is outside everything this
+ * spec reads: `../ask-post/ask-post.service.ts`, a separate request the asker
+ * makes on an answer they already have, which calls no model (§ Posting an
+ * answer to the channel).
+ *
  * What asking runs is the route (`ask.controller.ts`), the answer lane (this
  * folder) and the request lane (`../act`), which only ever proposes a card.
  * Confirming a card is a different request, through the ordinary services.
@@ -99,6 +104,18 @@ const CALLS = new Set([
   // which runs only what it was offered (`agent/agent-loop.service.ts`).
   'agentTools.filter',
   'loop.run',
+  // The agent's chapter tools (#4901, `agent/tools-chapter/`): reads of
+  // people, tasks, events, attendance, points, hours and dues, each through
+  // the service its own page's route calls. The ones above that these tools
+  // also make are not repeated.
+  'attendance.getMyAttendance',
+  'attendance.getMyAttendanceForEvents',
+  'excuses.getMine',
+  'groups.list',
+  'rbac.getAlumniRoleId',
+  'service.findByChapterFiltered',
+  'service.leaderboard',
+  'standing.getStanding',
   // The model.
   'gateway.generateObject',
   'gateway.streamAgentRound',
@@ -137,6 +154,7 @@ function sourcesIn(dir: string): string[] {
 describe('Asking never posts to a channel or notifies (#4713)', () => {
   const sources = [
     ...sourcesIn(join(SERVICES, 'ask')),
+    ...sourcesIn(join(SERVICES, 'ask', 'agent', 'tools-chapter')),
     ...sourcesIn(join(SERVICES, 'act')),
     join(CONTROLLERS, 'ask.controller.ts'),
   ];

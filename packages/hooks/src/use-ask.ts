@@ -193,6 +193,11 @@ export interface AskExchange {
    */
   suggested?: boolean;
   /**
+   * Earlier turns were sent with this question. Its answer leaned on them,
+   * so it is not offered to the channel (`ai.ask.post.follow_up`, #4713).
+   */
+  followedUp?: boolean;
+  /**
    * The server's id for this ask, from the stream's `start` event: what
    * "Report this" names (#4315). Null until the stream begins.
    */
@@ -588,6 +593,7 @@ function useAskConversation(): AskConversation {
           id,
           question: trimmed,
           ...(options?.suggested ? { suggested: true } : {}),
+          ...(history.length > 0 ? { followedUp: true } : {}),
           phase: "working",
           // Nothing is being searched while the AI question is still on
           // screen, so the turn says nothing until the request is sent.

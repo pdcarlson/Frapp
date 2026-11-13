@@ -36,7 +36,10 @@ import {
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
-import type { MemberLookup } from "@repo/chat-core/message-actions";
+import {
+  isOwnPostedAnswer,
+  type MemberLookup,
+} from "@repo/chat-core/message-actions";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
   ASK_TURNS_ABOVE_ALL,
@@ -916,6 +919,33 @@ export const MessageTimeline = forwardRef<
     },
     [],
   );
+
+  /*
+    An Ask answer the member just posted for the channel (#4713) brings the
+    list to it, as their own send does. It is the Frapp sender's row and is
+    never pending, so the rule above doesn't see it; and their private copy
+    of the answer leaves the channel in the same moment, so the list's end
+    moves under a member who was reading it.
+  */
+  const newestRow = decorated.at(-1)?.message ?? null;
+  const ownAnswerId =
+    newestRow && isOwnPostedAnswer(newestRow, viewerId) ? newestRow.id : null;
+  const ownAnswerSeen = useRef<{
+    channelKey: string | null;
+    id: string | null;
+  } | null>(null);
+  useEffect(() => {
+    const channelKey = channelId ?? null;
+    const previous = ownAnswerSeen.current;
+    ownAnswerSeen.current = { channelKey, id: ownAnswerId };
+    if (previous === null || previous.channelKey !== channelKey) return;
+    if (ownAnswerId === null || previous.id === ownAnswerId) return;
+    if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    sendFrame.current = requestAnimationFrame(() => {
+      sendFrame.current = null;
+      jumpToLatest();
+    });
+  }, [ownAnswerId, channelId, jumpToLatest]);
 
   /*
     Load the next older page while the member sits at the top of what is
