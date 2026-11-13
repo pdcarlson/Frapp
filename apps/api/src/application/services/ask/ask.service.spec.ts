@@ -274,6 +274,98 @@ describe('AskService', () => {
     });
   });
 
+  describe('a question inside a conversation', () => {
+    const history = [
+      { question: 'When is the next chapter meeting?', answer: '' },
+      {
+        question: 'What is quorum?',
+        answer: 'Quorum is two thirds of active members.',
+      },
+    ];
+
+    it('searches the follow-up beside the question before it', async () => {
+      const { service, retrieval } = build({ passages: [passage()] });
+      await run(service, { question: 'And for a vote to expel?', history });
+      expect(retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: 'What is quorum?\nAnd for a vote to expel?',
+        }),
+        NOW,
+      );
+    });
+
+    it('shows the planner what the member asked before, and never an answer', async () => {
+      const { service, gateway } = build({
+        passages: [passage()],
+        tools: [tool()],
+      });
+      await run(service, { question: 'And for a vote to expel?', history });
+      const [, request] = gateway.generateObject.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages).toHaveLength(1);
+      expect(request.messages[0].content).toBe(
+        [
+          'Earlier in the conversation the member asked:',
+          '- When is the next chapter meeting?',
+          '- What is quorum?',
+          '',
+          'Question: And for a vote to expel?',
+          '',
+          'Tools:',
+          '- roster: Who is in the chapter.',
+        ].join('\n'),
+      );
+      expect(request.messages[0].content).not.toContain('two thirds');
+    });
+
+    it('gives the answer call the earlier turns as turns, ending on the question, and skips a turn with no answer', async () => {
+      const { service, gateway } = build({ passages: [passage()] });
+      await run(service, { question: 'And for a vote to expel?', history });
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages).toEqual([
+        { role: 'user', content: 'What is quorum?' },
+        {
+          role: 'assistant',
+          content: 'Quorum is two thirds of active members.',
+        },
+        { role: 'user', content: 'And for a vote to expel?' },
+      ]);
+    });
+
+    it('still answers only from this question’s sources: an earlier answer backs nothing', async () => {
+      const { service } = build({
+        passages: [passage()],
+        answer: ok({ text: 'Three quarters, as I said.', citations: [] }),
+      });
+      const { answer } = await run(service, {
+        question: 'And for a vote to expel?',
+        history,
+      });
+      expect(answer.status).toBe('not_found');
+    });
+
+    it('a first question is searched and sent as it always was', async () => {
+      const { service, retrieval, gateway } = build({ passages: [passage()] });
+      await run(service);
+      expect(retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'What is quorum?' }),
+        NOW,
+      );
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: unknown[] },
+      ];
+      expect(request.messages).toEqual([
+        { role: 'user', content: 'What is quorum?' },
+      ]);
+    });
+  });
+
   describe('no answer without a source', () => {
     it('answers "couldn’t find that" without calling a model when nothing was found', async () => {
       const { service, gateway } = build({ passages: [] });

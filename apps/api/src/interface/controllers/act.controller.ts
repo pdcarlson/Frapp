@@ -51,9 +51,12 @@ function zone(header: string | undefined): string {
 
 /**
  * Asking Frapp to do something (#718, `spec/behavior/ai.md` § Asking Frapp to
- * do something). Its own routes, apart from Ask's: a question (`/v1/ai/ask`)
- * has no way to reach an action, and a request here never answers a question
- * (`docs/security/ai-prompt-injection.md` C5).
+ * do something). A request here never answers a question. The conversation
+ * (`POST /v1/ai/ask` with `actions`) reaches the same `ActService.act` for a
+ * member who holds what these routes require, in a lane of its own that sees
+ * only what the member typed (`AskConversationService`,
+ * `docs/security/ai-prompt-injection.md` C5). `POST /v1/ai/act` stays for
+ * the builds that still show Ask and Do as two sides.
  *
  * **No route here changes anything in the chapter.** Each answers with a
  * proposal, saved as a suggestion only the caller can open. The change is
@@ -82,7 +85,7 @@ export class ActController {
   @ApiOperation({
     summary: 'The actions the caller can ask for',
     description:
-      'The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.',
+      'The actions whose own route the caller could call now (its permission held, its module on). A client asks for proposal cards in the Ask conversation only when this lists at least one action.',
   })
   @ApiOkResponse({ type: ActStatusDto })
   @ApiForbiddenResponse(NOT_ALLOWED)
@@ -163,6 +166,7 @@ export class ActController {
         eventId: dto.event_id,
         amount: dto.amount,
         reason: dto.reason ?? null,
+        keepEarlier: dto.keep_earlier === true,
       }),
     );
   }

@@ -17,12 +17,12 @@ import {
   memberFallbackLabel,
   useAcceptAiSuggestion,
   useActEventAudience,
-  useActRequest,
   useChapterRoster,
   useCurrentUser,
   useDismissAiSuggestion,
   type ActResponse,
   type AiSuggestion,
+  type AskProposalResolution,
   type PointsSuggestionEdits,
 } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -61,17 +61,18 @@ import {
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
-import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The Do side of Ask on the phone (#718, `spec/behavior/ai.md` § Asking
- * Frapp to do something): an officer leaving chapter says "give 5 points to
- * everyone who came tonight", and gets back a card that says exactly what
+ * A proposal in the Ask conversation on the phone (#718,
+ * `spec/behavior/ai.md` § Asking Frapp to do something): an officer leaving
+ * chapter types "give 5 points to everyone who came tonight" in the same
+ * field a question goes in, and gets back a card that says exactly what
  * would happen and to whom. Nothing changes until they press Confirm. Web's
- * twin is `apps/web/components/ask/act-pane.tsx`; both ask the same routes
- * (`useActRequest`) in the same words (`ACT_COPY`).
+ * twin is `apps/web/components/ask/ask-proposal.tsx`; both read the same
+ * stream (`useAsk`) and the same words (`ACT_COPY`).
  *
- * **A card to confirm, in the sheet that already answers.** Siri and
+ * **A card to confirm, in the thread where it was asked.** Siri and
  * Shortcuts answer a spoken request with the thing filled in and a Confirm
  * before anything is sent, and Apple's Reminders and Calendar suggestions
  * show what would be added before it is. The card here is that: the action
@@ -84,12 +85,15 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * sheet with a search field, not a menu). A task opens the ordinary task
  * form on the proposal, the same door a suggested task has
  * (`suggested-tasks.tsx`), so who, when and the steps are changed where an
- * officer already changes them. Everything else is asked again in other
- * words: the field stays under the card.
+ * officer already changes them. Everything else is said again in other
+ * words: the conversation carries what was typed before.
  *
- * **Nothing above moves while it works.** The request sits where it was
- * typed and one line under it says it is being worked out; the card takes
- * that line's place. Confirm and Cancel keep their words while they save.
+ * **Every card in the thread stays live.** A card is not replaced by the
+ * next thing asked. Once it is confirmed or dismissed it becomes one line
+ * saying so, in the card's own frame, with a way to where the change shows.
+ *
+ * **Nothing above moves while it works.** Confirm and Cancel keep their
+ * words while they save.
  *
  * **Fixed gold, never the chapter accent**, as the rest of the Ask sheet
  * (`components.md` §11): nothing here reaches `useChapterBranding()`.
@@ -98,243 +102,132 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 /** Where a finished change can be seen. */
 export type ActLink = { href: "/tasks" | "/events"; label: string };
 
-export type ActTurn =
-  | { phase: "working"; request: string }
-  | { phase: "failed"; request: string; message: string }
-  | { phase: "answered"; request: string; response: ActResponse }
-  | { phase: "done"; request: string; line: string; link: ActLink | null }
-  | { phase: "cancelled"; request: string };
-
-const CONSENT_REQUIRED: ActResponse = {
-  status: "unavailable",
-  action: null,
-  suggestion: null,
-  notes: [],
-  event_choice: null,
-  missing: null,
-  reason: "consent_required",
-  available_actions: [],
+/**
+ * Where a confirmed change can be seen, by the page the card named. The
+ * phone has no points page to open (`notifications/targets.ts`).
+ */
+const RESULT_LINKS: Record<string, ActLink> = {
+  tasks: { href: "/tasks", label: ACT_COPY.open_tasks },
+  events: { href: "/events", label: ACT_COPY.open_events },
 };
 
 /**
- * What the Do side is showing and how a request is sent. The sheet holds it
- * (not the pane), so a waiting card is still there after a look at the Ask
- * side or a close and reopen, the way a finished answer is.
+ * The members an officer left on each points card, by proposal. The sheet
+ * holds it, not the card: the card unmounts when the sheet closes, and a
+ * list that quietly went back to the first one would give points to someone
+ * the officer had taken off.
  */
-export function useActSession(ensureConsent: () => Promise<boolean>) {
-  const request = useActRequest();
-  const audience = useActEventAudience();
-  const [turn, setTurn] = useState<ActTurn | null>(null);
-  // Only the latest request may write the answer: one sent, then replaced
-  // before it came back, is dropped.
-  const latest = useRef(0);
-  // The members an officer left on a points card, by proposal. Held here and
-  // not on the card: the card unmounts with a look at the Ask side and with
-  // the sheet, and a list that quietly went back to the first one would give
-  // points to someone the officer had taken off.
-  const [kept, setKept] = useState<{ id: string; targets: string[] } | null>(
-    null,
-  );
-  // A Confirm or Cancel is out. Nothing else is sent until it is back, so
-  // its answer can't land on another request's turn.
-  const [deciding, setDeciding] = useState(false);
-  const working = turn?.phase === "working" || deciding;
-
-  async function settle(said: string, run: () => Promise<ActResponse>) {
-    const mine = ++latest.current;
-    setTurn({ phase: "working", request: said });
-    try {
-      const agreed = await ensureConsent();
-      const response = agreed ? await run() : CONSENT_REQUIRED;
-      if (mine === latest.current) {
-        setTurn({ phase: "answered", request: said, response });
-      }
-    } catch (error) {
-      if (mine === latest.current) {
-        setTurn({
-          phase: "failed",
-          request: said,
-          message: errorCopy(error, ACT_COPY.failed),
-        });
-      }
-    }
-  }
-
-  return {
-    turn,
-    setTurn,
-    working,
-    kept,
-    setKept,
-    deciding,
-    setDeciding,
-    /** Sends what the member typed. False when there was nothing to send. */
-    submit(text: string): boolean {
-      const said = text.trim();
-      if (!said || working) return false;
-      void settle(said, () => request.mutateAsync(said));
-      return true;
-    },
-    /** The follow-up to "Which event?". */
-    pickEvent(eventId: string) {
-      if (turn?.phase !== "answered" || working) return;
-      const choice = turn.response.event_choice;
-      if (!choice) return;
-      void settle(turn.request, () =>
-        audience.mutateAsync({
-          eventId,
-          amount: choice.amount,
-          reason: choice.reason,
-        }),
-      );
-    },
-  };
-}
-export type ActSession = ReturnType<typeof useActSession>;
+export type KeptTargets = Readonly<Record<string, readonly string[]>>;
 
 type Reporting = ReturnType<typeof useAiReport>;
 
-/** The two sides of the sheet, beside its title. */
-export function AskModeSwitch({
-  mode,
-  onChange,
-}: {
-  mode: "ask" | "do";
-  onChange: (next: "ask" | "do") => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <View
-      accessibilityRole="radiogroup"
-      accessibilityLabel={ACT_COPY.mode_label}
-      style={styles.modeTrack}
-    >
-      {(["ask", "do"] as const).map((value) => {
-        const held = value === mode;
-        const label = value === "ask" ? ACT_COPY.mode_ask : ACT_COPY.mode_do;
-        return (
-          <Pressable
-            key={value}
-            accessibilityRole="radio"
-            accessibilityLabel={label}
-            accessibilityState={{ checked: held }}
-            // 30pt drawn against the 44pt minimum.
-            hitSlop={{ top: 7, bottom: 7 }}
-            onPress={() => {
-              if (!held) onChange(value);
-            }}
-            style={[styles.modeSegment, held ? styles.modeHeld : null]}
-          >
-            <Text style={[styles.modeLabel, held ? styles.modeLabelHeld : null]}>
-              {label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-/** The body of the Do side: the request, and whatever came of it. */
-export function ActBody({
-  session,
-  actions,
+export function AskProposal({
+  proposal,
+  resolution,
+  kept,
+  onKeep,
   report,
+  onProposal,
+  onResolved,
+  onAnswerConsent,
   onOpen,
 }: {
-  session: ActSession;
-  /** The actions this member can ask for (`GET /v1/ai/act`). */
-  actions: readonly string[];
+  /** What the server answered the member's words with. */
+  proposal: ActResponse;
+  /** Set once the card was confirmed or dismissed. */
+  resolution: AskProposalResolution | null;
+  kept: KeptTargets;
+  onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
+  /** The event pick answered with a new proposal for this turn. */
+  onProposal: (proposal: ActResponse) => void;
+  onResolved: (resolution: AskProposalResolution) => void;
+  /** Opens the AI sheet, for a pick refused because it is unanswered. */
+  onAnswerConsent: () => void;
   /** Leaves the sheet for the screen a finished change shows on. */
   onOpen: (link: ActLink) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { turn, setTurn } = session;
+  const audience = useActEventAudience();
+  const [picking, setPicking] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
-  if (!turn) {
-    const examples = actions.flatMap((action) => {
-      const example = (ACT_COPY.examples as Record<string, string>)[action];
-      return example ? [example] : [];
-    });
+  if (resolution) {
+    const headline = proposalHeadline(proposal);
+    const link =
+      resolution.kind === "done"
+        ? (RESULT_LINKS[resolution.page ?? ""] ?? null)
+        : null;
     return (
-      <>
-        <View style={styles.block}>
-          <Text style={styles.strong}>{ACT_COPY.empty_title}</Text>
-          <Text style={styles.muted}>{ACT_COPY.empty_body}</Text>
-        </View>
-        <View style={styles.block}>
-          {examples.map((example) => (
-            <Pressable
-              key={example}
-              accessibilityRole="button"
-              accessibilityLabel={example}
-              accessibilityHint="Sends this request."
-              onPress={() => session.submit(example)}
-              style={({ pressed }) => [
-                styles.choice,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={styles.choiceText}>{example}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <View style={styles.echo}>
-        <Text style={styles.body}>{turn.request}</Text>
-      </View>
-      <View accessibilityLiveRegion="polite" style={styles.block}>
-        {turn.phase === "working" ? (
-          <Text style={styles.caption}>{ACT_COPY.working}</Text>
-        ) : null}
-        {turn.phase === "failed" ? (
-          <>
-            <Text style={styles.body}>{turn.message}</Text>
-            <QuietButton
-              label={ACT_COPY.try_again}
-              onPress={() => session.submit(turn.request)}
-              styles={styles}
-            />
-          </>
-        ) : null}
-        {turn.phase === "cancelled" ? (
-          <Text style={styles.muted}>{ACT_COPY.cancelled}</Text>
-        ) : null}
-        {turn.phase === "done" ? (
-          <>
-            <Text style={styles.body}>{turn.line}</Text>
-            {turn.link ? (
-              <ActLinkButton link={turn.link} onOpen={onOpen} styles={styles} />
-            ) : null}
-          </>
-        ) : null}
-        {turn.phase === "answered" ? (
-          <ActAnswer
-            response={turn.response}
-            report={report}
-            onAnswerConsent={() => session.submit(turn.request)}
-            onPickEvent={session.pickEvent}
-            session={session}
-            onDone={(line, link) =>
-              setTurn({ phase: "done", request: turn.request, line, link })
-            }
-            onCancelled={() =>
-              setTurn({ phase: "cancelled", request: turn.request })
-            }
+      <View style={styles.card}>
+        {headline ? <Text style={styles.headline}>{headline}</Text> : null}
+        <Text style={styles.muted}>
+          {resolution.kind === "done" ? resolution.line : ACT_COPY.cancelled}
+        </Text>
+        {link ? (
+          <QuietButton
+            label={link.label}
+            onPress={() => onOpen(link)}
             styles={styles}
           />
         ) : null}
       </View>
-    </>
+    );
+  }
+
+  async function pickEvent(eventId: string) {
+    const choice = proposal.event_choice;
+    if (!choice || picking) return;
+    setProblem(null);
+    setPicking(true);
+    try {
+      onProposal(
+        await audience.mutateAsync({
+          eventId,
+          amount: choice.amount,
+          reason: choice.reason,
+          // The other cards in the thread stay waiting.
+          keepEarlier: true,
+        }),
+      );
+    } catch (error) {
+      setProblem(errorCopy(error, ACT_COPY.failed));
+    } finally {
+      setPicking(false);
+    }
+  }
+
+  return (
+    <View style={styles.block}>
+      <ActAnswer
+        response={proposal}
+        busy={picking}
+        kept={kept}
+        onKeep={onKeep}
+        report={report}
+        onAnswerConsent={onAnswerConsent}
+        onPickEvent={(eventId) => void pickEvent(eventId)}
+        onDone={(line, page) => onResolved({ kind: "done", line, page })}
+        onCancelled={() => onResolved({ kind: "cancelled" })}
+        styles={styles}
+      />
+      {problem ? (
+        <Text accessibilityRole="alert" style={styles.problem}>
+          {problem}
+        </Text>
+      ) : null}
+    </View>
   );
+}
+
+/** What the card was about, in a few words, once it is one line. */
+function proposalHeadline(proposal: ActResponse): string | null {
+  const suggestion = proposal.suggestion;
+  if (!suggestion) return null;
+  if (suggestion.task) return suggestion.task.title;
+  if (suggestion.new_event) return suggestion.new_event.name;
+  return suggestion.points?.reason ?? null;
 }
 
 type Styles = ReturnType<typeof createStyles>;
@@ -370,27 +263,11 @@ function QuietButton({
   );
 }
 
-function ActLinkButton({
-  link,
-  onOpen,
-  styles,
-}: {
-  link: ActLink;
-  onOpen: (link: ActLink) => void;
-  styles: Styles;
-}) {
-  return (
-    <QuietButton
-      label={link.label}
-      onPress={() => onOpen(link)}
-      styles={styles}
-    />
-  );
-}
-
 function ActAnswer({
   response,
-  session,
+  busy,
+  kept,
+  onKeep,
   report,
   onAnswerConsent,
   onPickEvent,
@@ -399,11 +276,14 @@ function ActAnswer({
   styles,
 }: {
   response: ActResponse;
-  session: ActSession;
+  /** An event pick is on its way: the choices wait. */
+  busy: boolean;
+  kept: KeptTargets;
+  onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
   onAnswerConsent: () => void;
   onPickEvent: (eventId: string) => void;
-  onDone: (line: string, link: ActLink | null) => void;
+  onDone: (line: string, page: string) => void;
   onCancelled: () => void;
   styles: Styles;
 }) {
@@ -414,7 +294,8 @@ function ActAnswer({
         key={response.suggestion.id}
         suggestion={response.suggestion}
         notes={response.notes}
-        session={session}
+        kept={kept[response.suggestion.id] ?? null}
+        onKeep={onKeep}
         report={report}
         onDone={onDone}
         onCancelled={onCancelled}
@@ -437,10 +318,13 @@ function ActAnswer({
               key={event.id}
               accessibilityRole="button"
               accessibilityLabel={`${event.name}. ${when}`}
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
               onPress={() => onPickEvent(event.id)}
               style={({ pressed }) => [
                 styles.choice,
                 pressed ? styles.pressed : null,
+                busy ? styles.dimmed : null,
               ]}
             >
               <Text style={styles.choiceText}>{event.name}</Text>
@@ -540,7 +424,8 @@ function dueLine(task: { due_date: string | null; due_at: string | null }) {
 function ActCard({
   suggestion,
   notes,
-  session,
+  kept,
+  onKeep,
   report,
   onDone,
   onCancelled,
@@ -548,9 +433,11 @@ function ActCard({
 }: {
   suggestion: AiSuggestion;
   notes: ActResponse["notes"];
-  session: ActSession;
+  /** The members the officer left on this card, or null for the proposal's own. */
+  kept: readonly string[] | null;
+  onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
-  onDone: (line: string, link: ActLink | null) => void;
+  onDone: (line: string, page: string) => void;
   onCancelled: () => void;
   styles: Styles;
 }) {
@@ -575,14 +462,12 @@ function ActCard({
   };
 
   const { points, task, new_event: event } = suggestion;
-  const { kept, setKept, deciding, setDeciding } = session;
   const proposed = points?.target_user_ids;
-  const targets = useMemo(
-    () => (kept?.id === suggestion.id ? kept.targets : (proposed ?? [])),
-    [kept, suggestion.id, proposed],
-  );
+  const targets = useMemo(() => [...(kept ?? proposed ?? [])], [kept, proposed]);
   const setTargets = (change: (list: string[]) => string[]) =>
-    setKept({ id: suggestion.id, targets: change(targets) });
+    onKeep(suggestion.id, change(targets));
+  // A Confirm or Cancel is out: the card's controls wait for it.
+  const [deciding, setDeciding] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with nobody left: say so, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -637,19 +522,12 @@ function ActCard({
             outcome?.adjusted ?? targets.length,
             outcome?.skipped ?? 0,
           ),
-          // The phone has no points page to open (`notifications/targets.ts`).
-          null,
+          "points",
         );
       } else if (task) {
-        onDone(ACT_COPY.done_task, {
-          href: "/tasks",
-          label: ACT_COPY.open_tasks,
-        });
+        onDone(ACT_COPY.done_task, "tasks");
       } else {
-        onDone(ACT_COPY.done_event, {
-          href: "/events",
-          label: ACT_COPY.open_events,
-        });
+        onDone(ACT_COPY.done_event, "events");
       }
     } catch (error) {
       setProblem(refusalLine(error));
@@ -729,10 +607,7 @@ function ActCard({
           } finally {
             setDeciding(false);
           }
-          onDone(ACT_COPY.done_task, {
-            href: "/tasks",
-            label: ACT_COPY.open_tasks,
-          });
+          onDone(ACT_COPY.done_task, "tasks");
         },
       }
     : undefined;
@@ -1124,14 +999,6 @@ function createStyles(tokens: SignetTokens) {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
     },
-    echo: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.md,
-    },
     choice: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
@@ -1250,33 +1117,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       fontFamily: fontFamilyFor(600),
       color: gold.onHouse,
-    },
-    modeTrack: {
-      flexDirection: "row",
-      gap: 2,
-      padding: 2,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    modeSegment: {
-      height: 30,
-      minWidth: 52,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-      borderRadius: tokens.radius.control,
-    },
-    modeHeld: {
-      backgroundColor: tint(gold.house, 0.18),
-    },
-    modeLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    modeLabelHeld: {
-      color: gold.askText,
     },
     pickerContent: {
       paddingHorizontal: tokens.spacing.lg,

@@ -7,6 +7,7 @@ import {
   type AskStreamEvent,
 } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
+import type { AskConversationEvent } from '../../application/services/ask/ask-conversation.service';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -63,12 +64,14 @@ const done: AskStreamEvent = {
 };
 
 function build(
-  stream: (input: { signal?: AbortSignal }) => AsyncGenerator<AskStreamEvent>,
+  stream: (input: {
+    signal?: AbortSignal;
+  }) => AsyncGenerator<AskConversationEvent>,
 ) {
   const askService = {
     assertMayAsk: jest.fn(async () => undefined),
-    ask: jest.fn(stream),
   };
+  const conversation = { converse: jest.fn(stream) };
   const diagnostics = {
     view: jest.fn(async () => ({
       offered: true,
@@ -88,6 +91,7 @@ function build(
   };
   const controller = new AskController(
     askService as never,
+    conversation as never,
     diagnostics as never,
   );
   const response = new FakeResponse();
@@ -101,14 +105,22 @@ function build(
       response as never,
     );
   const stopController = new AskDiagnosticsStopController(diagnostics as never);
-  return { controller, stopController, askService, diagnostics, response, ask };
+  return {
+    controller,
+    stopController,
+    askService,
+    conversation,
+    diagnostics,
+    response,
+    ask,
+  };
 }
 
 describe('AskController', () => {
   beforeEach(() => jest.mocked(reportSwallowed).mockClear());
 
   it('writes each event as one Server-Sent Events frame and ends the response', async () => {
-    const { ask, response, askService } = build(async function* () {
+    const { ask, response, conversation } = build(async function* () {
       yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
       yield { v: ASK_STREAM_VERSION, type: 'text', delta: 'Two\nthirds' };
       yield done;
@@ -127,7 +139,7 @@ describe('AskController', () => {
       'done',
     ]);
     expect(response.ended).toBe(true);
-    expect(askService.ask).toHaveBeenCalledWith(
+    expect(conversation.converse).toHaveBeenCalledWith(
       expect.objectContaining({
         chapterId: 'chapter-a',
         userId: 'user-1',
@@ -135,16 +147,59 @@ describe('AskController', () => {
         enabledModules: { events: true },
         timeZone: 'America/Chicago',
         savedNoticeShown: true,
+        // A build that only knows answers never gets a proposal.
+        actions: false,
       }),
+    );
+    const [input] = conversation.converse.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+    ];
+    expect('history' in input).toBe(false);
+  });
+
+  it('passes the conversation and the client’s say that it shows cards', async () => {
+    const { ask, conversation } = build(async function* () {
+      yield done;
+    });
+    const history = [{ question: 'Who is the treasurer?', answer: 'Dana.' }];
+    await ask(undefined, { history, actions: true });
+    expect(conversation.converse).toHaveBeenCalledWith(
+      expect.objectContaining({ history, actions: true }),
     );
   });
 
+  it('ends the stream with the proposal, in the shape the request route answers with', async () => {
+    const { ask, response } = build(async function* () {
+      yield { v: ASK_STREAM_VERSION, type: 'start', ask_id: 'a' };
+      yield {
+        type: 'act',
+        outcome: { status: 'unclear', action: 'give_points', missing: 'amount' },
+      };
+    });
+    await ask(undefined, { actions: true });
+    expect(response.events().at(-1)).toEqual({
+      v: ASK_STREAM_VERSION,
+      type: 'proposal',
+      act: {
+        status: 'unclear',
+        action: 'give_points',
+        suggestion: null,
+        notes: [],
+        event_choice: null,
+        missing: 'amount',
+        reason: null,
+        available_actions: [],
+      },
+    });
+    expect(response.ended).toBe(true);
+  });
+
   it('falls back to a known time zone, and treats a missing notice flag as not shown', async () => {
-    const { ask, askService } = build(async function* () {
+    const { ask, conversation } = build(async function* () {
       yield done;
     });
     await ask('Mars/Olympus');
-    const [input] = askService.ask.mock.calls[0] as unknown as [
+    const [input] = conversation.converse.mock.calls[0] as unknown as [
       { timeZone: string; savedNoticeShown: boolean },
     ];
     expect(input.timeZone).not.toBe('Mars/Olympus');
@@ -152,16 +207,18 @@ describe('AskController', () => {
   });
 
   it('refuses before the stream opens when the member may not ask', async () => {
-    const { ask, askService, response } = build(async function* () {
-      yield done;
-    });
+    const { ask, askService, conversation, response } = build(
+      async function* () {
+        yield done;
+      },
+    );
     askService.assertMayAsk.mockRejectedValueOnce(
       new ForbiddenException({ code: 'ai.consent.required' }),
     );
     await expect(ask()).rejects.toBeInstanceOf(ForbiddenException);
     expect(response.flushed).toBe(false);
     expect(response.body).toBe('');
-    expect(askService.ask).not.toHaveBeenCalled();
+    expect(conversation.converse).not.toHaveBeenCalled();
   });
 
   it('ends a stream that broke with one error event, and reports it', async () => {

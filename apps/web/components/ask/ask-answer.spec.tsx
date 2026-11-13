@@ -2,14 +2,20 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
-import { AI_REPORT_COPY, ASK_COPY, type AskAnswer } from "@repo/validation";
+import {
+  ACT_COPY,
+  AI_REPORT_COPY,
+  ASK_COPY,
+  type AskAnswer,
+} from "@repo/validation";
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
+  useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-const { AskExchangeView } = await import("./ask-answer");
+const { AskTurn } = await import("./ask-answer");
 import { askSourceHref } from "./ask-source-link";
 
 /**
@@ -60,11 +66,14 @@ const ANSWER: AskAnswer = {
 };
 
 const exchange = (overrides: Partial<AskExchange> = {}): AskExchange => ({
+  id: "turn-1",
   question: "What is quorum?",
   phase: "done",
   step: null,
   preview: "",
   answer: ANSWER,
+  proposal: null,
+  resolution: null,
   failure: null,
   ...overrides,
 });
@@ -74,10 +83,12 @@ const show = (
   handlers: { retry?: () => void; consent?: () => void } = {},
 ) =>
   render(
-    <AskExchangeView
+    <AskTurn
       exchange={value}
       onRetry={handlers.retry ?? (() => undefined)}
       onAnswerConsent={handlers.consent ?? (() => undefined)}
+      onProposal={() => undefined}
+      onResolved={() => undefined}
     />,
   );
 
@@ -113,7 +124,7 @@ describe("askSourceHref", () => {
   });
 });
 
-describe("AskExchangeView", () => {
+describe("AskTurn", () => {
   it("offers Report this under an answer, and nothing under one never attempted (#4315)", () => {
     const { unmount } = show(exchange({ askId: "a-1" }));
     expect(
@@ -149,17 +160,48 @@ describe("AskExchangeView", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists the sources with their kind, place and full date", () => {
+  it("lists the sources as chips, each named with its kind, place and full date", () => {
     show(exchange());
-    const list = screen.getByRole("list");
+    const list = screen.getByRole("list", { name: ASK_COPY.sources });
     expect(
-      within(list).getByText("Document · Article IV · January 10, 2026"),
-    ).toBeInTheDocument();
+      within(list).getByRole("link", {
+        name: "Source 1: Bylaws, Document · Article IV · January 10, 2026",
+      }),
+    ).toHaveAttribute("href", "/documents?document=d1");
     expect(
-      within(list).getByText("Channel message · November 9, 2026"),
+      within(list).getByRole("link", {
+        name: "Source 2: #general, Channel message · November 9, 2026",
+      }),
     ).toBeInTheDocument();
-    // Live or undated data says when it was read, never a blank.
-    expect(within(list).getByText(ASK_COPY.live)).toBeInTheDocument();
+    // Live or undated data says when it was read, never a blank; a source
+    // this build has no page for is a chip with no link.
+    expect(
+      within(list).getByLabelText(
+        `Source 3: Something newer, ${ASK_COPY.live}`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the card in place of an answer when the member asked for something to be done", () => {
+    show(
+      exchange({
+        answer: null,
+        proposal: {
+          status: "unclear",
+          action: "give_points",
+          suggestion: null,
+          notes: [],
+          event_choice: null,
+          missing: "amount",
+          reason: null,
+          available_actions: [],
+        },
+      }),
+    );
+    expect(screen.getByText(ACT_COPY.missing.amount)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: AI_REPORT_COPY.action }),
+    ).toBeNull();
   });
 
   it("says it could not find it, and shows no answer text", () => {
@@ -175,7 +217,7 @@ describe("AskExchangeView", () => {
       }),
     );
     expect(screen.getByText(ASK_COPY.not_found)).toBeInTheDocument();
-    expect(screen.queryByText(ASK_COPY.sources)).toBeNull();
+    expect(screen.queryByRole("list", { name: ASK_COPY.sources })).toBeNull();
   });
 
   it("warns when part of the answer could not be matched, was cut short, or left messages out", () => {

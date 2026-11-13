@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -11,23 +12,31 @@ import {
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
-import { eyebrowStyle } from "@/components/eyebrow";
-import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * One Ask exchange on the phone: the answer with a numbered marker at each
- * cited sentence, and the sources those markers open
+ * One turn of the Ask conversation on the phone: what the member typed, then
+ * what Frapp came back with. That is an answer with a numbered marker at
+ * each cited sentence and the sources those markers open
  * (`spec/ui/design-system/components.md` §11; `spec/behavior/ai.md` § Ask;
- * #450, #451). Web's twin is `apps/web/components/ask/ask-answer.tsx`, and
- * both read the same words (`ASK_COPY`) and cut the answer with the same
- * function (`askAnswerSegments`), so a citation lands on the same sentence in
- * both.
+ * #450, #451), or the card for something the member asked to have done
+ * (`ask-proposal.tsx`, passed in as `proposal`). Web's twin is
+ * `apps/web/components/ask/ask-answer.tsx`, and both read the same words
+ * (`ASK_COPY`) and cut the answer with the same function
+ * (`askAnswerSegments`), so a citation lands on the same sentence in both.
  *
- * Perplexity and Notion AI on a phone do the same two things: a small numbered
- * marker after the sentence it backs, and a list of sources under the answer
- * whose rows are the real tap targets. The marker is tappable too, but a
- * number inside a sentence is a small target, so every source is also a full
- * row below.
+ * **Who said what is told by shape, not by labels.** The member's words sit
+ * in a bubble on the right; Frapp's answer is plain text on the left with no
+ * frame, the way ChatGPT's, Claude's and Perplexity's phone apps draw a
+ * conversation with one person and one assistant. Only a proposal, which is
+ * a thing to act on, is a card.
+ *
+ * **Sources are chips under the answer**, as Perplexity and Notion AI draw
+ * them: the number its markers carry, then its name. The marker inside the
+ * sentence is tappable too, but a number in a line of text is a small
+ * target, so every source is also a chip with a full-height touch area. What
+ * kind of source it is and its date are in the chip's spoken name, so a
+ * thread of several answers stays short.
  *
  * **Nothing above moves while it works.** The step line ("Searching your
  * chapter's sources") sits under the text, where the sources go when the
@@ -39,10 +48,11 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * `useChapterBranding()`.
  *
  * A refusal, "couldn't find that" and "not available" are the product working
- * as designed, not errors, so they keep the same card and plain words.
+ * as designed, not errors, so they read as plain answers.
  */
-export function AskExchangeCard({
+export function AskTurn({
   exchange,
+  proposal,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -51,9 +61,11 @@ export function AskExchangeCard({
   report,
 }: {
   exchange: AskExchange;
-  /** Whether this build has a screen for the source; a row without one is plain text. */
+  /** The card for a turn that asked for something to be done, in the answer's place. */
+  proposal?: ReactNode;
+  /** Whether this build has a screen for the source; a chip without one is plain. */
   canOpen: (source: AskSource) => boolean;
-  /** The source whose document link is being fetched, so its row says so. */
+  /** The source whose document link is being fetched, so its chip says so. */
   openingSourceId?: string | null;
   onOpenSource: (source: AskSource) => void;
   /** Asks the same question again, after a failure that may not repeat. */
@@ -70,54 +82,75 @@ export function AskExchangeCard({
   const styles = createStyles(tokens);
 
   return (
-    <View style={styles.card} accessibilityLiveRegion="polite">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <Text style={styles.answer}>{exchange.preview}</Text>
-          ) : null}
-          <Text style={styles.note}>
-            {(ASK_COPY.steps as Record<string, string>)[exchange.step ?? ""] ??
-              ASK_COPY.steps.searching}
-          </Text>
-        </>
-      ) : null}
+    <View style={styles.turn}>
+      <View style={styles.bubble}>
+        <Text accessibilityRole="header" style={styles.answer}>
+          {exchange.question}
+        </Text>
+      </View>
+      <View style={styles.reply} accessibilityLiveRegion="polite">
+        {exchange.phase === "working" ? (
+          <>
+            {exchange.preview ? (
+              <Text style={styles.answer}>{exchange.preview}</Text>
+            ) : null}
+            <Text style={styles.note}>
+              {(ASK_COPY.steps as Record<string, string>)[
+                exchange.step ?? ""
+              ] ?? ASK_COPY.steps.searching}
+            </Text>
+          </>
+        ) : null}
 
-      {exchange.phase === "failed" && exchange.failure ? (
-        <>
-          <Text style={styles.answer}>{exchange.failure.message}</Text>
-          {exchange.failure.retryable ? (
-            <CardAction label={ASK_COPY.try_again} onPress={onRetry} />
-          ) : null}
-        </>
-      ) : null}
+        {exchange.phase === "failed" && exchange.failure ? (
+          <>
+            <Text style={styles.answer}>{exchange.failure.message}</Text>
+            {exchange.failure.retryable ? (
+              <CardAction label={ASK_COPY.try_again} onPress={onRetry} />
+            ) : null}
+          </>
+        ) : null}
 
-      {exchange.phase === "done" && exchange.answer ? (
-        <AnswerBody
-          answer={exchange.answer}
-          canOpen={canOpen}
-          openingSourceId={openingSourceId ?? null}
-          onOpenSource={onOpenSource}
-          onAnswerConsent={onAnswerConsent}
-        />
-      ) : null}
+        {exchange.phase === "done" && exchange.proposal ? proposal : null}
 
-      {/* Anything Ask wrote, or chose not to, can be reported. An answer
-          that was never attempted has nothing AI-made in it. Last in the
-          card, so it turning into "Reported" moves nothing. */}
-      {report &&
-      exchange.phase === "done" &&
-      exchange.answer &&
-      exchange.answer.status !== "unavailable" &&
-      exchange.askId ? (
-        <CardAction
-          label={
-            report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action
-          }
-          disabled={report.reported}
-          onPress={report.onPress}
-        />
-      ) : null}
+        {exchange.phase === "done" && exchange.answer ? (
+          <AnswerBody
+            answer={exchange.answer}
+            canOpen={canOpen}
+            openingSourceId={openingSourceId ?? null}
+            onOpenSource={onOpenSource}
+            onAnswerConsent={onAnswerConsent}
+          />
+        ) : null}
+
+        {/* Anything Ask wrote, or chose not to, can be reported. An answer
+            that was never attempted has nothing AI-made in it. Last in the
+            turn, so it turning into "Reported" moves nothing. */}
+        {report &&
+        exchange.phase === "done" &&
+        exchange.answer &&
+        exchange.answer.status !== "unavailable" &&
+        exchange.askId ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action
+            }
+            accessibilityState={report.reported ? { disabled: true } : undefined}
+            disabled={report.reported}
+            hitSlop={12}
+            onPress={report.onPress}
+            style={({ pressed }) => [
+              styles.report,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.note}>
+              {report.reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -183,7 +216,8 @@ function AnswerBody({
               onPress={opens ? () => onOpenSource(source) : undefined}
               style={styles.marker}
             >
-              {` ${number} `}
+              {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
+              {`\u00A0${number}\u00A0`}
             </Text>
           );
         })}
@@ -191,11 +225,8 @@ function AnswerBody({
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>
-          <Text style={[eyebrowStyle(tokens), styles.sourcesHead]}>
-            {ASK_COPY.sources}
-          </Text>
           {answer.sources.map((source, index) => (
-            <SourceRow
+            <SourceChip
               key={source.id}
               number={index + 1}
               source={source}
@@ -233,7 +264,11 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
   );
 }
 
-function SourceRow({
+/**
+ * One source as a chip: the number its markers carry, then its name. 36pt
+ * drawn, with the touch area filled out to 44pt by the gap between rows.
+ */
+function SourceChip({
   number,
   source,
   opens,
@@ -249,24 +284,18 @@ function SourceRow({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const meta = askSourceMetaLine(source);
+  const label = `Source ${number}: ${source.title}. ${meta}`;
   const body = (
     <>
       <Text style={styles.sourceNumber}>{number}</Text>
-      <View style={styles.sourceText}>
-        <Text style={styles.sourceTitle}>{source.title}</Text>
-        {/* The same line whether or not a link is being fetched, so the row
-            keeps its height. */}
-        <Text style={styles.note}>{opening ? "Opening" : meta}</Text>
-      </View>
+      <Text numberOfLines={1} style={styles.sourceTitle}>
+        {source.title}
+      </Text>
     </>
   );
   if (!opens) {
     return (
-      <View
-        accessible
-        accessibilityLabel={`Source ${number}: ${source.title}. ${meta}`}
-        style={styles.sourceRow}
-      >
+      <View accessible accessibilityLabel={label} style={styles.chip}>
         {body}
       </View>
     );
@@ -274,13 +303,15 @@ function SourceRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Source ${number}: ${source.title}. ${meta}`}
+      accessibilityLabel={label}
       accessibilityHint="Opens this source."
       accessibilityState={{ busy: opening }}
+      hitSlop={{ top: 4, bottom: 4 }}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.sourceRow,
-        pressed ? styles.pressed : null,
+        styles.chip,
+        // Dimmed while its link is fetched: the chip keeps its size.
+        pressed || opening ? styles.pressed : null,
       ]}
     >
       {body}
@@ -288,7 +319,7 @@ function SourceRow({
   );
 }
 
-/** A compact secondary action inside the card. */
+/** A compact secondary action under an answer. */
 function CardAction({
   label,
   onPress,
@@ -322,13 +353,19 @@ function CardAction({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    card: {
-      borderRadius: tokens.radius.cardLarge,
-      borderWidth: 1,
-      // House gold at 35%, per §11: the fixed brand value, never the accent.
-      borderColor: tint(tokens.color.gold.house, 0.35),
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
+    turn: {
+      gap: tokens.spacing.md,
+    },
+    bubble: {
+      alignSelf: "flex-end",
+      maxWidth: "85%",
+      borderRadius: 18,
+      borderBottomRightRadius: 6,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: 14,
+      paddingVertical: tokens.spacing.sm,
+    },
+    reply: {
       gap: tokens.spacing.md,
     },
     answer: {
@@ -350,29 +387,32 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     sources: {
-      gap: tokens.spacing.xs,
-    },
-    sourcesHead: {
-      color: tokens.color.text.muted,
-    },
-    sourceRow: {
       flexDirection: "row",
+      flexWrap: "wrap",
       gap: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
+    },
+    chip: {
+      flexDirection: "row",
       alignItems: "center",
+      gap: 6,
+      height: 36,
+      maxWidth: "100%",
+      paddingLeft: 10,
+      paddingRight: tokens.spacing.md,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
     },
     sourceNumber: {
       ...typeRole(tokens.typography.role.caption),
       fontFamily: fontFamilyFor(700),
       color: tokens.color.gold.askText,
-      width: 18,
-    },
-    sourceText: {
-      flex: 1,
     },
     sourceTitle: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+      flexShrink: 1,
     },
     action: {
       alignSelf: "flex-start",
@@ -387,6 +427,9 @@ function createStyles(tokens: SignetTokens) {
     actionText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+    },
+    report: {
+      alignSelf: "flex-start",
     },
     pressed: {
       opacity: 0.7,

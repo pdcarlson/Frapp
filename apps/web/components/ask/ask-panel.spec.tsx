@@ -10,24 +10,36 @@ import { ACT_COPY, ASK_COPY, askSavedLine } from "@repo/validation";
 
 const state = vi.hoisted(() => ({
   ask: vi.fn(),
+  retry: vi.fn(),
+  stop: vi.fn(),
   reset: vi.fn(),
-  exchange: null as unknown,
+  refetchStatus: vi.fn(),
+  exchanges: [] as unknown[],
   savedUntil: null as string | null,
   consent: vi.fn(),
+  permissions: ["ai:use", "ai:act"],
   actions: null as string[] | null,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useAsk: () => ({
-    exchange: state.exchange,
+    exchanges: state.exchanges,
+    working: state.exchanges.some(
+      (exchange) => (exchange as { phase: string }).phase === "working",
+    ),
     ask: state.ask,
-    stop: vi.fn(),
+    retry: state.retry,
+    setProposal: vi.fn(),
+    resolveProposal: vi.fn(),
+    stop: state.stop,
     reset: state.reset,
   }),
   useActStatus: () => ({ data: state.actions }),
-  useMyPermissions: () => ({ data: { permissions: ["ai:use", "ai:act"] } }),
+  useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMyPermissions: () => ({ data: { permissions: state.permissions } }),
   useAskStatus: () => ({
+    refetch: state.refetchStatus,
     data: {
       saved_until: state.savedUntil,
       diagnostics: {
@@ -46,23 +58,19 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
   }),
 }));
 
-vi.mock("@/components/ask/act-pane", () => ({
-  useActSession: () => ({ turn: null, setTurn: vi.fn(), latestRef: { current: 0 } }),
-  ActPane: ({ actions }: { actions: string[] }) => (
-    <p>Do pane: {actions.join(", ")}</p>
-  ),
-}));
-
 const { AskPanel } = await import("./ask-panel");
 
 const open = () => render(<AskPanel open onOpenChange={() => undefined} />);
 
 const DONE = {
+  id: "turn-1",
   question: "When is the budget vote?",
   phase: "done",
   step: null,
   preview: "",
   failure: null,
+  proposal: null,
+  resolution: null,
   answer: {
     status: "answered",
     reason: null,
@@ -85,21 +93,35 @@ const DONE = {
   },
 };
 
+/** What a question is sent with, for a member Frapp cannot act for. */
+const sent = (over: Record<string, unknown> = {}) => ({
+  savedNoticeShown: false,
+  actions: false,
+  gate: state.consent,
+  ...over,
+});
+
 describe("AskPanel", () => {
   beforeEach(() => {
     state.ask.mockReset().mockResolvedValue(undefined);
+    state.retry.mockReset().mockResolvedValue(undefined);
+    state.stop.mockReset();
+    state.reset.mockReset();
+    state.refetchStatus.mockReset();
     state.consent.mockReset().mockResolvedValue(true);
-    state.exchange = null;
+    state.exchanges = [];
     state.savedUntil = null;
+    state.permissions = ["ai:use", "ai:act"];
+    state.actions = null;
   });
 
-  it("asks what was typed on Enter, and clears the field", async () => {
+  it("sends what was typed on Enter, behind the consent gate, and clears the field", async () => {
     open();
     const field = screen.getByRole("textbox", { name: ASK_COPY.placeholder });
     await userEvent.setup().type(field, "Who is the treasurer?{Enter}");
-    expect(state.ask).toHaveBeenCalledWith("Who is the treasurer?", {
-      savedNoticeShown: false,
-    });
+    // The gate is the hook's to run: the question is on screen first, and
+    // nothing leaves for a member who says no (`use-ask.spec.tsx`).
+    expect(state.ask).toHaveBeenCalledWith("Who is the treasurer?", sent());
     expect(field).toHaveValue("");
   });
 
@@ -108,40 +130,14 @@ describe("AskPanel", () => {
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: ASK_COPY.examples[0] }));
-    expect(state.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], {
-      savedNoticeShown: false,
-    });
+    expect(state.ask).toHaveBeenCalledWith(ASK_COPY.examples[0], sent());
   });
 
-  it("sends nothing for a member who does not say yes, and says what to do", async () => {
-    state.consent.mockResolvedValue(false);
-    open();
-    await userEvent
-      .setup()
-      .type(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-        "Who is the treasurer?{Enter}",
-      );
-    expect(state.ask).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText(ASK_COPY.unavailable.consent_required),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Who is the treasurer?")).toBeInTheDocument();
-  });
-
-  it("says so when it could not check the member's answer", async () => {
-    state.consent.mockRejectedValue(new TypeError("Failed to fetch"));
-    open();
-    await userEvent
-      .setup()
-      .type(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-        "Who is the treasurer?{Enter}",
-      );
-    expect(state.ask).not.toHaveBeenCalled();
-    expect(
-      await screen.findByRole("button", { name: ASK_COPY.try_again }),
-    ).toBeInTheDocument();
+  it("reads whether answers are being saved again each time it opens", () => {
+    const { rerender } = render(<AskPanel open={false} onOpenChange={vi.fn()} />);
+    expect(state.refetchStatus).not.toHaveBeenCalled();
+    rerender(<AskPanel open onOpenChange={vi.fn()} />);
+    expect(state.refetchStatus).toHaveBeenCalledTimes(1);
   });
 
   it("shows the saved line while answers are kept, and only then says it was shown", async () => {
@@ -156,26 +152,22 @@ describe("AskPanel", () => {
         screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
         "Who is the treasurer?{Enter}",
       );
-    expect(state.ask).toHaveBeenCalledWith("Who is the treasurer?", {
-      savedNoticeShown: true,
-    });
+    expect(state.ask).toHaveBeenCalledWith(
+      "Who is the treasurer?",
+      sent({ savedNoticeShown: true }),
+    );
   });
 
-  it("says each question stands alone when nothing is kept", () => {
+  it("says nothing under the field, and nothing about saving when nothing is kept", () => {
     open();
-    expect(screen.getByText(ASK_COPY.single_shot)).toBeInTheDocument();
+    expect(screen.queryByText(/answered on its own/)).toBeNull();
     expect(screen.queryByText(/saved for the Frapp team/)).toBeNull();
   });
 
   it("takes no second question while one is being answered", async () => {
-    state.exchange = {
-      question: "First?",
-      phase: "working",
-      step: "searching",
-      preview: "",
-      answer: null,
-      failure: null,
-    };
+    state.exchanges = [
+      { ...DONE, phase: "working", step: "searching", answer: null },
+    ];
     open();
     await userEvent
       .setup()
@@ -185,6 +177,83 @@ describe("AskPanel", () => {
       );
     expect(state.ask).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: ASK_COPY.send })).toBeDisabled();
+  });
+
+  describe("one conversation", () => {
+    const SECOND = {
+      ...DONE,
+      id: "turn-2",
+      question: "And who ran it?",
+      answer: { ...DONE.answer, text: "Dana Reyes ran it.", sources: [] },
+    };
+
+    it("keeps every turn on screen, in order, with the field still under them", () => {
+      state.exchanges = [DONE, SECOND];
+      open();
+      const turns = screen.getAllByRole("article");
+      expect(turns).toHaveLength(2);
+      expect(turns[0]).toHaveTextContent("When is the budget vote?");
+      expect(turns[1]).toHaveTextContent("Dana Reyes ran it.");
+      expect(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+      ).toBeInTheDocument();
+      // The examples are for an empty thread.
+      expect(
+        screen.queryByRole("button", { name: ASK_COPY.examples[0] }),
+      ).toBeNull();
+    });
+
+    it("starts a new conversation from the header, and offers that only once there is one", async () => {
+      const view = open();
+      expect(
+        screen.queryByRole("button", { name: ASK_COPY.new_conversation }),
+      ).toBeNull();
+      view.unmount();
+      state.exchanges = [DONE];
+      open();
+      await userEvent
+        .setup()
+        .click(
+          screen.getByRole("button", { name: ASK_COPY.new_conversation }),
+        );
+      expect(state.reset).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries a failed turn in place, with what a question is sent with", async () => {
+      state.exchanges = [
+        {
+          ...DONE,
+          phase: "failed",
+          answer: null,
+          failure: { message: ASK_COPY.failed, retryable: true },
+        },
+      ];
+      open();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: ASK_COPY.try_again }));
+      expect(state.retry).toHaveBeenCalledWith("turn-1", sent());
+    });
+
+    it("opens the AI sheet again from a turn that was refused for it", async () => {
+      state.exchanges = [
+        {
+          ...DONE,
+          answer: {
+            ...DONE.answer,
+            status: "unavailable",
+            reason: "consent_required",
+            text: "",
+            sources: [],
+          },
+        },
+      ];
+      open();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: ASK_COPY.consent_action }));
+      expect(state.retry).toHaveBeenCalledWith("turn-1", sent());
+    });
   });
 
   describe("beside the page", () => {
@@ -238,19 +307,18 @@ describe("AskPanel", () => {
       expect(onOpenChange).not.toHaveBeenCalled();
     });
 
-    it("drops a question still being answered when it closes, however it was closed", () => {
-      state.exchange = { ...DONE, phase: "working", answer: null };
-      state.reset.mockClear();
+    it("drops a question still being answered when it closes, however it was closed, and keeps the turns before it", () => {
+      state.exchanges = [DONE, { ...DONE, id: "turn-2", phase: "working", answer: null }];
       const view = render(<AskPanel open onOpenChange={() => undefined} />);
-      expect(state.reset).not.toHaveBeenCalled();
+      expect(state.stop).not.toHaveBeenCalled();
       // Closed from outside, as the pill does.
       view.rerender(<AskPanel open={false} onOpenChange={() => undefined} />);
-      expect(state.reset).toHaveBeenCalledTimes(1);
+      expect(state.stop).toHaveBeenCalledTimes(1);
+      expect(state.reset).not.toHaveBeenCalled();
     });
 
     it("keeps a finished answer across a close, and gives focus back to what opened it", () => {
-      state.exchange = DONE;
-      state.reset.mockClear();
+      state.exchanges = [DONE];
       const opener = { current: null as HTMLButtonElement | null };
       const tree = (isOpen: boolean) => (
         <>
@@ -265,6 +333,7 @@ describe("AskPanel", () => {
       const view = render(tree(true));
       view.rerender(tree(false));
       expect(state.reset).not.toHaveBeenCalled();
+      expect(state.stop).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "Ask" })).toHaveFocus();
       view.rerender(tree(true));
       expect(
@@ -273,7 +342,7 @@ describe("AskPanel", () => {
     });
 
     it("gets out of the way of a followed source where there is no room for both", async () => {
-      state.exchange = DONE;
+      state.exchanges = [DONE];
       const onOpenChange = vi.fn();
       const matchMedia = vi.fn(() => ({ matches: false }));
       vi.stubGlobal("matchMedia", matchMedia);
@@ -296,43 +365,53 @@ describe("AskPanel", () => {
   });
 });
 
-describe("Ask and Do (#718)", () => {
+describe("a member Frapp can act for (#718)", () => {
   beforeEach(() => {
-    state.exchange = null;
+    state.ask.mockReset().mockResolvedValue(undefined);
+    state.exchanges = [];
+    state.savedUntil = null;
+    state.permissions = ["ai:use", "ai:act"];
     state.actions = null;
   });
 
-  it("shows no switch to a member who cannot have Ask take actions", () => {
-    open();
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
-  });
-
-  it("shows no switch when the member holds the permission but no action", () => {
-    state.actions = [];
-    open();
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-  });
-
-  it("opens on Ask, and Do swaps the question field for the request pane", async () => {
+  it("has no Ask and Do switch, whoever the member is: one field takes both", () => {
     state.actions = ["give_points", "create_task"];
     open();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+  });
+
+  it("sends what they type as something that may end in a card, and offers one request to try", async () => {
+    state.actions = ["create_task", "give_points"];
+    open();
+    expect(screen.getByText(new RegExp(ASK_COPY.empty_body_act))).toBeDefined();
+    await userEvent.click(
+      screen.getByRole("button", { name: ACT_COPY.examples.create_task }),
+    );
+    expect(state.ask).toHaveBeenCalledWith(
+      ACT_COPY.examples.create_task,
+      sent({ actions: true }),
+    );
+    // One request beside the questions, not one per action.
     expect(
-      screen
-        .getByRole("radio", { name: ACT_COPY.mode_ask })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
+      screen.queryByRole("button", { name: ACT_COPY.examples.give_points }),
+    ).toBeNull();
+  });
 
-    await userEvent.click(
-      screen.getByRole("radio", { name: ACT_COPY.mode_do }),
-    );
-    expect(screen.getByText("Do pane: give_points, create_task")).toBeDefined();
-    expect(screen.queryByPlaceholderText(ASK_COPY.placeholder)).toBeNull();
-
-    await userEvent.click(
-      screen.getByRole("radio", { name: ACT_COPY.mode_ask }),
-    );
-    expect(screen.getByPlaceholderText(ASK_COPY.placeholder)).toBeDefined();
+  it.each([
+    ["holds the permission but no action", ["ai:use", "ai:act"], [] as string[]],
+    ["does not hold the permission", ["ai:use"], null],
+  ])("answers only, for a member who %s", async (_name, permissions, actions) => {
+    state.permissions = permissions;
+    state.actions = actions;
+    open();
+    expect(screen.queryByText(new RegExp(ASK_COPY.empty_body_act))).toBeNull();
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
+        "Give Jordan 5 points{Enter}",
+      );
+    expect(state.ask).toHaveBeenCalledWith("Give Jordan 5 points", sent());
   });
 });

@@ -68,9 +68,9 @@ export function useAiSurfaces(): AiSurfaces {
 
 /**
  * The things this member can ask Frapp to do (#718), or an empty list: the
- * Do side of the Ask sheet shows only for a member the server lists actions
- * for, which takes Ask itself, `ai:act` and a permission to do at least one
- * of them. The server is asked only for a member who holds `ai:act`, and only
+ * Ask sheet asks for proposal cards only for a member the server lists
+ * actions for, which takes Ask itself, `ai:act` and a permission to do at
+ * least one of them. The server is asked only for a member who holds `ai:act`, and only
  * while `enabled` (the sheet is open), so a member without Ask never sends
  * the request.
  */

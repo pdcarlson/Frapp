@@ -70,26 +70,18 @@ export type ActNoteType = (typeof ACT_NOTE_TYPES)[number];
 /** A proposal the member asked for waits this long, then is gone. */
 export const ACT_PROPOSAL_EXPIRY_DAYS = 1;
 
-/** The words the Do side of Ask shows, shared so web and mobile cannot drift. */
+/**
+ * The words a proposal in the Ask conversation shows, shared so web and
+ * mobile cannot drift. What surrounds the card (the field, the empty state)
+ * is `ASK_COPY`'s.
+ */
 export const ACT_COPY = {
-  /** The two sides of the panel. */
-  mode_ask: "Ask",
-  mode_do: "Do",
-  mode_label: "Ask a question or get something done",
-  placeholder: "Say what to do",
-  send: "Send",
-  empty_title: "Get something done",
-  empty_body:
-    "Say it in your own words. You'll see exactly what will happen, and nothing changes until you confirm.",
+  /** One request to try, per action, on Ask's empty state. */
   examples: {
     give_points: "Give 5 points to everyone who came to chapter tonight",
     create_task: "Make a task for Jordan to book the bus by Friday",
     create_event: "Put a study night on the calendar for Tuesday at 7",
   } satisfies Record<ActAction, string>,
-  working: "Working out what that would do",
-  /** Under the field: what the model is shown, and that nothing is remembered. */
-  footnote:
-    "One thing at a time. Only what you type here is read, and nothing changes until you confirm.",
   confirm: "Confirm",
   cancel: "Cancel",
   confirming: "Confirming",
@@ -111,7 +103,6 @@ export const ACT_COPY = {
     "ai.suggestion.incomplete":
       "Something on this card is missing. Fill it in, then confirm.",
   },
-  try_again: "Try again",
   refused: "Ask can't help with that request.",
   no_action: "That isn't something Ask can do for you here.",
   no_action_can: "It can:",

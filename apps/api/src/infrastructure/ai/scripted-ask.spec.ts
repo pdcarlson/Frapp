@@ -96,4 +96,27 @@ describe('the scripted Ask replies', () => {
     ]);
     expect(reply.citations ?? []).toEqual([]);
   });
+
+  it('reads a follow-up beside the question before it, and a question that stands alone by itself', () => {
+    const sources = [
+      { id: 'p1', text: 'Quorum for elections is three quarters.' },
+      { id: 'p2', text: 'Devin Okafor is the treasurer.' },
+    ].map((source) => ({ ...source, title: 'Source' }));
+    const after = (question: string) =>
+      scriptedAskAnswer({
+        kind: 'cited',
+        messages: [
+          { role: 'user', content: 'What is quorum for elections?' },
+          { role: 'assistant', content: 'Three quarters.' },
+          { role: 'user', content: question },
+        ],
+        sources,
+      } as unknown as LanguageModelRequest) as Said;
+    expect(after('And who decides it?').citations).toEqual([
+      { sourceId: 'p1', quote: 'Quorum for elections is three quarters.' },
+    ]);
+    expect(after('Who is the treasurer?').citations).toEqual([
+      { sourceId: 'p2', quote: 'Devin Okafor is the treasurer.' },
+    ]);
+  });
 });

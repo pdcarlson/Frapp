@@ -4704,7 +4704,7 @@ export interface paths {
         put?: never;
         /**
          * Ask a question; the answer is streamed
-         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.
          */
         post: operations["AskController_ask_v1"];
         delete?: never;
@@ -4746,7 +4746,7 @@ export interface paths {
         };
         /**
          * The actions the caller can ask for
-         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows the Do side of Ask only when this answers, and offers an example for each action listed.
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client asks for proposal cards in the Ask conversation only when this lists at least one action.
          */
         get: operations["ActController_status_v1"];
         put?: never;
@@ -8827,6 +8827,12 @@ export interface components {
             saved_until: string | null;
             diagnostics: components["schemas"]["AskDiagnosticsDto"];
         };
+        AskHistoryTurnDto: {
+            /** @description What the member typed in that turn. */
+            question: string;
+            /** @description What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages). */
+            answer: string;
+        };
         AskRequestDto: {
             /**
              * @description The question, in the member’s own words.
@@ -8835,6 +8841,10 @@ export interface components {
             question: string;
             /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
             saved_notice_shown?: boolean;
+            /** @description The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it. */
+            history?: components["schemas"]["AskHistoryTurnDto"][];
+            /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
+            actions?: boolean;
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -8896,6 +8906,8 @@ export interface components {
             amount: number;
             /** @description As the `needs_event` answer carried it. Empty names the event instead. */
             reason?: string;
+            /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
+            keep_earlier?: boolean;
         };
         ChatCatchUpUnreadDto: {
             /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
