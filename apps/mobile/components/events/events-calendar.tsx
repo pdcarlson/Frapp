@@ -168,14 +168,18 @@ export function EventsCalendar({
       else if (event.translationX >= SWIPE_DISTANCE) shift(-1);
     });
 
+  // Keyed on the day, not the Date: the screen makes a fresh one each
+  // render while it follows the clock, which would rebuild the grid's
+  // layout on every tick.
   const gridDays = useMemo(
     () => (span === 0 ? [] : consecutiveDays(selectedDay, span)),
-    [selectedDay, span],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    [selectedKey, span],
   );
   const headerLabel =
     range === "month"
       ? month.toLocaleDateString(undefined, { month: "long", year: "numeric" })
-      : rangeLabel(gridDays);
+      : rangeLabel(gridDays, now);
   const stepNoun =
     range === "month" ? "month" : range === "day" ? "day" : "3 days";
 
@@ -213,7 +217,8 @@ export function EventsCalendar({
 
       {range !== "month" ? (
         <GestureDetector gesture={swipe}>
-          <View>
+          <View style={styles.root}>
+            {emptyNote ? <InlineNote>{emptyNote}</InlineNote> : null}
             <EventsTimeGrid
               days={gridDays}
               events={events}
@@ -385,10 +390,11 @@ export function EventsCalendar({
 
 /**
  * The 3 days or Day header: the day written out for Day, else the month
- * the days fall in ("November 2026", "Nov – Dec 2026"), as Google
- * Calendar's phone app heads its 3-day view.
+ * the days fall in ("November 2026", "Nov – Dec 2026", "Dec 2026 – Jan
+ * 2027"), as Google Calendar's phone app heads its 3-day view. Day names
+ * the year when it isn't this one, as the month heading always does.
  */
-function rangeLabel(days: Date[]): string {
+function rangeLabel(days: Date[], now: Date): string {
   const first = days[0];
   const last = days[days.length - 1];
   if (!first || !last) return "";
@@ -397,9 +403,15 @@ function rangeLabel(days: Date[]): string {
       weekday: "long",
       month: "long",
       day: "numeric",
+      ...(first.getFullYear() === now.getFullYear()
+        ? {}
+        : { year: "numeric" as const }),
     });
   }
-  if (first.getMonth() === last.getMonth()) {
+  if (
+    first.getMonth() === last.getMonth() &&
+    first.getFullYear() === last.getFullYear()
+  ) {
     return first.toLocaleDateString(undefined, {
       month: "long",
       year: "numeric",
@@ -407,7 +419,9 @@ function rangeLabel(days: Date[]): string {
   }
   const short = (day: Date) =>
     day.toLocaleDateString(undefined, { month: "short" });
-  return `${short(first)} – ${short(last)} ${last.getFullYear()}`;
+  return first.getFullYear() === last.getFullYear()
+    ? `${short(first)} – ${short(last)} ${last.getFullYear()}`
+    : `${short(first)} ${first.getFullYear()} – ${short(last)} ${last.getFullYear()}`;
 }
 
 function createStyles(tokens: SignetTokens) {

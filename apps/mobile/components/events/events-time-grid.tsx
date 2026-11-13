@@ -57,7 +57,7 @@ function longDay(day: Date): string {
  * which web reads too), and an All day strip for the day's tasks and any
  * event of a whole day or more, on every day it covers. A red line marks the
  * time now in today's column. A member who can create events taps an hour
- * to open New event starting then.
+ * that isn't over to open New event starting then (`calendarHourStart`).
  *
  * `now` is the screen's ticking clock, which also decides which column is
  * today, so a tab left open past midnight moves both together.
@@ -135,6 +135,10 @@ export function EventsTimeGrid({
 
   const blockBorder = (event: EventRow) =>
     requiredOf(event.attendance) ? accent : tokens.color.border.control;
+  // The accent edge is what marks a required event to the eye; a screen
+  // reader hears it, as web's grid says it.
+  const required = (event: EventRow) =>
+    requiredOf(event.attendance) ? ", mandatory" : "";
 
   return (
     <View style={styles.root}>
@@ -203,7 +207,7 @@ export function EventsTimeGrid({
                 <Pressable
                   key={event.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open ${event.name}, all day`}
+                  accessibilityLabel={`Open ${event.name}, all day${required(event)}`}
                   onPress={() => onOpen(event.id)}
                   style={({ pressed }) => [
                     styles.allDayChip,
@@ -274,7 +278,16 @@ export function EventsTimeGrid({
                     { top: hour * HOUR_HEIGHT },
                     hour > 0 ? styles.hourLine : null,
                   ];
-                  if (!canCreate) {
+                  // An hour already over isn't offered: the form refuses a
+                  // start that has passed.
+                  const over =
+                    new Date(
+                      day.getFullYear(),
+                      day.getMonth(),
+                      day.getDate(),
+                      hour + 1,
+                    ) <= now;
+                  if (!canCreate || over) {
                     return <View key={hour} style={lineStyle} />;
                   }
                   return (
@@ -313,7 +326,7 @@ export function EventsTimeGrid({
                       key={`${event.id}-${key}`}
                       testID={`time-grid-block-${event.id}-${key}`}
                       accessibilityRole="button"
-                      accessibilityLabel={`Open ${event.name}, ${clock}`}
+                      accessibilityLabel={`Open ${event.name}, ${clock}${required(event)}`}
                       onPress={() => onOpen(event.id)}
                       style={({ pressed }) => [
                         styles.block,

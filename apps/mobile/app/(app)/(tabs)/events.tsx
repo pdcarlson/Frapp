@@ -42,7 +42,11 @@ import {
   NewEventSheet,
   useCanCreateEvents,
 } from "@/components/events/new-event-sheet";
-import { emptyEventDraft, type NewEventDraft } from "@/lib/events/create-event";
+import {
+  calendarHourStart,
+  emptyEventDraft,
+  type NewEventDraft,
+} from "@/lib/events/create-event";
 import {
   createEventRowStyles,
   EventRowCard,
@@ -367,25 +371,22 @@ export default function EventsScreen() {
           range={calendarRange}
           onRangeChange={setCalendarRange}
           canCreate={canCreateEvents}
-          onCreateAt={(day, hour) =>
+          onCreateAt={(day, hour) => {
+            const start = calendarHourStart(day, hour, now);
+            if (!start) return;
             setCreateAt((previous) => ({
               key: (previous?.key ?? 0) + 1,
-              template: {
-                ...emptyEventDraft(),
-                start: new Date(
-                  day.getFullYear(),
-                  day.getMonth(),
-                  day.getDate(),
-                  hour,
-                ),
-              },
-            }))
-          }
+              template: { ...emptyEventDraft(), start },
+            }));
+          }}
           // With nothing scheduled, Calendar says what the List says (by the
-          // List's own test), and points a creator at the +.
+          // List's own test), and points a creator at the +, or in 3 days
+          // and Day at an hour, as web's grid does.
           emptyNote={
             list.soon.length === 0 && list.later.length === 0
-              ? nothingScheduled
+              ? calendarRange !== "month" && canCreateEvents
+                ? `${EVENTS_COPY.empty} Tap an hour to add the first event.`
+                : nothingScheduled
               : null
           }
         />
