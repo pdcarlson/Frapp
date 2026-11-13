@@ -1,4 +1,4 @@
-import { formatDueLabel, parseInstant } from "@repo/formatting";
+import { formatEndsLabel, parseInstant } from "@repo/formatting";
 import {
   FORM_CHOICE_QUESTION_TYPES,
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
@@ -292,12 +292,7 @@ export function formDeadlineLine(
   now: number,
 ): string | null {
   if (isFormClosed(payload, now)) return "Closed";
-  if (!parseInstant(payload.closes_at)) return null;
-  // A task's countdown words, as the sign-up's end line takes them
-  // (`signupDeadlineLine`). `formatDueLabel` reads the ISO string, not a
-  // `Date`, which it answers with `null`.
-  const due = formatDueLabel(payload.closes_at, new Date(now));
-  return due ? due.replace(/^Due /, "Closes ") : null;
+  return formatEndsLabel("Closes", payload.closes_at, new Date(now));
 }
 
 /**

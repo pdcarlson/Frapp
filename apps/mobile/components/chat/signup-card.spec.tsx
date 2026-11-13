@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Alert } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { SignupCard } from "./signup-card";
@@ -18,11 +19,12 @@ vi.mock("@repo/hooks", async () => {
 
 const exported = vi.hoisted(() => ({
   calls: [] as { rows: Record<string, string>[]; prefix: string }[],
+  ok: true,
 }));
 vi.mock("@/lib/chat/share-csv", () => ({
   shareCsv: async (rows: Record<string, string>[], prefix: string) => {
     exported.calls.push({ rows, prefix });
-    return true;
+    return exported.ok;
   },
 }));
 
@@ -218,5 +220,27 @@ describe("SignupCard on the phone (#3926)", () => {
       "Devin Okafor",
     ]);
     myPermissions.current = [];
+  });
+
+  it("offers Export to the sheet's creator without channels:manage, and says so when a share fails", async () => {
+    myPermissions.current = [];
+    exported.calls = [];
+    exported.ok = false;
+    vi.mocked(Alert.alert).mockClear();
+    // The viewer ("me") posted this sheet.
+    const mine = {
+      ...card([{ user: "u1", slots: ["sat"] }]),
+      sender_id: "me",
+    } as ChatMessage;
+    const tree = render(mine);
+    await act(async () => {
+      button(tree, "Export").props.onPress();
+    });
+    expect(exported.calls).toHaveLength(1);
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Couldn't export",
+      "Try again in a moment.",
+    );
+    exported.ok = true;
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  exportFileName,
   exportHeaders,
   neutralizeFormulaCell,
   rowsToCsv,
@@ -87,5 +88,13 @@ describe("exportHeaders", () => {
 describe("rowsToCsv of no rows", () => {
   it("is empty, with no BOM", () => {
     expect(rowsToCsv([])).toBe("");
+  });
+});
+
+describe("exportFileName", () => {
+  it("names an export by its prefix and the member's own day", () => {
+    expect(
+      exportFileName("form-room-picks", "csv", new Date(2026, 10, 13, 23, 30)),
+    ).toBe("frapp-form-room-picks-2026-11-13.csv");
   });
 });

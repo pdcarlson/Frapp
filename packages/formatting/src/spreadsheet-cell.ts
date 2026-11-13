@@ -1,3 +1,5 @@
+import { localIsoDate } from "./local-date";
+
 /**
  * A cell that a spreadsheet would run as a formula, made inert.
  *
@@ -79,4 +81,18 @@ export function rowsToCsv(rows: Record<string, string>[]): string {
     lines.push(headers.map((header) => toCsvCell(row[header] ?? "")).join(","));
   }
   return `\uFEFF${lines.join("\r\n")}`;
+}
+
+/**
+ * `frapp-<filenamePrefix>-<date>.<extension>`, the one export file name, for
+ * the dashboard's downloads and the phone's shared files alike, so the two
+ * can't drift. The date is the member's own day, not UTC's: an evening export
+ * in the Americas would otherwise be dated tomorrow.
+ */
+export function exportFileName(
+  filenamePrefix: string,
+  extension: string,
+  now: Date = new Date(),
+): string {
+  return `frapp-${filenamePrefix}-${localIsoDate(now)}.${extension}`;
 }

@@ -1,7 +1,7 @@
 import {
   CURRENCY_AMOUNT,
+  exportFileName,
   exportHeaders,
-  localIsoDate,
   neutralizeFormulaCell,
   rowsToCsv,
 } from "@repo/formatting";
@@ -270,13 +270,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   }
 }
 
-/** `frapp-<filenamePrefix>-<date>.<extension>`, the one export filename shape. */
-function exportFilename(filenamePrefix: string, extension: string): string {
-  // The member's own day, not UTC's: an evening export in the Americas would
-  // otherwise be dated tomorrow.
-  return `frapp-${filenamePrefix}-${localIsoDate(new Date())}.${extension}`;
-}
-
 /**
  * Serialize rows to CSV and download them as `frapp-<filenamePrefix>-<date>.csv`.
  * Shared so the MIME type and filename convention live in one place.
@@ -286,7 +279,7 @@ export function downloadCsv(
   filenamePrefix: string,
 ): void {
   const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, exportFilename(filenamePrefix, "csv"));
+  downloadBlob(blob, exportFileName(filenamePrefix, "csv"));
 }
 
 /**
@@ -323,7 +316,7 @@ export async function downloadXlsx(
     stickyRowsCount: 1,
     columns,
   }).toBlob();
-  downloadBlob(blob, exportFilename(filenamePrefix, "xlsx"));
+  downloadBlob(blob, exportFileName(filenamePrefix, "xlsx"));
 }
 
 /** The file types an export offers, in menu order. */

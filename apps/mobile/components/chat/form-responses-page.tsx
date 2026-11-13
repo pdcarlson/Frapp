@@ -43,6 +43,7 @@ import { IconButton } from "@/components/icon-button";
 import { CloseGlyph, ShareGlyph } from "@/components/control-glyphs";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import { Segmented } from "@/components/segmented";
+import { meterStyles } from "@/components/meter";
 import {
   SkeletonBlock,
   SkeletonRegion,
@@ -188,7 +189,10 @@ export function FormResponsesPage({
             <SkeletonRegion label="Loading responses" style={styles.list}>
               {payload.questions.map((question) => (
                 <View key={question.id} style={styles.item}>
-                  <SkeletonText role={tokens.typography.role.body} width="60%" />
+                  <SkeletonText
+                    role={tokens.typography.role.body}
+                    width="60%"
+                  />
                   <SkeletonBlock
                     width="100%"
                     height={tokens.touch.minimum}
@@ -253,7 +257,7 @@ function Summary({
   return (
     <View style={styles.list}>
       {summary.map(({ question, answered, choices, texts }, index) => (
-        <View key={question.id} style={styles.item}>
+        <View key={question.id} style={styles.panel}>
           <View>
             <Text accessibilityRole="header" style={styles.questionTitle}>
               {index + 1}. {question.title}
@@ -262,42 +266,42 @@ function Summary({
               {formQuestionAnsweredLine(answered, total)}
             </Text>
           </View>
-          {choices ? (
-            choices.map((choice) => {
-              const percent = formChoicePercent(choice.count, answered);
-              return (
-                <View
-                  key={choice.id}
-                  accessible
-                  accessibilityLabel={`${choice.label}: ${choice.count}, ${percent}%`}
-                >
-                  <View style={styles.choiceRow}>
-                    <Text style={styles.choiceLabel}>{choice.label}</Text>
-                    <Text style={styles.count}>
-                      {choice.count} · {percent}%
-                    </Text>
+          {choices
+            ? choices.map((choice) => {
+                const percent = formChoicePercent(choice.count, answered);
+                return (
+                  <View
+                    key={choice.id}
+                    accessible
+                    accessibilityLabel={`${choice.label}: ${choice.count}, ${percent}%`}
+                  >
+                    <View style={styles.choiceRow}>
+                      <Text style={styles.choiceLabel}>{choice.label}</Text>
+                      <Text style={styles.count}>
+                        {choice.count} · {percent}%
+                      </Text>
+                    </View>
+                    <View style={styles.meterTrack}>
+                      <View
+                        style={[
+                          styles.meterFill,
+                          {
+                            width: `${percent}%`,
+                            backgroundColor: brand.accentPrimary,
+                          },
+                        ]}
+                      />
+                    </View>
                   </View>
-                  <View style={styles.meterTrack}>
-                    <View
-                      style={[
-                        styles.meterFill,
-                        {
-                          width: `${percent}%`,
-                          backgroundColor: brand.accentPrimary,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              );
-            })
-          ) : texts && texts.length > 0 ? (
-            texts.map((text, i) => (
-              <Text key={i} style={styles.textAnswer}>
-                {text}
-              </Text>
-            ))
-          ) : null}
+                );
+              })
+            : texts && texts.length > 0
+              ? texts.map((text, i) => (
+                  <Text key={i} style={styles.textAnswer}>
+                    {text}
+                  </Text>
+                ))
+              : null}
         </View>
       ))}
     </View>
@@ -318,7 +322,7 @@ function Individual({
   return (
     <View style={styles.list}>
       {data.responses.map((response) => (
-        <View key={response.user_id} style={styles.person}>
+        <View key={response.user_id} style={styles.panel}>
           <Text accessibilityRole="header" style={styles.questionTitle}>
             {labelOf(response.user_id)}
           </Text>
@@ -395,12 +399,14 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     item: {
       gap: tokens.spacing.sm,
     },
-    person: {
+    // Each question's summary and each person's answers sit on a card, as
+    // web's are inside its raised panel, so the meter's `--background` groove
+    // (`meterStyles`) recedes against it rather than vanishing into the page.
+    panel: {
       gap: tokens.spacing.sm,
       padding: tokens.spacing.md,
       borderRadius: tokens.radius.control,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
     },
     questionTitle: {
       ...typeRole({
@@ -428,18 +434,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
       fontVariant: ["tabular-nums"],
     },
-    // The sign-up card's slot meter (`signup-card.tsx`).
     meterTrack: {
+      ...meterStyles(tokens).track,
       marginTop: tokens.spacing.xs,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: tokens.color.surface.popover,
-      overflow: "hidden",
     },
-    meterFill: {
-      height: "100%",
-      borderRadius: 2,
-    },
+    meterFill: meterStyles(tokens).fill,
     textAnswer: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,

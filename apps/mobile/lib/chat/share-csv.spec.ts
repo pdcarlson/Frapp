@@ -1,7 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { csvShareFileName, shareCsv } from "./share-csv";
+import { shareCsv } from "./share-csv";
 
 /**
  * The phone's Export (#3926 step 4): rows become the dashboard's CSV, written
@@ -18,14 +18,6 @@ beforeEach(() => {
   sharing.shareAsync.mockResolvedValue(undefined);
 });
 
-describe("csvShareFileName", () => {
-  it("is the dashboard's export name", () => {
-    expect(csvShareFileName("form-room-picks", new Date(2026, 10, 13))).toBe(
-      "frapp-form-room-picks-2026-11-13.csv",
-    );
-  });
-});
-
 describe("shareCsv", () => {
   it("writes the CSV into the cache and shares it as a CSV", async () => {
     const ok = await shareCsv(
@@ -34,6 +26,15 @@ describe("shareCsv", () => {
       "Export responses",
     );
     expect(ok).toBe(true);
+    // The folder is new on every export, and neither platform's write makes
+    // a missing parent, so it has to exist before the write.
+    expect(fs.makeDirectoryAsync).toHaveBeenCalledWith(
+      expect.stringMatching(/^file:\/\/\/cache\/chat-export\/\d+\/$/),
+      { intermediates: true },
+    );
+    expect(fs.makeDirectoryAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      fs.writeAsStringAsync.mock.invocationCallOrder[0]!,
+    );
     const [uri, text] = fs.writeAsStringAsync.mock.calls[0]!;
     expect(uri).toMatch(
       /^file:\/\/\/cache\/chat-export\/\d+\/frapp-form-room-picks-\d{4}-\d{2}-\d{2}\.csv$/,

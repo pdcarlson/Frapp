@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, useImperativeHandle, forwardRef } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BackHandler } from "react-native";
+import { Alert, BackHandler } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
@@ -77,11 +77,12 @@ vi.mock("@repo/chat-core/form-responses", async () => {
 
 const exported = vi.hoisted(() => ({
   calls: [] as { rows: Record<string, string>[]; prefix: string }[],
+  ok: true,
 }));
 vi.mock("@/lib/chat/share-csv", () => ({
   shareCsv: async (rows: Record<string, string>[], prefix: string) => {
     exported.calls.push({ rows, prefix });
-    return true;
+    return exported.ok;
   },
 }));
 
@@ -103,6 +104,8 @@ beforeEach(() => {
   responses.result = null;
   responses.fail = null;
   exported.calls = [];
+  exported.ok = true;
+  vi.mocked(Alert.alert).mockClear();
   vi.mocked(BackHandler.addEventListener).mockClear();
 });
 
@@ -475,5 +478,38 @@ describe("FormFillPage's Responses mode (#3926 step 4)", () => {
     expect(byLabel(tree, "Try again")).toBeDefined();
     rerender([form("m1", {}, { is_deleted: true })]);
     expect(host().messageId).toBeNull();
+  });
+
+  it("holds Export until someone answers, and says so when a share fails", async () => {
+    responses.result = { responses: [], not_responded: ["u1"] };
+    const empty = setup([form()]);
+    act(() => empty.host().open("m1", "responses"));
+    await flush();
+    expect(text(empty.tree)).toContain("No one has answered yet.");
+    expect(pressable(empty.tree, "Export").props.disabled).toBe(true);
+
+    responses.result = {
+      responses: [
+        {
+          user_id: "u1",
+          answers: { q1: "Alex" },
+          created_at: "2026-11-12T10:00:00Z",
+          updated_at: "2026-11-12T10:00:00Z",
+        },
+      ],
+      not_responded: [],
+    };
+    exported.ok = false;
+    const { tree, host } = setup([form()]);
+    act(() => host().open("m1", "responses"));
+    await flush();
+    expect(pressable(tree, "Export").props.disabled).toBe(false);
+    await act(async () => {
+      pressable(tree, "Export").props.onPress();
+    });
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Couldn't export",
+      "Try again in a moment.",
+    );
   });
 });
