@@ -13,8 +13,11 @@ import {
   isAnnouncementChannel,
   isDirectChannel,
   isModuleEnabled,
+  mentionPicksIn,
+  readMentionPicks,
   withoutObjectReplacement,
   type ChatMessageFlag,
+  type MentionPick,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
 import { stampCardClosed } from './card-close';
@@ -159,6 +162,13 @@ export interface SendMessageInput {
    * files.
    */
   gif?: MessageGif | null;
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835): a
+   * token spelling a picked label reaches that member or nobody. Stored as
+   * the server's own `metadata.mention_picks`, so an edit reads the body the
+   * same way.
+   */
+  mention_picks?: readonly MentionPick[] | null;
   /**
    * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
    * client send: it is what refuses a card kind whose module is off
@@ -1185,11 +1195,17 @@ export class ChatService {
     // list would let any member force a push to any other member in a channel
     // they had muted on purpose. `ChatMentionService` owns the rules,
     // including that a reply mentions the author it quotes (#3844).
+    // Only the picks the cleaned body still writes are read or kept.
+    const mentionPicks = mentionPicksIn(
+      input.content,
+      input.mention_picks ?? [],
+    );
     const mentions = await this.mentions.resolveForSend(
       input.chapter_id,
       input.sender_id,
       input.content,
       replyTo,
+      mentionPicks,
     );
 
     // Auto-follow BEFORE the insert, so the push worker, which reacts to the
@@ -1239,6 +1255,7 @@ export class ChatService {
           ...clientMetadata(input.metadata),
           ...(attachments.length > 0 ? attachmentMetadataOf(attachments) : {}),
           ...(gif ? { gif } : {}),
+          ...(mentionPicks.length > 0 ? { mention_picks: mentionPicks } : {}),
         },
         mentions,
       });
@@ -1464,6 +1481,7 @@ export class ChatService {
     chapterId: string,
     senderId: string,
     content: string,
+    picked: readonly MentionPick[] = [],
   ): Promise<ChatMessage> {
     // Ownership alone is not enough: a member removed from another chapter
     // would still pass the sender check on their historical messages there.
@@ -1540,6 +1558,13 @@ export class ChatService {
     // A reply's ping of the author it quotes (#3844) is not re-resolved: the
     // edit keeps it exactly as the send stored it, since the reply still
     // quotes them (`ChatMentionService.resolveForEdit`).
+    //
+    // The picks the message was sent with are kept (#3835): a client sends
+    // only the ones made in this edit, and an old client none, so without the
+    // stored ones an edit would read a picked `@Jane Doe` whose member has
+    // since left as `@Jane`, and hand it to whoever is the only Jane now.
+    const storedPicks = readMentionPicks(message.metadata?.mention_picks);
+    const mentionPicks = mentionPicksIn(content, [...picked, ...storedPicks]);
     const mentions = await this.mentions.resolveForEdit(
       chapterId,
       senderId,
@@ -1547,11 +1572,17 @@ export class ChatService {
       message.mentions ?? [],
       await this.quotedAuthorId(message.reply_to_id ?? null),
       message.content ?? '',
+      { previous: storedPicks, next: mentionPicks },
     );
 
     const edited = await this.messageRepo.update(messageId, {
       content,
       mentions,
+      // Written only when there are picks to keep or to drop, so an ordinary
+      // edit leaves the row's metadata as it was.
+      ...(storedPicks.length > 0 || mentionPicks.length > 0
+        ? { metadata: withPicks(message.metadata, mentionPicks) }
+        : {}),
       edited_at: new Date().toISOString(),
     });
     await this.rewriteNotificationsForEdit(edited, chapterId, senderId);
@@ -2140,6 +2171,17 @@ export class ChatService {
   }
 }
 
+/** `metadata` with its `mention_picks` replaced by `picks`, or dropped when none (#3835). */
+function withPicks(
+  metadata: Record<string, any> | null | undefined,
+  picks: readonly MentionPick[],
+): Record<string, any> {
+  const next: Record<string, any> = { ...(metadata ?? {}) };
+  delete next.mention_picks;
+  if (picks.length > 0) next.mention_picks = picks;
+  return next;
+}
+
 /**
  * A send's own `metadata`, without the keys only the server stamps.
  * `attachment_count` and `attachment_photos` describe the attachment rows, so
@@ -2155,5 +2197,9 @@ function clientMetadata(
   // The server's own too (#4631): a GIF's URL is checked against the
   // provider's media host on the way in, so a client can't write one here.
   delete own.gif;
+  // And the picks (#3835), which arrive as `mention_picks` and are kept only
+  // where the body still writes them: a client's own copy here would pin a
+  // token to a member the send never checked.
+  delete own.mention_picks;
   return own;
 }

@@ -38,19 +38,22 @@ describe("activityStandingRows", () => {
     );
     const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
     expect(byId.points).toMatchObject({
-      value: "42 of 60",
+      figure: "42",
+      target: "of 60",
       detail: "#5 of 58",
       progress: 0.7,
       spokenLabel: "42 of 60 points this semester, ranked 5 of 58",
     });
     expect(byId.service).toMatchObject({
-      value: "4h 30m of 10h",
+      figure: "4h 30m",
+      target: "of 10h",
       progress: 0.45,
       spokenLabel: "4h 30m of 10h of service approved this semester",
     });
     // Past the goal, the bar stays full and the count says by how much.
     expect(byId.study).toMatchObject({
-      value: "8h 20m of 6h",
+      figure: "8h 20m",
+      target: "of 6h",
       progress: 1,
     });
   });
@@ -58,12 +61,18 @@ describe("activityStandingRows", () => {
   it("draws every part in order, with a meter only on required events", () => {
     const rows = activityStandingRows(standing({}));
     expect(
-      rows.map((row) => [row.label, row.value, row.detail, row.progress]),
+      rows.map((row) => [
+        row.label,
+        row.figure,
+        row.target,
+        row.detail,
+        row.progress,
+      ]),
     ).toEqual([
-      ["Points", "42", "#5 of 58", null],
-      ["Required events", "6 of 8", "1 excused", 0.75],
-      ["Service hours", "4h 30m", "1h 30m pending", null],
-      ["Study hours", "2h 5m", "This week", null],
+      ["Points", "42", null, "#5 of 58", null],
+      ["Required events", "6", "of 8", "1 excused", 0.75],
+      ["Service hours", "4h 30m", null, "1h 30m pending", null],
+      ["Study hours", "2h 5m", null, "This week", null],
     ]);
     expect(rows[1]?.spokenLabel).toBe(
       "Attended 6 of 8 required events this semester, 1 excused",
@@ -78,9 +87,9 @@ describe("activityStandingRows", () => {
       study: { minutes: 125, week_start: "2026-11-08T05:00:00.000Z" },
       unavailable: [],
     } as unknown as ActivityStanding);
-    expect(rows.map((row) => [row.id, row.value, row.progress])).toEqual([
+    expect(rows.map((row) => [row.id, row.figure, row.progress])).toEqual([
       ["points", "42", null],
-      ["required_events", "6 of 8", 0.75],
+      ["required_events", "6", 0.75],
       ["service", "4h 30m", null],
       ["study", "2h 5m", null],
     ]);
@@ -98,7 +107,7 @@ describe("activityStandingRows", () => {
       standing({ service: null, unavailable: ["service"] }),
     );
     expect(rows.find((row) => row.id === "service")).toMatchObject({
-      value: null,
+      figure: null,
       detail: "Couldn't load",
       progress: null,
     });
@@ -109,7 +118,7 @@ describe("activityStandingRows", () => {
       standing({ required_events: { required: 0, attended: 0, excused: 0 } }),
     )[1];
     expect(row).toMatchObject({
-      value: "None yet",
+      empty: true,
       detail: null,
       progress: null,
     });

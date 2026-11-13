@@ -16,7 +16,7 @@ export const activityKeys = createChapterQueryKeys("activity");
  *
  * A poll row carries no tallies; draw chat's own card from the message it
  * points at. Invalidate `activityKeys.chapter(chapterId)` after acting on a row (a vote, a
- * task transition, an approval) so the row leaves "Needs you".
+ * task transition, an approval) so the row leaves the list.
  */
 export function useActivity(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();

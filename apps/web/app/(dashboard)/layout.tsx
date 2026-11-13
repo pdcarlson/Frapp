@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { AskHost } from "@/components/ask/ask-host";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { ChapterPresenceProvider } from "@/lib/providers/chapter-presence-provider";
 import {
@@ -65,15 +66,22 @@ export default async function DashboardLayout({
         own name in chat) is below.
       */}
       <ChapterAccentStyle paint={accentPaint} />
-      <DashboardShell
-        defaultNavCollapsed={navCollapsed}
-        defaultChatOpen={chatOpen}
-        defaultChatView={chatView}
-        defaultToolShare={toolShare}
-        defaultMembersHidden={membersHidden}
-      >
-        {children}
-      </DashboardShell>
+      {/*
+        Ask Frapp's conversation is owned out here, above the shell, so it is
+        the same thread in every channel and is still there after a tool page
+        covered the chat (`components/ask/ask-host.tsx`).
+      */}
+      <AskHost>
+        <DashboardShell
+          defaultNavCollapsed={navCollapsed}
+          defaultChatOpen={chatOpen}
+          defaultChatView={chatView}
+          defaultToolShare={toolShare}
+          defaultMembersHidden={membersHidden}
+        >
+          {children}
+        </DashboardShell>
+      </AskHost>
     </ChapterPresenceProvider>
   );
 }

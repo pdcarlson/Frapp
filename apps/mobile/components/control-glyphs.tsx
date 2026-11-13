@@ -96,6 +96,44 @@ export function PencilGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/** Copy: web draws Lucide's `Copy` for the same intent. */
+export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M10 8h10a2 2 0 012 2v10a2 2 0 01-2 2H10a2 2 0 01-2-2V10a2 2 0 012-2z"
+        {...detail}
+      />
+      <Path d="M4 16a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2" {...detail} />
+    </Frame>
+  );
+}
+
+/** Done, where a control confirms in place (Copy turning to Copied). */
+export function CheckGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M20 6L9 17l-5-5" {...detail} />
+    </Frame>
+  );
+}
+
+/** Report: web draws Lucide's `Flag` for the same intent. */
+export function FlagGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"
+        {...detail}
+      />
+      <Path d="M4 22v-7" {...detail} />
+    </Frame>
+  );
+}
+
 /** Mark all read: web draws Lucide's `CheckCheck` for the same intent. */
 export function CheckAllGlyph({
   color,

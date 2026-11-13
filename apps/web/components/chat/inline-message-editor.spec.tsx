@@ -10,6 +10,7 @@ import {
   chatText,
   chatTextKit,
   createKeymap,
+  editorMentionPicks,
   pasteAsLines,
 } from "./chat-editor";
 
@@ -194,7 +195,7 @@ describe("InlineMessageEditor", () => {
     );
     const getText = vi.fn(() => "hi there");
     captured.at(-1)!.onUpdate!({ editor: { getText } });
-    expect(onChange).toHaveBeenCalledWith("hi there");
+    expect(onChange).toHaveBeenCalledWith("hi there", []);
     // A paragraph boundary is one line break, the same as a hard break.
     expect(getText).toHaveBeenCalledWith({ blockSeparator: "\n" });
   });
@@ -297,3 +298,48 @@ describe("chatMentionExtension onlyOnceTyped", () => {
   });
 });
 
+
+describe("editorMentionPicks (#3835)", () => {
+  function withExtension(content: unknown) {
+    return new Editor({
+      extensions: [
+        StarterKit,
+        chatMentionExtension({ current: [] }, { current: [] }),
+      ],
+      content: content as never,
+    });
+  }
+
+  it("reads each picked member's id off the node the @ list inserted", () => {
+    const editor = withExtension({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "ask " },
+            // What a member row's pick inserts: its row spread onto attrs.
+            {
+              type: "mention",
+              attrs: { id: "u-paul", label: "Paul Carlson", memberId: "u-paul" },
+            },
+            { type: "text", text: " and " },
+            // A role row's pick carries no member id.
+            { type: "mention", attrs: { id: "r-1", label: "Officers" } },
+          ],
+        },
+      ],
+    });
+    expect(chatText(editor)).toBe("ask @Paul Carlson and @Officers");
+    expect(editorMentionPicks(editor)).toEqual([
+      { user_id: "u-paul", label: "Paul Carlson" },
+    ]);
+  });
+
+  it("finds none on a message opened for an edit, whose chips the server already holds picks for", () => {
+    const editor = withExtension(
+      buildEditDoc("@Paul Carlson hi", chipsFor(["u-paul"])),
+    );
+    expect(editorMentionPicks(editor)).toEqual([]);
+  });
+});

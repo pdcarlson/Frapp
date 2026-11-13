@@ -169,7 +169,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Activity",
         icon: ActivityGlyph,
         href: "/activity",
-        description: "What needs you, and what you made.",
+        description: "Your week, what is left to do, and what you made.",
       },
       {
         id: "events",

@@ -44,6 +44,7 @@ function filterMentionEntries(
       ? {
           kind: "member",
           id: entry.member.user_id,
+          memberId: entry.member.user_id,
           label: entry.label,
           displayName: entry.member.display_name,
           avatarUrl: entry.member.avatar_url,

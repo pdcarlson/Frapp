@@ -562,6 +562,9 @@ export const ASK_COPY = {
   /** Clears the thread: the next question starts with nothing before it. */
   new_conversation: "New conversation",
   consent_action: "Turn on Frapp AI",
+  /** Under a finished answer: copies its words, without the markers. */
+  copy_answer: "Copy answer",
+  copied_answer: "Copied",
   entry_label: "Ask a question about your chapter",
 } as const;
 
@@ -573,6 +576,16 @@ function ownWords(
   return Object.prototype.hasOwnProperty.call(words, key)
     ? (words[key] as string)
     : null;
+}
+
+/** What a `reading` step named, in words: the live reads, then the count of sources. */
+function readParts(detail?: AskStepDetail | null): string[] {
+  const parts = (detail?.reads ?? [])
+    .map((name) => ownWords(ASK_COPY.reads, name))
+    .filter((words): words is string => words !== null);
+  const found = detail?.found ?? 0;
+  if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
+  return parts;
 }
 
 /**
@@ -590,11 +603,7 @@ export function askStepLine(
   detail?: AskStepDetail | null,
 ): string {
   if (step === "reading") {
-    const parts = (detail?.reads ?? [])
-      .map((name) => ownWords(ASK_COPY.reads, name))
-      .filter((words): words is string => words !== null);
-    const found = detail?.found ?? 0;
-    if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
+    const parts = readParts(detail);
     return parts.length === 0
       ? ASK_COPY.steps.reading
       : `Reading ${joinNames(parts)}`;
@@ -604,6 +613,19 @@ export function askStepLine(
   return (
     (step ? ownWords(ASK_COPY.steps, step) : null) ?? ASK_COPY.steps.searching
   );
+}
+
+/**
+ * What Frapp read to write a finished answer: the reading line in the past
+ * tense ("Read the events calendar and 3 sources"), kept under the answer
+ * where the work line was (Paul, 2026-11-13: the conversation "should feel
+ * more agentic"). ChatGPT keeps "Thought for 12s" and Perplexity its count of
+ * sources the same way. Null when the turn named nothing it read, so a
+ * refusal or an answer from the thread alone carries no line.
+ */
+export function askReadLine(detail?: AskStepDetail | null): string | null {
+  const parts = readParts(detail);
+  return parts.length === 0 ? null : `Read ${joinNames(parts)}`;
 }
 
 /** A source kind's label, or null for a kind this build does not know. */

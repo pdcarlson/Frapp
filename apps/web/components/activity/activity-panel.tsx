@@ -61,7 +61,7 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
  *   the review here is that page's own flow (`useServiceReview`).
  *
  * `onActed` runs after an action that changes what the page lists, so the row
- * can leave "Needs you".
+ * can leave the list.
  */
 /**
  * The tasks waiting on the viewer's sign-off, for stepping from one review to

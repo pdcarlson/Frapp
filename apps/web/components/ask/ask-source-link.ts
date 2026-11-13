@@ -36,3 +36,12 @@ export function askSourceHref(source: AskSource): string | null {
       return PAGE_ROUTES[target.page] ?? null;
   }
 }
+
+/**
+ * Whether the source is a chat message. Following one moves the thread under
+ * the Ask card instead of opening a page beside it, so the card has to get
+ * out of the way (`ask-card.tsx`).
+ */
+export function askSourceIsMessage(source: AskSource): boolean {
+  return askSourceTarget(source)?.type === "message";
+}

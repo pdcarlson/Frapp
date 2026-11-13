@@ -1005,6 +1005,102 @@ describe("sendMessage with a GIF (#4631)", () => {
   });
 });
 
+describe("picked mentions (#3835)", () => {
+  const PICKS = [{ user_id: "u-jane", label: "Jane Doe" }];
+  const posted = () => ({
+    POST: vi.fn().mockResolvedValue({
+      data: { message: { id: "msg-1", client_message_id: "c-1" } },
+      error: null,
+      response: { status: 201 },
+    }),
+  });
+
+  it("posts the picks beside the body, and queues them for a flush", async () => {
+    const apiClient = posted();
+    const outbox = stubOutbox();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "@Jane Doe hi",
+      mentionPicks: PICKS,
+    });
+
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { content: string; mention_picks?: unknown };
+    };
+    // The body is the name, as every reader draws it; the id rides beside.
+    expect(init.body.content).toBe("@Jane Doe hi");
+    expect(init.body.mention_picks).toEqual(PICKS);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionPicks: PICKS }),
+    );
+  });
+
+  it("sends none when nothing was picked", async () => {
+    const apiClient = posted();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+    });
+    await sendMessage(ctx, { channelId: "chan-1", content: "@Jane hi" });
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: Record<string, unknown>;
+    };
+    expect(init.body.mention_picks).toBeUndefined();
+  });
+
+  it("replays a queued row's picks on retry", async () => {
+    const apiClient = posted();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+    });
+    const row: OutboxRow = {
+      clientId: "c-1",
+      channelId: "chan-1",
+      body: "@Jane Doe hi",
+      mentionPicks: PICKS,
+      attempts: 1,
+      status: "failed",
+      queuedAt: Date.now(),
+    };
+    await retryOutboxRow(ctx, row);
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { mention_picks?: unknown };
+    };
+    expect(init.body.mention_picks).toEqual(PICKS);
+  });
+
+  it("sends an edit's picks", async () => {
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: { id: "msg-1", channel_id: "chan-1", content: "@Jane Doe" },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      content: "@Jane Doe",
+      mentionPicks: PICKS,
+    });
+    expect(apiClient.PATCH).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}",
+      expect.objectContaining({
+        body: { content: "@Jane Doe", mention_picks: PICKS },
+      }),
+    );
+  });
+});
+
 describe("outbox analytics", () => {
   it("emits queued then confirmed on a successful send, with an elapsed_ms property", async () => {
     const track = vi.fn();

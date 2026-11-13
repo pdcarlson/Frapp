@@ -339,15 +339,19 @@ describe('ChatController', () => {
   // service, which re-checks it before touching the row.
   describe('active-chapter threading', () => {
     it('passes the chapter to editMessage', async () => {
+      const picks = [{ user_id: 'user-2', label: 'Jane Doe' }];
       await controller.editMessage('msg-1', 'ch-1', 'user-1', {
         content: 'Updated',
+        mention_picks: picks,
       });
 
+      // The picks made while editing ride through (#3835).
       expect(service.editMessage).toHaveBeenCalledWith(
         'msg-1',
         'ch-1',
         'user-1',
         'Updated',
+        picks,
       );
     });
 

@@ -25,7 +25,8 @@ export function localWeekStart(now: Date = new Date()): Date {
 
 /**
  * How the member is doing this semester (`GET /v1/activity/standing`,
- * `spec/behavior/activity.md` § Standing), for the top of Activity.
+ * `spec/behavior/activity.md` § Standing), for the strip under Activity's
+ * week card.
  *
  * Never fresh, as `useActivity` isn't: points, attendance and hours change on
  * other screens, none of which knows about this read, so it is read again
@@ -63,19 +64,17 @@ export interface StandingRow {
   label: string;
   /** The label in one word, for a gauge half a phone wide. */
   shortLabel: string;
-  /** The number as drawn; `null` when the part couldn't be read. */
-  value: string | null;
   /**
-   * `value` in two pieces, for a gauge that draws the number large and its
-   * target small (#4766): "45" and "of 150", "4h" and "of 10h". `target` is
-   * `null` with nothing to measure against, `figure` when unreadable.
+   * The number in two pieces, for a gauge that draws it large and its target
+   * small (#4766): "45" and "of 150", "4h" and "of 10h". `target` is `null`
+   * with nothing to measure against, `figure` when the part couldn't be read.
    */
   figure: string | null;
   target: string | null;
   /**
    * Nothing yet and nothing to aim at: zero points or hours with no goal, or
-   * no required event so far. A row still lists it; a gauge strip leaves it
-   * out (`activityStandingGauges`), since a bare zero says nothing.
+   * no required event so far. The gauge strip leaves it out
+   * (`activityStandingGauges`), since a bare zero says nothing.
    */
   empty: boolean;
   /** The line beside or under it, or `null` for none. */
@@ -106,7 +105,6 @@ export function activityStandingRows(
       id,
       label,
       shortLabel: SHORT_LABEL[id],
-      value: null,
       figure: null,
       target: null,
       empty: false,
@@ -125,7 +123,6 @@ export function activityStandingRows(
       id: "points",
       label: "Points",
       shortLabel: SHORT_LABEL.points,
-      value: goal === null ? String(total) : `${total} of ${goal}`,
       figure: String(total),
       target: goal === null ? null : `of ${goal}`,
       empty: goal === null && total === 0,
@@ -145,7 +142,6 @@ export function activityStandingRows(
       id: "required_events",
       label: "Required events",
       shortLabel: SHORT_LABEL.required_events,
-      value: required === 0 ? "None yet" : `${attended} of ${required}`,
       figure: String(attended),
       target: `of ${required}`,
       empty: required === 0,
@@ -176,7 +172,6 @@ export function activityStandingRows(
       id: "service",
       label: "Service hours",
       shortLabel: SHORT_LABEL.service,
-      value: goal === null ? approved : `${approved} of ${goal}`,
       figure: approved,
       target: goal === null ? null : `of ${goal}`,
       empty: goal === null && approved_minutes === 0 && pending_minutes === 0,
@@ -197,7 +192,6 @@ export function activityStandingRows(
       id: "study",
       label: "Study hours",
       shortLabel: SHORT_LABEL.study,
-      value: goal === null ? minutes : `${minutes} of ${goal}`,
       figure: minutes,
       target: goal === null ? null : `of ${goal}`,
       empty: goal === null && standing.study.minutes === 0,

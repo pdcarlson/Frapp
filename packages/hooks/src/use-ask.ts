@@ -173,6 +173,12 @@ export interface AskExchange {
   step: string | null;
   /** What that step said is being read, for the line under the turn. */
   stepDetail?: AskStepDetail | null;
+  /**
+   * What the turn's `reading` step named, kept once the answer lands, for
+   * the line under it ("Read the events calendar and 3 sources",
+   * `askReadLine`). Absent for a turn that never reached that step.
+   */
+  read?: AskStepDetail | null;
   /** The text as it streams. A preview: `answer` replaces it. */
   preview: string;
   answer: AskAnswer | null;
@@ -227,6 +233,10 @@ export function applyAskEvent(
         // Each step replaces the last one's detail, so "3 sources" never
         // outlives the step that counted them.
         stepDetail: { reads: event.reads, found: event.found },
+        // What was read is also what the finished answer says it read.
+        ...(event.step === "reading"
+          ? { read: { reads: event.reads, found: event.found } }
+          : {}),
       };
     case "text":
       return { ...exchange, preview: exchange.preview + event.delta };

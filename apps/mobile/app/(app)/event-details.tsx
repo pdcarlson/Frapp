@@ -3,6 +3,7 @@ import {
   can,
   checkInZoneLine,
   seriesRuleOf,
+  seriesStartsIn,
   statusLabel,
 } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
@@ -148,15 +149,30 @@ export default function EventDetailsScreen() {
     () => selectEventDetail(parentQuery.data),
     [parentQuery.data],
   );
-  const parentSettled = !event?.parent_event_id || !parentQuery.isPending;
+  // The chapter's events, for the series' real next meeting: a Repeat change
+  // on a started series steps from it (`repeatEditAnchor`, #4746). Read only
+  // for an editor, and only on a series; the list is usually cached already.
+  const seriesListQuery = useEvents({
+    enabled:
+      grants.edit && !!(event?.parent_event_id || event?.recurrence_rule),
+  });
+  // Edit waits for both, so a Repeat change never steps from a guess while
+  // the list loads. A list read that fails leaves the guess from the rule.
+  const parentSettled =
+    (!event?.parent_event_id || !parentQuery.isPending) &&
+    !seriesListQuery.isLoading;
   const editTarget = useMemo<EventEditTarget | null>(() => {
     if (!event) return null;
-    return {
+    const target = {
       event,
       seriesRule: seriesRuleOf(event, parent),
       parent: event.parent_event_id ? parent : null,
     };
-  }, [event, parent]);
+    return {
+      ...target,
+      seriesStarts: seriesStartsIn(target, seriesListQuery.data),
+    };
+  }, [event, parent, seriesListQuery.data]);
   // The sheet's draft is seeded from the event when it mounts, so a save
   // (or anyone else's) remounts it with what the server now holds.
   const editSheetKey = editTarget

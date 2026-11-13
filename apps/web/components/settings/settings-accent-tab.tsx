@@ -249,7 +249,7 @@ export function SettingsAccentTab({
     <ProfileSection
       id="settings-accent"
       title="Accent color"
-      hint="Paints primary buttons, your own name in chat and the active nav item. The Frapp mark and the Ask pill keep their own colors."
+      hint="Paints primary buttons, your own name in chat, the active nav item and the Ask Frapp button. The Frapp mark keeps its own color."
     >
       <form onSubmit={saveAccent}>
         <div className="space-y-4">

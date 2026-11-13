@@ -53,7 +53,7 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import { errorCopy, MemberFacingError } from "@repo/hooks/error-copy";
 import {
   useCallback,
@@ -166,6 +166,7 @@ interface PendingPhotoSend {
   channelId: string;
   body: string;
   replyToId: string | null;
+  mentionPicks: readonly MentionPick[] | null;
   /** The photos' keys, in the order the message shows them. */
   keys: string[];
 }
@@ -189,6 +190,11 @@ export interface SendOptions {
    * (`replyTargetId` in `@repo/chat-core/message-actions`).
    */
   replyToId?: string | null;
+  /**
+   * The members the composer's `@` picker wrote into the body (#3835), so a
+   * picked name reaches that member or nobody, never another by name.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
 }
 
 /** What a failed Close sign-ups or Close form says when chat-core says nothing. */
@@ -335,7 +341,12 @@ export interface UseChatChannelResult {
    * is merged on success, and the Realtime echo of the same edit is a no-op.
    * Rejects with a member-facing message on failure, and changes nothing.
    */
-  edit: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: members picked while editing (#3835). */
+  edit: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /**
    * Soft-deletes a message (own, or any with `channels:manage`). Pessimistic
    * like `edit`, per `spec/ui/resilience/`: the tombstone lands when the
@@ -834,6 +845,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         channelId: pending.channelId,
         content: pending.body,
         replyToId: pending.replyToId,
+        mentionPicks: pending.mentionPicks,
         clientMessageId,
         attachmentsReady,
         attachmentCount: pending.keys.length,
@@ -931,6 +943,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           channelId,
           body,
           replyToId: options?.replyToId ?? null,
+          mentionPicks: options?.mentionPicks ?? null,
           keys,
         });
         cancelDraftTimer();
@@ -964,6 +977,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           channelId,
           content: body,
           replyToId: options?.replyToId ?? null,
+          mentionPicks: options?.mentionPicks ?? null,
           clientMessageId,
           attachments:
             staged.length > 0
@@ -1131,13 +1145,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const edit = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       if (!channelId || !ctx) {
         throw new MemberFacingError("Couldn't edit message. Try again.");
       }
       await withFailureMessage(
         (onError) =>
-          editMessage({ ...ctx, onError }, { channelId, messageId, content }),
+          editMessage(
+            { ...ctx, onError },
+            { channelId, messageId, content, mentionPicks },
+          ),
         "Couldn't edit message. Try again.",
       );
     },
