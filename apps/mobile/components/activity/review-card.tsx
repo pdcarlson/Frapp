@@ -102,7 +102,7 @@ export function ReviewCard({
           <>
             <AccentChip label={review.count} />
             <DisclosureGlyph
-              color={tokens.color.text.muted}
+              color={tokens.color.text.mutedForeground}
               direction={open ? "down" : "right"}
             />
           </>

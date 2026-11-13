@@ -582,7 +582,9 @@ function DaySection({
       ? { color: tokens.color.semantic.warning }
       : day.tone === "accent"
         ? { color: accent }
-        : null;
+        : // A day is the content's own label, in the foreground tone, as
+          // the Calendar's day headings are (`DayHeading`, #4138).
+          { color: tokens.color.text.foreground };
   return (
     <View testID={`activity-day-${day.id}`}>
       <View
