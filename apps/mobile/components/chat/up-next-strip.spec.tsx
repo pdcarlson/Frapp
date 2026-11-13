@@ -112,8 +112,9 @@ describe("selectNextEvent", () => {
   });
 
   it("survives a non-array, a null, and rows missing required fields", () => {
-    // `GET /v1/events` infers as `never` in the SDK, so this is fed whatever the
-    // runtime actually returns — the selector must not throw on any of it.
+    // The selector narrows at the boundary (it predates the events route's
+    // schema, #4867), so it is fed whatever a runtime could return — it must
+    // not throw on any of it.
     expect(selectNextEvent(undefined, NOW)).toBeNull();
     expect(selectNextEvent(null, NOW)).toBeNull();
     expect(selectNextEvent("not a list", NOW)).toBeNull();
