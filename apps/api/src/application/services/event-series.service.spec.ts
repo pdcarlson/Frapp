@@ -1081,6 +1081,34 @@ describe('EventSeriesService', () => {
         ]);
       });
 
+      // #4746: the split path takes the request's zone over a stale one on
+      // file. The new head is 18:00Z, 2 PM in New York, already past its DST
+      // change, so New York keeps 18:00Z where London would move to 17:00Z.
+      it("regenerates a legacy token in the request's zone on a started head", async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+        mockNotificationService.timeZoneFor.mockResolvedValue('Europe/London');
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+          'user-editor',
+          'America/New_York',
+        );
+
+        const starts = occurrenceRows(mockEventRepo).map(
+          (row) => row.start_time,
+        );
+        expect(starts).toHaveLength(6);
+        expect(starts.slice(0, 2)).toEqual([
+          '2026-04-05T18:00:00.000Z',
+          '2026-04-19T18:00:00.000Z',
+        ]);
+      });
+
       it("falls back to the creator's zone when the saving officer has none", async () => {
         // Every meeting carries its series' creator.
         const made: Event = { ...parent, created_by: OFFICER };

@@ -311,8 +311,9 @@ export class EventSeriesService {
    * stepper the Repeat controls caption a series from, so what an officer is
    * told and what gets written cannot drift apart. A structured rule steps in
    * its own zone, keeping the wall-clock time across DST (#3662); a legacy
-   * token steps in `legacyZone`, the saving officer's or the creator's
-   * (`legacyZoneFor`, #4505), or UTC without one. The zone is read before this, so it stays pure.
+   * token steps in `legacyZone`, the one `legacyZoneFor` picks (the saving
+   * request's, else a zone on file, #4505 / #4746), or UTC without one. The
+   * zone is read before this, so it stays pure.
    *
    * For a legacy token, skipping rather than filtering is load-bearing: its
    * run is counted from `skipBefore`, not from the head. Filtering a fixed

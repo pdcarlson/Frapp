@@ -351,14 +351,13 @@ function wholeNumber(text: string): number | null {
  * cadence and treat the head as one-time), so a client sends a token where
  * it says the same series (#4488): weekly on the first meeting's weekday or
  * every 2 weeks, or monthly on its day of the month, at the token's own
- * length. The API steps a token in the saving officer's zone on file, which
- * is this device's, or in UTC when it has none (#4505), so the token is
- * compared with the rule stepped in UTC, instant by instant: a run a DST
- * change moves in the draft's zone, or a monthly series whose UTC date
- * differs, keeps the structured rule and its wall-clock time. A token that
- * matches in UTC matches in the draft's zone too, so either way the API
- * makes the meetings shown. The one gap is a zone on file that lags the
- * device's (a trip, before the next request records it).
+ * length. The API steps a token in the saving request's own zone, which is
+ * this device's (#4746), else the officer's zone on file, else UTC (#4505),
+ * so the token is compared with the rule stepped in UTC, instant by instant:
+ * a run a DST change moves in the draft's zone, or a monthly series whose
+ * UTC date differs, keeps the structured rule and its wall-clock time. A
+ * token that matches in UTC matches in the draft's zone too, so either way
+ * the API makes the meetings shown.
  * What stays different is regeneration: a series edit that rebuilds a token
  * makes its run again from now, where a `COUNT` holds (spec § Recurring).
  */
@@ -593,13 +592,15 @@ export interface RepeatEditSeries {
  * API splits it off, the series' next meeting moved by the same shift.
  *
  * The next meeting is the real one (`nextStart`) when the editor holds the
- * series' rows (#4746). A legacy series last made before #4505, or by an
- * officer with no zone on file, was stepped in UTC, so after a DST change
- * the pattern stepped on this device's clock reads an hour off its rows,
- * and near midnight a different weekday or day of the month. Without the
- * rows it is read from the stored rule's pattern, a legacy token on this
- * device's clock as the API now steps one (#4505); the API checks the rule
- * against the real one.
+ * series' rows (#4746): the API takes a changed rule as sent, without
+ * checking its weekdays or day of the month against the meeting it promotes,
+ * so a wrong anchor is saved as is. A legacy series last made before #4505,
+ * or by an officer with no zone on file, was stepped in UTC, so after a DST
+ * change the pattern stepped on this device's clock reads an hour off its
+ * rows, and near midnight a different weekday or day of the month. Both
+ * editors hold Repeat while the rows load; only when they can't be read is
+ * the next meeting predicted from the stored rule's pattern, a legacy token
+ * on this device's clock as the API now steps one (#4505).
  */
 export function repeatEditAnchor(series: RepeatEditSeries): Date {
   const { headStart, headRule, shiftMs, now, nextStart } = series;

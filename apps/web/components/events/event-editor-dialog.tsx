@@ -482,12 +482,17 @@ export function EventEditorDialog({
   }, [mode, event, parentQuery.data, seriesListQuery.data]);
   // A generated meeting waits for its parent before it saves, as the phone's
   // Edit does (`event-details.tsx`): until then "All upcoming events" can't be
-  // offered, and a save would go to this meeting alone without asking.
+  // offered, and a save would go to this meeting alone without asking. A
+  // series also waits for the chapter's events while they load, so a Repeat
+  // change steps from the real next meeting, not a guess (#4746). A list
+  // read that fails leaves the guess from the rule.
   const parentLoading =
-    !usingPreviewData && parentId !== "" && parentQuery.isPending;
+    !usingPreviewData &&
+    ((parentId !== "" && parentQuery.isPending) || seriesListQuery.isLoading);
   // Repeat waits for the parent: without it the series' rule is unknown.
   const repeatLocked =
-    !!editTarget?.event.parent_event_id && editTarget.parent === null;
+    (!!editTarget?.event.parent_event_id && editTarget.parent === null) ||
+    parentLoading;
   const repeatSeriesAt = (
     start: Date,
     now: Date,
