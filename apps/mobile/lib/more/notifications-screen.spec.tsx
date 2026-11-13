@@ -817,6 +817,16 @@ describe("Notifications: clearing an entry (#3948)", () => {
     }[];
     expect(buttons.map((b) => b.text)).toEqual(["Cancel", "Clear"]);
     act(() => buttons[1]?.onPress?.());
-    expect(clearRows.mutate).toHaveBeenCalledWith(["new", "old"]);
+    expect(clearRows.mutate).toHaveBeenCalledWith({
+      ids: ["new", "old"],
+      conversation: { channelId: "c1" },
+    });
+
+    // A screen reader's named action asks the same way.
+    alert.mockClear();
+    act(() =>
+      row.props.onAccessibilityAction({ nativeEvent: { actionName: "clear" } }),
+    );
+    expect(alert).toHaveBeenCalledTimes(1);
   });
 });

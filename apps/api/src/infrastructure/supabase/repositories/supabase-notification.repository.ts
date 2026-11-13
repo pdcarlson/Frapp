@@ -212,6 +212,34 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     return data?.length ?? 0;
   }
 
+  async deleteConversation(
+    userId: string,
+    chapterId: string,
+    conversation: { channelId: string; threadRootId?: string },
+    through: string,
+  ): Promise<number> {
+    // The same conversation `notificationSourceKey` groups in the inbox: one
+    // channel's own rows, or one thread's (as `markChatChannelRead` splits
+    // them), never a row that mentions the member, which is its own entry.
+    // `data->>mentioned` is absent on most rows, hence the `is.null` arm.
+    const query = this.supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('data->target->>screen', 'chat')
+      .eq('data->target->>channelId', conversation.channelId)
+      .lte('created_at', through)
+      .or('data->>mentioned.is.null,data->>mentioned.neq.true');
+    const scoped = conversation.threadRootId
+      ? query.eq('data->target->>threadRootId', conversation.threadRootId)
+      : query.is('data->target->>threadRootId', null);
+    const { data, error } = await scoped.select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
   async rewriteChatMessageBody(
     chapterId: string,
     messageId: string,

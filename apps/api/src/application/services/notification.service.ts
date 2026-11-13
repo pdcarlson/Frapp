@@ -943,17 +943,29 @@ export class NotificationService {
 
   /**
    * Clear notifications from the member's list (#3948): the rows named, if
-   * they are the caller's in this chapter. A clear is a delete; a cleared row
-   * comes back nowhere, as Discord's and GitHub's do not.
+   * they are the caller's in this chapter, and with `conversation` the rest
+   * of that conversation's rows up to now too, so a cleared entry doesn't
+   * come back with rows past the page the client listed or read rows its
+   * Unread filter hid. A clear is a delete, with no archive to restore from.
    */
   async clearNotifications(
     userId: string,
     chapterId: string,
     ids: readonly string[],
+    conversation?: { channelId: string; threadRootId?: string },
   ): Promise<{ cleared: number }> {
-    const cleared = await this.notificationRepo.deleteMany(userId, chapterId, [
+    const through = new Date().toISOString();
+    let cleared = await this.notificationRepo.deleteMany(userId, chapterId, [
       ...new Set(ids),
     ]);
+    if (conversation) {
+      cleared += await this.notificationRepo.deleteConversation(
+        userId,
+        chapterId,
+        conversation,
+        through,
+      );
+    }
     return { cleared };
   }
 

@@ -5908,9 +5908,23 @@ export interface components {
             /** @description How many notifications this call marked read */
             updated: number;
         };
+        NotificationConversationDto: {
+            /**
+             * Format: uuid
+             * @description The chat channel (`data.target.channelId`)
+             */
+            channelId: string;
+            /**
+             * Format: uuid
+             * @description A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.
+             */
+            threadRootId?: string;
+        };
         ClearNotificationsDto: {
             /** @description The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped. */
             ids: string[];
+            /** @description Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid. */
+            conversation?: components["schemas"]["NotificationConversationDto"];
         };
         ClearNotificationsResultDto: {
             /** @description How many notifications this call cleared */

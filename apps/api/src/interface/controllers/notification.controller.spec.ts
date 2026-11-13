@@ -118,6 +118,7 @@ describe('NotificationController', () => {
         'user-1',
         'chapter-1',
         ['n-1'],
+        undefined,
       );
       expect(result).toEqual({ cleared: 1 });
     });

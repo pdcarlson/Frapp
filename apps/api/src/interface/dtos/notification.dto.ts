@@ -13,6 +13,7 @@ import {
   Min,
   Validate,
   ValidateIf,
+  ValidateNested,
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
@@ -128,8 +129,11 @@ const NOTIFICATION_SCREEN_REGEX = /^[a-z][a-z_]{0,39}$/;
 /** Most screens one "seen" call may name; a client screen covers one or two. */
 const MARK_READ_SCREENS_MAX = 10;
 
-/** Most rows one call may name: a client lists 50. */
-const MARK_READ_IDS_MAX = 100;
+/**
+ * Most rows one read or clear may name: one inbox entry's, and a client lists
+ * 50 (#3948).
+ */
+const ENTRY_IDS_MAX = 100;
 
 export class MarkNotificationsReadDto {
   @ApiPropertyOptional({
@@ -151,18 +155,34 @@ export class MarkNotificationsReadDto {
       "Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both.",
     type: [String],
     format: 'uuid',
-    maxItems: MARK_READ_IDS_MAX,
+    maxItems: ENTRY_IDS_MAX,
   })
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(MARK_READ_IDS_MAX)
+  @ArrayMaxSize(ENTRY_IDS_MAX)
   @IsUUID('all', { each: true })
   ids?: string[];
 }
 
-/** Most notifications one clear may name: the client's page is 50 rows. */
-export const CLEAR_NOTIFICATIONS_MAX = 100;
+/** A chat conversation, as an inbox entry groups it (#3948). */
+export class NotificationConversationDto {
+  @ApiProperty({
+    description: 'The chat channel (`data.target.channelId`)',
+    format: 'uuid',
+  })
+  @IsUUID()
+  channelId: string;
+
+  @ApiPropertyOptional({
+    description:
+      "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  threadRootId?: string;
+}
 
 export class ClearNotificationsDto {
   @ApiProperty({
@@ -171,13 +191,23 @@ export class ClearNotificationsDto {
     type: [String],
     format: 'uuid',
     minItems: 1,
-    maxItems: CLEAR_NOTIFICATIONS_MAX,
+    maxItems: ENTRY_IDS_MAX,
   })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(CLEAR_NOTIFICATIONS_MAX)
+  @ArrayMaxSize(ENTRY_IDS_MAX)
   @IsUUID('all', { each: true })
   ids: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.',
+    type: NotificationConversationDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationConversationDto)
+  conversation?: NotificationConversationDto;
 }
 
 export class ClearNotificationsResultDto {

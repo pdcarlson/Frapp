@@ -130,7 +130,8 @@ export default function NotificationsScreen() {
 
   // Clear (#3948), from a long press as Discord's inbox and GitHub's app
   // offer theirs, confirmed in one tap so a press held too long removes
-  // nothing. A conversation's entry clears every row it stands for.
+  // nothing. A conversation's entry clears the whole conversation on the
+  // server, rows the list didn't load or hid under Unread included.
   function confirmClear(row: NotificationRow) {
     Alert.alert(
       notificationTitle(row.title),
@@ -140,7 +141,11 @@ export default function NotificationsScreen() {
         {
           text: "Clear",
           style: "destructive",
-          onPress: () => clear.mutate(row.ids ?? [row.id]),
+          onPress: () =>
+            clear.mutate({
+              ids: row.ids ?? [row.id],
+              conversation: row.conversation ?? undefined,
+            }),
         },
       ],
       { cancelable: true },

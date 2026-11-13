@@ -19501,6 +19501,24 @@
           "updated"
         ]
       },
+      "NotificationConversationDto": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "description": "The chat channel (`data.target.channelId`)",
+            "format": "uuid"
+          },
+          "threadRootId": {
+            "type": "string",
+            "description": "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
       "ClearNotificationsDto": {
         "type": "object",
         "properties": {
@@ -19513,6 +19531,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "conversation": {
+            "description": "Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationConversationDto"
+              }
+            ]
           }
         },
         "required": [

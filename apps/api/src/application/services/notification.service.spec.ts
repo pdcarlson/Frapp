@@ -67,6 +67,7 @@ describe('NotificationService', () => {
       markChatChannelRead: jest.fn(),
       markAllRead: jest.fn(),
       deleteMany: jest.fn(),
+      deleteConversation: jest.fn(),
       rewriteChatMessageBody: jest.fn(),
     };
     mockPushTokenRepo = {
@@ -1663,6 +1664,29 @@ describe('NotificationService', () => {
         ['n-1', 'n-2'],
       );
       expect(result).toEqual({ cleared: 2 });
+      expect(mockNotificationRepo.deleteConversation).not.toHaveBeenCalled();
+    });
+
+    it('with a conversation, also clears its rows past the ids, up to now', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-13T19:00:00.000Z'));
+      mockNotificationRepo.deleteMany.mockResolvedValue(2);
+      mockNotificationRepo.deleteConversation.mockResolvedValue(5);
+
+      const result = await service.clearNotifications(
+        'user-1',
+        'chapter-1',
+        ['n-1', 'n-2'],
+        { channelId: 'c-1', threadRootId: 'm-1' },
+      );
+
+      expect(mockNotificationRepo.deleteConversation).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        { channelId: 'c-1', threadRootId: 'm-1' },
+        '2026-11-13T19:00:00.000Z',
+      );
+      expect(result).toEqual({ cleared: 7 });
+      jest.useRealTimers();
     });
   });
 

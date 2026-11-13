@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { notificationSourceKey } from "./notification-rows";
 
 /**
  * Query keys for this module.
@@ -206,10 +207,7 @@ export function useNotifications(limit?: number) {
   // Every pending receipt, the push tap's `on-open` ones included: mutation
   // filters match by key prefix.
   const pendingReads = useMutationState({
-    filters: {
-      mutationKey: markNotificationReadMutationKey,
-      status: "pending",
-    },
+    filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
     select: (mutation) => {
       const id = mutation.state.variables;
       return typeof id === "string"
@@ -222,8 +220,8 @@ export function useNotifications(limit?: number) {
   const pendingClears = useMutationState({
     filters: { mutationKey: clearNotificationsMutationKey, status: "pending" },
     select: (mutation) => {
-      const ids = mutation.state.variables;
-      return Array.isArray(ids) ? ids.join("\n") : null;
+      const scope = mutation.state.variables as ClearScope | undefined;
+      return scope ? clearScopeKeys(scope).join("\n") : null;
     },
   });
   // Reduced to a string, so the `select` below keeps its identity (and the
@@ -237,8 +235,8 @@ export function useNotifications(limit?: number) {
       pending.set(id, sentAt);
     }
     const clearing = new Set(clearingKey ? clearingKey.split("\n") : []);
-    return <T>(data: T): T =>
-      withPendingReads(withoutRows(data, clearing), pending);
+    return <T,>(data: T): T =>
+      withPendingReads(withoutCleared(data, clearing), pending);
   }, [pendingKey, clearingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
@@ -331,10 +329,7 @@ export function useRemovePushToken() {
  * own defaults. Its failures group in Sentry under `notifications`, not
  * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
  */
-export const markNotificationReadMutationKey = [
-  "notifications",
-  "read",
-] as const;
+export const markNotificationReadMutationKey = ["notifications", "read"] as const;
 
 /**
  * The read receipt a push tap sends as it opens the app: the same write, under
@@ -417,17 +412,45 @@ export function invalidateNotificationLists(queryClient: QueryClient) {
   });
 }
 
-/** The cached list without the rows `ids` names; the same list if none. */
-function withoutRows<T>(data: T, ids: ReadonlySet<string>): T {
-  if (ids.size === 0 || !Array.isArray(data)) return data;
-  const kept = data.filter(
-    (row: unknown) =>
-      !(
-        row &&
-        typeof row === "object" &&
-        ids.has((row as CachedNotificationRow).id as string)
-      ),
-  );
+/**
+ * What a clear removes (#3948): the entry's row ids and, for a conversation,
+ * its `notificationSourceKey`, so rows of it the list hid (past its page, or
+ * read under Unread) go with it, as the server deletes them.
+ */
+export interface ClearScope {
+  ids: readonly string[];
+  conversation?: { channelId: string; threadRootId?: string };
+}
+
+function conversationKey(conversation: {
+  channelId: string;
+  threadRootId?: string;
+}): string {
+  return notificationSourceKey({
+    target: { screen: "chat", ...conversation },
+  }) as string;
+}
+
+/** A clear's ids and conversation key, as one set of strings. */
+function clearScopeKeys(scope: ClearScope): string[] {
+  return scope.conversation
+    ? [...scope.ids, conversationKey(scope.conversation)]
+    : [...scope.ids];
+}
+
+/**
+ * The cached list without the rows `keys` names, by id or by conversation
+ * key; the same list if none goes.
+ */
+function withoutCleared<T>(data: T, keys: ReadonlySet<string>): T {
+  if (keys.size === 0 || !Array.isArray(data)) return data;
+  const kept = data.filter((row: unknown) => {
+    if (!row || typeof row !== "object") return true;
+    const { id, data: rowData } = row as CachedNotificationRow;
+    if (typeof id === "string" && keys.has(id)) return false;
+    const source = notificationSourceKey(rowData);
+    return !(source && keys.has(source));
+  });
   return (kept.length === data.length ? data : kept) as T;
 }
 
@@ -437,10 +460,12 @@ const clearNotificationsMutationKey = ["notifications", "clear"] as const;
 /**
  * Clear notifications from the member's list (#3948):
  * `POST /v1/notifications/clear` with the rows' ids, the caller's own in the
- * active chapter. A conversation's entry clears every row it stands for.
+ * active chapter, and for a conversation's entry the conversation, so the
+ * server deletes the rest of it too.
  *
  * The rows leave the list on the tap, through `useNotifications`' overlay of
- * pending clears, and on success leave the cache before the overlay lifts;
+ * pending clears, and on success leave every cached list (an unmounted one
+ * included, which the refetch below doesn't reach) before the overlay lifts;
  * a failed clear simply stops hiding them. The lists then refetch.
  */
 export function useClearNotifications() {
@@ -448,21 +473,22 @@ export function useClearNotifications() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: clearNotificationsMutationKey,
-    mutationFn: async (ids: readonly string[]) => {
+    mutationFn: async (scope: ClearScope) => {
       const result = await client.POST("/v1/notifications/clear", {
-        body: { ids: [...ids] },
+        body: {
+          ids: [...scope.ids],
+          ...(scope.conversation ? { conversation: scope.conversation } : {}),
+        },
       });
       throwUnlessOk(result);
       return result.data;
     },
-    onSuccess: (_result, ids) => {
-      const gone = new Set(ids);
-      for (const [queryKey, rows] of queryClient.getQueriesData({
-        predicate: (query) => isNotificationListKey(query.queryKey),
-      })) {
-        const next = withoutRows(rows, gone);
-        if (next !== rows) queryClient.setQueryData(queryKey, next);
-      }
+    onSuccess: (_result, scope) => {
+      const gone = new Set(clearScopeKeys(scope));
+      queryClient.setQueriesData(
+        { predicate: (query) => isNotificationListKey(query.queryKey) },
+        (rows: unknown) => withoutCleared(rows, gone),
+      );
       return invalidateNotificationLists(queryClient);
     },
   });
@@ -480,8 +506,7 @@ function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   return withRowsRead(
     data,
     (row) => {
-      const sentAt =
-        typeof row.id === "string" ? pending.get(row.id) : undefined;
+      const sentAt = typeof row.id === "string" ? pending.get(row.id) : undefined;
       if (sentAt === undefined) return false;
       stamp = sentAt;
       return true;
@@ -541,9 +566,7 @@ export function refetchIfChannelNotificationsShown(
   channelId: string,
 ): void {
   const shown = queryClient
-    .getQueriesData({
-      predicate: (query) => isNotificationListKey(query.queryKey),
-    })
+    .getQueriesData({ predicate: (query) => isNotificationListKey(query.queryKey) })
     .some(
       ([, rows]) =>
         Array.isArray(rows) &&
@@ -605,9 +628,7 @@ export function useMarkNotificationRead({
       );
       const firstFetchInFlight = queryClient
         .getQueryCache()
-        .findAll({
-          predicate: (query) => isNotificationListKey(query.queryKey),
-        })
+        .findAll({ predicate: (query) => isNotificationListKey(query.queryKey) })
         .some(
           (query) =>
             query.state.data === undefined &&
@@ -772,12 +793,7 @@ export function useUpdateNotificationPreference() {
       const restore = previousEnabledFor(previous, body.category);
       const next = applyPreferenceToRows(previous, body);
       if (next) queryClient.setQueryData(queryKey, next);
-      return {
-        queryKey,
-        category: body.category,
-        restore,
-        wrote: next !== null,
-      };
+      return { queryKey, category: body.category, restore, wrote: next !== null };
     },
     onError: (_error, _body, context) => {
       if (!context?.wrote) return;

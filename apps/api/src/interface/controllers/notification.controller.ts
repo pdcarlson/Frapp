@@ -127,6 +127,7 @@ export class NotificationController {
       userId,
       chapterId,
       dto.ids,
+      dto.conversation,
     );
   }
 

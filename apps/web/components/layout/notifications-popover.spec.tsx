@@ -877,17 +877,33 @@ describe("NotificationsPopover: clearing a row (#3948)", () => {
     ];
     mockClear.mockClear();
     mockMarkRead.mockClear();
-    renderDrawer();
+    mockMarkManyRead.mockClear();
+    const onOpenChange = vi.fn();
+    render(
+      <NotificationsPopover open onOpenChange={onOpenChange}>
+        {BELL}
+      </NotificationsPopover>,
+    );
 
     await userEvent.click(
       screen.getByRole("button", { name: "Clear: Ryan in #general" }),
     );
-    expect(mockClear).toHaveBeenCalledWith(["g2", "g1"]);
+    // The whole conversation, so its rows past the page go too.
+    expect(mockClear).toHaveBeenCalledWith({
+      ids: ["g2", "g1"],
+      conversation: { channelId: "c-general" },
+    });
+    // Clearing is not opening: nothing is read and the list stays open.
     expect(mockMarkRead).not.toHaveBeenCalled();
+    expect(mockMarkManyRead).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Clear: Notice" }),
     );
-    expect(mockClear).toHaveBeenLastCalledWith(["n-event"]);
+    expect(mockClear).toHaveBeenLastCalledWith({
+      ids: ["n-event"],
+      conversation: undefined,
+    });
   });
 });

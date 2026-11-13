@@ -13,6 +13,7 @@
  */
 import {
   groupNotificationsBySource,
+  notificationConversation,
   notificationEntryCount,
   notificationWhen,
   type NotificationFilter,
@@ -61,6 +62,11 @@ export interface NotificationRow {
    * (#3948); absent means just `id`.
    */
   ids?: string[];
+  /**
+   * The conversation a clear deletes on the server (#3948), rows the list
+   * didn't load or hid under Unread included; absent for a row on its own.
+   */
+  conversation?: { channelId: string; threadRootId?: string } | null;
 }
 
 export interface NotificationGroup {
@@ -130,6 +136,7 @@ export function selectNotificationGroups(
     count: notificationEntryCount(entry),
     unreadIds: entry.unreadIds,
     ids: entry.rows.map((row) => row.id),
+    conversation: notificationConversation(entry.lead.data),
   }));
 
   const groups: NotificationGroup[] = [

@@ -228,6 +228,90 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('deleteConversation (#3948)', () => {
+    const chat = (target: Record<string, unknown>, extra = {}) => ({
+      target: { screen: 'chat', channelId: 'c-1', ...target },
+      ...extra,
+    });
+    const convo = [
+      { id: 'old', data: chat({}), created_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'read', data: chat({}), created_at: '2026-01-01T00:00:30.000Z' },
+      {
+        id: 'mention',
+        data: chat({}, { mentioned: true }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'thread',
+        data: chat({ threadRootId: 'm-1' }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'other',
+        data: chat({ channelId: 'c-2' }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      { id: 'late', data: chat({}), created_at: '2026-01-01T00:05:00.000Z' },
+    ];
+    const THROUGH = '2026-01-01T00:01:00.000Z';
+
+    beforeEach(() => {
+      const row = (r: (typeof convo)[number], prefix: string) => ({
+        ...r,
+        id: `${prefix}-${r.id}`,
+        user_id: USER_SHARED,
+        title: 'Alex',
+        body: 'hi',
+        read_at: null,
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...convo.map((r) => inA(row(r, 'a'))),
+            ...convo.map((r) => inB(row(r, 'b'))),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+    const left = () =>
+      harness
+        .rows('notifications')
+        .map((n) => n.id as string)
+        .filter((id) => id.startsWith('b-'))
+        .sort();
+
+    it("deletes the channel's own rows up to now, not a mention, a thread, another channel or a later row", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteConversation(
+          USER_SHARED,
+          CHAPTER_B,
+          { channelId: 'c-1' },
+          THROUGH,
+        ),
+      );
+
+      expect(cleared).toBe(2);
+      expect(left()).toEqual(['b-late', 'b-mention', 'b-other', 'b-thread']);
+      expect(harness.rows('notifications')).toHaveLength(10);
+    });
+
+    it("deletes only that thread's rows with a thread root", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteConversation(
+          USER_SHARED,
+          CHAPTER_B,
+          { channelId: 'c-1', threadRootId: 'm-1' },
+          THROUGH,
+        ),
+      );
+
+      expect(cleared).toBe(1);
+      expect(left()).not.toContain('b-thread');
+      expect(left()).toHaveLength(5);
+    });
+  });
+
   describe('markAllRead (#3929)', () => {
     const rows = [
       {
