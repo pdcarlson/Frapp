@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 // Only the ref's type: the field is `SearchField`, at the top of the screen as
@@ -66,6 +66,12 @@ import { channelsErrorCopy } from "@/lib/chat/channels-error";
 import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
+/** Under the search while the roster is still being read. */
+const MEMBERS_LOADING = "Loading your chapter's members…";
+/** The same, while that read waits for the network. */
+const MEMBERS_WAITING_FOR_NETWORK =
+  "Your chapter's members will load when you're back online.";
+
 /**
  * Messages: the member's direct and group messages on their own screen,
  * behind the door at the top right of Chat home (owner, 2026-11-07, option B
@@ -124,8 +130,18 @@ export default function MessagesScreen() {
   const [showHidden, setShowHidden] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<TextInput>(null);
-  // Members whose DM is being opened, so a second tap starts nothing.
-  const startingRef = useRef(new Set<string>());
+  // The member whose DM is being opened, so no second start runs meanwhile,
+  // and a count of picks: any later pick (another row, another member) or
+  // leaving the screen bumps it, so a slow start that lands after it opens
+  // nothing (web's search and the member sheet guard the same way).
+  const startingRef = useRef<string | null>(null);
+  const pickSeq = useRef(0);
+  useEffect(() => {
+    const seq = pickSeq;
+    return () => {
+      seq.current += 1;
+    };
+  }, []);
   const refresh = useRefetchAll([
     channelsQuery,
     unreadQuery,
@@ -162,18 +178,24 @@ export default function MessagesScreen() {
   // A DM the member pinned (pins are shared with web's rail) leads, then the
   // rest newest first; a conversation with no message yet sorts last, by name.
   const { pinnedIds } = useSidebarPreferences();
+  // The newest-first rule web's Direct messages list shares (#3774). The
+  // search ranks this order, without pins, as web's does (#4668).
+  const newestFirst = useMemo(
+    () =>
+      [...listedChannels(direct)].sort(
+        compareLatestFirst<ChannelSummary>(
+          (channel) => latestById.get(channel.id)?.created_at,
+          (channel) => displayChannelName(channel, viewerId, memberNames),
+        ),
+      ),
+    [direct, latestById, viewerId, memberNames],
+  );
   const listed = useMemo(() => {
     const pinRank = (channel: ChannelSummary) =>
       pinnedIds.has(channel.id) ? 0 : 1;
-    // The newest-first rule web's Direct messages list shares (#3774).
-    const newestFirst = compareLatestFirst<ChannelSummary>(
-      (channel) => latestById.get(channel.id)?.created_at,
-      (channel) => displayChannelName(channel, viewerId, memberNames),
-    );
-    return [...listedChannels(direct)].sort(
-      (a, b) => pinRank(a) - pinRank(b) || newestFirst(a, b),
-    );
-  }, [direct, latestById, pinnedIds, viewerId, memberNames]);
+    // A stable sort, so the newest-first order holds within each half.
+    return [...newestFirst].sort((a, b) => pinRank(a) - pinRank(b));
+  }, [newestFirst, pinnedIds]);
   const hidden = useMemo(() => hiddenChannels(direct), [direct]);
 
   const searching = query.trim().length > 0;
@@ -181,7 +203,7 @@ export default function MessagesScreen() {
     () =>
       searchDirectMessages({
         query,
-        conversations: listed,
+        conversations: newestFirst,
         titleOf: (channel) =>
           displayChannelName(channel, viewerId, memberNames),
         roster: (rosterQuery.data ?? []) as DmSearchMember[],
@@ -192,7 +214,7 @@ export default function MessagesScreen() {
       }),
     [
       query,
-      listed,
+      newestFirst,
       viewerId,
       memberNames,
       rosterQuery.data,
@@ -215,25 +237,35 @@ export default function MessagesScreen() {
   } else if (searching && rosterFailed) {
     heldNote = DM_SEARCH_ROSTER_FAILED;
     if (!rosterQuery.isFetching) retryHeld = () => void rosterQuery.refetch();
+  } else if (searching && rosterQuery.data === undefined) {
+    // Still reading it; offline under `offlineFirst` the read waits for the
+    // network, which can be a long time, so it says so.
+    heldNote =
+      rosterQuery.fetchStatus === "paused"
+        ? MEMBERS_WAITING_FOR_NETWORK
+        : MEMBERS_LOADING;
   }
 
   async function startConversation(member: DmSearchMember) {
-    if (startingRef.current.has(member.user_id)) return;
-    startingRef.current.add(member.user_id);
+    if (startingRef.current !== null) return;
+    const seq = ++pickSeq.current;
+    startingRef.current = member.user_id;
     try {
       const channelId = dmChannelIdOf(
         await startDm.mutateAsync({ member_id: member.user_id }),
       );
+      if (seq !== pickSeq.current) return;
       if (!channelId) throw new Error("No channel id returned");
       setQuery("");
       openChannel(channelId);
     } catch {
+      if (seq !== pickSeq.current) return;
       Alert.alert(
         startDmFailedTitle(member.display_name),
         START_DM_FAILED_BODY,
       );
     } finally {
-      startingRef.current.delete(member.user_id);
+      startingRef.current = null;
     }
   }
 
@@ -266,6 +298,7 @@ export default function MessagesScreen() {
   }
 
   function openChannel(channelId: string) {
+    pickSeq.current += 1;
     router.push({ pathname: "/chat-thread", params: { channelId } });
   }
 
@@ -283,10 +316,13 @@ export default function MessagesScreen() {
   }
 
   const error = channelsErrorCopy(channelsQuery.error, null);
+  const listLoading = channelsQuery.isPending || latestQuery.isPending;
+  const listFailed = channelsQuery.isError && channelsQuery.data === undefined;
 
   return (
     <ScreenShell
       back={BACK_TO_CHAT}
+      keyboardShouldPersistTaps="handled"
       title="Messages"
       refresh={refresh}
       // New message, where iMessage and Instagram keep it. It focuses the
@@ -301,11 +337,22 @@ export default function MessagesScreen() {
         </HeaderButton>
       }
     >
-      {/* The order comes from the latest messages, so the list waits for
-          them (or their failure) rather than reordering under a thumb. */}
-      {channelsQuery.isPending || latestQuery.isPending ? (
+      {/* Drawn in every state, so the pencil always has a field to focus:
+          a member can still be found and messaged while the list loads or
+          after it failed, as the Directory's Message could before. */}
+      <SearchField
+        inputRef={searchRef}
+        value={query}
+        onChangeText={setQuery}
+        placeholder={DM_SEARCH_PLACEHOLDER}
+        accessibilityLabel={DM_SEARCH_PLACEHOLDER}
+        searchGlyph
+      />
+      {searching ? null : listLoading ? (
+        /* The order comes from the latest messages, so the list waits for
+           them (or their failure) rather than reordering under a thumb. */
         <ChannelListSkeleton />
-      ) : channelsQuery.isError && channelsQuery.data === undefined ? (
+      ) : listFailed ? (
         <ErrorState
           title={error.title}
           body={error.body}
@@ -313,16 +360,9 @@ export default function MessagesScreen() {
           retryLabel="Try loading messages again"
           isRetrying={channelsQuery.isFetching}
         />
-      ) : (
+      ) : null}
+      {searching || (!listLoading && !listFailed) ? (
         <>
-          <SearchField
-            inputRef={searchRef}
-            value={query}
-            onChangeText={setQuery}
-            placeholder={DM_SEARCH_PLACEHOLDER}
-            accessibilityLabel={DM_SEARCH_PLACEHOLDER}
-            searchGlyph
-          />
           {searching ? (
             <>
               <View style={styles.rows}>
@@ -360,8 +400,7 @@ export default function MessagesScreen() {
                   {heldNote}
                 </InlineNote>
               ) : found.conversations.length === 0 &&
-                found.members.length === 0 &&
-                !rosterQuery.isPending ? (
+                found.members.length === 0 ? (
                 <InlineNote>{dmSearchNoMatches(query)}</InlineNote>
               ) : null}
             </>
@@ -415,7 +454,7 @@ export default function MessagesScreen() {
             </>
           )}
         </>
-      )}
+      ) : null}
     </ScreenShell>
   );
 }

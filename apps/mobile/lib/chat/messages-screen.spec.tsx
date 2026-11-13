@@ -37,7 +37,12 @@ const {
   rosterState,
 } = vi.hoisted(() => ({
   startMutateAsync: vi.fn(),
-  rosterState: { failed: false, refetch: vi.fn() },
+  rosterState: {
+    failed: false,
+    // A first read still out: `pending`, or `paused` waiting for the network.
+    unread: null as null | "pending" | "paused",
+    refetch: vi.fn(),
+  },
   blockListState: {
     value: {
       ids: new Set<string>() as ReadonlySet<string>,
@@ -112,7 +117,13 @@ vi.mock("@repo/hooks", async () => {
     useViewerUserId: () => VIEWER,
     useOwnAvatarTint: () => null,
     useChapterRoster: () =>
-      rosterState.failed
+      rosterState.unread
+        ? {
+            ...query(undefined, rosterState.refetch),
+            isPending: true,
+            fetchStatus: rosterState.unread === "paused" ? "paused" : "fetching",
+          }
+        : rosterState.failed
         ? {
             ...query(undefined, rosterState.refetch),
             isError: true,
@@ -268,6 +279,7 @@ function hiddenToggle(tree: ReactTestRenderer) {
 beforeEach(() => {
   vi.clearAllMocks();
   rosterState.failed = false;
+  rosterState.unread = null;
   blockListState.value = {
     ids: new Set(),
     status: "ready",
@@ -690,5 +702,121 @@ describe("Messages search (#4668)", () => {
     );
     act(() => note.props.action.onPress());
     expect(rosterState.refetch).toHaveBeenCalled();
+  });
+
+  it("starts one DM at a time, and clears the search once it opens", async () => {
+    let resolve!: (value: unknown) => void;
+    startMutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    const tree = render();
+    search(tree, "carol");
+    act(() => {
+      void rowNamed(tree, "Carol Alvarez").props.onPress();
+      void rowNamed(tree, "Carol Alvarez").props.onPress();
+    });
+    expect(startMutateAsync).toHaveBeenCalledTimes(1);
+    await act(async () => resolve({ id: "c-dm-carol" }));
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType(SearchField).props.value).toBe("");
+  });
+
+  it("opens nothing when a slow start lands after the member picked a conversation", async () => {
+    let resolve!: (value: unknown) => void;
+    startMutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    const tree = render();
+    search(tree, "al");
+    act(() => void rowNamed(tree, "Carol Alvarez").props.onPress());
+    act(() => rowNamed(tree, "Alice Chen").props.onPress());
+    await act(async () => resolve({ id: "c-dm-carol" }));
+    const push = vi.mocked(useRouter)().push;
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: dmAlice.id },
+    });
+  });
+
+  it("opens nothing when a slow start lands after the member left Messages", async () => {
+    let resolve!: (value: unknown) => void;
+    startMutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    const tree = render();
+    search(tree, "carol");
+    act(() => void rowNamed(tree, "Carol Alvarez").props.onPress());
+    act(() => tree.unmount());
+    await act(async () => resolve({ id: "c-dm-carol" }));
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("says the members are loading, or waiting for the network, rather than nothing", () => {
+    rosterState.unread = "pending";
+    let tree = render();
+    search(tree, "carol");
+    expect(tree.root.findByType(InlineNote).props.children).toBe(
+      "Loading your chapter's members…",
+    );
+    act(() => tree.unmount());
+    rosterState.unread = "paused";
+    tree = render();
+    search(tree, "carol");
+    expect(tree.root.findByType(InlineNote).props.children).toBe(
+      "Your chapter's members will load when you're back online.",
+    );
+  });
+
+  it("offers no retry while a failed block list waits for the network", () => {
+    blockListState.value = {
+      ...blockListState.value,
+      status: "unavailable",
+      isPaused: true,
+    };
+    const tree = render();
+    search(tree, "al");
+    expect(tree.root.findByType(InlineNote).props.action).toBeUndefined();
+  });
+
+  it("keeps the search while the list failed, so New message still has a field", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      data: undefined,
+    };
+    channelsData.value = undefined as unknown as unknown[];
+    const tree = render();
+    expect(tree.root.findAllByType(SearchField)).toHaveLength(1);
+    expect(tree.root.findAllByType(ErrorState)).toHaveLength(1);
+    // Searching shows members in place of the error.
+    search(tree, "carol");
+    expect(rows(tree).map((row) => row.props.name)).toEqual(["Carol Alvarez"]);
+  });
+
+  it("ranks by recency like web, not pins first", () => {
+    const olderGroup = {
+      id: "c-group-old",
+      name: "Old crew",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, ALICE, BOB],
+    };
+    channelsData.value = [general, olderGroup, group];
+    pinnedIds.value = new Set([olderGroup.id]);
+    latestData.value = [
+      latest(olderGroup.id, "2026-11-01T10:00:00Z"),
+      latest(group.id, "2026-11-12T10:00:00Z"),
+    ];
+    const tree = render();
+    // The list leads with the pin...
+    expect(rows(tree)[0]!.props.name).toBe("Old crew");
+    search(tree, "bob");
+    // ...the search with the newer conversation, as web's does (Bob, with no
+    // 1:1 here, follows under Start a conversation).
+    expect(rows(tree).map((row) => row.props.name)).toEqual([
+      "Exec board",
+      "Old crew",
+      "Bob Diaz",
+    ]);
+  });
+
+  it("lets a tap on a result through while the keyboard is up", () => {
+    expect(
+      render().root.findByType(ScreenShell).props.keyboardShouldPersistTaps,
+    ).toBe("handled");
   });
 });
