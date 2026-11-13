@@ -16,12 +16,21 @@ import type { AskTool } from './ask-tool';
  *
  * A question can come with the conversation before it (`ai.md` § One
  * conversation). The answer call gets the earlier turns as turns: what the
- * member typed, and what Ask answered. The planner gets only what the member
- * typed, never an answer, so it still sees nothing anyone else wrote (C3).
+ * member sent, and what Ask answered. The planner gets only what the member
+ * sent, never an answer or a source.
+ *
+ * What the member sent is what they typed, with one exception (#4700): a
+ * question tapped from the opening suggestions can carry the name of an
+ * event, a task or a meeting, which another member wrote, at most
+ * `ASK_SUGGESTION_NAME_MAX` characters on one line. Both calls here read it
+ * as the question. Neither can change anything: this planner picks among
+ * read tools that run as the asker, and the answer call has no tool. The
+ * acting planner (`act.plan`), which C3 is about, never reads a tapped
+ * question (`AskConversationService`).
  */
 
 export const ASK_ANSWER_PROMPT_VERSION = 'ask.answer@v2';
-export const ASK_PLAN_PROMPT_VERSION = 'ask.plan@v2';
+export const ASK_PLAN_PROMPT_VERSION = 'ask.plan@v3';
 
 /** Earlier questions shown to the planner and added to the search. */
 const ASK_EARLIER_QUESTIONS_FOR_PLAN = 3;
@@ -43,7 +52,7 @@ export function askAnswerSystem(today: string): string {
 
 export const ASK_PLAN_SYSTEM = [
   'You decide which live chapter data a question needs before it is answered.',
-  "The chapter's documents, minutes and announcements are searched separately. Pick a tool only when the question needs data that changes day to day: who holds a role, what is on the calendar, points, dues.",
+  "The chapter's documents, minutes and announcements are searched separately. Pick a tool only when the question needs data that changes day to day: who holds a role, what is on the calendar, points, dues, the member's own tasks.",
   'Return the names of the tools needed, from the list given, at most three. Return an empty list when none is needed. Never invent a tool name.',
   'You may also be given what the member asked earlier in the conversation. Use it only to understand the question, such as what "it" or "the one after" refers to. Pick tools for the question, not for the earlier ones.',
 ].join('\n');

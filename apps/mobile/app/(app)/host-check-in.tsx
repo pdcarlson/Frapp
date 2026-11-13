@@ -40,9 +40,12 @@ import {
 /**
  * s22 — Host check-in, admin (`canvas-screens.dc.html:704`).
  *
- * An officer projects this; members scan it with s18. The code rotates every 30
- * seconds and the server accepts the current and previous window, so a scan
- * racing a rotation still lands (`spec/ui/mobile/patterns.md`).
+ * An officer projects this; members point their phone's own camera at it. The
+ * QR is a link (`@repo/validation` `check-in-link.ts`, 2026-11-13) that opens
+ * s18 already checking in, or the web page on a phone without the app. The
+ * code rotates every 30 seconds and the server accepts a scanned one for three
+ * windows more (a typed one for one more), so a scan that races a rotation, or
+ * waits on a location prompt, still lands.
  *
  * ## The QR is dark-on-white even though the app is dark-only
  *

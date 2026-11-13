@@ -179,6 +179,34 @@ export class MeetingService {
           .findByEvent(chapterId, eventId)
           .then((row) => (row ? [row] : []))
       : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /**
+   * The newest posted minutes the viewer may read for meetings held since
+   * `since`, at most `limit`. The same read rule as `list`, over a read that
+   * does not load the chapter's whole history (Ask's opening, #4700).
+   */
+  async listPostedSince(
+    chapterId: string,
+    viewerId: string,
+    since: Date,
+    limit: number,
+  ): Promise<Meeting[]> {
+    const rows = await this.meetingRepo.findPostedSince(
+      chapterId,
+      since.toISOString(),
+      limit,
+    );
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /** The rows of `rows` the viewer may read (`readable`), in their order. */
+  private async readableRows(
+    chapterId: string,
+    viewerId: string,
+    rows: Meeting[],
+  ): Promise<Meeting[]> {
     if (rows.length === 0) return [];
     const access = await this.access(chapterId, viewerId);
     // Only the events these rows point at, never the whole calendar: a

@@ -16239,6 +16239,47 @@
         ]
       }
     },
+    "/v1/ai/ask/suggestions": {
+      "get": {
+        "description": "Up to three questions and one request, each built from a record the caller’s own account holds right now (their next event, their open tasks, what they owe, minutes they can read, their points). No model is called, and the chapter’s Ask switch and the AI sheet are not checked: nothing here leaves the server. Each question is one Ask could answer for this caller. Empty when there is nothing to ask about.",
+        "operationId": "AskController_openingSuggestions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskSuggestionsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What Ask opens with for this member",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/ask/diagnostics": {
       "post": {
         "description": "The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.",
@@ -18528,7 +18569,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "description": "Must contain something besides whitespace."
           },
           "permissions": {
             "type": "array",
@@ -18578,7 +18620,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "description": "Must contain something besides whitespace."
           },
           "permissions": {
             "type": "array",
@@ -28470,6 +28513,45 @@
           "diagnostics"
         ]
       },
+      "AskSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "What the suggestion is about. A client shows the text and does not need to know every kind.",
+            "example": "event"
+          },
+          "text": {
+            "type": "string",
+            "description": "The words to show, and to send when the member taps it.",
+            "example": "When and where is Chapter meeting on Sunday?"
+          },
+          "request": {
+            "type": "boolean",
+            "description": "False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "request"
+        ]
+      },
+      "AskSuggestionsDto": {
+        "type": "object",
+        "properties": {
+          "suggestions": {
+            "description": "At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskSuggestionDto"
+            }
+          }
+        },
+        "required": [
+          "suggestions"
+        ]
+      },
       "AskHistoryTurnDto": {
         "type": "object",
         "properties": {
@@ -28482,6 +28564,10 @@
             "type": "string",
             "description": "What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages).",
             "maxLength": 2000
+          },
+          "suggested": {
+            "type": "boolean",
+            "description": "True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done."
           }
         },
         "required": [

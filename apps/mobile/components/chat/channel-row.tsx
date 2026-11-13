@@ -4,13 +4,16 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
-import { AuditGlyph, LockGlyph } from "@/components/chat/card-glyphs";
+import {
+  AuditGlyph,
+  LockGlyph,
+  MuteGlyph,
+} from "@/components/chat/card-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import { type ChannelMark } from "@repo/hooks/channel-start";
@@ -102,7 +105,7 @@ export interface ChannelRowProps {
   preview?: string | null;
   /**
    * The member muted this channel. The row stays where it is, drawn quiet: a
-   * read row's title whatever its count, and a crossed-out bell after the
+   * read row's title whatever its count, and a crossed-out speaker after the
    * name, so a busy muted channel doesn't shout from the top of the list.
    */
   isMuted?: boolean;
@@ -289,7 +292,7 @@ export function ChannelRow({
           >
             {name}
           </Text>
-          {isMuted ? <MutedGlyph color={tokens.color.text.muted} /> : null}
+          {isMuted ? <MutedMark color={tokens.color.text.muted} /> : null}
         </View>
         {preview != null ? (
           <Text
@@ -339,20 +342,18 @@ function SigilGlyph({
 }
 
 /**
- * A bell with a slash, after a muted row's name. Decorative: the row's label
- * says "muted".
+ * The crossed-out speaker (`MuteGlyph`, web's row's mark) after a muted row's
+ * name, at 14 in the muted text hue. Decorative: the row's label says "muted".
  */
-function MutedGlyph({ color }: { color: string }) {
+function MutedMark({ color }: { color: string }) {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" accessible={false}>
-      <Path
-        d="M6 10a6 6 0 0 1 10.4-4.1M18 10c0 4 1.6 5.6 2.2 6.4.2.3 0 .6-.3.6H8M9.5 20a2.6 2.6 0 0 0 5 0M4 4l16 16"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        fill="none"
-      />
-    </Svg>
+    <View
+      testID="channel-row-muted"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <MuteGlyph active focused accent={color} muted={color} size={14} />
+    </View>
   );
 }
 

@@ -13,6 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
@@ -25,18 +26,19 @@ import Svg, { Path } from "react-native-svg";
 import {
   useAsk,
   useAskStatus,
+  useAskSuggestions,
   useDocumentDownloadUrl,
   type AskExchange,
   type AskOptions,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  ACT_COPY,
   ASK_COPY,
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
   formatAiAnswerDate,
   type AskSource,
+  type AskSuggestion,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/ai-consent-sheet";
 import {
@@ -98,6 +100,17 @@ import {
  * when the app restarts. A question still being answered when the sheet
  * closes is dropped; the turns before it stay.
  *
+ * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
+ * just be like some presets"). Before the first turn the sheet offers up to
+ * three questions and one request the server built from what this member's
+ * account holds now: their next event, their open tasks, minutes they can
+ * read, their points. The same list, in the same words, as web's panel.
+ * There is no fixed list; with nothing to ask about, the two opening lines
+ * stand alone. They are read once the sheet is open and fade in under the
+ * opening words, where nothing sits below them to move. A tapped question
+ * is sent as a suggestion, never as words the member typed (`useAsk`'s
+ * `suggested`).
+ *
  * **Consent is asked at the first question**, not when the sheet opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
  * first, so the consent sheet opens over the words it is about. The server
@@ -137,6 +150,9 @@ const ASK_SNAP_POINTS = ["78%"];
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK = 80;
 
+/** An opacity change only, so it is the same with reduced motion on. */
+const SUGGESTIONS_FADE_MS = 200;
+
 export const AskSheet = forwardRef<
   BottomSheetModal,
   {
@@ -174,6 +190,7 @@ export const AskSheet = forwardRef<
   const actions = useActActions({ enabled: shownOpen });
   const canAct = actions.length > 0;
   const mayAct = useMayAct();
+  const { suggestions } = useAskSuggestions({ enabled: shownOpen });
   const [kept, setKept] = useState<KeptTargets>({});
 
   const [draft, setDraft] = useState("");
@@ -218,9 +235,9 @@ export const AskSheet = forwardRef<
   const options = useCallback(
     (): AskOptions => ({
       savedNoticeShown: savedUntil !== null,
-      // Asked for on the permission alone. The list of actions only picks
-      // the opening example: a request typed before it arrives, or after it
-      // failed to load, must still come back as a card.
+      // Asked for on the permission alone. The list of actions only words
+      // the opening: a request typed before it arrives, or after it failed
+      // to load, must still come back as a card.
       actions: mayAct,
       gate: ensureConsent,
     }),
@@ -233,6 +250,20 @@ export const AskSheet = forwardRef<
       setDraft("");
       setSourceNotice(null);
       void ask(text, options());
+    },
+    [ask, options],
+  );
+
+  const pick = useCallback(
+    (suggestion: AskSuggestion) => {
+      if (workingRef.current) return;
+      setSourceNotice(null);
+      // A question can name a record someone else wrote, so it is sent as a
+      // suggestion. The one request holds none and is sent like typed words.
+      void ask(suggestion.text, {
+        ...options(),
+        suggested: !suggestion.request,
+      });
     },
     [ask, options],
   );
@@ -406,8 +437,9 @@ export const AskSheet = forwardRef<
             ))
           ) : (
             <AskEmpty
-              actions={canAct ? actions : null}
-              onPick={submit}
+              canAct={canAct}
+              suggestions={suggestions}
+              onPick={pick}
               styles={styles}
             />
           )}
@@ -459,51 +491,54 @@ export const AskSheet = forwardRef<
 });
 
 /**
- * Before the first turn: what Frapp answers from, and a few things to try.
- * A member Frapp can act for is told so, and offered one request beside the
- * questions.
+ * Before the first turn: what Frapp answers from, and what this member could
+ * ask about their own account right now. A member Frapp can act for is told
+ * so. With nothing to suggest, the two lines stand alone.
  */
 function AskEmpty({
-  actions,
+  canAct,
+  suggestions,
   onPick,
   styles,
 }: {
-  /** The actions this member can ask for, or null when they cannot. */
-  actions: readonly string[] | null;
-  onPick: (text: string) => void;
+  /** Frapp can take at least one action for this member. */
+  canAct: boolean;
+  suggestions: readonly AskSuggestion[];
+  onPick: (suggestion: AskSuggestion) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const request = (actions ?? []).flatMap((action) => {
-    const example = (ACT_COPY.examples as Record<string, string>)[action];
-    return example ? [example] : [];
-  })[0];
-  const examples = [...ASK_COPY.examples, ...(request ? [request] : [])];
   return (
     <>
       <View style={styles.emptyWords}>
         <Text style={styles.emptyTitle}>{ASK_COPY.empty_title}</Text>
         <Text style={styles.emptyBody}>
           {ASK_COPY.empty_body}
-          {actions ? ` ${ASK_COPY.empty_body_act}` : ""}
+          {canAct ? ` ${ASK_COPY.empty_body_act}` : ""}
         </Text>
       </View>
-      <View style={styles.examples}>
-        {examples.map((example) => (
-          <Pressable
-            key={example}
-            accessibilityRole="button"
-            accessibilityLabel={example}
-            accessibilityHint="Sends this."
-            onPress={() => onPick(example)}
-            style={({ pressed }) => [
-              styles.example,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.exampleText}>{example}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {suggestions.length > 0 ? (
+        // Fades in when it arrives. Nothing sits below it, so nothing moves.
+        <Animated.View
+          entering={FadeIn.duration(SUGGESTIONS_FADE_MS)}
+          style={styles.examples}
+        >
+          {suggestions.map((suggestion) => (
+            <Pressable
+              key={suggestion.text}
+              accessibilityRole="button"
+              accessibilityLabel={suggestion.text}
+              accessibilityHint="Sends this."
+              onPress={() => onPick(suggestion)}
+              style={({ pressed }) => [
+                styles.example,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.exampleText}>{suggestion.text}</Text>
+            </Pressable>
+          ))}
+        </Animated.View>
+      ) : null}
     </>
   );
 }

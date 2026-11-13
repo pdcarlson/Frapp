@@ -52,6 +52,13 @@ describe("ChannelRowMenu", () => {
     ]);
   });
 
+  it("draws chat's pin, solid once the channel is pinned (#4292)", async () => {
+    renderRow({ pinned: true });
+    await open();
+    const item = screen.getByRole("menuitem", { name: "Unpin from top" });
+    expect(item.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
+  });
+
   it("adds Mark as read on an unread row", async () => {
     const markRead = vi.fn();
     renderRow({ unread: true, actions: actions({ onMarkRead: markRead }) });

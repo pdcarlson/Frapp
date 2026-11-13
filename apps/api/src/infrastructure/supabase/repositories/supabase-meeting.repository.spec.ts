@@ -74,6 +74,35 @@ describe('SupabaseMeetingRepository — tenant scope', () => {
     expect(rows.map((r) => r.id)).toEqual([MEETING_B]);
   });
 
+  it('findPostedSince returns only the caller chapter’s posted minutes in the window', async () => {
+    const posted = { ...row, status: 'posted' };
+    const rows = [
+      { id: 'recent', event_id: null, ...posted },
+      // Posted, but for a meeting before the window.
+      {
+        id: 'old',
+        event_id: null,
+        ...posted,
+        event_start_time: '2026-08-01T00:00:00.000Z',
+      },
+      // In the window, still a draft.
+      { id: 'draft', event_id: null, ...row },
+    ];
+    harness = createTenantHarness({
+      tables: {
+        meetings: [
+          ...rows.map((item) => inA({ ...item, id: `${item.id}-a` })),
+          ...rows.map((item) => inB({ ...item, id: `${item.id}-b` })),
+        ],
+      },
+    });
+    repo = new SupabaseMeetingRepository(harness.client);
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findPostedSince(CHAPTER_B, '2026-09-13T00:00:00.000Z', 5),
+    );
+    expect(found.map((r) => r.id)).toEqual(['recent-b']);
+  });
+
   it("findById misses another chapter's minutes", async () => {
     const found = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findById(CHAPTER_B, MEETING_A),

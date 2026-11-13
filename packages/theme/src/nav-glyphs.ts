@@ -241,9 +241,9 @@ export type NavGlyphName = keyof typeof NAV_GLYPHS;
  * The pin and the star Documents marks folders and files with (#3934), on
  * the §1 stroke recipe's 24 grid rather than this set's 256 one: no Phosphor
  * entry here covers them, and chat's pin was drawn on that grid first. One
- * copy of the path data for web (`chat-glyphs.tsx`'s `PinGlyph`, and
- * `resources-glyphs.tsx`'s own `PinGlyph` and `StarGlyph`, which fill solid
- * while on since #4289) and mobile (`components/documents/document-glyphs.tsx`),
+ * copy of the path data for web (`chat-glyphs.tsx`'s `PinGlyph`, which
+ * Documents re-exports, and `resources-glyphs.tsx`'s `StarGlyph`; both fill
+ * solid while on, #4289 and #4292) and mobile (`components/documents/document-glyphs.tsx`),
  * so the two apps draw one shape for one idea. `body` takes the fill while
  * on; `detail` is stroke only.
  */
@@ -254,5 +254,17 @@ export const MARK_GLYPH_PATHS = {
   },
   star: {
     body: "M12 3.6l2.55 5.2 5.7.83-4.13 4.02.98 5.68L12 16.65l-5.1 2.68.98-5.68-4.13-4.02 5.7-.83z",
+  },
+  /**
+   * A channel's notification level (web's `MuteGlyph` in `chat-glyphs.tsx`,
+   * mobile's in `components/chat/card-glyphs.tsx`, #4738): a speaker's box and
+   * cone, split by `split`, with `waves`, or `muted`'s × in their place. Not a
+   * bell, which is the notification inbox's (#3362).
+   */
+  mute: {
+    body: "M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z",
+    split: "M7.5 9.5v5",
+    waves: "M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4",
+    muted: "M15.5 9.5l5 5M20.5 9.5l-5 5",
   },
 } as const;

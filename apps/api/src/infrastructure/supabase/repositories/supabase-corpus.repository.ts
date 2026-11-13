@@ -63,6 +63,29 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
     return data;
   }
 
+  async indexedSourceIds(
+    chapterId: string,
+    sourceType: string,
+    sourceIds: readonly string[],
+  ): Promise<string[]> {
+    if (sourceIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('corpus_sources')
+      .select('source_id, revision, indexed_revision')
+      .eq('chapter_id', chapterId)
+      .eq('source_type', sourceType)
+      .in('source_id', [...sourceIds])
+      // The search's own rule (`match_corpus_chunks`): indexed, at the
+      // revision the source is at now. A source the indexer skipped (no
+      // text, too large) also carries an indexed revision, and one edited
+      // since is `pending` with its passages gone, so neither is findable.
+      .eq('status', 'indexed');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? [])
+      .filter((row) => row.indexed_revision === row.revision)
+      .map((row) => row.source_id);
+  }
+
   async postponeChapter(chapterId: string, until: Date): Promise<void> {
     const at = until.toISOString();
     // The sources a sweep just claimed carry the claim's own, longer wait

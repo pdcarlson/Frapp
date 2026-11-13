@@ -30,14 +30,15 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 
 /**
  * The paths on the dashboard origin the app claims as universal links (iOS)
- * and App Links (Android). Only the invite: every other dashboard page stays
+ * and App Links (Android). The invite, and the event check-in code a phone's
+ * camera reads (`./check-in-link`, 2026-11-13): every other dashboard page stays
  * on the web (the phone dashboard suggests the app with a card it can close). The web's `/.well-known` files publish
  * these; the binary claims them through `apps/mobile/app.json`
  * (`ios.associatedDomains`, Android `intentFilters`), which must list the same
  * paths. Until a store build carries that native half (#4002), no installed
  * app claims them and every invite link opens the web.
  */
-export const APP_LINK_PATHS = ["/join"] as const;
+export const APP_LINK_PATHS = ["/join", "/check-in"] as const;
 
 /**
  * The phone a user agent belongs to, or null for anything else.
@@ -76,7 +77,7 @@ export function openInAppUrl(platform: NativePlatform, token: string): string {
  * The one shape of a link into the app: `frapp://<route>` on iOS, Chrome's
  * `intent:` form naming the package on Android.
  */
-function appUrl(platform: NativePlatform, route: string): string {
+export function appUrl(platform: NativePlatform, route: string): string {
   if (platform === "android") {
     return `intent://${route}#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
   }

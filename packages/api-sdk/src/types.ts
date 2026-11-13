@@ -4821,6 +4821,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Ask opens with for this member
+         * @description Up to three questions and one request, each built from a record the caller’s own account holds right now (their next event, their open tasks, what they owe, minutes they can read, their points). No model is called, and the chapter’s Ask switch and the AI sheet are not checked: nothing here leaves the server. Each question is one Ask could answer for this caller. Empty when there is nothing to ask about.
+         */
+        get: operations["AskController_openingSuggestions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/ask/diagnostics": {
         parameters: {
             query?: never;
@@ -5561,6 +5581,7 @@ export interface components {
             scope: "chapter";
         };
         CreateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name: string;
             permissions: string[];
             display_order?: number;
@@ -5578,6 +5599,7 @@ export interface components {
             tier_id?: string | null;
         };
         UpdateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name?: string;
             permissions?: string[];
             display_order?: number;
@@ -9051,11 +9073,31 @@ export interface components {
             saved_until: string | null;
             diagnostics: components["schemas"]["AskDiagnosticsDto"];
         };
+        AskSuggestionDto: {
+            /**
+             * @description What the suggestion is about. A client shows the text and does not need to know every kind.
+             * @example event
+             */
+            kind: string;
+            /**
+             * @description The words to show, and to send when the member taps it.
+             * @example When and where is Chapter meeting on Sunday?
+             */
+            text: string;
+            /** @description False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed. */
+            request: boolean;
+        };
+        AskSuggestionsDto: {
+            /** @description At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about. */
+            suggestions: components["schemas"]["AskSuggestionDto"][];
+        };
         AskHistoryTurnDto: {
             /** @description What the member typed in that turn. */
             question: string;
             /** @description What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages). */
             answer: string;
+            /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
+            suggested?: boolean;
         };
         AskRequestDto: {
             /**
@@ -20358,6 +20400,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_openingSuggestions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskSuggestionsDto"];
+                };
             };
             /** @description AI is off on this server (`ai.not_available`). */
             404: {

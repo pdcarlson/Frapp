@@ -11,6 +11,7 @@ import {
   type LanguageModelStreamEvent,
 } from '#domain/adapters/language-model.interface';
 import { estimateTokens } from '#domain/utils/token-estimate';
+import { abortableSleep } from './abortable-sleep';
 
 /**
  * What a script answers a request with. Exactly one of the three shapes:
@@ -50,17 +51,29 @@ export type ScriptedReplies = Readonly<Record<string, ScriptedHandler>>;
  * marker sentence and no citations; a `structured` task with no script fails
  * as `invalid_output`, because no marker can satisfy a schema. Usage is estimated from lengths, so the
  * ledger and the caps see plausible, repeatable numbers.
+ *
+ * It answers at once unless it is given a pace (`AI_SCRIPTED_PACE_MS`, local
+ * runs only): then every reply waits that long and streamed words arrive
+ * spaced out, so what a member sees while a real model works (the line under
+ * a working Ask turn, a draft being written) can be looked at and captured.
  */
 export class ScriptedLanguageModel implements ILanguageModel {
   readonly provider = 'scripted' as const;
 
-  constructor(private readonly scripts: ScriptedReplies = {}) {}
+  constructor(
+    private readonly scripts: ScriptedReplies = {},
+    /** How long each reply takes to start, in milliseconds. */
+    private readonly paceMs = 0,
+  ) {}
 
-  generate(request: LanguageModelRequest): Promise<LanguageModelResult> {
+  async generate(request: LanguageModelRequest): Promise<LanguageModelResult> {
+    if (this.paceMs > 0) {
+      await abortableSleep(this.paceMs, 'scripted', request.signal);
+    }
     try {
-      return Promise.resolve(this.reply(request));
+      return this.reply(request);
     } catch (error) {
-      return Promise.reject(asLanguageModelError(error));
+      throw asLanguageModelError(error);
     }
   }
 
@@ -71,6 +84,13 @@ export class ScriptedLanguageModel implements ILanguageModel {
     if (result.outcome === 'completed') {
       // Word by word, so a client's streaming path is exercised.
       for (const piece of result.text.match(/\S+\s*/g) ?? []) {
+        if (this.paceMs > 0) {
+          await abortableSleep(
+            Math.ceil(this.paceMs / WORDS_PER_PACE),
+            'scripted',
+            request.signal,
+          );
+        }
         yield { type: 'text', delta: piece };
       }
     }
@@ -117,6 +137,9 @@ export class ScriptedLanguageModel implements ILanguageModel {
     };
   }
 }
+
+/** A paced stream writes this many words in the time one reply takes to start. */
+const WORDS_PER_PACE = 20;
 
 function fallback(request: LanguageModelRequest): ScriptedReply {
   if (request.kind === 'structured') return { fail: 'invalid_output' };

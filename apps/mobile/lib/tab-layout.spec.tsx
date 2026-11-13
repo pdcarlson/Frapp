@@ -209,6 +209,16 @@ describe("app stack", () => {
     }
   });
 
+  // Messages lives to the right of Chat, so it pushes in from the right on
+  // Android too, where the stack's default is a short fade-and-shift (#4447).
+  it("pushes Messages in from the right on both platforms", () => {
+    const { screens } = stack();
+    const messages = screens.find((screen) => screen.props.name === "messages");
+    expect(resolved(messages!.props.options, "messages").animation).toBe(
+      "ios_from_right",
+    );
+  });
+
   it("puts the tabs under a screen opened by link", () => {
     // A cold `frapp://event-details` or a notification tap still has Chat
     // home under it, so its swipe and its back capsule land somewhere.

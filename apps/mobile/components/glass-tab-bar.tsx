@@ -90,7 +90,7 @@ export function GlassTabBar({
   const youStatus =
     own && own.status !== "online" ? MEMBER_STATUS_LABEL[own.status] : null;
   const { run, ask, sheets, notice } = useQuickActionsHost({
-    events: available.includes("checkIn") || available.includes("hostCheckIn"),
+    events: available.includes("hostCheckIn"),
   });
 
   const focusedRoute = state.routes[state.index];

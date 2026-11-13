@@ -7,8 +7,9 @@ import { WILDCARD } from '#domain/constants/permissions';
 
 /**
  * A live read Ask can make while answering (`spec/behavior/ai.md` § Live
- * structured data): the roster, events, points, dues. These are never in the
- * index; a tool reads them at the moment of the question, as the asker.
+ * structured data): the roster, events, points, dues, the asker's tasks.
+ * These are never in the index; a tool reads them at the moment of the
+ * question, as the asker.
  *
  * How a tool is kept inside the asker's own access
  * (`docs/security/ai-prompt-injection.md` C2, C3, C5):

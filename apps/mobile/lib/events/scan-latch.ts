@@ -1,20 +1,17 @@
 /**
- * Single-shot latch for `CameraView.onBarcodeScanned`.
+ * Single-shot latch for a check-in, one per event.
  *
- * expo-camera fires that callback continuously while a code stays in frame —
- * many times per second, not once per physical code. Without a latch, holding
- * a phone steady for one second turns one QR into dozens of concurrent
- * `POST .../check-in` calls: a self-inflicted burst against the API's write
- * throttle, and a pile of 409s behind the one request that actually won.
+ * It was written for the in-app scanner, whose camera handed the same code
+ * over many times a second; the scanner is gone (2026-11-13), and the rule
+ * still holds for what is left. A camera link can be opened twice (a double
+ * tap on the banner, or the screen re-rendering with the same token), and a
+ * double tap on the typed code's button lands its second press before the
+ * re-render that disables it. Each of those must send one check-in, not two:
+ * the second would only come back a 409.
  *
- * Kept out of the screen so the rule can be tested without a camera, a render
- * tree, or a fake timer. The screen holds one per event in a ref, and a typed
- * code claims it too, so a double tap on the manual sheet sends one check-in.
- *
- * The latch releases only when the caller says so — after the server has
- * answered, success or failure. Releasing on a timer instead would reintroduce
- * the burst whenever the response outran the timeout, which is exactly the
- * network condition the debounce exists for.
+ * The latch releases only when the caller says so, after the server has
+ * answered, success or failure. Releasing on a timer instead would let a
+ * second request through whenever the response outran the timeout.
  */
 export interface ScanLatch {
   /**

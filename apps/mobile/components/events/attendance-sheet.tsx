@@ -35,7 +35,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { Segmented } from "@/components/segmented";
-import { roleOptionsFrom } from "@/lib/events/attendance-roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 
 /**
  * "Who's coming": an event's attendance by role (`spec/behavior/events.md`
@@ -128,7 +128,7 @@ function AttendanceBody({
   const [pinned] = useState(() => Object.keys(value.roles));
 
   const options = useMemo(
-    () => roleOptionsFrom(rolesQuery.data),
+    () => toRoleOptions(rolesQuery.data, "hide"),
     [rolesQuery.data],
   );
   // Until the roles load, a set-apart id can't be told from a deleted one.

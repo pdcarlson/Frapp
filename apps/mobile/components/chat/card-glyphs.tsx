@@ -1,4 +1,5 @@
 import { Path, Rect } from "react-native-svg";
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import {
   GlyphFrame,
   glyphPaint,
@@ -9,7 +10,7 @@ import {
 
 /**
  * The eyebrow glyphs of the chat cards that have no tab of their own, and
- * the channel row's lock and audit marks (`channel-row.tsx`).
+ * the channel row's lock, audit and muted marks (`channel-row.tsx`).
  *
  * Geometry is transcribed from web's chat family
  * (`apps/web/components/chat/chat-glyphs.tsx` and the shell's
@@ -131,6 +132,35 @@ export function LockGlyph(props: TabGlyphProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * Notification level: a speaker (a box and its cone, split by a detail
+ * stroke) with two sound waves, an × for the waves when `active` (muted).
+ * Web's `MuteGlyph`, from the same path data (`MARK_GLYPH_PATHS.mute`). A speaker, not a bell, since #3362: the bell
+ * is the notification inbox's glyph (iconography.md §6.2.2). The row draws it
+ * `focused` in the muted text hue, as web's row draws it `active` in
+ * `text-muted`.
+ */
+export function MuteGlyph({
+  active,
+  ...props
+}: TabGlyphProps & { active: boolean }) {
+  const { stroke, fill } = glyphPaint(props);
+  const paths = MARK_GLYPH_PATHS.mute;
+  const line = {
+    stroke,
+    strokeWidth: STROKE_WIDTH,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  } as const;
+  return (
+    <GlyphFrame size={props.size}>
+      <Path d={paths.body} fill={fill} {...line} />
+      <Path d={paths.split} fill="none" {...line} />
+      <Path d={active ? paths.muted : paths.waves} fill="none" {...line} />
     </GlyphFrame>
   );
 }
