@@ -648,6 +648,9 @@ function useAskConversation(): AskConversation {
             // Only the new door is named: a server from before #4713
             // refuses a field it does not know, and "ask" is its default.
             ...(origin ? { door: "chat_private" as const } : {}),
+            // What the member had open, so "this channel" means something
+            // to the tool loop (#4904). Ask's own screen sends none.
+            ...(origin ? { from: { channel_id: origin.channelId } } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,
