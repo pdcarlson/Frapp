@@ -138,6 +138,17 @@ describe("replyPreviewText", () => {
     );
   });
 
+  it("quotes a posted Ask answer by its words, and names it when it has none (#4713)", () => {
+    expect(
+      replyPreviewText(
+        preview({ content: "Quorum is half.", kind: "ask_answer" }),
+      ),
+    ).toBe("Quorum is half.");
+    expect(replyPreviewText(preview({ content: "", kind: "ask_answer" }))).toBe(
+      "Answer from Frapp",
+    );
+  });
+
   it("names a bookmark-shaped row with no kind as Message, not a blank", () => {
     expect(replyPreviewText({ content: "", is_deleted: false })).toBe(
       "Message",

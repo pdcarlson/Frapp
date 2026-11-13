@@ -137,6 +137,11 @@ interface EligibleClaimants {
 export interface ChapterMemberAccess {
   user_id: string;
   permissions: Set<string>;
+  /**
+   * The member's `role_ids` as stored (both rows' when a user has two), the
+   * list the event read gate checks an invitation against (`isInvited`).
+   */
+  role_ids: string[];
   /** Smallest `display_order` among held live roles; `null` when none. */
   top_role_order: number | null;
   /**
@@ -1233,6 +1238,7 @@ export class RbacService {
         permissions: flattenPermissionSets(
           liveRoles.map((role) => role.permissions),
         ),
+        role_ids: [...new Set(roleIds)],
         top_role_order: top?.display_order ?? null,
         top_role: top
           ? {

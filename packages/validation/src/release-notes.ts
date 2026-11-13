@@ -148,6 +148,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "If your chapter has Ask Frapp on, type @Frapp and a question in any channel to ask it right there: nothing is posted and only you see the answer.",
       "Your own message now lights up for you when it mentions you, such as your own @here or @everyone.",
       "A forwarded message shows up as a card marked Forwarded, with who wrote it and when.",
+      "Ask Frapp now knows who is asking, so \"me\" and \"my\" mean you, and its answers are shorter and in its own words.",
+      "An answer from @Frapp in a channel can be posted for everyone there with Post for everyone here, after Frapp tells you which of its sources not everyone can open.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",

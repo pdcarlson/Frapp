@@ -23,7 +23,12 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { isEventVisibleTo, isInvited } from './event-role-targeting';
+import {
+  isEventVisibleTo,
+  isEventVisibleWith,
+  isInvited,
+  type EventViewer,
+} from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   checkInWindowBounds,
@@ -179,6 +184,30 @@ export class EventService {
     if (unique.length === 0) return [];
     const events = await this.eventRepo.findByIds(unique, chapterId);
     return this.visibleOf(events, chapterId, viewerId);
+  }
+
+  /**
+   * Of `ids`, the events every one of `viewers` may read, by the list's own
+   * rule (`isEventVisibleWith`). An id that names no event in this chapter is
+   * not in the answer. One read however many viewers: for a check made over
+   * a whole audience, such as who in a channel could open what an Ask Frapp
+   * answer drew on before it is posted there (#4713).
+   */
+  async visibleToAll(
+    ids: readonly string[],
+    chapterId: string,
+    viewers: readonly EventViewer[],
+  ): Promise<Set<string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Set();
+    const events = await this.eventRepo.findByIds(unique, chapterId);
+    return new Set(
+      events
+        .filter((event) =>
+          viewers.every((viewer) => isEventVisibleWith(event, viewer)),
+        )
+        .map((event) => event.id),
+    );
   }
 
   /**

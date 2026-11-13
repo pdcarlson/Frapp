@@ -5,6 +5,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import type { NameResolver } from "@repo/hooks";
 import { AnnouncementCard } from "./announcement-card";
+import { AskAnswerCard } from "./ask-answer-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { EventCard } from "./event-card";
 import { FormCard } from "./form-card";
@@ -108,6 +109,8 @@ export function MessageRenderer({
           onClosePoll={onClosePoll}
         />
       );
+    case "ask_answer":
+      return <AskAnswerCard message={message} nameFor={nameFor} />;
     case "signup":
       return (
         <SignupCard
