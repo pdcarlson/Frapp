@@ -165,6 +165,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "While an officer's check-in screen is up, an event's chat card, page and Activity row say to point your phone's camera at the code instead of offering a Check in that can't work.",
       "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
       "You can clear a notification with the x that shows when you hover over it.",
+      "After you link or unlink your Discord account, an open chat now shows your imported messages under the right name without a reload.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
