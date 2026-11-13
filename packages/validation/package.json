@@ -11,6 +11,10 @@
       "import": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./search-indexing": {
+      "types": "./search-indexing.d.mts",
+      "default": "./search-indexing.mjs"
+    },
     "./*": {
       "types": "./dist/*.d.ts",
       "require": "./dist/*.js",

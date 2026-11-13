@@ -32,6 +32,7 @@ import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
 import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
 import { NewSignupSheet } from "@/components/chat/new-signup-sheet";
+import { NewFormSheet } from "@/components/chat/new-form-sheet";
 import {
   NewEventSheet,
   type EventCreatedOutcome,
@@ -49,6 +50,7 @@ import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 const PHONE_PLUS_COMMANDS = [
   "poll",
   "signup",
+  "form",
   "event",
   "task",
   "hours",
@@ -60,7 +62,7 @@ const NO_FORMS: ReadonlySet<ChannelForm> = new Set();
 
 /** What each form's posted-but-not-quite outcome is called in its alert. */
 const OUTCOME_TITLES: Record<
-  "poll" | "signup" | "task" | "hours",
+  "poll" | "signup" | "form" | "task" | "hours",
   { posted: string; unconfirmed: string }
 > = {
   poll: { posted: "Poll posted", unconfirmed: "Couldn't confirm the poll" },
@@ -68,6 +70,7 @@ const OUTCOME_TITLES: Record<
     posted: "Sign-up sheet posted",
     unconfirmed: "Couldn't confirm the sign-up sheet",
   },
+  form: { posted: "Form posted", unconfirmed: "Couldn't confirm the form" },
   task: { posted: "Task created", unconfirmed: "Couldn't confirm the task" },
   hours: { posted: "Hours logged", unconfirmed: "Couldn't confirm the hours" },
 };
@@ -80,7 +83,7 @@ const OUTCOME_TITLES: Record<
  * read this before trying again.
  */
 export function presentPostOutcome(
-  form: "poll" | "signup" | "task" | "hours",
+  form: "poll" | "signup" | "form" | "task" | "hours",
   result: { warning?: string; unconfirmed?: boolean },
   alert: typeof Alert.alert = Alert.alert,
 ): void {
@@ -137,6 +140,7 @@ export function useComposerPlus({
     UseChatChannelResult,
     | "sendPoll"
     | "sendSignup"
+    | "sendForm"
     | "postTask"
     | "postHours"
     | "trackEventCard"
@@ -198,6 +202,7 @@ export function useComposerPlus({
   const gifs = useGifAvailability();
   const pollRef = useRef<BottomSheetModal>(null);
   const signupRef = useRef<BottomSheetModal>(null);
+  const newFormRef = useRef<BottomSheetModal>(null);
   const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
@@ -244,6 +249,12 @@ export function useComposerPlus({
         signupRef.current?.present();
         return;
       }
+      if (command === "form") {
+        newFormRef.current?.present();
+        return;
+      }
+      // Points isn't on the phone's + yet, so `PHONE_PLUS_COMMANDS` never
+      // offers it.
       if (command === "points") return;
       setNow(new Date());
       if (mountedForms.has(command)) {
@@ -275,6 +286,7 @@ export function useComposerPlus({
           gifRef,
           pollRef,
           signupRef,
+          newFormRef,
           eventRef,
           taskRef,
           hoursRef,
@@ -285,8 +297,15 @@ export function useComposerPlus({
     }, [channelId]),
   );
 
-  const { sendPoll, sendSignup, postTask, postHours, trackEventCard, sendGif } =
-    channel;
+  const {
+    sendPoll,
+    sendSignup,
+    sendForm,
+    postTask,
+    postHours,
+    trackEventCard,
+    sendGif,
+  } = channel;
   const openGif = useCallback(() => {
     Keyboard.dismiss();
     gifRef.current?.present();
@@ -306,6 +325,14 @@ export function useComposerPlus({
       return result;
     },
     [sendSignup],
+  );
+  const postFormHere = useCallback(
+    async (form: Parameters<typeof sendForm>[0]) => {
+      const result = await sendForm(form);
+      if (result.ok) presentPostOutcome("form", result);
+      return result;
+    },
+    [sendForm],
   );
   const postPollHere = useCallback(
     async (poll: Parameters<typeof sendPoll>[0]) => {
@@ -367,6 +394,11 @@ export function useComposerPlus({
         key={`signup-${key}`}
         ref={signupRef}
         onPost={postSignupHere}
+      />
+      <NewFormSheet
+        key={`form-${key}`}
+        ref={newFormRef}
+        onPost={postFormHere}
       />
       {mountedForms.has("event") && eventChat ? (
         <SheetBoundary key={`event-${key}`} onError={() => dropForm("event")}>

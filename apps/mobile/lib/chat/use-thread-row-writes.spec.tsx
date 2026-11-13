@@ -41,11 +41,12 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   editMessage: dispatcher("edit"),
   deleteMessage: dispatcher("delete"),
   closePoll: dispatcher("closePoll"),
-  closeCard: dispatcher("closeSignup"),
+  closeCard: dispatcher("closeCard"),
 }));
 vi.mock("./use-chat-channel", async () => {
   const { MemberFacingError } = await import("@repo/hooks/error-copy");
   return {
+    closeCardFailure: (kind: string) => `Couldn't close ${kind}`,
     // The channel hook's own wording helper, as it is.
     withFailureMessage: async (
       run: (onError: (input: ErrorInput) => void) => Promise<void>,
@@ -103,7 +104,8 @@ describe("useThreadRowWrites", () => {
       await hook.result.current.edit("r1", "fixed");
       await hook.result.current.remove(ROOT);
       await hook.result.current.closePoll("r1");
-      await hook.result.current.closeSignup(ROOT);
+      await hook.result.current.closeCard(ROOT, "signup");
+      await hook.result.current.closeCard("r1", "form");
     });
     expect(calls.map(({ fn, args }) => [fn, args.threadRootId])).toEqual([
       ["react", ROOT],
@@ -112,8 +114,12 @@ describe("useThreadRowWrites", () => {
       ["edit", ROOT],
       ["delete", null],
       ["closePoll", ROOT],
-      ["closeSignup", null],
+      ["closeCard", null],
+      ["closeCard", ROOT],
     ]);
+    expect(
+      calls.filter(({ fn }) => fn === "closeCard").map(({ args }) => args.kind),
+    ).toEqual(["signup", "form"]);
     expect(calls.every(({ args }) => args.channelId === CHANNEL)).toBe(true);
   });
 

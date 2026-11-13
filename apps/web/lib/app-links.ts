@@ -25,6 +25,12 @@ import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
  * prerendered (`dynamic = "force-static"`), so serving it runs no function.
  */
 
+/** What each claimed path is for, as the file says it to a reader. */
+const APP_LINK_COMMENTS: Record<(typeof APP_LINK_PATHS)[number], string> = {
+  "/join": "An invite link opens the app's join step (#4002)",
+  "/check-in": "The check-in code a phone camera reads opens check-in",
+};
+
 /** An Apple Team ID: ten uppercase letters and digits. */
 function validTeamId(raw: string | undefined): string | null {
   const value = raw?.trim();
@@ -69,7 +75,7 @@ export function appleAppSiteAssociation(
           appIDs: [`${teamId}.${NATIVE_APP_ID}`],
           components: APP_LINK_PATHS.map((path) => ({
             "/": path,
-            comment: "An invite link opens the app's join step (#4002)",
+            comment: APP_LINK_COMMENTS[path],
           })),
         },
       ],

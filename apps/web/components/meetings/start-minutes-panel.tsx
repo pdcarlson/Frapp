@@ -34,7 +34,7 @@ import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import {
@@ -138,7 +138,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const [problems, setProblems] = useState<Record<string, string>>({});
 
   const roles = useMemo(
-    () => normalizeRoleOptions(rolesQuery.data),
+    () => toRoleOptions(rolesQuery.data),
     [rolesQuery.data],
   );
   const shownRoles = useMemo(() => {

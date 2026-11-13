@@ -8,7 +8,9 @@ import {
   askHistory,
   createAskStreamReader,
   type AskAnswer,
+  type AskStepDetail,
   type AskStreamEvent,
+  type AskSuggestion,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
 import type { ActResponse } from "./use-act";
@@ -59,6 +61,43 @@ export function useAskStatus(options?: { enabled?: boolean }) {
     staleTime: 30_000,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
+}
+
+const askSuggestionsKey = (chapterId: string | null | undefined) =>
+  ["ai", "ask", "suggestions", chapterId] as const;
+
+/**
+ * What Ask opens with for this member (#4700): questions and one request
+ * built on the server from their own records, with no model call. Empty
+ * until it arrives and whenever it cannot be read, so a screen shows its
+ * plain opening and nothing waits on this.
+ *
+ * Read when Ask opens, and never again while it is open: a list on screen
+ * does not change under a thumb. Reopened within a minute it is the same
+ * list. Reopened later it is read again, and it is empty until the new one
+ * arrives, so a row for a task finished since is never shown and then
+ * swapped for another.
+ */
+export function useAskSuggestions(options?: { enabled?: boolean }): {
+  suggestions: AskSuggestion[];
+} {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const query = useQuery({
+    queryKey: askSuggestionsKey(chapterId),
+    queryFn: async (): Promise<AskSuggestion[]> => {
+      const result = await client.GET("/v1/ai/ask/suggestions");
+      if (isAiNotAvailable(result.error)) return [];
+      throwUnlessOk(result);
+      return result.data?.suggestions ?? [];
+    },
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+  return { suggestions: query.isFetching ? [] : (query.data ?? []) };
 }
 
 /**
@@ -115,14 +154,25 @@ export interface AskExchange {
   id: string;
   question: string;
   /**
+   * The member tapped this from the opening suggestions and did not type it.
+   * It can name a record another member wrote, so it is sent without
+   * `actions` and marked in later history (`ask.ts`).
+   */
+  suggested?: boolean;
+  /**
    * The server's id for this ask, from the stream's `start` event: what
    * "Report this" names (#4315). Null until the stream begins.
    */
   askId?: string | null;
   /** `working` until the server's `done`; `failed` when no answer arrived. */
   phase: "working" | "done" | "failed";
-  /** The step the server last named, while working. Open on the wire. */
+  /**
+   * The step the server last named, while working. Open on the wire. Null
+   * while a working turn has not been sent yet (the AI question is open).
+   */
   step: string | null;
+  /** What that step said is being read, for the line under the turn. */
+  stepDetail?: AskStepDetail | null;
   /** The text as it streams. A preview: `answer` replaces it. */
   preview: string;
   answer: AskAnswer | null;
@@ -171,7 +221,13 @@ export function applyAskEvent(
     case "start":
       return { ...exchange, askId: event.ask_id };
     case "status":
-      return { ...exchange, step: event.step };
+      return {
+        ...exchange,
+        step: event.step,
+        // Each step replaces the last one's detail, so "3 sources" never
+        // outlives the step that counted them.
+        stepDetail: { reads: event.reads, found: event.found },
+      };
     case "text":
       return { ...exchange, preview: exchange.preview + event.delta };
     case "done":
@@ -179,6 +235,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
+        stepDetail: null,
         preview: "",
         answer: event.answer,
       };
@@ -187,6 +244,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
+        stepDetail: null,
         preview: "",
         // The shape `POST /v1/ai/act` answers with; open on the wire, and
         // the card shows a status it does not know as the generic line.
@@ -198,6 +256,7 @@ export function applyAskEvent(
         ...exchange,
         phase: "failed",
         step: null,
+        stepDetail: null,
         preview: "",
         failure: { message: ASK_COPY.failed, retryable: event.retryable },
       };
@@ -209,6 +268,7 @@ function failed(exchange: AskExchange, message: string): AskExchange {
     ...exchange,
     phase: "failed",
     step: null,
+    stepDetail: null,
     preview: "",
     failure: { message, retryable: true },
   };
@@ -227,7 +287,11 @@ function askHistoryOf(exchanges: readonly AskExchange[]) {
           exchange.phase === "done" &&
           exchange.answer?.status !== "unavailable",
       )
-      .map(({ question, answer }) => ({ question, answer })),
+      .map(({ question, answer, suggested }) => ({
+        question,
+        answer,
+        suggested,
+      })),
   );
 }
 
@@ -236,6 +300,11 @@ export interface AskOptions {
   savedNoticeShown?: boolean;
   /** This screen shows proposal cards, and the member may have Frapp act. */
   actions?: boolean;
+  /**
+   * The words are an opening suggestion the member tapped, not ones they
+   * typed. A suggested turn never asks for a card, whatever `actions` says.
+   */
+  suggested?: boolean;
   /**
    * Runs after the question is on screen and before it is sent: the AI
    * sheet's gate. False ends the turn as "answer the AI question first"; a
@@ -339,8 +408,11 @@ export function useAsk(): {
         {
           id,
           question: trimmed,
+          ...(options?.suggested ? { suggested: true } : {}),
           phase: "working",
-          step: "searching",
+          // Nothing is being searched while the AI question is still on
+          // screen, so the turn says nothing until the request is sent.
+          step: options?.gate ? null : "searching",
           preview: "",
           answer: null,
           proposal: null,
@@ -365,17 +437,21 @@ export function useAsk(): {
               ...current,
               phase: "done",
               step: null,
+              stepDetail: null,
               answer: unavailable("consent_required"),
             }));
             return;
           }
           if (abort.signal.aborted) return;
+          update((current) => ({ ...current, step: "searching" }));
         }
         const result = await client.POST("/v1/ai/ask", {
           body: {
             question: trimmed,
             ...(history.length > 0 ? { history } : {}),
-            ...(options?.actions ? { actions: true } : {}),
+            ...(options?.actions && !options.suggested
+              ? { actions: true }
+              : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
           },
           parseAs: "stream",
@@ -391,7 +467,13 @@ export function useAsk(): {
           }
           update((current) =>
             reason
-              ? { ...current, phase: "done", step: null, answer: unavailable(reason) }
+              ? {
+                  ...current,
+                  phase: "done",
+                  step: null,
+                  stepDetail: null,
+                  answer: unavailable(reason),
+                }
               : failed(current, errorCopy(result.error, ASK_COPY.failed)),
           );
           return;
@@ -452,7 +534,12 @@ export function useAsk(): {
       );
       const again = latest.current.find((exchange) => exchange.id === id);
       return again && !busy
-        ? run(again.question, options, id)
+        ? run(
+            again.question,
+            // A suggestion asked again is still not the member's own words.
+            again.suggested ? { ...options, suggested: true } : options,
+            id,
+          )
         : Promise.resolve();
     },
     [run],

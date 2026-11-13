@@ -7,8 +7,9 @@
  * active — and detail strokes (clock hands, calendar rules, checkmarks, bell
  * clappers) stay stroke-only. A state change recolors the one glyph; there is
  * no second, filled variant to swap to. The one exception is `markFillProps`
- * below, for Documents' Star and Pin (§1 rule 1's note, #4289): the same
- * glyph, filled solid while on.
+ * below, for the member-toggled marks — Documents' Star and Pin (#4289), chat's
+ * channel pin and bookmark (#4292); §1 rule 1's note: the same glyph, filled
+ * solid while on.
  *
  * This module holds only the recipe. The glyphs themselves live with the
  * surface that owns their intents — `components/layout/nav-glyphs.tsx` for the
@@ -42,8 +43,8 @@ export function fillProps(active: boolean | undefined) {
 }
 
 /**
- * Documents' Star and Pin: solid in their hue while on, the neutral
- * silhouette while off. The one exception to §1
+ * The member-toggled marks (Documents' Star and Pin, chat's pin and
+ * bookmark): solid in their hue while on, the neutral silhouette while off. The one exception to §1
  * rule 1's "recolor, never fill", because at 18% an on mark read as the off
  * outline in another colour (#4289). Path data is unchanged: the same glyph,
  * filled.

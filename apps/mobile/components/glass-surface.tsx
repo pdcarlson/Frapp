@@ -83,6 +83,13 @@ function safeLiquidGlassAvailable(): boolean {
   }
 }
 
+/**
+ * The width of every glass surface's edge, drawn inside the size it is given
+ * (the frame is border-box). A child that lays out cells across the surface
+ * measures from inside it (the quick-actions panel's cells, 2026-11-13).
+ */
+export const GLASS_EDGE = StyleSheet.hairlineWidth;
+
 type GlassSurfaceProps = {
   /** The shape: size, radius, position. The radius also clips the blur. */
   style?: StyleProp<ViewStyle>;
@@ -106,7 +113,7 @@ export function GlassSurface({ style, children, mode }: GlassSurfaceProps) {
 
   const frame: ViewStyle = {
     overflow: "hidden",
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: GLASS_EDGE,
     borderColor:
       drawn === "solid" ? tokens.color.border.hairline : signetGlass.edge,
     backgroundColor:

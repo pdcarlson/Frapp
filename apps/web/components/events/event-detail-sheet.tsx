@@ -52,7 +52,7 @@ import { checkInZoneState, MyCheckIn } from "@/components/events/my-check-in";
 import { ExcuseReview, MyExcuse } from "@/components/events/event-excuses";
 import { Can } from "@/components/shared/can";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { cn, getErrorMessage } from "@/lib/utils";
@@ -254,7 +254,7 @@ export function EventDetailSheet({
   const roleNameById = useMemo(
     () =>
       new Map(
-        normalizeRoleOptions(rolesQuery.data, "keep").map((role) => [
+        toRoleOptions(rolesQuery.data, "keep").map((role) => [
           role.id,
           role.name,
         ]),

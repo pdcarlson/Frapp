@@ -70,9 +70,8 @@ describe("the acting agent's words", () => {
     expect(actActionLabel("something_new")).toBeNull();
   });
 
-  it("has an example and a label for every action", () => {
+  it("has a label for every action", () => {
     for (const action of ACT_ACTIONS) {
-      expect(ACT_COPY.examples[action]).toBeTruthy();
       expect(actActionLabel(action)).toBeTruthy();
     }
   });

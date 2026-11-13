@@ -11,6 +11,7 @@ import {
   askAnswerSegments,
   askLeftOutLine,
   askSourceMetaLine,
+  askStepLine,
   askUnavailableLine,
   type AskAnswer,
   type AskSource,
@@ -86,11 +87,11 @@ export function AskTurn({
                 {exchange.preview}
               </p>
             ) : null}
-            <p className="text-caption text-muted-foreground">
-              {(ASK_COPY.steps as Record<string, string>)[
-                exchange.step ?? ""
-              ] ?? ASK_COPY.steps.searching}
-            </p>
+            {exchange.step ? (
+              <p className="text-caption text-muted-foreground">
+                {askStepLine(exchange.step, exchange.stepDetail)}
+              </p>
+            ) : null}
           </>
         ) : null}
         {exchange.phase === "failed" && exchange.failure ? (

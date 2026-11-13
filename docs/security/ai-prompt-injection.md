@@ -274,6 +274,29 @@ officer's typed request into a proposal they confirm
   and the actions that officer may take. No chat, document, roster, event title or retrieved text is
   in it, so there is no injector whose ceiling could apply (C3). An answer naming an action that was
   not offered, or that does not exist, is treated as no action.
+- **A tapped opening suggestion is not the officer's words** (added in #4700 by pdcarlson,
+  2026-11-13). Ask opens with questions the server built from the member's own records
+  ([`ai.md` § What Ask opens with](../../spec/behavior/ai.md#what-ask-opens-with)), and a question
+  names a record: "When and where is <event name> on Sunday?". An event name is text another member wrote, so
+  a tapped question would otherwise carry an injector's text into the acting planner (`act.plan`) as
+  if the officer had typed it. Three things keep it out. The client sends a tapped question without `actions`, so the
+  request lane does not run for that turn. It marks the turn `suggested` in the `history` it sends
+  later, and `AskConversationService` leaves a suggested turn out of the earlier messages the
+  planner reads. And the one suggestion that asks for something to be done is built from two weekday
+  names and fixed words, with no name from any record, so it is safe to send as typed words. The
+  mark comes from the member's own client, like `history` itself: a member who strips it has only
+  typed the event's name themselves, which they could always do. C3's rule is unchanged for the
+  acting planner: it sees only what the member typed.
+
+  The answer lane does read a tapped question, and this is new with #4700: the question is the user
+  turn of `ask.plan` and `ask.answer`, and one of the earlier questions on later turns, so a record's
+  name (one line, at most 60 characters, `askSuggestionName`) reaches those two calls outside the
+  labelled sources. Before #4700 everything in that turn was typed by the member. What bounds it is
+  what bounds the answer lane already: `ask.plan` can only pick among read tools that run as the
+  asker, `ask.answer` has no tool, an answer is shown only to the member who asked, and it must
+  still cite a source word for word. So the most a hostile name can do is bend one member's own
+  answer, which the same name could already attempt from inside a source. No test or eval covers a
+  hostile name in the question turn yet (#4707).
 - **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
   it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
   questions and requests the member typed earlier in the sitting (the last three), so "make it 10"
@@ -294,9 +317,17 @@ officer's typed request into a proposal they confirm
   member who sends an answer back anyway is sending text they were already shown.
 - **A turn that ends in a card has already searched.** The two lanes start together, so by the time
   the request lane has a card the answer lane may have embedded the question, searched the index
-  and made its own planning call. It is stopped there: its first step past searching is held until
-  the request lane has spoken, so no tool runs and no answer is written for that turn, and nothing
-  it found reaches the request lane.
+  and made its own planning call. It is stopped there: before it goes past its search it asks
+  whether it may (`AskInput.mayGoOn`), and it is answered only once the request lane has spoken, so
+  no tool runs, nothing is kept and no answer is written for that turn, and nothing it found
+  reaches the request lane. (Changed in #4701 by pdcarlson, 2026-11-13: until then the hold was the
+  conversation service waiting on the answer lane's first event past "searching", which tied the
+  rule to an event the member is shown. The rule is the same.)
+- **What a working turn says it is doing carries no text anyone wrote** (#4701). The stream's
+  `status` events name a step, the names of the read tools the planner picked, and a count of
+  sources. The request lane tells the conversation only that an offered action was read, by a
+  callback given the action's name; the step it causes (`proposing`) is a fixed word. No title,
+  passage, name or model output is in any of them.
 - **Cards are asked for on `ai:act` alone.** The client sets `actions` for any member who holds the
   permission, without waiting for the list of actions; the server decides whether anything fits.
 - **Details are resolved by the server, as the officer, in their chapter.** The model writes names;

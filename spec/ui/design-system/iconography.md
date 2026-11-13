@@ -67,6 +67,10 @@ Rules:
    `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
    `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
    selection and every other state still recolor only.
+   Changed in #4292 by shawnatomklein-eng, 2026-11-13: the exception now
+   covers chat's pin (a pinned channel, a pinned message's marker) and its
+   bookmark ribbon too, as Slack fills a saved item's ribbon. Documents'
+   `PinGlyph` is chat's again.
 2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
    capsule (white at 8%) the full height of the pill's row, as iOS 26's own
    bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
@@ -268,6 +272,7 @@ except the audit card's).
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 | A private or role-gated channel's row on chat home, in the `#` sigil's slot, size (18) and colours, and its channel start's tile (32, accent), as web draws both (#4134; the rule is `channelMarkFor` in `@repo/hooks/channel-start`) | `LockGlyph` (body filled, shackle stroke-only; web's `LockGlyph`) | `components/chat/card-glyphs.tsx` |
+| A muted channel's row on chat home, straight after the name, at 14 in `text.muted`, as web's rail draws it (#4738; a crossed-out bell until then, which drew the inbox's silhouette) | `MuteGlyph` (web's speaker, box filled, split and × stroke-only; `active` draws the × in place of the waves) | `components/chat/card-glyphs.tsx` |
 
 The poll card has no glyph: its eyebrow is muted text on both surfaces.
 
@@ -299,7 +304,7 @@ the chapter accent in a back-row slot (2026-11-05).
 
 | Semantic intent | Glyph | Drawn by | Web counterpart |
 |---|---|---|---|
-| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on the check-in scanner (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on member check-in (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
 | Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
 | Edit | `PencilGlyph` | Messages' new-message button and Event details' Edit (Profile's back row until #3711) | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
@@ -392,14 +397,15 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 
 | Semantic intent | Glyph |
 |---|---|
-| Pinned message | `PinGlyph` |
-| Pin a channel to the top of your own list (#2877), filled while pinned | `PinGlyph` |
-| Bookmarked message (personal) | `BookmarkGlyph` |
+| Pinned message (the "Pinned" marker), solid (#4292) | `PinGlyph` |
+| Pin a channel to the top of your own list (#2877), solid while pinned (#4292, §1 rule 1's exception) | `PinGlyph` |
+| Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
 | Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
 | Sign-up sheet, in the composer's **+** menu (#3926): a clipboard, the board filled, the clip and a ticked line stroke-only | `SignupGlyph` |
+| Form, in the composer's **+** menu (#3926 step 3): a page of questions, each a choice dot and a line (the phone's + sheet draws the same path data) | `FormGlyph` |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Jump to latest, on the round control over the thread's bottom-right corner: a down arrow, `SendArrowGlyph` turned over, the web face of mobile's `↓` (2026-11-12) | `JumpToLatestGlyph` |
 | Announcement | `AnnouncementGlyph` |
@@ -557,7 +563,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph and the drawn `PinGlyph` and `StarGlyph` (both #3934, solid while on since #4289). The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, `PinGlyph` (chat's, re-exported) and the drawn `StarGlyph` (both #3934, solid while on since #4289). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -578,14 +584,15 @@ button, and the PDF a report exports to.
 
 Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice.
+which is §1 rule 1's rule and the two preceding families' practice, and a
+fourth, `PinGlyph`, re-exports chat's (#4292).
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 `PinGlyph` takes chat's pin shape (§6.2.2), since pinning a message, a
-channel and a document is one idea; until #4289 (2026-11-11) it was a
-re-export, and it is drawn here now because a document's pin fills solid
-while chat's keeps the tinted recipe. `StarGlyph` is drawn here, because no
+channel and a document is one idea, and it is a re-export of chat's again
+since #4292 (2026-11-13), when chat's pin took the same solid fill; from
+#4289 until then it was drawn here, because only a document's pin filled solid. `StarGlyph` is drawn here, because no
 set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,

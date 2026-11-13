@@ -31,6 +31,7 @@ const PAGES: Record<string, NotificationTarget> = {
   events: { pathname: "/events" },
   points: { pathname: "/tasks" },
   dues: { pathname: "/dues" },
+  tasks: { pathname: "/tasks" },
 };
 
 export function askSourceOpening(source: AskSource): AskSourceOpening | null {

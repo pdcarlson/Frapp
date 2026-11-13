@@ -68,6 +68,7 @@ import {
   actOnCard,
   closePoll as closePollAction,
   closeCard as closeCardAction,
+  type ClosableCardKind,
   setMessageFlag as setMessageFlagAction,
   deleteMessage,
   discardOutboxRow,
@@ -107,10 +108,12 @@ import {
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
 import type { SignupPayload } from "@repo/chat-core/signups";
+import type { FormPayload } from "@repo/chat-core/forms";
 import {
   postHours,
   postPoll,
   postSignup,
+  postForm,
   postTask,
   SIGNED_OUT_POST_COPY,
   trackEventCard,
@@ -186,6 +189,13 @@ export interface SendOptions {
    * (`replyTargetId` in `@repo/chat-core/message-actions`).
    */
   replyToId?: string | null;
+}
+
+/** What a failed Close sign-ups or Close form says when chat-core says nothing. */
+export function closeCardFailure(kind: ClosableCardKind): string {
+  return kind === "form"
+    ? "Couldn't close the form. Try again."
+    : "Couldn't close sign-ups. Try again.";
 }
 
 /**
@@ -287,6 +297,15 @@ export interface UseChatChannelResult {
     payload: SignupPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
+   * The + sheet's New form (#3926 step 3): a `kind: "form"` card into this
+   * channel through chat-core's `postForm`, with `sendPoll`'s outcomes.
+   * Never rejects.
+   */
+  sendForm: (form: {
+    content: string;
+    payload: FormPayload;
+  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
    * The + sheet's GIF picker (#4631): the GIF as its own message, through
    * the outbox like any message. It touches neither the draft nor the photo
    * tray. Never rejects; resolves `ok: false` with the reason it couldn't
@@ -329,8 +348,11 @@ export interface UseChatChannelResult {
    * member-facing message on failure, and changes nothing.
    */
   closePoll: (messageId: string) => Promise<void>;
-  /** Closes a sign-up card early (#3926), pessimistic like `closePoll`. */
-  closeSignup: (messageId: string) => Promise<void>;
+  /**
+   * Closes a sign-up card (#3926) or a form card (step 3) early, pessimistic
+   * like `closePoll`.
+   */
+  closeCard: (messageId: string, kind: ClosableCardKind) => Promise<void>;
   /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
    * Pessimistic like `closePoll`: the row draws the flag when the server's
@@ -1036,6 +1058,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendForm = useCallback(
+    async (form: {
+      content: string;
+      payload: FormPayload;
+    }): Promise<
+      { ok: true; warning?: string } | { ok: false; error: string }
+    > => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      const result = await postForm(ctx, channelId, form);
+      if (result.ok) return result;
+      return { ok: false, error: result.error };
+    },
+    [channelId, ctx],
+  );
+
   const sendGif = useCallback(
     async (
       gif: OutgoingGif,
@@ -1135,15 +1172,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  const closeSignup = useCallback(
-    async (messageId: string) => {
-      if (!channelId || !ctx) {
-        throw new MemberFacingError("Couldn't close sign-ups. Try again.");
-      }
+  const closeCard = useCallback(
+    async (messageId: string, kind: ClosableCardKind) => {
+      const failure = closeCardFailure(kind);
+      if (!channelId || !ctx) throw new MemberFacingError(failure);
       await withFailureMessage(
         (onError) =>
-          closeCardAction({ ...ctx, onError }, { channelId, messageId }),
-        "Couldn't close sign-ups. Try again.",
+          closeCardAction({ ...ctx, onError }, { channelId, messageId, kind }),
+        failure,
       );
     },
     [channelId, ctx],
@@ -1395,13 +1431,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     sendPoll,
     sendGif,
     sendSignup,
+    sendForm,
     postTask: postTaskHere,
     postHours: postHoursHere,
     trackEventCard: trackEventCardHere,
     edit,
     remove,
     closePoll,
-    closeSignup,
+    closeCard,
     flag,
     react,
     unreact,

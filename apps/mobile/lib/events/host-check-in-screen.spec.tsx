@@ -687,7 +687,7 @@ describe("Host check-in on the real code request", () => {
 
   const MINT = {
     data: {
-      qrPayload: "frapp-checkin:v1:evt-1:signed",
+      qrPayload: "https://app.frapp.live/check-in?event=evt-1&t=signed",
       manualCode: "4KQ-88",
       expiresAt: "2099-01-01T00:00:00Z",
       rotatesInMs: ROTATES_IN_MS,

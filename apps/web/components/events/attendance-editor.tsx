@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
-import type { RoleOption } from "@/lib/roles";
+import type { RoleOption } from "@repo/hooks/chapter-roles";
 
 /**
  * Who's coming, by role (`spec/behavior/events.md` § Attendance by role): the

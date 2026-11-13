@@ -1,6 +1,7 @@
 import { messageFlagView } from "@repo/chat-core/flags";
 import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   readAnnouncementBody,
   readEventPayload,
@@ -37,6 +38,7 @@ import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 import { RushCard } from "./rush-card";
 import { SignupCard } from "./signup-card";
+import { FormCard } from "./form-card";
 import { SystemAuditLine } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
@@ -92,8 +94,11 @@ export interface ThreadMessageRowProps {
   ) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll: (messageId: string) => void;
-  /** A sign-up card's Close sign-ups, its creator's or a moderator's (#3926). */
-  onCloseSignup: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups (#3926) or a form card's Close form
+   * (step 3), its creator's or a moderator's.
+   */
+  onCloseCard: (messageId: string, kind: ClosableCardKind) => void;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -149,7 +154,7 @@ function ThreadMessageRowBody({
   blockState,
   onVote,
   onClosePoll,
-  onCloseSignup,
+  onCloseCard,
   onRetry,
   onDiscard,
   onReact,
@@ -258,7 +263,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote, onClosePoll, onCloseSignup, nameFor },
+        { onVote, onClosePoll, onCloseCard, nameFor },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -352,14 +357,15 @@ function ThreadMessageRowBody({
  * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
  * `loading`, the placeholder for a heavy write in flight, which the + sheet's
  * Task, Service hours and Event forms send (#3865); it reads as its text
- * ("Creating task …") until the server's card replaces it.
+ * ("Creating task …") until the server's card replaces it. And `form`
+ * (#3926 step 3), drawn as its title until the phone's form card lands.
  */
 function cardFor(
   frame: ChatCardFrameProps,
   row: {
     onVote: ThreadMessageRowProps["onVote"];
     onClosePoll: ThreadMessageRowProps["onClosePoll"];
-    onCloseSignup: ThreadMessageRowProps["onCloseSignup"];
+    onCloseCard: ThreadMessageRowProps["onCloseCard"];
     nameFor: ThreadMessageRowProps["nameFor"];
   },
 ): ReactNode | null {
@@ -380,7 +386,15 @@ function cardFor(
           {...frame}
           nameFor={row.nameFor}
           onClaim={row.onVote}
-          onCloseSignup={row.onCloseSignup}
+          onCloseSignup={(id) => row.onCloseCard(id, "signup")}
+        />
+      );
+    case "form":
+      // Answered on its own page (`FormFillPage`), never on the card.
+      return (
+        <FormCard
+          {...frame}
+          onCloseForm={(id) => row.onCloseCard(id, "form")}
         />
       );
     case "event": {

@@ -34,6 +34,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   CHANNEL_LIST_KEY,
   resolveAuthorAvatar,
@@ -89,7 +90,12 @@ import {
   threadTitleFor,
 } from "@/lib/chat/channel-list";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
-import { confirmCloseSignup } from "@/lib/chat/confirm-close-signup";
+import { confirmCloseCard } from "@/lib/chat/confirm-close-card";
+import {
+  FormFillContext,
+  FormFillPage,
+  useFormFillHost,
+} from "./form-fill-page";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { threadHeaderLines } from "@/lib/chat/thread-header";
@@ -296,6 +302,20 @@ export function MessageThreadScreen({
     [memberAvatarFor, importedAvatars.data],
   );
 
+  // A form card's page (#3926 step 3), over the thread as it is over the
+  // channel (`useFormFillHost`): handed the card's live row, the parent or a
+  // reply, and closed on a blur or when that row is deleted or held by the
+  // block list.
+  const hostRows = useMemo(
+    () => (rootRow ? [rootRow, ...rows] : rows),
+    [rootRow, rows],
+  );
+  const { state: formFill, message: filledRow } = useFormFillHost(
+    hostRows,
+    channelId,
+  );
+  const formFillOpen = formFill.messageId !== null;
+
   const { writeBlockedReason } = useConnection();
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
@@ -374,11 +394,9 @@ export function MessageThreadScreen({
   // A line of a summary opens its reply (#3946), paging earlier replies for
   // it when it isn't loaded, as the channel's jump does. The parent is not a
   // row: it heads the list, so its line scrolls to the top.
-  const {
-    listRef,
-    jumpToMessage,
-    onScrollToIndexFailed,
-  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, rootId);
+  const { listRef, jumpToMessage, onScrollToIndexFailed } = useJumpToMessage<
+    FlatList<ThreadRow>
+  >(inverted, rootId);
   const { jumpToImportant: jumpToReply } = useJumpToImportant({
     rows: inverted,
     resetKey: rootId,
@@ -463,7 +481,7 @@ export function MessageThreadScreen({
 
   // A reaction chip's tap and the sheet's quick row tick once, here where the
   // member acted, as the channel's do.
-  const { react, unreact, act, remove, closePoll, closeSignup } = writes;
+  const { react, unreact, act, remove, closePoll, closeCard } = writes;
   const onReact = useCallback(
     (messageId: string, emoji: string) => {
       selectionHaptic();
@@ -487,9 +505,10 @@ export function MessageThreadScreen({
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
     [closePoll],
   );
-  const onCloseSignup = useCallback(
-    (messageId: string) => confirmCloseSignup(() => closeSignup(messageId)),
-    [closeSignup],
+  const onCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) =>
+      confirmCloseCard(kind, () => closeCard(messageId, kind)),
+    [closeCard],
   );
   const onDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
@@ -636,7 +655,7 @@ export function MessageThreadScreen({
           blockState={blockState}
           onVote={onVote}
           onClosePoll={onClosePoll}
-          onCloseSignup={onCloseSignup}
+          onCloseCard={onCloseCard}
           onRetry={onRetry}
           onDiscard={thread.discard}
           onReact={onReact}
@@ -660,7 +679,7 @@ export function MessageThreadScreen({
       blockState,
       onVote,
       onClosePoll,
-      onCloseSignup,
+      onCloseCard,
       onRetry,
       thread.discard,
       onReact,
@@ -774,142 +793,161 @@ export function MessageThreadScreen({
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      {/* As s05's: rises by the keyboard less the bottom inset (#4010). */}
-      <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
-        <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Back to ${channelTitle}`}
-            hitSlop={12}
-            // Pops the thread back to its channel, as the edge swipe does.
-            onPress={() => (below ? below.goBack() : goBackTo(router, "/"))}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
-          >
-            <BackGlyph color={brand.accent} />
-          </Pressable>
-          <View style={styles.headerText}>
-            <Text
-              accessibilityRole="header"
-              numberOfLines={1}
-              style={styles.headerName}
-            >
-              {header.title}
-            </Text>
-            <Text numberOfLines={1} style={styles.headerChannel}>
-              {header.subtitle}
-            </Text>
-          </View>
-          {thread.root ? (
-            <Chip
-              label={following ? "Following" : "Follow"}
-              on={following}
-              onPress={() => {
-                if (!followBusy) void toggleFollow();
-              }}
+      {/* As s05's: rises by the keyboard less the bottom inset (#4010). The
+          form page covers it, so it leaves the accessibility tree while the
+          page is up (`spec/ui/mobile/patterns.md` § Overlays). */}
+      <FormFillContext.Provider value={formFill.open}>
+        <KeyboardAvoidingArea
+          style={styles.flex}
+          atScreenBottom
+          collapsable={false}
+          accessibilityElementsHidden={formFillOpen}
+          importantForAccessibility={
+            formFillOpen ? "no-hide-descendants" : "auto"
+          }
+        >
+          <View style={styles.header}>
+            <Pressable
               accessibilityRole="button"
-              accessibilityState={{ selected: following, busy: followBusy }}
-              accessibilityHint={
-                following
-                  ? "Stops notifications for this thread"
-                  : "Notifies you of new replies"
-              }
+              accessibilityLabel={`Back to ${channelTitle}`}
+              hitSlop={12}
+              // Pops the thread back to its channel, as the edge swipe does.
+              onPress={() => (below ? below.goBack() : goBackTo(router, "/"))}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
+            >
+              <BackGlyph color={brand.accent} />
+            </Pressable>
+            <View style={styles.headerText}>
+              <Text
+                accessibilityRole="header"
+                numberOfLines={1}
+                style={styles.headerName}
+              >
+                {header.title}
+              </Text>
+              <Text numberOfLines={1} style={styles.headerChannel}>
+                {header.subtitle}
+              </Text>
+            </View>
+            {thread.root ? (
+              <Chip
+                label={following ? "Following" : "Follow"}
+                on={following}
+                onPress={() => {
+                  if (!followBusy) void toggleFollow();
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: following, busy: followBusy }}
+                accessibilityHint={
+                  following
+                    ? "Stops notifications for this thread"
+                    : "Notifies you of new replies"
+                }
+              />
+            ) : null}
+          </View>
+
+          {catchUp.waiting ? (
+            <CatchUpStrip
+              line={CHAT_CATCH_UP_COPY.resume_line}
+              action={CHAT_CATCH_UP_COPY.resume_action}
+              onAction={catchUp.resume}
+              onDismiss={catchUp.drop}
+            />
+          ) : canSummarize &&
+            !catchUp.active &&
+            !offerDismissed &&
+            replyCount >= CHAT_CATCH_UP_OFFER_AT ? (
+            <CatchUpStrip
+              line={chatCatchUpThreadOfferLine(replyCount)}
+              action={CHAT_CATCH_UP_COPY.thread_action}
+              onAction={() => {
+                setOfferDismissed(true);
+                summarizeThread();
+              }}
+              onDismiss={() => setOfferDismissed(true)}
             />
           ) : null}
-        </View>
 
-        {catchUp.waiting ? (
-          <CatchUpStrip
-            line={CHAT_CATCH_UP_COPY.resume_line}
-            action={CHAT_CATCH_UP_COPY.resume_action}
-            onAction={catchUp.resume}
-            onDismiss={catchUp.drop}
-          />
-        ) : canSummarize &&
-          !catchUp.active &&
-          !offerDismissed &&
-          replyCount >= CHAT_CATCH_UP_OFFER_AT ? (
-          <CatchUpStrip
-            line={chatCatchUpThreadOfferLine(replyCount)}
-            action={CHAT_CATCH_UP_COPY.thread_action}
-            onAction={() => {
-              setOfferDismissed(true);
-              summarizeThread();
-            }}
-            onDismiss={() => setOfferDismissed(true)}
-          />
-        ) : null}
+          <View style={styles.flex}>
+            {/* The channel's chat background (#3973), as behind its list. */}
+            <ChatBackground channelId={channelId} />
+            {body}
+          </View>
 
-        <View style={styles.flex}>
-          {/* The channel's chat background (#3973), as behind its list. */}
-          <ChatBackground channelId={channelId} />
-          {body}
-        </View>
-
-        {/* Not a live region, and the blank hidden, as s05's line is: one
+          {/* Not a live region, and the blank hidden, as s05's line is: one
             that changes with every pause would talk over the thread. */}
-        <View
-          testID="typing-line"
-          style={styles.typingSlot}
-          accessibilityElementsHidden={!typing}
-          importantForAccessibility={typing ? "auto" : "no-hide-descendants"}
-        >
-          <Text style={styles.typing} numberOfLines={1}>
-            {typing ?? TYPING_LINE_BLANK}
-          </Text>
-        </View>
-        {/* The channel's banner, for the channel's reason: a refused reaction
+          <View
+            testID="typing-line"
+            style={styles.typingSlot}
+            accessibilityElementsHidden={!typing}
+            importantForAccessibility={typing ? "auto" : "no-hide-descendants"}
+          >
+            <Text style={styles.typing} numberOfLines={1}>
+              {typing ?? TYPING_LINE_BLANK}
+            </Text>
+          </View>
+          {/* The channel's banner, for the channel's reason: a refused reaction
             or vote rolls back silently, so this is its only report (#999).
             Dismissible, as nothing is left to retry. */}
-        {writes.reactionError || writes.actionError ? (
-          <View style={styles.rowErrorBanner} accessibilityLiveRegion="polite">
-            <Text style={styles.rowErrorText}>
-              {writes.reactionError ?? writes.actionError}
-            </Text>
-            <IconButton
-              label="Dismiss"
-              onPress={
-                writes.reactionError
-                  ? writes.clearReactionError
-                  : writes.clearActionError
-              }
+          {writes.reactionError || writes.actionError ? (
+            <View
+              style={styles.rowErrorBanner}
+              accessibilityLiveRegion="polite"
             >
-              <CloseGlyph color={tokens.color.text.mutedForeground} />
-            </IconButton>
-          </View>
-        ) : null}
-        <ChatComposer
-          value={staging.value}
-          onChangeText={onChangeText}
-          onSend={staging.submit}
-          canSend={
-            !!viewerId &&
-            !writeBlockedReason &&
-            // The composer keys its input's `editable` on this, so an emptied
-            // edit stays typeable; it greys Save out itself, and the hint says
-            // why (`useComposerStaging`).
-            (staging.isEditing ? !staging.isSavingEdit : canReply)
-          }
-          placeholder={staging.isEditing ? "Edit message" : "Reply in thread…"}
-          context={staging.context}
-          disabledHint={
-            staging.isEditing
-              ? writeBlockedReason
-                ? THREAD_OFFLINE_HINT
-                : staging.editError
-              : !canReply
-                ? THREAD_NO_REPLY_HINT
-                : writeBlockedReason
+              <Text style={styles.rowErrorText}>
+                {writes.reactionError ?? writes.actionError}
+              </Text>
+              <IconButton
+                label="Dismiss"
+                onPress={
+                  writes.reactionError
+                    ? writes.clearReactionError
+                    : writes.clearActionError
+                }
+              >
+                <CloseGlyph color={tokens.color.text.mutedForeground} />
+              </IconButton>
+            </View>
+          ) : null}
+          <ChatComposer
+            value={staging.value}
+            onChangeText={onChangeText}
+            onSend={staging.submit}
+            canSend={
+              !!viewerId &&
+              !writeBlockedReason &&
+              // The composer keys its input's `editable` on this, so an emptied
+              // edit stays typeable; it greys Save out itself, and the hint says
+              // why (`useComposerStaging`).
+              (staging.isEditing ? !staging.isSavingEdit : canReply)
+            }
+            placeholder={
+              staging.isEditing ? "Edit message" : "Reply in thread…"
+            }
+            context={staging.context}
+            disabledHint={
+              staging.isEditing
+                ? writeBlockedReason
                   ? THREAD_OFFLINE_HINT
-                  : sendError
-          }
-          hintTone={
-            !writeBlockedReason &&
-            (staging.isEditing ? !!staging.editError : canReply && !!sendError)
-              ? "error"
-              : "muted"
-          }
-        />
-      </KeyboardAvoidingArea>
+                  : staging.editError
+                : !canReply
+                  ? THREAD_NO_REPLY_HINT
+                  : writeBlockedReason
+                    ? THREAD_OFFLINE_HINT
+                    : sendError
+            }
+            hintTone={
+              !writeBlockedReason &&
+              (staging.isEditing
+                ? !!staging.editError
+                : canReply && !!sendError)
+                ? "error"
+                : "muted"
+            }
+          />
+        </KeyboardAvoidingArea>
+      </FormFillContext.Provider>
       {catchUp.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
@@ -920,6 +958,7 @@ export function MessageThreadScreen({
         onReact={onReact}
         onUnreact={onUnreact}
       />
+      <FormFillPage state={formFill} message={filledRow} />
     </SafeAreaView>
   );
 }

@@ -275,13 +275,18 @@ export function SignupForm({
 /**
  * Ends at a set time: off by default (the card stays open until it is
  * closed); on, a day and a time, starting from tomorrow at 6 PM. The day is
- * typed as the event editor's is (`DateField`, leaning ahead).
+ * typed as the event editor's is (`DateField`, leaning ahead). The New form
+ * builder shares it (`form-builder.tsx`), with its own words.
  */
-function EndTimeField({
+export function EndTimeField({
+  id = "new-signup-ends",
+  label = "Ends at a set time",
   value,
   disabled,
   onChange,
 }: {
+  id?: string;
+  label?: string;
   value: Date | null;
   disabled: boolean;
   onChange: (next: Date | null) => void;
@@ -295,9 +300,9 @@ function EndTimeField({
   return (
     <div className="space-y-2 text-sm">
       <div className="flex items-center justify-between gap-4">
-        <Label htmlFor="new-signup-ends">Ends at a set time</Label>
+        <Label htmlFor={id}>{label}</Label>
         <Switch
-          id="new-signup-ends"
+          id={id}
           checked={value !== null}
           disabled={disabled}
           onCheckedChange={(on) =>

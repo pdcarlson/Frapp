@@ -252,7 +252,7 @@ describe("other sign-in refusals", () => {
     expect(call.variant).toBeUndefined();
   });
 
-  it("asks for the magic link with intent=confirm, for an address GoTrue answers with a confirmation", async () => {
+  it("asks for the magic link with intent=sign-in-link, so a new account is caught and a confirmation stays good news (#3801)", async () => {
     auth.signInWithOtp.mockResolvedValue({ data: { session: null, user: null }, error: null });
     render(<SignInScreen />);
     fill(/email/i, EMAIL);
@@ -262,7 +262,7 @@ describe("other sign-in refusals", () => {
     ];
     const link = new URL(args.options.emailRedirectTo);
     expect(link.searchParams.get("next")).toBe(INVITE);
-    expect(link.searchParams.get("intent")).toBe("confirm");
+    expect(link.searchParams.get("intent")).toBe("sign-in-link");
   });
 
   it("reports the hourly email cap as a failure that sent nothing", async () => {

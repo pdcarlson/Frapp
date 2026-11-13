@@ -244,6 +244,45 @@ describe('NotificationService', () => {
     return userIds;
   };
 
+  describe('timeZoneFor', () => {
+    it('reads the zone on file, else the quiet-hours zone', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValueOnce({
+        time_zone: 'America/Chicago',
+        quiet_hours_tz: 'Europe/London',
+      } as never);
+      await expect(service.timeZoneFor('user-1')).resolves.toBe(
+        'America/Chicago',
+      );
+      mockSettingsRepo.findByUser.mockResolvedValueOnce({
+        time_zone: null,
+        quiet_hours_tz: 'Europe/London',
+      } as never);
+      await expect(service.timeZoneFor('user-1')).resolves.toBe(
+        'Europe/London',
+      );
+    });
+
+    // #4505: a series' meetings are stored stepped in this zone, so a failed
+    // read is reported rather than only read as "no zone".
+    it('reports a failed read and answers null', async () => {
+      const logged = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockSettingsRepo.findByUser.mockRejectedValueOnce(new Error('timeout'));
+
+      await expect(service.timeZoneFor('user-1')).resolves.toBeNull();
+
+      expect(captureException).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          tags: { caught_at: 'notification-time-zone-read' },
+        }),
+      );
+      logged.mockRestore();
+    });
+  });
+
   describe('notifyUser', () => {
     it('should skip when preference is disabled for category', async () => {
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue({

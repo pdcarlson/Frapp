@@ -80,6 +80,7 @@ import {
 } from "@repo/chat-core/blocks";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   authorInitialsFallback,
   memberAvatarHue,
@@ -247,8 +248,11 @@ export interface MessageItemProps {
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
-  /** A sign-up card's Close sign-ups (#3926), its creator's or a moderator's. */
-  onCloseSignup?: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups or a form card's Close form (#3926), its
+   * creator's or a moderator's.
+   */
+  onCloseCard?: (messageId: string, kind: ClosableCardKind) => void;
   /**
    * Flag, re-flag or (`null`) unflag this message (#3921). Optional so a
    * surface that doesn't wire it offers no Flag control; whether the viewer
@@ -411,7 +415,7 @@ export function MessageItem({
   onEdit,
   onDelete,
   onClosePoll,
-  onCloseSignup,
+  onCloseCard,
   onFlag,
   isBookmarked,
   onToggleBookmark,
@@ -837,7 +841,7 @@ export function MessageItem({
         {edited ? <span>{EDITED_MARKER}</span> : null}
         {pinned ? (
           <span className="inline-flex items-center gap-1">
-            <PinGlyph className="h-3.5 w-3.5" />
+            <PinGlyph className="h-3.5 w-3.5" active />
             Pinned
           </span>
         ) : null}
@@ -900,7 +904,7 @@ export function MessageItem({
         isConfirmed={isConfirmed}
         onAct={onAct ?? (() => {})}
         onClosePoll={onClosePoll}
-        onCloseSignup={onCloseSignup}
+        onCloseCard={onCloseCard}
         trailing={trailingOnOwnLine ? undefined : trailing}
         muted={isPending || isFailed}
       />

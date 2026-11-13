@@ -151,6 +151,23 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040007) ===");
       },
     );
 
+    check(
+      "a pledge class name of only whitespace is refused (#4756)",
+      await refused(
+        `insert into chapter_pledge_classes (chapter_id, name, position)
+           values ('${CH}', E'\\t\\n ', 9)`,
+      ),
+      {},
+    );
+    check(
+      "a manual group name of only whitespace is refused (#4756)",
+      await refused(
+        `insert into chapter_groups (chapter_id, kind, name)
+           values ('${CH}', 'manual', E'\\t\\n ')`,
+      ),
+      {},
+    );
+
     const y2027 = await groupId(`chapter_id = $1 and class_year = 2027`, [CH]);
     const y2028 = await groupId(`chapter_id = $1 and class_year = 2028`, [CH]);
     const before = {

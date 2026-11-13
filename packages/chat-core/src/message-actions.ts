@@ -40,6 +40,7 @@ export const CARD_KINDS: ReadonlySet<string> = new Set([
   "hours",
   "rush",
   "signup",
+  "form",
 ]);
 
 /**

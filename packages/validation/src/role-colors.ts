@@ -7,9 +7,13 @@ import { isEveryoneRole } from "./everyone-role";
  * from this list instead of a free hex picker. Every swatch clears WCAG AA for
  * normal text (4.5:1) on every resting surface a name sits on (lowest is
  * Violet at 5.13:1 on `--popover`). On a hovered row's `--card-hover`, Rose
- * and Violet fall to 4.49:1 and 4.42:1 since the 2026-11-12 surface ladder
- * (#3826) lightened it; `apps/web/components/roles/role-colors-contrast.spec.ts`
- * guards the rest against the token source and pins that exception.
+ * and Violet rest at 4.49:1 and 4.42:1 since the 2026-11-12 surface ladder
+ * (#3826) lightened it, a hair under AA; web lifts the painted name on hover so
+ * it clears there too (`apps/web/components/roles/role-name-paint.ts`, #4387).
+ * The stored value stays as listed: the API validates against it and shipped
+ * mobile builds paint only exact palette values, so re-pitching a swatch would
+ * orphan every role stored with it. `role-colors-contrast.spec.ts` guards the
+ * resting palette against the token source and the lifted palette on hover.
  *
  * Two hue families are left out on purpose: red, which already means a mention
  * or an error, and gold, which is Signet's own colour for the Ask surface.

@@ -1547,7 +1547,7 @@ on their imported messages in that chapter are theirs.
 | `task` | Task assignment card |
 | `poll` | Poll (inline vote) |
 | `signup` | Sign-up sheet: named slots with a limit, and who holds which, on web and mobile ([integrations.md § Sign-up sheet cards](./integrations.md#sign-up-sheet-cards), #3926) |
-| `form` | Form: a questionnaire that opens a full page; each member's answers are private to them and the form's creator ([integrations.md § Form cards](./integrations.md#form-cards), #3926 step 3). The API and data ship first; until the web and phone cards land, both draw it as its title |
+| `form` | Form: a questionnaire that opens a full page; each member's answers are private to them and the form's creator ([integrations.md § Form cards](./integrations.md#form-cards), #3926 step 3). On web and the phone |
 | `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `points` | Points grant or deduction notification (`/points`) |
 | `hours` | Service hours log confirmation (created by `/hours log`) |

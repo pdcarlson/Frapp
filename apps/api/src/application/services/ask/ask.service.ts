@@ -82,6 +82,14 @@ export interface AskInput {
   /** The client showed the "answers are being saved" line before sending. */
   savedNoticeShown: boolean;
   signal?: AbortSignal;
+  /**
+   * Asked once the search and the planning call are back, and before
+   * anything else: no tool has run, nothing has been kept and no word has
+   * been written. False ends the turn there with nothing more sent, which is
+   * how a conversation whose turn became a card stops its answer
+   * (`AskConversationService`). Left out, the answer goes straight on.
+   */
+  mayGoOn?: () => Promise<boolean>;
 }
 
 /** One source handed to the model, with what a citation of it shows. */
@@ -251,6 +259,12 @@ function passageEntry(
  * 6. **Citations placed** at the end of the sentence each one backs, and
  *    only the sources actually cited are sent.
  *
+ * **What the stream says it is doing is what happened** (#4701): `searching`
+ * at the start, `reading` after step 1 with the tools picked and how many
+ * sources were found (and not at all when there is nothing to read), and
+ * `writing` at the first word of step 4. A step carries tool names and a
+ * count, never a title or a passage.
+ *
  * Nothing is stored, except by the beta diagnostics window when it is on
  * for the chapter and the client showed its notice (`AskDiagnosticsService`).
  * No question, answer or source text is logged here.
@@ -314,6 +328,13 @@ export class AskService {
       ),
       this.plan(input, offered, context),
     ]);
+    // Nothing past the search is run, kept or shown for a turn that became
+    // a card.
+    if (input.mayGoOn && !(await input.mayGoOn())) return;
+    // A member who closed the panel while that was worked out is not read
+    // for, written for or kept: not every turn sends a step here for the
+    // route to stop at.
+    if (input.signal?.aborted) return;
     if (retrieved.status !== 'ok') {
       yield this.done(
         emptyAnswer('unavailable', { reason: unavailableReason(retrieved) }),
@@ -321,7 +342,19 @@ export class AskService {
       return;
     }
 
-    yield this.step('reading');
+    // Said only when there is something to read, and it names it: the live
+    // reads the planner picked, and how many sources the search found, each
+    // counted once however many of its passages matched (#4701).
+    const found = new Set(retrieved.passages.map((passage) => passage.sourceId))
+      .size;
+    if (planned.length > 0 || found > 0) {
+      yield event({
+        type: 'status',
+        step: 'reading',
+        reads: planned.map((tool) => tool.name),
+        found,
+      });
+    }
     // The last of chat's three consent checks (#4314): a member who said No
     // since the search ran has their words dropped here, before any text
     // leaves Frapp. Their messages join the left-out count, never by name.
@@ -333,6 +366,8 @@ export class AskService {
         this.consent,
       ),
     ]);
+    // Nor is anything written or kept for one who left while it read.
+    if (input.signal?.aborted) return;
     const leftOut = retrieved.leftOutMessages + allowed.withheldMessages;
     const passages = allowed.passages.map((passage) =>
       passageEntry(passage, input.timeZone),
@@ -361,7 +396,9 @@ export class AskService {
       return;
     }
 
-    yield this.step('writing');
+    // "Writing" is said at the first word, not before the model has been
+    // asked: until then it is still reading what it was handed.
+    let writing = false;
     let result: AiCitedResult | null = null;
     for await (const part of this.gateway.streamCited(
       'ask.answer',
@@ -374,9 +411,13 @@ export class AskService {
       },
       context,
     )) {
-      if (part.type === 'text')
+      if (part.type === 'text') {
+        if (!writing) {
+          writing = true;
+          yield this.step('writing');
+        }
         yield event({ type: 'text', delta: part.delta });
-      else result = part.result;
+      } else result = part.result;
     }
 
     const answer = this.answerFrom(result, entries, leftOut);

@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { SEARCH_ROBOTS_METADATA } from "@repo/validation/search-indexing";
 import { PageviewTracker } from "../components/pageview-tracker";
 
 /*
@@ -41,6 +42,10 @@ export const metadata: Metadata = {
   description:
     "Frapp is chat first. Events, check-in and points land in the conversation your members already read. Free for chat and members, with no card.",
   metadataBase: new URL("https://frapp.live"),
+  // Hidden from search while Frapp is in testing (#4758): one switch,
+  // `SEARCH_INDEXING_ENABLED` in @repo/validation/search-indexing.mjs, which
+  // also sets an `X-Robots-Tag` header in next.config.js.
+  robots: SEARCH_ROBOTS_METADATA,
   openGraph: {
     title: "Frapp. Ask your chapter anything.",
     description: ogDescription,

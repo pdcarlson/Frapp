@@ -1,10 +1,11 @@
 import { FOCUS_RING } from "@/components/ui/focus";
 
 /*
- * Class recipes for the native controls the dashboard tables use directly — a
- * `<select>` filter and an `<input type="checkbox">` row selector — which are
- * plain elements rather than Radix primitives and so cannot reuse the `ui/`
- * components.
+ * Class recipes for the dashboard's toolbar rows and the native controls its
+ * tables use directly, such as the `<input type="checkbox">` row selector, a
+ * plain element rather than a Radix primitive and so unable to reuse the `ui/`
+ * components. Pickers are the app's `Select` (`ui/select.tsx`); the native
+ * `<select>` paint that used to live here went with the last one (#3616).
  *
  * They live under `components/` rather than `lib/` because Tailwind scans by
  * `content` glob (`./app/**`, `./components/**`), and a class token that
@@ -52,12 +53,6 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * `Table`'s own `overflow-auto` wrapper, so those 12px scroll the table rather
  * than the page and the 375px floor is unaffected.
  */
-/*
- * §4's native-`<select>` paint, with the height left out — the two heights the
- * spec gives it are the only difference between the pair below, so the fill,
- * border, type and focus recipe are written once.
- */
-
 /**
  * A toolbar row's height: 36 to a mouse, 44 to a finger. The same rule the
  * dense list rows below it take (`min-h-9 pointer-coarse:min-h-11`), and

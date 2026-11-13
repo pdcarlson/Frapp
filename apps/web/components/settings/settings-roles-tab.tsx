@@ -11,9 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { useMyPermissions, useRoles } from "@repo/hooks";
-import { isEveryoneRole } from "@repo/validation";
 import {
   PresidencyClaimBanner,
   TransferPresidencySection,
@@ -150,26 +149,28 @@ function DefaultInviteRoleCard({
 }) {
   const rolesQuery = useRoles();
 
+  const roles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
+    [rolesQuery.data],
+  );
+  // A role holding `*` is no default: an invite can't grant it (the API
+  // answers 403). One already configured stays listed, so the card names it
+  // rather than calling it gone, and the officer can pick another.
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
-        first.name.localeCompare(second.name),
-      ),
-    [rolesQuery.data],
+      roles
+        .filter(
+          (role) =>
+            !role.everyone && (!role.locked || role.id === configuredDefaultId),
+        )
+        .map(({ id, name }) => ({ id, name }))
+        .sort((first, second) => first.name.localeCompare(second.name)),
+    [roles, configuredDefaultId],
   );
 
   // The Everyone role (#4191) is what an invite with no default grants, so a
   // chapter whose default names it reads as having none.
-  const everyoneId = useMemo(
-    () =>
-      Array.isArray(rolesQuery.data)
-        ? (
-            (rolesQuery.data as unknown[]).find(isEveryoneRole) as
-              { id?: unknown } | undefined
-          )?.id
-        : undefined,
-    [rolesQuery.data],
-  );
+  const everyoneId = roles.find((role) => role.everyone)?.id;
   const defaultInviteRoleId =
     configuredDefaultId !== null && configuredDefaultId === everyoneId
       ? null

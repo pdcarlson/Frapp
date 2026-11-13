@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASK_COPY,
+  ASK_STEPS,
   ASK_STREAM_KEEPALIVE,
   ASK_STREAM_VERSION,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
   ASK_HISTORY_MAX_TURNS,
   ASK_QUESTION_MAX_LENGTH,
+  ASK_SUGGESTION_NAME_MAX,
   AskRequestSchema,
+  AskSuggestionSchema,
   askAnswerSegments,
   askHistory,
   askLeftOutLine,
   askSourceKindLabel,
   askSourceTarget,
+  askStepLine,
+  askSuggestionName,
+  askSuggestionText,
   askUnavailableLine,
   createAskStreamReader,
   encodeAskStreamEvent,
@@ -86,6 +93,11 @@ describe("the Ask stream format", () => {
     ).toEqual({ v, type: "status", step: "thinking" });
   });
 
+  it("carries what a reading step says is being read", () => {
+    const event = { v, type: "status", step: "reading", reads: ["roster"], found: 3 };
+    expect(parseAskStreamEvent(JSON.stringify(event))).toEqual(event);
+  });
+
   it("keeps a source of a kind and target it does not know, without a link", () => {
     const event = parseAskStreamEvent(
       JSON.stringify({
@@ -120,6 +132,24 @@ describe("askHistory", () => {
 
   it("sends a finished turn as its question and its answer", () => {
     expect(askHistory([turn(" What is quorum? ")])).toEqual([
+      { question: "What is quorum?", answer: answer.text },
+    ]);
+  });
+
+  it("marks a turn whose question was a tapped suggestion, and only that turn", () => {
+    expect(
+      askHistory([
+        { ...turn("When and where is Formal on Friday?"), suggested: true },
+        turn("And the one after?"),
+        { ...turn("What is quorum?"), suggested: false },
+      ]),
+    ).toEqual([
+      {
+        question: "When and where is Formal on Friday?",
+        answer: answer.text,
+        suggested: true,
+      },
+      { question: "And the one after?", answer: answer.text },
       { question: "What is quorum?", answer: answer.text },
     ]);
   });
@@ -254,6 +284,60 @@ describe("Ask copy", () => {
   });
 });
 
+describe("askStepLine", () => {
+  it("says what the server named, and searching for a step this build does not know", () => {
+    expect(askStepLine("searching")).toBe("Searching your chapter's sources");
+    expect(askStepLine("writing")).toBe("Writing");
+    expect(askStepLine("proposing")).toBe("Working out what that would change");
+    expect(askStepLine("pondering")).toBe("Searching your chapter's sources");
+    expect(askStepLine(null)).toBe("Searching your chapter's sources");
+    // An open string from the wire is never read off the object itself.
+    expect(askStepLine("constructor")).toBe("Searching your chapter's sources");
+  });
+
+  it("names the records being read and how many sources were found", () => {
+    expect(askStepLine("reading", { reads: ["events"], found: 0 })).toBe(
+      "Reading the events calendar",
+    );
+    expect(askStepLine("reading", { reads: [], found: 1 })).toBe(
+      "Reading 1 source",
+    );
+    expect(askStepLine("reading", { reads: ["roster"], found: 3 })).toBe(
+      "Reading the roster and 3 sources",
+    );
+    expect(
+      askStepLine("reading", {
+        reads: ["events", "my_tasks", "my_points"],
+        found: 2,
+      }),
+    ).toBe("Reading the events calendar, your tasks, your points and 2 sources");
+  });
+
+  it("leaves out a read this build has no words for, and never reads a name off the object itself", () => {
+    expect(
+      askStepLine("reading", { reads: ["attendance", "roster"], found: 0 }),
+    ).toBe("Reading the roster");
+    expect(askStepLine("reading", { reads: ["constructor"], found: 2 })).toBe(
+      "Reading 2 sources",
+    );
+  });
+
+  it("says the plain reading line when an older server names nothing", () => {
+    expect(askStepLine("reading")).toBe("Reading what it found");
+    expect(askStepLine("reading", { reads: ["attendance"] })).toBe(
+      "Reading what it found",
+    );
+  });
+
+  it("has words for every step, and the line under a turn draws them", () => {
+    for (const step of ASK_STEPS) {
+      expect(ASK_COPY.steps[step].length).toBeGreaterThan(0);
+      // A step added to the list is drawn without a change to `askStepLine`.
+      expect(askStepLine(step)).toBe(ASK_COPY.steps[step]);
+    }
+  });
+});
+
 describe("askAnswerSegments", () => {
   it("puts each marker where the server placed it", () => {
     expect(askAnswerSegments(answer)).toEqual([
@@ -315,5 +399,54 @@ describe("askSourceKindLabel", () => {
     expect(askSourceKindLabel("chat")).toBe("Channel message");
     expect(askSourceKindLabel("minutes")).toBe("Minutes");
     expect(askSourceKindLabel("hologram")).toBeNull();
+  });
+});
+
+describe("the opening suggestions", () => {
+  it("writes each one as the member would type it, with nothing abbreviated", () => {
+    expect(askSuggestionText.event("Chapter Meeting", "on Sunday")).toBe(
+      "When and where is Chapter Meeting on Sunday?",
+    );
+    expect(askSuggestionText.task("Book the bus")).toBe(
+      'When is my task "Book the bus" due?',
+    );
+    expect(askSuggestionText.tasks(3)).toBe(
+      "Which of my 3 open tasks is due first?",
+    );
+    expect(askSuggestionText.dues("Fall dues")).toBe(
+      "How much do I owe for Fall dues?",
+    );
+    expect(askSuggestionText.minutes("Chapter Meeting", "November 9")).toBe(
+      "What was decided at Chapter Meeting on November 9?",
+    );
+    expect(askSuggestionText.points()).toBe(
+      "How many points do I have this semester?",
+    );
+    expect(askSuggestionText.request("Sunday", "Saturday")).toBe(
+      "Make a task for me to get ready for Sunday's event, due Saturday",
+    );
+  });
+
+  it("puts a record's name on one line, and leaves out one that is empty or too long to name", () => {
+    expect(askSuggestionName("  Chapter\n Meeting  ")).toBe("Chapter Meeting");
+    expect(askSuggestionName("")).toBeNull();
+    expect(askSuggestionName("   ")).toBeNull();
+    expect(askSuggestionName(null)).toBeNull();
+    expect(askSuggestionName("x".repeat(ASK_SUGGESTION_NAME_MAX))).toHaveLength(
+      ASK_SUGGESTION_NAME_MAX,
+    );
+    expect(
+      askSuggestionName("x".repeat(ASK_SUGGESTION_NAME_MAX + 1)),
+    ).toBeNull();
+  });
+
+  it("reads a kind a newer server adds", () => {
+    expect(
+      AskSuggestionSchema.parse({
+        kind: "something_new",
+        text: "A question",
+        request: false,
+      }).kind,
+    ).toBe("something_new");
   });
 });
