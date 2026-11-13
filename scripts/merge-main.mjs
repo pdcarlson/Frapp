@@ -130,6 +130,9 @@ export function graftSquashedPrs(git, { remote, base, log }) {
     const shared = git(["merge-base", "HEAD", head.out], { allowFail: true });
     if (!shared.ok) continue;
     if (git(["merge-base", "--is-ancestor", shared.out, base], { allowFail: true }).ok) continue;
+    // A head pushed after the squash landed (the PR branch merged main later)
+    // descends from it, and grafting it on would make a cycle.
+    if (git(["merge-base", "--is-ancestor", sha, head.out], { allowFail: true }).ok) continue;
     const parents = git(["rev-list", "--parents", "-n", "1", sha]).out.split(" ").slice(1);
     if (parents.length !== 1) continue; // not a squash
     if (git(["replace", "--graft", sha, parents[0], head.out], { allowFail: true }).ok) {
