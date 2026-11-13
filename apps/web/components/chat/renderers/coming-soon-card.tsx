@@ -1,6 +1,6 @@
 "use client";
 
-import { EYEBROW } from "../chip";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 
@@ -19,7 +19,7 @@ interface ComingSoonCardProps {
  */
 export function ComingSoonCard({ message, label }: ComingSoonCardProps) {
   return (
-    <div className="mt-1 w-[28rem] max-w-full rounded-lg border border-dashed border-border p-4">
+    <div className={cn(MESSAGE_CARD, "border border-dashed border-border")}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>
         {label ?? message.kind} · not built yet
       </p>

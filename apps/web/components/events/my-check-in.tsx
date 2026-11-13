@@ -7,7 +7,7 @@ import {
   useNow,
   type OwnAttendanceRow,
 } from "@repo/hooks";
-import { checkInWindowBounds } from "@repo/validation";
+import { checkInWindowBounds, isValidZoneOutline } from "@repo/validation";
 import {
   formatRelativeDayTime,
   formatTimeOfDay,
@@ -29,29 +29,16 @@ import { attendanceStatusLabel } from "@/components/events/attendance-status";
 export type ZoneState = "none" | "zone" | "malformed";
 
 /**
- * An event's `check_in_zone` as a {@link ZoneState}. Three states, not two: a
- * non-empty polygon with a point that isn't a finite pair, or fewer than three
- * points, is not "no zone". It mirrors `isValidZone` on the server, which
- * needs **every** entry to be a finite pair and then refuses every check-in,
- * so calling it "check in from anywhere" would say the opposite of what
- * members get. The event sheet and the chat event card both read it.
+ * An event's `check_in_zone` as a {@link ZoneState}. Three states, not two:
+ * an outline that isn't a usable polygon is not "no zone", because the server
+ * (`isValidZone`, which runs `isValidZoneOutline`) then refuses every
+ * check-in, so calling it "check in from anywhere" would say the opposite of
+ * what members get. The same check the server runs; only a missing zone is
+ * none. The event sheet and the chat event card both read it.
  */
 export function checkInZoneState(zone: unknown): ZoneState {
-  const entries: unknown[] = Array.isArray(zone) ? zone : [];
-  if (entries.length === 0) return "none";
-  const points = entries.filter((point) => {
-    if (!point || typeof point !== "object") return false;
-    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
-    return (
-      typeof lat === "number" &&
-      Number.isFinite(lat) &&
-      typeof lng === "number" &&
-      Number.isFinite(lng)
-    );
-  }).length;
-  return entries.length >= 3 && points === entries.length
-    ? "zone"
-    : "malformed";
+  if (zone === null || zone === undefined) return "none";
+  return isValidZoneOutline(zone) ? "zone" : "malformed";
 }
 
 /**

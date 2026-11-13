@@ -459,13 +459,16 @@ export function useCardStyles() {
   return useMemo(() => createStyles(tokens, brand), [tokens, brand]);
 }
 
-/** Web's `max-w-md` (28rem): the widest a chat card draws on either app. */
+/**
+ * Web's 28rem (`MESSAGE_CARD`'s `w-[28rem] max-w-full`): the widest a chat
+ * card draws on either app.
+ */
 const CARD_MAX_WIDTH = 448;
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     // The body column's full width up to web's cap (`MESSAGE_CARD`'s
-    // `max-w-md`, 448), so a card is one width on both apps and a tablet's
+    // 28rem, 448), so a card is one width on both apps and a tablet's
     // wide column doesn't stretch it (#4136).
     card: {
       maxWidth: CARD_MAX_WIDTH,

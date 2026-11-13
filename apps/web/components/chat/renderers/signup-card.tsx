@@ -149,7 +149,7 @@ export function SignupCard({
       </p>
       <div className="mt-2 text-base font-bold">{payload.title}</div>
       {payload.note ? (
-        <p className="mt-1 whitespace-pre-wrap text-caption text-muted-foreground">
+        <p className="mt-2 whitespace-pre-wrap text-caption text-muted-foreground">
           {payload.note}
         </p>
       ) : null}

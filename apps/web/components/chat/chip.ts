@@ -132,8 +132,8 @@ export { EYEBROW } from "@/components/ui/typography";
  *
  * `w-[28rem] max-w-full`: every card is one width, 28rem (448px) or the
  * body column when that is narrower, as the phone's cards fill their column
- * (#4136, `components.md` § Chat messages, "Cards"). Discord's embeds cap the
- * same way. A card that hugged its content made a column of cards ragged, and
+ * (#4136, `components.md` § Chat messages (compact layout), "Cards").
+ * Discord's embeds cap the same way. A card that hugged its content made a column of cards ragged, and
  * a loading card jumped width when its card arrived. A set width, not
  * `w-full`: the message box around a card is `w-fit` (so the action bar sits
  * beside it), and a percentage of that collapses back to the content.

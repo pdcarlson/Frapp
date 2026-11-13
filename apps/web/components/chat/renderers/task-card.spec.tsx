@@ -185,6 +185,22 @@ describe("TaskCard", () => {
     );
   });
 
+  it("offers the assignee no Start while the chapter has Tasks turned off (#4136)", () => {
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.queryByRole("button", { name: /start/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /mark done/i })).toBeNull();
+  });
+
   it("hides assignee actions from a non-assignee", () => {
     render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
     expect(

@@ -166,6 +166,10 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
       : null;
   const checkedInDone = !eventsOff && own?.kind === "checked-in";
   const markedLine = !eventsOff && own?.kind === "marked" ? own.label : null;
+  // An approved excuse writes the EXCUSED row, so "Marked excused" already
+  // says it; the excuse's own note would repeat it (the phone's rule).
+  const markedExcused =
+    markedLine !== null && selectOwnAttendance(mine.data)?.status === "EXCUSED";
   const offerExcuse = !eventsOff && excuse.kind === "offer";
   const actionsDisabled = !isConfirmed || checkIn.isPending;
 
@@ -263,12 +267,15 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           {markedLine ?? zoneLine}
         </p>
       ) : null}
-      {eventsOff && (windowOpen || excuse.kind === "offer") ? (
+      {/* Only while check-in is open, as on the phone: the line is about
+          check-in, and a channel of upcoming cards would repeat it under
+          each one. */}
+      {eventsOff && windowOpen ? (
         <p className="mt-2 text-caption text-muted-foreground">
           {CHECK_IN_MODULE_OFF_LINE}
         </p>
       ) : null}
-      {excuse.kind === "sent" ? (
+      {excuse.kind === "sent" && !markedExcused ? (
         <p className="mt-2 text-caption text-muted-foreground">
           {excuse.title}
         </p>

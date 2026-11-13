@@ -199,19 +199,11 @@ function isDm(channel: ChatChannel): boolean {
 }
 
 /**
- * Badge text. A mention badge leads with `@` and shows the **mention** count,
- * not the total — s04 draws `@ 2` on a row whose unread total is higher. Same
- * rule mobile's `channel-row.tsx` ships, and the same 99+ cap.
- *
- * Duplicated from mobile rather than shared, for this slice only: moving it is
- * a cross-app change that does not belong in a web repaint. Consolidation into
- * `@repo/formatting` is #1194.
- */
-/**
- * A row's name, then the crossed-out bell straight after it on a muted
- * channel, as the phone's row and GroupMe draw it (#4136): the bell describes
- * the name, and the row's far end stays the count badge's. The name truncates
- * first, so the bell never leaves it.
+ * A row's name, then the muted mark (`MuteGlyph`, the crossed-out speaker)
+ * straight after it on a muted channel, where the phone's row and GroupMe put
+ * theirs (#4136): the mark describes the name, and the row's far end stays
+ * the count badge's. The name truncates
+ * first, so the mark never leaves it.
  *
  * The glyph is `aria-hidden` (every duotone glyph is), so it carries its own
  * `sr-only` word. The muted state used to be the literal text "muted", which a
@@ -228,6 +220,16 @@ function ChannelRowName({ title, muted }: { title: string; muted: boolean }) {
     </span>
   );
 }
+
+/**
+ * Badge text. A mention badge leads with `@` and shows the **mention** count,
+ * not the total — s04 draws `@ 2` on a row whose unread total is higher. Same
+ * rule mobile's `channel-row.tsx` ships, and the same 99+ cap.
+ *
+ * Duplicated from mobile rather than shared, for this slice only: moving it is
+ * a cross-app change that does not belong in a web repaint. Consolidation into
+ * `@repo/formatting` is #1194.
+ */
 
 export function badgeLabel(unreadCount: number, mentionCount: number): string {
   const count = mentionCount > 0 ? mentionCount : unreadCount;

@@ -17,7 +17,11 @@ const checkIn = vi.fn().mockResolvedValue(undefined);
 // The viewer's own row and the event, read while check-in is open (#4136).
 const mockMyAttendance = vi.fn();
 const mockUseEvent = vi.fn();
-const checkInState = { isPending: false };
+const checkInState: {
+  isPending: boolean;
+  /** The event of the session's own last successful check-in, if any. */
+  succeededFor?: string;
+} = { isPending: false };
 
 const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -39,6 +43,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCheckIn: () => ({
     mutateAsync: checkIn,
     isPending: checkInState.isPending,
+    isSuccess: checkInState.succeededFor !== undefined,
+    variables: checkInState.succeededFor
+      ? { eventId: checkInState.succeededFor }
+      : undefined,
   }),
   useMyAttendance: (id: string) => mockMyAttendance(id),
   useEvent: (id: string) => mockUseEvent(id),
@@ -93,6 +101,7 @@ describe("EventCard", () => {
     mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: [] });
     checkInState.isPending = false;
+    checkInState.succeededFor = undefined;
     mockMyAttendance.mockReturnValue({
       data: null,
       isPending: false,
@@ -312,6 +321,56 @@ describe("EventCard", () => {
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says Checked in the moment the member's own check-in lands", () => {
+      // Before the row is read back: no row yet, but this session's POST
+      // succeeded, so Check in must not come back for a refused second press.
+      checkInState.succeededFor = "evt-1";
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByRole("button", { name: "Checked in" })).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: "Check in" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says an approved excuse once, as the mark (the phone's rule)", () => {
+      mockMyAttendance.mockReturnValue({
+        data: { attendance: { status: "EXCUSED", check_in_time: null } },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      mockEventCardExcuse.mockReturnValue({
+        kind: "sent",
+        status: "APPROVED",
+        reason: "Away game",
+        title: "Excused",
+        detail: null,
+        canWithdraw: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByText("Marked excused")).toBeInTheDocument();
+      expect(screen.queryByText("Excused")).not.toBeInTheDocument();
+    });
+
+    it("says nothing about Events being off before check-in opens", () => {
+      mockCurrentChapter.mockReturnValue({
+        data: {
+          subscription_status: "active",
+          enabled_modules: { events: false },
+        },
+        isPending: false,
+        isError: false,
+      });
+      mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+      // A required event days away: no check-in is due, so no line about it.
+      render(<EventCard message={makeMessage()} isConfirmed />);
+      expect(
+        screen.queryByText(/Check-in is turned off/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Can't make it" }),
       ).not.toBeInTheDocument();
     });
 
