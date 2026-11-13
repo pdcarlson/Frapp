@@ -224,3 +224,27 @@ export function timeGridColumns<E extends GridEvent, Task>(
     };
   });
 }
+
+/**
+ * Where a placed block draws in its column, in the grid's units: its top at
+ * its start, and as tall as it lasts but never shorter than
+ * {@link MIN_BLOCK_MINUTES}, the height `layoutDay` judged its overlaps on.
+ */
+export function blockGeometry(span: {
+  startMinute: number;
+  endMinute: number;
+}): { top: number; height: number } {
+  const drawnMinutes = Math.max(
+    span.endMinute - span.startMinute,
+    MIN_BLOCK_MINUTES,
+  );
+  return {
+    top: (span.startMinute / 60) * HOUR_HEIGHT,
+    height: (drawnMinutes / 60) * HOUR_HEIGHT,
+  };
+}
+
+/** Whether a block ends inside its day, so its end time can be shown. */
+export function endsWithinDay(span: { endMinute: number }): boolean {
+  return span.endMinute < MINUTES_PER_DAY;
+}

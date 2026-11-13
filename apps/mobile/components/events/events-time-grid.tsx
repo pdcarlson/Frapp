@@ -11,10 +11,11 @@ import { localIsoDate, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import {
+  blockGeometry,
+  endsWithinDay,
   GRID_HOURS as HOURS,
   HOUR_HEIGHT,
   hourLabel,
-  MINUTES_PER_DAY,
   minuteOfDay,
   OPEN_AT_HOUR,
   timeGridColumns,
@@ -274,18 +275,13 @@ export function EventsTimeGrid({
 
                 {placed.map((span) => {
                   const event = span.item;
-                  const top = (span.startMinute / 60) * HOUR_HEIGHT;
-                  const height = Math.max(
-                    ((span.endMinute - span.startMinute) / 60) * HOUR_HEIGHT,
-                    HOUR_HEIGHT / 2,
-                  );
+                  const { top, height } = blockGeometry(span);
                   const startLabel = formatEventClock(
                     parseInstant(event.start_time),
                   );
-                  const endLabel =
-                    span.endMinute < MINUTES_PER_DAY
-                      ? formatEventClock(parseInstant(event.end_time))
-                      : "";
+                  const endLabel = endsWithinDay(span)
+                    ? formatEventClock(parseInstant(event.end_time))
+                    : "";
                   const clock = endLabel
                     ? `${startLabel} – ${endLabel}`
                     : startLabel;

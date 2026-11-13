@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  blockGeometry,
   consecutiveDays,
+  endsWithinDay,
+  HOUR_HEIGHT,
   isAllDaySpan,
   layoutDay,
+  MIN_BLOCK_MINUTES,
   spanWithinDay,
   timeGridColumns,
   type TimedSpan,
@@ -157,13 +161,17 @@ describe("timeGridColumns (#4825)", () => {
     expect(sat!.placed[0]).toMatchObject({ startMinute: 0, endMinute: 2 * 60 });
   });
 
-  it("puts a day-long event in the strip of every day it covers", () => {
+  it("puts a day-long event in the strip of the days it covers, and no others", () => {
     const retreat = { id: "r", start_time: at(13, 9), end_time: at(14, 17) };
-    const columns = timeGridColumns(days, [retreat], new Map());
-    for (const column of columns) {
-      expect(column.allDay).toEqual([retreat]);
-      expect(column.placed).toEqual([]);
-    }
+    const [fri, sat, sun] = timeGridColumns(
+      consecutiveDays(new Date(2026, 10, 13), 3),
+      [retreat],
+      new Map(),
+    );
+    expect(fri!.allDay).toEqual([retreat]);
+    expect(sat!.allDay).toEqual([retreat]);
+    expect(sun!.allDay).toEqual([]);
+    for (const column of [fri!, sat!, sun!]) expect(column.placed).toEqual([]);
   });
 
   it("lays overlapping events side by side", () => {
@@ -192,5 +200,59 @@ describe("timeGridColumns (#4825)", () => {
     expect(fri!.tasks).toEqual([]);
     expect(sat!.tasks).toEqual(["dues"]);
     expect(sat!.day).toEqual(new Date(2026, 10, 14));
+  });
+});
+
+/* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
+   build input. */
+describe("timeGridColumns keys by the local date east of UTC", () => {
+  // Local midnight in Tokyo is the previous day in UTC, so a key built from
+  // the UTC date would hand each column the day before's tasks. Node reads
+  // TZ afresh when it is set, so this zone holds for these tests only.
+  const zone = process.env.TZ;
+  afterEach(() => {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
+  it("files tasks under the column's own day in Tokyo", () => {
+    process.env.TZ = "Asia/Tokyo";
+    const day = new Date(2026, 10, 14);
+    expect(day.toISOString().slice(0, 10)).toBe("2026-11-13");
+    const [column] = timeGridColumns(
+      [day],
+      [],
+      new Map([
+        ["2026-11-13", ["yesterday"]],
+        ["2026-11-14", ["today"]],
+      ]),
+    );
+    expect(column!.key).toBe("2026-11-14");
+    expect(column!.tasks).toEqual(["today"]);
+  });
+});
+
+/* eslint-enable turbo/no-undeclared-env-vars */
+
+describe("blockGeometry (#4825)", () => {
+  it("draws a block from its start, as tall as it lasts", () => {
+    expect(
+      blockGeometry({ startMinute: 18 * 60, endMinute: 19 * 60 + 30 }),
+    ).toEqual({
+      top: 18 * HOUR_HEIGHT,
+      height: 1.5 * HOUR_HEIGHT,
+    });
+  });
+
+  it("never draws a block shorter than the overlap rule's minimum", () => {
+    // MIN_BLOCK_MINUTES, the height layoutDay judges overlaps on.
+    expect(
+      blockGeometry({ startMinute: 9 * 60, endMinute: 9 * 60 + 10 }).height,
+    ).toBe((MIN_BLOCK_MINUTES / 60) * HOUR_HEIGHT);
+  });
+
+  it("shows an end time only for a block that ends inside its day", () => {
+    expect(endsWithinDay({ endMinute: 23 * 60 })).toBe(true);
+    expect(endsWithinDay({ endMinute: 24 * 60 })).toBe(false);
   });
 });

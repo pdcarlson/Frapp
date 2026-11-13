@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { formatTimeOfDay, localIsoDate } from "@repo/formatting";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import {
+  blockGeometry,
+  endsWithinDay,
   GRID_HOURS as HOURS,
   HOUR_HEIGHT,
   hourLabel,
@@ -286,15 +288,10 @@ export function EventsTimeGrid({
 
                 {placed.map((span) => {
                   const facts = factsOf(span.item);
-                  const top = (span.startMinute / 60) * HOUR_HEIGHT;
-                  const height = Math.max(
-                    ((span.endMinute - span.startMinute) / 60) * HOUR_HEIGHT,
-                    HOUR_HEIGHT / 2,
-                  );
-                  const endLabel =
-                    span.endMinute < 24 * 60
-                      ? formatTimeOfDay(span.item.end_time)
-                      : null;
+                  const { top, height } = blockGeometry(span);
+                  const endLabel = endsWithinDay(span)
+                    ? formatTimeOfDay(span.item.end_time)
+                    : null;
                   return (
                     <button
                       key={`${facts.eventId}-${key}`}
