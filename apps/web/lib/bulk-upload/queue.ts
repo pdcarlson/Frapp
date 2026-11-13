@@ -1,5 +1,6 @@
 /**
- * The bulk upload queue that stays ahead of the person (#3499).
+ * The bulk upload queue that stays ahead of the person (#3499), shared by
+ * backwork's bulk upload and the Documents folder import (#2242).
  *
  * Each file moves through:
  *
@@ -16,6 +17,13 @@
  * Framework-free on purpose: React reads it through `useSyncExternalStore`
  * (`getSnapshot` returns a new object only when something changed), and the
  * spec drives it with controlled promises.
+ *
+ * Memory (#3540): `trim` drops what only review needed (backwork's page
+ * previews) the moment an item is submitted, and with `sizeOf` and
+ * `maxHeldBytes` the queue stops preparing ahead of the current item while
+ * submitted items waiting to upload hold more than the budget, picking up
+ * again as they finish. One tab never piles up hundreds of MB of documents
+ * the person has already sent on.
  *
  * `close()` is what a page calls when it unmounts. It is not the end of the
  * queue: submitted items keep finishing (the person pressed Upload; a link
@@ -57,8 +65,26 @@ export type BulkQueueOptions<P, S> = {
   finish: (job: { file: File; prepared: P; submission: S }) => Promise<void>;
   /** Frees what `prepare` made (a loaded PDF, object URLs) once it's unneeded. */
   release?: (prepared: P) => void;
+  /**
+   * Frees what only review needed when an item is submitted, keeping what
+   * `finish` uses; returns what the item keeps.
+   */
+  trim?: (prepared: P) => P;
+  /** Bytes a prepared item holds in memory, for `maxHeldBytes`. */
+  sizeOf?: (prepared: P) => number;
+  /**
+   * While submitted items not yet uploaded hold more than this (by
+   * `sizeOf`), only the current item is prepared, with no lookahead.
+   */
+  maxHeldBytes?: number;
   /** Items prepared past the current one. */
   lookahead?: number;
+  /**
+   * Prepares running at once. Unlimited by default, since `lookahead`
+   * already bounds them; a folder import, which prepares (hashes) every file
+   * ahead, sets it so only a couple of files are read into memory at once.
+   */
+  maxPreparing?: number;
   maxFinishing?: number;
   /** Whether a failure leaves nothing to save, so it doesn't count as unsaved. */
   isFinal?: (error: unknown, stage: "prepare" | "finish") => boolean;
@@ -83,10 +109,12 @@ export class BulkUploadQueue<P, S> {
   private repump = false;
   private readonly lookahead: number;
   private readonly maxFinishing: number;
+  private readonly maxPreparing: number;
 
   constructor(private readonly options: BulkQueueOptions<P, S>) {
     this.lookahead = options.lookahead ?? 2;
     this.maxFinishing = options.maxFinishing ?? 2;
+    this.maxPreparing = options.maxPreparing ?? Number.POSITIVE_INFINITY;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -108,7 +136,16 @@ export class BulkUploadQueue<P, S> {
   submit(id: string, submission: S): void {
     const item = this.find(id);
     if (!item || item.status !== "ready") return;
-    this.patch(id, { status: "waiting", submission, error: undefined });
+    const prepared =
+      item.prepared && this.options.trim
+        ? this.options.trim(item.prepared)
+        : item.prepared;
+    this.patch(id, {
+      status: "waiting",
+      submission,
+      prepared,
+      error: undefined,
+    });
   }
 
   /** Re-runs whichever background step failed, with what it already has. */
@@ -224,6 +261,25 @@ export class BulkUploadQueue<P, S> {
     );
   }
 
+  /**
+   * Whether submitted, not-yet-uploaded items hold more than the budget: those
+   * waiting or uploading, and those whose upload failed, which keep what they
+   * hold for a retry.
+   */
+  private overBudget(): boolean {
+    const { sizeOf, maxHeldBytes } = this.options;
+    if (!sizeOf || maxHeldBytes === undefined) return false;
+    let held = 0;
+    for (const item of this.items) {
+      const submitted =
+        item.status === "waiting" ||
+        item.status === "finishing" ||
+        (item.status === "failed" && item.failedStage === "finish");
+      if (submitted && item.prepared) held += sizeOf(item.prepared);
+    }
+    return held > maxHeldBytes;
+  }
+
   private changed(): void {
     this.publish();
     this.pump();
@@ -249,11 +305,15 @@ export class BulkUploadQueue<P, S> {
     try {
       do {
         this.repump = false;
+        const preparingNow = this.items.filter(
+          (it) => it.status === "preparing",
+        ).length;
         const toPrepare = this.closed
           ? []
           : this.reviewLine()
-              .slice(0, this.lookahead + 1)
-              .filter((it) => it.status === "queued");
+              .slice(0, this.overBudget() ? 1 : this.lookahead + 1)
+              .filter((it) => it.status === "queued")
+              .slice(0, Math.max(0, this.maxPreparing - preparingNow));
         let finishing = this.items.filter(
           (it) => it.status === "finishing",
         ).length;
@@ -344,7 +404,7 @@ export class BulkUploadQueue<P, S> {
 }
 
 /** Calls `run` now, turning a synchronous throw into a rejection. */
-function settle<T>(run: () => Promise<T>): Promise<T> {
+export function settle<T>(run: () => Promise<T>): Promise<T> {
   try {
     return run();
   } catch (error) {

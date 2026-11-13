@@ -253,6 +253,76 @@ describe('ChapterDocumentService', () => {
     });
   });
 
+  describe('batches (folder import, #2242)', () => {
+    it('mints one ticket per file, in order', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://signed',
+      );
+      const tickets = await service.requestUploadUrls('ch-1', [
+        { filename: 'a.pdf', contentType: 'application/pdf' },
+        {
+          filename: 'b.docx',
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+      ]);
+      expect(tickets).toHaveLength(2);
+      expect(tickets[0].storagePath).toMatch(/\/a\.pdf$/);
+      expect(tickets[1].storagePath).toMatch(/\/b\.docx$/);
+    });
+
+    it('refuses the call when one file is not allowed, naming it', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://signed',
+      );
+      await expect(
+        service.requestUploadUrls('ch-1', [
+          { filename: 'a.pdf', contentType: 'application/pdf' },
+          { filename: 'movie.mov', contentType: 'video/quicktime' },
+        ]),
+      ).rejects.toThrow(/File 2 \(movie\.mov\)/);
+    });
+
+    it('files each upload on its own and reports a refusal against it', async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+      const results = await service.confirmUploads([
+        {
+          chapter_id: 'ch-1',
+          title: 'Bylaws',
+          storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+          uploaded_by: 'user-1',
+        },
+        {
+          chapter_id: 'ch-1',
+          title: 'Elsewhere',
+          storage_path: 'chapters/ch-2/documents/doc-2/x.pdf',
+          uploaded_by: 'user-1',
+        },
+      ]);
+      expect(results[0]).toEqual({
+        storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+        document: baseDocument,
+      });
+      expect(results[1].document).toBeUndefined();
+      expect(results[1].error).toEqual(expect.any(String));
+      expect(mockDocumentRepo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails the whole call on a server error (the client retries with the same paths)', async () => {
+      mockDocumentRepo.create.mockRejectedValue(new Error('db down'));
+      await expect(
+        service.confirmUploads([
+          {
+            chapter_id: 'ch-1',
+            title: 'Bylaws',
+            storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+            uploaded_by: 'user-1',
+          },
+        ]),
+      ).rejects.toThrow('db down');
+    });
+  });
+
   describe('confirmUpload', () => {
     it("files a type in the chapter's own spelling (#3642)", async () => {
       mockDocumentRepo.create.mockResolvedValue(baseDocument);

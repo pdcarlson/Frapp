@@ -3672,6 +3672,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/upload-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URLs for up to 25 files (folder import) */
+        post: operations["ChapterDocumentController_requestUploadUrls_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own */
+        post: operations["ChapterDocumentController_confirmUploads_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents": {
         parameters: {
             query?: never;
@@ -8001,6 +8035,14 @@ export interface components {
             /** @description Server-allocated document id embedded in storage_path. */
             document_id: string;
         };
+        RequestDocumentUploadUrlsDto: {
+            /** @description One to 25 files, each checked as the single upload-url route checks it */
+            files: components["schemas"]["RequestDocumentUploadUrlDto"][];
+        };
+        DocumentUploadUrlsResponseDto: {
+            /** @description One ticket per file, in the order sent */
+            tickets: components["schemas"]["DocumentUploadUrlResponseDto"][];
+        };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
@@ -8019,6 +8061,10 @@ export interface components {
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
         };
+        ConfirmDocumentUploadsDto: {
+            /** @description One to 25 uploads to file, each as the single confirm route takes it */
+            documents: components["schemas"]["ConfirmDocumentUploadDto"][];
+        };
         ChapterDocumentDto: {
             id: string;
             chapter_id: string;
@@ -8034,6 +8080,18 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+        };
+        DocumentConfirmResultDto: {
+            /** @description The storage path this result is for */
+            storage_path: string;
+            /** @description The filed document, when it was filed */
+            document?: components["schemas"]["ChapterDocumentDto"];
+            /** @description Why it was not filed, when it was not */
+            error?: string;
+        };
+        DocumentConfirmResultsDto: {
+            /** @description One result per upload, in the order sent */
+            results: components["schemas"]["DocumentConfirmResultDto"][];
         };
         DocumentTypeDto: {
             id: string;
@@ -17749,6 +17807,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentUploadUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_requestUploadUrls_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestDocumentUploadUrlsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentUploadUrlsResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_confirmUploads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDocumentUploadsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentConfirmResultsDto"];
                 };
             };
             /** @description Error */

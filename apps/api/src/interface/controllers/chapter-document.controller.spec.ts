@@ -114,6 +114,17 @@ describe('ChapterDocumentController', () => {
     });
   });
 
+  describe('folder import batches (#2242)', () => {
+    it.each(['requestUploadUrls', 'confirmUploads'] as const)(
+      '%s requires chapter_docs:upload, as the single routes do',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+      },
+    );
+  });
+
   describe('document types (#3642)', () => {
     // Every member reads the list (the upload form and filters show it);
     // only document managers change it.

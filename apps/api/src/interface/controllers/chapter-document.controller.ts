@@ -54,6 +54,10 @@ import {
   DocumentFolderDto,
   DocumentPreviewUrlDto,
   CreateDocumentTypeDto,
+  RequestDocumentUploadUrlsDto,
+  DocumentUploadUrlsResponseDto,
+  ConfirmDocumentUploadsDto,
+  DocumentConfirmResultsDto,
   UpdateDocumentTypeDto,
   DocumentTypeDto,
 } from '../dtos/chapter-document.dto';
@@ -98,6 +102,89 @@ export class ChapterDocumentController {
       storage_path: ticket.storagePath,
       document_id: ticket.documentId,
     };
+  }
+
+  @Post('upload-urls')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary: 'Get signed upload URLs for up to 25 files (folder import)',
+  })
+  @ApiCreatedResponse({ type: DocumentUploadUrlsResponseDto })
+  async requestUploadUrls(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestDocumentUploadUrlsDto,
+  ): Promise<DocumentUploadUrlsResponseDto> {
+    const tickets = await this.chapterDocumentService.requestUploadUrls(
+      chapterId,
+      dto.files.map((file) => ({
+        filename: file.filename,
+        contentType: file.content_type,
+        sizeBytes: file.size_bytes,
+      })),
+    );
+    if (tickets.some((ticket) => !ticket.signedUrl || !ticket.storagePath)) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      tickets: tickets.map((ticket) => ({
+        upload_url: ticket.signedUrl,
+        storage_path: ticket.storagePath,
+        document_id: ticket.documentId,
+      })),
+    };
+  }
+
+  @Post('batch')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary:
+      'Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own',
+  })
+  @ApiCreatedResponse({ type: DocumentConfirmResultsDto })
+  @FeatureEvent(
+    'documents-imported',
+    ({
+      result,
+    }: FeatureEventInput<
+      ConfirmDocumentUploadsDto,
+      DocumentConfirmResultsDto
+    >) => {
+      // Counted from what was filed, not what was sent: a document the
+      // service refused on its own isn't an import.
+      const filed = (Array.isArray(result?.results) ? result.results : [])
+        .map((entry) => entry?.document)
+        .filter((doc): doc is ChapterDocumentDto => Boolean(doc));
+      return {
+        count: filed.length,
+        typed_count: filed.filter((doc) => hasText(doc.document_type)).length,
+        filed_count: filed.filter((doc) => hasText(doc.folder)).length,
+      };
+    },
+  )
+  async confirmUploads(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ConfirmDocumentUploadsDto,
+  ): Promise<DocumentConfirmResultsDto> {
+    const results = await this.chapterDocumentService.confirmUploads(
+      dto.documents.map((doc) => ({
+        chapter_id: chapterId,
+        title: doc.title,
+        description: doc.description,
+        folder: doc.folder,
+        storage_path: doc.storage_path,
+        uploaded_by: userId,
+        content_type: doc.content_type,
+        byte_size: doc.byte_size,
+        document_type: doc.document_type,
+        effective_date: doc.effective_date,
+      })),
+    );
+    return { results };
   }
 
   @Post()

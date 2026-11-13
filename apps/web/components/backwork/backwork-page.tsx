@@ -59,8 +59,8 @@ import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import { useBackworkCourseDialog } from "@/components/backwork/backwork-course-dialog";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
-import { BulkDropZone } from "@/components/backwork/bulk/drop-zone";
-import type { CollectedFiles } from "@/lib/backwork-bulk/collect-files";
+import { BulkDropZone } from "@/components/shared/bulk-drop-zone";
+import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
 import {

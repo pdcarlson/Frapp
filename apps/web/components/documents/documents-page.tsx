@@ -51,6 +51,7 @@ import {
   FolderDialog,
   useFolderManagement,
 } from "@/components/documents/folder-management";
+import { FolderImportPanel } from "@/components/documents/folder-import-panel";
 import { FolderRail } from "@/components/documents/folder-rail";
 import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
@@ -279,6 +280,10 @@ function ChapterDocumentsPage() {
     () => folders.map((folder) => folder.name),
     [folders],
   );
+  const importContext = useMemo(
+    () => ({ typeOptions, folders: folderNames, documents }),
+    [typeOptions, folderNames, documents],
+  );
   const upload = useDocumentUpload(gate, {
     activeFolder,
     typeOptions,
@@ -391,6 +396,7 @@ function ChapterDocumentsPage() {
             typeOptions={typeOptions}
             typeRows={typesQuery.isSuccess && canManageTypes ? typeRows : null}
           />
+          <FolderImportPanel gate={gate} context={importContext} />
           <DocumentsPageDropTarget
             gate={gate}
             upload={upload}

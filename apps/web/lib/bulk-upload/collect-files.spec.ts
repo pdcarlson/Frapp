@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { collectFromDrop, collectFromList, isPdfFile } from "./collect-files";
+import {
+  collectFromDrop,
+  collectFromList,
+  isPdfFile,
+  relativePath,
+} from "./collect-files";
 
 function file(name: string, type = "") {
   return new File(["x"], name, { type });
@@ -78,7 +83,32 @@ describe("collect-files", () => {
       "Quiz 1.pdf",
       "loose.pdf",
     ]);
-    expect(result.skipped).toBe(2);
+    // The cover image is counted; Finder's .DS_Store is dropped unseen.
+    expect(result.skipped).toBe(1);
+  });
+
+  it("keeps every type a `keep` allows, with each file's folder path (#2242)", async () => {
+    const folder = dirEntry("Exec", [
+      fileEntry(file("Budget.xlsx")),
+      dirEntry("2025", [fileEntry(file("Minutes 10-12.docx"))]),
+      fileEntry(file("Thumbs.db")),
+      fileEntry(file("._Budget.xlsx")),
+    ]);
+    const result = await collectFromDrop([dropItem(folder)], () => true);
+    expect(result.files.map(relativePath)).toEqual([
+      "Exec/2025/Minutes 10-12.docx",
+      "Exec/Budget.xlsx",
+    ]);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("reads a picked folder's path from the browser, and a lone file's name", () => {
+    const picked = file("Bylaws.pdf");
+    Object.defineProperty(picked, "webkitRelativePath", {
+      value: "Chapter/Governance/Bylaws.pdf",
+    });
+    expect(relativePath(picked)).toBe("Chapter/Governance/Bylaws.pdf");
+    expect(relativePath(file("Loose.pdf"))).toBe("Loose.pdf");
   });
 
   it("falls back to the plain file when the browser has no entry API", async () => {

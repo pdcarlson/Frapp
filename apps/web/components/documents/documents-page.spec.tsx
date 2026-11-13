@@ -132,6 +132,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateDocumentType: () => ({ mutateAsync: mockUpdateType, isPending: false }),
   useDeleteDocumentType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // The folder import's batch routes (#2242); its own spec covers them.
+  useRequestDocumentUploadUrls: () => ({ mutateAsync: vi.fn() }),
+  useConfirmDocumentUploads: () => ({ mutateAsync: vi.fn() }),
+  useInvalidateDocuments: () => vi.fn(),
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
@@ -183,6 +187,9 @@ vi.mock("@/components/shared/can", () => ({
     deniedFallback?: React.ReactNode;
   }) => (canGate.granted ? <>{children}</> : <>{deniedFallback ?? null}</>),
 }));
+
+// The folder import (#2242) reads the auth account it began under.
+vi.mock("@/lib/auth/use-auth-user-id", () => ({ useAuthUserId: () => "auth-1" }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),

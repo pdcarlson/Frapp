@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -58,6 +59,12 @@ export interface RequestUploadUrlInput {
   contentType: string;
   sizeBytes?: number;
 }
+
+export type RequestUploadUrlFile = Omit<RequestUploadUrlInput, 'chapterId'>;
+
+export type ConfirmUploadResult =
+  | { storage_path: string; document: ChapterDocument; error?: never }
+  | { storage_path: string; error: string; document?: never };
 
 export interface ConfirmUploadInput {
   chapter_id: string;
@@ -120,6 +127,61 @@ export class ChapterDocumentService {
     );
 
     return { signedUrl, storagePath, documentId };
+  }
+
+  /**
+   * Signed upload links for several files at once (a folder import, #2242),
+   * each checked as {@link requestUploadUrl} checks one. One refused file
+   * refuses the call, naming which, since the client checked them all first.
+   */
+  async requestUploadUrls(chapterId: string, files: RequestUploadUrlFile[]) {
+    const tickets: Awaited<ReturnType<typeof this.requestUploadUrl>>[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        tickets.push(await this.requestUploadUrl({ chapterId, ...file }));
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw new BadRequestException(
+            `File ${index + 1} (${file.filename}): ${error.message}`,
+          );
+        }
+        throw error;
+      }
+    }
+    return tickets;
+  }
+
+  /**
+   * Files several uploads at once (a folder import, #2242), each as
+   * {@link confirmUpload} files one. A refusal of one (a bad type, a full
+   * type list, a path outside the chapter) is reported against it and the
+   * rest still file, since their bytes are already in storage. Anything else
+   * fails the call. Confirming is idempotent per stored object, and the web
+   * import keeps each file's storage path across retries, so retrying a
+   * failed call files what wasn't filed and answers the rest with the
+   * documents already filed.
+   */
+  async confirmUploads(
+    inputs: ConfirmUploadInput[],
+  ): Promise<ConfirmUploadResult[]> {
+    const results: ConfirmUploadResult[] = [];
+    for (const input of inputs) {
+      try {
+        results.push({
+          storage_path: input.storage_path,
+          document: await this.confirmUpload(input),
+        });
+      } catch (error) {
+        if (!(error instanceof HttpException) || error.getStatus() >= 500) {
+          throw error;
+        }
+        results.push({
+          storage_path: input.storage_path,
+          error: error.message,
+        });
+      }
+    }
+    return results;
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<ChapterDocument> {
