@@ -261,18 +261,21 @@ export class BulkUploadQueue<P, S> {
     );
   }
 
-  /** Whether submitted, not-yet-uploaded items hold more than the budget. */
+  /**
+   * Whether submitted, not-yet-uploaded items hold more than the budget: those
+   * waiting or uploading, and those whose upload failed, which keep what they
+   * hold for a retry.
+   */
   private overBudget(): boolean {
     const { sizeOf, maxHeldBytes } = this.options;
     if (!sizeOf || maxHeldBytes === undefined) return false;
     let held = 0;
     for (const item of this.items) {
-      if (
-        (item.status === "waiting" || item.status === "finishing") &&
-        item.prepared
-      ) {
-        held += sizeOf(item.prepared);
-      }
+      const submitted =
+        item.status === "waiting" ||
+        item.status === "finishing" ||
+        (item.status === "failed" && item.failedStage === "finish");
+      if (submitted && item.prepared) held += sizeOf(item.prepared);
     }
     return held > maxHeldBytes;
   }
@@ -401,7 +404,7 @@ export class BulkUploadQueue<P, S> {
 }
 
 /** Calls `run` now, turning a synchronous throw into a rejection. */
-function settle<T>(run: () => Promise<T>): Promise<T> {
+export function settle<T>(run: () => Promise<T>): Promise<T> {
   try {
     return run();
   } catch (error) {

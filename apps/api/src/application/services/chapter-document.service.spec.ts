@@ -308,7 +308,7 @@ describe('ChapterDocumentService', () => {
       expect(mockDocumentRepo.create).toHaveBeenCalledTimes(1);
     });
 
-    it('fails the whole call on a server error, which a retry repeats safely', async () => {
+    it('fails the whole call on a server error (the client retries with the same paths)', async () => {
       mockDocumentRepo.create.mockRejectedValue(new Error('db down'));
       await expect(
         service.confirmUploads([

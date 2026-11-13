@@ -7,8 +7,24 @@ import { Button } from "@/components/ui/button";
 import {
   collectFromDrop,
   collectFromList,
+  isPdfFile,
   type CollectedFiles,
 } from "@/lib/bulk-upload/collect-files";
+
+/** What the large drop zone says, and what its file picker offers. */
+export type DropZoneCopy = {
+  title: string;
+  hint: string;
+  files: string;
+  accept: string;
+};
+
+const PDF_COPY: DropZoneCopy = {
+  title: "Drop PDFs or folders of PDFs",
+  hint: `Up to ${MAX_BACKWORK_UPLOAD_LABEL} each. You'll redact and describe each one, and the next one loads while you work.`,
+  files: "Choose PDFs",
+  accept: ".pdf,application/pdf",
+};
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,8 +46,14 @@ export function BulkDropZone({
   disabled = false,
   describedBy,
   onRefusedDrop,
+  keep = isPdfFile,
+  copy = PDF_COPY,
 }: {
   onFiles: (collected: CollectedFiles) => void;
+  /** Which files to take; the rest are counted as skipped. PDFs by default. */
+  keep?: (file: File) => boolean;
+  /** The words for what it takes, for the Documents folder import (#2242). */
+  copy?: DropZoneCopy;
   variant?: "large" | "compact" | "strip";
   disabled?: boolean;
   describedBy?: string;
@@ -58,13 +80,13 @@ export function BulkDropZone({
     }
     // `collectFromDrop` takes the entries before its first await, while the
     // browser still holds them (`collect-files.ts`).
-    void collectFromDrop(event.dataTransfer.items).then(onFiles, () =>
+    void collectFromDrop(event.dataTransfer.items, keep).then(onFiles, () =>
       onFiles({ files: [], skipped: 0, unreadable: 1 }),
     );
   }
 
   function onPick(event: React.ChangeEvent<HTMLInputElement>) {
-    if (event.target.files) onFiles(collectFromList(Array.from(event.target.files)));
+    if (event.target.files) onFiles(collectFromList(Array.from(event.target.files), keep));
     event.target.value = "";
   }
 
@@ -79,7 +101,7 @@ export function BulkDropZone({
         disabled={disabled}
         aria-describedby={describedBy}
       >
-        <Upload className="h-4 w-4" aria-hidden="true" /> Choose PDFs
+        <Upload className="h-4 w-4" aria-hidden="true" /> {copy.files}
       </Button>
       <Button
         type="button"
@@ -117,10 +139,8 @@ export function BulkDropZone({
       {variant === "large" ? (
         <>
           <Upload className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-          <p className="text-label font-semibold text-foreground">Drop PDFs or folders of PDFs</p>
-          <p className="max-w-sm text-caption text-muted-foreground">
-            Up to {MAX_BACKWORK_UPLOAD_LABEL} each. You&apos;ll redact and describe each one, and the next one loads while you work.
-          </p>
+          <p className="text-label font-semibold text-foreground">{copy.title}</p>
+          <p className="max-w-sm text-caption text-muted-foreground">{copy.hint}</p>
         </>
       ) : variant === "strip" ? (
         <p className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
@@ -134,7 +154,7 @@ export function BulkDropZone({
         <p className="text-caption text-muted-foreground">Drop more here</p>
       )}
       {pickers}
-      <input ref={filesInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={onPick} data-testid="bulk-file-input" />
+      <input ref={filesInput} type="file" accept={copy.accept} multiple hidden onChange={onPick} data-testid="bulk-file-input" />
       <input ref={folderInput} type="file" multiple hidden onChange={onPick} data-testid="bulk-folder-input" />
     </div>
   );

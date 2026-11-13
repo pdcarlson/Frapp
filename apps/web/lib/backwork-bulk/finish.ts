@@ -82,7 +82,6 @@ export function mustFlatten(fields: BulkFields, boxes: BoxesByPage): boolean {
   return fields.document_variant === "Student Copy" || countBoxes(boxes) > 0;
 }
 
-export { sha256Hex };
 
 function tagsOf(raw: string): string[] | undefined {
   const tags = raw

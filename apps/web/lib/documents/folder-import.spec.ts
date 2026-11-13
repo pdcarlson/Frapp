@@ -59,7 +59,7 @@ describe("folderFromPath", () => {
         "Treasurer",
         "Governance",
       ]),
-    ).toEqual({ folder: "Treasurer", isNew: false });
+    ).toEqual({ folder: "Treasurer", isNew: false, depth: 1 });
   });
 
   it("else files into a chapter folder whose name holds the path folder's words", () => {
@@ -67,21 +67,24 @@ describe("folderFromPath", () => {
     expect(folderFromPath("Drive/Minutes/10-12.pdf", folders)).toEqual({
       folder: "Meeting Minutes",
       isNew: false,
+      depth: 1,
     });
     expect(folderFromPath("Drive/governance/bylaws.pdf", folders)).toEqual({
       folder: "Bylaws & Governance",
       isNew: false,
+      depth: 1,
     });
     // An exact match anywhere on the path beats a partial one deeper down.
     expect(
       folderFromPath("Drive/Treasurer/Minutes/x.pdf", ["Treasurer", "Meeting Minutes"]),
-    ).toEqual({ folder: "Treasurer", isNew: false });
+    ).toEqual({ folder: "Treasurer", isNew: false, depth: 1 });
   });
 
   it("proposes the first folder under the dropped one as new", () => {
     expect(folderFromPath("Chapter files/Rush/2025/flyer.pdf", [])).toEqual({
       folder: "Rush",
       isNew: true,
+      depth: 1,
     });
   });
 
@@ -89,6 +92,7 @@ describe("folderFromPath", () => {
     expect(folderFromPath("Philanthropy/plan.docx", [])).toEqual({
       folder: "Philanthropy",
       isNew: true,
+      depth: 0,
     });
     expect(folderFromPath("plan.docx", ["Governance"])).toBeNull();
   });
@@ -118,6 +122,13 @@ describe("suggestForImport", () => {
     expect(suggestion.documentType).toBe("Minutes");
     expect(suggestion.folder).toBe("Meeting Minutes");
     expect(suggestion.folderIsNew).toBe(false);
+  });
+
+  it("keeps the folders a deep path loses in the title", () => {
+    const a = suggestForImport("Chapter files/Rush/2024/flyer.pdf", context);
+    const b = suggestForImport("Chapter files/Rush/2025/fall/flyer.pdf", context);
+    expect([a.folder, a.title]).toEqual(["Rush", "Flyer (2024)"]);
+    expect([b.folder, b.title]).toEqual(["Rush", "Flyer (2025 / fall)"]);
   });
 
   it("files a loose file where the chapter files its type", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
 import { EMPTY_FIELDS, type BulkFields } from "./fields";
-import { finishUpload, flattenedFileName, sha256Hex, type FinishDeps } from "./finish";
+import { finishUpload, flattenedFileName, type FinishDeps } from "./finish";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "./geometry";
 
 /**

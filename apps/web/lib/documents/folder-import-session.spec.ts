@@ -53,6 +53,7 @@ function harness(overrides: Partial<ImportDeps> = {}) {
     ),
     assertChapter: vi.fn(),
     sleep: vi.fn(async () => undefined),
+    confirmWaitMs: 5,
     ...overrides,
   };
   return { deps, run: new FolderImport(deps) };
@@ -193,5 +194,84 @@ describe("FolderImport", () => {
       "Recruitment",
       "Drop",
     ]);
+  });
+
+  it("re-files the same stored file after a failed filing call, never a second copy", async () => {
+    let failOnce = true;
+    const { run, deps } = harness({
+      confirm: vi.fn(async (docs: ConfirmRequest[]) => {
+        if (failOnce) {
+          failOnce = false;
+          throw { statusCode: 500 };
+        }
+        return docs.map((d) => ({ storage_path: d.storage_path }));
+      }),
+    });
+    run.add([file("Drop/bylaws.pdf")], CONTEXT);
+    await flush();
+    run.apply();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await flush();
+    const item = run.getSnapshot().queue.items[0]!;
+    expect(item.status).toBe("failed");
+
+    run.retry(item.id);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await flush();
+
+    expect(run.getSnapshot().queue.items[0]!.status).toBe("done");
+    expect(deps.mint).toHaveBeenCalledTimes(1);
+    expect(deps.put).toHaveBeenCalledTimes(1);
+    const paths = vi
+      .mocked(deps.confirm)
+      .mock.calls.map(([docs]) => docs[0]!.storage_path);
+    expect(paths).toHaveLength(2);
+    expect(paths[1]).toBe(paths[0]);
+  });
+
+  it("mints links ahead in full batches of 25 at Import", async () => {
+    const { run, deps } = harness();
+    run.add(
+      Array.from({ length: 30 }, (_, i) => file(`Drop/f${i}.pdf`, `body ${i}`)),
+      CONTEXT,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flush();
+    expect(run.apply()).toBe(30);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await flush();
+    expect(vi.mocked(deps.mint).mock.calls.map(([files]) => files.length)).toEqual([
+      25, 5,
+    ]);
+  });
+
+  it("drops a file that couldn't be read at Import, so progress can finish", async () => {
+    const { run } = harness();
+    const broken = file("Drop/broken.pdf");
+    Object.defineProperty(broken, "arrayBuffer", {
+      value: () => Promise.reject(new Error("moved")),
+    });
+    run.add([file("Drop/bylaws.pdf"), broken], CONTEXT);
+    await flush();
+    expect(run.apply()).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await flush();
+    expect(run.getSnapshot().queue.items.map((it) => it.status)).toEqual(["done"]);
+  });
+
+  it("files nothing once the chapter or account has changed", async () => {
+    const { run, deps } = harness({
+      assertChapter: vi.fn(() => {
+        throw new Error("You switched chapters or accounts");
+      }),
+    });
+    run.add([file("Drop/bylaws.pdf")], CONTEXT);
+    await flush();
+    run.apply();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await flush();
+    expect(deps.put).not.toHaveBeenCalled();
+    expect(deps.confirm).not.toHaveBeenCalled();
+    expect(run.getSnapshot().queue.items[0]!.status).toBe("failed");
   });
 });

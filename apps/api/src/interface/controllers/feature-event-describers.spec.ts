@@ -167,20 +167,27 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
   'ChapterDocumentController.confirmUploads': {
     'documents-imported': [
       [
-        'a batch with one typed document and one filed in a folder',
+        'a batch with one refused, one typed and one filed in a folder',
         {
-          body: {
-            documents: [
-              { document_type: 'Minutes', folder: ' ' },
-              { folder: 'Finance' },
+          result: {
+            results: [
+              { storage_path: 'a', error: 'Type list is full' },
+              {
+                storage_path: 'b',
+                document: { document_type: 'Minutes', folder: ' ' },
+              },
+              {
+                storage_path: 'c',
+                document: { document_type: null, folder: 'Finance' },
+              },
             ],
           },
         },
         { count: 2, typed_count: 1, filed_count: 1 },
       ],
       [
-        'a body with no list, without throwing',
-        { body: { documents: 'nope' } },
+        'a result with no list, without throwing',
+        { result: { results: 'nope' } },
         { count: 0, typed_count: 0, filed_count: 0 },
       ],
     ],

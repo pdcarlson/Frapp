@@ -86,21 +86,25 @@ export function folderSegments(path: string): string[] {
  *   dropped folder is usually just the container;
  * - else, for a file sitting directly in the dropped folder, that folder;
  * - else (a loose file) nothing.
+ *
+ * `depth` is the index on the path of the folder it chose, so the folders
+ * below it, which one level can't keep, can go into the title instead.
  */
 export function folderFromPath(
   path: string,
   folders: readonly string[],
-): { folder: string; isNew: boolean } | null {
+): { folder: string; isNew: boolean; depth: number } | null {
   const segments = folderSegments(path);
   for (const match of [sameName, holdsWords]) {
-    for (const segment of [...segments].reverse()) {
-      const own = folders.find((folder) => match(folder, segment));
-      if (own) return { folder: own, isNew: false };
+    for (let depth = segments.length - 1; depth >= 0; depth -= 1) {
+      const own = folders.find((folder) => match(folder, segments[depth]!));
+      if (own) return { folder: own, isNew: false, depth };
     }
   }
-  const pick = segments.length >= 2 ? segments[1] : segments[0];
+  const depth = segments.length >= 2 ? 1 : 0;
+  const pick = segments[depth];
   if (!pick) return null;
-  return { folder: pick.trim().slice(0, FOLDER_NAME_MAX), isNew: true };
+  return { folder: pick.trim().slice(0, FOLDER_NAME_MAX), isNew: true, depth };
 }
 
 function sameName(folder: string, segment: string): boolean {
@@ -163,8 +167,12 @@ export function suggestForImport(
     !fromPath && documentType
       ? suggestFolder(documentType, context.folders, context.documents)
       : null;
+  // Folders below the one it lands in would otherwise be lost, and two
+  // "Flyer"s from "Rush/2024" and "Rush/2025" would read the same.
+  const below = fromPath ? segments.slice(fromPath.depth + 1) : [];
+  const title = titleFromFilename(name);
   return {
-    title: titleFromFilename(name),
+    title: below.length > 0 ? `${title} (${below.join(" / ")})` : title,
     documentType: documentType ?? "",
     folder: fromPath?.folder ?? fromType ?? "",
     folderIsNew: fromPath?.isNew ?? false,

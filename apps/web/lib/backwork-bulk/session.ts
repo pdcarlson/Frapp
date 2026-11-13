@@ -13,7 +13,8 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import type { BulkFields } from "@/lib/backwork-bulk/fields";
-import { finishUpload, sha256Hex } from "@/lib/backwork-bulk/finish";
+import { finishUpload } from "@/lib/backwork-bulk/finish";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
 import { BulkUploadQueue } from "@/lib/bulk-upload/queue";
@@ -93,7 +94,7 @@ export const BACKWORK_MAX_HELD_BYTES = 200 * 1024 * 1024;
  * What a submitted item keeps: the bytes, and the PDF for flattening. Its
  * page previews were for review and go now (#3540).
  */
-function trimPrepared(prepared: Prepared): Prepared {
+export function trimPrepared(prepared: Prepared): Prepared {
   for (const preview of prepared.previews.values()) {
     preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
   }

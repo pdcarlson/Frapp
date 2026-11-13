@@ -147,22 +147,21 @@ export class ChapterDocumentController {
   @ApiCreatedResponse({ type: DocumentConfirmResultsDto })
   @FeatureEvent(
     'documents-imported',
-    ({ body }: FeatureEventInput<ConfirmDocumentUploadsDto>) => {
-      // Read defensively: a describer sees the body as sent.
-      const docs: unknown[] = Array.isArray(body.documents)
-        ? body.documents
-        : [];
-      const has = (key: 'document_type' | 'folder') =>
-        docs.filter(
-          (doc) =>
-            typeof doc === 'object' &&
-            doc !== null &&
-            hasText((doc as Record<string, unknown>)[key]),
-        ).length;
+    ({
+      result,
+    }: FeatureEventInput<
+      ConfirmDocumentUploadsDto,
+      DocumentConfirmResultsDto
+    >) => {
+      // Counted from what was filed, not what was sent: a document the
+      // service refused on its own isn't an import.
+      const filed = (Array.isArray(result?.results) ? result.results : [])
+        .map((entry) => entry?.document)
+        .filter((doc): doc is ChapterDocumentDto => Boolean(doc));
       return {
-        count: docs.length,
-        typed_count: has('document_type'),
-        filed_count: has('folder'),
+        count: filed.length,
+        typed_count: filed.filter((doc) => hasText(doc.document_type)).length,
+        filed_count: filed.filter((doc) => hasText(doc.folder)).length,
       };
     },
   )

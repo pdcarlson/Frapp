@@ -63,11 +63,8 @@ import {
   SEMESTERS,
 } from "@repo/validation";
 import { isPdfFile } from "@/lib/bulk-upload/collect-files";
-import {
-  BACKWORK_YEAR_MIN,
-  confirmFields,
-  sha256Hex,
-} from "@/lib/backwork-bulk/finish";
+import { BACKWORK_YEAR_MIN, confirmFields } from "@/lib/backwork-bulk/finish";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BulkFields } from "@/lib/backwork-bulk/fields";
 import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 

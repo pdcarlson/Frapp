@@ -1,14 +1,13 @@
 "use client";
 
 import React, {
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronRight, FolderOpen, FolderUp, Loader2, Upload } from "lucide-react";
+import { ChevronRight, FolderUp, Loader2 } from "lucide-react";
 import {
   putSignedUpload,
   useConfirmDocumentUploads,
@@ -16,7 +15,11 @@ import {
   useRequestDocumentUploadUrls,
 } from "@repo/hooks";
 import { MemberFacingError } from "@repo/hooks/error-copy";
-import { MAX_UPLOAD_LABEL } from "@repo/validation";
+import { MAX_UPLOAD_LABEL, acceptAttribute } from "@repo/validation";
+import {
+  BulkDropZone,
+  type DropZoneCopy,
+} from "@/components/shared/bulk-drop-zone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -43,21 +46,22 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import {
-  collectFromDrop,
-  collectFromList,
-  type CollectedFiles,
-} from "@/lib/bulk-upload/collect-files";
+import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import {
   FolderImport,
   duplicateReasons,
+  folderImportFor,
+  setFolderImport,
+  subscribeFolderImport,
   isIncluded,
   type ImportContext,
   type ImportRow,
   type ImportView,
 } from "@/lib/documents/folder-import-session";
 import { LEFT_OUT_LABEL } from "@/lib/documents/folder-import";
+import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const NONE = "__none__";
@@ -95,6 +99,8 @@ export function FolderImportPanel({
   const confirmUploads = useConfirmDocumentUploads();
   const invalidate = useInvalidateDocuments();
   const chapterId = useChapterStore((s) => s.activeChapterId);
+  // The auth account, which is what `liveUserId` reads back, as backwork's.
+  const userId = useAuthUserId();
 
   // The latest mutations, read when a batch goes out rather than when the
   // import was made.
@@ -103,11 +109,17 @@ export function FolderImportPanel({
     live.current = { requestUrls, confirmUploads, chapterId };
   });
 
-  const [run, setRun] = useState<FolderImport | null>(null);
+  const run = useSyncExternalStore(
+    subscribeFolderImport,
+    () => folderImportFor(chapterId),
+    () => null,
+  );
   function start(collected: CollectedFiles) {
     const startedIn = live.current.chapterId;
+    // Read now, not from this render: two drops in quick succession join
+    // one import rather than the second replacing the first.
     const next =
-      run ??
+      folderImportFor(startedIn) ??
       new FolderImport({
         mint: async (files) =>
           (await live.current.requestUrls.mutateAsync({ files })).tickets,
@@ -122,16 +134,22 @@ export function FolderImportPanel({
         confirm: async (documents) =>
           (await live.current.confirmUploads.mutateAsync({ documents }))
             .results,
-        assertChapter: () => {
-          if (useChapterStore.getState().activeChapterId !== startedIn) {
+        // Nothing files once the chapter or the signed-in account has
+        // changed since the import began, as backwork's bulk upload.
+        assertChapter: async () => {
+          const stale = () =>
+            useChapterStore.getState().activeChapterId !== startedIn;
+          if (stale() || (await liveUserId()) !== startedBy || stale()) {
             throw new MemberFacingError(
-              "You switched chapters, so this one wasn't imported.",
+              "You switched chapters or accounts, so this one wasn't imported.",
             );
           }
         },
+        onSettled: invalidate,
       });
+    const startedBy = userId;
     next.add(collected.files, context, collected.unreadable ?? 0);
-    setRun(next);
+    setFolderImport(startedIn, next);
   }
 
   const view = useSyncExternalStore(
@@ -144,29 +162,11 @@ export function FolderImportPanel({
     (it) => it.status === "waiting" || it.status === "finishing",
   ).length;
 
-  // Refresh the library once an import has nothing left in flight.
-  const wasPending = useRef(0);
-  useEffect(() => {
-    if (wasPending.current > 0 && pending === 0) invalidate();
-    wasPending.current = pending;
-  }, [pending, invalidate]);
-
-  // The tab is the only copy of what hasn't uploaded yet.
-  useEffect(() => {
-    if (pending === 0) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
-
   function close() {
     dialog.setOpen(false);
     // A finished or never-started import is cleared; one still uploading
     // keeps going behind the page and is there when the panel reopens.
-    if (run && pending === 0) {
-      run.discard();
-      setRun(null);
-    }
+    if (run && pending === 0) setFolderImport(chapterId, null);
   }
 
   return (
@@ -190,7 +190,14 @@ export function FolderImportPanel({
           <PanelHeader>Import a folder</PanelHeader>
           {view.rows.length === 0 && view.leftOut.length === 0 ? (
             <PanelBody>
-              <ImportDropZone onFiles={start} disabled={!gate.allowed} />
+              <BulkDropZone
+                variant="large"
+                keep={keepAll}
+                copy={IMPORT_COPY}
+                onFiles={start}
+                disabled={!gate.allowed}
+                describedBy={gate.allowed ? undefined : gate.noticeId}
+              />
             </PanelBody>
           ) : view.applied ? (
             <ImportProgress view={view} run={run!} onDone={close} />
@@ -210,6 +217,12 @@ export function FolderImportPanel({
   );
 }
 
+/** The signed-in account right now: the one the API client's token is for. */
+async function liveUserId(): Promise<string | null> {
+  const { data } = await createSupabaseBrowserClient().auth.getSession();
+  return data.session?.user?.id ?? null;
+}
+
 const noSubscribe = () => () => undefined;
 const EMPTY_VIEW: ImportView = {
   rows: [],
@@ -223,98 +236,12 @@ const emptyView = () => EMPTY_VIEW;
 /** Takes everything; the check after it says what Documents can't take. */
 const keepAll = () => true;
 
-function ImportDropZone({
-  onFiles,
-  disabled,
-}: {
-  onFiles: (collected: CollectedFiles) => void;
-  disabled: boolean;
-}) {
-  const [over, setOver] = useState(false);
-  const folderInput = useRef<HTMLInputElement>(null);
-  const filesInput = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    // `webkitdirectory` isn't in React's attribute types.
-    folderInput.current?.setAttribute("webkitdirectory", "");
-  }, []);
-
-  function pick(event: React.ChangeEvent<HTMLInputElement>) {
-    if (event.target.files?.length) {
-      onFiles(collectFromList(Array.from(event.target.files), keepAll));
-    }
-    event.target.value = "";
-  }
-
-  return (
-    <div
-      data-testid="folder-import-drop"
-      onDragOver={(event) => {
-        event.preventDefault();
-        if (!disabled) setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        if (disabled) return;
-        // Entries are taken before the first await (`collect-files.ts`).
-        void collectFromDrop(event.dataTransfer.items, keepAll).then(onFiles, () =>
-          onFiles({ files: [], skipped: 0, unreadable: 1 }),
-        );
-      }}
-      className={cn(
-        "flex min-h-72 flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-6 text-center transition-colors",
-        over ? "border-muted-foreground bg-card-hover" : "border-input bg-surface-1",
-      )}
-    >
-      <FolderUp className="h-6 w-6 text-muted-foreground" aria-hidden />
-      <p className="text-label font-semibold">Drop a folder here</p>
-      <div className="flex flex-wrap justify-center gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="toolbar"
-          className="gap-1.5"
-          disabled={disabled}
-          onClick={() => folderInput.current?.click()}
-        >
-          <FolderOpen className="h-4 w-4" aria-hidden /> Choose a folder
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="toolbar"
-          className="gap-1.5"
-          disabled={disabled}
-          onClick={() => filesInput.current?.click()}
-        >
-          <Upload className="h-4 w-4" aria-hidden /> Choose files
-        </Button>
-      </div>
-      <p className="max-w-xs text-caption text-muted-foreground">
-        Nothing uploads until you&apos;ve checked each file&apos;s folder, type
-        and title. PDFs, Office files, text, CSV or images, up to{" "}
-        {MAX_UPLOAD_LABEL} each.
-      </p>
-      <input
-        ref={folderInput}
-        type="file"
-        multiple
-        hidden
-        aria-label="Choose a folder"
-        onChange={pick}
-      />
-      <input
-        ref={filesInput}
-        type="file"
-        multiple
-        hidden
-        aria-label="Choose files"
-        onChange={pick}
-      />
-    </div>
-  );
-}
+const IMPORT_COPY: DropZoneCopy = {
+  title: "Drop a folder here",
+  hint: `Nothing uploads until you've checked each file's folder, type and title. PDFs, Office files, text, CSV or images, up to ${MAX_UPLOAD_LABEL} each.`,
+  files: "Choose files",
+  accept: acceptAttribute("document"),
+};
 
 function ImportReview({
   view,
@@ -346,8 +273,13 @@ function ImportReview({
   const unreadable =
     view.unreadable +
     view.rows.filter((row) => status.get(row.id)?.status === "failed").length;
-  const copies = view.rows.filter((row) => duplicates.has(row.id));
-  const rest = view.rows.filter((row) => !duplicates.has(row.id));
+  const [copies, rest] = useMemo(
+    () => [
+      view.rows.filter((row) => duplicates.has(row.id)),
+      view.rows.filter((row) => !duplicates.has(row.id)),
+    ],
+    [view.rows, duplicates],
+  );
   const toImport = view.rows.filter(
     (row) =>
       status.get(row.id)?.status === "ready" &&
@@ -497,7 +429,12 @@ function ImportReview({
   );
 }
 
-function FileRow({
+/*
+  Memoised: an edit replaces only its own row object, and a queue update
+  changes only the rows whose status moved, so a folder of hundreds of files
+  re-renders a row, not the list, per keystroke.
+*/
+const FileRow = React.memo(function FileRow({
   row,
   included,
   note,
@@ -568,7 +505,7 @@ function FileRow({
       </div>
     </li>
   );
-}
+});
 
 function ImportProgress({
   view,

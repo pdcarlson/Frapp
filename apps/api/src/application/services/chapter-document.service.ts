@@ -156,8 +156,10 @@ export class ChapterDocumentService {
    * {@link confirmUpload} files one. A refusal of one (a bad type, a full
    * type list, a path outside the chapter) is reported against it and the
    * rest still file, since their bytes are already in storage. Anything else
-   * fails the call; confirming is idempotent per stored object, so the
-   * client retries the whole batch.
+   * fails the call. Confirming is idempotent per stored object, and the web
+   * import keeps each file's storage path across retries, so retrying a
+   * failed call files what wasn't filed and answers the rest with the
+   * documents already filed.
    */
   async confirmUploads(
     inputs: ConfirmUploadInput[],

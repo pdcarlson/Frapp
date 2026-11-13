@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 
 const { mockMint, mockConfirm, mockInvalidate } = vi.hoisted(() => ({
@@ -17,6 +17,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useInvalidateDocuments: () => mockInvalidate,
 }));
 
+vi.mock("@/lib/auth/use-auth-user-id", () => ({ useAuthUserId: () => "u-1" }));
+
+vi.mock("@/lib/supabase/client", () => ({
+  createSupabaseBrowserClient: () => ({
+    auth: {
+      getSession: async () => ({ data: { session: { user: { id: "u-1" } } } }),
+    },
+  }),
+}));
+
 vi.mock("@/lib/stores/chapter-store", () => {
   const state = { activeChapterId: "chap-1" };
   const useChapterStore = (selector: (s: typeof state) => unknown) =>
@@ -26,6 +36,7 @@ vi.mock("@/lib/stores/chapter-store", () => {
 });
 
 const { FolderImportPanel } = await import("./folder-import-panel");
+const { setFolderImport } = await import("@/lib/documents/folder-import-session");
 
 const GATE: SubscriptionGate = {
   allowed: true,
@@ -57,7 +68,7 @@ async function openAndPick(files: File[]) {
   render(<FolderImportPanel gate={GATE} context={CONTEXT} />);
   await userEvent.click(screen.getByRole("button", { name: /import a folder/i }));
   const dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Choose a folder"), {
+  fireEvent.change(within(dialog).getByTestId("bulk-folder-input"), {
     target: { files },
   });
   return dialog;
@@ -66,6 +77,8 @@ async function openAndPick(files: File[]) {
 describe("FolderImportPanel (#2242)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The import outlives the panel on purpose; start each test without one.
+    setFolderImport("chap-1", null);
     mockMint.mockImplementation(async ({ files }: { files: { filename: string }[] }) => ({
       tickets: files.map((f, i) => ({
         upload_url: `https://put/${i}`,
@@ -79,6 +92,13 @@ describe("FolderImportPanel (#2242)", () => {
       }),
     );
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+    // Filing waits seconds for a batch to fill; let the clock run fast.
+    vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 200 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("groups files by suggested folder, lists what's left out, and holds copies back", async () => {
@@ -115,10 +135,10 @@ describe("FolderImportPanel (#2242)", () => {
       expect(within(dialog).getByText(/2 files to import/)).toBeInTheDocument(),
     );
     const title = within(dialog).getByLabelText("Title for Drop/notes.pdf");
-    await userEvent.clear(title);
-    await userEvent.type(title, "Spring notes");
+    fireEvent.change(title, { target: { value: "Spring notes" } });
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Import 2 files" }));
+    await vi.advanceTimersByTimeAsync(7_000);
 
     await waitFor(() =>
       expect(within(dialog).getByText("Imported 2 of 2 files")).toBeInTheDocument(),
@@ -148,10 +168,12 @@ describe("FolderImportPanel (#2242)", () => {
       expect(within(dialog).getByText(/1 file to import/)).toBeInTheDocument(),
     );
     await userEvent.click(within(dialog).getByRole("button", { name: "Import 1 file" }));
+    await vi.advanceTimersByTimeAsync(7_000);
     const failed = await within(dialog).findByRole("region", { name: "Didn't import" });
     expect(within(failed).getByText(/50 document types/)).toBeInTheDocument();
 
     await userEvent.click(within(failed).getByRole("button", { name: "Retry" }));
+    await vi.advanceTimersByTimeAsync(7_000);
     await waitFor(() =>
       expect(within(dialog).getByText("Imported 1 of 1 file")).toBeInTheDocument(),
     );

@@ -1,3 +1,5 @@
+import { settle } from "@/lib/bulk-upload/queue";
+
 /**
  * Coalesces one-at-a-time calls into batch requests: each `add` waits a
  * moment for others, then one `run` serves up to `max` of them, and each
@@ -50,12 +52,4 @@ export function createBatcher<In, Out>(
         }
       }),
   };
-}
-
-function settle<T>(run: () => Promise<T>): Promise<T> {
-  try {
-    return run();
-  } catch (error) {
-    return Promise.reject(error);
-  }
 }

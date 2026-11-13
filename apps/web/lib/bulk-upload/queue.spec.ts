@@ -361,4 +361,23 @@ describe("BulkUploadQueue", () => {
     await flush();
     expect([...h.prepares.keys()]).toEqual(["a.pdf", "b.pdf", "c.pdf"]);
   });
+
+  it("counts a failed upload's held bytes toward the budget, since it keeps them for a retry (#3540)", async () => {
+    const h = harness({ maxFinishing: 2, sizeOf: () => 60, maxHeldBytes: 100 });
+    h.queue.add(["a.pdf", "b.pdf", "c.pdf", "d.pdf", "e.pdf"].map(pdf));
+    for (const name of ["a.pdf", "b.pdf", "c.pdf"]) {
+      h.prepares.get(name)!.resolve(name);
+    }
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "a" });
+    h.queue.submit(h.idOf("b.pdf"), { title: "b" });
+    // Both fail (offline): they still hold 120, so no lookahead past c.
+    h.finishes.get("a.pdf")!.reject(new Error("offline"));
+    h.finishes.get("b.pdf")!.reject(new Error("offline"));
+    await flush();
+    expect(h.status("a.pdf")).toBe("failed");
+    h.queue.submit(h.idOf("c.pdf"), { title: "c" });
+    await flush();
+    expect(h.prepares.has("e.pdf")).toBe(false);
+  });
 });

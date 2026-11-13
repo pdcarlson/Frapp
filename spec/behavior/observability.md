@@ -660,7 +660,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | Event | Recorded when | Properties |
 | --- | --- | --- |
 | `document-uploaded` | A document upload is confirmed. Its category and folder are free text, so only whether they were set | `has_document_type`, `has_folder` |
-| `documents-imported` | A folder import files one batch of up to 25 documents (#2242). Types and folders are chapter-chosen names, so only counts | `count`, `typed_count`, `filed_count` |
+| `documents-imported` | A folder import's batch call files documents (#2242), counted from the response, so a document the API refused isn't counted. Types and folders are chapter-chosen names, so only counts | `count`, `typed_count`, `filed_count` |
 | `document-viewed` | A document is fetched, to view or download. Each fetch counts, a refetch included | — |
 | `backwork-uploaded` | Backwork is uploaded. `assignment_type` is the closed assignment list; title, course and professor are never sent | `assignment_type`, `is_redacted`, `tag_count` |
 | `backwork-viewed` | A backwork item is fetched. Each fetch counts | — |

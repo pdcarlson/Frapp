@@ -119,7 +119,8 @@ export class ConfirmDocumentUploadDto {
 /**
  * Files one batch call takes: a folder import (#2242) mints its upload links
  * and files its documents 25 at a time, so the fan-out throttle (10 calls a
- * minute) still lets it move 250 files a minute.
+ * minute) still lets it move up to 250 files a minute: it mints links ahead
+ * in full batches and gathers filings into batches.
  */
 export const DOCUMENT_BATCH_MAX = 25;
 

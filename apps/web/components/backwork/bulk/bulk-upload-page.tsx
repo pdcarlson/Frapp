@@ -46,7 +46,7 @@ import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
 import type { ItemStatus, QueueItem } from "@/lib/bulk-upload/queue";
 import { PdfRedactor } from "./pdf-redactor";
-import { BulkDropZone } from "./drop-zone";
+import { BulkDropZone } from "@/components/shared/bulk-drop-zone";
 import { BulkFieldsForm } from "./bulk-fields";
 import {
   EMPTY_FIELDS,
@@ -185,6 +185,10 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
           title: accepted.length > 0 ? `Added ${accepted.length} PDFs` : "No PDFs added",
           description: notes.join(". ") + ".",
         });
+      } else if (files.length === 0) {
+        // Nothing at all, or only the operating system's own files
+        // (.DS_Store), which the walk drops without counting.
+        toast({ title: "No PDFs added", description: "There were no files in what you dropped." });
       }
     },
     [queue, toast],
