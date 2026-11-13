@@ -1462,7 +1462,7 @@ export function MessageItem({
                     {mine ? null : (
                       <AuthorName
                         openProfile={openAuthor}
-                        className="min-w-0 truncate text-sm font-semibold text-foreground"
+                        className="min-w-0 truncate text-label leading-5 text-foreground"
                         style={authorColor ? { color: authorColor } : undefined}
                       >
                         {authorLabel}
@@ -1726,7 +1726,7 @@ export function MessageItem({
                 >
                   <AuthorName
                     openProfile={openAuthor}
-                    className="min-w-0 truncate text-sm font-semibold text-foreground"
+                    className="min-w-0 truncate text-label leading-5 text-foreground"
                     // A literal from the role palette, which is contrast-checked
                     // against these surfaces (`@repo/validation` role-colors).
                     style={authorColor ? { color: authorColor } : undefined}
