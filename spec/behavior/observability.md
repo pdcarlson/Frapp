@@ -519,6 +519,22 @@ Each question a member is allowed to ask sends one PostHog event, `ai-question-a
 
 It is sent once the member has passed the checks that can refuse a question outright (the server switch, the chapter's switch, `ai:use`, consent), and before the answer starts, so a question that later fails or is stopped is still counted. It is not a feature event: Ask belongs to no module. No question text, answer text, source, channel id or message id is on it; `ask.controller.spec.ts` runs the event through `assertContentFreeProperties`, and `ai-stored-text.invariant.spec.ts` reads it for leaks with everything else the route sends out. The share of questions asked from a channel is `door = chat_private` over all.
 
+## AI answer events
+
+What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)).
+
+| Event | Sent when | Properties |
+| --- | --- | --- |
+| `ai-answer-finished` | A turn ends, however it ends (`AskTraceService.record`) | `ask_id`, `door`, `prompt_version`, `model`, `effort`, `outcome`, `limit_kind`, `error_kind`, `is_follow_up`, `is_rephrase`, `read_chat`, `truncated`, and counts: `rounds`, `tool_calls`, `tool_failures`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_micro_usd`, `duration_ms`, `sources_read`, `citations_kept`, `citations_dropped`, `left_out_messages`, `proposals` |
+| `ai-answer-tool-called` | Once per tool call in that turn | `ask_id`, `tool`, `outcome`, `round`, `duration_ms`, `arg_bytes`, `result_chars`, `result_sources` |
+| `ai-answer-rated` | The asker sets or changes their thumbs | `ask_id`, `rating`, `reason`, and the turn's `door`, `prompt_version`, `model`, `effort`, `outcome` |
+| `ai-answer-rating-cleared` | The asker takes their thumbs back | `ask_id` and the turn's five codes |
+| `ai-answer-signal` | A tap under an answer | `ask_id`, `signal` (`retried`, `think_harder`, `source_opened`, `card_confirmed`, `card_dismissed`; `ASK_SIGNALS` in `@repo/validation`), and the turn's five codes |
+
+`outcome` is how the turn ended: `answered`, `not_found`, `refused`, `limit`, `unavailable`, `proposal`, `stopped` or `error`. A tool's `outcome` is `ok`, `empty`, `invalid_args`, `denied`, `unknown_tool`, `stopped` or `error`; `tool` is the registered name of a tool the loop offered, and is null when the model named one it was not offered. `is_rephrase` is true when the same member asked again within a minute of their last question. `ask_id` is a random id that ties a turn's events together and says nothing about the question. The model rounds of a turn are not sent again here: the gateway already sends `ai-call-finished` for each provider call.
+
+`ask-trace.service.spec.ts` and `ask-feedback.service.spec.ts` run every event through `assertContentFreeProperties`, and `ask-observe.invariant.spec.ts` hands the recorder a turn with text in every code field and reads the events for it.
+
 ## AI Suggestion Events
 
 AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed by a background run, or by the save of posted minutes ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks), #4313), and expired by an hourly sweep, none of which is a request to the suggestion routes, so they are not feature events. `AiSuggestionService` sends five events itself, through `AnalyticsService`:

@@ -7,6 +7,9 @@ import type {
   AiSuggestion,
   AskDiagnosticsExchange,
   AskDiagnosticsWindow,
+  AskFeedbackRow,
+  AskTraceRow,
+  AskTraceStepRow,
   BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
@@ -148,6 +151,9 @@ export interface Database {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
+      ai_ask_feedback: TableDefinition<AskFeedbackRow>;
+      ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;
+      ai_ask_traces: TableDefinition<AskTraceRow>;
       ai_diagnostics_exchanges: TableDefinition<AskDiagnosticsExchange>;
       ai_diagnostics_windows: TableDefinition<AskDiagnosticsWindow>;
       ai_reports: TableDefinition<AiReport>;

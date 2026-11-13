@@ -3,6 +3,8 @@ export * from "./ai-copy";
 // Report this (#4315): the reasons, the request, and the words about what a
 // report keeps.
 export * from "./ai-report";
+// Thumbs on an Ask answer and the taps under it (#4902).
+export * from "./ask-feedback";
 // Suggested tasks (#4313): the words web and mobile share.
 export * from "./ai-suggestion-copy";
 export * from "./alumni-permission";
