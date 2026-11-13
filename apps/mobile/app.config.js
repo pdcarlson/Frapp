@@ -80,6 +80,21 @@
 // this repo. iOS needs neither: EAS generates the APNs key on the first
 // `eas build -p ios` against the Apple account.
 //
+// The **staging variant** (#2511): a second app that installs beside the store
+// app, so staging can be used on a phone without replacing the app a member
+// signs in to. `FRAPP_APP_VARIANT=staging`, which only eas.json's `staging`
+// profile sets, gives it its own name, scheme, bundle id and package
+// (STAGING_IDENTITY below; spec/ui/brand-identity.md § 1 lists them beside the
+// production ones). The variant drops the universal-link and App Link claims:
+// those name app.frapp.live, whose `/.well-known` files vouch only for the
+// production app, so the variant would fail verification and never open them.
+// Two fences keep the pair apart: the variant refuses every EAS profile but
+// `staging` (and that profile refuses to run without it), and it refuses the
+// production API and Supabase origins, so a binary called Frapp Staging can
+// never hold a member's real chapter. Everything else (the EAS project, the
+// update URL, the Sentry project) is shared, which is why its updates go to
+// a channel of their own.
+//
 // Source of truth for the credential inventory:
 // docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
 const fs = require("node:fs");
@@ -430,6 +445,79 @@ function withGoogleSignIn(config) {
   };
 }
 
+const APP_VARIANT_ENV = "FRAPP_APP_VARIANT";
+const STAGING_VARIANT = "staging";
+// The eas.json profile that builds the variant, and the only one that may.
+const STAGING_PROFILE = "staging";
+const STAGING_IDENTITY = Object.freeze({
+  name: "Frapp Staging",
+  scheme: "frapp-staging",
+  applicationId: "live.frapp.mobile.staging",
+});
+
+const APP_VARIANT_VALUE_ERROR = [
+  `${APP_VARIANT_ENV} must be unset (the production app) or "${STAGING_VARIANT}"`,
+  "(the side-by-side staging app). Any other value would build an app with",
+  "identifiers nobody registered.",
+].join(" ");
+
+const APP_VARIANT_PROFILE_ERROR = [
+  `${APP_VARIANT_ENV}=${STAGING_VARIANT} and the "${STAGING_PROFILE}" profile in`,
+  "apps/mobile/eas.json go together: that profile sets the variable, and no",
+  "other profile may. A staging-named app built from another profile, or the",
+  "staging profile built without the variant, would put one environment's",
+  "backend under the other app's name and bundle id.",
+].join(" ");
+
+const STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR = [
+  "The staging variant (Frapp Staging) refuses the production API and Supabase",
+  `origins (${PRODUCTION_API_ORIGIN}, ${PRODUCTION_SUPABASE_ORIGIN}). It exists`,
+  "to test against staging beside the store app; pointed at production it would",
+  "be a second, unreviewed app holding members' real chapters.",
+].join(" ");
+
+/** `"staging"`, or undefined for the production app. Anything else throws. */
+function appVariant(env) {
+  const raw = String(env[APP_VARIANT_ENV] || "").trim();
+  if (!raw) return undefined;
+  if (raw !== STAGING_VARIANT) throw new Error(APP_VARIANT_VALUE_ERROR);
+  return raw;
+}
+
+// A run with no profile (`expo start`, a local `expo prebuild`) may set the
+// variant by hand; every EAS build and guarded update has a profile and must
+// pair the two.
+function assertVariantMatchesProfile({ variant, profile } = {}) {
+  if (!profile) return;
+  if ((variant === STAGING_VARIANT) === (profile === STAGING_PROFILE)) return;
+  throw new Error(APP_VARIANT_PROFILE_ERROR);
+}
+
+function assertStagingVariantOrigins({ variant, apiUrl, supabaseUrl } = {}) {
+  if (variant !== STAGING_VARIANT) return;
+  if (
+    normalizePublicOrigin(apiUrl) === PRODUCTION_API_ORIGIN ||
+    supabasePublicOrigin(supabaseUrl) === PRODUCTION_SUPABASE_ORIGIN
+  ) {
+    throw new Error(STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR);
+  }
+}
+
+/** app.json's config as the staging variant: its own identity, no link claims. */
+function withStagingVariant(config) {
+  const ios = { ...config.ios };
+  delete ios.associatedDomains;
+  const android = { ...config.android };
+  delete android.intentFilters;
+  return {
+    ...config,
+    name: STAGING_IDENTITY.name,
+    scheme: STAGING_IDENTITY.scheme,
+    ios: { ...ios, bundleIdentifier: STAGING_IDENTITY.applicationId },
+    android: { ...android, package: STAGING_IDENTITY.applicationId },
+  };
+}
+
 // The profile whose public-value fences apply: an EAS build's, or the one
 // `npm run eas -- update` publishes for (`scripts/eas-update.mjs` sets
 // `FRAPP_EAS_UPDATE_PROFILE` from the channel's build profile in eas.json, #3472).
@@ -456,11 +544,22 @@ function assertProductionUpdateSentryDsn({ updateProfile, sentryDsn } = {}) {
 }
 
 function applyMobileConfig(
-  config,
+  appJsonConfig,
   { env = process.env, existsSync = fs.existsSync } = {},
 ) {
   const googleServicesFile = resolveGoogleServicesFile({ env, existsSync });
   const profile = publicValueProfile(env);
+  const variant = appVariant(env);
+  assertVariantMatchesProfile({ variant, profile });
+  assertStagingVariantOrigins({
+    variant,
+    apiUrl: env.EXPO_PUBLIC_API_URL,
+    supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
+  });
+  const config =
+    variant === STAGING_VARIANT
+      ? withStagingVariant(appJsonConfig)
+      : appJsonConfig;
   // Native-only: an update never carries google-services.json, so this one
   // keys on the build profile alone.
   assertProductionAndroidGoogleServices({
@@ -533,6 +632,16 @@ applyExpoConfig.googleIosUrlScheme = googleIosUrlScheme;
 applyExpoConfig.publicValueProfile = publicValueProfile;
 applyExpoConfig.assertProductionUpdateSentryDsn = assertProductionUpdateSentryDsn;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
+applyExpoConfig.appVariant = appVariant;
+applyExpoConfig.assertVariantMatchesProfile = assertVariantMatchesProfile;
+applyExpoConfig.assertStagingVariantOrigins = assertStagingVariantOrigins;
+applyExpoConfig.APP_VARIANT_ENV = APP_VARIANT_ENV;
+applyExpoConfig.STAGING_PROFILE = STAGING_PROFILE;
+applyExpoConfig.STAGING_IDENTITY = STAGING_IDENTITY;
+applyExpoConfig.APP_VARIANT_VALUE_ERROR = APP_VARIANT_VALUE_ERROR;
+applyExpoConfig.APP_VARIANT_PROFILE_ERROR = APP_VARIANT_PROFILE_ERROR;
+applyExpoConfig.STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR =
+  STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
 applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
