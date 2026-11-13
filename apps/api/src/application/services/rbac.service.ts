@@ -592,14 +592,32 @@ export class RbacService {
     if (role.is_system)
       throw new ForbiddenException('Cannot delete system roles');
 
-    await this.roleRepo.delete(roleId);
+    // One transaction (#4547): the id leaves every holder's role_ids, and a
+    // holder left with no member-access role gets Everyone, as
+    // `rolesAfterSave` gives it back, so nobody is locked out by a delete.
+    const deletion = await this.roleRepo.delete(chapterId, roleId);
+    if (!deletion) throw new NotFoundException('Role not found');
     await this.chapterAuditLogService.record({
       chapterId,
       actorUserId,
       action: 'role_deleted',
       targetType: AUDIT_TARGET_TYPE,
       targetId: roleId,
-      diff: { role: { from: role, to: null } } satisfies AuditDiff,
+      diff: {
+        role: { from: role, to: null },
+        ...(deletion.strippedMemberIds.length > 0 && {
+          removed_from_member_ids: {
+            from: deletion.strippedMemberIds,
+            to: null,
+          },
+        }),
+        ...(deletion.givenEveryoneMemberIds.length > 0 && {
+          given_everyone_member_ids: {
+            from: null,
+            to: deletion.givenEveryoneMemberIds,
+          },
+        }),
+      } satisfies AuditDiff,
     });
   }
 
@@ -735,6 +753,11 @@ export class RbacService {
         return (
           r.id !== presidentRole.id &&
           r.id !== memberRole.id &&
+          // Floored on the keys too (#4548): the tier reorder refuses to lift
+          // New members or Alumni above Everyone, and this holds even if a
+          // role edit moves one of them into a higher tier.
+          r.system_key !== SystemRoleKeys.NEW_MEMBER &&
+          r.system_key !== SystemRoleKeys.ALUMNI &&
           Number.isFinite(rank) &&
           rank < memberRank
         );

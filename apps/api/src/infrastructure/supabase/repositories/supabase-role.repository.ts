@@ -5,7 +5,10 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import type {
+  IRoleRepository,
+  RoleDeletion,
+} from '#domain/repositories/role.repository.interface';
 import { Role } from '#domain/entities/role.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { readOncePerRequest, readSharedInBurst } from '../request-reads';
@@ -141,8 +144,16 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data;
   }
 
-  async delete(id: string): Promise<void> {
-    const { error } = await this.supabase.from('roles').delete().eq('id', id);
+  async delete(chapterId: string, id: string): Promise<RoleDeletion | null> {
+    const { data, error } = await this.supabase.rpc('delete_role', {
+      p_chapter_id: chapterId,
+      p_role_id: id,
+    });
     if (error) throw new SupabaseQueryError(error);
+    if (!data) return null;
+    return {
+      strippedMemberIds: data.stripped_member_ids ?? [],
+      givenEveryoneMemberIds: data.given_everyone_member_ids ?? [],
+    };
   }
 }

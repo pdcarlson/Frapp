@@ -129,6 +129,47 @@ describe('SupabaseRoleRepository — tenant scope', () => {
     });
   });
 
+  // #4547: the delete runs in the `delete_role` RPC, whose only scoping
+  // visible here is `p_chapter_id`.
+  it('delete passes the chapter to delete_role and reads back who it touched', async () => {
+    harness = createTenantHarness({
+      tables: seed(),
+      rpc: {
+        delete_role: {
+          data: {
+            role: { id: ROLE_B },
+            stripped_member_ids: ['m-1', 'm-2'],
+            given_everyone_member_ids: ['m-2'],
+          },
+        },
+      },
+    });
+    repo = new SupabaseRoleRepository(harness.client);
+
+    const deletion = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.delete(CHAPTER_B, ROLE_B),
+    );
+
+    expect(deletion).toEqual({
+      strippedMemberIds: ['m-1', 'm-2'],
+      givenEveryoneMemberIds: ['m-2'],
+    });
+    expect(harness.rpcCalls[0].args).toEqual({
+      p_chapter_id: CHAPTER_B,
+      p_role_id: ROLE_B,
+    });
+  });
+
+  it('delete answers null when the chapter has no such role', async () => {
+    harness = createTenantHarness({
+      tables: seed(),
+      rpc: { delete_role: { data: null } },
+    });
+    repo = new SupabaseRoleRepository(harness.client);
+
+    await expect(repo.delete(CHAPTER_A, ROLE_B)).resolves.toBeNull();
+  });
+
   // An app open's GET requests join one roles read (#3752); a request that
   // may write reads its own.
   it.each([

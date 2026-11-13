@@ -35,6 +35,9 @@ export const PG_CHECK_VIOLATION = '23514';
  * nothing; `assign_member_pledge_classes` raises it on purpose when a listed
  * member is not in the chapter (#3939).
  */
+/** `invalid_parameter_value`: a function refused an argument it was given. */
+export const PG_INVALID_PARAMETER_VALUE = '22023';
+
 export const PG_NO_DATA_FOUND = 'P0002';
 
 export function isUniqueViolation(error: unknown): boolean {

@@ -259,7 +259,10 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
-    mockRoleRepo.delete.mockResolvedValue(undefined);
+    mockRoleRepo.delete.mockResolvedValue({
+      strippedMemberIds: [],
+      givenEveryoneMemberIds: [],
+    });
     mockChapterAuditLogService.record.mockRejectedValue(
       new Error('audit insert failed'),
     );
@@ -602,11 +605,14 @@ describe('RbacService', () => {
   it('should delete custom role', async () => {
     const role: Role = roleFixture();
     mockRoleRepo.findById.mockResolvedValue(role);
-    mockRoleRepo.delete.mockResolvedValue(undefined);
+    mockRoleRepo.delete.mockResolvedValue({
+      strippedMemberIds: [],
+      givenEveryoneMemberIds: [],
+    });
 
     await service.delete('role-1', 'ch-1', ACTOR);
 
-    expect(mockRoleRepo.delete).toHaveBeenCalledWith('role-1');
+    expect(mockRoleRepo.delete).toHaveBeenCalledWith('ch-1', 'role-1');
     expect(mockChapterAuditLogService.record).toHaveBeenCalledTimes(1);
     expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
       chapterId: 'ch-1',
@@ -616,6 +622,40 @@ describe('RbacService', () => {
       targetId: 'role-1',
       diff: { role: { from: role, to: null } },
     });
+  });
+
+  // #4547: the delete takes the role off its holders in the same
+  // transaction, and the audit row says who lost it and who got Everyone.
+  it('records who lost a deleted role and who was given Everyone', async () => {
+    const role: Role = roleFixture();
+    mockRoleRepo.findById.mockResolvedValue(role);
+    mockRoleRepo.delete.mockResolvedValue({
+      strippedMemberIds: ['m-1', 'm-2'],
+      givenEveryoneMemberIds: ['m-2'],
+    });
+
+    await service.delete('role-1', 'ch-1', ACTOR);
+
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role_deleted',
+        diff: {
+          role: { from: role, to: null },
+          removed_from_member_ids: { from: ['m-1', 'm-2'], to: null },
+          given_everyone_member_ids: { from: null, to: ['m-2'] },
+        },
+      }),
+    );
+  });
+
+  it('answers 404 when the role went between the read and the delete', async () => {
+    mockRoleRepo.findById.mockResolvedValue(roleFixture());
+    mockRoleRepo.delete.mockResolvedValue(null);
+
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
   });
 
   it('should reject deleting a role from another chapter', async () => {
@@ -1124,6 +1164,44 @@ describe('RbacService', () => {
           needs_president: true,
           eligible: true,
           next_role_name: 'Treasurer',
+        });
+      });
+
+      // #4548: a New Member role moved into a tier above Everyone's (by a
+      // role edit; the reorder refuses it) still never makes a claimant.
+      it('never counts a New Member role as a claimant, whatever tier it sits in', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        const newMemberRole = roleFixture({
+          id: 'role-new-member',
+          tier_id: 'tier-officers',
+          name: 'New Member',
+          system_key: SystemRoleKeys.NEW_MEMBER,
+          permissions: [SystemPermissions.MEMBERS_VIEW],
+          is_system: true,
+          display_order: 6,
+        });
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+          newMemberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [newMemberRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
         });
       });
 
