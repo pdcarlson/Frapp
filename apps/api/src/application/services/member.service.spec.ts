@@ -604,6 +604,18 @@ describe('MemberService', () => {
       expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
+    it('answers 404 when the member was removed while the save was out', async () => {
+      mockRepo.findById
+        .mockResolvedValueOnce(existingMember)
+        .mockResolvedValueOnce(null);
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole, customRole]);
+      mockRepo.setRoleIds.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
     describe('the Everyone role (#4191)', () => {
       const everyone = roleFixture({
         id: 'role-everyone',

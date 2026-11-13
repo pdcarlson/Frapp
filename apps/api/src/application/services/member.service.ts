@@ -422,6 +422,11 @@ export class MemberService {
       roleIds,
     );
     if (!written) {
+      // The RPC writes nothing for a row that is gone as well as one that
+      // moved; a member removed mid-save is a 404, not a reload.
+      if (!(await this.memberRepo.findById(memberId))) {
+        throw new NotFoundException('Member not found');
+      }
       throw new ConflictException(
         "This member's roles changed while you were saving. Reload and try again.",
       );

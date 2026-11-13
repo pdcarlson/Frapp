@@ -9,7 +9,7 @@ Adds `set_member_role_ids`, a locked compare-and-set write of a member's `role_i
 
 ## Promotion
 
-- **Purpose**: `PATCH /v1/members/:id/roles` writes through `set_member_role_ids`, which writes nothing (the API answers 409) when the member row moved since the save read it, or when a newly given role no longer exists. Its role locks are ordered as `delete_role` takes them, so a delete either waits and then strips the id, or has committed and the save is refused.
+- **Purpose**: `PATCH /v1/members/:id/roles` writes through `set_member_role_ids`, which writes nothing (the API answers 409) when the member row moved since the save read it, or when a newly given role no longer exists. Its role locks are ordered as `delete_role` takes them, so that by design a delete either waits and then strips the id, or has committed and the save is refused (checked by hand with two connections; CI coverage of the overlap is #4862).
 - **Checks**: `select proname from pg_proc where proname = 'set_member_role_ids';` returns one row. `select has_function_privilege('authenticated', 'public.set_member_role_ids(uuid, uuid, text[], text[])', 'execute');` is false.
 - **Promoter notes**: Apply before the API that calls it: the old API keeps writing with a plain update and works against this schema. Writes no data.
 

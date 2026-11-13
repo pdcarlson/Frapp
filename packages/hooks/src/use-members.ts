@@ -7,7 +7,7 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
-import type { components } from "@repo/api-sdk";
+import { statusOf, type components } from "@repo/api-sdk";
 import {
   roleColorOrNull,
   SYSTEM_SENDER_ID,
@@ -421,6 +421,15 @@ export function useUpdateMemberRoles() {
       queryClient.invalidateQueries({
         queryKey: ["user", "me", "permissions", chapterId],
       });
+    },
+    onError: (error) => {
+      // 409: the member's roles moved while this save was out, such as a
+      // role deleted mid-save (#4830). The editor's copy of the member and
+      // the chapter's roles are stale, so both are read again; a save from
+      // them would resend what the server just refused.
+      if (statusOf(error) !== 409) return;
+      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
     },
   });
 }

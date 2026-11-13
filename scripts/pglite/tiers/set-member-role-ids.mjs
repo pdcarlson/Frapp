@@ -9,10 +9,19 @@ import { db, miss } from "../harness.mjs";
 // which writes nothing when the row moved since the read or a newly given
 // role is gone.
 //
-// PGlite is one connection, so the interleaving is played in order: the
-// save's reads, then the delete, then the save's write. That is the order in
-// which the old write did harm; the locks decide only which of the two waits,
-// and both orders end in a state checked here.
+// PGlite is one connection, so no two transactions overlap here and no lock
+// is ever waited on. What this tier plays, in order, is each end state the
+// locks leave: the delete committed before the save's write (the save is
+// refused: the order in which the old write did harm), and the save committed
+// before the delete (the delete strips what the save wrote). Which of the two
+// a real race lands in is the locks' doing, and a single connection can't
+// show that; the tier checks instead that the function still takes them, the
+// roles it names before the member row, the order `delete_role` takes them.
+// Without that role lock a save giving a role can commit it after a
+// concurrent delete scanned for holders, which is the #4830 outcome. The
+// overlapping case was run by hand against local Postgres with two
+// connections when this landed (#4830); a harness that runs it in CI is
+// #4862.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: set_member_role_ids (20261113175520) ===");
@@ -140,6 +149,42 @@ console.log("\n=== Functional: set_member_role_ids (20261113175520) ===");
       "a member of another chapter is not written",
       foreignChapter.length === 0 && same((await member(U[2])).ids, ok[0].ids),
       { foreignChapter },
+    );
+
+    // The other order: the save commits first, then the role it gave is
+    // deleted. The delete strips it and, since nothing else the member holds
+    // grants access, gives Everyone.
+    const TEMP = "a4830000-0000-4000-8000-0000000000e5";
+    await db.exec(`
+      insert into roles (id, chapter_id, name, is_system, display_order, permissions)
+      values ('${TEMP}', '${A}', 'Rush chair', false, 9, '{members:view}');
+      insert into members (chapter_id, user_id, role_ids)
+      values ('${A}', '${U[4]}', '{${R.dj}}');
+    `);
+    const late = await member(U[4]);
+    const first = await write(late.id, late.ids, [R.dj, TEMP]);
+    await rows(`select delete_role($1::uuid, $2::uuid)`, [A, TEMP]);
+    check(
+      "a save committed before a delete has the deleted id stripped, and Everyone given",
+      first.length === 1 && same((await member(U[4])).ids, [R.dj, R.everyone]),
+      { first, after: await member(U[4]) },
+    );
+
+    // The locks a single connection can't exercise: the function must still
+    // key-share lock the roles it names, before it locks the member row.
+    const [{ src }] = await rows(
+      `select prosrc as src from pg_proc where proname = 'set_member_role_ids'`,
+    );
+    const roleLock = src.search(
+      /from\s+public\.roles\s+r[^;]*for\s+key\s+share\s*;/i,
+    );
+    const memberLock = src.search(
+      /from\s+public\.members\s+m[^;]*for\s+update\s*;/i,
+    );
+    check(
+      "it key-share locks the named roles before it locks the member row",
+      roleLock !== -1 && memberLock !== -1 && roleLock < memberLock,
+      { roleLock, memberLock },
     );
   } catch (e) {
     check("the tier ran to the end", false, {
