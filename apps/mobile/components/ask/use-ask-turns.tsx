@@ -101,7 +101,9 @@ export function useAskTurns({
       : null,
     onOpenSource: (source: AskSource) => {
       // Counted against the answer's kept trace, where there is one (#4904).
-      signal(exchange.answer?.ask_id, "source_opened");
+      // Not while a document's link is still being fetched: that tap opens
+      // nothing, so it is not a second open.
+      if (!openingSourceId) signal(exchange.answer?.ask_id, "source_opened");
       void openSource(exchange.id, source);
     },
     busy: working && exchange.phase !== "working",
