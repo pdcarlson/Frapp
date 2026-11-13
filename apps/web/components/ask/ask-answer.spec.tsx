@@ -227,6 +227,28 @@ describe("AskTurn", () => {
     ).toHaveClass("bg-primary", "text-primary-foreground");
   });
 
+  it("says whose message a chat source is and when, on its chip and its marker (#4904)", () => {
+    const sources = ANSWER.sources.map((source) =>
+      source.id === "s2" ? { ...source, author: "Sam Ortiz" } : source,
+    );
+    show(exchange({ answer: { ...ANSWER, sources } }));
+    const list = screen.getByRole("list", { name: ASK_COPY.sources });
+    const chip = within(list).getByRole("link", {
+      name: /^Source 2: Sam Ortiz in #general, /,
+    });
+    expect(chip).toHaveTextContent("Sam Ortiz in #general");
+    expect(chip).toHaveTextContent("November 9, 2026");
+    // A source with no author reads as before, with no day on the chip.
+    const bylaws = within(list).getByRole("link", {
+      name: /^Source 1: Bylaws/,
+    });
+    expect(bylaws).not.toHaveTextContent("2026");
+    expect(
+      screen.getAllByRole("link", { name: "Source 2: Sam Ortiz in #general" })
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it("tells the card when a cited chat message is followed, and not for a source that opens beside chat", async () => {
     const followMessage = vi.fn();
     show(exchange(), { followMessage });
@@ -278,9 +300,7 @@ describe("AskTurn", () => {
     // are the plain words.
     expect(screen.queryByRole("link", { name: "#exec" })).toBeNull();
     expect(screen.queryByText("@Nobody")).toBeNull();
-    expect(
-      screen.getByText(/or #exec, not @Nobody\./),
-    ).toBeTruthy();
+    expect(screen.getByText(/or #exec, not @Nobody\./)).toBeTruthy();
   });
 
   it("reads the channel list only for an answer that names a channel", () => {

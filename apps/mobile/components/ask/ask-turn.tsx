@@ -21,7 +21,7 @@ import {
   askLeftOutLine,
   askPostedSourceTitle,
   askReadLine,
-  askSourceMetaLine,
+  askSourceChip,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
@@ -399,7 +399,7 @@ function AnswerBody({
           <Text
             key={position}
             accessibilityRole={opens ? "link" : undefined}
-            accessibilityLabel={`Source ${number}: ${source.title}`}
+            accessibilityLabel={`Source ${number}: ${askSourceChip(source).name}`}
             onPress={opens ? () => onOpenSource(source) : undefined}
             style={styles.marker}
           >
@@ -652,14 +652,20 @@ function SourceChip({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const meta = askSourceMetaLine(source);
-  const label = `Source ${number}: ${source.title}. ${meta}`;
+  // A quoted message says whose it is and when (`askSourceChip`, #4904).
+  const { name, when, meta } = askSourceChip(source);
+  const label = `Source ${number}: ${name}. ${meta}`;
   const body = (
     <>
       <Text style={styles.sourceNumber}>{number}</Text>
       <Text numberOfLines={1} style={styles.sourceTitle}>
-        {source.title}
+        {name}
       </Text>
+      {when ? (
+        <Text numberOfLines={1} style={styles.sourceWhen}>
+          {when}
+        </Text>
+      ) : null}
     </>
   );
   if (!opens) {
@@ -787,6 +793,11 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
       flexShrink: 1,
+    },
+    sourceWhen: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      flexShrink: 0,
     },
     action: {
       alignSelf: "flex-start",

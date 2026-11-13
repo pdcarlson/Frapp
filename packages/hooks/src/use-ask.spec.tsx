@@ -120,7 +120,20 @@ describe("applyAskEvent", () => {
       stepDetail: { reads: ["events"], found: 2 },
     });
     const writing = applyAskEvent(reading, { v, type: "status", step: "writing" });
-    expect(writing.stepDetail).toEqual({ reads: undefined, found: undefined });
+    expect(writing.stepDetail).toEqual({
+      reads: undefined,
+      found: undefined,
+      label: undefined,
+    });
+    // The tool loop's own line for a read rides along (#4904).
+    const labelled = applyAskEvent(reading, {
+      v,
+      type: "status",
+      step: "reading",
+      tool: "search_messages",
+      label: "Searching #general",
+    });
+    expect(labelled.stepDetail?.label).toBe("Searching #general");
     expect(
       applyAskEvent(reading, { v, type: "done", answer: ANSWER }).stepDetail,
     ).toBeNull();
