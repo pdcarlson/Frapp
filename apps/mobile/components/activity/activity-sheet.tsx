@@ -122,7 +122,7 @@ export function ActivitySheet({
   row: ActivityRow | null;
   viewerId: string | null;
   /**
-   * Where the row's own Confirm or Approve stands (#4437), so the sheet
+   * Where the row's own Confirm, Approve or Check in stands (#4437, #4427), so the sheet
    * opened from that row doesn't offer the same approval a second time.
    */
   rowActionState?: ActivityRowActionState;

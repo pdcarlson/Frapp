@@ -236,9 +236,10 @@ export default function ActivityScreen() {
     setOpened(row);
     setOpenedKey(row.key);
   };
-  // Confirm and Approve on the To review card's rows (#4437), while the
-  // chapter's plan allows them; acting there reads the item, as opening it
-  // does, and re-reads so the row leaves the card.
+  // Confirm and Approve on the To review card's rows (#4437), and Check in
+  // on the To do list's (#4427), while the chapter's plan allows them;
+  // acting there reads the item, as opening it does, and re-reads so the
+  // row leaves the card or the list.
   const { actions: rowActions, stateOf: rowActionStateOf } =
     useActivityRowActions({
       allowed: activityRowActionsAllowed(chapter),
@@ -323,6 +324,7 @@ export default function ActivityScreen() {
           nextLabel={agenda.nextLabel}
           filter={filter}
           onFilter={setPicked}
+          rowActions={rowActions}
           onOpenNext={open}
         />
         {standing.isPending ? (
@@ -340,6 +342,7 @@ export default function ActivityScreen() {
           // The one thing left is already on the week card.
           onCard={agenda.next !== null}
           onShowAll={() => setPicked("all")}
+          rowActions={rowActions}
           onOpen={open}
         />
         {below.map((group) => (
@@ -521,6 +524,7 @@ function ToDoSection({
   filter,
   onCard,
   onShowAll,
+  rowActions,
   onOpen,
 }: {
   days: ActivityAgendaDay[];
@@ -529,6 +533,8 @@ function ToDoSection({
   /** The week card holds the next thing, so an empty list isn't "nothing". */
   onCard: boolean;
   onShowAll: () => void;
+  /** Check in on an open event's row (#4427); `null` while refused. */
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -559,7 +565,12 @@ function ToDoSection({
         <InlineNote>{ACTIVITY_TO_DO_EMPTY}</InlineNote>
       ) : null}
       {days.map((day) => (
-        <DaySection key={day.id} day={day} onOpen={onOpen} />
+        <DaySection
+          key={day.id}
+          day={day}
+          rowActions={rowActions}
+          onOpen={onOpen}
+        />
       ))}
     </View>
   );
@@ -572,9 +583,11 @@ function ToDoSection({
  */
 function DaySection({
   day,
+  rowActions,
   onOpen,
 }: {
   day: ActivityAgendaDay;
+  rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -606,10 +619,11 @@ function DaySection({
         <SectionCount count={day.rows.length} />
       </View>
       {rows.map((row, index) => (
-        <ActivityListRow
+        <ActivityRowItem
           key={row.key}
           row={row}
           isFirst={index === 0}
+          actions={rowActions}
           onPress={() => onOpen(row)}
         />
       ))}

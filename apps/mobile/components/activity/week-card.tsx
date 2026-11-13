@@ -15,7 +15,10 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { ActivityListRow } from "./activity-row";
+import {
+  ActivityRowItem,
+  type ActivityRowActions,
+} from "./activity-row-action";
 import { ProgressRing } from "./progress-ring";
 
 /** The week ring: big enough to hold "12" over "of 24" at the type scale. */
@@ -48,6 +51,7 @@ export function WeekCard({
   nextLabel,
   filter,
   onFilter,
+  rowActions = null,
   onOpenNext,
 }: {
   summary: ActivityWeekSummary;
@@ -55,6 +59,11 @@ export function WeekCard({
   nextLabel: ActivityAgenda["nextLabel"];
   filter: ActivityAgendaFilter;
   onFilter: (filter: ActivityAgendaFilter) => void;
+  /**
+   * The Next row's ask as a button when it is one press (#4427: Check in on
+   * an event happening now), as the To do rows carry it.
+   */
+  rowActions?: ActivityRowActions | null;
   onOpenNext: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -133,9 +142,10 @@ export function WeekCard({
           >
             {nextLabel}
           </Text>
-          <ActivityListRow
+          <ActivityRowItem
             row={next}
             isFirst
+            actions={rowActions}
             onCard
             solo
             onPress={() => onOpenNext(next)}

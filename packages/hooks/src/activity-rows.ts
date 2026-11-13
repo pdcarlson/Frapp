@@ -130,15 +130,25 @@ export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
 /**
  * What a row's ask does on the row itself (#4402): the asks that are one
  * press with nothing to choose. `Vote` is not one, since a poll asks which
- * option, so it opens the record as before. Neither is `Check in` yet: an
- * event can require the member's location (`check_in_zone`), which the read
- * doesn't say and the web can't supply, so a one-press check-in would fail
- * there (#4427). The client acts through the same route and hook its panel
- * uses.
+ * option, so it opens the record as before. The client acts through the same
+ * route and hook its panel uses.
+ *
+ * `Check in` is one wherever the client can complete it (#4427): an event
+ * with a check-in zone needs the member's location, so it is on the row only
+ * for a client that can supply one (`canSupplyLocation`, the phone). On web a
+ * zoned event's row opens its panel, which says to use the phone
+ * (`spec/behavior/events.md` § Check-In). An API read from before the field
+ * existed doesn't say, so web counts its event as zoned and draws no button.
+ * The read doesn't say whether an officer's screen has made the code
+ * required, so a web press can still be refused for that, in the words the
+ * card uses (#4808).
  */
-export type ActivityRowAction = "confirm" | "approve";
+export type ActivityRowAction = "confirm" | "approve" | "check-in";
 
-export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
+export function activityRowAction(
+  row: ActivityRow,
+  options: { canSupplyLocation?: boolean } = {},
+): ActivityRowAction | null {
   if (!activityBadgeIsAsk(row)) return null;
   // A task that asks for proof opens instead: the officer sees the photos or
   // link before confirming it (#4635), which a one-press row can't show.
@@ -146,6 +156,10 @@ export function activityRowAction(row: ActivityRow): ActivityRowAction | null {
     return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
   }
   if (row.kind === "hours") return "approve";
+  if (row.kind === "event" && activityEventNeedsCheckIn(row.event)) {
+    const needsLocation = row.event.check_in_needs_location !== false;
+    return !needsLocation || options.canSupplyLocation ? "check-in" : null;
+  }
   return null;
 }
 

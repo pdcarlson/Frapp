@@ -1588,12 +1588,28 @@ describe("ActivityPage", () => {
             attendance: "required",
             point_value: 10,
             check_in_open: true,
+            check_in_needs_location: false,
+            checked_in: false,
+            created_by: "officer",
+            created_at: "2026-11-01T00:00:00.000Z",
+          },
+          {
+            id: "e2",
+            name: "Philanthropy 5K",
+            location: null,
+            start_time: "2026-11-12T19:30:00.000Z",
+            end_time: "2099-01-01T21:00:00.000Z",
+            attendance: "optional",
+            point_value: 20,
+            check_in_opens_minutes: 10,
+            check_in_open: true,
+            check_in_needs_location: true,
             checked_in: false,
           },
         ],
       });
 
-    it("puts Confirm and Approve on the row, and keeps Vote and Check in opening the panel", () => {
+    it("puts Confirm, Approve and Check in on the row, and keeps Vote and a zoned Check in opening the panel", () => {
       mockActivity.mockReturnValue(officerRead());
       render(<ActivityPage />);
 
@@ -1607,13 +1623,19 @@ describe("ActivityPage", () => {
           within(review).getByRole("button", { name }),
         ).toBeInTheDocument();
       }
-      // An event may need the member's location, which the web can't give
-      // (#4427): Check in stays the row's ask and opens the panel.
+      // An event open for check-in sits on its day in To do, its Check in a
+      // button on the row there (#4427).
       expect(
-        screen.queryByRole("button", { name: /^act:check-in/ }),
+        screen.getByRole("button", { name: "act:check-in:Chapter meeting" }),
+      ).toBeInTheDocument();
+      // A zoned event needs the member's location, which the web can't give
+      // (#4427): its Check in stays the row's ask and opens the panel, which
+      // says to use the phone.
+      expect(
+        screen.queryByRole("button", { name: "act:check-in:Philanthropy 5K" }),
       ).toBeNull();
       expect(
-        screen.getByRole("button", { name: /Chapter meeting/ }),
+        screen.getByRole("button", { name: /Philanthropy 5K/ }),
       ).toHaveAccessibleName(/Check in/);
       // The ask moved out of the row: the row itself no longer names it,
       // and only holds its place for the button laid over it.

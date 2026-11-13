@@ -144,18 +144,22 @@ What else differs from web:
 - **Approve and Reject sit under a pending service entry's card.**
   This sheet is the phone's only place to review hours.
   Reject asks first with the platform's alert and sends no comment, since that alert has no text field on Android; a comment is still web's.
-- **`Confirm` and `Approve` are buttons on a To review row**, as on web ([#4437](https://github.com/pdcarlson/Frapp/issues/4437), Shawn, 2026-11-12; `components/activity/activity-row-action.tsx`).
+- **`Confirm` and `Approve` are buttons on a To review row, and `Check in` on a To do row**, as on web ([#4437](https://github.com/pdcarlson/Frapp/issues/4437), Shawn, 2026-11-12; Check in [#4427](https://github.com/pdcarlson/Frapp/issues/4427), 2026-11-13; `components/activity/activity-row-action.tsx`).
   They are drawn in the ask's place with its look, and their hit area reaches the touch floor.
-  One tap does what the sheet does, through the same hooks and in the same words (`useConfirmTask` with the task card's failure line; `useReviewServiceEntry` with the hours sheet's): it records the item as read and re-reads, and the row leaves the To review card.
-  Once its write lands the button reads "Confirmed" or "Approved" and stays disabled until the re-read takes the row away, so a second tap can't repeat it.
+  One tap does what the sheet does, through the same hooks and in the same words (`useConfirmTask` with the task card's failure line; `useReviewServiceEntry` with the hours sheet's; `useCheckIn` with the chat event card's): it records the item as read and re-reads, and the row leaves the To review card or the To do list.
+  Once its write lands the button reads "Confirmed", "Approved" or "Checked in" and stays disabled until the re-read takes the row away, so a second tap can't repeat it.
   Where each write stands is held by the screen, not the row, so a row drawn again still knows, and the sheet opened from that row shows the approval recorded instead of a second Approve.
   A refusal is the platform's alert, named for the item; one from the plan or the module gate also withdraws the buttons, as a chat card withdraws its controls, until the member comes back to the screen or the app.
   The rest of the row still opens the sheet, where Reject and the record stay.
-  To a screen reader the button isn't a second stop inside the row: the row offers it as a named action (swipe up on VoiceOver, TalkBack's actions menu), as the Tasks row offers its checkbox, and a screen reader hears "Confirmed" or "Approved" when it lands.
+  To a screen reader the button isn't a second stop inside the row: the row offers it as a named action (swipe up on VoiceOver, TalkBack's actions menu), as the Tasks row offers its checkbox, and a screen reader hears "Confirmed", "Approved" or "Checked in" when it lands.
   These are paid-chapter writes.
   While the plan refuses them (the plan's own verdict, `lib/activity/row-action.ts`), no row draws a button and each opens its sheet, whose card puts the refusal into words.
   Offline, or while the chapter loads, the button is drawn dimmed (offline, the row's hint says why), and a tap on it opens the sheet as the ask did.
-  `Vote` and `Check in` stay the row's ask and open the sheet; whether the phone, which can send a location, offers Check in on the row is [#4427](https://github.com/pdcarlson/Frapp/issues/4427).
+  `Vote` stays the row's ask and opens the sheet.
+  **`Check in` is on the row of any event the member can check in to now** (open and not yet on the list), a zoned one included, since the phone can send the location web can't.
+  The tap asks for the phone's position when the read says the event has a zone (`check_in_needs_location`), as the chat event card does, and otherwise sends the plain check-in; if the server answers that the event needs a location (a zone drawn since the read), it asks then and sends once more.
+  A 409 means the member already has a row, which may be an officer's excused or absent mark, so the alert says only "You're already on the attendance list for this event." and the screen re-reads, after which the row shows which.
+  A location the member refuses, or a position outside the zone, is the alert in the card's words; once an officer's screen has shown the code, the alert offers Enter code, which opens s18 on that event.
 - **Archived polls is an accent text button at the touch floor**, as Show all is ([#4258](https://github.com/pdcarlson/Frapp/issues/4258)).
   There are no file rows any more ([#4291](https://github.com/pdcarlson/Frapp/issues/4291)), so every row opens a sheet.
 - **A refusal is a line under the card**, since the phone has no toast.

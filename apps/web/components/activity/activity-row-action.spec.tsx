@@ -12,6 +12,7 @@ import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 
 const confirmTask = vi.fn();
 const approve = vi.fn();
+const selfCheckIn = vi.fn();
 const toast = vi.fn();
 
 vi.mock("@repo/hooks", () => ({
@@ -20,6 +21,9 @@ vi.mock("@repo/hooks", () => ({
 }));
 vi.mock("@/components/service/use-service-review", () => ({
   useServiceReview: () => ({ approve }),
+}));
+vi.mock("@/lib/hooks/use-self-check-in", () => ({
+  useSelfCheckIn: () => ({ run: selfCheckIn }),
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
@@ -65,9 +69,16 @@ const hoursRow = {
   entry: { id: "h1", description: "Food bank" },
 } as unknown as ActivityRow;
 
+const eventRow = {
+  kind: "event",
+  key: "needs:event:e1",
+  title: "Chapter meeting",
+  event: { id: "e1", point_value: 10 },
+} as unknown as ActivityRow;
+
 function draw(
   row: ActivityRow,
-  action: "confirm" | "approve",
+  action: "confirm" | "approve" | "check-in",
   onActed = vi.fn(async () => {}),
   g = gate(),
 ) {
@@ -131,6 +142,20 @@ describe("ActivityRowActionButton (#4402)", () => {
     expect(approve).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: "h1" }),
     );
+  });
+
+  it("checks in through the event card's hook, handing the row on only once the member is on the list (#4427)", async () => {
+    selfCheckIn.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const onActed = draw(eventRow, "check-in");
+    const button = screen.getByRole("button", {
+      name: "Check in: Chapter meeting",
+    });
+    fireEvent.click(button);
+    await waitFor(() => expect(selfCheckIn).toHaveBeenCalledWith("e1", 10));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(onActed).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    await waitFor(() => expect(onActed).toHaveBeenCalledWith(eventRow));
   });
 
   it("stays disabled once its write lands, so a second press can't repeat it before the row leaves", async () => {

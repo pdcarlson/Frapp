@@ -55,6 +55,11 @@ member's own answer, not the event's default:
   ([`events.md`](events.md)) and check-in would not refuse them. It is false for an alumnus
   unless the event lists a role of theirs, the rule check-in itself applies.
 - `checked_in` is read only while `check_in_open` is true.
+- `check_in_needs_location` is whether checking in needs the member's location: the event has a
+  check-in zone ([`events.md`](events.md) § Check-In). The zone itself is not served here. A
+  client that can't supply a location (web) leaves Check in off the row and opens the event,
+  which says to use the phone; the phone checks in from the row and asks for the location then
+  ([#4427](https://github.com/pdcarlson/Frapp/issues/4427)).
 
 **Made by you**
 
@@ -200,7 +205,7 @@ since your last visit", 2026-11-11). Web and the phone draw the dots (#4405, 202
 draws one is [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)
 and [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). Opening a row from Activity (its panel
 or sheet, or on web the link itself) records the open, and the dot clears at once; so does acting
-on it from its row (Confirm or Approve, [#4426](https://github.com/pdcarlson/Frapp/issues/4426) on
+on it from its row (Confirm, Approve or Check in, [#4426](https://github.com/pdcarlson/Frapp/issues/4426) on
 web, [#4437](https://github.com/pdcarlson/Frapp/issues/4437) on the phone). A client that
 gets `unread_since: null` begins the member's dots (below).
 
@@ -208,7 +213,7 @@ gets `unread_since: null` begins the member's dots (below).
   made it, so it never waited on them. For the same reason a task they assigned to themselves and
   an event they made (`created_by`, served on each event row) are never unread.
 - **Until opened.** A row stays unread until the member opens that item from Activity, or acts on
-  it from its row (Confirm, Approve): the client
+  it from its row (Confirm, Approve, Check in): the client
   records it with `POST /v1/activity/reads`, naming the item's kind and id (`task`, `hours_entry`,
   `poll` by its message id, `event`, `link`, `signup` for a sign-up sheet or headcount and `form`
   for a form, each by its message id), up to 100 at a time. Scrolling past a row doesn't

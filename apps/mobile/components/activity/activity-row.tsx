@@ -119,7 +119,7 @@ export function ActivityListRow({
       </View>
       {row.badge ? (
         action ? (
-          <ActivityAskButton action={action} />
+          <ActivityAskButton action={action} filled={solo} />
         ) : activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} filled={solo} />
         ) : row.badge.variant === "outline" ? (
@@ -340,11 +340,15 @@ export interface ActivityRowActionControl {
  */
 export function ActivityAskButton({
   action,
+  filled = false,
 }: {
   action: ActivityRowActionControl;
+  /** `ActivityAsk`'s filled accent: the week card's Next row (#4766, #4427). */
+  filled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const tinted = askTinted(tokens, useChapterBranding());
+  const branding = useChapterBranding();
+  const tinted = askTinted(tokens, branding);
   const styles = createActivityRowStyles(tokens);
   const slop = Math.max(0, (tokens.touch.minimum - ASK_HEIGHT) / 2);
   return (
@@ -358,11 +362,34 @@ export function ActivityAskButton({
       style={({ pressed }) => [
         styles.ask,
         tinted.surface,
-        action.disabled ? tinted.disabled : pressed ? tinted.pressed : null,
+        // Disabled is the one recipe for every variant (tinted-control.ts);
+        // the filled ask keeps its accent fill otherwise, and a press dims
+        // it as the PR drew it, since the tinted press tint is for the
+        // subtle fill.
+        filled && !action.disabled
+          ? {
+              backgroundColor: branding.accentPrimary,
+              borderColor: branding.accentPrimary,
+            }
+          : null,
+        action.disabled
+          ? tinted.disabled
+          : pressed
+            ? filled
+              ? { opacity: 0.7 }
+              : tinted.pressed
+            : null,
       ]}
     >
       <Text
-        style={[tinted.label, action.disabled ? tinted.disabledLabel : null]}
+        style={[
+          tinted.label,
+          action.disabled
+            ? tinted.disabledLabel
+            : filled
+              ? { color: branding.accentOnPrimary }
+              : null,
+        ]}
       >
         {action.label}
       </Text>
