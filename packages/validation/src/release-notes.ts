@@ -146,6 +146,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can only invite people into roles at or below their own, and the invite list shows only the invites they could have sent.",
       "Notifications now show one row per conversation with how many messages it holds, and an Unread switch hides what you've already read.",
       "If your chapter has Ask Frapp on, type @Frapp and a question in any channel to ask it right there: nothing is posted and only you see the answer.",
+      "Your own message now lights up for you when it mentions you, such as your own @here or @everyone.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -165,6 +166,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "While an officer's check-in screen is up, an event's chat card, page and Activity row say to point your phone's camera at the code instead of offering a Check in that can't work.",
       "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
       "You can clear a notification with the x that shows when you hover over it.",
+      "After you link or unlink your Discord account, an open chat now shows your imported messages under the right name without a reload.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -189,6 +191,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "New task, Log service hours and Upload document keep what you typed when you go back, and open on it next time.",
       "Copy message link on a message's long-press gives you a link to that message. It opens on the web, and in the app when you tap it in a Frapp message.",
       "You can clear a notification by pressing and holding it.",
+      "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
     ],
   },
   {

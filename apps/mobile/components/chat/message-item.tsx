@@ -415,11 +415,11 @@ export function MessageRowFrame({
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   // A row that @-mentions the viewer wears the chapter accent the way Discord
   // marks one (components.md §11, see `MentionHighlight`). The list is the
-  // server's (`chat_messages.mentions`), the same set the notifier used, and a
-  // viewer's own message never lights up.
+  // server's (`chat_messages.mentions`), the same set the notifier used. A
+  // viewer's own message lights up too when it reaches them (their own
+  // `@here`, a role they hold), as on Discord (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -1232,10 +1232,7 @@ function BubbleRowFrame({
   children: ReactNode;
 }) {
   const mentionsViewer =
-    !!viewerId &&
-    message.sender_id !== viewerId &&
-    !message.is_deleted &&
-    message.mentions.includes(viewerId);
+    !!viewerId && !message.is_deleted && message.mentions.includes(viewerId);
   const { authorName, authorLabel, roleColor } = rowAuthor(
     message,
     nameFor,

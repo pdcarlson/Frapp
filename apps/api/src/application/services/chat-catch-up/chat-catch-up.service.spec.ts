@@ -237,6 +237,24 @@ describe('ChatCatchUpService', () => {
     );
   });
 
+  it("never marks the reader's own message as addressed to them, though their @here stores them", async () => {
+    const rows = [
+      ...afternoon(),
+      row(READER, '@here who can bring chairs Friday?', {
+        mentions: ['sam', READER],
+      }),
+    ];
+    const { service, gateway } = build({ rows });
+    await service.catchUp(input(), NOW);
+    const [, prompt] = gateway.generateObject.mock.calls[0];
+    expect(prompt.messages[0].content).toContain(
+      'Lee Park: @here who can bring chairs Friday?',
+    );
+    expect(prompt.messages[0].content).not.toContain(
+      'Lee Park (mentions Lee Park)',
+    );
+  });
+
   describe('consent (C8: only from members who said yes)', () => {
     it('never sends a message whose author has not said yes, and counts it without naming anyone', async () => {
       const rows = [

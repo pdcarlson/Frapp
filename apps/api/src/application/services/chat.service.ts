@@ -2202,6 +2202,41 @@ export class ChatService {
   }
 
   /**
+   * Mark unread (#3723): move the caller's read cursor in the message's
+   * channel back to just before it, so it and everything after it count as
+   * unread again, as Discord's and Slack's Mark unread do. One millisecond
+   * before, because a `Date` holds milliseconds and the column microseconds:
+   * the cursor lands strictly before the message, which is what makes it
+   * count (`get_channel_unread_counts` counts `created_at > last_read_at`).
+   *
+   * A timeline message only. A thread reply never counts toward its channel
+   * (#3785), so moving the channel's cursor to it would mark the wrong
+   * things unread; a deleted message has nothing to come back to. The chat
+   * notifications the read cleared stay cleared: the badge is the reminder.
+   */
+  async markMessageUnread(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+  ) {
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
+    if (message.thread_root_id) {
+      throw new BadRequestException(
+        "A thread reply can't be marked unread in its channel",
+      );
+    }
+    if (message.is_deleted) {
+      throw new BadRequestException("A deleted message can't be marked unread");
+    }
+    const before = new Date(Date.parse(message.created_at) - 1).toISOString();
+    return this.readReceiptRepo.upsert(message.channel_id, userId, before);
+  }
+
+  /**
    * Mark the caller's chat notifications for a channel read, through the
    * instant its receipt now reads (#3788). Awaited, so a client's refetch
    * after the request sees the rows cleared, but best-effort: a failed clear

@@ -194,6 +194,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",
   },
+  ChatController_markMessageUnread_v1: {
+    status: 'no-foreign-content',
+    why: "Moves the caller's own read cursor back (#3723); answers with that receipt only.",
+  },
 
   // ── Preferences ────────────────────────────────────────────────────
   ChatController_getChannelNotificationPreferences_v1: OWN_PREFERENCES,

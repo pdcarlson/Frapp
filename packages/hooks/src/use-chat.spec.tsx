@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useChannelUnreadCounts,
   useMarkChannelRead,
+  useMarkMessageUnread,
   markChannelReadMutationKey,
   useLeaveChannel,
   useSetChannelDisplayLock,
@@ -102,6 +103,43 @@ describe("useChannelUnreadCounts", () => {
 
     expect(result.current.fetchStatus).toBe("idle");
     expect(mockGet).not.toHaveBeenCalled();
+  });
+});
+
+describe("useMarkMessageUnread (#3723)", () => {
+  it("waits for a read stamp in flight, then moves the cursor and refreshes the badges", async () => {
+    const queryClient = createTestQueryClient();
+    const order: string[] = [];
+    let finishRead!: () => void;
+    const mockPost = vi.fn((path: string) => {
+      order.push(path);
+      if (path === "/v1/channels/{id}/read") {
+        return new Promise((resolve) => {
+          finishRead = () =>
+            resolve({ data: {}, response: { ok: true, status: 200 } });
+        });
+      }
+      return Promise.resolve({ data: {}, response: { ok: true, status: 201 } });
+    });
+    const wrapper = createWrapper(queryClient, { POST: mockPost });
+    const read = renderHook(() => useMarkChannelRead(), { wrapper });
+    const unread = renderHook(() => useMarkMessageUnread(), { wrapper });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    read.result.current.mutate("chan-1");
+    await waitFor(() => expect(order).toEqual(["/v1/channels/{id}/read"]));
+    unread.result.current.mutate("msg-1");
+    // Still holding: the stamp hasn't landed.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(order).toEqual(["/v1/channels/{id}/read"]);
+
+    finishRead();
+    await waitFor(() => expect(unread.result.current.isSuccess).toBe(true));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/v1/channels/messages/{messageId}/unread",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
   });
 });
 
