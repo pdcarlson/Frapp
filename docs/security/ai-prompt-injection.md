@@ -274,6 +274,19 @@ officer's typed request into a proposal they confirm
   and the actions that officer may take. No chat, document, roster, event title or retrieved text is
   in it, so there is no injector whose ceiling could apply (C3). An answer naming an action that was
   not offered, or that does not exist, is treated as no action.
+- **A tapped opening suggestion is not the officer's words** (added in #4700 by pdcarlson,
+  2026-11-13). Ask opens with questions the server built from the member's own records
+  ([`ai.md` § What Ask opens with](../../spec/behavior/ai.md#what-ask-opens-with)), and a question
+  names a record: "When and where is <event name> on Sunday?". An event name is text another member wrote, so
+  a tapped question would otherwise carry an injector's text into the planner as if the officer had
+  typed it. Three things keep it out. The client sends a tapped question without `actions`, so the
+  request lane does not run for that turn. It marks the turn `suggested` in the `history` it sends
+  later, and `AskConversationService` leaves a suggested turn out of the earlier messages the
+  planner reads. And the one suggestion that asks for something to be done is built from two weekday
+  names and fixed words, with no name from any record, so it is safe to send as typed words. The
+  mark comes from the member's own client, like `history` itself: a member who strips it has only
+  typed the event's name themselves, which they could always do. C3's rule is unchanged: the planner
+  sees only what the member typed.
 - **In a conversation, "the officer's words" includes their earlier messages, and nothing else from
   it** (changed in #4699 by pdcarlson, 2026-11-13). `AskConversationService` hands the planner the
   questions and requests the member typed earlier in the sitting (the last three), so "make it 10"

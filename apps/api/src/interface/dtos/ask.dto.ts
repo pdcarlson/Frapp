@@ -141,7 +141,7 @@ export class AskSuggestionDto {
 
   @ApiProperty({
     description: 'The words to show, and to send when the member taps it.',
-    example: 'When and where is Chapter meeting?',
+    example: 'When and where is Chapter meeting on Sunday?',
   })
   text: string;
 

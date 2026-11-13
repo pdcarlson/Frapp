@@ -27905,7 +27905,7 @@
           "text": {
             "type": "string",
             "description": "The words to show, and to send when the member taps it.",
-            "example": "When and where is Chapter meeting?"
+            "example": "When and where is Chapter meeting on Sunday?"
           },
           "request": {
             "type": "boolean",

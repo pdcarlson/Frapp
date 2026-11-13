@@ -138,7 +138,7 @@ const open = (tree: ReactTestRenderer) =>
 /** What the server built from this member's account (#4700). */
 const EVENT = {
   kind: "event",
-  text: "When and where is Formal?",
+  text: "When and where is Formal on Friday?",
   request: false,
 };
 const REQUEST = {

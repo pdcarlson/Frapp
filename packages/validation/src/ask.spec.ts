@@ -131,13 +131,13 @@ describe("askHistory", () => {
   it("marks a turn whose question was a tapped suggestion, and only that turn", () => {
     expect(
       askHistory([
-        { ...turn("When and where is Formal?"), suggested: true },
+        { ...turn("When and where is Formal on Friday?"), suggested: true },
         turn("And the one after?"),
         { ...turn("What is quorum?"), suggested: false },
       ]),
     ).toEqual([
       {
-        question: "When and where is Formal?",
+        question: "When and where is Formal on Friday?",
         answer: answer.text,
         suggested: true,
       },
@@ -342,8 +342,8 @@ describe("askSourceKindLabel", () => {
 
 describe("the opening suggestions", () => {
   it("writes each one as the member would type it, with nothing abbreviated", () => {
-    expect(askSuggestionText.event("Chapter Meeting")).toBe(
-      "When and where is Chapter Meeting?",
+    expect(askSuggestionText.event("Chapter Meeting", "on Sunday")).toBe(
+      "When and where is Chapter Meeting on Sunday?",
     );
     expect(askSuggestionText.task("Book the bus")).toBe(
       'When is my task "Book the bus" due?',

@@ -273,14 +273,14 @@ describe("the Ask hooks", () => {
       const POST = answering();
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
       await act(() =>
-        result.current.ask("When and where is Formal?", {
+        result.current.ask("When and where is Formal on Friday?", {
           actions: true,
           suggested: true,
         }),
       );
       // A suggestion can name a record someone else wrote: no `actions`.
       expect(POST.mock.calls[0]![1].body).toEqual({
-        question: "When and where is Formal?",
+        question: "When and where is Formal on Friday?",
       });
       expect(result.current.exchanges[0]!.suggested).toBe(true);
       await act(() => result.current.ask("Give 5 points to everyone who came", { actions: true }));
@@ -289,7 +289,7 @@ describe("the Ask hooks", () => {
         actions: true,
         history: [
           {
-            question: "When and where is Formal?",
+            question: "When and where is Formal on Friday?",
             answer: ANSWER.text,
             suggested: true,
           },
@@ -306,13 +306,13 @@ describe("the Ask hooks", () => {
         .mockResolvedValue(streamed([{ v, type: "done", answer: ANSWER }]));
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
       await act(() =>
-        result.current.ask("When and where is Formal?", { suggested: true }),
+        result.current.ask("When and where is Formal on Friday?", { suggested: true }),
       );
       await act(() =>
         result.current.retry(result.current.exchanges[0]!.id, { actions: true }),
       );
       expect(POST.mock.calls[1]![1].body).toEqual({
-        question: "When and where is Formal?",
+        question: "When and where is Formal on Friday?",
       });
       expect(result.current.exchanges[0]!.suggested).toBe(true);
     });
@@ -497,7 +497,7 @@ describe("the Ask hooks", () => {
 
     it("reads what the server built for this member", async () => {
       const suggestions = [
-        { kind: "event", text: "When and where is Formal?", request: false },
+        { kind: "event", text: "When and where is Formal on Friday?", request: false },
       ];
       const GET = vi.fn().mockResolvedValue(ok({ suggestions }));
       const { result } = renderHook(() => useAskSuggestions(), {

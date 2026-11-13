@@ -8889,7 +8889,7 @@ export interface components {
             kind: string;
             /**
              * @description The words to show, and to send when the member taps it.
-             * @example When and where is Chapter meeting?
+             * @example When and where is Chapter meeting on Sunday?
              */
             text: string;
             /** @description False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed. */

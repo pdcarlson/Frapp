@@ -91,7 +91,11 @@ function build(
   };
   const suggestions = {
     suggest: jest.fn(async () => [
-      { kind: 'event', text: 'When and where is Formal?', request: false },
+      {
+        kind: 'event',
+        text: 'When and where is Formal on Friday?',
+        request: false,
+      },
     ]),
   };
   const controller = new AskController(
@@ -279,7 +283,11 @@ describe('AskController', () => {
       ),
     ).resolves.toEqual({
       suggestions: [
-        { kind: 'event', text: 'When and where is Formal?', request: false },
+        {
+          kind: 'event',
+          text: 'When and where is Formal on Friday?',
+          request: false,
+        },
       ],
     });
     expect(suggestions.suggest).toHaveBeenCalledWith({

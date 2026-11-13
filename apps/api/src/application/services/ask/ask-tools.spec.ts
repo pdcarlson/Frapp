@@ -96,9 +96,8 @@ describe('Ask tools', () => {
       const text = result?.text ?? '';
       expect(text).toContain('Today is November 12, 2026.');
       expect(text).toContain(
-        'Chapter meeting: Sunday, November 15, 2026 at 7:00 PM to Sunday, November 15, 2026 at 8:00 PM',
+        'Chapter meeting: Sunday, November 15, 2026 at 7:00 PM to 8:00 PM, at Chapter room.',
       );
-      expect(text).toContain('Where: Chapter room');
       expect(text).toContain('Worth 10 points');
     });
 
@@ -133,10 +132,38 @@ describe('Ask tools', () => {
       expect(lines.filter((line) => line.startsWith('Coming '))).toHaveLength(
         50,
       );
-      // The ten most recent past events, oldest first.
-      expect(lines[1]).toContain('Past 20:');
+      // What is coming first, nearest first; then the ten most recent past
+      // events, newest first, each saying it is over.
+      expect(lines[1]).toContain('Coming 0:');
+      expect(lines[60]).toContain('Past 20 (already happened):');
+      expect(lines[51]).toContain('Past 29 (already happened):');
+      expect(lines[1]).not.toContain('already happened');
       expect(lines.at(-1)).toBe(
         '20 more events in this period are not listed here. The Events page has all of them.',
+      );
+    });
+
+    it('puts the next meeting before last week’s, and says which one is over', async () => {
+      const result = await new EventsAskTool(
+        {
+          findByChapter: jest.fn(async () => [
+            event({
+              start_time: '2026-11-09T00:00:00.000Z',
+              end_time: '2026-11-09T01:00:00.000Z',
+            }),
+            event(),
+          ]),
+        } as never,
+        {
+          findByUserAndChapter: jest.fn(async () => ({ role_ids: [] })),
+        } as never,
+      ).run(context);
+      const lines = (result?.text ?? '').split('\n');
+      expect(lines[1]).toBe(
+        'Chapter meeting: Sunday, November 15, 2026 at 7:00 PM to 8:00 PM, at Chapter room. You are required to attend. Worth 10 points.',
+      );
+      expect(lines[2]).toBe(
+        'Chapter meeting (already happened): Sunday, November 8, 2026 at 7:00 PM to 8:00 PM, at Chapter room. You were required to attend. Worth 10 points.',
       );
     });
 
@@ -346,6 +373,7 @@ describe('Ask tools', () => {
         text: [
           'Today is Thursday, November 12, 2026. Times are in America/New_York.',
           'You have 3 open tasks.',
+          'The one due first is Buy cups, due Tuesday, November 10, 2026.',
           'Buy cups: due Tuesday, November 10, 2026. It is past due. An officer sent it back: Wrong size. 1 of 2 steps checked off.',
           'Book the hall: due Saturday, November 14, 2026. Not started.',
           'Send the recap: due Friday, November 20, 2026 at 7:30 PM. You have started it. Worth 5 points. About: To the whole chapter.',
@@ -365,7 +393,8 @@ describe('Ask tools', () => {
       const result = await new MyTasksAskTool(tasks as never).run(context);
       const lines = result?.text.split('\n') ?? [];
       expect(lines[1]).toBe('You have 43 open tasks.');
-      expect(lines).toHaveLength(43);
+      expect(lines[2]).toMatch(/^The one due first is Task \d+, due /);
+      expect(lines).toHaveLength(44);
       expect(lines.at(-1)).toBe(
         '3 more of your tasks are not listed here. The Tasks page has all of them.',
       );

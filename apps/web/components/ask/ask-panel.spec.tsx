@@ -137,7 +137,7 @@ describe("AskPanel", () => {
   describe("what it opens with (#4700)", () => {
     const EVENT = {
       kind: "event",
-      text: "When and where is Formal?",
+      text: "When and where is Formal on Friday?",
       request: false,
     };
     const REQUEST = {
@@ -260,7 +260,7 @@ describe("AskPanel", () => {
     it("keeps every turn on screen, in order, with the field still under them", () => {
       state.exchanges = [DONE, SECOND];
       state.suggestions = [
-        { kind: "event", text: "When and where is Formal?", request: false },
+        { kind: "event", text: "When and where is Formal on Friday?", request: false },
       ];
       open();
       const turns = screen.getAllByRole("article");
@@ -272,7 +272,7 @@ describe("AskPanel", () => {
       ).toBeInTheDocument();
       // Suggestions are for an empty thread.
       expect(
-        screen.queryByRole("button", { name: "When and where is Formal?" }),
+        screen.queryByRole("button", { name: "When and where is Formal on Friday?" }),
       ).toBeNull();
     });
 

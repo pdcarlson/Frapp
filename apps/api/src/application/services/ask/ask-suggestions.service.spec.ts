@@ -160,7 +160,7 @@ describe('AskSuggestionsService', () => {
       },
       {
         kind: 'event',
-        text: 'When and where is Chapter meeting?',
+        text: 'When and where is Chapter meeting on Sunday?',
         request: false,
       },
       {
@@ -230,7 +230,7 @@ describe('AskSuggestionsService', () => {
     expect((await suggest()).map((item) => item.text)).toEqual([
       'How much do I owe for Fall dues?',
       'When is my task "Book the hall" due?',
-      'When and where is Chapter meeting?',
+      'When and where is Chapter meeting on Sunday?',
     ]);
   });
 
@@ -333,9 +333,64 @@ describe('AskSuggestionsService', () => {
         ],
       });
       expect((await suggest()).map((item) => item.text)).toEqual([
-        'When and where is Formal?',
+        'When and where is Formal on November 20?',
       ]);
     });
+
+    it('is one the member must attend this week, before a sooner one that is optional', async () => {
+      const { suggest } = setup({
+        actions: ['create_task'],
+        events: [
+          event({
+            name: 'Study hours',
+            start_time: '2026-11-14T22:00:00.000Z',
+          }),
+          event({ name: 'Chapter meeting', is_mandatory: true }),
+        ],
+      });
+      // The request is about the same event the question is.
+      expect((await suggest()).map((item) => item.text)).toEqual([
+        'When and where is Chapter meeting on Sunday?',
+        "Make a task for me to get ready for Sunday's event, due Saturday",
+      ]);
+    });
+
+    it('is the next one when what they must attend is more than a week out', async () => {
+      const { suggest } = setup({
+        events: [
+          event({
+            name: 'Study hours',
+            start_time: '2026-11-14T22:00:00.000Z',
+          }),
+          event({
+            name: 'Formal',
+            is_mandatory: true,
+            start_time: '2026-11-22T00:00:00.000Z',
+          }),
+        ],
+      });
+      expect((await suggest()).map((item) => item.text)).toEqual([
+        'When and where is Study hours on Saturday?',
+      ]);
+    });
+
+    it.each([
+      ['2026-11-12T23:00:00.000Z', 'today'],
+      ['2026-11-13T23:00:00.000Z', 'tomorrow'],
+      // 11:30 PM Saturday in New York, already Sunday in UTC.
+      ['2026-11-15T04:30:00.000Z', 'on Saturday'],
+      ['2026-11-18T23:00:00.000Z', 'on Wednesday'],
+      // The same weekday as today could mean two dates, so the date is said.
+      ['2026-11-19T23:00:00.000Z', 'on November 19'],
+    ])(
+      'says the day of an event starting %s as "%s", in the member’s zone',
+      async (start, when) => {
+        const { suggest } = setup({ events: [event({ start_time: start })] });
+        expect((await suggest())[0]?.text).toBe(
+          `When and where is Chapter meeting ${when}?`,
+        );
+      },
+    );
 
     it('skips a name that will not sit on one line, for the next that will', async () => {
       const { suggest } = setup({
@@ -345,7 +400,7 @@ describe('AskSuggestionsService', () => {
         ],
       });
       expect((await suggest()).map((item) => item.text)).toEqual([
-        'When and where is Formal?',
+        'When and where is Formal on November 20?',
       ]);
     });
   });

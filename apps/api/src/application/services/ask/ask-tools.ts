@@ -47,6 +47,25 @@ function longDateTime(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * "Sunday, November 15, 2026 at 7:00 PM to 8:00 PM": the day is said once
+ * when an event starts and ends on the same day in the asker's zone, as a
+ * person would say it. Across midnight both ends carry their day.
+ */
+function longRange(start: string, end: string, timeZone: string): string {
+  const day = (iso: string) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date(iso));
+  if (day(start) !== day(end)) {
+    return `${longDateTime(start, timeZone)} to ${longDateTime(end, timeZone)}`;
+  }
+  const endTime = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  }).format(new Date(end));
+  return `${longDateTime(start, timeZone)} to ${endTime}`;
+}
+
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -186,9 +205,11 @@ export class EventsAskTool implements AskTool {
       }),
       this.members.findByUserAndChapter(userId, chapterId),
     ]);
-    // What is coming matters most, so it is kept first: every event from
-    // today on, nearest first, then the most recent past ones in what is
-    // left. Shown in date order either way.
+    // What is coming matters most, so it is kept first and shown first:
+    // every event from today on, nearest first, then the most recent past
+    // ones in what is left, newest first, each saying it has happened. A
+    // meeting that repeats has last week's line too, and "when is chapter
+    // meeting on Sunday" means the next one (#4700).
     const nowIso = now.toISOString();
     const sorted = [...events].sort((a, b) =>
       a.start_time.localeCompare(b.start_time),
@@ -198,24 +219,30 @@ export class EventsAskTool implements AskTool {
       .slice(0, EVENTS_LIMIT);
     const past = sorted.filter((event) => event.end_time < nowIso);
     const kept = [
-      ...past.slice(
-        Math.max(0, past.length - (EVENTS_LIMIT - upcoming.length)),
-      ),
       ...upcoming,
+      ...past
+        .slice(Math.max(0, past.length - (EVENTS_LIMIT - upcoming.length)))
+        .reverse(),
     ];
     const cut = sorted.length - kept.length;
     const lines = kept.map((event) => {
       const attendance = eventAttendanceFor(event, member.role_ids ?? []);
+      const over = event.end_time < nowIso;
+      // One sentence carries what "when and where is it" asks for: the
+      // name, whether it is over, the time and the place. The place is as
+      // an officer typed it. The check-in zone's coordinates are never
+      // read: no location reaches a model.
       const parts = [
-        `${oneLine(event.name)}: ${longDateTime(event.start_time, timeZone)} to ${longDateTime(event.end_time, timeZone)}`,
-        // The place as an officer typed it. The check-in zone's
-        // coordinates are never read: no location reaches a model.
-        event.location ? `Where: ${oneLine(event.location)}` : null,
+        `${oneLine(event.name)}${over ? ' (already happened)' : ''}: ${longRange(event.start_time, event.end_time, timeZone)}${event.location ? `, at ${oneLine(event.location)}` : ''}`,
         attendance.status === 'required'
-          ? 'You are required to attend'
+          ? over
+            ? 'You were required to attend'
+            : 'You are required to attend'
           : attendance.status === 'optional'
             ? 'Optional for you'
-            : 'You are not invited',
+            : over
+              ? 'You were not invited'
+              : 'You are not invited',
         event.point_value > 0 ? `Worth ${event.point_value} points` : null,
         event.description ? `About: ${oneLine(event.description)}` : null,
       ];
@@ -392,15 +419,15 @@ export class MyTasksAskTool implements AskTool {
     );
     const kept = [...open, ...waiting].slice(0, MY_TASKS_LIMIT);
     if (kept.length === 0) return null;
+    const whenDue = (task: (typeof mine)[number]) =>
+      task.due_at
+        ? longDateTime(task.due_at, timeZone)
+        : longDay(task.due_date, timeZone);
     const lines = kept.map((task) => {
       const done = task.stored_status === TaskStatus.COMPLETED;
       const steps = task.subtasks ?? [];
       const parts = [
-        `${oneLine(task.title)}: due ${
-          task.due_at
-            ? longDateTime(task.due_at, timeZone)
-            : longDay(task.due_date, timeZone)
-        }`,
+        `${oneLine(task.title)}: due ${whenDue(task)}`,
         done
           ? 'You marked it done and it is waiting for an officer to confirm'
           : task.status === TaskStatus.OVERDUE
@@ -427,6 +454,13 @@ export class MyTasksAskTool implements AskTool {
     return result(chapterId, [
       `Today is ${longDay(now.toISOString(), timeZone)}. Times are in ${timeZone}.`,
       `You have ${open.length} open ${open.length === 1 ? 'task' : 'tasks'}.`,
+      // Said outright, so "which is due first" is read and not worked out
+      // from a list of dates.
+      ...(open.length > 1
+        ? [
+            `The one due first is ${oneLine(open[0].title)}, due ${whenDue(open[0])}.`,
+          ]
+        : []),
       ...lines,
     ]);
   }

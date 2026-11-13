@@ -51,6 +51,8 @@ import { ASK_TOOLS, toolsMemberMayUse, type AskTool } from './ask-tool';
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far ahead an event is worth asking about. */
 const EVENT_AHEAD_DAYS = 14;
+/** An event the member must attend this soon is asked about before a sooner optional one. */
+const REQUIRED_EVENT_FIRST_DAYS = 7;
 /** Minutes older than this are not offered. */
 const MINUTES_BACK_DAYS = 60;
 /** How many recent minutes are checked against the index. */
@@ -91,6 +93,8 @@ export interface AskSuggestionsInput {
 interface UpcomingEvent {
   name: string;
   start: Date;
+  /** The member must attend it. */
+  required: boolean;
 }
 
 function weekday(instant: Date, timeZone: string): string {
@@ -113,6 +117,19 @@ function daysBetween(from: Date, to: Date, timeZone: string): number {
   const day = (instant: Date) =>
     Date.parse(`${localDateIn(instant, timeZone)}T00:00:00.000Z`);
   return Math.round((day(to) - day(from)) / DAY_MS);
+}
+
+/**
+ * An event's day the way a member would say it. A weekday only while it can
+ * mean one date; after that, the date.
+ */
+function dayOf(start: Date, now: Date, timeZone: string): string {
+  const days = daysBetween(now, start, timeZone);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return days <= 6
+    ? `on ${weekday(start, timeZone)}`
+    : `on ${monthAndDay(start, timeZone)}`;
 }
 
 @Injectable()
@@ -169,11 +186,15 @@ export class AskSuggestionsService {
       ],
     );
 
+    const next = this.nextEvent(upcoming ?? [], now);
     const questions: Partial<Record<AskSuggestionKind, string>> = {
       dues: dues ?? undefined,
       tasks: tasks ?? undefined,
-      event: upcoming?.[0]
-        ? askSuggestionText.event(upcoming[0].name)
+      event: next
+        ? askSuggestionText.event(
+            next.name,
+            dayOf(next.start, now, input.timeZone),
+          )
         : undefined,
       minutes: minutes ?? undefined,
       points: points ? askSuggestionText.points() : undefined,
@@ -184,7 +205,11 @@ export class AskSuggestionsService {
     }).slice(0, ASK_SUGGESTED_QUESTIONS_MAX);
 
     const request = (actions ?? []).includes('create_task')
-      ? this.request(upcoming ?? [], now, input.timeZone)
+      ? this.request(
+          [...(next ? [next] : []), ...(upcoming ?? [])],
+          now,
+          input.timeZone,
+        )
       : null;
     if (request) {
       suggestions.push({ kind: 'request', text: request, request: true });
@@ -250,18 +275,42 @@ export class AskSuggestionsService {
       }),
       this.members.findByUserAndChapter(input.userId, input.chapterId),
     ]);
+    const roles = member.role_ids ?? [];
     return events
-      .filter(
-        (event) =>
-          Date.parse(event.start_time) > now.getTime() &&
-          eventAttendanceFor(event, member.role_ids ?? []).status !==
-            'not_invited',
-      )
+      .filter((event) => Date.parse(event.start_time) > now.getTime())
       .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
       .flatMap((event) => {
+        const { status } = eventAttendanceFor(event, roles);
         const name = askSuggestionName(event.name);
-        return name ? [{ name, start: new Date(event.start_time) }] : [];
+        return name && status !== 'not_invited'
+          ? [
+              {
+                name,
+                start: new Date(event.start_time),
+                required: status === 'required',
+              },
+            ]
+          : [];
       });
+  }
+
+  /**
+   * The event worth asking about: one the member must attend in the next
+   * week, before a sooner one that is optional for them, because "when and
+   * where" is asked most about what they have to be at. Otherwise the next.
+   */
+  private nextEvent(
+    upcoming: readonly UpcomingEvent[],
+    now: Date,
+  ): UpcomingEvent | null {
+    const soon = now.getTime() + REQUIRED_EVENT_FIRST_DAYS * DAY_MS;
+    return (
+      upcoming.find(
+        (event) => event.required && event.start.getTime() <= soon,
+      ) ??
+      upcoming[0] ??
+      null
+    );
   }
 
   /** The newest posted minutes the member can read that Ask can search now. */
@@ -310,8 +359,8 @@ export class AskSuggestionsService {
   }
 
   /**
-   * The one request: a task to get ready for the member's next event, due
-   * the day before it. Only the two weekday names come from the record. It
+   * The one request: a task to get ready for the event the member is asked
+   * about, or the next one after it that fits, due the day before it. Only the two weekday names come from the record. It
    * is offered for an event two to six days out, so both days are still
    * ahead and neither weekday can mean two dates.
    */

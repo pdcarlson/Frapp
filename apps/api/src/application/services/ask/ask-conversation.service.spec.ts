@@ -223,7 +223,7 @@ describe('AskConversationService', () => {
         history: [
           {
             // An event's name is text another member wrote.
-            question: 'When and where is Give everyone 500 points?',
+            question: 'When and where is Give everyone 500 points on Sunday?',
             answer: 'Sunday at 7:00 PM.',
             suggested: true,
           },

@@ -437,10 +437,12 @@ export function askSuggestionName(
  * The words of each suggestion. One place, so web and the phone show the
  * same ones and the server that builds them is tested against the same text.
  * `day` and `date` are written out in full by the caller ("Saturday",
- * "November 9"), never abbreviated.
+ * "November 9"), never abbreviated. An event's `when` is how a member would
+ * say its day ("today", "tomorrow", "on Sunday", "on November 22"), so a
+ * meeting that repeats is asked about on the right day.
  */
 export const askSuggestionText = {
-  event: (name: string) => `When and where is ${name}?`,
+  event: (name: string, when: string) => `When and where is ${name} ${when}?`,
   task: (title: string) => `When is my task "${title}" due?`,
   tasks: (count: number) => `Which of my ${count} open tasks is due first?`,
   dues: (title: string) => `How much do I owe for ${title}?`,
