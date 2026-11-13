@@ -31,6 +31,7 @@ import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { type ViewerProfile } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The member's own profile, drawn on the You tab (#3839): what was s15, the
@@ -314,6 +315,7 @@ export function ProfileSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
     skeletonStack: {
@@ -343,7 +345,7 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
       // The Details list's tone (`card`, as every grouped list since
       // 2026-11-05), as s15 draws both in one.
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       alignItems: "center",
       gap: tokens.spacing.xs,
@@ -365,7 +367,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     bioText: {

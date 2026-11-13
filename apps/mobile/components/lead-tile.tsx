@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { memberAvatarTint } from "@repo/hooks";
 import { useFrappTheme } from "@/lib/theme";
+import { useRaisedSurfaces } from "@/lib/surfaces";
 
 /**
  * The tile a row's leading glyph sits in (`spec/ui/mobile/patterns.md`
@@ -30,7 +31,11 @@ export function LeadTile({
   children,
 }: {
   size?: LeadTileSize;
-  /** What the row sits on, so the tile is one step above it. */
+  /**
+   * What the row sits on, so the tile is one step above it: `surface1` on the
+   * screen background, and the step above the card on a card
+   * (`lib/surfaces.ts`).
+   */
   on?: "background" | "card";
   /**
    * A fixed hue for a row that is a place (`lib/more/destination-hue.ts`):
@@ -45,6 +50,7 @@ export function LeadTile({
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
   const fill = hue ? memberAvatarTint(hue).fill : null;
   return (
@@ -52,7 +58,7 @@ export function LeadTile({
       style={[
         styles.tile,
         size === "lead" ? styles.lead : styles.row,
-        on === "card" ? styles.onCard : null,
+        on === "card" ? { backgroundColor: surfaces.raised } : null,
         // No edge of its own: the fill is the whole mark, as on an avatar.
         fill ? { backgroundColor: fill, borderColor: fill } : null,
       ]}
@@ -96,9 +102,6 @@ function createStyles(tokens: SignetTokens) {
       width: LEAD_TILE_SIZE.lead,
       height: LEAD_TILE_SIZE.lead,
       borderRadius: tokens.radius.chipLarge,
-    },
-    onCard: {
-      backgroundColor: tokens.color.surface.popover,
     },
   });
 }

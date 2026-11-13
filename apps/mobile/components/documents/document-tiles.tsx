@@ -3,6 +3,7 @@ import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { classifyFile, type LibraryDocument } from "@repo/hooks/document-library";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { NavGlyph } from "@/components/nav-glyph";
 import { PressableRow } from "@/components/list-section";
@@ -137,6 +138,7 @@ export function DocumentTiles({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     grid: {
       gap: tokens.spacing.sm,
@@ -150,7 +152,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     preview: {
       height: 88,
@@ -158,7 +160,7 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       gap: tokens.spacing.xs,
       borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: surfaces.raised,
       marginBottom: tokens.spacing.xs,
     },
     type: {

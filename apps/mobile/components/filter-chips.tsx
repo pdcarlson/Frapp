@@ -135,6 +135,8 @@ export function Chip({
             }
           : undefined
       }
+      // The idle chip's own fill is the input step, on a screen and in a sheet.
+      onControl
       lifts={!on}
       style={[
         styles.chip,

@@ -45,8 +45,10 @@ describe("LeadTile", () => {
     expect(tileStyle({}).style.backgroundColor).toBe(
       signetDarkTokens.color.surface.surface1,
     );
+    // A card on a screen is `surface1` (`lib/surfaces.ts`), so the tile on
+    // one is `card`.
     expect(tileStyle({ on: "card" }).style.backgroundColor).toBe(
-      signetDarkTokens.color.surface.popover,
+      signetDarkTokens.color.surface.card,
     );
   });
 

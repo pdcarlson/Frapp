@@ -6,6 +6,7 @@ import { SectionHeader } from "@/components/list-section";
 import type { SharedInvite } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { webAppHost } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The setup invite step's body (owner pick 2026-11-06, "Share first"): a card
@@ -103,6 +104,7 @@ export function InviteLinksCard({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     stack: {
       gap: tokens.spacing.lg,
@@ -114,7 +116,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.md,
       paddingHorizontal: tokens.spacing.md,
     },
@@ -156,7 +158,7 @@ function createStyles(tokens: SignetTokens) {
       width: 28,
       height: 28,
       borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: surfaces.raised,
       alignItems: "center",
       justifyContent: "center",
     },

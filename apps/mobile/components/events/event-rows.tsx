@@ -7,6 +7,7 @@ import { AccentChip, StatusChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The s06 event rows, shared by the List and the Calendar's day list (#3823).
@@ -94,7 +95,7 @@ export function EventRowCard({
       accessibilityLabel={accessibilityLabelOf(event, cadence)}
       accessibilityHint="View event details and check in."
       onPress={onPress}
-      // The card is itself a card, so it lifts to `surface.popover` on iOS;
+      // The card is itself a card, so it lifts to the step above it on iOS;
       // `PressableRow` rounds its Android ripple to the card's corners.
       onCard
       style={styles.card}
@@ -186,6 +187,7 @@ export function EventRowFlat({
 }
 
 export function createEventRowStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -193,7 +195,7 @@ export function createEventRowStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     flatRow: {

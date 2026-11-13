@@ -31,6 +31,7 @@ import { NavigationContext } from "expo-router/react-navigation";
 import { SignetTokens, type SignetTypeRole } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useRaisedSurfaces } from "@/lib/surfaces";
 
 /**
  * The skeleton / empty / error family, in one place.
@@ -110,6 +111,7 @@ export function SkeletonLines({
   tone?: "card" | "list";
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
   // `as const` so each stays a percentage literal — RN's `DimensionValue`
   // accepts `` `${number}%` ``, not a widened `string`.
@@ -123,7 +125,11 @@ export function SkeletonLines({
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading"
-      style={[styles.card, tone === "list" ? styles.listCard : null]}
+      style={[
+        styles.card,
+        { backgroundColor: surfaces.card },
+        tone === "list" ? styles.listCard : null,
+      ]}
     >
       {/* Left-aligned inside the centred card, as the rows they stand for. */}
       <SkeletonPulse>
@@ -244,6 +250,7 @@ function PulsedBlock({
   opacity,
 }: SkeletonBlockProps & { opacity: SharedValue<number> }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
   const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
@@ -252,7 +259,7 @@ function PulsedBlock({
       style={[
         style,
         styles.skeletonBlock,
-        { width, height },
+        { backgroundColor: surfaces.raised, width, height },
         radius === undefined ? null : { borderRadius: radius },
         pulse,
       ]}
@@ -418,10 +425,17 @@ export function ErrorState({
   isRetrying?: boolean;
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
 
   return (
-    <View style={[styles.card, styles.errorCard]}>
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: surfaces.card },
+        styles.errorCard,
+      ]}
+    >
       {/* Decoration, hidden from screen readers like the empty tile: the
           title already says what went wrong. */}
       <View
@@ -477,13 +491,13 @@ export function NoChapterState({ noun }: { noun: string }) {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    // The empty and error cards stay on `card`: §10 specs a state that
-    // replaces a screen as `--card`, and web's state cards paint it too.
+    // The fill is the card step for where the state is drawn
+    // (`useRaisedSurfaces`): §10 specs a state that replaces a screen as a
+    // card, and on the phone a card is one step above the page (#4682).
     card: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.sm,
       alignItems: "center",
@@ -554,8 +568,9 @@ function createStyles(tokens: SignetTokens) {
       // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
       // is the nearest token; a raw 6 would be a hard-coded value, which
       // foundations.md bans.
+      // Its fill is the step above the card it loads into
+      // (`useRaisedSurfaces`), so a loading screen is as quiet as a loaded one.
       borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
     },
   });
 }

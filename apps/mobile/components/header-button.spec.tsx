@@ -73,8 +73,11 @@ describe("HeaderButton", () => {
     expect(resting.width).toBe(HEADER_BUTTON_SIZE);
     expect(resting.height).toBe(HEADER_BUTTON_SIZE);
     expect(resting.borderRadius).toBe(HEADER_BUTTON_SIZE / 2);
-    // What marks it as a control: a fill and an edge, not a bare glyph.
-    expect(resting.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    // What marks it as a control: a fill and an edge, not a bare glyph. The
+    // fill is a card's on the page, one step above it (`lib/surfaces.ts`).
+    expect(resting.backgroundColor).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
     expect(resting.borderColor).toBe(signetDarkTokens.color.border.hairline);
     expect(
       HEADER_BUTTON_SIZE + 2 * (pressable.props.hitSlop as number),
@@ -84,9 +87,7 @@ describe("HeaderButton", () => {
 
   it("lifts a step while pressed", () => {
     const pressed = flatStyle(button(render()).props.style({ pressed: true }));
-    expect(pressed.backgroundColor).toBe(
-      signetDarkTokens.color.surface.popover,
-    );
+    expect(pressed.backgroundColor).toBe(signetDarkTokens.color.surface.card);
   });
 
   it("draws no badge at zero, and caps a large count", () => {

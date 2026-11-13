@@ -12,6 +12,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE } from "@repo/validation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { asRoute } from "@/lib/href";
 import {
@@ -176,6 +177,7 @@ export function SetupChecklistView({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     strip: {
       gap: tokens.spacing.xs,
@@ -215,7 +217,7 @@ function createStyles(tokens: SignetTokens) {
     // Done is the quietest thing on the list (foundations.md, accent rule:
     // a done state takes a muted check, never the accent).
     markDone: {
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     label: {
       ...typeRole(tokens.typography.role.label),
