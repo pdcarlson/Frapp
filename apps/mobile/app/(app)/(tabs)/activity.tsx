@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityFilterAvailable,
   activityGroups,
+  findActivityTaskRow,
   activitySummary,
   useActivity,
   useActivityStanding,
@@ -214,6 +215,38 @@ export default function ActivityScreen() {
         reread();
       },
     });
+
+  // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
+  // Opens that task's sheet once the read has it, whatever chip is picked,
+  // then clears the param so coming back to the tab doesn't open it again. A
+  // task no longer in the feed (confirmed from another device) opens nothing:
+  // the officer lands on the list, which is what is left to do. Opened during
+  // render, as the task board opens `?task=`, rather than from an effect.
+  const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
+  const reviewTaskId =
+    typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
+  const [openedReview, setOpenedReview] = useState<string | null>(null);
+  if (reviewTaskId !== null && activity.data && openedReview !== reviewTaskId) {
+    setOpenedReview(reviewTaskId);
+    const row = findActivityTaskRow(activity.data, reviewTaskId, now);
+    if (row) {
+      setOpened(row);
+      setOpenedKey(row.key);
+    }
+  } else if (reviewTaskId === null && openedReview !== null) {
+    setOpenedReview(null);
+  }
+  // What `open` does besides showing the sheet, kept out of render: reading
+  // the row, and dropping the param.
+  useEffect(() => {
+    if (openedReview === null) return;
+    if (opened?.unread && opened.kind === "task") {
+      if (opened.task.id === openedReview) markRead([opened.readRef]);
+    }
+    router.setParams({ review: undefined });
+    // Once per review opened; `opened` is the row that open set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openedReview, router]);
 
   function renderBody() {
     if (activity.isPending) {

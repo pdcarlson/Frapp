@@ -720,6 +720,26 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.viewerId).toBe("me");
   });
 
+  it("opens the task a review push names, then drops the param", () => {
+    // "Shawn Klein submitted: …" lands here as `/activity?review=<taskId>`.
+    const router = vi.mocked(useRouter)() as unknown as {
+      setParams?: (params: unknown) => void;
+    };
+    const setParams = vi.fn();
+    router.setParams = setParams;
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      review: "task-1",
+    });
+    try {
+      render();
+      expect(sheet.props?.row?.key).toBe("needs:task:task-1");
+      expect(setParams).toHaveBeenCalledWith({ review: undefined });
+    } finally {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+      delete router.setParams;
+    }
+  });
+
   it("dots an unread row, says so, and records the open (#4405)", () => {
     const data = read();
     activity.value = {

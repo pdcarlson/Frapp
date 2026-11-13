@@ -975,3 +975,23 @@ export function activityNeedsYouHeadline(
     needsYou === 1 ? "1 thing needs you" : `${needsYou} things need you`;
   return incomplete ? `At least ${words}` : words;
 }
+
+/**
+ * The row a task's review push opens (`target.view === "review"`): the task
+ * wherever the feed has it, read with every chip off so the one the member
+ * last picked can't hide it. Needs you comes first, so a task waiting on the
+ * viewer opens as the thing to act on. Null when the feed no longer has it,
+ * such as a completion confirmed from another device.
+ */
+export function findActivityTaskRow(
+  activity: Activity,
+  taskId: string,
+  now: Date = new Date(),
+): ActivityRow | null {
+  for (const group of activityGroups(activity, "all", now)) {
+    for (const row of [...group.rows, ...(group.archive?.rows ?? [])]) {
+      if (row.kind === "task" && row.task.id === taskId) return row;
+    }
+  }
+  return null;
+}

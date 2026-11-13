@@ -59,7 +59,7 @@ a tap mark the row read without a lookup. The `target` itself carries **only** t
 its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread reply
 (mobile opens that as the thread over its channel; web's drawer opens the channel,
 [`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId` (and `meetingId` for "Minutes posted", which web opens at `/meetings/<id>`; mobile opens the event until it shows minutes. "Meeting recording uploaded" sends the event alone: the minutes are still a draft its readers cannot open), `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
+`taskId`, plus `view: 'review'` on "submitted a task" to the officer who assigned it: both clients open that review in Activity (mobile `/activity?review=<taskId>`, web `/activity?review=<taskId>`, the task's sheet or panel up), because the task board lists only the reader's own tasks. Any other task push opens the reader's own task (mobile `/tasks?task=<taskId>`; web the board). A build from before 2026-11-13 reads only `screen` and opens the board. `billing` / `points` / `service` / `members` / `chat_reports` /
 `discord_import` send a bare `screen`. `ai_suggestions` sends `batchId`, `sourceType`
 and `sourceId`, for the review of suggested tasks (#4309, #4313): web opens the minutes they
 came from (`/meetings/<sourceId>` when `sourceType` is `meeting`), where they are listed under
@@ -397,6 +397,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 A push is read on a lock screen, in a glance, next to iOS Calendar and Google Calendar invites. So it names its subject and says what the reader needs to act on, never a category ("New Event", "Task Assigned") over a sentence that restates it. Chat pushes name their sender (above); event, task and member pushes follow the same rule (2026-11-06, from Paul's lock screen reading "New Event / Chapter has been scheduled").
 
 - **The title is the thing**: the event's or task's own name. A change says what changed after it: `Chapter rescheduled`, `Chapter moved`.
+- **When another member's action is the news, the title names them and it**: `Shawn Klein submitted: Clean his room`, `Paul Carlson sent back: Clean his room` (2026-11-13, from Paul's lock screen reading only `Clean his room` when a task came in for review). It is the task review loop: submitted, resubmitted, finished, confirmed and sent back. The body says what came with it and what is asked: `1 photo · Confirm to award 10 points`.
 - **The body is the facts, most important first, joined by ` · `**: for an event, whether it is required _of the reader_, when, and where: `Required · Mon, Nov 9, 8–9 PM · The Lodge`. A series is announced once, as its pattern (`Every Mon, 8–9 PM, from Nov 9`), never once per occurrence.
 - **Times are in the reader's zone.** The server renders the text, so it needs each recipient's zone: both clients send their device's or browser's zone on every request as `x-time-zone` (`@repo/api-sdk`), and the API records it in `user_settings.time_zone` when it changes (`TimeZoneSyncService`). A member with none falls back to `quiet_hours_tz`, then to the zone of whoever scheduled or moved the event (the actor of that push), then to `America/New_York`; a fallback zone is always labelled (`8–9 PM EST`) so a guess never reads as the member's own clock. Task due dates are calendar dates with no zone and are written as stored.
 - **Required means what attendance enforces.** `memberAttendance` (`event-role-targeting.ts`) reads the member's answer from attendance by role ([`events.md`](events.md#event-creation) § Event Creation): required, optional, or not invited, and a member not invited is not sent the push. An alumnus required only by the event's default, not by a role that names them, reads as optional, because the auto-absent sweep never holds them to it.
@@ -410,9 +411,11 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
 | Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
 | Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
-| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` (A task with no points and no proof is Done when marked, so its push ends at `marked it done.`, #4635.) |
-| Task confirmed | `Book the venue` | `Confirmed · +10 points` |
-| Task sent back | `Book the venue` | `Sent back: <officer's comment>` |
+| Task marked done (to its creator) | `Alex Smith submitted: Book the venue` | `1 photo · Confirm to award 10 points`: the photo count or `Link attached`, then the ask (`Check it and confirm` with no points). Opens the review itself (`target.view: 'review'`), and every one stacks in the iOS group `tasks:review`. |
+| Task resubmitted after a send-back | `Alex Smith resubmitted: Book the venue` | `Replied "<their note>" · 2 photos · Confirm to award 10 points` |
+| Task done with nothing to sign off (no points, no proof, #4635) | `Alex Smith finished: Book the venue` | `Done · send it back if something's off` |
+| Task confirmed | `Paul Carlson confirmed: Book the venue` | `+10 points` |
+| Task sent back | `Paul Carlson sent back: Book the venue` | `"<officer's reason>"` |
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
 | Member joined | `Alex Smith joined` | `New member of the chapter` |
 

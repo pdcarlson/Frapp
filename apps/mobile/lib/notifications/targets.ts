@@ -85,6 +85,20 @@ const ROUTES: Record<
 const MINUTES: NotificationTarget = { pathname: "/minutes-details" };
 
 /**
+ * Where a task push opens. "Submitted a task" (`view: "review"`) opens the
+ * review: Activity, with that task's sheet up (`/activity?review=`), since
+ * the board under Tasks lists only the viewer's own tasks and an officer's
+ * review was never on it. Every other task push is about the reader's own
+ * task (assigned, confirmed, sent back, overdue) and opens it on their board
+ * (`/tasks?task=`, the Events calendar's way in).
+ */
+function taskTarget(taskId: string, view: string | null): NotificationTarget {
+  return view === "review"
+    ? { pathname: "/activity", params: { review: taskId } }
+    : { pathname: "/tasks", params: { task: taskId } };
+}
+
+/**
  * Where an unrecognized or malformed target lands. Always renderable.
  *
  * Exported because callers legitimately need to ask "did this resolve, or did
@@ -161,6 +175,8 @@ export function resolveNotificationTarget(data: unknown): NotificationTarget {
   const screen = str(target, "screen");
   const meetingId = screen === "events" ? str(target, "meetingId") : null;
   if (meetingId) return { ...MINUTES, params: { id: meetingId } };
+  const taskId = screen === "tasks" ? str(target, "taskId") : null;
+  if (taskId) return taskTarget(taskId, str(target, "view"));
   const route = screen ? ROUTES[screen] : undefined;
   if (!route) return FALLBACK;
 

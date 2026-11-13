@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,6 +56,7 @@ import {
   activityBadgeIsAsk,
   activityFilterAvailable,
   activityGroups,
+  findActivityTaskRow,
   activityRowAction,
   activityKeys,
   activityStandingKeys,
@@ -382,6 +384,29 @@ function GroupPart({
  * stays open as it was, so the member sees the result of what they just did
  * rather than having the panel vanish under them.
  */
+/**
+ * Reads `?review=<taskId>` and hands it to the page once, then drops it from
+ * the address so a refresh or a return doesn't reopen the panel. Its own
+ * component because `useSearchParams` needs a Suspense boundary of its own
+ * (as in `chat-page.tsx`), and the page around it must not wait on one.
+ * `open` answers false until the feed has loaded, which retries on the next
+ * render.
+ */
+function ReviewParam({ open }: { open: (taskId: string) => boolean }) {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const taskId = searchParams.get("review");
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!taskId || handled.current === taskId) return;
+    if (!open(taskId)) return;
+    handled.current = taskId;
+    router.replace(pathname, { scroll: false });
+  });
+  return null;
+}
+
 export function ActivityPage() {
   const activity = useActivity();
   // How the member is doing this semester, on top. Its own read: when it
@@ -421,6 +446,15 @@ export function ActivityPage() {
     if (row.unread) markRead([row.readRef]);
     // A link opens in a new tab and has no panel.
     if (row.kind !== "link") setOpened(row);
+  };
+  // `/activity?review=<taskId>`: a "submitted a task" notification
+  // (`deepLinkFor` in the bell). Opens that task's panel once the read has
+  // it, whatever chip is picked; a task no longer in the feed opens nothing.
+  const openReview = (taskId: string) => {
+    if (!activity.data) return false;
+    const row = findActivityTaskRow(activity.data, taskId, now);
+    if (row) openFromList(row);
+    return true;
   };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();
@@ -578,6 +612,9 @@ export function ActivityPage() {
           ),
         )}
 
+        <Suspense fallback={null}>
+          <ReviewParam open={openReview} />
+        </Suspense>
         <ActivityPanel
           row={openRow}
           viewerId={userId}

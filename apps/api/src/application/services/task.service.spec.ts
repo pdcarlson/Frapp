@@ -936,7 +936,10 @@ describe('TaskService', () => {
       expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
         'user-1',
         'ch-1',
-        expect.objectContaining({ body: 'Sent back: Needs more work' }),
+        expect.objectContaining({
+          title: 'An officer sent back: Test Task',
+          body: '"Needs more work"',
+        }),
       );
     });
 
@@ -1558,8 +1561,8 @@ describe('TaskService', () => {
         'user-1',
         'ch-1',
         expect.objectContaining({
-          title: 'Test Task',
-          body: 'Confirmed · +10 points',
+          title: 'An officer confirmed: Test Task',
+          body: '+10 points',
           priority: 'NORMAL',
           category: 'tasks',
         }),
@@ -1605,11 +1608,14 @@ describe('TaskService', () => {
           'admin-1',
           'ch-1',
           expect.objectContaining({
-            title: 'Test Task',
-            body: 'The assignee marked it done. Confirm it to award the points.',
+            title: 'A member submitted: Test Task',
+            body: 'Confirm to award 10 points',
             priority: 'NORMAL',
             category: 'tasks',
-            data: { target: { screen: 'tasks', taskId: 'task-1' } },
+            threadId: 'tasks:review',
+            data: {
+              target: { screen: 'tasks', taskId: 'task-1', view: 'review' },
+            },
           }),
         );
       });
@@ -1633,7 +1639,7 @@ describe('TaskService', () => {
         expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
           'admin-1',
           'ch-1',
-          expect.objectContaining({ title: 'Test Task' }),
+          expect.objectContaining({ title: 'A member submitted: Test Task' }),
         );
       });
 
@@ -2223,7 +2229,7 @@ describe('TaskService', () => {
           'admin-1',
           'ch-1',
           expect.objectContaining({
-            body: expect.stringContaining('Confirm it to award the points.'),
+            body: 'Confirm to award 10 points',
           }),
         );
       });
@@ -2243,8 +2249,8 @@ describe('TaskService', () => {
         expect(patch.confirmed_at).toBe(patch.completed_at);
         expect(result.points_awarded).toBe(true);
         const push = mockNotificationService.notifyUser.mock.calls[0][2];
-        expect(push.body).toContain('marked it done.');
-        expect(push.body).not.toContain('Confirm it');
+        expect(push.title).toBe('A member finished: Test Task');
+        expect(push.body).toBe("Done · send it back if something's off");
       });
 
       it('compare-and-sets on the status, points and proof kind it judged', async () => {

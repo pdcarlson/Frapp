@@ -1,4 +1,9 @@
-import { formatDueDate, formatEventWhen, joinFacts } from './push-copy';
+import {
+  formatDueDate,
+  formatEventWhen,
+  joinFacts,
+  taskSubmittedCopy,
+} from './push-copy';
 
 const NOW = new Date('2026-11-06T12:00:00Z');
 const NY = { timeZone: 'America/New_York', now: NOW };
@@ -143,5 +148,78 @@ describe('joinFacts', () => {
     expect(joinFacts('Required', null, '', undefined, false, 'The Lodge')).toBe(
       'Required · The Lodge',
     );
+  });
+});
+
+describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
+  const task = {
+    title: 'Clean his room',
+    point_reward: 10,
+    proof_kind: 'photo',
+    proof_link: null,
+    completion_note: null,
+  };
+
+  it('leads with who and the action, then what came with it and the ask', () => {
+    expect(
+      taskSubmittedCopy('Shawn Klein', task, {
+        photoCount: 1,
+        resubmitted: false,
+      }),
+    ).toEqual({
+      title: 'Shawn Klein submitted: Clean his room',
+      body: '1 photo · Confirm to award 10 points',
+    });
+  });
+
+  it('quotes the reply on a resubmission, the thing that changed', () => {
+    expect(
+      taskSubmittedCopy(
+        'Shawn Klein',
+        { ...task, completion_note: 'Did the closet too' },
+        { photoCount: 2, resubmitted: true },
+      ),
+    ).toEqual({
+      title: 'Shawn Klein resubmitted: Clean his room',
+      body: 'Replied "Did the closet too" · 2 photos · Confirm to award 10 points',
+    });
+  });
+
+  it('names a link, and asks for a check when there are no points', () => {
+    expect(
+      taskSubmittedCopy(
+        'Marcus Hill',
+        {
+          ...task,
+          title: 'Submit the IFC form',
+          point_reward: null,
+          proof_kind: 'link',
+          proof_link: 'https://forms.example/ifc',
+        },
+        { photoCount: 0, resubmitted: false },
+      ).body,
+    ).toBe('Link attached · Check it and confirm');
+  });
+
+  it('says finished, asking nothing, for a task that needed no sign-off', () => {
+    expect(
+      taskSubmittedCopy(
+        'Sam Ortiz',
+        { ...task, point_reward: 0, proof_kind: 'none' },
+        { photoCount: 0, resubmitted: false },
+      ),
+    ).toEqual({
+      title: 'Sam Ortiz finished: Clean his room',
+      body: "Done · send it back if something's off",
+    });
+  });
+
+  it('cuts a long note', () => {
+    const { body } = taskSubmittedCopy(
+      'Shawn Klein',
+      { ...task, completion_note: 'x'.repeat(200) },
+      { photoCount: 0, resubmitted: false },
+    );
+    expect(body.startsWith(`"${'x'.repeat(59)}…"`)).toBe(true);
   });
 });

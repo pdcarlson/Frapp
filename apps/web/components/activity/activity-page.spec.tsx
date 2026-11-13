@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityFilterAvailable: actual.activityFilterAvailable,
     activityGroups: actual.activityGroups,
+    findActivityTaskRow: actual.findActivityTaskRow,
     activityRowAction: actual.activityRowAction,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
@@ -64,6 +65,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         : null,
   };
 });
+// `?review=<taskId>` from a "submitted a task" notification.
+let mockSearch = new URLSearchParams();
+const mockReplace = vi.fn();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearch,
+  usePathname: () => "/activity",
+  useRouter: () => ({ replace: mockReplace }),
+}));
 // The chapter's module switch, unknown here: every tile shows.
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
   useChapterModuleGate: () => mockModuleGate(),
@@ -575,6 +584,26 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
+  });
+
+  it("opens the task a review notification names, whatever chip is picked, once", () => {
+    mockSearch = new URLSearchParams("review=t1");
+    mockActivity.mockReturnValue(loaded());
+    render(<ActivityPage />);
+
+    expect(screen.getByText("panel:Book the venue")).toBeInTheDocument();
+    // Dropped from the address, so a refresh doesn't open it again.
+    expect(mockReplace).toHaveBeenCalledWith("/activity", { scroll: false });
+    mockSearch = new URLSearchParams();
+  });
+
+  it("opens nothing for a review the feed no longer has", () => {
+    mockSearch = new URLSearchParams("review=gone");
+    mockActivity.mockReturnValue(loaded());
+    render(<ActivityPage />);
+
+    expect(screen.queryByText(/^panel:/)).not.toBeInTheDocument();
+    mockSearch = new URLSearchParams();
   });
 
   it("dots an unread row and records the open when it is opened (#4405)", () => {
