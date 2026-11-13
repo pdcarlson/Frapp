@@ -136,6 +136,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Service hours now opens on your own approved and pending hours and your full log, with a chapter leaderboard you can switch between this semester and all time.",
       "Officers can ask for a photo or a link as proof on a task, add up to six photos, and say what needs to change when they send a task back.",
       "When you upload a document, the Type choices are now your chapter's own list, and officers who manage documents can rename, add or remove types with Edit types.",
+      "Officers can import a whole folder into Documents: Frapp suggests a folder, type and title for each file, sets aside copies and files it can't take, and imports them all once you've checked.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
