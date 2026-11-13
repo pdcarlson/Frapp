@@ -63,18 +63,29 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
   useImportantMessages,
+  ASK_TURNS_ABOVE_ALL,
+  placeAskTurns,
 } from "@repo/hooks";
 import {
+  ASK_COPY,
+  ASK_QUESTION_MAX_LENGTH,
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_OFFER_AT,
+  askMentionQuestion,
   can,
   chatCatchUpOfferLine,
   draftWithMention,
   mentionPickLabel,
+  spacedMentionNames,
   type ChatCatchUpPoint,
   type ChatMessageFlag,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  AskTurnsUnder,
+  useAskTurnsPlacement,
+  useChannelAsk,
+} from "@/components/ask/ask-in-channel";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ImportantStrip } from "@/components/chat/important-strip";
@@ -558,6 +569,8 @@ function ChannelThreadScreen() {
    */
   const [isPicking, setIsPicking] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  // Why a question for Frapp was not asked (#4713), until the draft changes.
+  const [askNotice, setAskNotice] = useState<string | null>(null);
   /**
    * Re-entry guard, a ref beside the state: two taps landing in one tick both
    * read the pre-commit state and both open a picker, and on Android the
@@ -618,13 +631,19 @@ function ChannelThreadScreen() {
     })();
   }, [addPhotos, channelId, photoRoom, requestUploadUrl.mutateAsync]);
 
+  // Whether a draft is a question for Frapp (#4713), set further down once
+  // the roster it is read against is known; `false` for a member without Ask.
+  const namesFrappRef = useRef<(text: string) => boolean>(() => false);
   const handleChangeText = useCallback(
     (next: string) => {
       setDraft(next);
+      // A refusal to ask said what to change; the member is changing it.
+      setAskNotice(null);
       // The manager throttles to one broadcast per 3s, so this can ride every
       // keystroke without flooding the channel. An emptied box (the clear
-      // after a send, the last character erased) is nobody typing.
-      if (next.trim().length > 0) emitTyping();
+      // after a send, the last character erased) is nobody typing, and
+      // neither is a question for Frapp, which nobody else will see arrive.
+      if (next.trim().length > 0 && !namesFrappRef.current(next)) emitTyping();
     },
     [setDraft, emitTyping],
   );
@@ -657,6 +676,32 @@ function ChannelThreadScreen() {
   // Where each run and each day starts (components.md §11 § Grouping), worked
   // out oldest first; `threadLayout` says why.
   const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
+
+  /*
+    `@Frapp` from this channel's composer (#4713): the question is asked, not
+    sent, and its answer is drawn here for this member alone, under the
+    message that was newest when it was asked
+    (`components/ask/ask-in-channel.tsx`). Null for a member without Ask,
+    whose `@Frapp` is ordinary text.
+  */
+  const channelAsk = useChannelAsk(channelId);
+  const askTurns = channelAsk?.turns;
+  const askTurnsByRow = useMemo(
+    () =>
+      placeAskTurns(
+        thread.rows.map((row) => ({
+          key: row.message.client_message_id,
+          at: row.message.created_at,
+        })),
+        askTurns ?? [],
+      ),
+    [thread.rows, askTurns],
+  );
+  // Where those turns sit among the rows, for `AskTurnsUnder` to read.
+  const askPlacement = useAskTurnsPlacement(
+    askTurnsByRow,
+    channelAsk?.renderTurn,
+  );
 
   // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
   const {
@@ -860,15 +905,26 @@ function ChannelThreadScreen() {
   }, [loadOlder]);
   const historyEdge = useMemo(
     () => (
-      <ThreadHistoryEdge
-        hasOlder={hasOlder}
-        isLoadingOlder={isLoadingOlder}
-        olderError={olderError}
-        onLoadOlder={handleLoadOlder}
-        start={channelStart}
-      />
+      <>
+        <ThreadHistoryEdge
+          hasOlder={hasOlder}
+          isLoadingOlder={isLoadingOlder}
+          olderError={olderError}
+          onLoadOlder={handleLoadOlder}
+          start={channelStart}
+        />
+        {/* Turns asked of Frapp before the oldest loaded message (#4713). */}
+        <AskTurnsUnder placement={askPlacement} rowKey={ASK_TURNS_ABOVE_ALL} />
+      </>
     ),
-    [hasOlder, isLoadingOlder, olderError, handleLoadOlder, channelStart],
+    [
+      hasOlder,
+      isLoadingOlder,
+      olderError,
+      handleLoadOlder,
+      channelStart,
+      askPlacement,
+    ],
   );
 
   // Parent lookup for reply quotes (#1727), built once per window rather
@@ -942,13 +998,82 @@ function ChannelThreadScreen() {
   });
   const submitComposer = staging.submit;
   const addMentionPick = staging.addMentionPick;
+
+  // Asking Frapp from the composer (`channelAsk`, above). Never while
+  // editing: an edit saves a message that is already posted.
+  const spacedNames = useMemo(
+    () =>
+      spacedMentionNames(
+        mentionRoster.data ?? [],
+        (mentionRoles.data ?? []).map((role) => role.name),
+      ),
+    [mentionRoster.data, mentionRoles.data],
+  );
+  const mayAskHere = channelAsk !== null && !staging.isEditing;
+  const namesFrapp = useCallback(
+    (text: string) =>
+      mayAskHere && askMentionQuestion(text, spacedNames) !== null,
+    [mayAskHere, spacedNames],
+  );
+  useEffect(() => {
+    namesFrappRef.current = namesFrapp;
+  }, [namesFrapp]);
+  const asksFrapp = namesFrapp(staging.value);
+  // What the line above the composer says: who is typing, or, while the
+  // draft is a question for Frapp, that only this member will see it.
+  const composerLine = asksFrapp ? ASK_COPY.only_you_hint : typingLine;
+  const newestRowKey = thread.rows.at(-1)?.message.client_message_id ?? null;
+  const askBusy = channelAsk?.busy ?? false;
+  const sendToFrapp = channelAsk?.send;
+  const replyContext =
+    staging.context?.kind === "reply" ? staging.context : null;
+
   const handleSend = useCallback(() => {
     // Clear first: `attachError` sits ahead of `sendError` in the hint chain
     // below, and a stale photo-permission line would hide the one report that
     // a message never reached the outbox.
     setAttachError(null);
+    const question =
+      sendToFrapp && mayAskHere ? askMentionQuestion(draft, spacedNames) : null;
+    if (sendToFrapp && question !== null) {
+      // Each refusal keeps the member's text, and says what to change.
+      const refusal =
+        photos.length > 0
+          ? ASK_COPY.no_attachments
+          : question.length === 0
+            ? ASK_COPY.no_question
+            : question.length > ASK_QUESTION_MAX_LENGTH
+              ? ASK_COPY.too_long
+              : askBusy
+                ? ASK_COPY.still_answering
+                : null;
+      if (refusal) {
+        setAskNotice(refusal);
+        return;
+      }
+      setDraft("");
+      setAskNotice(null);
+      // A staged reply was context for a message that is not being sent.
+      replyContext?.onCancel();
+      sendToFrapp(question, newestRowKey);
+      // Its turn is drawn under the newest message: go there, as a send does.
+      followSend();
+      return;
+    }
     submitComposer();
-  }, [submitComposer]);
+  }, [
+    submitComposer,
+    sendToFrapp,
+    mayAskHere,
+    draft,
+    spacedNames,
+    photos.length,
+    askBusy,
+    setDraft,
+    replyContext,
+    newestRowKey,
+    followSend,
+  ]);
 
   const handleDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
@@ -1199,7 +1324,7 @@ function ChannelThreadScreen() {
         ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
       const placement = layout.get(item.message.client_message_id);
-      return (
+      const row = (
         <ThreadMessageRow
           row={item}
           startsRun={placement?.startsRun ?? true}
@@ -1231,6 +1356,18 @@ function ChannelThreadScreen() {
           memberAvatarFor={memberAvatarFor}
         />
       );
+      return (
+        <>
+          {row}
+          {/* A question this member asked Frapp under this message, for them
+              alone (#4713). Not a row of its own: the list's rows and keys
+              stay the messages'. */}
+          <AskTurnsUnder
+            placement={askPlacement}
+            rowKey={item.message.client_message_id}
+          />
+        </>
+      );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
@@ -1260,6 +1397,7 @@ function ChannelThreadScreen() {
       openThread,
       threadUnread,
       memberAvatarFor,
+      askPlacement,
     ],
   );
 
@@ -1599,6 +1737,11 @@ function ChannelThreadScreen() {
                     onLoadOlder={handleLoadOlder}
                   />
                 ))}
+              {/* Asked of Frapp in a channel with no messages yet (#4713). */}
+              <AskTurnsUnder
+                placement={askPlacement}
+                rowKey={ASK_TURNS_ABOVE_ALL}
+              />
             </ScrollView>
           ) : (
             // The rows reach the image viewer through this, not through a
@@ -1679,7 +1822,9 @@ function ChannelThreadScreen() {
 
           {/*
           Always mounted, so someone starting or stopping typing moves nothing
-          above it. The caption Text is always there too: when nobody types it
+          above it. While the draft names `@Frapp` it says instead what Send
+          will do (#4713), before it does it: the line is already there, so
+          saying so moves nothing either. The caption Text is always there too: when nobody types it
           holds a non-breaking space, so the line it reserves is the caption's
           own line box, scaled with the system text size like the words it
           stands in for. Empty, it is hidden from a screen reader rather than
@@ -1690,13 +1835,13 @@ function ChannelThreadScreen() {
           <View
             testID="typing-line"
             style={styles.typingSlot}
-            accessibilityElementsHidden={typingLine === null}
+            accessibilityElementsHidden={composerLine === null}
             importantForAccessibility={
-              typingLine === null ? "no-hide-descendants" : "auto"
+              composerLine === null ? "no-hide-descendants" : "auto"
             }
           >
             <Text style={styles.typing} numberOfLines={1}>
-              {typingLine ?? TYPING_LINE_BLANK}
+              {composerLine ?? TYPING_LINE_BLANK}
             </Text>
           </View>
 
@@ -1756,6 +1901,7 @@ function ChannelThreadScreen() {
               avatarTintFor={avatarTintFor}
               mentionRoles={mentionRoles.data}
               onPickMember={addMentionPick}
+              ask={mayAskHere ? { naming: asksFrapp } : null}
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show
               // (nothing was queued), so this line is the only report of it.
@@ -1766,6 +1912,7 @@ function ChannelThreadScreen() {
               // indicator). `lib/connection/state.ts` holds the rule for the
               // surfaces that have to block instead.
               disabledHint={
+                askNotice ??
                 attachError ??
                 staging.editError ??
                 sendError ??
@@ -1779,7 +1926,7 @@ function ChannelThreadScreen() {
                     : null)
               }
               hintTone={
-                sendError || attachError || staging.editError
+                askNotice || sendError || attachError || staging.editError
                   ? "error"
                   : "muted"
               }
@@ -1831,6 +1978,7 @@ function ChannelThreadScreen() {
       />
       {composerPlus.sheets}
       {catchUp.sheets}
+      {channelAsk?.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

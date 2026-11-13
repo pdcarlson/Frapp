@@ -3025,6 +3025,26 @@ describe("Composer asks Frapp instead of posting (#4713)", () => {
     expect(editor.getText()).toBe("@Frapp what is this?");
   });
 
+  it("tells nobody the member is typing while the draft is a question for Frapp", () => {
+    const update = (text: string) =>
+      capturedOnUpdate.at(-1)!({ editor: { getText: () => text } });
+
+    const asking = baseProps({ ask: { busy: false, send: vi.fn() } });
+    render(<Composer {...asking} />);
+    update("@Frapp when is");
+    expect(asking.onTyping).not.toHaveBeenCalled();
+    // The draft still follows the box, and an ordinary message still pings.
+    expect(asking.onChangeDraft).toHaveBeenLastCalledWith("@Frapp when is");
+    update("see you at formal");
+    expect(asking.onTyping).toHaveBeenCalledTimes(1);
+
+    // Without Ask the same text is a message being typed.
+    const plain = baseProps();
+    render(<Composer {...plain} />);
+    update("@Frapp when is");
+    expect(plain.onTyping).toHaveBeenCalledTimes(1);
+  });
+
   it("offers Frapp in the @ list only to a member with Ask", async () => {
     const items = (ask: ComposerProps["ask"]) => {
       capturedExtensions.length = 0;

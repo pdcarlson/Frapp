@@ -572,6 +572,51 @@ vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
   },
 }));
 
+/**
+ * `@Frapp` from the thread (#4713). What a channel asks with and how a turn
+ * reads are `ask-in-channel.spec.tsx`'s; the screen decides when Send asks
+ * instead of posting, and where the turns sit. `value` is null for a member
+ * without Ask.
+ */
+const channelAsk = vi.hoisted(() => ({
+  value: null as null | {
+    busy: boolean;
+    send: (question: string, after: string | null) => void;
+    turns: { id: string; origin: { after?: string | null; at: string } }[];
+    renderTurn: (turn: { id: string }) => unknown;
+    sheets: null;
+  },
+}));
+vi.mock("@/components/ask/ask-in-channel", async () => {
+  const { createElement } = await import("react");
+  return {
+    useChannelAsk: () => channelAsk.value,
+    useAskTurnsPlacement: (byRow: unknown, renderTurn: unknown) => ({
+      byRow,
+      renderTurn,
+    }),
+    AskTurnsUnder: ({
+      placement,
+      rowKey,
+    }: {
+      placement: {
+        byRow: Map<string, { id: string }[]>;
+        renderTurn?: unknown;
+      };
+      rowKey: string;
+    }) =>
+      placement.renderTurn
+        ? (placement.byRow.get(rowKey) ?? []).map((turn) =>
+            createElement("AskChannelTurn", {
+              key: turn.id,
+              id: turn.id,
+              under: rowKey,
+            }),
+          )
+        : null,
+  };
+});
+
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ isOffline: false, writeBlockedReason: null }),
 }));
@@ -704,6 +749,7 @@ beforeEach(() => {
   catchUp.surface = false;
   catchUp.waiting = false;
   catchUp.active = false;
+  channelAsk.value = null;
 });
 
 describe("chat thread way back", () => {
@@ -1223,8 +1269,12 @@ describe("chat thread scrollback (#2772)", () => {
       isLoadingOlder: false,
       olderError: true,
     });
-    // The footer of an inverted list is drawn at the top.
-    expect(lastChild(list(tree)).type).toBe(ThreadHistoryEdge);
+    // The footer of an inverted list is drawn at the top: the edge, then the
+    // place for a turn asked of Frapp before the oldest loaded row (#4713),
+    // which draws nothing here.
+    const footer = list(tree).children.slice(-2) as ReactTestInstance[];
+    expect(footer[0]!.type).toBe(ThreadHistoryEdge);
+    expect(footer[1]!.props.rowKey).toBe("");
     act(() => byLabel(tree, "Retry loading earlier messages").props.onPress());
     expect(channel.loadOlder).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
@@ -2910,6 +2960,175 @@ describe("Catch me up in a channel (#3946)", () => {
       ).props.onPress(),
     );
     expect(catchUp.resume).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * #4713: a message that names `@Frapp` is a question for Frapp, from a member
+ * with Ask. It is never posted; its answer is drawn in the thread for that
+ * member alone.
+ */
+describe("chat thread asks Frapp instead of posting (#4713)", () => {
+  const composer = (tree: ReactTestRenderer) =>
+    tree.root.findByType(ChatComposer);
+  const typingLine = (tree: ReactTestRenderer) =>
+    tree.root
+      .find(
+        (node) =>
+          node.type === ("View" as never) &&
+          node.props.testID === "typing-line",
+      )
+      .findByType("Text" as never).props.children as string;
+  const HINT = "Only you will see this question and Frapp's answer.";
+
+  function asking(
+    draft: string,
+    overrides: Partial<UseChatChannelResult> = {},
+    busy = false,
+  ) {
+    const send = vi.fn();
+    channelAsk.value = {
+      busy,
+      send,
+      turns: [],
+      renderTurn: () => null,
+      sheets: null,
+    };
+    channel = channelState({ draft, ...overrides });
+    return { send, tree: render() };
+  }
+
+  it("sends the question to Frapp under the newest message, posts nothing and clears the box", () => {
+    const { send, tree } = asking("@Frapp when is formal?");
+    act(() => composer(tree).props.onSend());
+    expect(send).toHaveBeenCalledWith("when is formal?", "c-m2");
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(channel.setDraft).toHaveBeenCalledWith("");
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("says above the composer that only the member will see it, in the typing line's place", () => {
+    const { tree } = asking("@Frapp when is formal?");
+    expect(composer(tree).props.ask).toEqual({ naming: true });
+    expect(typingLine(tree)).toBe(HINT);
+    act(() => tree.unmount());
+
+    const plain = asking("when is formal?").tree;
+    expect(composer(plain).props.ask).toEqual({ naming: false });
+    expect(typingLine(plain)).not.toBe(HINT);
+    act(() => plain.unmount());
+  });
+
+  it("posts the same text as an ordinary message for a member without Ask", () => {
+    channel = channelState({ draft: "@Frapp when is formal?" });
+    const tree = render();
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).toHaveBeenCalledWith(
+      "@Frapp when is formal?",
+      expect.anything(),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("tells nobody the member is typing while the draft is a question for Frapp", () => {
+    const emitTyping = vi.fn();
+    const { tree } = asking("", { emitTyping });
+    act(() => composer(tree).props.onChangeText("@Frapp when is"));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer(tree).props.onChangeText("see you at formal"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    [
+      "nothing but the handle",
+      "@Frapp",
+      {},
+      false,
+      "Type your question after @Frapp.",
+    ],
+    [
+      "a question over the limit",
+      `@Frapp ${"a".repeat(1001)}`,
+      {},
+      false,
+      "That's too long for a question. Keep it under 1,000 characters.",
+    ],
+    [
+      "a second question while the first is being answered",
+      "@Frapp and the one after?",
+      {},
+      true,
+      "Frapp is still answering your last question.",
+    ],
+    [
+      "a question with a photo staged",
+      "@Frapp what is this?",
+      {
+        photos: [
+          {
+            key: "p1",
+            previewUri: "file:///a.jpg",
+            width: 10,
+            height: 10,
+            status: "ready",
+            attachment: null,
+            reason: null,
+          },
+        ],
+      } as unknown as Partial<UseChatChannelResult>,
+      false,
+      "Frapp can't read attachments. Remove them, or take @Frapp out to post this.",
+    ],
+  ])(
+    "refuses %s, says why above the box, and keeps the member's text",
+    (_, draft, overrides, busy, line) => {
+      const { send, tree } = asking(draft, overrides, busy);
+      act(() => composer(tree).props.onSend());
+      expect(send).not.toHaveBeenCalled();
+      expect(channel.send).not.toHaveBeenCalled();
+      expect(channel.setDraft).not.toHaveBeenCalled();
+      expect(composer(tree).props.disabledHint).toBe(line);
+      expect(composer(tree).props.hintTone).toBe("error");
+      // Changing the text takes the line away.
+      act(() => composer(tree).props.onChangeText(`${draft} `));
+      expect(composer(tree).props.disabledHint).toBeNull();
+      act(() => tree.unmount());
+    },
+  );
+
+  it("draws each turn under the message it was asked under, and adds no row", () => {
+    asking("");
+    channelAsk.value!.turns = [
+      {
+        id: "t1",
+        origin: {
+          after: "c-m1",
+          at: new Date(2026, 8, 28, 17, 0, 30).toISOString(),
+        },
+      },
+      {
+        id: "t0",
+        origin: {
+          after: null,
+          at: new Date(2026, 8, 28, 16, 0).toISOString(),
+        },
+      },
+    ];
+    const tree = render();
+    expect(rows(tree)).toHaveLength(2);
+    const drawn = tree.root
+      .findAllByType("AskChannelTurn" as never)
+      .map((node) => [node.props.id, node.props.under]);
+    expect(drawn).toContainEqual(["t1", "c-m1"]);
+    // Older than every loaded message: above them all.
+    expect(drawn).toContainEqual(["t0", ""]);
+    expect(drawn).toHaveLength(2);
     act(() => tree.unmount());
   });
 });

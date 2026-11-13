@@ -15,8 +15,6 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
-import { useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -27,8 +25,6 @@ import {
   useAsk,
   useAskStatus,
   useAskSuggestions,
-  useDocumentDownloadUrl,
-  type AskExchange,
   type AskOptions,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -37,21 +33,15 @@ import {
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
   formatAiAnswerDate,
-  type AskSource,
   type AskSuggestion,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
-import {
-  useAiReport,
-  type AiReportTarget,
-} from "@/components/ai/report-ai-sheet";
-import {
-  AskProposal,
-  type ActLink,
-  type KeptTargets,
-} from "@/components/ask/ask-proposal";
 import { AskSendGlyph } from "@/components/ask/ask-bar";
 import { AskTurn } from "@/components/ask/ask-turn";
+import {
+  SOURCE_OPEN_FAILED,
+  useAskTurns,
+} from "@/components/ask/use-ask-turns";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappCrest } from "@/components/frapp-crest";
 import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
@@ -66,11 +56,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useActActions, useMayAct } from "@/lib/ai/availability";
-import { askSourceOpening } from "@/lib/ask/source-route";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { asRoute, openHref } from "@/lib/href";
-import { selectDownloadUrl } from "@/lib/more/documents";
-import { notificationHref } from "@/lib/notifications/targets";
 import {
   fieldTypeRole,
   fontFamilyFor,
@@ -111,8 +97,12 @@ import {
  * the same field. The header's New conversation button clears the thread.
  *
  * The thread is this sitting's: it survives a close and reopen, and is gone
- * when the app restarts. A question still being answered when the sheet
- * closes is dropped; the turns before it stay.
+ * when the app restarts. A question asked here and still being answered when
+ * the sheet closes is dropped; the turns before it stay. One asked from a
+ * channel with `@Frapp` (#4713) is a turn of this same thread, and goes on
+ * being answered: its answer is drawn in the channel, which closing the sheet
+ * does not take away. What a turn does when the member acts on it is
+ * `useAskTurns`, shared with the channel's row.
  *
  * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
  * just be like some presets"). Before the first turn the sheet offers up to
@@ -188,7 +178,6 @@ export const AskSheet = forwardRef<
   }
 >(function AskSheet({ onClosed }, ref) {
   const closeSheet = useSheetClose(ref);
-  const router = useRouter();
   const { tokens } = useFrappTheme();
   const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -217,21 +206,14 @@ export const AskSheet = forwardRef<
   const [shownOpen, setShownOpen] = useState(false);
   const status = useAskStatus({ enabled: shownOpen });
   const { ensureConsent, consentSheet } = useAiConsentGate();
-  const reporting = useAiReport();
-  const openDocument = useDocumentDownloadUrl();
 
   // What this member can ask to have done (#718), or nothing.
   const actions = useActActions({ enabled: shownOpen });
   const canAct = actions.length > 0;
   const mayAct = useMayAct();
   const { suggestions } = useAskSuggestions({ enabled: shownOpen });
-  const [kept, setKept] = useState<KeptTargets>({});
 
   const [draft, setDraft] = useState("");
-  const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
-  // A source that didn't open, said under the turn it belongs to.
-  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
-  const presenting = useRef(false);
   const leftForSource = useRef(false);
   const scroller = useRef<BottomSheetScrollViewMethods>(null);
   // Whether the member is reading the newest words: only then does the
@@ -252,15 +234,21 @@ export const AskSheet = forwardRef<
     scroller.current?.scrollToEnd?.({ animated: true });
   }, [lastId]);
 
-  // A question still being answered is dropped with the sheet; the turns
-  // before it are there when it reopens.
+  // A question asked here and still being answered is dropped with the
+  // sheet; the turns before it are there when it reopens. One asked from a
+  // channel goes on: its answer is drawn there.
   const workingRef = useRef(working);
+  const askedHere = exchanges.some(
+    (exchange) => exchange.phase === "working" && !exchange.origin,
+  );
+  const askedHereRef = useRef(askedHere);
   useEffect(() => {
     workingRef.current = working;
-  }, [working]);
+    askedHereRef.current = askedHere;
+  }, [working, askedHere]);
   const onDismiss = useCallback(() => {
     setShownOpen(false);
-    if (workingRef.current) stop();
+    if (askedHereRef.current) stop();
     const left = leftForSource.current;
     leftForSource.current = false;
     onClosed?.(left);
@@ -278,20 +266,32 @@ export const AskSheet = forwardRef<
     [mayAct, ensureConsent, savedUntil],
   );
 
+  // The screen is about to be on top: the host must not navigate over it.
+  const leave = useCallback(() => {
+    leftForSource.current = true;
+    closeSheet();
+  }, [closeSheet]);
+  const turns = useAskTurns({
+    conversation: { working, retry, setProposal, resolveProposal },
+    options,
+    leave,
+  });
+  const clearNotice = turns.clearNotice;
+
   const submit = useCallback(
     (text: string) => {
       if (!text.trim() || workingRef.current) return;
       setDraft("");
-      setSourceNotice(null);
+      clearNotice();
       void ask(text, options());
     },
-    [ask, options],
+    [ask, options, clearNotice],
   );
 
   const pick = useCallback(
     (suggestion: AskSuggestion) => {
       if (workingRef.current) return;
-      setSourceNotice(null);
+      clearNotice();
       // A question can name a record someone else wrote, so it is sent as a
       // suggestion. The one request holds none and is sent like typed words.
       void ask(suggestion.text, {
@@ -299,59 +299,10 @@ export const AskSheet = forwardRef<
         suggested: !suggestion.request,
       });
     },
-    [ask, options],
-  );
-
-  const canOpen = useCallback(
-    (source: AskSource) => askSourceOpening(source) !== null,
-    [],
-  );
-
-  const openSource = useCallback(
-    async (exchangeId: string, source: AskSource) => {
-      const opening = askSourceOpening(source);
-      if (!opening) return;
-      if (opening.kind === "route") {
-        leftForSource.current = true;
-        closeSheet();
-        openHref(router, asRoute(notificationHref(opening.target)));
-        return;
-      }
-      // One browser at a time: iOS rejects a second presentation.
-      if (presenting.current) return;
-      presenting.current = true;
-      setSourceNotice(null);
-      setOpeningSourceId(`${exchangeId}:${source.id}`);
-      try {
-        const url = selectDownloadUrl(
-          await openDocument.mutateAsync(opening.documentId),
-        );
-        if (!url) {
-          setSourceNotice(exchangeId);
-          return;
-        }
-        await WebBrowser.openBrowserAsync(url);
-      } catch {
-        setSourceNotice(exchangeId);
-      } finally {
-        presenting.current = false;
-        setOpeningSourceId(null);
-      }
-    },
-    [closeSheet, openDocument, router],
+    [ask, options, clearNotice],
   );
 
   const canSend = draft.trim().length > 0 && !working;
-
-  const openActLink = useCallback(
-    (link: ActLink) => {
-      // The screen is about to be on top: the host must not navigate over it.
-      leftForSource.current = true;
-      closeSheet();
-      openHref(router, asRoute(link.href));
-    },
-    [closeSheet, router],
-  );
 
   return (
     <>
@@ -385,8 +336,8 @@ export const AskSheet = forwardRef<
                 label={ASK_COPY.new_conversation}
                 onPress={() => {
                   reset();
-                  setKept({});
-                  setSourceNotice(null);
+                  turns.forget();
+                  clearNotice();
                 }}
               >
                 <PencilGlyph color={tokens.color.text.mutedForeground} />
@@ -428,41 +379,8 @@ export const AskSheet = forwardRef<
           {exchanges.length > 0 ? (
             exchanges.map((exchange) => (
               <View key={exchange.id} style={styles.turn}>
-                <AskTurn
-                  exchange={exchange}
-                  canOpen={canOpen}
-                  openingSourceId={
-                    openingSourceId?.startsWith(`${exchange.id}:`)
-                      ? openingSourceId.slice(exchange.id.length + 1)
-                      : null
-                  }
-                  onOpenSource={(source) =>
-                    void openSource(exchange.id, source)
-                  }
-                  busy={working && exchange.phase !== "working"}
-                  onRetry={() => void retry(exchange.id, options())}
-                  onAnswerConsent={() => void retry(exchange.id, options())}
-                  report={reportFor(exchange, reporting)}
-                  proposal={
-                    exchange.proposal ? (
-                      <AskProposal
-                        proposal={exchange.proposal}
-                        resolution={exchange.resolution}
-                        kept={kept}
-                        onKeep={(id, targets) =>
-                          setKept((current) => ({ ...current, [id]: targets }))
-                        }
-                        report={reporting}
-                        onProposal={(next) => setProposal(exchange.id, next)}
-                        onResolved={(resolution) =>
-                          resolveProposal(exchange.id, resolution)
-                        }
-                        onOpen={openActLink}
-                      />
-                    ) : null
-                  }
-                />
-                {sourceNotice === exchange.id ? (
+                <AskTurn {...turns.propsFor(exchange)} />
+                {turns.sourceFailed(exchange.id) ? (
                   <Text accessibilityLiveRegion="polite" style={styles.caption}>
                     {SOURCE_OPEN_FAILED}
                   </Text>
@@ -520,7 +438,7 @@ export const AskSheet = forwardRef<
         </View>
       </BottomSheetModal>
       {consentSheet}
-      {reporting.reportSheet}
+      {turns.reportSheet}
     </>
   );
 });
@@ -577,25 +495,6 @@ function AskEmpty({
     </>
   );
 }
-
-/** The answer's "Report this", for a member who may report (#4315). */
-function reportFor(
-  exchange: AskExchange,
-  reporting: ReturnType<typeof useAiReport>,
-) {
-  if (!reporting.offered || !exchange.askId) return null;
-  const target: AiReportTarget = {
-    subject: "ask_answer",
-    subjectId: exchange.askId,
-    receipt: exchange.answer?.report_receipt ?? null,
-  };
-  return {
-    reported: reporting.isReported(target),
-    onPress: () => reporting.report(target),
-  };
-}
-
-const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

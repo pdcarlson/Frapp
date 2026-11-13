@@ -1022,9 +1022,11 @@ export function Composer({
   // Whether the `@` list offers Frapp, read on each keystroke: the editor's
   // extensions are built once, before it is known whether this member has Ask.
   const askRef = useRef(false);
+  const spacedNamesRef = useRef(spacedNames);
   useEffect(() => {
     askRef.current = ask !== null;
-  }, [ask]);
+    spacedNamesRef.current = spacedNames;
+  }, [ask, spacedNames]);
   // Whether Send will ask Frapp instead of posting, so the composer can say
   // so before it happens.
   const asksFrapp =
@@ -1156,8 +1158,12 @@ export function Composer({
       composerMentionPicks(channelId, editor);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
-      // for four seconds under the message that had just landed.
-      if (text.trim().length > 0) onTyping();
+      // for four seconds under the message that had just landed. Nor is a
+      // question for Frapp, which nobody else will see arrive (#4713).
+      const forFrapp =
+        askRef.current &&
+        askMentionQuestion(text, spacedNamesRef.current) !== null;
+      if (text.trim().length > 0 && !forFrapp) onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
         parsed.isSlash &&
