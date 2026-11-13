@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus, Repeat } from "lucide-react";
 import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
@@ -21,6 +22,16 @@ import {
   CalendarTaskChip,
   CalendarTaskRow,
 } from "@/components/events/calendar-tasks";
+import {
+  EventChip,
+  EventsTimeGrid,
+} from "@/components/events/events-time-grid";
+import {
+  consecutiveDays,
+  startOfDay,
+  startOfWeek,
+} from "@repo/hooks/calendar-time-grid";
+import type { CalendarView } from "@/lib/events/events-view";
 
 type EventRow = Record<string, unknown>;
 
@@ -29,12 +40,13 @@ type EventsCalendarProps = {
   onSelectEvent: (event: EventRow) => void;
   /**
    * Fires when an officer clicks a day's date number (the compact month: the
-   * picked day's New event) to create an event on that day. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
+   * picked day's New event) to create an event on that day, or an hour of the
+   * Week or Day view, which passes that hour as `startHour`. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
    * the caller is responsible for gating; this component only renders the
    * disabled state it's given so a lapsed chapter still sees the day it
    * clicked, not a silently inert control.
    */
-  onCreateOnDay: (day: Date) => void;
+  onCreateOnDay: (day: Date, startHour?: number) => void;
   /**
    * The viewer can create events (`EVENT_CREATE_PERMISSIONS`: `events:create`
    * and `members:view`). Otherwise a day number is a plain date: no button,
@@ -63,13 +75,20 @@ type EventsCalendarProps = {
    */
   createTitle?: string;
   /**
-   * Lifted to the parent rather than kept as local state: the page unmounts
-   * the calendar while the list is showing, and a `useState` here would
-   * silently reset to the current month every time an officer switches to
-   * the list and back.
+   * The day the calendar is on: Month shows its month, Week its week, Day
+   * the day itself. Lifted to the parent rather than kept as local state:
+   * the page unmounts the calendar while the list is showing, and a
+   * `useState` here would silently reset to today every time an officer
+   * switches to the list and back.
    */
-  monthAnchor: Date;
-  onMonthAnchorChange: (next: Date) => void;
+  anchor: Date;
+  onAnchorChange: (next: Date) => void;
+  /**
+   * Month, Week or Day (#4818), remembered per browser by the page like the
+   * List/Calendar toggle.
+   */
+  view: CalendarView;
+  onViewChange: (next: CalendarView) => void;
   /**
    * The viewer's tasks and the tasks they assigned, by due day, already
    * narrowed to the kinds switched on (#4144). A day lists them after its
@@ -96,6 +115,12 @@ const MAX_VISIBLE_EVENTS_PER_DAY = 3;
  */
 const COMPACT_BELOW_WIDTH = 600;
 const MAX_DOTS_PER_DAY = 3;
+/**
+ * Below the same width the Week draws three days from the one it's on, as
+ * Google Calendar's phone app does: seven columns of ~60px can't name an
+ * event any better than the month's day cells could.
+ */
+const COMPACT_WEEK_DAYS = 3;
 
 /** `useRequiredOfViewer`'s answer: whether an event requires the viewer. */
 type RequiredOf = (event: EventAttendanceFields) => boolean;
@@ -176,8 +201,10 @@ export function EventsCalendar({
   createDisabled,
   createDescribedBy,
   createTitle,
-  monthAnchor,
-  onMonthAnchorChange,
+  anchor,
+  onAnchorChange,
+  view,
+  onViewChange,
   tasksByDay = NO_TASKS,
   nameOf = fallbackName,
   layerToggles = null,
@@ -195,7 +222,21 @@ export function EventsCalendar({
   // outside the shown month falls back below, so it needs no reset.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
 
+  const anchorTime = startOfDay(anchor).getTime();
+  const monthAnchor = useMemo(
+    () => startOfMonth(new Date(anchorTime)),
+    [anchorTime],
+  );
   const days = useMemo(() => buildMonthGrid(monthAnchor), [monthAnchor]);
+  // The Week's or Day's columns: a week from its Sunday (three days from the
+  // anchor when compact), or the one day.
+  const gridDays = useMemo(() => {
+    const day = new Date(anchorTime);
+    if (view === "day") return [day];
+    return compact
+      ? consecutiveDays(day, COMPACT_WEEK_DAYS)
+      : consecutiveDays(startOfWeek(day), 7);
+  }, [anchorTime, view, compact]);
   const requiredOf = useRequiredOfViewer();
 
   const eventsByDay = useMemo(() => {
@@ -225,32 +266,76 @@ export function EventsCalendar({
   }, [events]);
 
   const todayKey = localDayKey(new Date());
-  const monthLabel = monthAnchor.toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+  const firstDay = gridDays[0]!;
+  const lastDay = gridDays[gridDays.length - 1]!;
+  const headingLabel =
+    view === "month"
+      ? monthAnchor.toLocaleDateString(undefined, {
+          month: "long",
+          year: "numeric",
+        })
+      : view === "day"
+        ? firstDay.toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })
+        : new Intl.DateTimeFormat(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }).formatRange(firstDay, lastDay);
+  const stepNoun =
+    view === "month"
+      ? "month"
+      : view === "day"
+        ? "day"
+        : compact
+          ? `${COMPACT_WEEK_DAYS} days`
+          : "week";
 
-  function goToPreviousMonth() {
-    onMonthAnchorChange(
-      new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() - 1, 1),
-    );
-  }
-  function goToNextMonth() {
-    onMonthAnchorChange(
-      new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1),
-    );
+  // Prev and Next turn a month, a week (three days when compact) or a day.
+  function step(direction: 1 | -1) {
+    if (view === "month") {
+      onAnchorChange(
+        new Date(
+          monthAnchor.getFullYear(),
+          monthAnchor.getMonth() + direction,
+          1,
+        ),
+      );
+      return;
+    }
+    const length = view === "day" ? 1 : compact ? COMPACT_WEEK_DAYS : 7;
+    const next = new Date(anchorTime);
+    next.setDate(next.getDate() + direction * length);
+    onAnchorChange(next);
   }
   function goToToday() {
-    onMonthAnchorChange(startOfMonth(new Date()));
+    onAnchorChange(startOfDay(new Date()));
     setPickedKey(todayKey);
   }
   // A day from the month before or after (the grid's leading and trailing
   // days carry their dots too) opens its own month, as a phone calendar does.
+  // The picked day is the anchor too, so Week and Day open on it.
   function pickDay(day: Date) {
-    if (day.getMonth() !== monthAnchor.getMonth()) {
-      onMonthAnchorChange(startOfMonth(day));
-    }
+    onAnchorChange(startOfDay(day));
     setPickedKey(localDayKey(day));
+  }
+  // Leaving the month for Week or Day lands on the day in view there: the
+  // compact month's picked day, else today when it is in the month shown,
+  // as Google Calendar keeps its selected day across views.
+  function changeView(next: CalendarView) {
+    if (view === "month" && next !== "month") {
+      const shown = days.find((day) => localDayKey(day) === shownDayKey);
+      if (shown) onAnchorChange(startOfDay(shown));
+    }
+    onViewChange(next);
+  }
+  function openDay(day: Date) {
+    onAnchorChange(startOfDay(day));
+    onViewChange("day");
   }
 
   // The compact month's day: the one picked if it is in this month, else
@@ -270,9 +355,20 @@ export function EventsCalendar({
     >
       <div className="flex items-center justify-between gap-2">
         <h2 id="events-calendar-month" className="text-base font-semibold">
-          {monthLabel}
+          {headingLabel}
         </h2>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <SegmentedChoice
+            label="Calendar view"
+            options={[
+              { value: "month", label: "Month" },
+              { value: "week", label: compact ? "3 days" : "Week" },
+              { value: "day", label: "Day" },
+            ]}
+            value={view}
+            onChange={changeView}
+            className="mr-1"
+          />
           <Button variant="secondary" size="toolbar" onClick={goToToday}>
             Today
           </Button>
@@ -280,8 +376,8 @@ export function EventsCalendar({
             variant="ghost"
             size="icon"
             className={compactControlClassName}
-            aria-label="Previous month"
-            onClick={goToPreviousMonth}
+            aria-label={`Previous ${stepNoun}`}
+            onClick={() => step(-1)}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -289,8 +385,8 @@ export function EventsCalendar({
             variant="ghost"
             size="icon"
             className={compactControlClassName}
-            aria-label="Next month"
-            onClick={goToNextMonth}
+            aria-label={`Next ${stepNoun}`}
+            onClick={() => step(1)}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -314,7 +410,23 @@ export function EventsCalendar({
         </InlineNote>
       )}
 
-      {compact ? (
+      {view !== "month" ? (
+        <EventsTimeGrid
+          days={gridDays}
+          events={events}
+          tasksByDay={tasksByDay}
+          nameOf={nameOf}
+          todayKey={todayKey}
+          factsOf={(event) => calendarEventFacts(event, requiredOf)}
+          onSelectEvent={onSelectEvent}
+          onOpenDay={openDay}
+          onCreateAt={(day, hour) => onCreateOnDay(day, hour)}
+          canCreate={canCreate}
+          createDisabled={createDisabled}
+          createDescribedBy={createDescribedBy}
+          createTitle={createTitle}
+        />
+      ) : compact ? (
         <CompactMonth
           days={days}
           requiredOf={requiredOf}
@@ -436,42 +548,13 @@ export function EventsCalendar({
 
                   <div className="flex flex-col gap-1">
                     {visibleEvents.map((event) => {
-                      const {
-                        eventId,
-                        eventName,
-                        isMandatory,
-                        isSeriesHead,
-                        isSeriesInstance,
-                        viewLabel,
-                      } = calendarEventFacts(event, requiredOf);
-
+                      const facts = calendarEventFacts(event, requiredOf);
                       return (
-                        <button
-                          key={eventId}
-                          type="button"
-                          title={eventName}
-                          aria-label={viewLabel}
-                          className={cn(
-                            "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
-                            FOCUS_RING,
-                            "hover:bg-card-hover",
-                            isMandatory
-                              ? "border-l-primary"
-                              : "border-l-border",
-                          )}
-                          onClick={() => onSelectEvent(event)}
-                        >
-                          {isSeriesHead ? (
-                            <EventsGlyph className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          ) : null}
-                          {isSeriesInstance ? (
-                            <Repeat
-                              aria-hidden="true"
-                              className="h-3 w-3 shrink-0 text-muted-foreground"
-                            />
-                          ) : null}
-                          <span className="truncate">{eventName}</span>
-                        </button>
+                        <EventChip
+                          key={facts.eventId}
+                          facts={facts}
+                          onSelect={() => onSelectEvent(event)}
+                        />
                       );
                     })}
                     {visibleTasks.map((item) => (

@@ -92,10 +92,7 @@ import {
   EventEditorDialog,
   isoToLocalInput,
 } from "@/components/events/event-editor-dialog";
-import {
-  EventsCalendar,
-  startOfMonth,
-} from "@/components/events/events-calendar";
+import { EventsCalendar } from "@/components/events/events-calendar";
 import { pointsLabel } from "@/components/events/event-labels";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -112,9 +109,12 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import {
   readCalendarLayers,
+  readCalendarView,
   readEventsView,
   writeCalendarLayers,
+  writeCalendarView,
   writeEventsView,
+  type CalendarView,
   type EventsView,
 } from "@/lib/events/events-view";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -254,14 +254,18 @@ export function EventsPage() {
   // derived from the live events below, so a realtime change reaches the
   // open sheet. `null` for a one-time event.
   const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
-  // Set only by a calendar day click, so the "New event" button keeps opening
-  // a blank form.
+  // Set only by a calendar day or hour click, so the "New event" button
+  // keeps opening a blank form. Holds the start, hour included.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
   // Lifted here (not local to EventsCalendar) because the calendar unmounts
   // when the list is showing — see EventsCalendar's own comment.
-  const [calendarMonthAnchor, setCalendarMonthAnchor] = useState<Date>(() =>
-    startOfMonth(new Date()),
-  );
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
+  // Month, Week or Day (#4818); `null` until read from this browser.
+  const [storedCalendarView, setStoredCalendarView] =
+    useState<CalendarView | null>(null);
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
   // The bulk action posts auto-absent, which is `events:update` and paid-ops
@@ -332,6 +336,17 @@ export function EventsPage() {
   function chooseView(next: EventsView) {
     setView(next);
     writeEventsView(userId, next);
+  }
+
+  // Read with the viewer, like the List/Calendar choice; Month until then
+  // and for anyone who never picked.
+  if (storedCalendarView === null && userId) {
+    setStoredCalendarView(readCalendarView(userId) ?? "month");
+  }
+  const calendarView: CalendarView = storedCalendarView ?? "month";
+  function chooseCalendarView(next: CalendarView) {
+    setStoredCalendarView(next);
+    writeCalendarView(userId, next);
   }
 
   // Tasks on the calendar (#4144): the viewer's own on their due day, and
@@ -469,7 +484,6 @@ export function EventsPage() {
   const calendarCreateDefaults = useMemo(() => {
     if (!calendarCreateDay) return null;
     const start = new Date(calendarCreateDay);
-    start.setHours(CALENDAR_DEFAULT_START_HOUR, 0, 0, 0);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     return {
       startAt: isoToLocalInput(start.toISOString()),
@@ -698,11 +712,20 @@ export function EventsPage() {
     setRecurrenceFilter("all");
   }
 
-  function openCreate(day: Date | null) {
+  // A day from the month starts at the default hour; an hour from the Week
+  // or Day view starts then.
+  function openCreate(
+    day: Date | null,
+    startHour: number = CALENDAR_DEFAULT_START_HOUR,
+  ) {
     setEditorMode("create");
     setActiveEvent(null);
     setActiveSeriesKey(null);
-    setCalendarCreateDay(day);
+    setCalendarCreateDay(
+      day
+        ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), startHour)
+        : null,
+    );
     setEventPlan(null);
     editorDialog.setOpen(true);
   }
@@ -1184,8 +1207,10 @@ export function EventsPage() {
               />
             ) : null
           }
-          monthAnchor={calendarMonthAnchor}
-          onMonthAnchorChange={setCalendarMonthAnchor}
+          anchor={calendarAnchor}
+          onAnchorChange={setCalendarAnchor}
+          view={calendarView}
+          onViewChange={chooseCalendarView}
           canCreate={canCreateEvents}
           chapterHasEvents={hasEvents}
           createDisabled={eventWriteControls.disabled}

@@ -5,6 +5,9 @@ import {
 
 export type EventsView = "list" | "calendar";
 
+/** The calendar's Month, Week or Day (#4818). */
+export type CalendarView = "month" | "week" | "day";
+
 /**
  * The Events page's last view (List or Calendar) on this browser, per user
  * (#3822): the page opens where this person left it. Not on the server: a
@@ -40,6 +43,38 @@ export function writeEventsView(
     window.localStorage.setItem(eventsViewStorageKey(userId), view);
   } catch {
     /* Best-effort: the choice holds for this page's life. */
+  }
+}
+
+/**
+ * The calendar's last Month / Week / Day choice on this browser, per user
+ * (#4818), kept the same way and for the same reason as the view.
+ */
+export function readCalendarView(
+  userId: string | null | undefined,
+): CalendarView | null {
+  if (!userId || typeof window === "undefined") return null;
+  try {
+    const stored = window.localStorage.getItem(
+      `frapp.events.calendar-view.${userId}`,
+    );
+    return stored === "month" || stored === "week" || stored === "day"
+      ? stored
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCalendarView(
+  userId: string | null | undefined,
+  view: CalendarView,
+): void {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`frapp.events.calendar-view.${userId}`, view);
+  } catch {
+    /* Best-effort, as the view. */
   }
 }
 
