@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { neutralizeFormulaCell, toCsvCell } from "./spreadsheet-cell";
+import {
+  exportHeaders,
+  neutralizeFormulaCell,
+  rowsToCsv,
+  toCsvCell,
+} from "./spreadsheet-cell";
 
 // #3969 / #3976: every spreadsheet export (dashboard CSV and clipboard copy,
 // API `format=csv`) makes a member-typed formula cell inert with this rule.
@@ -54,5 +59,33 @@ describe("toCsvCell", () => {
     for (const cell of ["Late arrival", "-5", "-$12.00", ""]) {
       expect(toCsvCell(cell)).toBe(cell);
     }
+  });
+});
+
+describe("rowsToCsv", () => {
+  it("quotes commas, quotes and line breaks, and keeps emoji", () => {
+    const csv = rowsToCsv([
+      { Description: 'Said "hi", twice\nthen left 🎉', Amount: "-5" },
+    ]);
+    expect(csv).toBe(
+      '\uFEFFDescription,Amount\r\n"Said ""hi"", twice\nthen left 🎉",-5',
+    );
+  });
+
+  it("makes a formula-shaped cell inert, header included", () => {
+    const csv = rowsToCsv([{ "=cmd": "=1+1", Note: "@here, now" }]);
+    expect(csv).toBe("\uFEFF'=cmd,Note\r\n'=1+1,\"'@here, now\"");
+  });
+});
+
+describe("exportHeaders", () => {
+  it("takes every row's keys in first-seen order", () => {
+    expect(exportHeaders([{ A: "1" }, { B: "2", A: "3" }])).toEqual(["A", "B"]);
+  });
+});
+
+describe("rowsToCsv of no rows", () => {
+  it("is empty, with no BOM", () => {
+    expect(rowsToCsv([])).toBe("");
   });
 });

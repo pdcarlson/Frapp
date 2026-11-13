@@ -16,6 +16,16 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
+const exported = vi.hoisted(() => ({
+  calls: [] as { rows: Record<string, string>[]; prefix: string }[],
+}));
+vi.mock("@/lib/chat/share-csv", () => ({
+  shareCsv: async (rows: Record<string, string>[], prefix: string) => {
+    exported.calls.push({ rows, prefix });
+    return true;
+  },
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#DDB844",
@@ -184,6 +194,29 @@ describe("SignupCard on the phone (#3926)", () => {
     const open = render(card([]), vi.fn(), onClose);
     act(() => button(open, "Close sign-ups").props.onPress());
     expect(onClose).toHaveBeenCalledWith("m1");
+    myPermissions.current = [];
+  });
+
+  it("offers Export to a moderator once someone has signed up, and shares the list (#3926 step 4)", async () => {
+    // A member who isn't the creator and can't manage channels gets none.
+    expect(() =>
+      button(render(card([{ user: "u1", slots: ["fri"] }])), "Export"),
+    ).toThrow();
+
+    myPermissions.current = ["channels:manage"];
+    // Nothing to export yet.
+    expect(() => button(render(card([])), "Export")).toThrow();
+    exported.calls = [];
+    const tree = render(card([{ user: "u1", slots: ["fri", "sat"] }]));
+    await act(async () => {
+      button(tree, "Export").props.onPress();
+    });
+    expect(exported.calls).toHaveLength(1);
+    expect(exported.calls[0]!.prefix).toBe("signup-sober-drivers");
+    expect(exported.calls[0]!.rows.map((row) => row.Name)).toEqual([
+      "Devin Okafor",
+      "Devin Okafor",
+    ]);
     myPermissions.current = [];
   });
 });

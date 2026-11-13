@@ -54,7 +54,9 @@ export {
 } from "./last-year";
 export {
   CURRENCY_AMOUNT,
+  exportHeaders,
   neutralizeFormulaCell,
+  rowsToCsv,
   toCsvCell,
 } from "./spreadsheet-cell";
 export {
