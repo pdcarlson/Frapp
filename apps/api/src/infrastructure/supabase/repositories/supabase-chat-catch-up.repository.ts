@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  CatchUpMessagePlace,
   CatchUpMessageRow,
   CatchUpStretch,
   IChatCatchUpRepository,
@@ -113,18 +114,36 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     return data?.[0]?.created_at ?? null;
   }
 
-  async readChannelSince(input: {
+  readChannelSince(input: {
     chapterId: string;
     channelId: string;
     since: string;
     limit: number;
   }): Promise<CatchUpStretch> {
-    const { data, error, count } = await this.written(
-      input.chapterId,
-      input.channelId,
-    )
-      .gte('created_at', input.since)
-      .order('created_at', { ascending: false })
+    return this.readChannelWindow({
+      chapterId: input.chapterId,
+      channelId: input.channelId,
+      from: input.since,
+      limit: input.limit,
+      keep: 'newest',
+    });
+  }
+
+  async readChannelWindow(input: {
+    chapterId: string;
+    channelId: string;
+    from?: string;
+    before?: string;
+    limit: number;
+    keep: 'newest' | 'oldest';
+  }): Promise<CatchUpStretch> {
+    let query = this.written(input.chapterId, input.channelId);
+    if (input.from !== undefined) query = query.gte('created_at', input.from);
+    if (input.before !== undefined) {
+      query = query.lt('created_at', input.before);
+    }
+    const { data, error, count } = await query
+      .order('created_at', { ascending: input.keep === 'oldest' })
       .limit(input.limit);
     if (error) throw new SupabaseQueryError(error);
     const fetched = (data ?? []) as Row[];
@@ -142,6 +161,39 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
       messages: oldestFirst(rows.map(toMessage)),
       // The count is of the whole stretch; what was withheld here comes off.
       total: (count ?? fetched.length) - (fetched.length - rows.length),
+    };
+  }
+
+  async locateMessage(input: {
+    chapterId: string;
+    messageId: string;
+  }): Promise<CatchUpMessagePlace | null> {
+    const { data, error } = await this.supabase
+      .from('chat_messages')
+      .select(
+        'channel_id, created_at, thread_root_id, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id, type, is_audit_log)',
+      )
+      .eq('id', input.messageId)
+      .eq('chat_channels.chapter_id', input.chapterId)
+      .in('chat_channels.type', CHAPTER_CHANNEL_TYPES)
+      .eq('chat_channels.is_audit_log', false)
+      .eq('is_deleted', false)
+      .in('kind', WRITTEN_KINDS)
+      .neq('content', '')
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    if (!data) return null;
+    const row = data as unknown as CatchUpMessagePlace;
+    if (
+      row.thread_root_id !== null &&
+      (await this.rushRootIds([row.thread_root_id])).size > 0
+    ) {
+      return null;
+    }
+    return {
+      channel_id: row.channel_id,
+      created_at: row.created_at,
+      thread_root_id: row.thread_root_id,
     };
   }
 

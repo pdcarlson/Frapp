@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -17,6 +18,7 @@ import {
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import {
   CHAT_CATCH_UP_REPOSITORY,
+  type CatchUpMessagePlace,
   type CatchUpMessageRow,
   type CatchUpStretch,
   type IChatCatchUpRepository,
@@ -25,6 +27,7 @@ import {
   CHAT_MEMBER_BLOCK_REPOSITORY,
   type IChatMemberBlockRepository,
 } from '#domain/repositories/chat-moderation.repository.interface';
+import type { ChatChannel } from '#domain/entities/chat.entity';
 import {
   USER_REPOSITORY,
   type IUserRepository,
@@ -63,6 +66,49 @@ export interface ChatCatchUpInput {
   /** The reader's IANA time zone, for "today". */
   timeZone: string;
   signal?: AbortSignal;
+}
+
+/** Whose messages are being read, and for whom. */
+export interface ChatReader {
+  /** From `ChapterGuard`. Never from the request body or a model. */
+  chapterId: string;
+  /** The reader, from the auth guard. */
+  userId: string;
+}
+
+/** One stretch {@link ChatCatchUpService.readStretch} is asked for. */
+export type ChatStretchRequest =
+  /**
+   * The thread one message is in or started: its first message and its
+   * replies. The message names its own channel.
+   */
+  | { threadOfMessageId: string; limit: number }
+  /**
+   * The messages around one message, which names its own channel. A thread
+   * reply reads its thread.
+   */
+  | { aroundMessageId: string; limit: number }
+  /** A stretch of a channel between two moments, either optional. */
+  | {
+      channelId: string;
+      from?: string;
+      before?: string;
+      limit: number;
+      /** Which end of a longer stretch is read. Default the newest. */
+      keep?: 'newest' | 'oldest';
+    };
+
+/** A stretch as a reader may be given it: no summary, no model call. */
+export interface ChatStretchRead {
+  channel: { id: string; name: string };
+  /** Oldest first: only authors who said yes, the reader's blocks left out. */
+  messages: CatchUpMessage[];
+  /** Messages left out because their authors have not said yes. A count. */
+  leftOut: number;
+  /** Messages of the stretch that were past `limit` and not read. */
+  notRead: number;
+  /** The chapter has channel messages switched off for AI: nothing is read. */
+  chatOff: boolean;
 }
 
 function result(
@@ -297,6 +343,169 @@ export class ChatCatchUpService {
   }
 
   /**
+   * A stretch of a channel as its messages, for a reader that is not this
+   * service's own summary: Ask's tools read a channel through here (#4900),
+   * so there is one reader of chat for a model and one copy of its rules.
+   * Steps 1, 3 and 4 of {@link catchUp}, and nothing else: no model is
+   * called, nothing is written, and no read marker moves.
+   *
+   * Null when there is nothing this reader may be told about: a channel that
+   * is not there, is another chapter's, is one they cannot open, or is a
+   * direct message, group DM or the audit log; a message or thread that is
+   * not there or sits under a recruitment candidate's card. One answer for
+   * all of them, so the read is never a way to learn that a channel or a
+   * message exists.
+   *
+   * The caller owns the consent check for its own model call (the gateway
+   * makes it). The chapter's chat switch is read here, because with it off
+   * no member's messages may reach any model.
+   */
+  async readStretch(
+    reader: ChatReader,
+    request: ChatStretchRequest,
+  ): Promise<ChatStretchRead | null> {
+    const messageId =
+      'threadOfMessageId' in request
+        ? request.threadOfMessageId
+        : 'aroundMessageId' in request
+          ? request.aroundMessageId
+          : null;
+    let channelId: string;
+    let place: CatchUpMessagePlace | null = null;
+    if (messageId !== null) {
+      place = await this.stretches.locateMessage({
+        chapterId: reader.chapterId,
+        messageId,
+      });
+      if (!place) return null;
+      channelId = place.channel_id;
+    } else {
+      channelId = (request as { channelId: string }).channelId;
+    }
+
+    const channel = await this.openChannel(reader, channelId);
+    if (!channel) return null;
+    const base = { channel: { id: channel.id, name: channel.name } };
+    if (
+      !(await this.consent.chapterSwitchOn(reader.chapterId, 'chat_source'))
+    ) {
+      return { ...base, messages: [], leftOut: 0, notRead: 0, chatOff: true };
+    }
+
+    const scope = { chapterId: reader.chapterId, channelId };
+    const limit = Math.min(
+      Math.max(Math.trunc(request.limit), 1),
+      CHAT_CATCH_UP_MAX_MESSAGES,
+    );
+    let stretch: CatchUpStretch;
+    const threadRootId =
+      place === null
+        ? null
+        : 'threadOfMessageId' in request
+          ? (place.thread_root_id ?? request.threadOfMessageId)
+          : place.thread_root_id;
+    if (threadRootId !== null) {
+      const thread = await this.stretches.readThread({
+        ...scope,
+        rootId: threadRootId,
+        limit,
+      });
+      if (!thread) return null;
+      stretch = thread;
+    } else if (place) {
+      // The message itself opens the later half, so it is always read.
+      const before = Math.floor((limit - 1) / 2);
+      const [earlier, later] = await Promise.all([
+        before > 0
+          ? this.stretches.readChannelWindow({
+              ...scope,
+              before: place.created_at,
+              limit: before,
+              keep: 'newest',
+            })
+          : Promise.resolve({ messages: [], total: 0 }),
+        this.stretches.readChannelWindow({
+          ...scope,
+          from: place.created_at,
+          limit: limit - before,
+          keep: 'oldest',
+        }),
+      ]);
+      stretch = {
+        messages: [...earlier.messages, ...later.messages],
+        // "Around a message" is the stretch asked for; the rest of the
+        // channel on either side is not a part of it that went unread.
+        total: earlier.messages.length + later.messages.length,
+      };
+    } else {
+      const window = request as Extract<ChatStretchRequest, { keep?: unknown }>;
+      stretch = await this.stretches.readChannelWindow({
+        ...scope,
+        ...(window.from === undefined ? {} : { from: window.from }),
+        ...(window.before === undefined ? {} : { before: window.before }),
+        limit,
+        keep: window.keep ?? 'newest',
+      });
+    }
+
+    const readable = await this.readable(reader, stretch.messages);
+    return {
+      ...base,
+      messages: readable.messages,
+      leftOut: readable.leftOut,
+      notRead: Math.max(stretch.total - stretch.messages.length, 0),
+      chatOff: false,
+    };
+  }
+
+  /**
+   * Step 4 for messages a caller already holds (#4900): a search's hits,
+   * from channels the caller has checked this reader can open. Which of
+   * them a model may be shown, by the same rule as a stretch, with the
+   * author's name. Nothing while the chapter's chat switch is off.
+   */
+  async readableAmong(
+    reader: ChatReader,
+    rows: readonly CatchUpMessageRow[],
+  ): Promise<{ messages: CatchUpMessage[]; leftOut: number }> {
+    if (rows.length === 0) return { messages: [], leftOut: 0 };
+    const { messages, leftOut } = await this.readable(reader, rows);
+    return { messages, leftOut };
+  }
+
+  /**
+   * Step 1 without the throw: the channel when this reader can open it and
+   * it is one a model may read, otherwise null.
+   */
+  private async openChannel(
+    reader: ChatReader,
+    channelId: string,
+  ): Promise<ChatChannel | null> {
+    let channel: ChatChannel;
+    try {
+      channel = await this.channels.assertChannelAccess(
+        channelId,
+        reader.chapterId,
+        reader.userId,
+        'read',
+      );
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
+      ) {
+        return null;
+      }
+      throw error;
+    }
+    return channel.type === 'DM' ||
+      channel.type === 'GROUP_DM' ||
+      channel.is_audit_log
+      ? null
+      : channel;
+  }
+
+  /**
    * The exchange, sealed into the response so a report can hand it back.
    * Null when the server holds no sealing key. Never throws: a receipt that
    * could not be made costs the member only the text in a report, never
@@ -412,7 +621,7 @@ export class ChatCatchUpService {
 
   /** Step 4: whose messages the summary may read, and how many it may not. */
   private async readable(
-    input: ChatCatchUpInput,
+    input: ChatReader,
     rows: readonly CatchUpMessageRow[],
   ): Promise<{
     messages: CatchUpMessage[];

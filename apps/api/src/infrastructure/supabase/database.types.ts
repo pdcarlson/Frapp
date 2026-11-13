@@ -812,13 +812,18 @@ export interface Database {
           p_embedding: string;
           p_embedding_model: string;
           p_limit: number;
+          /** `20261113204057` (#4900): each narrows, null narrows nothing. */
+          p_source_types?: string[];
+          p_channel_ids?: string[];
+          p_author_id?: string;
+          p_since?: string;
+          p_until?: string;
         };
         Returns: CorpusCandidate[];
       };
       /**
-       * `20261112170000` (#4314) — a chat window's readable messages, oldest
-       * conversation first; one row with a null `message_id` when it holds
-       * none, no row when it is gone or its channel is a DM.
+       * `20261113204057` (#4900) — one indexed source's passages in order,
+       * for a member of the chapter; never a chat window.
        */
       read_chat_corpus_window: {
         Args: { p_chapter_id: string; p_window_id: string };
@@ -840,6 +845,32 @@ export interface Database {
        * PRIVATE channel's `member_ids`. Empty result set means the row didn't
        * match (wrong id/chapter, not PRIVATE) or the removal would have left
        * no current chapter member listed, which it refuses.
+       */
+      read_corpus_source_chunks: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_source_type: string;
+          p_source_id: string;
+          p_offset: number;
+          p_limit: number;
+        };
+        Returns: {
+          chunk_id: string;
+          chunk_index: number;
+          heading: string | null;
+          content: string;
+          page_start: number | null;
+          page_end: number | null;
+          title: string;
+          source_at: string | null;
+          chunk_count: number;
+        }[];
+      };
+      /**
+       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * conversation first; one row with a null `message_id` when it holds
+       * none, no row when it is gone or its channel is a DM.
        */
       remove_private_channel_member: {
         Args: {
