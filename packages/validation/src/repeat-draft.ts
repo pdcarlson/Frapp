@@ -577,29 +577,40 @@ export interface RepeatEditSeries {
    */
   shiftMs: number;
   now: Date;
+  /**
+   * The series' real next meeting, when the editor holds its rows: the
+   * earliest generated meeting after `now`, the one the API promotes when
+   * it splits off a started head (`splitStartedHead`). Missing or `null`,
+   * it is read from the stored rule's pattern instead.
+   */
+  nextStart?: Date | null;
 }
 
 /**
  * The meeting a changed rule steps from once the save lands, which the API
  * takes the rule as sent from (`EventSeriesService.updateSeries`): the head
  * moved by the save's shift, or, when the head has already started and the
- * API splits it off, the series' next meeting moved by the same shift. The
- * next meeting is read from the stored rule's pattern; one moved by hand
- * since isn't known here, and the API checks the rule against the real one.
- * A legacy token is stepped on this device's clock, as the API now makes one
- * in the saving officer's zone (#4505). A series last made before that, or
- * by an officer with no zone on file, has meetings stepped in UTC, so after a
- * DST change its next meeting can read an hour off here; the API checks the
- * rule against the real one.
+ * API splits it off, the series' next meeting moved by the same shift.
+ *
+ * The next meeting is the real one (`nextStart`) when the editor holds the
+ * series' rows (#4746). A legacy series last made before #4505, or by an
+ * officer with no zone on file, was stepped in UTC, so after a DST change
+ * the pattern stepped on this device's clock reads an hour off its rows,
+ * and near midnight a different weekday or day of the month. Without the
+ * rows it is read from the stored rule's pattern, a legacy token on this
+ * device's clock as the API now steps one (#4505); the API checks the rule
+ * against the real one.
  */
 export function repeatEditAnchor(series: RepeatEditSeries): Date {
-  const { headStart, headRule, shiftMs, now } = series;
+  const { headStart, headRule, shiftMs, now, nextStart } = series;
   if (headStart.getTime() > now.getTime() || !headRule) {
     return new Date(headStart.getTime() + shiftMs);
   }
-  const next = seriesChildStarts(headRule, headStart, now.getTime(), {
-    legacyTimeZone: localTimeZone(),
-  })?.[0];
+  const next =
+    nextStart ??
+    seriesChildStarts(headRule, headStart, now.getTime(), {
+      legacyTimeZone: localTimeZone(),
+    })?.[0];
   return new Date((next ?? headStart).getTime() + shiftMs);
 }
 

@@ -35,20 +35,26 @@ describe('Write payload ordering — server-decided keys survive a DTO collision
       create,
     } as unknown as EventService);
 
-    await controller.create(CHAPTER_ID, USER_ID, {
-      name: 'Chapter Meeting',
-      start_time: '2026-09-01T18:00:00.000Z',
-      end_time: '2026-09-01T19:00:00.000Z',
-      // A DTO that grew these properties, or a pipe that stopped stripping them.
-      chapter_id: HOSTILE_CHAPTER_ID,
-      created_by: HOSTILE_USER_ID,
-    } as never);
+    await controller.create(
+      CHAPTER_ID,
+      USER_ID,
+      {
+        name: 'Chapter Meeting',
+        start_time: '2026-09-01T18:00:00.000Z',
+        end_time: '2026-09-01T19:00:00.000Z',
+        // A DTO that grew these properties, or a pipe that stopped stripping them.
+        chapter_id: HOSTILE_CHAPTER_ID,
+        created_by: HOSTILE_USER_ID,
+      } as never,
+      'America/New_York',
+    );
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         chapter_id: CHAPTER_ID,
         created_by: USER_ID,
       }),
+      'America/New_York',
     );
   });
 

@@ -474,6 +474,57 @@ describe('EventSeriesService', () => {
         );
       });
 
+      // #4746: the zone on file can lag the device after a trip; the
+      // request's own header is the device's zone now.
+      it("steps in the request's zone over a stale zone on file", async () => {
+        mockEventRepo.create.mockResolvedValue(head);
+        // London changes its clocks two weeks after New York (2027-03-28).
+        mockNotificationService.timeZoneFor.mockResolvedValue('Europe/London');
+
+        await service.create(
+          {
+            created_by: OFFICER,
+            chapter_id: 'ch-1',
+            name: 'Chapter Meeting',
+            start_time: head.start_time,
+            end_time: head.end_time,
+            recurrence_rule: 'WEEKLY',
+          },
+          'America/New_York',
+        );
+
+        const rows = occurrenceRows(mockEventRepo);
+        expect(rows.map((row) => nyTime(row.start_time as string))).toEqual(
+          Array(12).fill('19:00'),
+        );
+        expect(rows[2].start_time).toBe('2027-03-18T23:00:00.000Z');
+      });
+
+      it('falls back to the zone on file for a header it cannot step in', async () => {
+        mockEventRepo.create.mockResolvedValue(head);
+        mockNotificationService.timeZoneFor.mockResolvedValue(
+          'America/New_York',
+        );
+
+        for (const header of ['Mars/Olympus', ' America/Chicago', '']) {
+          mockEventRepo.createMany.mockClear();
+          await service.create(
+            {
+              created_by: OFFICER,
+              chapter_id: 'ch-1',
+              name: 'Chapter Meeting',
+              start_time: head.start_time,
+              end_time: head.end_time,
+              recurrence_rule: 'WEEKLY',
+            },
+            header,
+          );
+          expect(occurrenceRows(mockEventRepo)[2].start_time).toBe(
+            '2027-03-18T23:00:00.000Z',
+          );
+        }
+      });
+
       it('keeps the 6-meeting runs of BIWEEKLY and MONTHLY', async () => {
         mockNotificationService.timeZoneFor.mockResolvedValue(
           'America/New_York',
@@ -859,6 +910,40 @@ describe('EventSeriesService', () => {
           (row) => row.start_time,
         );
         expect(starts).toHaveLength(12);
+        expect(starts.slice(1, 4)).toEqual([
+          '2027-03-12T00:00:00.000Z',
+          '2027-03-18T23:00:00.000Z',
+          '2027-03-25T23:00:00.000Z',
+        ]);
+      });
+
+      // #4746: a regenerate steps in the saving request's zone, not the
+      // stale one on file.
+      it("regenerates a legacy token in the request's zone", async () => {
+        const upcoming: Event = {
+          ...parent,
+          recurrence_rule: 'MONTHLY',
+          start_time: '2027-02-26T00:00:00.000Z',
+          end_time: '2027-02-26T01:00:00.000Z',
+          created_by: OFFICER,
+        };
+        mockEventRepo.findById.mockResolvedValue(upcoming);
+        mockEventRepo.findChildren.mockResolvedValue([]);
+        mergeUpdate([upcoming]);
+        mockNotificationService.timeZoneFor.mockResolvedValue('Europe/London');
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'WEEKLY' },
+          'series',
+          OFFICER,
+          'America/New_York',
+        );
+
+        const starts = occurrenceRows(mockEventRepo).map(
+          (row) => row.start_time,
+        );
         expect(starts.slice(1, 4)).toEqual([
           '2027-03-12T00:00:00.000Z',
           '2027-03-18T23:00:00.000Z',

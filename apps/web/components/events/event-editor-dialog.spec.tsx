@@ -36,6 +36,8 @@ vi.mock("@repo/hooks", () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
   useEvent: (id: unknown) => useEventMock(id),
+  // The chapter's events, for a started series' next meeting (#4746).
+  useEvents: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
   useEventTypes: () => ({
     data: [

@@ -170,7 +170,14 @@ export class EventService {
     return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
-  async create(rawInput: CreateEventInput): Promise<CreateEventResult> {
+  /**
+   * `requestZone` is the creating request's `x-time-zone`: a legacy repeat
+   * token keeps that zone's wall clock (`EventSeriesService.legacyZoneFor`).
+   */
+  async create(
+    rawInput: CreateEventInput,
+    requestZone?: string | null,
+  ): Promise<CreateEventResult> {
     const { start_time, end_time } = rawInput;
 
     const start = new Date(start_time);
@@ -287,7 +294,7 @@ export class EventService {
       // (`parent_event_id` is `on delete set null`). Occurrences go first, so a
       // failure partway leaves the series whole rather than orphaned.
       try {
-        await this.series.generateRecurringInstances(parent);
+        await this.series.generateRecurringInstances(parent, requestZone);
       } catch (error) {
         try {
           const landed = await this.eventRepo.findChildren(
@@ -363,6 +370,7 @@ export class EventService {
     input: UpdateEventInput,
     scope: EventMutationScope = 'instance',
     actorId?: string,
+    requestZone?: string | null,
   ): Promise<Event> {
     let existing: Event | null = null;
     if (input.start_time || input.end_time) {
@@ -389,7 +397,13 @@ export class EventService {
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(target, chapterId, patch, actorId);
+      return this.series.updateSeries(
+        target,
+        chapterId,
+        patch,
+        actorId,
+        requestZone,
+      );
     }
 
     // The row as it was, to tell a real move from a round-tripped save

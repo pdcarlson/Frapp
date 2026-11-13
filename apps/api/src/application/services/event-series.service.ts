@@ -19,6 +19,7 @@ import {
   checkSeriesLength,
   isRepeatRule,
   isRecurrenceRule,
+  isSupportedTimeZone,
   seriesChildStarts,
 } from '@repo/validation';
 import {
@@ -152,9 +153,17 @@ export class EventSeriesService {
    * Materialize the generated occurrences of a recurring parent, in one
    * insert: they all land or none do. The caller owns the parent row and
    * decides what a failure means for it (`EventService.create` deletes it).
+   * `requestZone` is the creating request's `x-time-zone` (`legacyZoneFor`).
    */
-  async generateRecurringInstances(parent: Event): Promise<Event[]> {
-    const zone = await this.legacyZoneFor(parent, parent.created_by);
+  async generateRecurringInstances(
+    parent: Event,
+    requestZone?: string | null,
+  ): Promise<Event[]> {
+    const zone = await this.legacyZoneFor(
+      parent,
+      parent.created_by,
+      requestZone,
+    );
     return this.eventRepo.createMany(
       this.buildOccurrencePayloads(parent, zone),
     );
@@ -162,25 +171,39 @@ export class EventSeriesService {
 
   /**
    * The zone a series' legacy token keeps the wall clock of when it is
-   * (re)generated (#4505): the zone on file (`timeZoneFor`) for the officer
-   * saving it, else for its creator. Chapters keep no zone of their own, and
-   * the officer who schedules a meeting is on its campus.
+   * (re)generated (#4505): the saving request's own `x-time-zone`, else the
+   * zone on file (`timeZoneFor`) for the officer saving it, else for its
+   * creator. Chapters keep no zone of their own, and the officer who
+   * schedules a meeting is on its campus.
    *
    * The saver comes first because their Repeat control captions the series,
    * and decides whether a token says the same meetings as their structured
-   * rule (`legacyTokenFor` in `@repo/validation`), on their device's zone,
-   * which is the zone the API keeps on file for them. On a new series the
-   * saver is the creator. The creator stands in when the saver has no zone,
-   * and covers a series no request is saving.
+   * rule (`legacyTokenFor` in `@repo/validation`), on their device's zone.
+   * The request's header is that zone as the device has it now; the zone on
+   * file can lag it after a trip, because it is recorded without waiting and
+   * each process remembers it for hours (`TimeZoneSyncService`), so it only
+   * stands in for a request that sends no header or one this runtime can't
+   * step in (#4746). On a new series the saver is the creator. The creator
+   * stands in when the saver has no zone, and covers a series no request is
+   * saving.
    *
    * `null` (step in UTC, as tokens always did) for a structured rule, which
-   * names its own zone and needs no read, and when neither has a zone.
+   * names its own zone and needs no read, and when none of them has a zone.
    */
   private async legacyZoneFor(
     series: Event,
     saverId: string | null | undefined,
+    requestZone?: string | null,
   ): Promise<string | null> {
     if (!isRecurrenceRule(series.recurrence_rule)) return null;
+    // Untrimmed is passed over: the zone check trims, the stepper doesn't.
+    if (
+      requestZone &&
+      requestZone === requestZone.trim() &&
+      isSupportedTimeZone(requestZone)
+    ) {
+      return requestZone;
+    }
     for (const userId of new Set([saverId, series.created_by])) {
       if (!userId) continue;
       const zone = await this.notifications.timeZoneFor(userId);
@@ -402,13 +425,15 @@ export class EventSeriesService {
 
   /**
    * Apply an edit to a whole recurring series — the parent and every *future*
-   * occurrence. Past occurrences are never in the write set.
+   * occurrence. Past occurrences are never in the write set. `requestZone`
+   * is the saving request's `x-time-zone` (`legacyZoneFor`).
    */
   async updateSeries(
     target: Event,
     chapterId: string,
     input: UpdateEventInput,
     actorId?: string,
+    requestZone?: string | null,
   ): Promise<Event> {
     const parent = await this.resolveSeriesParent(target, chapterId);
 
@@ -557,6 +582,7 @@ export class EventSeriesService {
         now,
         change,
         actorId,
+        requestZone,
       });
     }
 
@@ -576,7 +602,7 @@ export class EventSeriesService {
         recurrence_rule: nextRule,
       };
       const template: Event = { ...parent, ...written };
-      const zone = await this.legacyZoneFor(template, actorId);
+      const zone = await this.legacyZoneFor(template, actorId, requestZone);
       await this.replaceOccurrences({
         headId: parent.id,
         chapterId,
@@ -657,6 +683,7 @@ export class EventSeriesService {
     now: number;
     change: EventChange | null;
     actorId?: string;
+    requestZone?: string | null;
   }): Promise<Event> {
     const {
       parent,
@@ -671,6 +698,7 @@ export class EventSeriesService {
       now,
       change,
       actorId,
+      requestZone,
     } = args;
 
     const { future, past } = this.partitionByTime(children, now);
@@ -804,7 +832,7 @@ export class EventSeriesService {
       // consistent series, just not regenerated; the request fails, and
       // repeating a rule change against the new head finishes the rebuild.
       const template: Event = { ...newHead, recurrence_rule: seriesRule };
-      const zone = await this.legacyZoneFor(template, actorId);
+      const zone = await this.legacyZoneFor(template, actorId, requestZone);
       await this.replaceOccurrences({
         headId: newHead.id,
         chapterId,
