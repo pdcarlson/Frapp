@@ -588,6 +588,8 @@ export const ASK_COPY = {
    * before it does it.
    */
   only_you_hint: "Only you will see this question and Frapp's answer.",
+  /** The same, where there is room for two words beside the private mark. */
+  only_you_short: "Only you",
   /** On an answer drawn in a channel for the asker alone. */
   only_you: "Only you can see this",
   dismiss: "Dismiss",

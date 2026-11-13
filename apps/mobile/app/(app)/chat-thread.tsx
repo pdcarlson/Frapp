@@ -1357,7 +1357,10 @@ function ChannelThreadScreen() {
         />
       );
       return (
-        <>
+        // One view, not a fragment: an inverted list's cell is laid out
+        // bottom-up (`column-reverse`, in `VirtualizedListCellRenderer`), so
+        // a second child of the cell would be drawn above the message.
+        <View>
           {row}
           {/* A question this member asked Frapp under this message, for them
               alone (#4713). Not a row of its own: the list's rows and keys
@@ -1366,7 +1369,7 @@ function ChannelThreadScreen() {
             placement={askPlacement}
             rowKey={item.message.client_message_id}
           />
-        </>
+        </View>
       );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and

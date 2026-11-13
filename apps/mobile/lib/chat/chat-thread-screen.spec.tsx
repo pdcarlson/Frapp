@@ -3129,6 +3129,19 @@ describe("chat thread asks Frapp instead of posting (#4713)", () => {
     // Older than every loaded message: above them all.
     expect(drawn).toContainEqual(["t0", ""]);
     expect(drawn).toHaveLength(2);
+    // In one view with its message, and that message alone. An inverted
+    // list lays a cell's children out bottom-up, so a turn that was the
+    // cell's second child would be drawn above the message, not under it.
+    let cell = tree.root
+      .findAllByType("AskChannelTurn" as never)
+      .find((node) => node.props.id === "t1")!.parent;
+    while (cell && typeof cell.type !== "string") cell = cell.parent;
+    expect(cell?.type).toBe("View");
+    expect(
+      cell
+        ?.findAllByType("ThreadMessageRow" as never)
+        .map((node) => node.props.row.message.client_message_id),
+    ).toEqual(["c-m1"]);
     act(() => tree.unmount());
   });
 });

@@ -237,7 +237,8 @@ export function AskChannelTurn({ exchange }: { exchange: AskExchange }) {
             type="button"
             onClick={() => channel.dismiss(exchange.id)}
             className={cn(
-              "rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+              // 44px to a finger.
+              "rounded-sm text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:items-center",
               FOCUS_RING,
             )}
           >

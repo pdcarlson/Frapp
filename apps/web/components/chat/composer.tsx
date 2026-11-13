@@ -12,6 +12,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { EyeOff } from "lucide-react";
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -2076,7 +2077,7 @@ export function Composer({
           overflow every touch target on it. The constant reserves what this row
           *comes out as*; it does not set it.
         */}
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="@container mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             {/*
               One + for a file and every command's form (#3865, layout A),
@@ -2149,16 +2150,30 @@ export function Composer({
           {/*
             What Send will do while the draft names `@Frapp` (#4713), said
             before it does it. On the row's own line between the controls and
-            Send, so it arrives and leaves without moving anything; it
-            shortens before it wraps.
+            Send, so it arrives and leaves without moving anything. Where the
+            row is too narrow for the sentence (a phone's width, or a chat
+            column squeezed by a thread beside it) it is the private mark and
+            two words, the mark the answer itself will carry; a sentence cut
+            to "Only you will…" told the member nothing. The row measures
+            itself (`@container`), since the window's width says little about
+            the composer's. A screen reader always gets the sentence.
           */}
           {asksFrapp ? (
             <p
               role="status"
               data-ask-hint=""
-              className="min-w-0 flex-1 truncate text-right text-caption text-muted-foreground"
+              className="flex min-w-0 flex-1 items-center justify-end gap-1 text-caption text-muted-foreground"
             >
-              {ASK_COPY.only_you_hint}
+              <EyeOff
+                className="h-3 w-3 shrink-0 @xl:hidden"
+                aria-hidden="true"
+              />
+              <span className="truncate @xl:hidden" aria-hidden="true">
+                {ASK_COPY.only_you_short}
+              </span>
+              <span className="sr-only @xl:not-sr-only @xl:truncate">
+                {ASK_COPY.only_you_hint}
+              </span>
             </p>
           ) : null}
           {/*

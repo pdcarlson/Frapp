@@ -2938,6 +2938,10 @@ describe("Composer asks Frapp instead of posting (#4713)", () => {
       <Composer {...baseProps({ draft: "@Frapp when is formal?", ask })} />,
     );
     expect(screen.getByRole("status")).toHaveTextContent(HINT);
+    // A narrow row shows the private mark and two words in its place; a
+    // screen reader skips those for the sentence itself.
+    expect(screen.getByText("Only you")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText(HINT)).not.toHaveAttribute("aria-hidden");
 
     rerender(<Composer {...baseProps({ draft: "when is formal?", ask })} />);
     expect(screen.queryByText(HINT)).toBeNull();
