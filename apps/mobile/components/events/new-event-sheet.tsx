@@ -757,7 +757,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     <Text style={styles.optionValue} numberOfLines={1}>
                       {describeAttendance(draft.attendance, roleName)}
                     </Text>
-                    <ForwardGlyph color={tokens.color.text.muted} />
+                    <ForwardGlyph color={tokens.color.text.mutedForeground} />
                   </Pressable>
                   {setsRequirements ? (
                     <>

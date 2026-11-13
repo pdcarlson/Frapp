@@ -102,7 +102,9 @@ export function StartCard({
               {proximity ? (
                 <Text
                   style={
-                    proximity.inside ? styles.proximityHere : styles.proximityAway
+                    proximity.inside
+                      ? styles.proximityHere
+                      : styles.proximityAway
                   }
                 >
                   {proximityCopy(proximity)}
@@ -114,7 +116,7 @@ export function StartCard({
           ) : null}
         </View>
         {canChooseZone ? (
-          <ForwardGlyph color={tokens.color.text.muted} size={20} />
+          <ForwardGlyph color={tokens.color.text.mutedForeground} size={20} />
         ) : null}
       </Pressable>
 
