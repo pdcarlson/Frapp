@@ -208,9 +208,10 @@
      * 2026-11-12 surface ladder (#3826) it was `--popover` lifted 6%
      * toward white; on the lighter `--popover` that would be #3D3D3D,
      * and every tone drawn on it as text reads better the lower it sits.
-     * Two role colours, which a hovered member row draws names in, still
-     * miss 4.5:1 on it (Rose 4.49, Violet 4.42; role-colors-contrast.spec.ts
-     * records the exception and #4387 tracks it).
+     * Two role colours, Rose and Violet, sit just under 4.5:1 on it at
+     * full strength, so a hovered row lifts the role-coloured names it
+     * draws (`apps/web/components/roles/role-name-paint.ts`, #4387; the
+     * figures live in `packages/validation/src/role-colors.ts`).
      * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder
      * change fails there instead of leaving this value behind. */
     --card-hover: #3B3B3B;
