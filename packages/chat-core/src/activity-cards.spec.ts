@@ -71,11 +71,15 @@ describe("Activity card messages", () => {
       point_value: 10,
       check_in_opens_minutes: 10,
       is_mandatory: true,
+      // The server's answer for this member, alumni rule included: the row
+      // has no role lists for the card to work it out from (#4660).
+      viewer_required: true,
     });
-    expect(
-      readEventPayload(activityEventMessage({ ...row, attendance: "optional" }))
-        ?.is_mandatory,
-    ).toBe(false);
+    const optional = readEventPayload(
+      activityEventMessage({ ...row, attendance: "optional" }),
+    );
+    expect(optional?.is_mandatory).toBe(false);
+    expect(optional?.viewer_required).toBe(false);
   });
 
   it("builds an hours message the hours card reads", () => {

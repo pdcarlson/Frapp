@@ -14,6 +14,7 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters } from "./use-chapters";
 import { useRoles } from "./use-roles";
+import { useMyAttendance } from "./use-attendance";
 
 /**
  * Absence excuses for required events, on every surface
@@ -371,5 +372,63 @@ export function sortExcusesForReview<
     const pb = b.status === "PENDING" ? 0 : 1;
     if (pa !== pb) return pa - pb;
     return a.created_at.localeCompare(b.created_at);
+  });
+}
+
+/** What a chat event card knows about its event (`EventPayload`'s fields). */
+export interface ExcuseCardEvent extends EventAttendanceFields {
+  event_id: string;
+  start_time: string;
+  end_time: string;
+  check_in_opens_minutes: number;
+  /**
+   * The server's own answer for this viewer, when the card has one (the
+   * Activity page's built message); it wins over the role fields.
+   */
+  viewer_required?: boolean;
+}
+
+/**
+ * The excuse view for a chat event card (#4660): {@link myExcuseView} over
+ * the card's snapshot, so the card offers Can't make it, or says where an
+ * excuse stands, as the event page would while the excuse window is open.
+ * Once it closes the card says nothing more about excuses (the event page
+ * still shows a sent one), so an old card in a long history never reads.
+ *
+ * A channel holds many cards, so whether the event requires the viewer comes
+ * from the card itself: `viewer_required` when it carries one, else its role
+ * fields through {@link useRequiredOfViewer} (a card posted before them goes
+ * by `is_mandatory`). That rule reads the viewer's memberships and the
+ * chapter's roles, one shared cached read each, not one per card. The two
+ * reads the view needs (the viewer's excuse and attendance row) run only for
+ * a card that requires them, until its excuse window closes. Pass `null` for
+ * a card whose payload didn't read.
+ */
+export function useEventCardExcuse(
+  card: ExcuseCardEvent | null,
+  now: Date,
+): MyExcuseView {
+  const requiredOf = useRequiredOfViewer();
+  const end = card ? new Date(card.end_time) : null;
+  const windowOpen =
+    !!end &&
+    !isNaN(end.getTime()) &&
+    now.getTime() <= eventExcuseClosesAt(end).getTime();
+  const required =
+    !!card && windowOpen && (card.viewer_required ?? requiredOf(card));
+  const eventId = required ? card.event_id : "";
+  const mine = useMyEventExcuse(eventId, { enabled: required });
+  const own = useMyAttendance(eventId, { enabled: required });
+  if (!required) return { kind: "none" };
+  return myExcuseView({
+    required,
+    mine: mine.data,
+    mineUnanswered: mine.data === undefined,
+    ownAttendance: own.data,
+    ownUnanswered: own.data === undefined,
+    start: card.start_time,
+    end: card.end_time,
+    opensMinutes: card.check_in_opens_minutes,
+    now,
   });
 }

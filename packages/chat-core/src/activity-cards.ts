@@ -6,8 +6,9 @@
  * confirm, check in), and each of those cards takes one chat message. A poll
  * row carries its real message. A task, an event or a pending service entry
  * may have no card message at all (a card is only posted when the record was
- * made from a channel), so these build the message the card reads: the same
- * payload the API writes when it posts one. The cards read live state by id
+ * made from a channel), so these build the message the card reads: the
+ * payload the API writes when it posts one, except where a row says less (an
+ * event row holds the member's own answer, not the event's role lists). The cards read live state by id
  * (`useTask`, `useAttendance`, `useServiceEntry`), so a built message draws
  * the record as it is now, exactly as a posted card does.
  *
@@ -112,8 +113,11 @@ export function activityEventMessage(event: ActivityEventRow): ChatMessage {
     location: event.location,
     point_value: event.point_value,
     // The member's own answer, which is what the row carries, rather than the
-    // event's default.
+    // event's default. The row has no role lists, so it also says outright
+    // whether the event requires this member (the server's rule, alumni
+    // included), which the card's Can't make it goes by (#4660).
     is_mandatory: event.attendance === "required",
+    viewer_required: event.attendance === "required",
     check_in_opens_minutes: event.check_in_opens_minutes,
     created_at: event.start_time,
   });

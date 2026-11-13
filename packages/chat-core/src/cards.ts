@@ -7,7 +7,7 @@ import type {
   TaskPayload,
 } from "./integrations/payloads";
 import type { ChatMessage } from "./types";
-import { checkInOpensMinutes } from "@repo/validation";
+import { attendanceFieldsOf, checkInOpensMinutes } from "@repo/validation";
 
 export type {
   EventPayload,
@@ -61,6 +61,8 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
   ) {
     return null;
   }
+  // The role fields read as the event sheet reads them (#4660).
+  const roles = attendanceFieldsOf(r);
   return {
     event_id: r.event_id,
     name: r.name,
@@ -69,9 +71,28 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
     location: typeof r.location === "string" ? r.location : null,
     point_value: finiteNumber(r.point_value) ?? 0,
     is_mandatory: r.is_mandatory === true,
+    ...presentRoleFields(roles),
+    ...(typeof r.viewer_required === "boolean"
+      ? { viewer_required: r.viewer_required }
+      : {}),
     check_in_opens_minutes: checkInOpensMinutes(r.check_in_opens_minutes),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
   };
+}
+
+/**
+ * The role fields a card carries, leaving out any it doesn't, so a card posted
+ * before them reads as it always has (`is_mandatory` alone).
+ */
+function presentRoleFields(
+  roles: ReturnType<typeof attendanceFieldsOf>,
+): Partial<EventPayload> {
+  const out: Partial<EventPayload> = {};
+  if (roles.required_role_ids) out.required_role_ids = roles.required_role_ids;
+  if (roles.optional_role_ids) out.optional_role_ids = roles.optional_role_ids;
+  if (roles.excluded_role_ids) out.excluded_role_ids = roles.excluded_role_ids;
+  if (roles.others_invited !== null) out.others_invited = roles.others_invited;
+  return out;
 }
 
 /**

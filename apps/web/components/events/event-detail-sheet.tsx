@@ -93,6 +93,12 @@ type EventDetailSheetProps = {
    * leaves the sheet.
    */
   docked?: boolean;
+  /**
+   * The chat card's ask to open the member's Can't make it line
+   * (`/events?event=<id>&excuse=1`, #4660): it applies only while the sheet
+   * shows that event, and each new `count` opens the line again.
+   */
+  excuseAsk?: { eventId: string; count: number } | null;
 };
 
 export function EventDetailSheet({
@@ -106,6 +112,7 @@ export function EventDetailSheet({
   onRequestEdit,
   onEventDeleted,
   docked = false,
+  excuseAsk = null,
 }: EventDetailSheetProps) {
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
@@ -454,6 +461,7 @@ export function EventDetailSheet({
                 start={resolvedEvent?.start_time}
                 end={resolvedEvent?.end_time}
                 opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                writeAsk={excuseAsk?.eventId === eventId ? excuseAsk.count : 0}
               />
             ) : null}
             {eventId &&
