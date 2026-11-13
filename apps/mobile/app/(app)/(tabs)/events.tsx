@@ -260,8 +260,10 @@ export default function EventsScreen() {
               {/* Web's fold, word for word (#4135): the label, its count and
                   a disclosure chevron, the way a collapsed channel section
                   draws it, rather than a Show N / Hide action. */}
-              <SectionHeader>{EVENTS_COPY.later}</SectionHeader>
-              <Text style={styles.laterCount}>{eventsCount(laterCount)}</Text>
+              <View style={styles.laterLabel}>
+                <SectionHeader>{EVENTS_COPY.later}</SectionHeader>
+                <Text style={styles.laterCount}>{eventsCount(laterCount)}</Text>
+              </View>
               <View style={styles.laterChevron}>
                 <DisclosureGlyph
                   color={tokens.color.text.mutedForeground}
@@ -475,11 +477,19 @@ function createStyles(tokens: SignetTokens) {
     dayGroup: {
       gap: tokens.spacing.sm,
     },
+    // The caption keeps its top margin, so the row sits on its baseline at
+    // the bottom, the way an uncounted Later header sat.
     laterToggle: {
       flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
+      alignItems: "flex-end",
       minHeight: tokens.touch.minimum,
+    },
+    // The caption and its count on one baseline, as `SectionHeader`'s own
+    // counted row draws them.
+    laterLabel: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: tokens.spacing.sm,
     },
     laterCount: {
       ...typeRole(tokens.typography.role.caption),
