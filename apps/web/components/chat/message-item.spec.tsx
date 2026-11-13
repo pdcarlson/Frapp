@@ -1099,11 +1099,11 @@ describe("MessageItem edited marker", () => {
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass("w-full", "max-w-md");
+    ).toHaveClass("w-[28rem]", "max-w-full");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
-    ).toHaveClass("w-full", "max-w-md");
+    ).toHaveClass("w-[28rem]", "max-w-full");
   });
 
   it("marks an edited card under the card, not inside it", () => {

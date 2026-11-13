@@ -130,13 +130,15 @@ export { EYEBROW } from "@/components/ui/typography";
  * the hairline and the shadow ban, and a message card that hand-rolls them is a
  * card that silently stops following §8 the next time §8 moves.
  *
- * `w-full max-w-md`: every card is one width, the body column up to 28rem
- * (448px), as the phone's cards fill their column (#4136, `components.md`
- * § Chat messages, "Cards"). Discord's embeds cap the same way. A card that
- * hugged its content made a column of cards ragged, and a loading card
- * jumped width when its card arrived.
+ * `w-[28rem] max-w-full`: every card is one width, 28rem (448px) or the
+ * body column when that is narrower, as the phone's cards fill their column
+ * (#4136, `components.md` § Chat messages, "Cards"). Discord's embeds cap the
+ * same way. A card that hugged its content made a column of cards ragged, and
+ * a loading card jumped width when its card arrived. A set width, not
+ * `w-full`: the message box around a card is `w-fit` (so the action bar sits
+ * beside it), and a percentage of that collapses back to the content.
  */
-export const MESSAGE_CARD = "mt-1 w-full max-w-md rounded-lg p-4";
+export const MESSAGE_CARD = "mt-1 w-[28rem] max-w-full rounded-lg p-4";
 
 /**
  * One icon in the per-message action bar (`components.md` §11 § Per-message
