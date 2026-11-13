@@ -771,7 +771,15 @@ function validateLedgerCoverage(migrations) {
  * the same file is judged again; or `{ file, removed: true, reason }` for a
  * removal, `file` being the path at the merge base.
  */
-export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([]);
+export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
+  {
+    file: "supabase/migrations/20261113130014_roles_name_not_blank.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261113145556 with the same SQL. It merged after 20261113132007 had " +
+      "reached staging, so staging's db push refused it; no hosted database ever applied it.",
+  },
+]);
 
 /** A dollar-quote tag, `$$` or `$name$`, matched at `lastIndex`. */
 const DOLLAR_TAG = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
