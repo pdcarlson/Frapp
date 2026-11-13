@@ -1970,6 +1970,45 @@ describe('ActivityService', () => {
       expect(view.needs_you.tasks).toHaveLength(5);
     });
 
+    it('counts what is open before the 25-row cap on each list', async () => {
+      const { service, taskService, messageRepo } = build();
+      serveTasks(
+        taskService,
+        Array.from({ length: 30 }, (_, index) =>
+          task({ id: `task-${index}`, due_date: '2026-11-12' }),
+        ),
+      );
+      servePolls(
+        messageRepo,
+        Array.from({ length: 30 }, (_, index) =>
+          pollCard({ id: `poll-${index}` }),
+        ),
+        [],
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.tasks).toHaveLength(25);
+      expect(view.needs_you.polls).toHaveLength(25);
+      // The ring is of everything, not of the rows the list carries.
+      expect(view.week.tasks).toEqual({ done: 0, total: 30 });
+      expect(view.week.polls).toEqual({ done: 0, total: 30 });
+    });
+
+    it('keeps the day of check-in grace when the week has just begun', async () => {
+      const { service, eventService } = build();
+      // Ten past midnight on Sunday: Saturday night's event is before the
+      // week, and still inside its check-in grace for Coming up.
+      jest.setSystemTime(new Date('2026-11-08T00:10:00.000Z'));
+
+      await service.getActivity(CHAPTER, ME, null);
+
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: '2026-11-07T00:10:00.000Z',
+        startsBefore: '2026-11-22T00:10:00.000Z',
+      });
+    });
+
     it('counts a vote in the week it was cast, on a poll that has since closed too', async () => {
       const { service, messageRepo, actionRepo } = build();
       const closed = pollCard({ id: 'closed' });
@@ -2015,6 +2054,7 @@ describe('ActivityService', () => {
         signupCard({ id: 'open-sheet' }),
         signupCard({ id: 'claimed-sheet' }),
         signupCard({ id: 'closed-sheet' }, { closes_at: iso(-HOUR) }),
+        signupCard({ id: 'gave-up-sheet' }, { closes_at: iso(-HOUR) }),
         formCard({ id: 'open-form' }),
         formCard({ id: 'answered-form' }),
         formCard({ id: 'old-form' }),
@@ -2040,6 +2080,12 @@ describe('ActivityService', () => {
           payload: { slot_ids: ['sat'] },
           created_at: iso(-2 * HOUR),
         },
+        // Gave every slot back before the sheet closed: not an answer.
+        {
+          message_id: 'gave-up-sheet',
+          payload: { slot_ids: [] },
+          created_at: iso(-2 * HOUR),
+        },
       ]);
       formResponseRepo.findAnswered.mockResolvedValue([
         { message_id: 'answered-form', created_at: iso(-HOUR) },
@@ -2054,7 +2100,7 @@ describe('ActivityService', () => {
       ]);
       // The closed sheet's claims are read for the caller alone.
       expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
-        ['closed-sheet'],
+        ['closed-sheet', 'gave-up-sheet'],
         ME,
         'signup',
       );
@@ -2111,8 +2157,8 @@ describe('ActivityService', () => {
       expect(view.week.events).toEqual({ done: 2, total: 5 });
     });
 
-    it('holds an alumnus to no event the default alone requires', async () => {
-      const { service, eventService, rbacService } = build();
+    it('counts for an alumnus only what they can do: no event the default alone invites them to', async () => {
+      const { service, eventService, rbacService, attendanceRepo } = build();
       rbacService.isAlumni.mockResolvedValue(true);
       eventService.findByChapter.mockResolvedValue([
         event({
@@ -2120,11 +2166,65 @@ describe('ActivityService', () => {
           start_time: iso(-26 * HOUR),
           end_time: iso(-25 * HOUR),
         }),
+        // Still ahead, but check-in refuses them: never theirs to finish.
+        event({
+          id: 'ahead',
+          start_time: iso(24 * HOUR),
+          end_time: iso(25 * HOUR),
+        }),
+        event({
+          id: 'optional-ahead',
+          start_time: iso(48 * HOUR),
+          end_time: iso(49 * HOUR),
+          is_mandatory: false,
+        }),
+        // An officer marked them present at one: that is done.
+        event({
+          id: 'came',
+          start_time: iso(-30 * HOUR),
+          end_time: iso(-29 * HOUR),
+        }),
+        // Their role is named on this one, so it holds them like anyone.
+        event({
+          id: 'named',
+          start_time: iso(30 * HOUR),
+          end_time: iso(31 * HOUR),
+          required_role_ids: ['role-member'],
+        }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        attended('came', 'PRESENT'),
       ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
-      expect(view.week.events).toEqual({ done: 0, total: 0 });
+      expect(view.week.events).toEqual({ done: 1, total: 2 });
+    });
+
+    it('holds a member to no required event from before they joined', async () => {
+      const { service, eventService, memberRepo } = build();
+      // Joined a day ago, after Monday's meeting and before Thursday's.
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member'],
+        created_at: iso(-24 * HOUR),
+      });
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'before-joining',
+          start_time: iso(-30 * HOUR),
+          end_time: iso(-29 * HOUR),
+        }),
+        event({
+          id: 'after-joining',
+          start_time: iso(48 * HOUR),
+          end_time: iso(49 * HOUR),
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.week.events).toEqual({ done: 0, total: 1 });
     });
 
     it('serves a part null with no name while its module is off', async () => {
@@ -2166,6 +2266,22 @@ describe('ActivityService', () => {
       // The list's own events section is a different read and still serves.
       expect(view.coming_up.map((row) => row.id)).toEqual(['e']);
       expect(view.unavailable).toEqual(['tasks']);
+    });
+
+    it('serves polls and cards null and named when their read fails', async () => {
+      const { service, messageRepo } = build();
+      messageRepo.findCardsByChapter.mockRejectedValue(new Error('boom'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      // Never { done: 0, total: 0 }: a client would draw a finished week.
+      expect(view.week).toMatchObject({
+        events: { done: 0, total: 0 },
+        tasks: { done: 0, total: 0 },
+        polls: null,
+        cards: null,
+        unavailable: ['polls', 'cards'],
+      });
     });
   });
 });

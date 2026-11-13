@@ -752,6 +752,16 @@ describe("Activity screen (#3897)", () => {
       });
       expect(screenText(tree)).not.toContain("Showing only");
       expect(sectionCount(tree, "To do")).toBe(8);
+      // For good: the line coming back (a new poll on Monday) must not
+      // narrow the list again without a press.
+      activity.value = { ...activity.value, data: busy() };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(weekLine(tree, "answers").props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(screenText(tree)).not.toContain("Showing only");
     });
   });
 
@@ -844,9 +854,13 @@ describe("Activity screen (#3897)", () => {
       expect(drawnText(tree.root.findByType(ReviewCard))).toContain(
         "Couldn't load hours waiting for approval. Pull down to try again.",
       );
-      // A member is not told about a queue they don't have.
+      // Before the phone knows the member's role, too: the read tries that
+      // queue only for a member who approves hours, so a failed one is never
+      // drawn as an empty one.
       links.permissions = [];
-      expect(render().root.findAllByType(ReviewCard)).toHaveLength(0);
+      expect(drawnText(render().root.findByType(ReviewCard))).toContain(
+        "Couldn't load hours waiting for approval.",
+      );
     });
   });
 
@@ -1762,6 +1776,14 @@ describe("Activity screen (#3897)", () => {
     it("lists them in their own group, and opens one in the sheet", () => {
       const tree = render();
       expect(sectionCount(tree, "Links")).toBe(1);
+      // Under what the member made, as the page's own order has it.
+      const headings = tree.root
+        .findAllByType(SectionHeader)
+        .map((node) => node.props.children as string);
+      expect(headings.indexOf("Waiting on others")).toBeGreaterThan(-1);
+      expect(headings.indexOf("Links")).toBeGreaterThan(
+        headings.indexOf("Waiting on others"),
+      );
       act(() => {
         row(tree, "Google Form").props.onPress();
       });

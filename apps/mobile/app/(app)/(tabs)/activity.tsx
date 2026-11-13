@@ -28,7 +28,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled, joinNames } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -63,6 +63,9 @@ import { openMessageLink } from "@/lib/chat/open-link";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
+/** The groups under To do, in the order they are drawn. */
+const BELOW_ORDER: ActivityGroup["id"][] = ["made-by-you", "links"];
+
 /** What the To do list says it is narrowed to, under a week line. */
 const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
   events: "events",
@@ -82,7 +85,7 @@ const FILTER_NOUN: Record<Exclude<ActivityAgendaFilter, "all">, string> = {
  *
  * 1. The week card (`WeekCard`): done of total this week, a line per kind,
  *    and the one thing to do next.
- * 2. This semester (`SemesterStrip`): up to four gauges in one row.
+ * 2. This semester (`SemesterStrip`): up to four gauges, two across.
  * 3. To review (`ReviewCard`): for an officer with something to sign off.
  * 4. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
@@ -146,10 +149,18 @@ export default function ActivityScreen() {
     () => (activity.data ? activityWeekSummary(activity.data) : null),
     [activity.data],
   );
-  // The week line picked on this visit. Not kept between visits: the page
-  // opens on everything, and a line that has left the card (its last item
-  // done, its module turned off) drops its narrowing with it.
+  // The week line picked while the app is open. Never stored: a fresh launch
+  // opens on everything. A line that has left the card (its last item done,
+  // its module turned off, a new week) takes its narrowing with it for good,
+  // so the list doesn't narrow itself again when the line comes back.
   const [picked, setPicked] = useState<ActivityAgendaFilter>("all");
+  const pickedLineGone =
+    picked !== "all" &&
+    summary !== null &&
+    !summary.lines.some((line) => line.id === picked);
+  // Adjusted while rendering, as React documents for state that follows a
+  // prop: no frame is drawn with the stale pick.
+  if (pickedLineGone) setPicked("all");
   const filter: ActivityAgendaFilter =
     picked !== "all" && summary?.lines.some((line) => line.id === picked)
       ? picked
@@ -167,9 +178,6 @@ export default function ActivityScreen() {
             {
               canConfirmTasks:
                 moduleOn("tasks") && can("tasks:manage", permissions ?? []),
-              canApproveHours:
-                moduleOn("service") &&
-                can("service:approve", permissions ?? []),
             },
             now,
           )
@@ -184,12 +192,14 @@ export default function ActivityScreen() {
   );
   const below =
     filter === "all"
-      ? groups.filter(
-          (group) =>
-            (group.id === "made-by-you" || group.id === "links") &&
-            (group.rows.length > 0 ||
-              group.archive !== null ||
-              group.unavailable.length > 0),
+      ? BELOW_ORDER.flatMap((id) =>
+          groups.filter(
+            (group) =>
+              group.id === id &&
+              (group.rows.length > 0 ||
+                group.archive !== null ||
+                group.unavailable.length > 0),
+          ),
         )
       : [];
   // The open row as the latest read has it. A row that has left the list (a
@@ -531,9 +541,9 @@ function ToDoSection({
         // A section the read could not load is said, never shown as empty:
         // "nothing to do" must not be a failed read.
         <InlineNote tone="warning">
-          {`Couldn't load ${unavailable
-            .map((section) => ACTIVITY_SECTION_NAMES[section])
-            .join(", ")}. Pull down to try again.`}
+          {`Couldn't load ${joinNames(
+            unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
+          )}. Pull down to try again.`}
         </InlineNote>
       ) : null}
       {count === 0 && filter === "all" && unavailable.length === 0 ? (
@@ -640,9 +650,9 @@ function GroupSection({
       {group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
-          {`Couldn't load ${group.unavailable
-            .map((section) => ACTIVITY_SECTION_NAMES[section])
-            .join(", ")}. Pull down to try again.`}
+          {`Couldn't load ${joinNames(
+            group.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
+          )}. Pull down to try again.`}
         </InlineNote>
       ) : null}
       {group.parts.map((part) => (

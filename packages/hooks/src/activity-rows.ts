@@ -82,7 +82,7 @@ export function parseActivityFilter(raw: unknown): ActivityFilter | null {
 }
 
 /** How many rows each list of the read carries at most (`activity.md`). */
-const ACTIVITY_LIST_LIMIT = 25;
+export const ACTIVITY_LIST_LIMIT = 25;
 
 /** Whether the member can check in to an event right now and hasn't. */
 function activityEventNeedsCheckIn(
@@ -335,16 +335,16 @@ export function activityPollIsOpen(
 }
 
 /**
- * When a closed poll stopped taking votes, for ordering the archive newest
- * first: closed by hand, or its closing time; its posting as a last resort.
- */
-/**
  * How a row's detail says when: `dated` names the day ("Tomorrow · 7:00
  * PM"), for a row that stands alone; `timed` says only the time ("7:00 PM"),
  * for a row drawn under a day's heading, as the Events lists draw theirs.
  */
 type RowWhen = "dated" | "timed";
 
+/**
+ * When a closed poll stopped taking votes, for ordering the archive newest
+ * first: closed by hand, or its closing time; its posting as a last resort.
+ */
 function pollClosedAt(poll: ActivityPoll): number {
   const at = parseInstant(poll.closed_at ?? poll.closes_at ?? poll.created_at);
   return at ? at.getTime() : 0;

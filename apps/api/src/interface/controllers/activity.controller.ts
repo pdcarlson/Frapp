@@ -46,7 +46,10 @@ import {
   SetActivityLinkStateDto,
 } from '../dtos/activity.dto';
 
-/** The week a client named, refused when it names anything but this week. */
+/**
+ * The week a client named for the standing, refused when it names anything
+ * but this week. The page's own read does not refuse it (`getActivity`).
+ */
 function weekStartOf(query: ActivityWeekQueryDto, now: Date): Date | undefined {
   const weekStart = query.week_start ? new Date(query.week_start) : undefined;
   if (weekStart && !acceptableWeekStart(weekStart, now)) {
@@ -77,11 +80,11 @@ export class ActivityController {
   @ApiOperation({
     summary: 'Get what needs the caller and what they made',
     description:
-      'The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
+      'The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
   })
   @ApiOkResponse({ type: ActivityDto })
   @ApiBadRequestResponse({
-    description: '`week_start` is more than eight days back or a day ahead.',
+    description: '`week_start` is not a date-time.',
   })
   async getActivity(
     @CurrentChapterId() chapterId: string,
@@ -89,10 +92,14 @@ export class ActivityController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Query() query: ActivityWeekQueryDto,
   ): Promise<ActivityView> {
-    const now = new Date();
+    // A week the standing would refuse is not refused here: the service
+    // counts the default week instead. This read is the whole page and the
+    // tab's badge, and the client sends its own clock's week on every one, so
+    // a phone with a wrong clock would otherwise lose everything it has to do
+    // over a number at the top.
     return this.activityService.getActivity(chapterId, userId, enabledModules, {
-      weekStart: weekStartOf(query, now),
-      now,
+      weekStart: query.week_start ? new Date(query.week_start) : undefined,
+      now: new Date(),
     });
   }
 

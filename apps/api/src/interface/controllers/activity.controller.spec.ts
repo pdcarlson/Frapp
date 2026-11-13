@@ -97,15 +97,23 @@ describe('ActivityController', () => {
     );
   });
 
-  it('refuses a week start that would widen "this week"', async () => {
+  it('does not refuse a week start from a wrong clock: the page still loads', async () => {
+    // Every Activity read carries the device's own week, so a refusal here
+    // would cost a phone with a wrong clock its whole list and its tab
+    // badge. The service counts the default week for a start out of range.
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
     const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
 
-    await expect(
-      controller.getActivity('chapter-1', 'user-1', null, {
-        week_start: yearAgo.toISOString(),
-      }),
-    ).rejects.toThrow('week_start must be between');
-    expect(activityService.getActivity).not.toHaveBeenCalled();
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: yearAgo.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart: yearAgo, now: expect.any(Date) },
+    );
   });
 
   describe('standing', () => {

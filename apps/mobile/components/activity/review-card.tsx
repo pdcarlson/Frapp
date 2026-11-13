@@ -7,6 +7,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { joinNames } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
@@ -65,9 +66,9 @@ export function ReviewCard({
     cappable && !all ? review.rows.slice(0, REVIEW_ROW_LIMIT) : review.rows;
   const failed =
     review.unavailable.length > 0
-      ? `Couldn't load ${review.unavailable
-          .map((section) => ACTIVITY_SECTION_NAMES[section])
-          .join(", ")}. Pull down to try again.`
+      ? `Couldn't load ${joinNames(
+          review.unavailable.map((section) => ACTIVITY_SECTION_NAMES[section]),
+        )}. Pull down to try again.`
       : null;
   return (
     <View style={styles.card} testID="activity-review-card">

@@ -1,5 +1,7 @@
 import { dayDelta, formatDayHeading } from "@repo/formatting";
+import { joinNames } from "@repo/validation";
 import {
+  ACTIVITY_LIST_LIMIT,
   activityReviewRows,
   activityToDos,
   type Activity,
@@ -7,6 +9,7 @@ import {
   type ActivitySection,
   type ActivityToDo,
 } from "./activity-rows";
+import { isSentBack } from "./task-card";
 
 /**
  * The member's week (`GET /v1/activity`'s `week`,
@@ -68,12 +71,6 @@ const WEEK_PART_NAMES: Record<ActivityWeek["unavailable"][number], string> = {
   polls: "polls",
   cards: "sign-ups and forms",
 };
-
-/** "tasks", "tasks and polls", "events, tasks and polls". */
-const listed = (names: string[]) =>
-  names.length <= 1
-    ? (names[0] ?? "")
-    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
 /**
  * The top of the page (#4766): one ring, done of total this week, where the
@@ -165,7 +162,7 @@ export function activityWeekSummary(activity: Activity): ActivityWeekSummary {
     incomplete,
     headline,
     warning: incomplete
-      ? `Couldn't load ${listed(week.unavailable.map((part) => WEEK_PART_NAMES[part]))}. Pull down to try again.`
+      ? `Couldn't load ${joinNames(week.unavailable.map((part) => WEEK_PART_NAMES[part]))}. Pull down to try again.`
       : null,
     spokenLabel:
       total === 0
@@ -291,8 +288,7 @@ export function activityAgenda(
                 ? "Later"
                 : id === "anytime"
                   ? "No deadline"
-                  : (formatDayHeading(item.todo.at?.toISOString(), now) ??
-                    "Today"),
+                  : dayLabel(Number(id.slice("day:".length)), now),
         tone: id === "overdue" ? "warning" : id === "now" ? "accent" : "plain",
         rows: [],
         limit: isDay && filter === "all" ? AGENDA_DAY_LIMIT : null,
@@ -305,7 +301,7 @@ export function activityAgenda(
       isDay
         ? item.todo.timed
         : id === "overdue"
-          ? { ...item.todo.dated, badge: null }
+          ? underOverdue(item.todo.dated)
           : item.todo.dated,
     );
   }
@@ -319,6 +315,32 @@ export function activityAgenda(
   };
 }
 
+/**
+ * A day's heading by how many days ahead it is, not by a row's own date: an
+ * item from earlier that is neither overdue nor open (a time that passed
+ * since the read) is listed with today's, and the heading still says Today.
+ */
+function dayLabel(daysAhead: number, now: Date): string {
+  // Noon, so a clock change on the day can't move it across midnight.
+  const day = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + daysAhead,
+    12,
+  );
+  return formatDayHeading(day.toISOString(), now) ?? "Today";
+}
+
+/**
+ * A row under the Overdue heading: its "Overdue" chip would repeat the
+ * heading, so it goes. A task that was sent back keeps "Needs changes",
+ * which is the reason it is the member's again (`isSentBack`).
+ */
+function underOverdue(row: ActivityRow): ActivityRow {
+  if (row.kind === "task" && isSentBack(row.task)) return row;
+  return { ...row, badge: null };
+}
+
 /** What waits on the member's review, for the To review card. */
 export interface ActivityReview {
   rows: ActivityRow[];
@@ -330,8 +352,6 @@ export interface ActivityReview {
   unavailable: ActivitySection[];
 }
 
-const REVIEW_LIST_LIMIT = 25;
-
 /**
  * The To review card (#4766), for a member who can confirm tasks or approve
  * hours: one card where two count tiles were, as Google Classroom gives a
@@ -340,28 +360,30 @@ const REVIEW_LIST_LIMIT = 25;
  */
 export function activityReview(
   activity: Activity,
-  options: { canConfirmTasks: boolean; canApproveHours: boolean },
+  options: { canConfirmTasks: boolean },
   now: Date = new Date(),
 ): ActivityReview | null {
   // The read serves these only to a member who may act on them, so rows are
   // shown as served: a slow permissions read must not hide an officer's
-  // queue. The permissions decide only whose business a failed part is.
+  // queue. A failed part is named the same way where the read can tell whose
+  // it is: it tries the hours queue only for a member who approves hours, so
+  // that failure is always this member's. The tasks read is every member's,
+  // so its failure is the reviewer's business only when they confirm tasks
+  // (To do names it for everyone).
   const rows = activityReviewRows(activity, now);
   const down = new Set(activity.unavailable);
   const unavailable: ActivitySection[] = [
     ...(options.canConfirmTasks && down.has("tasks")
       ? (["tasks"] as const)
       : []),
-    ...(options.canApproveHours && down.has("hours_approvals")
-      ? (["hours_approvals"] as const)
-      : []),
+    ...(down.has("hours_approvals") ? (["hours_approvals"] as const) : []),
   ];
   if (rows.length === 0 && unavailable.length === 0) return null;
   const tasks = activity.needs_you.task_confirmations.length;
   const hours = activity.needs_you.hours_approvals.length;
-  const capped = tasks >= REVIEW_LIST_LIMIT || hours >= REVIEW_LIST_LIMIT;
+  const capped = tasks >= ACTIVITY_LIST_LIMIT || hours >= ACTIVITY_LIST_LIMIT;
   const some = (count: number) =>
-    count >= REVIEW_LIST_LIMIT ? `${REVIEW_LIST_LIMIT}+` : String(count);
+    count >= ACTIVITY_LIST_LIMIT ? `${ACTIVITY_LIST_LIMIT}+` : String(count);
   return {
     rows,
     count: capped ? `${rows.length}+` : String(rows.length),

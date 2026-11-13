@@ -377,6 +377,83 @@ describe("activityAgenda (#4766)", () => {
     expect(rows.find((row) => row.title === "Sent back")!.badge).not.toBeNull();
   });
 
+  it("keeps Needs changes on an overdue task that was sent back", () => {
+    // An officer usually sends a task back after its date: under Overdue the
+    // "Overdue" chip goes, the reason it came back stays.
+    const agenda = activityAgenda(
+      activity({
+        needs_you: needs({
+          tasks: [
+            task({
+              id: "late",
+              title: "Receipts",
+              status: "OVERDUE",
+              due_date: "2026-11-10",
+            }),
+            task({
+              id: "back",
+              title: "Budget",
+              status: "OVERDUE",
+              stored_status: "IN_PROGRESS",
+              sent_back_at: at(-1),
+              due_date: "2026-11-11",
+            }),
+          ],
+        }),
+      }),
+      "tasks",
+      NOW,
+    );
+    expect(agenda.days[0]).toMatchObject({ id: "overdue" });
+    expect(
+      agenda.days[0]!.rows.map((row) => [row.title, row.badge?.label ?? null]),
+    ).toEqual([
+      ["Receipts", null],
+      ["Budget", "Needs changes"],
+    ]);
+  });
+
+  it("heads today's rows Today, whatever an earlier item's own date says", () => {
+    // A time that passed since the read, or a date the server's UTC day has
+    // not called overdue yet: listed with today's, under Today.
+    const agenda = activityAgenda(
+      activity({
+        needs_you: needs({
+          tasks: [
+            task({ id: "stale", title: "Stale", due_at: at(-1, 23, 50) }),
+            task({ id: "today", title: "Agenda", due_at: at(0, 17) }),
+          ],
+        }),
+      }),
+      "tasks",
+      NOW,
+    );
+    expect(
+      agenda.days.map((day) => [day.label, day.rows.map((row) => row.title)]),
+    ).toEqual([["Today", ["Stale", "Agenda"]]]);
+  });
+
+  it("drops a poll or sign-up whose time ran out since the read", () => {
+    // #4258: the page stays open past a closing time and is not re-read.
+    const agenda = activityAgenda(
+      activity({
+        needs_you: needs({
+          polls: [
+            poll({ message_id: "gone", question: "Gone", closes_at: at(0, 11) }),
+            poll({ message_id: "open", question: "Open", closes_at: at(0, 13) }),
+          ],
+          cards: [
+            card({ message_id: "c-gone", title: "Shut", closes_at: at(0, 11) }),
+            card({ message_id: "c-open", title: "Rides", closes_at: at(0, 14) }),
+          ],
+        }),
+      }),
+      "all",
+      NOW,
+    );
+    expect(agenda.rows.map((row) => row.title)).toEqual(["Open", "Rides"]);
+  });
+
   it("leaves an event the member has checked in to off the list", () => {
     const agenda = activityAgenda(
       activity({
@@ -465,7 +542,7 @@ describe("activityAgenda (#4766)", () => {
 });
 
 describe("activityReview (#4766)", () => {
-  const officer = { canConfirmTasks: true, canApproveHours: true };
+  const officer = { canConfirmTasks: true };
   const waiting = () =>
     activity({
       needs_you: needs({
@@ -509,7 +586,7 @@ describe("activityReview (#4766)", () => {
     expect(
       activityReview(
         activity(),
-        { canConfirmTasks: false, canApproveHours: false },
+        { canConfirmTasks: false },
         NOW,
       ),
     ).toBeNull();
@@ -521,7 +598,7 @@ describe("activityReview (#4766)", () => {
     expect(
       activityReview(
         waiting(),
-        { canConfirmTasks: false, canApproveHours: false },
+        { canConfirmTasks: false },
         NOW,
       ),
     ).toMatchObject({ count: "3" });
@@ -556,13 +633,31 @@ describe("activityReview (#4766)", () => {
       rows: [],
       unavailable: ["hours_approvals"],
     });
-    // A failed part the member doesn't review is not theirs to hear about.
+  });
+
+  it("names a failed hours queue before the permissions are known", () => {
+    // The read tries that queue only for a member who approves hours, so its
+    // failure is theirs whatever the phone knows of their role yet. An empty
+    // queue and a failed one must not look the same.
     expect(
       activityReview(
         activity({ unavailable: ["hours_approvals"] }),
-        { canConfirmTasks: true, canApproveHours: false },
+        { canConfirmTasks: false },
+        NOW,
+      ),
+    ).toMatchObject({ rows: [], unavailable: ["hours_approvals"] });
+  });
+
+  it("leaves a failed tasks read to To do for a member who confirms nothing", () => {
+    expect(
+      activityReview(
+        activity({ unavailable: ["tasks"] }),
+        { canConfirmTasks: false },
         NOW,
       ),
     ).toBeNull();
+    expect(
+      activityReview(activity({ unavailable: ["tasks"] }), officer, NOW),
+    ).toMatchObject({ unavailable: ["tasks"] });
   });
 });

@@ -586,7 +586,7 @@ export class ActivityWeekDto implements ActivityWeek {
   @ApiProperty({
     format: 'date-time',
     description:
-      'Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC.',
+      'Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range.',
   })
   start: string;
 
@@ -695,7 +695,7 @@ export class ActivityWeekQueryDto {
     required: false,
     format: 'date-time',
     description:
-      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now. Omitted: last Sunday at midnight UTC.',
+      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.',
   })
   @IsOptional()
   @IsISO8601({ strict: true })

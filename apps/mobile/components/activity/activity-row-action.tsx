@@ -71,7 +71,7 @@ export function useActivityRowActions({
   /** The plan's own verdict (`activityRowActionsAllowed`). */
   allowed: boolean;
   chapterPending: boolean;
-  /** Records the read and re-reads, so the row leaves Needs you. */
+  /** Records the read and re-reads, so the row leaves its list. */
   onActed: (row: ActivityRow) => void;
 }): {
   /** `null` while the writes are refused: every row opens its sheet. */

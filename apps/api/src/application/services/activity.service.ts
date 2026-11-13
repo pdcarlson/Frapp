@@ -465,6 +465,8 @@ function weekCount(done: number, open: number): ActivityWeekCount {
 interface EventViewer {
   roleIds: string[];
   isAlumni: boolean;
+  /** When the member joined the chapter; `null` when it can't be read. */
+  joinedAt: number | null;
 }
 
 /**
@@ -549,10 +551,14 @@ export class ActivityService {
       (viewerRead ??= Promise.all([
         this.memberRepo.findByUserAndChapter(userId, chapterId),
         this.rbacService.isAlumni(chapterId, userId),
-      ]).then(([member, isAlumni]) => ({
-        roleIds: member?.role_ids ?? [],
-        isAlumni,
-      })));
+      ]).then(([member, isAlumni]) => {
+        const joined = member ? new Date(member.created_at).getTime() : NaN;
+        return {
+          roleIds: member?.role_ids ?? [],
+          isAlumni,
+          joinedAt: Number.isNaN(joined) ? null : joined,
+        };
+      }));
 
     // Chat's channel list and the caller's block list, read once and shared
     // by the two sections that list chat messages (polls and links), and only
@@ -1075,7 +1081,7 @@ export class ActivityService {
   ): Promise<{
     unvoted: ActivityPoll[];
     mine: ActivityPoll[];
-    /** Other members' polls the caller first voted on since the week began. */
+    /** Other members' polls the caller last voted on since the week began. */
     votedThisWeek: number;
   }> {
     // The channel list is the access rule: `getChannels` is what chat itself
@@ -1136,8 +1142,10 @@ export class ActivityService {
       )
     ).filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0);
     const votedIds = new Set(voteRows.map((row) => row.message_id));
-    // By when the vote row was first written: changing a vote later updates
-    // the row in place (ADR-07), so a vote counts in the week it was cast.
+    // By the vote row's `created_at`, which is when the member last voted:
+    // changing a vote rewrites it (`updateForVote`, ADR-07). So a vote counts
+    // in the week it was cast or last changed, and a pick changed this week
+    // on a poll first answered earlier counts as one done this week.
     const otherIds = new Set(others.map((message) => message.id));
     const votedThisWeek = voteRows.filter(
       (row) => otherIds.has(row.message_id) && since(row.created_at, weekStart),
@@ -1395,6 +1403,11 @@ export class ActivityService {
    * - Optional: counted while its check-in can still open or is open, and
    *   dropped once that closes without them: nobody is held to an optional
    *   event they skipped.
+   * - An alumnus the event invites only by its default is counted only when
+   *   marked present: check-in refuses them (`toEventRows`), so the event is
+   *   never theirs to do.
+   * - A required event from before the member joined does not hold them, as
+   *   the standing has it (`ActivityStandingService.readRequiredEvents`).
    */
   private async readWeekEvents(
     userId: string,
@@ -1408,7 +1421,7 @@ export class ActivityService {
       return start >= week.start && start < week.end;
     });
     if (inWeek.length === 0) return { done: 0, total: 0 };
-    const [{ roleIds, isAlumni }, attendance] = await Promise.all([
+    const [{ roleIds, isAlumni, joinedAt }, attendance] = await Promise.all([
       viewer(),
       this.attendanceRepo.findByUserForEvents(
         userId,
@@ -1429,10 +1442,12 @@ export class ActivityService {
         continue;
       }
       if (status === 'EXCUSED') continue;
-      // An alumnus the default alone would require is held to nothing
-      // (`toEventRows`).
+      // An alumnus the default alone invites can't check in, so the event
+      // is nothing they could finish (`toEventRows`).
+      if (isAlumni && !answer.byRole) continue;
       const required =
-        answer.status === 'required' && !(isAlumni && !answer.byRole);
+        answer.status === 'required' &&
+        (joinedAt === null || new Date(event.start_time).getTime() > joinedAt);
       const window = this.checkInWindowOf(event);
       if (required || (window !== null && window.closesAt > now)) open += 1;
     }

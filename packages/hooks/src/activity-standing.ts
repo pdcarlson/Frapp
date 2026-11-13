@@ -61,7 +61,7 @@ const SHORT_LABEL: Record<ActivityStandingSection, string> = {
 export interface StandingRow {
   id: ActivityStandingSection;
   label: string;
-  /** The label in one word, for a gauge a quarter of a phone wide. */
+  /** The label in one word, for a gauge half a phone wide. */
   shortLabel: string;
   /** The number as drawn; `null` when the part couldn't be read. */
   value: string | null;
