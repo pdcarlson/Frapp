@@ -123,7 +123,9 @@ function evalTools(
     return {
       // Two results of one tool are two tools here, so each is its own read.
       name: seen === 0 ? result.toolName : `${result.toolName}_${seen + 1}`,
-      description: `Live data: ${result.toolName.replace(/_/g, ' ')}.`,
+      description:
+        result.description ??
+        `Live data: ${result.toolName.replace(/_/g, ' ')}.`,
       kind: 'roster',
       title: result.toolName,
       page: 'members',
@@ -196,6 +198,12 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
       const { caller } = invocation;
       const corpus = createEvalCorpus(invocation, embedGateway);
       const toolCalls: RecordedToolCall[] = [];
+      const asker = invocation.asker;
+      const askerRoles = (asker?.roles ?? []).map((name, index) => ({
+        id: `role-${index}`,
+        name,
+        system_key: asker?.alumni && name === 'Alumni' ? 'ALUMNI' : null,
+      }));
       const service = new AskService(
         corpus.retrieval,
         gateway,
@@ -207,14 +215,21 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         } as never,
         {
           getEffectivePermissions: () => Promise.resolve(caller.permissions),
-          findByChapter: () => Promise.resolve([]),
+          findByChapter: () => Promise.resolve(askerRoles),
         } as never,
-        // The cases name no asker yet, so Ask answers without one, as it
-        // does when that read fails (#4890).
+        // The adversarial cases name no asker, so Ask answers without one,
+        // as it does when that read fails (#4890). A case that names one
+        // (the real-question set) is read the way the product reads it.
         {
-          findByUserAndChapter: () => Promise.reject(new Error('no asker')),
+          findByUserAndChapter: () =>
+            asker
+              ? Promise.resolve({ role_ids: askerRoles.map((role) => role.id) })
+              : Promise.reject(new Error('no asker')),
         } as never,
-        { findDisplayIdentitiesByIds: () => Promise.resolve([]) } as never,
+        {
+          findDisplayIdentitiesByIds: () =>
+            Promise.resolve(asker ? [{ display_name: asker.name }] : []),
+        } as never,
         { keep: () => Promise.resolve(false) } as never,
         evalTools(invocation, toolCalls),
       );
