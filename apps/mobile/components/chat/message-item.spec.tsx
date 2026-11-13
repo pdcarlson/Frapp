@@ -407,8 +407,19 @@ describe("a row that mentions the viewer", () => {
     expect(highlights(tree)).toHaveLength(0);
   });
 
-  it("draws nothing for the viewer's own message that names them", () => {
-    const tree = renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
+  it("lights the viewer's own message when it reaches them, as their own @here does", () => {
+    const tree = renderItem(
+      message({
+        sender_id: VIEWER,
+        content: "@here build",
+        mentions: [VIEWER],
+      }),
+    );
+    expect(highlights(tree)).toHaveLength(1);
+  });
+
+  it("draws nothing for the viewer's own message that reaches only others", () => {
+    const tree = renderItem(message({ sender_id: VIEWER, mentions: [OTHER] }));
     expect(highlights(tree)).toHaveLength(0);
   });
 

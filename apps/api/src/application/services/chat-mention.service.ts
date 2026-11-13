@@ -259,10 +259,17 @@ export class ChatMentionService {
         hereView?.mentionable &&
         tokens.some((token) => foldMentionName(token) === HERE_MENTION_NAME)
       ) {
-        hereView.member_ids =
+        const reached =
           here === 'read'
             ? [...((await this.presence.onlineUserIds(chapterId)) ?? [])]
             : reachedByHere(here, candidates, allowed);
+        // The sender is always among who their own `@here` reaches: they are
+        // here, sending it, whatever the presence read says (Paul,
+        // 2026-11-13: "that should ping me too"). It only lights their own
+        // row, since the push and the unread badge skip a sender's own message.
+        hereView.member_ids = reached.includes(senderId)
+          ? reached
+          : [...reached, senderId];
       }
 
       return resolveMentions(content, candidates, allowed, picks);

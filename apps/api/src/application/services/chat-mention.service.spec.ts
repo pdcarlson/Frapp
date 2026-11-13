@@ -569,7 +569,16 @@ describe('ChatMentionService.resolveForSend', () => {
       const open = service(members, opened, ['members:view'], ['u1', 'u3']);
       await expect(
         open.mentions.resolveForSend('ch-1', 'u2', '@here'),
-      ).resolves.toEqual(['u1', 'u3']);
+      ).resolves.toEqual(['u1', 'u3', 'u2']);
+    });
+
+    it('reaches the sender even when the presence read misses them', async () => {
+      // They are here, sending it (Paul, 2026-11-13). Only their own row
+      // lights: the push and the badge skip a sender's own message.
+      const officer = service(members, roles, ['channels:manage'], ['u3']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
+      ).resolves.toEqual(['u3', 'u1']);
     });
 
     it('never falls through to a member when nobody is online or the read fails', async () => {
@@ -581,7 +590,7 @@ describe('ChatMentionService.resolveForSend', () => {
         const officer = service(named, roles, ['channels:manage'], online);
         await expect(
           officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual(['u1']);
       }
     });
 
@@ -596,7 +605,7 @@ describe('ChatMentionService.resolveForSend', () => {
           null,
           '@here',
         ),
-      ).resolves.toEqual(['u3', 'u4']);
+      ).resolves.toEqual(['u3', 'u4', 'u1']);
       expect(officer.onlineUserIds).not.toHaveBeenCalled();
     });
 
@@ -617,7 +626,7 @@ describe('ChatMentionService.resolveForSend', () => {
           '@Ben Stone @here',
           { previous: picks, next: picks },
         ),
-      ).resolves.toEqual(['u2']);
+      ).resolves.toEqual(['u2', 'u1']);
     });
 
     it('drops a name the edit removes, though the message keeps @here', async () => {
