@@ -139,7 +139,7 @@ export async function createChatServiceFixture() {
     findImportantInChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
-    findPollCardsByChapter: jest.fn(),
+    findCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
     create: jest.fn(),

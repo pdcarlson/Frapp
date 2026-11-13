@@ -231,6 +231,9 @@ function SheetCard({
       return (
         <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
       );
+    case "card":
+      // A sign-up or form row opens its message in chat, never this sheet.
+      return null;
   }
 }
 

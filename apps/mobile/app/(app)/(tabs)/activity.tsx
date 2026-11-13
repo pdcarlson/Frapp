@@ -201,6 +201,19 @@ export default function ActivityScreen() {
   const { markRead } = useActivityUnread(activity.data);
   const open = (row: ActivityRow) => {
     if (row.unread) markRead([row.readRef]);
+    // A sign-up or form (#3926) is answered on its card: the row goes to
+    // the message in chat rather than a sheet, as a link row goes to its
+    // link.
+    if (row.kind === "card") {
+      router.push({
+        pathname: "/chat-thread",
+        params: {
+          channelId: row.card.channel_id,
+          focusMessageId: row.card.message_id,
+        },
+      });
+      return;
+    }
     setOpened(row);
     setOpenedKey(row.key);
   };

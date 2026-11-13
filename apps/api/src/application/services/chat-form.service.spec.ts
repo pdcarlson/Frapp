@@ -31,12 +31,20 @@ describe('ChatFormService (#3926 step 3)', () => {
     updated_at: '2026-11-13T01:00:00Z',
   };
 
-  let repo: { findOwn: jest.Mock; save: jest.Mock };
+  let repo: {
+    findOwn: jest.Mock;
+    findAnsweredMessageIds: jest.Mock;
+    save: jest.Mock;
+  };
   let access: { assertMessageAccess: jest.Mock };
   let service: ChatFormService;
 
   beforeEach(() => {
-    repo = { findOwn: jest.fn(), save: jest.fn().mockResolvedValue(row) };
+    repo = {
+      findOwn: jest.fn(),
+      findAnsweredMessageIds: jest.fn(),
+      save: jest.fn().mockResolvedValue(row),
+    };
     access = { assertMessageAccess: jest.fn().mockResolvedValue(form) };
     service = new ChatFormService(repo, access as never);
   });

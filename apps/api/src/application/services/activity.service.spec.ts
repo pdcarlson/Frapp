@@ -107,7 +107,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     isAlumni: jest.fn().mockResolvedValue(false),
   };
   const messageRepo = {
-    findPollCardsByChapter: jest.fn().mockResolvedValue([]),
+    findCardsByChapter: jest.fn().mockResolvedValue([]),
   };
   const actionRepo = { findActionsOnMessages: jest.fn().mockResolvedValue([]) };
   const linkService = { listFor: jest.fn().mockResolvedValue([]) };
@@ -124,6 +124,9 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   };
   const attendanceRepo = {
     findByEventAndUser: jest.fn().mockResolvedValue(null),
+  };
+  const formResponseRepo = {
+    findAnsweredMessageIds: jest.fn().mockResolvedValue([]),
   };
   const readRepo = {
     // No client has begun this member's dots: every row is read.
@@ -146,10 +149,12 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     memberRepo as never,
     attendanceRepo as never,
     readRepo,
+    formResponseRepo as never,
   );
   return {
     service,
     readRepo,
+    formResponseRepo,
     taskService,
     serviceEntryService,
     eventService,
@@ -164,17 +169,75 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   };
 }
 
-/** `findPollCardsByChapter` answers the chapter scan and the caller's own list separately. */
+/** `findCardsByChapter` answers the chapter scan and the caller's own list separately. */
 function servePolls(
-  messageRepo: { findPollCardsByChapter: jest.Mock },
+  messageRepo: { findCardsByChapter: jest.Mock },
   recent: ChatMessage[],
   own: ChatMessage[] = [],
 ) {
-  messageRepo.findPollCardsByChapter.mockImplementation(
-    (_chapterId: string, options: { senderId?: string }) =>
-      Promise.resolve(options.senderId ? own : recent),
+  messageRepo.findCardsByChapter.mockImplementation(
+    (_chapterId: string, options: { kind: string; senderId?: string }) =>
+      Promise.resolve(
+        options.kind !== 'poll' ? [] : options.senderId ? own : recent,
+      ),
   );
 }
+
+/** Sign-up and form cards for `findCardsByChapter`'s chapter-wide reads. */
+function serveCards(
+  messageRepo: { findCardsByChapter: jest.Mock },
+  cards: ChatMessage[],
+) {
+  messageRepo.findCardsByChapter.mockImplementation(
+    (_chapterId: string, options: { kind: string }) =>
+      Promise.resolve(cards.filter((card) => card.kind === options.kind)),
+  );
+}
+
+const signupCard = (
+  overrides: Partial<ChatMessage> & { id: string },
+  payload: Record<string, unknown> = {},
+) =>
+  ({
+    channel_id: READABLE,
+    sender_id: OTHER,
+    content: 'Sign-up: Sober drivers',
+    kind: 'signup',
+    payload: {
+      title: 'Sober drivers',
+      slots: [
+        { id: 'fri', label: 'Friday', capacity: 2 },
+        { id: 'sat', label: 'Saturday', capacity: 2 },
+      ],
+      closes_at: iso(48 * HOUR),
+      ...payload,
+    },
+    is_deleted: false,
+    created_at: iso(-3 * HOUR),
+    ...overrides,
+  }) as ChatMessage;
+
+const formCard = (
+  overrides: Partial<ChatMessage> & { id: string },
+  payload: Record<string, unknown> = {},
+) =>
+  ({
+    channel_id: READABLE,
+    sender_id: OTHER,
+    content: 'Form: Room picks',
+    kind: 'form',
+    payload: {
+      title: 'Room picks',
+      questions: [
+        { id: 'q1', type: 'short_answer', title: 'Your name', required: true },
+        { id: 'q2', type: 'yes_no', title: 'Staying over?', required: false },
+      ],
+      ...payload,
+    },
+    is_deleted: false,
+    created_at: iso(-1 * HOUR),
+    ...overrides,
+  }) as ChatMessage;
 
 /**
  * `TaskService.list` answers the caller's own tasks and the chapter-wide list
@@ -302,7 +365,7 @@ describe('ActivityService', () => {
       expect(chatBlocks.listBlockedUserIds).toHaveBeenCalledWith(CHAPTER, ME);
     });
 
-    it('serves no polls or links, and says so, when the block list cannot be read', async () => {
+    it('serves no polls, cards or links, and says so, when the block list cannot be read', async () => {
       const { service, messageRepo, chatBlocks } = build();
       chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
       servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
@@ -311,10 +374,11 @@ describe('ActivityService', () => {
 
       expect(view.needs_you.polls).toEqual([]);
       expect(view.made_by_you.polls).toEqual([]);
-      // Links mask by the same block list, so they fail with it rather than
-      // list a blocked member's link.
+      // Sign-up and form cards and links mask by the same block list, so they
+      // fail with it rather than list a blocked member's card or link.
+      expect(view.needs_you.cards).toEqual([]);
       expect(view.links).toEqual([]);
-      expect(view.unavailable).toEqual(['polls', 'links']);
+      expect(view.unavailable).toEqual(['polls', 'cards', 'links']);
     });
 
     it('serves the caller’s links, uncounted in needs_you_count (#3897)', async () => {
@@ -370,8 +434,11 @@ describe('ActivityService', () => {
     it('reports a failed section to Sentry at error level, not only the log (#4096)', async () => {
       const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
       const { service, messageRepo } = build();
-      messageRepo.findPollCardsByChapter.mockRejectedValue(
-        new Error('db down'),
+      messageRepo.findCardsByChapter.mockImplementation(
+        (_chapterId: string, options: { kind: string }) =>
+          options.kind === 'poll'
+            ? Promise.reject(new Error('db down'))
+            : Promise.resolve([]),
       );
 
       try {
@@ -504,7 +571,8 @@ describe('ActivityService', () => {
       );
       // Newest first, the open one last since it is the oldest.
       expect(ids.at(-1)).toBe('old-open');
-      expect(messageRepo.findPollCardsByChapter).toHaveBeenCalledWith(CHAPTER, {
+      expect(messageRepo.findCardsByChapter).toHaveBeenCalledWith(CHAPTER, {
+        kind: 'poll',
         senderId: ME,
         limit: 100,
       });
@@ -518,7 +586,153 @@ describe('ActivityService', () => {
       const view = await service.getActivity(CHAPTER, ME, { polls: false });
 
       expect(view.needs_you.polls).toEqual([]);
-      expect(messageRepo.findPollCardsByChapter).not.toHaveBeenCalled();
+      expect(messageRepo.findCardsByChapter).not.toHaveBeenCalledWith(
+        CHAPTER,
+        expect.objectContaining({ kind: 'poll' }),
+      );
+    });
+  });
+
+  describe('sign-up and form cards (#3926 step 4)', () => {
+    it('lists open sign-ups, headcounts and forms the caller has not answered, soonest closing first', async () => {
+      const { service, messageRepo, formResponseRepo } = build();
+      serveCards(messageRepo, [
+        signupCard({ id: 'sheet' }),
+        signupCard(
+          { id: 'headcount' },
+          { format: 'headcount', closes_at: iso(2 * HOUR) },
+        ),
+        formCard({ id: 'form' }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.needs_you.cards.map((card) => [
+          card.message_id,
+          card.kind,
+          card.item_count,
+        ]),
+      ).toEqual([
+        ['headcount', 'headcount', 2],
+        ['sheet', 'signup', 2],
+        // No end time: last.
+        ['form', 'form', 2],
+      ]);
+      expect(view.needs_you.cards[0]).toMatchObject({
+        channel_name: 'general',
+        channel_type: 'PUBLIC',
+        sender_id: OTHER,
+        title: 'Sober drivers',
+        unread: false,
+      });
+      expect(view.needs_you_count).toBe(3);
+      expect(formResponseRepo.findAnsweredMessageIds).toHaveBeenCalledWith(
+        ['form'],
+        ME,
+      );
+    });
+
+    it('leaves out a card the caller answered, either headcount answer included, but keeps a cleared claim', async () => {
+      const { service, messageRepo, actionRepo, formResponseRepo } = build();
+      serveCards(messageRepo, [
+        signupCard({ id: 'claimed' }),
+        signupCard({ id: 'cleared' }),
+        signupCard({ id: 'going' }, { format: 'headcount' }),
+        signupCard({ id: 'not-going' }, { format: 'headcount' }),
+        formCard({ id: 'answered-form' }),
+        formCard({ id: 'open-form' }),
+      ]);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'claimed', payload: { slot_ids: ['fri'] } },
+        { message_id: 'cleared', payload: { slot_ids: [] } },
+        { message_id: 'going', payload: { slot_ids: ['going'] } },
+        { message_id: 'not-going', payload: { slot_ids: ['not_going'] } },
+      ]);
+      formResponseRepo.findAnsweredMessageIds.mockResolvedValue([
+        'answered-form',
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.cards.map((card) => card.message_id)).toEqual([
+        'cleared',
+        'open-form',
+      ]);
+      expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
+        ['claimed', 'cleared', 'going', 'not-going'],
+        ME,
+        'signup',
+      );
+    });
+
+    it('leaves out the caller’s own, closed ones, unreadable channels and blocked members', async () => {
+      const { service, messageRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      serveCards(messageRepo, [
+        signupCard({ id: 'mine', sender_id: ME }),
+        signupCard({ id: 'closed-early' }, { closed_at: iso(-HOUR) }),
+        formCard({ id: 'expired' }, { closes_at: iso(-HOUR) }),
+        formCard({ id: 'hidden', channel_id: UNREADABLE }),
+        signupCard({ id: 'blocked', sender_id: BLOCKED }),
+        signupCard({ id: 'waiting' }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.cards.map((card) => card.message_id)).toEqual([
+        'waiting',
+      ]);
+    });
+
+    it('is listed with every module off: a card is a chat message', async () => {
+      const { service, messageRepo } = build();
+      serveCards(messageRepo, [signupCard({ id: 'sheet' })]);
+
+      const view = await service.getActivity(CHAPTER, ME, {
+        polls: false,
+        tasks: false,
+        events: false,
+        hours: false,
+      });
+
+      expect(view.needs_you.cards).toHaveLength(1);
+    });
+
+    it('serves the section empty and names it when the answers can’t be read', async () => {
+      const { service, messageRepo, formResponseRepo } = build();
+      serveCards(messageRepo, [formCard({ id: 'form' })]);
+      formResponseRepo.findAnsweredMessageIds.mockRejectedValue(
+        new Error('down'),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.cards).toEqual([]);
+      expect(view.unavailable).toContain('cards');
+    });
+
+    it('dots a card the caller has not opened, under its own read kind', async () => {
+      const { service, messageRepo, readRepo } = build();
+      readRepo.findUnreadStart.mockResolvedValue(iso(-10 * HOUR));
+      readRepo.findReads.mockResolvedValue([
+        { kind: 'signup', item_id: 'sheet', read_at: iso(-HOUR) },
+        // A read under the wrong kind is not this card's.
+        { kind: 'signup', item_id: 'form', read_at: iso(-HOUR / 2) },
+      ]);
+      serveCards(messageRepo, [
+        signupCard({ id: 'sheet' }),
+        formCard({ id: 'form' }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(
+        view.needs_you.cards.map((card) => [card.message_id, card.unread]),
+      ).toEqual([
+        ['sheet', false],
+        ['form', true],
+      ]);
     });
   });
 

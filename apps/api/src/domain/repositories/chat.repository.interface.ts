@@ -234,6 +234,9 @@ export interface IChatCategoryRepository {
   ): Promise<string[]>;
 }
 
+/** The chat card kinds Activity lists (`findCardsByChapter`). */
+export type ChatCardKind = 'poll' | 'signup' | 'form';
+
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
   /**
@@ -283,17 +286,19 @@ export interface IChatMessageRepository {
     options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   /**
-   * Newest-first poll **cards** (`kind = 'poll'`, the format every client
-   * posts) across the chapter, deleted rows left out. `senderId` keeps one
+   * Newest-first chat **cards** of one kind across the chapter: poll cards
+   * (`kind = 'poll'`, the format every client posts), sign-up sheets and
+   * headcounts (`'signup'`) or forms (`'form'`), deleted rows left out.
+   * `senderId` keeps one
    * member's. Whether a card is still open is not decided here: its deadline
    * is an ISO string inside `payload`, and comparing those as text is wrong
    * across offsets, so the caller parses it. Every channel's rows come back,
    * readable or not; the caller filters by access, as with
    * {@link findPollsByChapter}.
    */
-  findPollCardsByChapter(
+  findCardsByChapter(
     chapterId: string,
-    options: { senderId?: string; limit: number },
+    options: { kind: ChatCardKind; senderId?: string; limit: number },
   ): Promise<ChatMessage[]>;
   /**
    * Locate an already-persisted message by its idempotency triple. Used by

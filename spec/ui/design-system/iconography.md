@@ -33,7 +33,7 @@ Color per state (roles defined in [foundations](foundations.md)):
 The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
 glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
-`link` and `confirm`, §6.2.5a) draw one shared
+`link`, `confirm`, `signup` and `form`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -632,7 +632,7 @@ rows draw the same lead at the same sizes in `text.mutedForeground`
 #4173 step 2), and both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
-`link` and `confirm` were added for the two kinds that have no place of their own.
+`link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
 
 A row from another member leads with that member's face instead
@@ -652,6 +652,8 @@ coloured. Which rows take a face:
 | Poll | `polls`, `chart-bar` |
 | Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
 | Sign-up link | `link`, `link` (added for it) |
+| Sign-up sheet or headcount to answer (#3926) | `signup`, `list-checks` (added for it) |
+| Form to fill out (#3926) | `form`, `clipboard-text` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 
