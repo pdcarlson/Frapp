@@ -35,6 +35,7 @@ import type {
   ChatChannel,
   ChatChannelCategory,
   ChatFormResponse,
+  ChatForwardedMessage,
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
@@ -638,6 +639,7 @@ export interface Database {
           payload: Record<string, unknown> | null;
           attachment_count: number;
           created_at: string;
+          forwarded_from: ChatForwardedMessage | null;
         }[];
       };
       /**

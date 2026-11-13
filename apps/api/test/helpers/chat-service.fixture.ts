@@ -25,6 +25,7 @@ import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
 import { ChapterPresenceReader } from '../../src/application/services/chapter-presence-reader.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
@@ -289,6 +290,11 @@ export async function createChatServiceFixture() {
   const mockRoleRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
   const mockTierRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
 
+  // A forward's copy names the original's author (#4864). Nobody by default.
+  const mockUserRepo = {
+    findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
+  };
+
   // Defaults: caller is a member of the chapter, channel resolves, no special
   // permissions. Individual tests override to exercise denial paths.
   mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -347,6 +353,7 @@ export async function createChatServiceFixture() {
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
       { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
+      { provide: USER_REPOSITORY, useValue: mockUserRepo },
     ],
   }).compile();
 
@@ -376,6 +383,7 @@ export async function createChatServiceFixture() {
     mockChatBlocks,
     mockReportRepo,
     mockThreadRepo,
+    mockUserRepo,
   };
 }
 

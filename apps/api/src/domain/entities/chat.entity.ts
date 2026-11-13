@@ -379,7 +379,64 @@ export interface ChatMessage {
    * viewer who blocked them (`chat-block-mask.ts`).
    */
   thread_last_reply?: ChatThreadLastReply | null;
+  /**
+   * Set when this message is a forward (#4864): a copy of the original the
+   * server built when the forwarder sent it, never a live reference, since
+   * the people here may not be able to read the source channel. The row's own
+   * `content` is the forwarder's comment, and may be empty. Blanked to
+   * `deleted: true` by a trigger when the original is deleted
+   * (`20261113185033_chat_message_forwarded_from.sql`), and nulled on a
+   * deleted forward. The ORIGINAL author's content: a read that masks
+   * withholds it from a viewer who blocked them (`chat-block-mask.ts`).
+   *
+   * Optional for rows written before the column existed.
+   */
+  forwarded_from?: ChatForwardedMessage | null;
   created_at: string;
+}
+
+/**
+ * The GIF a forwarded copy carries, the same shape as a GIF message's
+ * `metadata.gif` (`MessageGif` in `gif.service.ts`), so readers draw it with
+ * the same renderer.
+ */
+export interface ChatForwardedGif {
+  provider: string;
+  id: string;
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * What a forward holds of the message it copies (#4864). Built by
+ * `ChatService.forwardMessage`, never taken from a client.
+ */
+export interface ChatForwardedMessage {
+  /** The original message. */
+  message_id: string;
+  /** Where the original lives. Readers name it only if they can see it. */
+  channel_id: string;
+  /** The original's author, or null for an imported row or a deleted original. */
+  sender_id: string | null;
+  /** The author's name when it was forwarded; rewritten on account deletion. */
+  author_name: string | null;
+  /** The original's text; `''` for a GIF or files only, or once deleted. */
+  content: string;
+  gif: ChatForwardedGif | null;
+  /** How many files the original had. They are not copied. */
+  attachment_count: number;
+  /** The original's `created_at`. */
+  created_at: string;
+  /** True once the original was deleted: everything but where and when is gone. */
+  deleted?: boolean;
+  /**
+   * Set by a read that masks, as `ChatThreadLastReply.sender_blocked` is:
+   * `true` when the viewer blocked the original's author, so the copy is
+   * withheld; `false` when it was cleared. Absent on the Realtime echo.
+   */
+  sender_blocked?: boolean;
 }
 
 /**
@@ -548,6 +605,12 @@ export interface ChannelLatestMessage {
   payload: Record<string, unknown> | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * The latest message's forwarded copy (#4864), its `content` cut to 500;
+   * withheld (`sender_blocked: true`) when the caller blocked the original's
+   * author. Null when the latest message is not a forward.
+   */
+  forwarded_from: ChatForwardedMessage | null;
 }
 
 /**

@@ -680,6 +680,67 @@ describe('ChatPushWorkerService', () => {
     );
   });
 
+  // #4864: a forward with no comment previews the copy, whose author is not
+  // the sender. A recipient who blocked that author still gets the push (the
+  // forwarder is not blocked), without the author's words.
+  it("previews a forward's copy, withheld from whoever blocked its author", async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'blocker', 'bystander']);
+    filterOutBlockers.mockImplementation(
+      async (_chapterId: string, senderId: string | null, ids: string[]) =>
+        senderId === 'author' ? ids.filter((id) => id !== 'blocker') : ids,
+    );
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: '',
+      kind: 'text',
+      mentions: ['blocker', 'bystander'],
+      forwarded_from: { sender_id: 'author', content: 'grill is ready' },
+      created_at: '',
+    });
+
+    expect(filterOutBlockers).toHaveBeenCalledWith('chap-1', 'author', [
+      'blocker',
+      'bystander',
+    ]);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'bystander',
+      'chap-1',
+      expect.objectContaining({ body: 'Forwarded: grill is ready' }),
+    );
+    expect(notifyUser).toHaveBeenCalledWith(
+      'blocker',
+      'chap-1',
+      expect.objectContaining({ body: 'Forwarded a message' }),
+    );
+  });
+
+  it('asks nothing more of the block list for a forward with a comment', async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'a']);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'look at this',
+      kind: 'text',
+      mentions: ['a'],
+      forwarded_from: { sender_id: 'author', content: 'grill is ready' },
+      created_at: '',
+    });
+
+    expect(filterOutBlockers).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({ body: 'look at this' }),
+    );
+  });
+
   describe('chatPushPreview', () => {
     it('names a GIF message, which has no text (#4631)', () => {
       expect(
@@ -688,6 +749,58 @@ describe('ChatPushWorkerService', () => {
           metadata: { gif: { url: 'https://static.klipy.com/h.webp' } },
         }),
       ).toBe('Sent a GIF');
+    });
+
+    describe('a forward (#4864)', () => {
+      const copy = { content: 'grill is in my garage', gif: null };
+
+      it('is the comment when there is one', () => {
+        expect(
+          chatPushPreview({ content: 'see below', forwarded_from: copy }),
+        ).toBe('see below');
+      });
+
+      it("quotes the copy's text when there is no comment", () => {
+        expect(chatPushPreview({ content: '', forwarded_from: copy })).toBe(
+          'Forwarded: grill is in my garage',
+        );
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: 'y'.repeat(300) },
+          }),
+        ).toBe(`Forwarded: ${'y'.repeat(189)}`);
+      });
+
+      it('names a GIF, and anything else as a message', () => {
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: '', gif: { url: 'https://x/g.webp' } },
+          }),
+        ).toBe('Forwarded a GIF');
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: '', gif: null },
+          }),
+        ).toBe('Forwarded a message');
+      });
+
+      it('says only that something was forwarded when withheld or deleted', () => {
+        expect(
+          chatPushPreview(
+            { content: '', forwarded_from: copy },
+            { withholdForwarded: true },
+          ),
+        ).toBe('Forwarded a message');
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { ...copy, content: '', deleted: true },
+          }),
+        ).toBe('Forwarded a message');
+      });
     });
 
     it('drops U+FFFC, which every surface drew as an "OBJ" box (#4346)', () => {

@@ -44,12 +44,18 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '#domain/repositories/user.repository.interface';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import type {
   ChatChannel,
   ChatChannelListItem,
   ChatChannelView,
+  ChatForwardedGif,
+  ChatForwardedMessage,
   ChatMessage,
   ChatMessageKind,
   ChannelType,
@@ -188,6 +194,13 @@ export interface SendMessageInput {
    * client request can never set it.
    */
   system_originated?: boolean;
+  /**
+   * Internal-only: the copy `forwardMessage` built of the message being
+   * forwarded (#4864). Never on `SendMessageDto`, so a client can't claim a
+   * copy of something it never read. With it, `content` (the forwarder's
+   * comment) may be empty.
+   */
+  forwarded_from?: ChatForwardedMessage | null;
 }
 
 /**
@@ -372,6 +385,9 @@ export class ChatService {
     // Message threads (#3785): a thread reply's auto-follow and read cursor.
     @Inject(CHAT_THREAD_REPOSITORY)
     private readonly threads: IChatThreadRepository,
+    // A forward's copy names the original's author as they were then (#4864).
+    @Inject(USER_REPOSITORY)
+    private readonly users: IUserRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -1089,7 +1105,11 @@ export class ChatService {
       if ((input.kind ?? 'text') !== 'text') {
         throw new BadRequestException('Only a plain message can be a GIF');
       }
-    } else if (!input.content.trim() && attachments.length === 0) {
+    } else if (
+      !input.content.trim() &&
+      attachments.length === 0 &&
+      !input.forwarded_from
+    ) {
       throw new BadRequestException(
         'A message needs content or at least one attachment',
       );
@@ -1247,6 +1267,9 @@ export class ChatService {
           ...(mentionPicks.length > 0 ? { mention_picks: mentionPicks } : {}),
         },
         mentions,
+        ...(input.forwarded_from
+          ? { forwarded_from: input.forwarded_from }
+          : {}),
       });
     } catch (error) {
       if (
@@ -1348,6 +1371,123 @@ export class ChatService {
     }
 
     return { message, deduplicated };
+  }
+
+  /**
+   * Forward one message to one channel or DM (#4864,
+   * spec/behavior/chat/README.md § Forwarding a message).
+   *
+   * The forward is an ordinary text message in the destination, sent by the
+   * caller through {@link sendMessage}, so it dedupes on `client_message_id`,
+   * resolves the comment's mentions, notifies and counts unread like any
+   * post. Its `content` is the caller's comment, which may be empty, and its
+   * `forwarded_from` is a copy of the original built here, never taken from
+   * the client: the people in the destination may not be able to read the
+   * source, so the copy is what they see.
+   *
+   * - The source must be readable by the caller (404 otherwise, as every
+   *   message action answers), and the destination postable (404 / 403 from
+   *   {@link sendMessage}'s own check). The destination may be the source's
+   *   channel.
+   * - Only a live text message is forwarded: a card, a deleted message, or a
+   *   forward of a deleted original with no comment is a 400.
+   * - A forward of a forward never nests. With no comment of its own (no
+   *   text, GIF or files), the source's copy is passed on, so the new
+   *   forward still points at the original and follows its deletion.
+   *   Otherwise the source itself is copied and its own copy dropped.
+   * - Files are not copied: the copy counts them (`attachment_count`).
+   *
+   * Answers the new message masked for the caller, as a read would serve it.
+   */
+  async forwardMessage(input: {
+    message_id: string;
+    chapter_id: string;
+    sender_id: string;
+    channel_id: string;
+    content?: string | null;
+    client_message_id?: string | null;
+    mention_picks?: readonly MentionPick[] | null;
+  }): Promise<MaskedChatMessage> {
+    const source = await this.assertMessageAccess(
+      input.message_id,
+      input.chapter_id,
+      input.sender_id,
+    );
+    const copy = await this.forwardedCopyOf(source);
+    const { message } = await this.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id,
+      sender_id: input.sender_id,
+      content: input.content ?? '',
+      kind: 'text',
+      client_message_id: input.client_message_id ?? null,
+      mention_picks: input.mention_picks ?? null,
+      forwarded_from: copy,
+    });
+    return this.maskOne(message, input.chapter_id, input.sender_id);
+  }
+
+  /** The copy a forward of `source` carries, or a 400 when it can't be forwarded. */
+  private async forwardedCopyOf(
+    source: ChatMessage,
+  ): Promise<ChatForwardedMessage> {
+    const refuse = () =>
+      new BadRequestException("This message can't be forwarded");
+    if (source.is_deleted || (source.kind ?? 'text') !== 'text') {
+      throw refuse();
+    }
+    const gif = forwardedGifOf(source.metadata?.gif);
+    const attachmentCount = attachmentCountOf(source.metadata);
+    const inner = source.forwarded_from ?? null;
+    if (inner && !source.content.trim() && !gif && attachmentCount === 0) {
+      // Nothing of its own to copy: pass the original's copy on.
+      if (inner.deleted === true) throw refuse();
+      return {
+        message_id: inner.message_id,
+        channel_id: inner.channel_id,
+        sender_id: inner.sender_id ?? null,
+        author_name: inner.author_name ?? null,
+        content: inner.content ?? '',
+        gif: inner.gif ?? null,
+        attachment_count: inner.attachment_count ?? 0,
+        created_at: inner.created_at,
+      };
+    }
+    return {
+      message_id: source.id,
+      channel_id: source.channel_id,
+      sender_id: source.sender_id,
+      author_name: await this.authorNameOf(source),
+      content: source.content,
+      gif,
+      attachment_count: attachmentCount,
+      created_at: source.created_at,
+    };
+  }
+
+  /**
+   * The source's author as a reader would name them now: their display name,
+   * or the row's own `author_name` for a message with no Frapp user. A failed
+   * read leaves it null rather than failing the forward: a reader falls back
+   * to the roster by `sender_id`, as it does for any message.
+   */
+  private async authorNameOf(source: ChatMessage): Promise<string | null> {
+    if (!source.sender_id) return source.author_name ?? null;
+    try {
+      const [identity] = await this.users.findDisplayIdentitiesByIds([
+        source.sender_id,
+      ]);
+      const name = identity?.display_name?.trim();
+      return name ? name : (source.author_name ?? null);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-forward-author-name',
+        message: `Could not read the author of message ${source.id}; the forward names no one`,
+        error,
+      });
+      return source.author_name ?? null;
+    }
   }
 
   /**
@@ -1751,6 +1891,8 @@ export class ChatService {
       flag: null,
       flagged_by: null,
       flagged_at: null,
+      // A deleted forward keeps nothing of the copy it carried (#4864).
+      forwarded_from: null,
     });
     // The in-app notifications that quote the message go in the same
     // statement: `chat_messages_forget_notifications` deletes every row whose
@@ -2158,6 +2300,41 @@ export class ChatService {
       (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
     );
   }
+}
+
+/**
+ * A GIF message's `metadata.gif`, as a forward's copy carries it (#4864), or
+ * null when there is none or it isn't the shape `GifService.messageGif`
+ * writes.
+ */
+function forwardedGifOf(gif: unknown): ChatForwardedGif | null {
+  if (!gif || typeof gif !== 'object') return null;
+  const g = gif as Record<string, unknown>;
+  if (
+    typeof g.provider !== 'string' ||
+    typeof g.id !== 'string' ||
+    typeof g.url !== 'string' ||
+    typeof g.width !== 'number' ||
+    typeof g.height !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    provider: g.provider,
+    id: g.id,
+    title: typeof g.title === 'string' ? g.title : '',
+    url: g.url,
+    width: g.width,
+    height: g.height,
+  };
+}
+
+/** `metadata.attachment_count` when it is a whole positive number, else 0. */
+function attachmentCountOf(
+  metadata: Record<string, unknown> | null | undefined,
+): number {
+  const raw = metadata?.attachment_count;
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
 }
 
 /** `metadata` with its `mention_picks` replaced by `picks`, or dropped when none (#3835). */
