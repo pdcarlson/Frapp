@@ -693,6 +693,184 @@ describe('AiGatewayService', () => {
     });
   });
 
+  describe('streamAgentRound', () => {
+    const TOOL = {
+      name: 'search_messages',
+      description: 'Finds messages.',
+      inputSchema: { type: 'object', properties: {} },
+    };
+    const QUESTION = {
+      promptVersion: 'ask.agent@v1',
+      system: 'You are Ask Frapp.',
+      messages: [{ role: 'user' as const, content: 'What do I owe?' }],
+      tools: [TOOL],
+      context: [{ id: 'asker', title: 'The member asking', text: 'Jordan.' }],
+      rounds: [],
+    };
+    const CALL = { id: 'call-1', name: 'search_messages', input: { q: 'x' } };
+    const agentEvents = async (stream: AsyncIterable<unknown>) => {
+      const events: { type: string; result?: unknown }[] = [];
+      for await (const event of stream) events.push(event as never);
+      return events;
+    };
+
+    it('offers the tools, hands back the calls and what to replay, and runs none', async () => {
+      const h = harness({
+        'ask.agent': () => ({ text: '', toolCalls: [CALL] }),
+      });
+
+      const events = await agentEvents(
+        h.gateway.streamAgentRound('ask.agent', QUESTION, CONTEXT),
+      );
+
+      expect(h.requests[0]).toMatchObject({
+        kind: 'agent',
+        tools: [TOOL],
+        context: QUESTION.context,
+        rounds: [],
+        cache: true,
+        // From the catalog, not the caller.
+        model: 'claude-sonnet-5-5',
+        effort: 'medium',
+        maxOutputTokens: 4_000,
+      });
+      expect(events.at(-1)?.result).toMatchObject({
+        status: 'ok',
+        toolCalls: [CALL],
+        replay: { calls: [CALL] },
+      });
+      // One model call, one ledger row: a round is not a loop.
+      expect(h.steps).toEqual([
+        'consent',
+        'reserve',
+        'model',
+        'record',
+        'event',
+      ]);
+    });
+
+    it('checks a citation against what the rounds returned, and nothing else', async () => {
+      const h = harness({
+        'ask.agent': () => ({
+          text: 'You owe $450.',
+          citations: [
+            { sourceId: 'message:m1', quote: 'dues are $450' },
+            { sourceId: 'message:m1', quote: 'dues are $900' },
+            // Read beside the question, never a source.
+            { sourceId: 'asker', quote: 'Jordan.' },
+          ],
+        }),
+      });
+
+      const events = await agentEvents(
+        h.gateway.streamAgentRound(
+          'ask.agent',
+          {
+            ...QUESTION,
+            rounds: [
+              {
+                replay: { calls: [CALL] },
+                results: [
+                  {
+                    callId: 'call-1',
+                    note: null,
+                    sources: [
+                      {
+                        id: 'message:m1',
+                        title: '#general',
+                        text: 'Sam Park: dues are $450',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          CONTEXT,
+        ),
+      );
+
+      expect(events.at(-1)?.result).toMatchObject({
+        status: 'ok',
+        text: 'You owe $450.',
+        toolCalls: [],
+        citations: [{ sourceId: 'message:m1', quote: 'dues are $450' }],
+        droppedCitations: 2,
+      });
+    });
+
+    it('reserves for everything the round sends: the results so far and the tools', async () => {
+      const first = harness({ 'ask.agent': () => ({ text: 'ok' }) });
+      await agentEvents(
+        first.gateway.streamAgentRound('ask.agent', QUESTION, CONTEXT),
+      );
+      const later = harness({ 'ask.agent': () => ({ text: 'ok' }) });
+      await agentEvents(
+        later.gateway.streamAgentRound(
+          'ask.agent',
+          {
+            ...QUESTION,
+            rounds: [
+              {
+                replay: null,
+                results: [
+                  {
+                    callId: 'call-1',
+                    note: null,
+                    sources: [
+                      { id: 's', title: 't', text: 'word '.repeat(2_000) },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          CONTEXT,
+        ),
+      );
+
+      const reserved = (h: Harness) =>
+        (h.spend.reserve.mock.calls[0][1] as { inputTokens: number })
+          .inputTokens;
+      expect(reserved(later)).toBeGreaterThan(reserved(first) + 1_000);
+    });
+
+    it('makes no call past a cap, and says which', async () => {
+      const h = harness({ 'ask.agent': () => ({ text: 'never' }) });
+      h.spend.reserve.mockResolvedValue({
+        granted: false,
+        reason: 'member_cap',
+      });
+
+      const events = await agentEvents(
+        h.gateway.streamAgentRound('ask.agent', QUESTION, CONTEXT),
+      );
+
+      expect(events).toEqual([
+        {
+          type: 'end',
+          result: {
+            status: 'unavailable',
+            reason: 'spend_cap',
+            detail: 'member_cap',
+          },
+        },
+      ]);
+      expect(h.steps).not.toContain('model');
+    });
+
+    it('marks its event as an agent round', async () => {
+      const h = harness({ 'ask.agent': () => ({ text: 'ok' }) });
+      await agentEvents(
+        h.gateway.streamAgentRound('ask.agent', QUESTION, CONTEXT),
+      );
+      expect(h.telemetry.callFinished.mock.calls[0][1]).toMatchObject({
+        kind: 'agent',
+        streamed: true,
+      });
+    });
+  });
+
   describe('embed', () => {
     it('returns one vector per text at the catalog’s width', async () => {
       const h = harness();
