@@ -143,6 +143,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Frapp AI now introduces itself once with what it can do, and one switch in Settings turns it on or off.",
       "Deleting a role no longer locks out the people who held it, since anyone left without a role keeps the chapter's everyday access.",
       "A form opened while you're offline, or when it can't reach the server, now says its answers may not be the newest.",
+      "Officers can only invite people into roles at or below their own, and the invite list shows only the invites they could have sent.",
+      "Notifications now show one row per conversation with how many messages it holds, and an Unread switch hides what you've already read.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -158,6 +160,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity now opens with the same week ring as the phone app: how much of your week is done, your next thing to do, and the rest listed by day.",
       "Ask Frapp now lives in the chat box next to GIF, and the conversation opens over your chat instead of in a side panel.",
       "The Events calendar has Week and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
+      "Leaving a page halfway through a new event, a document upload or new minutes keeps what you typed, and the form picks up where you left off.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -176,6 +179,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Signing in with an email or a Google or Apple account that has no Frapp account yet now says it made a new one, with Sign out a tap away so you can use the way you joined.",
       "The Calendar has 3 days and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
       "Opening a form while you're offline no longer leaves its questions locked.",
+      "Activity can now show a short note from Frapp about one of your tasks, with a suggested place to start, when your chapter has Ask on.",
+      "Long-press a message to pin it for the channel or save it for yourself, and find both under Pinned messages and Saved messages in the channel's menu.",
     ],
   },
   {
