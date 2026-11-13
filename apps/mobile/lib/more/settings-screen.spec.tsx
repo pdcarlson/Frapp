@@ -35,6 +35,7 @@ type PushStatus = { granted: boolean; canAskAgain: boolean; status: string };
  * below can read it.
  */
 const state = vi.hoisted(() => ({
+  setNudges: vi.fn(),
   permissions: [] as string[],
   pushReason: null as string | null,
   quietHoursEnabled: false,
@@ -82,6 +83,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isError: false,
   }),
+  // The nudge card's switch (#4781), drawn once the member said yes to AI.
+  useMemberNudgeSettings: (options: { enabled?: boolean }) => ({
+    data: options.enabled ? { enabled: true } : undefined,
+  }),
+  useSetMemberNudgesEnabled: () => ({ mutate: state.setNudges }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -429,6 +435,24 @@ describe("Settings copy", () => {
         .map((node) => [node.props.children].flat().join(""));
       expect(text).toContain("Use AI features");
       expect(text).toContain(value);
+    });
+
+    it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {
+      const nudgeSwitch = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Nudges on Activity" &&
+            typeof node.props.onValueChange === "function",
+        );
+      state.aiConsent = { answer: "no", sheet_changed: false };
+      expect(nudgeSwitch(render())).toHaveLength(0);
+
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      state.setNudges.mockClear();
+      const [toggle] = nudgeSwitch(render());
+      expect(toggle.props.value).toBe(true);
+      act(() => toggle.props.onValueChange(false));
+      expect(state.setNudges).toHaveBeenCalledWith(false);
     });
 
     it("opens the consent sheet", () => {

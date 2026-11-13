@@ -37,6 +37,7 @@ export * from './financial-transaction.entity';
 export * from './google-calendar-connection.entity';
 export * from './invite.entity';
 export * from './meeting.entity';
+export * from './member-nudge.entity';
 export * from './member.entity';
 export * from './notification.entity';
 export * from './pledge-class.entity';

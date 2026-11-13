@@ -75,7 +75,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "f5f9f02866892920",
+    fingerprint: "08e5e090c003adff",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

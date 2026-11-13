@@ -9,8 +9,10 @@ import {
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
+  useMemberNudgeSettings,
   usePermissionList,
   useSetChapterChatLevel,
+  useSetMemberNudgesEnabled,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -200,6 +202,12 @@ export default function PreferencesScreen() {
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
   const aiConsentSheetRef = useRef<BottomSheetModal>(null);
   const aiConsent = useAiConsent();
+  // The nudge card on Activity (#4781): the member's own switch, offered
+  // only once they have said yes to AI, since the card is an AI feature.
+  const aiYes =
+    aiConsent.data?.answer === "yes" && !aiConsent.data.sheet_changed;
+  const nudgeSettings = useMemberNudgeSettings({ enabled: aiYes });
+  const setNudgesEnabled = useSetMemberNudgesEnabled();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
@@ -466,6 +474,19 @@ export default function PreferencesScreen() {
             }
             accessibilityHint="Shows what AI features use, and lets you change your answer."
             onPress={() => aiConsentSheetRef.current?.present()}
+          />
+        ) : null}
+        {aiYes && nudgeSettings.data ? (
+          <ListRow
+            label="Nudges on Activity"
+            description="A short note from Frapp when one of your tasks could use it."
+            trailing={
+              <Toggle
+                value={nudgeSettings.data.enabled}
+                onValueChange={(value) => setNudgesEnabled.mutate(value)}
+                accessibilityLabel="Nudges on Activity"
+              />
+            }
           />
         ) : null}
         <ListRow

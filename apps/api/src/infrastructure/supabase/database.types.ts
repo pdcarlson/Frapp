@@ -76,6 +76,8 @@ import type {
   MeetingTemplate,
   Member,
   MemberCustomFieldValueRow,
+  MemberNudge,
+  MemberNudgeSettings,
   MessageReaction,
   Notification,
   NotificationPreference,
@@ -216,6 +218,8 @@ export interface Database {
       meeting_templates: TableDefinition<MeetingTemplate>;
       meetings: TableDefinition<Meeting>;
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
+      member_nudge_settings: TableDefinition<MemberNudgeSettings>;
+      member_nudges: TableDefinition<MemberNudge>;
       members: TableDefinition<Member>;
       message_reactions: TableDefinition<MessageReaction>;
       notification_preferences: TableDefinition<NotificationPreference>;
