@@ -195,6 +195,7 @@ export * from "./time-zone";
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
   acceptAttribute,
+  AVATAR_MAX_EDGE,
   contentTypeByExtension,
   DOCUMENT_UPLOAD_SURFACES,
   fileExtension,
