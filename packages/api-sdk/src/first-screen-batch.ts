@@ -1,6 +1,6 @@
 import type { Middleware } from "openapi-fetch";
 import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
-import type { components } from "./types";
+import type { components, paths } from "./types";
 
 /** A section `GET /v1/bootstrap` can answer. */
 export type BootstrapSection = keyof components["schemas"]["BootstrapDto"];
@@ -14,8 +14,9 @@ const BOOTSTRAP_NOTIFICATION_LIMIT = 50;
  * the inbox at the one page the bootstrap reads.
  */
 const SECTION_BY_PATH: Readonly<Record<string, BootstrapSection>> = {
-  // Keyed by the generated paths, so a route renamed in the API fails the
-  // build here instead of silently leaving the batch.
+  // Checked against the generated paths (the `satisfies` below), so a route
+  // renamed in the API fails the build here instead of silently leaving the
+  // batch.
   "/v1/users/me": "user",
   "/v1/users/me/permissions": "permissions",
   "/v1/users/me/legal-acceptance": "legal_acceptance",
@@ -39,7 +40,7 @@ const SECTION_BY_PATH: Readonly<Record<string, BootstrapSection>> = {
   "/v1/documents": "documents",
   "/v1/members/roster": "member_roster",
   "/v1/notifications": "notifications",
-};
+} satisfies Partial<Record<keyof paths, BootstrapSection>>;
 
 /**
  * Sections that read the same whatever chapter is active. A read for one of
@@ -128,6 +129,13 @@ const COMPANIONS: Partial<Record<BootstrapSection, BootstrapSection[]>> = {
  */
 export const FIRST_SCREEN_COMPANION_TTL_MS = 3_000;
 
+/**
+ * How long a batch waits for the bootstrap before its reads go out on their
+ * own routes instead. A batch holds every read in it, so one stalled call
+ * must not hold the first screen.
+ */
+export const FIRST_SCREEN_BATCH_TIMEOUT_MS = 5_000;
+
 interface Stashed {
   value: unknown;
   expires: number;
@@ -152,6 +160,29 @@ function takeStashed(key: string, now: number): unknown {
   if (!entry) return undefined;
   stash.delete(key);
   return entry.expires > now ? entry.value : undefined;
+}
+
+/** Drops the answers no read took in time, so the stash can't grow. */
+function sweepStash(now: number): void {
+  for (const [key, entry] of stash) {
+    if (entry.expires <= now) stash.delete(key);
+  }
+}
+
+/**
+ * Drops a session's held answers when it writes: a write may change what a
+ * held answer says, and the read its invalidation sends must reach the route.
+ */
+function forgetSession(session: string): void {
+  for (const key of stash.keys()) {
+    if (key.startsWith(`${session}|`)) stash.delete(key);
+  }
+}
+
+function sessionOf(request: Request): string {
+  return `${request.headers.get("authorization") ?? ""}|${
+    new URL(request.url).origin
+  }`;
 }
 
 function jsonResponse(value: unknown): Response {
@@ -201,13 +232,15 @@ function batchFor(
  * same body their own route would have answered and need no change.
  *
  * Anything the bootstrap can't answer falls through to the read's own route,
- * unchanged: a batch of one, a failed or refused bootstrap (a 401 then comes
- * back on each route, where the client's sign-out handling sees it), a
- * section that came back `null`, or a network error.
+ * unchanged: a batch of one, a batch with no chapter (the bootstrap needs
+ * one, and a member with none yet would only be refused), a failed, refused
+ * or stalled bootstrap (a 401 then comes back on each route, where the
+ * client's sign-out handling sees it), a section that came back `null`, or a
+ * network error.
  *
  * A batch also fetches the reads known to follow its own ({@link COMPANIONS})
  * and holds each answer for {@link FIRST_SCREEN_COMPANION_TTL_MS}, for the
- * first read of it only.
+ * first read of it only, and never past a write by the same session.
  *
  * Reads are batched only with reads carrying the same credentials, and
  * chapter reads only with reads for the same chapter, so a batch never
@@ -224,7 +257,10 @@ export function createFirstScreenBatchMiddleware(options?: {
 
   const send = async (batch: Batch) => {
     const asked = [...new Set(batch.waiters.map((w) => w.section))];
-    if (asked.length < FIRST_SCREEN_BATCH_MIN_SECTIONS) {
+    if (
+      asked.length < FIRST_SCREEN_BATCH_MIN_SECTIONS ||
+      batch.chapter === null
+    ) {
       for (const waiter of batch.waiters) waiter.resolve(undefined);
       return;
     }
@@ -239,15 +275,28 @@ export function createFirstScreenBatchMiddleware(options?: {
       const headers = new Headers(batch.request.headers);
       headers.set(REQUEST_ID_HEADER, mintRequestId());
       const doFetch = options?.fetch ?? globalThis.fetch;
-      const response = await doFetch(url.toString(), {
-        method: "GET",
-        headers,
-      });
-      if (response.ok) {
-        const parsed: unknown = await response.json();
-        if (parsed && typeof parsed === "object") {
-          body = parsed as Record<string, unknown>;
+      // A controller and a timer, not `AbortSignal.timeout`, which React
+      // Native's runtime may not have.
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        FIRST_SCREEN_BATCH_TIMEOUT_MS,
+      );
+      let response: Response;
+      try {
+        response = await doFetch(url.toString(), {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const parsed: unknown = await response.json();
+          if (parsed && typeof parsed === "object") {
+            body = parsed as Record<string, unknown>;
+          }
         }
+      } finally {
+        clearTimeout(timer);
       }
     } catch {
       body = null;
@@ -272,20 +321,21 @@ export function createFirstScreenBatchMiddleware(options?: {
 
   return {
     onRequest({ request, schemaPath, params }) {
+      const session = sessionOf(request);
+      const now = Date.now();
+      sweepStash(now);
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        forgetSession(session);
+        return undefined;
+      }
       const section = bootstrapSectionFor(
         request.method,
         schemaPath,
         (params as { query?: Record<string, unknown> } | undefined)?.query,
       );
       if (!section) return undefined;
-      const session = `${request.headers.get("authorization") ?? ""}|${
-        new URL(request.url).origin
-      }`;
       const chapter = request.headers.get("x-chapter-id");
-      const stashed = takeStashed(
-        stashKey(session, chapter, section),
-        Date.now(),
-      );
+      const stashed = takeStashed(stashKey(session, chapter, section), now);
       if (stashed !== undefined) return jsonResponse(stashed);
       return new Promise<Response | undefined>((resolve) => {
         const batches = openBatches.get(session) ?? [];

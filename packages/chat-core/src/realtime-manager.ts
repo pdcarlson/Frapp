@@ -427,10 +427,8 @@ class ChatRealtimeManager {
         runs before the provider's `configure` on any mount where the channel
         is already known.
       - A viewer that has only just resolved is told to presence. Nothing
-        else changed: the session that joined is this viewer's own. Both
-        clients now wait for their first viewer before configuring (web
-        joined before `GET /v1/users/me` answered until #4709), but a
-        thread's channel can still have joined first. A joined
+        else changed: the session that joined is this viewer's own, and web
+        joins before `GET /v1/users/me` answers on most cold loads. A joined
         channel tracks them now (ADR-10: the push worker reads presence to
         skip members reading the thread); one still joining reads the viewer
         when its SUBSCRIBED lands (`trackViewer`).

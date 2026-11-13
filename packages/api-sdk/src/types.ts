@@ -5359,7 +5359,7 @@ export interface paths {
         };
         /**
          * What a client's first screen reads, in one request
-         * @description The reads a client's first screen makes (the user, chapters, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
          */
         get: operations["BootstrapController_getBootstrap_v1"];
         put?: never;
@@ -22416,7 +22416,7 @@ export interface operations {
     BootstrapController_getBootstrap_v1: {
         parameters: {
             query?: {
-                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. */
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
                 include?: string;
             };
             header?: never;

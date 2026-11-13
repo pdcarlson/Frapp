@@ -36,9 +36,17 @@ describe('BootstrapQueryDto', () => {
     expect(errors).toEqual([]);
   });
 
-  it('refuses a name that is not a section', async () => {
-    const { errors } = await parse({ include: 'user,messages' });
-    expect(errors).toHaveLength(1);
-    expect(errors[0].property).toBe('include');
+  // An installed app asks for the sections it shipped with; a section a
+  // later API dropped must not fail its whole batch.
+  it('drops a name that is not a section rather than refusing the request', async () => {
+    const { dto, errors } = await parse({ include: 'user,messages' });
+    expect(errors).toEqual([]);
+    expect(dto.include).toEqual(['user']);
+  });
+
+  it('reads no section when every name is unknown', async () => {
+    const { dto, errors } = await parse({ include: 'messages,inbox' });
+    expect(errors).toEqual([]);
+    expect(dto.include).toEqual([]);
   });
 });

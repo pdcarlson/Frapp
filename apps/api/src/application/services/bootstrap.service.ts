@@ -247,17 +247,18 @@ export class BootstrapService {
   }
 
   /**
-   * Reads `include` (every section when omitted) for the caller. Names are
-   * validated by the DTO before they reach here.
+   * Reads `include` for the caller: every section when it is omitted, none
+   * when it names none this build knows (the DTO drops unknown names).
    */
   async load(
     userId: string,
     chapterId: string,
     include?: readonly BootstrapSectionName[],
   ): Promise<BootstrapSections> {
-    const names = include?.length
-      ? [...new Set(include)]
-      : [...BOOTSTRAP_SECTION_NAMES];
+    const names =
+      include === undefined
+        ? [...BOOTSTRAP_SECTION_NAMES]
+        : [...new Set(include)];
     const caller: Caller = { userId, chapterId };
     const values = await Promise.all(
       names.map((name) =>

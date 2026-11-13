@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient, REQUEST_ID_HEADER } from "./client";
 import {
   bootstrapSectionFor,
+  FIRST_SCREEN_BATCH_TIMEOUT_MS,
   FIRST_SCREEN_COMPANION_TTL_MS,
 } from "./first-screen-batch";
 
@@ -311,6 +312,142 @@ describe("first-screen batching", () => {
         "/v1/bootstrap?include=user,settings,whats_new",
         "/v1/users/me/whats-new",
       ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("batches a read whose query names only undefined values, as the documents list sends", async () => {
+    const fetchMock = stubFetch((include) =>
+      json(Object.fromEntries(include.map((section) => [section, []]))),
+    );
+    const api = client({ token: "token-undefined-query" });
+
+    await Promise.all([
+      api.GET("/v1/documents", {
+        params: { query: { folder: undefined, search: undefined } },
+      }),
+      api.GET("/v1/channels"),
+    ]);
+
+    expect(urlsOf(fetchMock)).toEqual([
+      "/v1/bootstrap?include=documents,channels",
+    ]);
+  });
+
+  it("holds no companion that came back null, so its read goes to its route", async () => {
+    stubFetch(() =>
+      json({ permissions: { permissions: [] }, channels: [], documents: null }),
+    );
+    const api = client({ token: "token-null-companion" });
+
+    await Promise.all([
+      api.GET("/v1/users/me/permissions"),
+      api.GET("/v1/channels"),
+    ]);
+    const documents = await api.GET("/v1/documents");
+
+    expect(documents.data).toEqual({ route: "/v1/documents" });
+  });
+
+  it("lets a chapter read take over only a batch of user reads", async () => {
+    const fetchMock = stubFetch((include) =>
+      json(Object.fromEntries(include.map((section) => [section, {}]))),
+    );
+    const early = createFrappClient({
+      baseUrl: BASE,
+      getAuthToken: () => "token-takeover",
+      batchFirstScreenReads: true,
+    });
+    const api = client({ token: "token-takeover", chapter: "chapter-1" });
+
+    // A chapter read with no chapter header is answered for whatever chapter
+    // its own route resolves; a chapter-1 batch must not answer it.
+    await Promise.all([
+      early.GET("/v1/channels"),
+      early.GET("/v1/users/me"),
+      api.GET("/v1/channels/unread"),
+      api.GET("/v1/settings"),
+    ]);
+
+    expect(urlsOf(fetchMock).sort()).toEqual([
+      "/v1/bootstrap?include=channel_unread,settings",
+      "/v1/channels",
+      "/v1/users/me",
+    ]);
+  });
+
+  it("never sends a batch with no chapter, which the bootstrap would refuse", async () => {
+    // A member with no chapter yet (onboarding) reads only user sections.
+    const fetchMock = stubFetch(() => json({}));
+    const api = createFrappClient({
+      baseUrl: BASE,
+      getAuthToken: () => "token-no-chapter",
+      batchFirstScreenReads: true,
+    });
+
+    await Promise.all([
+      api.GET("/v1/users/me"),
+      api.GET("/v1/chapters"),
+      api.GET("/v1/settings"),
+    ]);
+
+    expect(urlsOf(fetchMock).sort()).toEqual([
+      "/v1/chapters",
+      "/v1/settings",
+      "/v1/users/me",
+    ]);
+  });
+
+  it("drops a session's held answers when it writes", async () => {
+    const fetchMock = stubFetch((include) =>
+      json(Object.fromEntries(include.map((section) => [section, []]))),
+    );
+    const api = client({ token: "token-write" });
+
+    await Promise.all([
+      api.GET("/v1/users/me/permissions"),
+      api.GET("/v1/channels"),
+    ]);
+    // An upload, then the list's invalidation re-reads it: from the route.
+    await api.POST("/v1/documents/upload-url", {
+      body: { file_name: "a.pdf", content_type: "application/pdf" },
+    } as never);
+    await api.GET("/v1/documents");
+
+    expect(urlsOf(fetchMock).at(-1)).toBe("/v1/documents");
+  });
+
+  it("sends the reads on their routes when the bootstrap stalls", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (input: RequestInfo | URL, init?: RequestInit) => {
+          const request =
+            input instanceof Request ? input : new Request(String(input), init);
+          const url = new URL(request.url);
+          if (url.pathname === "/v1/bootstrap") {
+            // Never answers; only the abort ends it.
+            return new Promise<Response>((_, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(new DOMException("aborted", "AbortError")),
+              );
+            });
+          }
+          return Promise.resolve(json({ route: url.pathname }));
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const api = client({ token: "token-stall" });
+
+      const reads = Promise.all([
+        api.GET("/v1/users/me"),
+        api.GET("/v1/settings"),
+      ]);
+      await vi.advanceTimersByTimeAsync(FIRST_SCREEN_BATCH_TIMEOUT_MS + 50);
+      const [me] = await reads;
+
+      expect(me.data).toEqual({ route: "/v1/users/me" });
     } finally {
       vi.useRealTimers();
     }

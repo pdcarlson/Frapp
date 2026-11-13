@@ -24,7 +24,7 @@
  * and the typing tick, which nothing reads while chat is closed (#3899).
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useChatActivityHandler, useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -74,25 +74,7 @@ export function useChatRealtimeBinding(): void {
     thread subscribes before this configures; `configure` attaches that
     waiting channel.
   */
-  /*
-    Not before the first viewer is known (#4709). A first bind with no viewer
-    joined the inbox, and the viewer resolving a moment later rejoined it,
-    which owes a resync: on every cold open that re-stamped the open channel
-    read and re-read the unread counts the open had just read, two more
-    requests in the burst. The open's own reads (`/v1/users/me` among them)
-    land together, so the wait is short, and a thread that subscribes first
-    waits for this `configure` the way #3002 already provides for.
-
-    Mobile has always waited this way (`boundRef` in
-    `apps/mobile/lib/chat/use-chat-runtime.ts`), and like it, once bound, a
-    `null` viewer still rebinds at once: an in-place account swap must not
-    keep the previous member's channels joined until the new member's
-    `/v1/users/me` answers.
-  */
-  const bound = useRef(false);
   useEffect(() => {
-    if (!userId && !bound.current) return;
-    bound.current = true;
     chatRealtime.configure({
       queryClient,
       supabase,

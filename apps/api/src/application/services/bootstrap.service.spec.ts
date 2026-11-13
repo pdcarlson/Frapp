@@ -259,6 +259,13 @@ describe('BootstrapService', () => {
     expect(m.notifications.listNotifications).not.toHaveBeenCalled();
   });
 
+  it('reads nothing for an include that named no known section', async () => {
+    const m = build();
+
+    await expect(m.service.load(USER, CHAPTER, [])).resolves.toEqual({});
+    expect(m.users.findProfile).not.toHaveBeenCalled();
+  });
+
   it('answers null for a section whose read failed, and the rest as usual', async () => {
     const m = build();
     m.chat.getUnreadCounts.mockRejectedValue(new Error('pool timeout'));

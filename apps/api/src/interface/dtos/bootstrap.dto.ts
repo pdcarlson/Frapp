@@ -25,7 +25,17 @@ import {
   WhatsNewSeenDto,
 } from './user.dto';
 
-/** One comma-separated value, or the key repeated: both arrive as a list. */
+const KNOWN_SECTIONS: ReadonlySet<unknown> = new Set(BOOTSTRAP_SECTION_NAMES);
+
+/**
+ * One comma-separated value, or the key repeated: both arrive as a list.
+ * A name this build doesn't know is dropped, not refused: an installed app
+ * asks for the sections it knew when it shipped, and a section a later API
+ * renamed or removed must cost that app only that section (which it then
+ * reads from its own route), not every batch it sends. `include` is a plain
+ * string in the contract, so the breaking-change check can't see a section
+ * go.
+ */
 function splitNames(value: unknown): unknown[] {
   const parts: unknown[] = Array.isArray(value) ? value : [value];
   return [
@@ -35,7 +45,7 @@ function splitNames(value: unknown): unknown[] {
           typeof part === 'string' ? part.split(',') : [part],
         )
         .map((part) => (typeof part === 'string' ? part.trim() : part))
-        .filter((part) => part !== ''),
+        .filter((part) => part !== '' && KNOWN_SECTIONS.has(part)),
     ),
   ];
 }
@@ -43,7 +53,7 @@ function splitNames(value: unknown): unknown[] {
 export class BootstrapQueryDto {
   @ApiPropertyOptional({
     description:
-      'Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read.',
+      'Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section.',
     type: String,
     example: 'user,channels,channel_unread',
   })

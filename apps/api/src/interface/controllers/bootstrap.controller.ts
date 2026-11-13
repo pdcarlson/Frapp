@@ -35,8 +35,9 @@ import { BootstrapDto, BootstrapQueryDto } from '../dtos/bootstrap.dto';
  * route a section stands in for (chat, the chapter's member view, the inbox),
  * so the response holds nothing the caller couldn't read route by route. The
  * user-only routes it covers (`/users/me` and its siblings, `/chapters`,
- * `/settings`) need less, and a caller with no chapter never asks: the clients
- * read those on their own routes until a chapter is active. The guards still
+ * `/settings`) need less, and a caller with no chapter never asks: the client
+ * middleware sends no batch without a chapter, so those reads go to their own
+ * routes until one is active. The guards still
  * run per request (#3752); this route only makes an open one request.
  *
  * `AuthSyncInterceptor` because `/users/me` and `/chapters` carry it: an open
@@ -55,7 +56,7 @@ export class BootstrapController {
   @ApiOperation({
     summary: "What a client's first screen reads, in one request",
     description:
-      "The reads a client's first screen makes (the user, chapters, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
+      "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
   })
   @ApiOkResponse({ type: BootstrapDto })
   async getBootstrap(
