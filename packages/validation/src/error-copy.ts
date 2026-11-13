@@ -112,6 +112,15 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "A headcount takes one answer": "Pick one answer: Going or Can’t make it.",
   "Only the sign-up’s creator or a member who manages channels can close it":
     "Only the person who posted this, or an officer who manages channels, can close it.",
+  // Form cards (#3926 step 3). A form a member has open may have closed a
+  // moment ago; the other refusals are checked again in the form before it
+  // sends, so they reach a member only from an out-of-date client.
+  "This form is closed": "This form has closed, so answers can’t be changed.",
+  "This form is already closed": "This form has already closed.",
+  "Cannot close a deleted form": "That form was deleted.",
+  "Only the form’s creator or a member who manages channels can close it":
+    "Only the person who posted this, or an officer who manages channels, can close it.",
+  "Answer every required question": "Answer every question marked required.",
   // Check-in and study
   "Already checked in for this event": "You're already checked in.",
   "This event has an invalid check-in area; an officer needs to redraw it":

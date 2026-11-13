@@ -36,6 +36,7 @@ import type {
   ChatLinkMemberState,
   ChatMemberBlock,
   ChatMessage,
+  ChatFormResponse,
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
@@ -175,6 +176,7 @@ export interface Database {
       chat_channels: TableDefinition<ChatChannel>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
+      chat_form_responses: TableDefinition<ChatFormResponse>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
       chat_message_attachments: TableDefinition<ChatMessageAttachment>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
@@ -407,6 +409,15 @@ export interface Database {
           p_president_role_id: string;
         };
         Returns: boolean;
+      };
+      /** `20261113040009`. Raises `form_card_missing` or `form_closed`. */
+      save_chat_form_response: {
+        Args: {
+          p_message_id: string;
+          p_user_id: string;
+          p_answers: Json;
+        };
+        Returns: ChatFormResponse;
       };
       claim_signup_slots: {
         Args: {

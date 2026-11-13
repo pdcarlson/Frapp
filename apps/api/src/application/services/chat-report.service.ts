@@ -1012,7 +1012,8 @@ export class ChatReportService {
  *
  * A sign-up sheet card (`kind: 'signup'`, #3926) is read the same way: its
  * title on its own line if it differs from `content`, then its details and
- * each slot's name as `- ` lines.
+ * each slot's name as `- ` lines. A form card (`kind: 'form'`, step 3) is
+ * too: its description, then each question followed by its options.
  *
  * Polls come in two shapes, and both are read: web's `/poll` and New poll
  * dialog and mobile's New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
@@ -1062,6 +1063,10 @@ function pollText(
   // shows instead of `content`, optional details, and slot names. Its details
   // go first, then one line per slot, so a harassing slot name is kept.
   if (message.kind === 'signup') return signupText(message.payload);
+  // A form (#3926 step 3) likewise: its title, then its description, each
+  // question and each option. Members' answers are private and never on the
+  // card, so a report of the card carries none of them.
+  if (message.kind === 'form') return formText(message.payload);
   let card: unknown;
   if (message.kind === 'poll') card = message.payload;
   else if (message.type === 'POLL') card = message.metadata;
@@ -1102,6 +1107,39 @@ function signupText(
         ? (slot as { label?: unknown }).label
         : null;
     if (typeof label === 'string') labels.push(label);
+  }
+  return { question: typeof title === 'string' ? title : null, labels };
+}
+
+function formText(
+  card: unknown,
+): { question: string | null; labels: string[] } | null {
+  if (!card || typeof card !== 'object') return null;
+  const { title, description, questions } = card as {
+    title?: unknown;
+    description?: unknown;
+    questions?: unknown;
+  };
+  if (!Array.isArray(questions)) return null;
+  const labels: string[] = [];
+  if (typeof description === 'string' && description.trim() !== '') {
+    labels.push(description);
+  }
+  for (const question of questions) {
+    if (!question || typeof question !== 'object') continue;
+    const { title: text, options } = question as {
+      title?: unknown;
+      options?: unknown;
+    };
+    if (typeof text === 'string') labels.push(text);
+    if (!Array.isArray(options)) continue;
+    for (const option of options) {
+      const label: unknown =
+        option && typeof option === 'object'
+          ? (option as { label?: unknown }).label
+          : null;
+      if (typeof label === 'string') labels.push(label);
+    }
   }
   return { question: typeof title === 'string' ? title : null, labels };
 }

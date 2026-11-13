@@ -754,16 +754,16 @@ export class ChatController {
     );
   }
 
-  // ── Sign-up cards (#3926) ────────────────────────────────────────────
+  // ── Sign-up and form cards (#3926) ───────────────────────────────────
 
   @Post('messages/:messageId/close')
   @ApiOperation({
     summary:
-      'Close a sign-up card early (its creator, or channels:manage); claims already made stay',
+      'Close a sign-up or form card early (its creator, or channels:manage); answers already made stay',
   })
   // The closed row, so a client can draw the close before its Realtime echo.
   @ApiCreatedResponse({ type: ChatMessageDto })
-  async closeSignup(
+  async closeCard(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -771,7 +771,7 @@ export class ChatController {
     // Resolved here rather than by `@RequirePermissions`, as `deleteMessage`
     // does: the card's creator needs no permission. Lazy: asked only when the
     // caller isn't the creator.
-    return this.chatService.closeSignup(messageId, chapterId, userId, () =>
+    return this.chatService.closeCard(messageId, chapterId, userId, () =>
       this.rbacService.memberHasAnyPermission(chapterId, userId, [
         SystemPermissions.CHANNELS_MANAGE,
       ]),

@@ -1417,8 +1417,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Close a sign-up card early (its creator, or channels:manage); claims already made stay */
-        post: operations["ChatController_closeSignup_v1"];
+        /** Close a sign-up or form card early (its creator, or channels:manage); answers already made stay */
+        post: operations["ChatController_closeCard_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1557,6 +1557,24 @@ export interface paths {
         get?: never;
         /** Set the caller's notification level for a channel */
         put: operations["ChatController_setChannelNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/form-response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own answers to a form card, or null before they answer */
+        get: operations["ChatFormController_getOwnResponse_v1"];
+        /** Save the caller's answers to a form card, replacing their last ones (until the form closes) */
+        put: operations["ChatFormController_saveResponse_v1"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5888,7 +5906,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup" | "form";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -5907,7 +5925,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -6064,7 +6082,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -6134,7 +6152,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
             gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
@@ -6195,6 +6213,22 @@ export interface components {
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
+        };
+        FormResponseDto: {
+            answers: {
+                [key: string]: string | string[];
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OwnFormResponseDto: {
+            response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        SaveFormResponseDto: {
+            /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
+            answers: {
+                [key: string]: string | string[];
+            };
         };
         BookmarkedMessageDto: {
             /** Format: uuid */
@@ -12295,7 +12329,7 @@ export interface operations {
             };
         };
     };
-    ChatController_closeSignup_v1: {
+    ChatController_closeCard_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -12650,6 +12684,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getOwnResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnFormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_saveResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFormResponseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponseDto"];
                 };
             };
             /** @description Error */

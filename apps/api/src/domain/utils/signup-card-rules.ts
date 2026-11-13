@@ -3,7 +3,6 @@ import {
   HEADCOUNT_NOT_GOING_SLOT_ID,
   HEADCOUNT_SLOTS,
   SIGNUP_ANSWER_NOTE_MAX_LENGTH,
-  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
   SIGNUP_HEADCOUNT_FORMAT,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
@@ -11,6 +10,7 @@ import {
   SIGNUP_SLOTS_MAX,
   SIGNUP_TITLE_MAX_LENGTH,
 } from '@repo/validation';
+import { normalizeClosesAt } from './card-closing';
 
 /**
  * Rules for a sign-up sheet card in chat (`kind: 'signup'`, #3926).
@@ -48,10 +48,6 @@ export {
   HEADCOUNT_NOT_GOING_SLOT_ID,
   SIGNUP_HEADCOUNT_FORMAT,
 };
-
-/** The furthest ahead an end time may be set. */
-const CLOSES_AT_MAX_AHEAD_MS =
-  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS * 24 * 60 * 60 * 1000;
 
 export interface SignupSlot {
   id: string;
@@ -110,20 +106,9 @@ export function normalizeSignupCard(
     if (trimmed) note = trimmed;
   }
 
-  let closesAt: string | undefined;
-  if (raw.closes_at != null && raw.closes_at !== '') {
-    const at =
-      typeof raw.closes_at === 'string' ? Date.parse(raw.closes_at) : NaN;
-    if (Number.isNaN(at)) {
-      return { error: 'A sign-up card’s end time must be a date and time' };
-    }
-    // A past end time is kept, not refused: a card queued offline can reach
-    // the server after the time its creator picked, and it then posts closed.
-    if (at > now + CLOSES_AT_MAX_AHEAD_MS) {
-      return { error: 'A sign-up card can end at most a year from now' };
-    }
-    closesAt = new Date(at).toISOString();
-  }
+  const closing = normalizeClosesAt(raw.closes_at, 'A sign-up card', now);
+  if ('error' in closing) return closing;
+  const closesAt = closing.closesAt;
 
   const extras = closesAt ? { closes_at: closesAt } : {};
 
@@ -211,22 +196,6 @@ export function isHeadcountCard(payload: unknown): boolean {
   return (
     (payload as { format?: unknown } | null)?.format === SIGNUP_HEADCOUNT_FORMAT
   );
-}
-
-/**
- * Whether the card takes no more claims: closed early, or past its end time.
- * The claim RPC decides this again under its lock; this lets the API refuse
- * without a round trip and the close route refuse a second close.
- */
-export function isSignupCardClosed(
-  payload: unknown,
-  now: number = Date.now(),
-): boolean {
-  const card = payload as { closed_at?: unknown; closes_at?: unknown } | null;
-  if (typeof card?.closed_at === 'string' && card.closed_at !== '') return true;
-  if (typeof card?.closes_at !== 'string') return false;
-  const at = Date.parse(card.closes_at);
-  return !Number.isNaN(at) && at <= now;
 }
 
 /**
