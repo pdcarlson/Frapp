@@ -113,7 +113,7 @@ import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
-import Link from "next/link";
+import { DmSearch } from "./dm-search-dialog";
 import { useRouter } from "next/navigation";
 import { channelSettingsPath } from "@/components/settings/settings-paths";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -260,11 +260,7 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
-import {
-  InlineNote,
-  InlineNoteAction,
-  inlineNoteActionClassName,
-} from "@/components/shared/inline-note";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
@@ -768,6 +764,9 @@ export function ChatShell({
    * the message rather than on a list the member then has to navigate out of.
    */
   const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+  // Direct messages' people search (#4668), opened by its field, the New
+  // message pencil and the empty list's prompt.
+  const [dmSearchOpen, setDmSearchOpen] = useState(false);
   /*
     The member list (#3536). From 1280px it is a column beside the timeline,
     shown unless the member hid it, which a cookie remembers. Below that there
@@ -2933,21 +2932,17 @@ export function ChatShell({
         <div className="ml-auto flex items-center gap-1">
           {directView && channelsPaneState === "ready" ? (
             // New message (#3774), where the phone's Messages screen, iMessage
-            // and Instagram keep it. A DM starts from a member, so it opens
-            // the Directory, whose member sheet has Message.
+            // and Instagram keep it. It opens the people search (#4668), as
+            // their pencil opens a "To:" search, rather than the Directory.
             <Button
-              asChild
               variant="ghost"
               size="icon"
               className={compactControlClassName}
+              aria-label="New message"
+              title="New message"
+              onClick={() => setDmSearchOpen(true)}
             >
-              <Link
-                href="/members"
-                aria-label="New message"
-                title="New message: pick someone in the Directory"
-              >
-                <SquarePen className="h-4 w-4" aria-hidden="true" />
-              </Link>
+              <SquarePen className="h-4 w-4" aria-hidden="true" />
             </Button>
           ) : null}
           <ChannelFilters
@@ -2956,6 +2951,12 @@ export function ChatShell({
           />
         </div>
       </header>
+      {directView && channelsPaneState === "ready" ? (
+        // Where Discord keeps "Find or start a conversation" (#4668).
+        <div className="shrink-0 px-2 pt-2">
+          <DmSearch open={dmSearchOpen} onOpenChange={setDmSearchOpen} />
+        </div>
+      ) : null}
       {/*
         The gutter is on an inner wrapper, not the scroller: a scroller's own
         padding sits outside the box a sticky child pins to, so a pinned
@@ -3506,16 +3507,12 @@ export function ChatShell({
         {directNoneOpen ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {directEmpty ? (
-              /*
-                A DM starts from a member, on web as on the phone, so the way
-                in is the Directory's Message action.
-              */
+              // The way in is the people search (#4668), as the pencil's is.
               <InlineNote>
                 {"No direct messages yet. "}
-                <Link href="/members" className={inlineNoteActionClassName}>
-                  Find someone in the Directory
-                </Link>
-                {" and choose Message."}
+                <InlineNoteAction onClick={() => setDmSearchOpen(true)}>
+                  Find someone to message
+                </InlineNoteAction>
               </InlineNote>
             ) : (
               <InlineNote>
