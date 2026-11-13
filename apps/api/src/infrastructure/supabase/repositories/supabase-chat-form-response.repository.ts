@@ -11,11 +11,14 @@ import { SupabaseQueryError } from '../supabase-query-error';
 /**
  * Members' answers to form cards (#3926 step 3).
  *
- * Every query filters on `user_id`. That filter is the privacy boundary: the
- * table enables RLS with no policies, and the API reaches it through the
- * service-role client, which bypasses RLS, so nothing but this filter keeps
- * one member's answers from another (`SupabaseChapterDocumentStarRepository`
- * is built the same way).
+ * Every query but one filters on `user_id`. That filter is the privacy
+ * boundary: the table enables RLS with no policies, and the API reaches it
+ * through the service-role client, which bypasses RLS, so nothing but this
+ * filter keeps one member's answers from another
+ * (`SupabaseChapterDocumentStarRepository` is built the same way). The one
+ * exception is `findAllForCreator` (#3926 step 4), which reads every member's
+ * answers to a form and is safe only behind the sender check in
+ * `ChatFormService.getResponses`. Never call it from anywhere else.
  */
 @Injectable()
 export class SupabaseChatFormResponseRepository implements IChatFormResponseRepository {
@@ -38,18 +41,33 @@ export class SupabaseChatFormResponseRepository implements IChatFormResponseRepo
     return data;
   }
 
-  async findAnsweredMessageIds(
+  async findAllForCreator(messageId: string): Promise<ChatFormResponse[]> {
+    // Not member-filtered: the creator check in `ChatFormService` is the
+    // boundary for this one read.
+    const { data, error } = await this.supabase
+      .from('chat_form_responses')
+      .select('*')
+      .eq('message_id', messageId)
+      .order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async findAnswered(
     messageIds: string[],
     userId: string,
-  ): Promise<string[]> {
+  ): Promise<Pick<ChatFormResponse, 'message_id' | 'created_at'>[]> {
     if (messageIds.length === 0) return [];
     const { data, error } = await this.supabase
       .from('chat_form_responses')
-      .select('message_id')
+      .select('message_id, created_at')
       .eq('user_id', userId)
       .in('message_id', messageIds);
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).map((row) => row.message_id);
+    return (data ?? []).map((row) => ({
+      message_id: row.message_id,
+      created_at: row.created_at,
+    }));
   }
 
   async save(

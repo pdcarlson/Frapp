@@ -15,13 +15,14 @@ import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
-import { CheckEmail, confirmationRedirectUrl } from "@/components/auth/check-email";
+import { CheckEmail } from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/hooks/use-toast";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 import {
   EMAIL_CONFIRMED_AUTH_ERROR,
   describeAuthError,
+  magicLinkRedirectUrl,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import {
@@ -176,10 +177,13 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // `intent=confirm`: for an address that isn't confirmed yet, GoTrue
-          // answers this with the Confirm signup email, whose `?code=` link is
-          // the one that can confirm and still fail to sign this browser in.
-          emailRedirectTo: confirmationRedirectUrl(window.location.origin, redirectTo),
+          // `intent=sign-in-link`: this is the sign-in screen, so a link that
+          // just created a brand-new, chapterless account is told so on
+          // `/new-account` (#3801). The tag still carries the Confirm-signup
+          // good-news path for an address that isn't confirmed yet, whose
+          // `?code=` link can confirm and still fail to sign this browser in
+          // ({@link isEmailLinkIntent}).
+          emailRedirectTo: magicLinkRedirectUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;

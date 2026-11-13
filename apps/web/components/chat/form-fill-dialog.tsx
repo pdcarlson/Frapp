@@ -19,8 +19,7 @@ import {
 } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
-  FORM_NO,
-  FORM_YES,
+  FORM_YES_NO_OPTIONS,
   fetchOwnFormResponse,
   formAnswerProblems,
   formAnswersForSave,
@@ -479,10 +478,7 @@ function QuestionField({
     case "checkboxes": {
       const options =
         question.type === "yes_no"
-          ? [
-              { id: FORM_YES, label: "Yes" },
-              { id: FORM_NO, label: "No" },
-            ]
+          ? FORM_YES_NO_OPTIONS
           : (question.options ?? []);
       const many = question.type === "checkboxes";
       control = (

@@ -67,6 +67,10 @@ Rules:
    `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
    `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
    selection and every other state still recolor only.
+   Changed in #4292 by shawnatomklein-eng, 2026-11-13: the exception now
+   covers chat's pin (a pinned channel, a pinned message's marker) and its
+   bookmark ribbon too, as Slack fills a saved item's ribbon. Documents'
+   `PinGlyph` is chat's again.
 2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
    capsule (white at 8%) the full height of the pill's row, as iOS 26's own
    bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
@@ -306,7 +310,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
-| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.muted` | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
+| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.mutedForeground`, the tone of web's row `ChevronRight` (`text.muted` until 2026-11-13, #4138) | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
 | Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
@@ -393,9 +397,9 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 
 | Semantic intent | Glyph |
 |---|---|
-| Pinned message | `PinGlyph` |
-| Pin a channel to the top of your own list (#2877), filled while pinned | `PinGlyph` |
-| Bookmarked message (personal) | `BookmarkGlyph` |
+| Pinned message (the "Pinned" marker), solid (#4292) | `PinGlyph` |
+| Pin a channel to the top of your own list (#2877), solid while pinned (#4292, §1 rule 1's exception) | `PinGlyph` |
+| Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
@@ -559,7 +563,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph and the drawn `PinGlyph` and `StarGlyph` (both #3934, solid while on since #4289). The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, `PinGlyph` (chat's, re-exported) and the drawn `StarGlyph` (both #3934, solid while on since #4289). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -580,14 +584,15 @@ button, and the PDF a report exports to.
 
 Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice.
+which is §1 rule 1's rule and the two preceding families' practice, and a
+fourth, `PinGlyph`, re-exports chat's (#4292).
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 `PinGlyph` takes chat's pin shape (§6.2.2), since pinning a message, a
-channel and a document is one idea; until #4289 (2026-11-11) it was a
-re-export, and it is drawn here now because a document's pin fills solid
-while chat's keeps the tinted recipe. `StarGlyph` is drawn here, because no
+channel and a document is one idea, and it is a re-export of chat's again
+since #4292 (2026-11-13), when chat's pin took the same solid fill; from
+#4289 until then it was drawn here, because only a document's pin filled solid. `StarGlyph` is drawn here, because no
 set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
@@ -632,7 +637,8 @@ holding its kind's glyph at 20px in `--muted-foreground`
 or, for an event, its month and day in place of a glyph. The phone's Activity
 rows draw the same lead at the same sizes in `text.mutedForeground`
 ([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
-#4173 step 2), and both read which shape a kind takes from one map,
+#4173 step 2), except that since #4766 an event listed under a day's heading
+leads with the events glyph, the heading having said the day. Both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.

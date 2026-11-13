@@ -1134,7 +1134,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Magic link inside the email minute | `Check your inbox` | `We just sent you an email. Check your inbox and spam folder. You can ask for another in <n> seconds.` Not destructive: GoTrue sends an address one auth email a minute, so the refusal means one just went out. |
 | Email links switched off | `Unable to send magic link` | `Email links are switched off right now. Sign in with your password.` GoTrue's `otp_disabled`: asking again can't help, so it doesn't say to retry. |
 | Email send capped | `Unable to send magic link` | `We can't send email right now. Too many went out in the last hour. Try again in a few minutes.` The project's hourly cap, which GoTrue refuses with the same code as the minute but no seconds: nothing went out. |
-| Email confirmed (web) | `Email confirmed` | `This link couldn't sign this browser in. Sign in with your password, or ask for a new magic link.` On `/sign-in?authError=email_confirmed`: an email link (`intent=confirm`) that GoTrue verified, so the address is confirmed, but whose code couldn't sign this browser in ([`../web-dashboard/README.md` § Gating & routing semantics](../web-dashboard/README.md#gating--routing-semantics)). |
+| Email confirmed (web) | `Email confirmed` | `This link couldn't sign this browser in. Sign in with your password, or ask for a new magic link.` On `/sign-in?authError=email_confirmed`: an email link (`intent=confirm` from sign-up and Resend, or `intent=sign-in-link` from the sign-in magic link) that GoTrue verified, so the address is confirmed, but whose code couldn't sign this browser in ([`../web-dashboard/README.md` § Gating & routing semantics](../web-dashboard/README.md#gating--routing-semantics)). |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
 | Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first, side by side since 2026-11-05; half the column cannot hold the full label, so each shows `Apple` or `Google` and keeps `Continue with Apple` / `Continue with Google` as its accessible name. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |
 | Continue with email (mobile s01) | — | Button label that opens the email form (password or magic link), titled `Sign in with email`, with a `‹ Back` row to the providers (#3349). |
@@ -1224,6 +1224,8 @@ The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md
 ### New account (pre-auth)
 
 `/new-account`, shown once after a Google or Apple **sign-in** that created a new account ([#3786](https://github.com/pdcarlson/Frapp/issues/3786)). Wording decided by Paul, 2026-11-09.
+
+Also shown, with the same wording, after a sign-in **magic link** that created a new, chapterless email account for an address the member never joined with ([#3801](https://github.com/pdcarlson/Frapp/issues/3801), shawnatomklein-eng, 2026-11-13). "The method you joined with" then covers the address they joined with.
 
 | State | Title | Description |
 |---|---|---|

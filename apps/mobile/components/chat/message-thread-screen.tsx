@@ -958,7 +958,7 @@ export function MessageThreadScreen({
         onReact={onReact}
         onUnreact={onUnreact}
       />
-      <FormFillPage state={formFill} message={filledRow} />
+      <FormFillPage state={formFill} message={filledRow} nameFor={nameFor} />
     </SafeAreaView>
   );
 }

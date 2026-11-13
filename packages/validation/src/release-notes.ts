@@ -136,6 +136,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp opens with questions about your own account, like your next event or your open tasks, instead of the same three examples for everyone.",
       "Weekly and monthly repeating events set up or changed from now on keep the same time of day when the clocks change for daylight saving.",
       "While Ask Frapp works, it now says what it is really doing, like which records it is reading and how many sources it found.",
+      "A pinned message's pin now fills in, so it's easy to spot.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -145,6 +146,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When you upload a document, the Type choices are now your chapter's own list, and officers who manage documents can rename, add or remove types with Edit types.",
       "Officers can import a whole folder into Documents: Frapp suggests a folder, type and title for each file, sets aside copies and files it can't take, and imports them all once you've checked.",
       "You can now post a form in chat from the + menu, with short answer, paragraph, multiple choice, checkbox, dropdown and yes or no questions. Your answers aren't posted in the chat, and you can change them until the form closes.",
+      "Pinning a channel or saving a message now fills in its pin or ribbon, so it's clear which ones are on.",
+      "If an email sign-in link opens a brand-new account instead of the one you already have, you're now told so and can sign out in one step.",
+      "When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them; a sign-up sheet's creator can export who signed up for what.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",

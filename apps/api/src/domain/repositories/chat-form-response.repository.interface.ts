@@ -16,22 +16,23 @@ export class FormResponseRefusedError extends Error {
 /**
  * Members' answers to form cards in chat (#3926 step 3).
  *
- * Every method takes the member's id and filters on it: that filter is the
- * privacy boundary, since the table has RLS on and no policies and the API
+ * Every method but {@link IChatFormResponseRepository.findAllForCreator}
+ * takes the member's id and filters on it: that filter is the privacy boundary, since the table has RLS on and no policies and the API
  * reads it through the service role.
  */
 export interface IChatFormResponseRepository {
   /** The member's answers to one form, or `null` before they answer. */
   findOwn(messageId: string, userId: string): Promise<ChatFormResponse | null>;
   /**
-   * Which of these forms the member has answered: the ids among
-   * `messageIds` that have a row of theirs. Reads no answers, so Activity can
-   * tell a form that still needs them without loading what they wrote.
+   * Which of these forms the member has answered, and when they first did:
+   * the ids among `messageIds` that have a row of theirs. Reads no answers,
+   * so Activity can tell a form that still needs them, and one they answered
+   * this week, without loading what they wrote.
    */
-  findAnsweredMessageIds(
+  findAnswered(
     messageIds: string[],
     userId: string,
-  ): Promise<string[]>;
+  ): Promise<Pick<ChatFormResponse, 'message_id' | 'created_at'>[]>;
   /**
    * Write the member's answers (inserted, or replacing their last ones).
    * Throws {@link FormResponseRefusedError} when the card is missing or
@@ -44,4 +45,11 @@ export interface IChatFormResponseRepository {
     userId: string,
     answers: Record<string, string | string[]>,
   ): Promise<ChatFormResponse>;
+  /**
+   * Every member's answers to one form, oldest first, for the form's creator
+   * (#3926 step 4). The one read that is not filtered on a member: the caller
+   * (`ChatFormService.getResponses`) must have checked that the reader is
+   * the card's sender before calling it.
+   */
+  findAllForCreator(messageId: string): Promise<ChatFormResponse[]>;
 }

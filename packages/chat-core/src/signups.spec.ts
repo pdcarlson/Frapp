@@ -5,6 +5,8 @@ import {
   SIGNUP_SPOTS_PROBLEM,
   addSignupSlot,
   canCloseSignup,
+  canExportSignup,
+  signupExportRows,
   headcountAnswerPayload,
   headcountNotePayload,
   isSignupClosed,
@@ -516,5 +518,92 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
         now,
       ),
     ).toEqual({ ok: false, problem: SIGNUP_END_TOO_FAR_PROBLEM });
+  });
+});
+
+describe("sign-up export (#3926 step 4)", () => {
+  it("offers Export to the creator or a channels:manage holder, open or closed", () => {
+    const own = {
+      sender_id: "u1",
+      _status: "confirmed",
+      is_deleted: false,
+    } as const;
+    expect(canExportSignup(own, "u1", false)).toBe(true);
+    expect(canExportSignup(own, "u2", false)).toBe(false);
+    expect(canExportSignup(own, "u2", true)).toBe(true);
+    expect(canExportSignup({ ...own, is_deleted: true }, "u1", false)).toBe(
+      false,
+    );
+    // Not until the server has the card.
+    expect(canExportSignup({ ...own, _status: "pending" }, "u1", true)).toBe(
+      false,
+    );
+  });
+
+  it("lists each member per slot, in slot order and then sign-up order", () => {
+    const rows = signupExportRows(
+      message(card, [
+        { user: "bo", slots: ["sat"], at: "2026-11-12T10:05:00Z" },
+        { user: "ann", slots: ["fri", "sat"], at: "2026-11-12T10:00:00Z" },
+        { user: "gone", slots: ["fri"], at: "2026-11-12T10:09:00Z" },
+      ]),
+      card,
+      (id) => ({ ann: "Ann Lee", bo: "Bo Park" })[id] ?? `Member ${id}`,
+    );
+    expect(rows).toEqual([
+      {
+        Slot: "Friday",
+        Name: "Ann Lee",
+        "Signed up at": "2026-11-12T10:00:00Z",
+      },
+      {
+        Slot: "Friday",
+        Name: "Member gone",
+        "Signed up at": "2026-11-12T10:09:00Z",
+      },
+      {
+        Slot: "Saturday",
+        Name: "Ann Lee",
+        "Signed up at": "2026-11-12T10:00:00Z",
+      },
+      {
+        Slot: "Saturday",
+        Name: "Bo Park",
+        "Signed up at": "2026-11-12T10:05:00Z",
+      },
+    ]);
+  });
+
+  it("names a headcount's Answer and carries each member's note", () => {
+    const headcount: SignupPayload = {
+      title: "Formal",
+      format: "headcount",
+      slots: [
+        { id: "going", label: "Going", capacity: null },
+        { id: "not_going", label: "Can’t make it", capacity: null },
+      ],
+    };
+    const rows = signupExportRows(
+      message(headcount, [
+        { user: "ann", slots: ["going"], note: "running late" },
+        { user: "bo", slots: ["not_going"] },
+      ]),
+      headcount,
+      (id) => id,
+    );
+    expect(rows).toEqual([
+      {
+        Answer: "Going",
+        Name: "ann",
+        Note: "running late",
+        "Signed up at": "2026-11-12T10:00:00Z",
+      },
+      {
+        Answer: "Can’t make it",
+        Name: "bo",
+        Note: "",
+        "Signed up at": "2026-11-12T10:01:00Z",
+      },
+    ]);
   });
 });

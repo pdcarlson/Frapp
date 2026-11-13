@@ -263,6 +263,12 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_closeCard_v1: OFFICER_MODERATION,
   ChatFormController_getOwnResponse_v1: OWN_FORM_ANSWERS,
   ChatFormController_saveResponse_v1: OWN_FORM_ANSWERS,
+  // #3926 step 4: every member's answers, for the form's creator only. A
+  // responder the creator blocked stays listed, as a vote stays counted.
+  ChatFormController_getResponses_v1: {
+    status: 'not-hidden',
+    why: "A form's answers are written to its creator; leaving out a blocked responder would misreport who answered. Spec: README § Report and block, the form answers row.",
+  },
   ChatController_deleteMessage_v1: {
     status: 'no-foreign-content',
     why: 'Returns the soft-deleted row, whose content is already `[message deleted]`.',

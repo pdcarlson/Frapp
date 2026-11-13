@@ -2,17 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { getUser, redirect, signOutCurrentSession } = vi.hoisted(() => ({
+const { getUser, getSession, redirect, signOutCurrentSession } = vi.hoisted(() => ({
   getUser: vi.fn(),
+  getSession: vi.fn(async () => ({ data: { session: { access_token: "tok" } } })),
   redirect: vi.fn((to: string) => {
     throw new Error(`NEXT_REDIRECT ${to}`);
   }),
   signOutCurrentSession: vi.fn(async () => {}),
 }));
+// The new-account check's chapters read; the check itself runs for real.
+const fetchMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/supabase/server", () => ({
-  createSupabaseServerClient: vi.fn(async () => ({ auth: { getUser } })),
+  createSupabaseServerClient: vi.fn(async () => ({ auth: { getUser, getSession } })),
 }));
 vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession }));
 
@@ -40,10 +43,73 @@ describe("/new-account (#3786)", () => {
 
   beforeEach(() => {
     getUser.mockReset();
+    getSession.mockClear();
+    getSession.mockResolvedValue({ data: { session: { access_token: "tok" } } });
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(new Error("unexpected chapters read"));
+    vi.stubGlobal("fetch", fetchMock);
     redirect.mockClear();
     signOutCurrentSession.mockClear();
     assign.mockReset();
     vi.stubGlobal("location", { ...window.location, assign });
+  });
+
+  /** As GoTrue hands it back on the sign-in that opened its first link. */
+  function newEmailUser(email: string) {
+    return {
+      email,
+      created_at: "2026-11-13T09:00:00.000Z",
+      email_confirmed_at: "2026-11-13T09:40:00.000Z",
+      last_sign_in_at: "2026-11-13T09:40:00.300Z",
+      app_metadata: { provider: "email" },
+      identities: [{ provider: "email" }],
+    };
+  }
+  const chapters = (list: unknown[]) =>
+    fetchMock.mockResolvedValue({ ok: true, json: async () => list });
+
+  it("shows a brand-new magic-link account the notice (#3801)", async () => {
+    getUser.mockResolvedValue({ data: { user: newEmailUser("new@school.edu") } });
+    chapters([]);
+    await renderPage("/chat");
+    expect(redirect).not.toHaveBeenCalled();
+    expect(new Headers(fetchMock.mock.calls[0]![1].headers).get("Authorization")).toBe(
+      "Bearer tok",
+    );
+    expect(
+      screen.getByText(
+        "This is a new Frapp account for new@school.edu. Already a member? Sign out and use the method you joined with.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("sends an email account that belongs to a chapter straight on (#3801)", async () => {
+    getUser.mockResolvedValue({ data: { user: newEmailUser("member@school.edu") } });
+    chapters([{ chapter_id: "c1" }]);
+    await expect(renderPage("/events")).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/events");
+  });
+
+  it("sends a returning chapterless email account straight on, without reading the API (#3801)", async () => {
+    getUser.mockResolvedValue({
+      data: {
+        user: {
+          ...newEmailUser("waiting@school.edu"),
+          created_at: "2026-10-01T12:00:00.000Z",
+          email_confirmed_at: "2026-10-01T12:03:00.000Z",
+        },
+      },
+    });
+    await expect(renderPage("/join?token=inv-1")).rejects.toThrow("NEXT_REDIRECT");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(redirect).toHaveBeenCalledWith("/join?token=inv-1");
+  });
+
+  it("falls open to `next` when the chapters read fails (#3801)", async () => {
+    getUser.mockResolvedValue({ data: { user: newEmailUser("new@school.edu") } });
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(renderPage("/chat")).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/chat");
   });
 
   it("names the new account and tells a member how to get back to theirs", async () => {

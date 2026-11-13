@@ -86,7 +86,7 @@ function render(
     isConfirmed = true,
     viewerId = "me",
   }: {
-    open?: (id: string) => void;
+    open?: (id: string, mode?: "fill" | "responses") => void;
     hosted?: boolean;
     onCloseForm?: (id: string) => void;
     isConfirmed?: boolean;
@@ -207,5 +207,22 @@ describe("FormCard on the phone (#3926 step 3)", () => {
   it("holds its button where no screen hosts the form page", () => {
     const tree = render(form(), { hosted: false });
     expect(button(tree, "Fill out")!.props.disabled).toBe(true);
+  });
+
+  it("offers Responses to the form's creator alone, opened through the host (#3926 step 4)", () => {
+    expect(button(render(form()), "Responses")).toBeUndefined();
+    // Not even a channel moderator, as the API decides.
+    myPermissions.current = ["channels:manage"];
+    expect(button(render(form()), "Responses")).toBeUndefined();
+
+    const open = vi.fn();
+    const mine = render(form({}, { sender_id: "me" }), { open });
+    act(() => button(mine, "Responses")!.props.onPress());
+    expect(open).toHaveBeenCalledWith("m1", "responses");
+
+    const pending = render(form({}, { sender_id: "me" }), {
+      isConfirmed: false,
+    });
+    expect(button(pending, "Responses")!.props.disabled).toBe(true);
   });
 });

@@ -25,9 +25,10 @@ const HREF: Record<StandingRow["id"], string> = {
  * "This semester" at the top of `/activity` (Evan, 2026-11-12: a dashboard
  * with "progress bars and stuff"): the member's points and place, the
  * required events they made, their service hours and this week's study time,
- * from `GET /v1/activity/standing`. The phone draws the same rows
- * (`apps/mobile/components/activity/activity-standing.tsx`); here they are
- * tiles side by side, in the recipe of the summary's tiles below them.
+ * from `GET /v1/activity/standing`. The phone draws the same numbers as
+ * gauges under its week card (`activityStandingGauges`,
+ * `apps/mobile/components/activity/semester-strip.tsx`, #4766); here they
+ * are tiles side by side, in the recipe of the summary's tiles below them.
  *
  * A cell opens the page that owns its number. A cell draws a meter only when
  * it has a target: required events always, and points or hours when the

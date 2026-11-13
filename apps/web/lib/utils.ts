@@ -1,8 +1,9 @@
 import {
   CURRENCY_AMOUNT,
-  localIsoDate,
+  exportFileName,
+  exportHeaders,
   neutralizeFormulaCell,
-  toCsvCell,
+  rowsToCsv,
 } from "@repo/formatting";
 import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -134,37 +135,6 @@ export function labelled(
   formatted: string | null,
 ): string | null {
   return formatted ? `${label} ${formatted}` : null;
-}
-
-/** Column order for an export: every row's own keys, in first-seen order. */
-function exportHeaders(rows: Record<string, string>[]): string[] {
-  const headerSet = new Set<string>();
-  for (const row of rows) {
-    for (const key of Object.keys(row)) headerSet.add(key);
-  }
-  return Array.from(headerSet);
-}
-
-/**
- * Serialize flat row objects to a CSV string: UTF-8 BOM + CRLF line endings so
- * Excel renders umlauts/emoji correctly and downstream spreadsheet behavior
- * stays predictable without extra client libs. Column order is the union of
- * every row's own keys, in first-seen order, so rows with different shapes
- * still produce one header. Each cell goes through `toCsvCell`
- * (`@repo/formatting`): formula-shaped text made inert, then quoted. Shared
- * by every dashboard export (Points, Billing, Reports) through `exportRows` rather than each hand-rolling the
- * same escaping and BOM/CRLF handling.
- */
-export function rowsToCsv(rows: Record<string, string>[]): string {
-  if (rows.length === 0) return "";
-  const headers = exportHeaders(rows);
-  const lines = [headers.map(toCsvCell).join(",")];
-  for (const row of rows) {
-    lines.push(
-      headers.map((header) => toCsvCell(row[header] ?? "")).join(","),
-    );
-  }
-  return `\uFEFF${lines.join("\r\n")}`;
 }
 
 /**
@@ -300,13 +270,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   }
 }
 
-/** `frapp-<filenamePrefix>-<date>.<extension>`, the one export filename shape. */
-function exportFilename(filenamePrefix: string, extension: string): string {
-  // The member's own day, not UTC's: an evening export in the Americas would
-  // otherwise be dated tomorrow.
-  return `frapp-${filenamePrefix}-${localIsoDate(new Date())}.${extension}`;
-}
-
 /**
  * Serialize rows to CSV and download them as `frapp-<filenamePrefix>-<date>.csv`.
  * Shared so the MIME type and filename convention live in one place.
@@ -316,7 +279,7 @@ export function downloadCsv(
   filenamePrefix: string,
 ): void {
   const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, exportFilename(filenamePrefix, "csv"));
+  downloadBlob(blob, exportFileName(filenamePrefix, "csv"));
 }
 
 /**
@@ -333,7 +296,9 @@ export async function downloadXlsx(
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const data = rowsToXlsxData(rows).map((row, rowIndex) =>
     rowIndex === 0
-      ? row.map((cell) => (cell ? { ...cell, fontWeight: "bold" as const } : cell))
+      ? row.map((cell) =>
+          cell ? { ...cell, fontWeight: "bold" as const } : cell,
+        )
       : row,
   );
   // The writer does no auto-fit, and a date cell wider than its column shows
@@ -341,15 +306,17 @@ export async function downloadXlsx(
   const columns = exportHeaders(rows).map((header) => ({
     width: Math.min(
       60,
-      Math.max(header.length, ...rows.map((row) => (row[header] ?? "").length)) +
-        2,
+      Math.max(
+        header.length,
+        ...rows.map((row) => (row[header] ?? "").length),
+      ) + 2,
     ),
   }));
   const blob = await writeXlsxFile(data, {
     stickyRowsCount: 1,
     columns,
   }).toBlob();
-  downloadBlob(blob, exportFilename(filenamePrefix, "xlsx"));
+  downloadBlob(blob, exportFileName(filenamePrefix, "xlsx"));
 }
 
 /** The file types an export offers, in menu order. */

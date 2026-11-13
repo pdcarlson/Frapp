@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ROLE_NAME_CLASS } from "@/components/roles/role-name-paint";
 
 /*
  * The list's part in keeping the officer report queue fresh (#2257). The
@@ -600,9 +601,12 @@ describe("NotificationsPopover: rows that stand out (#4346)", () => {
       name: /Channel message\.\s*Ryan Castellano in #general/,
     });
     expect(row).toHaveAttribute("data-notification-kind", "channel");
-    expect(row.querySelector("[data-person-name]")).toHaveStyle({
-      color: "#8FA8FF",
-    });
+    const name = row.querySelector("[data-person-name]");
+    expect(name).toHaveStyle({ "--role-name": "#8FA8FF" });
+    // The class paints the colour (resting and hovered lift, #4387); the row
+    // carries the named group the lift keys off.
+    expect(name).toHaveClass(...ROLE_NAME_CLASS.split(" "));
+    expect(row).toHaveClass("group/row");
     expect(row).toHaveTextContent("RC");
     expect(row.querySelector("[data-kind-badge]")).toHaveTextContent("#");
   });
