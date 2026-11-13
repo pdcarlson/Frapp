@@ -97,11 +97,13 @@ export class AskTraceService implements OnModuleInit {
       if (!kept) return false;
       // A No on the AI sheet while the answer was being written has already
       // deleted this member's traces; this one landed after. Read their
-      // answer again and take it back out.
+      // answer again and take this one back out. Only this one: an answer
+      // that is not a yes can also be a sheet they have yet to see again,
+      // which is no reason to delete what they agreed to before.
       if (
         (await this.consent.getConsentState(trace.user_id)).answer !== 'yes'
       ) {
-        await this.traces.deleteByUser(trace.user_id);
+        await this.traces.deleteTrace(trace.id, trace.chapter_id);
         return false;
       }
       await this.send({ ...trace, is_rephrase: isRephrase }, steps);
@@ -161,22 +163,25 @@ export class AskTraceService implements OnModuleInit {
           proposals: trace.proposals,
         },
       });
-      for (const step of steps) {
-        if (step.kind !== 'tool') continue;
-        await this.analytics.track(ASK_TOOL_EVENT, trace.user_id, {
-          ...options,
-          properties: {
-            ask_id: trace.id,
-            tool: step.tool,
-            outcome: step.outcome,
-            round: step.round,
-            duration_ms: step.duration_ms,
-            arg_bytes: step.arg_bytes,
-            result_chars: step.result_chars,
-            result_sources: step.result_sources,
-          },
-        });
-      }
+      await Promise.all(
+        steps
+          .filter((step) => step.kind === 'tool')
+          .map((step) =>
+            this.analytics.track(ASK_TOOL_EVENT, trace.user_id, {
+              ...options,
+              properties: {
+                ask_id: trace.id,
+                tool: step.tool,
+                outcome: step.outcome,
+                round: step.round,
+                duration_ms: step.duration_ms,
+                arg_bytes: step.arg_bytes,
+                result_chars: step.result_chars,
+                result_sources: step.result_sources,
+              },
+            }),
+          ),
+      );
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',

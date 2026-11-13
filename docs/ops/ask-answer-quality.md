@@ -2,6 +2,8 @@
 
 How the Frapp team tells whether Ask's answers are good, from records that hold no text (#4902). The rules are in [`spec/behavior/ai.md` § Stored AI text](../../spec/behavior/ai.md#stored-ai-text) and [§ Feedback on an answer](../../spec/behavior/ai.md#feedback-on-an-answer); the table shapes are the migration's (`20261113203728_ai_ask_traces_and_feedback.sql`). When a member chooses to send the words of an answer, that is a report, and reading it is on [`ai-stored-text.md`](ai-stored-text.md).
 
+> **Not running yet (2026-11-13).** Nothing calls `AskTraceService.record` until the agent loop does (#4899). Until then no trace is written, so a thumbs or a tap on any answer is refused as not found and the tables stay empty.
+
 ## What is kept
 
 | Table | One row per | Holds |
@@ -91,7 +93,7 @@ group by 1, 2
 order by 1, 3 desc;
 ```
 
-A null `tool` with `unknown_tool` is the model naming a tool it was not offered.
+A null `tool` with `unknown_tool` is the model naming a tool it was not offered. `over_limit` is a call the model asked for after the turn had used up its tool calls; it did not run and is not counted in `tool_failures`.
 
 What one marked-down turn did, step by step, to turn a miss into a test case:
 

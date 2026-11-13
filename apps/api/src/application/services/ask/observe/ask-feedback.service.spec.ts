@@ -31,6 +31,7 @@ function build() {
           ? TRACE
           : null,
     ),
+    findFeedback: jest.fn(async () => feedback),
     upsertFeedback: jest.fn(
       async (input: { rating: string; reason: string | null; now: Date }) => {
         feedback = { rating: input.rating, reason: input.reason };
@@ -152,6 +153,20 @@ describe('AskFeedbackService', () => {
     ).not.toThrow();
   });
 
+  it('the same thumbs sent again is not counted twice; a changed one is', async () => {
+    const { service, events } = build();
+    await service.rate(mine, 'down', null, NOW);
+    await service.rate(mine, 'down', null, NOW);
+    expect(events()).toHaveLength(1);
+    await service.rate(mine, 'down', 'wrong', NOW);
+    await service.rate(mine, 'up', null, NOW);
+    expect(events().map((call) => call[2].properties.rating)).toEqual([
+      'down',
+      'down',
+      'up',
+    ]);
+  });
+
   it('a failed event never costs the member their thumbs', async () => {
     const { service, analytics } = build();
     analytics.track.mockRejectedValueOnce(new Error('posthog down'));
@@ -171,6 +186,14 @@ describe('AskFeedbackService', () => {
     ]);
     await service.clear(mine);
     expect(events()).toHaveLength(2);
+    for (const [name, , options] of events()) {
+      expect(() =>
+        assertContentFreeProperties({
+          name,
+          properties: options.properties as never,
+        }),
+      ).not.toThrow();
+    }
   });
 
   it('only the asker can take a thumbs back', async () => {
@@ -197,6 +220,13 @@ describe('AskFeedbackService', () => {
         }),
       ],
     ]);
+    const [name, , options] = events()[0];
+    expect(() =>
+      assertContentFreeProperties({
+        name,
+        properties: options.properties as never,
+      }),
+    ).not.toThrow();
     expect(traces.upsertFeedback).not.toHaveBeenCalled();
     await expect(
       service.signal({ ...mine, userId: OTHER }, 'retried'),

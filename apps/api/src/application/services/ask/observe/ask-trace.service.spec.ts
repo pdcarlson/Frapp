@@ -35,6 +35,7 @@ function build(
       },
     ),
     lastStartedAt: jest.fn(async () => over.last ?? null),
+    deleteTrace: jest.fn(async () => true),
     deleteByUser: jest.fn(async () => 1),
     deleteExpired: jest.fn(async () => 3),
   };
@@ -131,8 +132,18 @@ describe('AskTraceService', () => {
   it('takes the trace back out when the member said No while it was written', async () => {
     const { service, traces, analytics } = build({ answer: 'no' });
     await expect(service.record(turn())).resolves.toBe(false);
-    expect(traces.deleteByUser).toHaveBeenCalledWith(turn().userId);
+    expect(traces.deleteTrace).toHaveBeenCalledWith(
+      turn().askId,
+      turn().chapterId,
+    );
     expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  it('a sheet the member has yet to answer again costs this trace only, not their earlier ones', async () => {
+    const { service, traces } = build({ answer: null });
+    await expect(service.record(turn())).resolves.toBe(false);
+    expect(traces.deleteTrace).toHaveBeenCalledTimes(1);
+    expect(traces.deleteByUser).not.toHaveBeenCalled();
   });
 
   it('a No on the AI sheet deletes the member’s traces', async () => {

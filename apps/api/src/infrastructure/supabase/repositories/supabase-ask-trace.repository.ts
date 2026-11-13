@@ -60,7 +60,14 @@ export class SupabaseAskTraceRepository implements IAskTraceRepository {
       if (stepsError.code === FOREIGN_KEY_VIOLATION) return false;
       // A turn with its steps missing would read as one that used no
       // tools. Keep neither.
-      await this.supabase.from('ai_ask_traces').delete().eq('id', trace.id);
+      const { error: cleanupError } = await this.supabase
+        .from('ai_ask_traces')
+        .delete()
+        .eq('id', trace.id)
+        .eq('chapter_id', trace.chapter_id);
+      // The trace is still there without its steps: say that, not the
+      // error that led here.
+      if (cleanupError) throw new SupabaseQueryError(cleanupError);
       throw new SupabaseQueryError(stepsError);
     }
     return true;
@@ -93,6 +100,22 @@ export class SupabaseAskTraceRepository implements IAskTraceRepository {
       .from('ai_ask_traces')
       .select(SUMMARY_SELECT)
       .eq('id', askId)
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? null;
+  }
+
+  async findFeedback(
+    askId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<Pick<AskFeedbackRow, 'rating' | 'reason'> | null> {
+    const { data, error } = await this.supabase
+      .from('ai_ask_feedback')
+      .select('rating, reason')
+      .eq('ask_id', askId)
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .maybeSingle();
@@ -144,6 +167,17 @@ export class SupabaseAskTraceRepository implements IAskTraceRepository {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .select('ask_id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data?.length ?? 0) > 0;
+  }
+
+  async deleteTrace(askId: string, chapterId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('ai_ask_traces')
+      .delete()
+      .eq('id', askId)
+      .eq('chapter_id', chapterId)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
     return (data?.length ?? 0) > 0;
   }

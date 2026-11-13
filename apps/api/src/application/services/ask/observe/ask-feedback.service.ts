@@ -74,6 +74,11 @@ export class AskFeedbackService {
       });
     }
     const trace = await this.mine(actor);
+    const before = await this.traces.findFeedback(
+      trace.id,
+      actor.chapterId,
+      actor.userId,
+    );
     const row = await this.traces.upsertFeedback({
       askId: trace.id,
       chapterId: actor.chapterId,
@@ -84,7 +89,11 @@ export class AskFeedbackService {
     });
     // The trace was swept, or the member said No, between the two calls.
     if (!row) throw notFound();
-    this.track(ASK_RATED_EVENT, actor, trace, { rating, reason });
+    // The same thumbs sent again (a retry, a second device) is not a
+    // second rating, so it is not counted as one.
+    if (before?.rating !== rating || (before.reason ?? null) !== reason) {
+      this.track(ASK_RATED_EVENT, actor, trace, { rating, reason });
+    }
     return row;
   }
 

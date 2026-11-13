@@ -71,7 +71,7 @@ interface Captured {
  * A Supabase client that records every argument it is given. Reads answer
  * with the asker's own trace, so a thumbs has something to stand on.
  */
-function recordingSupabase(database: unknown[][], failWith?: string) {
+function recordingSupabase(database: unknown[][], failInsertsWith?: string) {
   const rows: Record<string, unknown> = {
     ai_ask_traces: {
       id: ASK,
@@ -93,10 +93,13 @@ function recordingSupabase(database: unknown[][], failWith?: string) {
   };
   const builder = (table: string, path: string): unknown => {
     const row = rows[table] ?? null;
-    const result = failWith
-      ? { data: null, error: { code: 'XX000', message: failWith } }
-      : // A delete answers with the rows it removed.
-        { data: path.includes('.delete') ? [row] : row, error: null };
+    // Only a write fails, so the reads before it pass and the turn's row
+    // really is handed to the database before it says no.
+    const result =
+      failInsertsWith && path.includes('.insert')
+        ? { data: null, error: { code: 'XX000', message: failInsertsWith } }
+        : // A delete answers with the rows it removed.
+          { data: path.includes('.delete') ? [row] : row, error: null };
     const target = Object.assign(() => undefined, {
       then: (resolve: (value: unknown) => unknown) => resolve(result),
     });
@@ -257,6 +260,9 @@ describe('Stored AI text: a trace and a thumbs keep no text (#4902)', () => {
       ({ traces }) => traces.record(leakyTurn()),
       'insert failed',
     );
+    expect(
+      captured.database.some((call) => call[0] === 'ai_ask_traces.insert'),
+    ).toBe(true);
     // The failure was reported ...
     expect(
       captured.output.some((line) => line.includes('Ask trace')) ||
@@ -270,7 +276,7 @@ describe('Stored AI text: a trace and a thumbs keep no text (#4902)', () => {
   it('a thumbs and a signal write and send only codes', async () => {
     const actor = { chapterId: CHAPTER, userId: USER, askId: ASK };
     const captured = await run(async ({ feedback }) => {
-      await feedback.rate(actor, 'down', 'wrong');
+      await feedback.rate(actor, 'down', 'missed');
       await feedback.signal(actor, 'source_opened');
       await feedback.clear(actor);
     });

@@ -143,8 +143,8 @@ create table if not exists public.ai_ask_trace_steps (
     check (kind = 'tool' or tool is null),
   constraint ai_ask_trace_steps_outcome_known
     check (outcome in (
-      'ok', 'empty', 'invalid_args', 'denied', 'unknown_tool', 'refused',
-      'stopped', 'error'
+      'ok', 'empty', 'invalid_args', 'denied', 'unknown_tool', 'over_limit',
+      'refused', 'stopped', 'error'
     )),
   constraint ai_ask_trace_steps_counts_not_negative
     check (

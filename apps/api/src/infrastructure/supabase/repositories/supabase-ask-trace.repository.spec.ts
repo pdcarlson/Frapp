@@ -172,6 +172,29 @@ describe('SupabaseAskTraceRepository — tenant scope', () => {
     ).toEqual(['ask-new', 'ask-new']);
   });
 
+  it('findFeedback reads only the chapter’s thumbs', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findFeedback('ask', CHAPTER_A, USER_SHARED),
+    );
+    expect(found).toEqual(
+      expect.objectContaining({ rating: 'up', reason: null }),
+    );
+    await expect(
+      repo.findFeedback('ask', CHAPTER_A, USER_B),
+    ).resolves.toBeNull();
+  });
+
+  it('deleteTrace deletes only the chapter’s trace', async () => {
+    await expect(repo.deleteTrace('ask-a', CHAPTER_B)).resolves.toBe(false);
+    const deleted = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.deleteTrace('ask-a', CHAPTER_A),
+    );
+    expect(deleted).toBe(true);
+    expect(harness.rows('ai_ask_traces').map((row) => row.id)).toEqual([
+      'ask-b',
+    ]);
+  });
+
   it('upsertFeedback writes the thumbs under the chapter it was given', async () => {
     const row = await repo.upsertFeedback({
       askId: 'ask-new',
@@ -219,5 +242,74 @@ describe('SupabaseAskTraceRepository — tenant scope', () => {
     expect(harness.rows('ai_ask_traces')).toHaveLength(2);
     await expect(repo.deleteExpired(new Date(EXPIRES))).resolves.toBe(2);
     expect(harness.rows('ai_ask_traces')).toHaveLength(0);
+  });
+});
+
+/**
+ * What `insertTrace` does when the database says no, which the harness
+ * above cannot say. A client that answers each write in turn.
+ */
+function scripted(answers: { code: string }[]) {
+  const calls: string[] = [];
+  const next = () => {
+    const error = answers.shift() ?? null;
+    return { data: null, error: error && { ...error, message: 'no' } };
+  };
+  const client = {
+    from: (table: string) => ({
+      insert: () => {
+        calls.push(`${table}.insert`);
+        return Promise.resolve(next());
+      },
+      delete: () => {
+        calls.push(`${table}.delete`);
+        const chain = {
+          eq: () => chain,
+          then: (resolve: (value: unknown) => unknown) => resolve(next()),
+        };
+        return chain;
+      },
+    }),
+  };
+  return { calls, repo: new SupabaseAskTraceRepository(client as never) };
+}
+
+describe('SupabaseAskTraceRepository — a refused insert', () => {
+  it.each([
+    ['this ask already has a trace', '23505'],
+    ['the member is gone', '23503'],
+  ])('keeps nothing and says so when %s', async (_why, code) => {
+    const { repo, calls } = scripted([{ code }]);
+    await expect(repo.insertTrace(trace({}), [step({})])).resolves.toBe(false);
+    expect(calls).toEqual(['ai_ask_traces.insert']);
+  });
+
+  it('says so when the trace went away before its steps landed', async () => {
+    const { repo } = scripted([undefined as never, { code: '23503' }]);
+    await expect(repo.insertTrace(trace({}), [step({})])).resolves.toBe(false);
+  });
+
+  it('takes the trace back out when its steps cannot be kept', async () => {
+    const { repo, calls } = scripted([undefined as never, { code: 'XX000' }]);
+    await expect(repo.insertTrace(trace({}), [step({})])).rejects.toThrow();
+    expect(calls).toEqual([
+      'ai_ask_traces.insert',
+      'ai_ask_trace_steps.insert',
+      'ai_ask_traces.delete',
+    ]);
+  });
+
+  it('reports a cleanup that failed too', async () => {
+    const { repo } = scripted([
+      undefined as never,
+      { code: 'XX000' },
+      { code: 'XX001' },
+    ]);
+    await expect(repo.insertTrace(trace({}), [step({})])).rejects.toThrow();
+  });
+
+  it('throws any other refusal', async () => {
+    const { repo } = scripted([{ code: 'XX000' }]);
+    await expect(repo.insertTrace(trace({}), [])).rejects.toThrow();
   });
 });

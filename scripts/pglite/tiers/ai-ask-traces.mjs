@@ -137,6 +137,7 @@ console.log("\n=== Functional: Ask traces and thumbs (20261113203728) ===");
     await step(ASK(1), 1);
     await step(ASK(2), 0);
     await step(ASK(3), 0, { tool: null, outcome: "unknown_tool" });
+    await step(ASK(3), 1, { outcome: "over_limit" });
     check(
       "a step's tool is a name, never a sentence",
       await refused(() => step(ASK(1), 2, { tool: SENTENCE })),

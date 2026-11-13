@@ -45,6 +45,13 @@ export interface IAskTraceRepository {
     userId: string,
   ): Promise<AskTraceSummary | null>;
 
+  /** The thumbs this member has on this answer in this chapter, if any. */
+  findFeedback(
+    askId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<Pick<AskFeedbackRow, 'rating' | 'reason'> | null>;
+
   /**
    * Sets the asker's thumbs on an answer, replacing an earlier one. Returns
    * null when the trace went away since it was read.
@@ -64,6 +71,12 @@ export interface IAskTraceRepository {
     chapterId: string,
     userId: string,
   ): Promise<boolean>;
+
+  /**
+   * Deletes one trace in one chapter, and with it its steps and thumbs.
+   * Returns whether there was one.
+   */
+  deleteTrace(askId: string, chapterId: string): Promise<boolean>;
 
   /**
    * Deletes every trace a person has, in every chapter, and with each its

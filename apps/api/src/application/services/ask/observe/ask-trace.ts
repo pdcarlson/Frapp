@@ -127,6 +127,8 @@ export interface AskTraceModelStep {
  * - `denied`: the asker may not use it, or an id in the arguments was not
  *   theirs to open.
  * - `unknown_tool`: the model named a tool the loop does not have.
+ * - `over_limit`: the turn had used up its tool calls; it did not run. Not
+ *   a failure of the tool.
  * - `stopped`: the turn was stopped while it ran.
  * - `error`: it threw.
  */
@@ -141,6 +143,7 @@ export interface AskTraceToolStep {
     | 'invalid_args'
     | 'denied'
     | 'unknown_tool'
+    | 'over_limit'
     | 'stopped'
     | 'error';
   durationMs: number;
@@ -187,6 +190,7 @@ const TOOL_STEP_OUTCOMES = new Set([
   'invalid_args',
   'denied',
   'unknown_tool',
+  'over_limit',
   'stopped',
   'error',
 ]);

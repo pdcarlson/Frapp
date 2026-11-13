@@ -2,7 +2,7 @@
 
 Frapp keeps no prompt or answer text, with the exceptions in [`spec/behavior/ai.md` § Stored AI text](../../spec/behavior/ai.md#stored-ai-text). This page is how both work in operation (#4315, ADR-28 decision 8): [reports](#reports) a member makes with "Report this", and the 14-day beta diagnostics window on Ask Frapp. The rules are the spec's; the table shapes are the migrations' (`20261112220000_ai_reports.sql`, `20261112200000_ai_ask_diagnostics.sql`).
 
-What is kept about Ask that is not text, the trace of each turn and the member's thumbs on it, is on its own page: [`ask-answer-quality.md`](ask-answer-quality.md).
+What is kept about Ask that is not text, the trace of each turn and the member's thumbs on it, is kept 90 days and deleted sooner when the asker leaves the chapter, deletes their account or answers No on the AI sheet. It is on its own page: [`ask-answer-quality.md`](ask-answer-quality.md).
 
 ## Reports
 
