@@ -776,8 +776,9 @@ export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
     file: "supabase/migrations/20261113130014_roles_name_not_blank.sql",
     removed: true,
     reason:
-      "Renamed to 20261113145556 with the same SQL. It merged after 20261113132007 had " +
-      "reached staging, so staging's db push refused it; no hosted database ever applied it.",
+      "Renamed to 20261113145556 with the same SQL. It merged 52 seconds after " +
+      "20261113132007, before either reached staging; staging applied 132007 first and " +
+      "db push then refused 130014. Neither hosted database had applied it at the rename.",
   },
 ]);
 
