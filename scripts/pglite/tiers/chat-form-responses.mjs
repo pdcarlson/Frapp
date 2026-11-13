@@ -67,7 +67,10 @@ console.log(
     ).rows[0];
     check(
       "a save inserts the member's one row, and a second save replaces its answers",
-      !!first.ok && !!second.ok && rows.n === 1 && rows.q1 === "Sam B" &&
+      !!first.ok &&
+        !!second.ok &&
+        rows.n === 1 &&
+        rows.q1 === "Sam B" &&
         rows.ordered === true,
       { first, second, rows },
     );
@@ -124,8 +127,10 @@ console.log(
     ).rows[0];
     check(
       "only the API may save or read answers, and none is broadcast",
-      access.authed === false && access.service === true &&
-        access.rls === true && access.policies === 0 &&
+      access.authed === false &&
+        access.service === true &&
+        access.rls === true &&
+        access.policies === 0 &&
         access.published === 0,
       access,
     );
