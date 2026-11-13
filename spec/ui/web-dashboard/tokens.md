@@ -374,6 +374,11 @@ anything, and that `signetAccentSemanticVars`' key set is disjoint from that fam
 single edit that would retint all of them at once. The lock that test enforces is in
 [`README.md` § Brand and copy locks](README.md#brand-and-copy-locks).
 
+**2026-11-13: the consumer changed, the family stands.** #4702 removed the top-bar pill (Paul,
+2026-11-13). The family now paints Ask's source markers, chip numbers and Confirm inside the
+conversation ([`../design-system/components.md` §11](../design-system/components.md)); Ask's entry
+button takes the chapter accent instead.
+
 ---
 
 ### L-06 — The ladder is pitched unevenly, and its tightest rung got tighter

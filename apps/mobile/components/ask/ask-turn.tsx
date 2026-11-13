@@ -13,6 +13,7 @@ import {
   type AskAnswer,
   type AskSource,
 } from "@repo/validation";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -45,8 +46,10 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * the server decides what stands once the model stops, and that replaces it
  * (`ask.ts`).
  *
- * **Fixed gold, never the chapter accent** (§11): nothing here reaches
- * `useChapterBranding()`.
+ * **The member's bubble is the chapter's colour; Frapp's marks are gold.**
+ * The bubble takes the solid accent and its contrast-checked text colour
+ * (Paul, 2026-11-13; `ask-sheet.tsx`). The markers and the number on a source
+ * chip keep Ask's fixed gold (§11) and never read the chapter's colour.
  *
  * A refusal, "couldn't find that" and "not available" are the product working
  * as designed, not errors, so they read as plain answers.
@@ -86,12 +89,16 @@ export function AskTurn({
   report?: { reported: boolean; onPress: () => void } | null;
 }) {
   const { tokens } = useFrappTheme();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
 
   return (
     <View style={styles.turn}>
-      <View style={styles.bubble}>
-        <Text accessibilityRole="header" style={styles.answer}>
+      <View style={[styles.bubble, { backgroundColor: accentPrimary }]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.answer, { color: accentOnPrimary }]}
+        >
           {exchange.question}
         </Text>
       </View>
@@ -376,7 +383,6 @@ function createStyles(tokens: SignetTokens) {
       maxWidth: "85%",
       borderRadius: 18,
       borderBottomRightRadius: 6,
-      backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: 14,
       paddingVertical: tokens.spacing.sm,
     },

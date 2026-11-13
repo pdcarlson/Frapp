@@ -504,10 +504,9 @@ export function DashboardShell({
     */
     <div
       data-dashboard-shell=""
-      // From `lg` the open Ask panel sits beside the shell, not over it
-      // (`ask-panel.tsx` sets the attribute on `<html>`). A channel's
-      // summary takes the same place (`catch-up-panel.tsx`).
-      className="relative flex h-dvh overflow-clip bg-background lg:[[data-ask-open]_&]:pr-[440px] lg:[[data-catch-up-open]_&]:pr-[440px]"
+      // From `lg` a channel's open summary sits beside the shell, not over
+      // it (`catch-up-panel.tsx` sets the attribute on `<html>`).
+      className="relative flex h-dvh overflow-clip bg-background lg:[[data-catch-up-open]_&]:pr-[440px]"
     >
       <ChapterWizardGate />
       {/* A member whose roles grant nothing (#3236). */}

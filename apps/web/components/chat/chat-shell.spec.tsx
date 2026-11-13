@@ -1017,6 +1017,11 @@ vi.mock("@/components/ai/ai-consent-sheet", () => ({
     consentDialog: null,
   }),
 }));
+// Where Ask Frapp's conversation is drawn (#4702). Who gets one is the
+// host's question (`ask-host.spec.tsx`); here it only has to be in place.
+vi.mock("@/components/ask/ask-host", () => ({
+  AskSlot: () => <div data-testid="ask-slot" />,
+}));
 // The Important strip (#4186): the hook is the server's answer, so the shell
 // test drives it directly.
 const importantState = vi.hoisted(() => ({
@@ -1627,6 +1632,23 @@ beforeEach(() => {
 // announcements channel (#3414); the shell tells the composer so, from that
 // channel's `can_post`, and only that: a chapter with no announcements channel
 // leaves `/announce` to dispatch, which says the channel is missing.
+/**
+ * Ask Frapp opens over the chat, rising from the composer (#4702, Paul
+ * 2026-11-13: "the ask for app either pops up on top of that"). The chat
+ * column gives it the place: directly above the composer, in the column, so
+ * the card is the thread's width and moves with the composer as a draft
+ * grows.
+ */
+describe("ChatShell gives Ask Frapp its place (#4702)", () => {
+  it("puts the slot directly above the composer, inside the chat column", () => {
+    render(<ChatShell />);
+    const slot = screen.getByTestId("ask-slot");
+    const composer = screen.getByTestId("composer");
+    expect(slot.nextElementSibling).toBe(composer);
+    expect(slot.parentElement).toBe(composer.parentElement);
+  });
+});
+
 describe("ChatShell /announce gate (#3414)", () => {
   afterEach(() => {
     channelsQueryState.value = {};

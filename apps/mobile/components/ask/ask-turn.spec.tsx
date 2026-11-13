@@ -2,7 +2,11 @@
 import React from "react";
 import { act } from "react";
 import { Text } from "react-native";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
 import {
@@ -24,13 +28,14 @@ import { AskTurn } from "./ask-turn";
  * can't drift.
  */
 
-// A purple chapter: Ask is fixed gold, so nothing here may read it.
-const branding = vi.hoisted(() => ({ read: vi.fn() }));
+// A purple chapter: the member's bubble takes its solid accent pair, and
+// nothing that is Frapp's (a marker, a chip's number) may.
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => {
-    branding.read();
-    return { accent: "#8B5CF6" };
-  },
+  useChapterBranding: () => ({
+    accent: "#8B5CF6",
+    accentPrimary: "#7C3AED",
+    accentOnPrimary: "#FFFFFF",
+  }),
 }));
 
 const BYLAWS: AskSource = {
@@ -307,9 +312,34 @@ describe("AskTurn", () => {
     expect(text).toContain(askLeftOutLine(3));
   });
 
-  it("never reads the chapter accent", () => {
-    render(exchange({ answer: answer() }));
-    expect(branding.read).not.toHaveBeenCalled();
+  it("draws the member's bubble in the chapter's colour and leaves Frapp's marks gold (#4702)", () => {
+    const tree = render(exchange({ answer: answer() }));
+    const flat = (style: unknown): Record<string, unknown> =>
+      Object.assign({}, ...[style].flat(Infinity as 1).filter(Boolean));
+    const painted = tree.root
+      .findAll((node) => node.props.style !== undefined)
+      .map((node) => ({ node, style: flat(node.props.style) }));
+    const question = tree.root.findAllByProps({ accessibilityRole: "header" })[0]!;
+    const within = (node: ReactTestInstance) => {
+      for (let at: ReactTestInstance | null = question; at; at = at.parent) {
+        if (at === node) return true;
+      }
+      return false;
+    };
+
+    // The question's words are the accent's own text colour, on its fill.
+    expect(flat(question.props.style).color).toBe("#FFFFFF");
+    const filled = painted.filter((p) => p.style.backgroundColor === "#7C3AED");
+    expect(filled.length).toBeGreaterThan(0);
+    // Nothing but the bubble is filled with it, and nothing reads the accent
+    // text role at all.
+    expect(filled.every((p) => within(p.node))).toBe(true);
+    const colours = painted
+      .flatMap((p) => [p.style.color, p.style.backgroundColor])
+      .map((value) => String(value).toUpperCase());
+    expect(colours).not.toContain("#8B5CF6");
+    // The marker keeps Ask's gold.
+    expect(colours).toContain("#F4CB63");
   });
 });
 

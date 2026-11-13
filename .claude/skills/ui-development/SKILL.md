@@ -77,7 +77,7 @@ Rules:
 - Extend the package, don't copy. A Signet product token (anything in `foundations.md`'s locked
   set) duplicated into an app-local file is a defect. A role only one surface may use belongs to
   that surface, which is why the two app-local remainders are deliberate. `gold.*` lives in
-  `apps/web/tailwind.config.ts` for the Ask pill. The landing's three marketing type roles
+  `apps/web/tailwind.config.ts` for Ask's source markers. The landing's three marketing type roles
   (`--text-hero`, `--text-display-lg`, `--text-lead`) are declared in `apps/landing/app/globals.css`
   and bound in `apps/landing/tailwind.config.ts`. They sit above `foundations.md` §7's locked six
   and are landing-only by decision, so using one on a product surface is an off-scale defect.

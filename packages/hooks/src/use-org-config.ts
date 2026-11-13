@@ -212,7 +212,7 @@ export function usePatchOrgConfig() {
     // (per the Chunk 06 brief — settings writes go through this mutation).
     //
     // A module toggle is also written into the current-chapter payload. The
-    // web shell's module gate (sidebar, drawer, Ask pill, Settings tools) reads
+    // web shell's module gate (sidebar, drawer, Settings tools) reads
     // `enabled_modules` from there, because members cannot read this config
     // endpoint (#1982), and that query is cached for five minutes. Without this
     // write, switching a module off would leave its nav row up until the cache

@@ -256,7 +256,9 @@
     --gold-house: #EFB63B;
     --gold-on-house: #2C2000;
     /* Re-pitched with the 2026-11-12 surface ladder (#3826): #251E0E sat
-     * 1.05:1 on the `--surface-1` top bar the Ask pill lives in, a fill
+     * 1.05:1 on the `--surface-1` top bar the Ask pill lived in (the pill
+     * left for the chat composer in #4702; Ask's source markers still paint
+     * this family on `--popover`), a fill
      * darker than the bar. #2C2515 is the same hue at 1.15:1 above it, the
      * lift it had before; the Ask text on it is 9.81:1. */
     --gold-ask-fill: #2C2515;

@@ -53,7 +53,6 @@ export function AskTurn({
   busy = false,
   onRetry,
   onAnswerConsent,
-  onFollowSource,
   onProposal,
   onResolved,
 }: {
@@ -63,8 +62,6 @@ export function AskTurn({
    * so this turn's Try again and consent buttons wait.
    */
   busy?: boolean;
-  /** A link out of the panel was followed, for a panel that then gets out of the way. */
-  onFollowSource?: () => void;
   /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
   /** Opens the AI sheet, for a turn refused because it is unanswered. */
@@ -76,7 +73,7 @@ export function AskTurn({
 }) {
   return (
     <article className="space-y-3">
-      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-surface-1 px-3.5 py-2 text-sm font-normal text-foreground">
+      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2 text-sm font-normal text-primary-foreground">
         {exchange.question}
       </h3>
       <div aria-live="polite" className="space-y-3">
@@ -118,7 +115,6 @@ export function AskTurn({
             resolution={exchange.resolution}
             onProposal={onProposal}
             onResolved={onResolved}
-            onLeave={onFollowSource}
           />
         ) : null}
         {exchange.phase === "done" && exchange.answer ? (
@@ -127,7 +123,6 @@ export function AskTurn({
               answer={exchange.answer}
               busy={busy}
               onAnswerConsent={onAnswerConsent}
-              onFollowSource={onFollowSource}
             />
             {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
@@ -154,11 +149,9 @@ function AskAnswerBody({
   answer,
   busy,
   onAnswerConsent,
-  onFollowSource,
 }: {
   answer: AskAnswer;
   busy: boolean;
-  onFollowSource?: () => void;
   onAnswerConsent: () => void;
 }) {
   if (answer.status === "unavailable") {
@@ -207,7 +200,6 @@ function AskAnswerBody({
               number={segment.citation.source + 1}
               source={answer.sources[segment.citation.source]}
               quote={segment.citation.quote}
-              onFollow={onFollowSource}
             />
           ),
         )}
@@ -216,12 +208,7 @@ function AskAnswerBody({
       {answer.sources.length > 0 ? (
         <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
           {answer.sources.map((source, index) => (
-            <SourceChip
-              key={source.id}
-              number={index + 1}
-              source={source}
-              onFollow={onFollowSource}
-            />
+            <SourceChip key={source.id} number={index + 1} source={source} />
           ))}
         </ol>
       ) : null}
@@ -259,12 +246,10 @@ function CitationMarker({
   number,
   source,
   quote,
-  onFollow,
 }: {
   number: number;
   source: AskSource | undefined;
   quote: string;
-  onFollow?: () => void;
 }) {
   if (!source) return null;
   const href = askSourceHref(source);
@@ -285,7 +270,6 @@ function CitationMarker({
       className={cn(MARKER, "hover:bg-gold-ask-border/30", FOCUS_RING)}
       aria-label={label}
       title={title}
-      onClick={onFollow}
     >
       {number}
     </Link>
@@ -297,15 +281,7 @@ function CitationMarker({
  * kind of source it is and its date are the chip's tooltip and its
  * accessible name, so a thread of several answers stays short.
  */
-function SourceChip({
-  number,
-  source,
-  onFollow,
-}: {
-  number: number;
-  source: AskSource;
-  onFollow?: () => void;
-}) {
+function SourceChip({ number, source }: { number: number; source: AskSource }) {
   const href = askSourceHref(source);
   const meta = askSourceMetaLine(source);
   const name = [`Source ${number}: ${source.title}`, meta]
@@ -331,7 +307,6 @@ function SourceChip({
       {href ? (
         <Link
           href={href}
-          onClick={onFollow}
           aria-label={name}
           title={meta}
           className={cn(

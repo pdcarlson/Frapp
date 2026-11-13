@@ -636,8 +636,8 @@ describe("the surface-specific keys stay out of the shared preset (#2371)", () =
   });
 
   it("does not carry the web-only `gold` family", () => {
-    // The Ask pill is an `apps/web` treatment; `apps/landing` implements no
-    // such control, so binding it here would claim a treatment it does not draw.
+    // Ask's fixed gold is an `apps/web` treatment; `apps/landing` implements
+    // no Ask surface, so binding it here would claim a treatment it does not draw.
     expect(colors).not.toHaveProperty("gold");
   });
 

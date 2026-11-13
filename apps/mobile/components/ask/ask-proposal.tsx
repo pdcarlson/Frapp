@@ -59,6 +59,7 @@ import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -94,8 +95,10 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * **Nothing above moves while it works.** Confirm and Cancel keep their
  * words while they save.
  *
- * **Fixed gold, never the chapter accent**, as the rest of the Ask sheet
- * (`components.md` §11): nothing here reaches `useChapterBranding()`.
+ * **Confirm is the chapter's colour**, as the send button is and as web's
+ * Confirm always was (Paul, 2026-11-13; `ask-sheet.tsx`). The card sits on
+ * the page's background, so it takes `surface1` and its notes `card`
+ * (`lib/surfaces.ts`).
  */
 
 /** Where a finished change can be seen. */
@@ -435,6 +438,7 @@ function ActCard({
   styles: Styles;
 }) {
   const { tokens } = useFrappTheme();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
   const rosterQuery = useChapterRoster();
@@ -828,12 +832,15 @@ function ActCard({
           onPress={() => void confirm()}
           style={({ pressed }) => [
             styles.confirm,
+            { backgroundColor: accentPrimary },
             pressed ? styles.pressed : null,
             busy ? styles.dimmed : null,
           ]}
         >
           {/* The same word while it saves, so the button keeps its width. */}
-          <Text style={styles.confirmText}>{ACT_COPY.confirm}</Text>
+          <Text style={[styles.confirmText, { color: accentOnPrimary }]}>
+            {ACT_COPY.confirm}
+          </Text>
         </Pressable>
       </View>
 
@@ -1029,7 +1036,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: tokens.color.surface.surface1,
       padding: tokens.spacing.md,
       gap: tokens.spacing.md,
     },
@@ -1049,7 +1056,7 @@ function createStyles(tokens: SignetTokens) {
     },
     notes: {
       borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       gap: tokens.spacing.xs,
@@ -1107,13 +1114,12 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,
       borderRadius: tokens.radius.control,
-      // House gold, fixed. Never the chapter accent on this surface.
-      backgroundColor: gold.house,
+      // The fill and the word's colour are the chapter's solid accent pair,
+      // set where the button is drawn.
     },
     confirmText: {
       ...typeRole(tokens.typography.role.label),
       fontFamily: fontFamilyFor(600),
-      color: gold.onHouse,
     },
     pickerContent: {
       paddingHorizontal: tokens.spacing.lg,
