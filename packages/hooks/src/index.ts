@@ -48,6 +48,7 @@ export * from "./use-ai";
 export * from "./use-ai-report";
 export * from "./use-ai-suggestions";
 export * from "./use-ask";
+export * from "./use-ask-feedback";
 export * from "./use-ask-post";
 export * from "./use-attendance";
 export * from "./use-backwork";

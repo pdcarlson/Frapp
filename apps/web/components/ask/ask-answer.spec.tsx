@@ -12,11 +12,43 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_FEEDBACK_COPY,
   askReadLine,
   type AskAnswer,
 } from "@repo/validation";
 
 const channelList = vi.hoisted(() => ({ reads: 0 }));
+const thumbs = vi.hoisted(() => ({
+  state: { rating: null, reason: null } as {
+    rating: "up" | "down" | null;
+    reason: string | null;
+  },
+  failed: false,
+  askId: undefined as string | null | undefined,
+  rate: vi.fn(),
+  giveReason: vi.fn(),
+}));
+const reportDialog = vi.hoisted(() => ({ opened: vi.fn() }));
+vi.mock("@/components/ai/report-ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ai/report-ai")>()),
+  ReportAiDialog: (props: {
+    initialReason?: string | null;
+    onReported: () => void;
+    onClose: () => void;
+  }) => {
+    reportDialog.opened(props.initialReason);
+    return (
+      <>
+        <button type="button" onClick={props.onReported}>
+          fake report sent
+        </button>
+        <button type="button" onClick={props.onClose}>
+          fake report closed
+        </button>
+      </>
+    );
+  },
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The reader has #rush-week and not #exec.
@@ -26,6 +58,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // The hook has its own spec (`use-ask-feedback.spec.tsx`); here it is what
+  // the row draws from.
+  useAskThumbs: (askId: string | null | undefined) => {
+    thumbs.askId = askId;
+    return {
+      state: thumbs.state,
+      failed: thumbs.failed,
+      rate: thumbs.rate,
+      giveReason: thumbs.giveReason,
+    };
+  },
 }));
 
 const { AskTurn } = await import("./ask-answer");
@@ -540,5 +583,127 @@ describe("AskTurn", () => {
     expect(
       screen.queryByRole("button", { name: ASK_COPY.try_again }),
     ).toBeNull();
+  });
+
+  describe("thumbs", () => {
+    const kept = (
+      rating: "up" | "down" | null,
+      reason: string | null = null,
+      receipt: string | null = "sealed",
+    ) => {
+      thumbs.state = { rating, reason };
+      thumbs.failed = false;
+      thumbs.rate.mockClear();
+      thumbs.giveReason.mockClear();
+      reportDialog.opened.mockClear();
+      return show(
+        exchange({
+          askId: "a-1",
+          answer: { ...ANSWER, ask_id: "trace-1", report_receipt: receipt },
+        }),
+      );
+    };
+
+    it("are not drawn under an answer the server kept no trace of", () => {
+      thumbs.state = { rating: null, reason: null };
+      show(exchange({ askId: "a-1" }));
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.down }),
+      ).toBeNull();
+    });
+
+    it("rate against the kept trace's id, not the turn's", async () => {
+      kept(null);
+      expect(thumbs.askId).toBe("trace-1");
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      );
+      expect(thumbs.rate).toHaveBeenCalledWith("up");
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.thanks)).toBeNull();
+    });
+
+    it("thank an up and mark it pressed", () => {
+      kept("up");
+      expect(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByText(ASK_FEEDBACK_COPY.thanks)).toBeInTheDocument();
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
+    });
+
+    it("ask why on a down, in one tap", async () => {
+      kept("down");
+      const group = screen.getByRole("group", {
+        name: ASK_FEEDBACK_COPY.prompt,
+      });
+      await userEvent.click(
+        within(group).getByRole("button", {
+          name: ASK_FEEDBACK_COPY.reasons.missed,
+        }),
+      );
+      expect(thumbs.giveReason).toHaveBeenCalledWith("missed");
+    });
+
+    it("offer to send the answer through Report this, on the reason given", async () => {
+      kept("down", "wrong");
+      expect(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.reasons.wrong }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByText(ASK_FEEDBACK_COPY.send.line, { exact: false }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      );
+      expect(reportDialog.opened).toHaveBeenCalledWith("wrong");
+      // Once it is sent the sheet stays up to say so; closing it folds the
+      // offer away, and the row's flag reads Reported.
+      await userEvent.click(
+        screen.getByRole("button", { name: "fake report sent" }),
+      );
+      expect(
+        screen.getByRole("button", { name: "fake report closed" }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: "fake report closed" }),
+      );
+      expect(
+        screen.getByRole("button", { name: AI_REPORT_COPY.reported }),
+      ).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      ).toBeNull();
+      expect(screen.getByText(ASK_FEEDBACK_COPY.thanks)).toBeInTheDocument();
+    });
+
+    it("offer no send for an answer a report would keep nothing of", () => {
+      kept("down", null, null);
+      expect(screen.getByText(ASK_FEEDBACK_COPY.prompt)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      ).toBeNull();
+    });
+
+    it("fold the offer away on Not now", async () => {
+      kept("down");
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.send.dismiss }),
+      );
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
+      expect(reportDialog.opened).not.toHaveBeenCalled();
+    });
+
+    it("say so when a rating did not send", () => {
+      thumbs.state = { rating: null, reason: null };
+      thumbs.failed = true;
+      show(exchange({ askId: "a-1", answer: { ...ANSWER, ask_id: "trace-1" } }));
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        ASK_FEEDBACK_COPY.failed,
+      );
+      thumbs.failed = false;
+    });
   });
 });

@@ -54,8 +54,14 @@ export function ReportAiButton({
   className,
   iconOnly = false,
   name,
+  reported: reportedElsewhere = false,
 }: {
   target: AiReportTarget;
+  /**
+   * Already reported by another way in (the send offer under a thumbs down,
+   * `ask-thumbs.tsx`), so this reads "Reported" too.
+   */
+  reported?: boolean;
   className?: string;
   /**
    * The flag alone, for a row that already carries its own icon actions
@@ -66,7 +72,8 @@ export function ReportAiButton({
   name?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [reported, setReported] = useState(false);
+  const [reportedHere, setReported] = useState(false);
+  const reported = reportedHere || reportedElsewhere;
   const permissions = useMyPermissions().data?.permissions;
   const label = reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action;
   // The report route asks for `ai:use`, as Ask does. A member without it
@@ -123,19 +130,25 @@ export function ReportAiButton({
  * message report: closing would throw the answer away, and a failure would
  * reach no one.
  */
-function ReportAiDialog({
+export function ReportAiDialog({
   target,
   onClose,
   onReported,
+  initialReason = null,
 }: {
   target: AiReportTarget;
   onClose: () => void;
   onReported: () => void;
+  /**
+   * The reason it opens on, when the member already gave one: a thumbs down
+   * on an Ask answer (`ask-thumbs.tsx`, #4904), so they do not pick twice.
+   */
+  initialReason?: AiReportReason | null;
 }) {
   const ids = useId();
   const policy = useAiReportPolicy();
   const report = useReportAi();
-  const [reason, setReason] = useState<AiReportReason | null>(null);
+  const [reason, setReason] = useState<AiReportReason | null>(initialReason);
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [failure, setFailure] = useState<string | null>(null);

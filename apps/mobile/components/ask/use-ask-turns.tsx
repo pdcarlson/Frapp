@@ -7,7 +7,7 @@ import {
   type AskExchange,
   type AskOptions,
 } from "@repo/hooks";
-import type { AskSource } from "@repo/validation";
+import type { AiReportReason, AskSource } from "@repo/validation";
 import {
   useAiReport,
   type AiReportTarget,
@@ -200,5 +200,13 @@ function reportFor(
   return {
     reported: reporting.isReported(target),
     onPress: () => reporting.report(target),
+    // From a thumbs down (#4904): the sheet opens on the reason given. Only
+    // for an answer with a receipt: without one a report keeps none of the
+    // answer, so "send this answer" would not be true.
+    ...(target.receipt
+      ? {
+          onSend: (reason: AiReportReason) => reporting.report(target, reason),
+        }
+      : {}),
   };
 }
