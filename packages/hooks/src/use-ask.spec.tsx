@@ -103,6 +103,25 @@ describe("applyAskEvent", () => {
     });
   });
 
+  it("keeps what a step says is being read, and only for that step", () => {
+    const reading = applyAskEvent(WORKING, {
+      v,
+      type: "status",
+      step: "reading",
+      reads: ["events"],
+      found: 2,
+    });
+    expect(reading).toMatchObject({
+      step: "reading",
+      stepDetail: { reads: ["events"], found: 2 },
+    });
+    const writing = applyAskEvent(reading, { v, type: "status", step: "writing" });
+    expect(writing.stepDetail).toEqual({ reads: undefined, found: undefined });
+    expect(
+      applyAskEvent(reading, { v, type: "done", answer: ANSWER }).stepDetail,
+    ).toBeNull();
+  });
+
   it("replaces the preview with the checked answer on done", () => {
     const streaming = { ...WORKING, preview: "Quorum is three people, I think" };
     expect(
@@ -382,6 +401,8 @@ describe("the Ask hooks", () => {
       expect(result.current.exchanges[0]).toMatchObject({
         question: "What is quorum?",
         phase: "working",
+        // Nothing is searched while the AI question is open, so no step.
+        step: null,
       });
       expect(result.current.working).toBe(true);
       await act(async () => {
@@ -396,6 +417,27 @@ describe("the Ask hooks", () => {
       // A turn that never reached the server is not part of the conversation sent.
       await act(() => result.current.ask("What is quorum?"));
       expect(POST.mock.calls[0]![1].body).toEqual({ question: "What is quorum?" });
+    });
+
+    it("says it is searching once the gate says yes and the question is sent, and at once with no gate", async () => {
+      // A request that never comes back, so the turn stays as it was sent.
+      const POST = vi.fn(() => new Promise<never>(() => undefined));
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      act(() => {
+        void result.current.ask("What is quorum?", { gate: async () => true });
+      });
+      await waitFor(() => expect(POST).toHaveBeenCalledTimes(1));
+      expect(result.current.exchanges[0]).toMatchObject({
+        phase: "working",
+        step: "searching",
+      });
+      act(() => {
+        void result.current.ask("And to expel a member?");
+      });
+      expect(result.current.exchanges.at(-1)).toMatchObject({
+        phase: "working",
+        step: "searching",
+      });
     });
 
     it("fails the turn in words when the gate itself breaks", async () => {
