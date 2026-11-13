@@ -6953,6 +6953,90 @@ export interface components {
             lat: number;
             lng: number;
         };
+        EventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EventDetailResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority. */
+            check_in_needs_code: boolean;
+        };
         CreateEventDto: {
             name: string;
             description?: string;
@@ -14670,7 +14754,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -14730,7 +14816,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventDetailResponseDto"];
+                };
             };
             /** @description Error */
             default: {
