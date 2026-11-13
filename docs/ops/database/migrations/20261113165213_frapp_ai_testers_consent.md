@@ -1,4 +1,4 @@
-# 20261113154905_frapp_ai_testers_consent.sql
+# 20261113165213_frapp_ai_testers_consent.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
