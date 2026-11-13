@@ -83,7 +83,9 @@ export function AccentChip({ label }: { label: string }) {
  * text — for quiet metadata that must not read as a status: the Events list's
  * Mandatory (#4132, as web's `<Badge variant="outline">` since #3822: a red
  * pill on every row of a chapter whose meetings are all required drowned the
- * list) and the Activity outline badges ("To do", "Required", "Closed"). Same
+ * list), on the Events list, Event detail and the chat event card; the chat
+ * cards' "+N pts" (`PointsChip`); and the Activity outline badges ("To do",
+ * "Required", "Closed"). Same
  * geometry as {@link StatusChip}, so it sits beside the others at one height.
  */
 export function HairlineChip({ label }: { label: string }) {

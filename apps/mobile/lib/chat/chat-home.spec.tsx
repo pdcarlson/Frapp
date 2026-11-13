@@ -590,6 +590,20 @@ describe("Chat home channel categories (#1684)", () => {
     category_id: "cat-deleted",
   };
 
+  it("hands each row its mark, so a private channel draws the lock (#4134)", () => {
+    categoriesData.value = [EXEC, COMM];
+    channelsData.value = [philanthropy, general, execBoard];
+    const tree = render();
+
+    expect(rowNamed(tree, "exec-board").props.mark).toBe("private");
+    expect(rowNamed(tree, "general").props.mark).toBe("hash");
+    expect(
+      rowNamed(tree, "exec-board").findAll(
+        (node) => node.props.testID === "channel-row-lock",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("nests channels under their categories, after Channels, in the API's order", () => {
     categoriesData.value = [EXEC, COMM];
     channelsData.value = [philanthropy, general, execBoard, dmAlice, group];

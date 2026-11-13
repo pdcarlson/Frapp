@@ -137,10 +137,12 @@ export function EventCard({
   // another device shows once the row is re-read (a remount, or the app
   // returning to the foreground), and a tap before then gets the server's 409.
   const mine = useMyAttendance(open ? payload.event_id : "");
-  const excuse = useEventCardExcuse(payload, now);
   // Mandatory means required of this viewer, as the Events list says it
   // (#4132): by default or by a role of theirs, else the card's own answer.
-  const required = eventCardRequiresViewer(payload, useRequiredOfViewer());
+  // The excuse offer reads the same rule.
+  const requiredOf = useRequiredOfViewer();
+  const excuse = useEventCardExcuse(payload, now, requiredOf);
+  const required = eventCardRequiresViewer(payload, requiredOf);
   const own = selectMyAttendance(mine.data);
   // A row without a check-in is an officer's mark.
   const marked = own && !own.checkedInAt ? own.status : null;

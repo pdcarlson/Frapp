@@ -259,7 +259,12 @@ describe("EventCard — the snapshot", () => {
   });
 
   it("draws Mandatory as the hairline chip, as the Events list does (#4132)", () => {
-    expect(render().root.findAllByType(HairlineChip)).toHaveLength(1);
+    // Mandatory and "+10 pts" are the one hairline chip.
+    expect(
+      render()
+        .root.findAllByType(HairlineChip)
+        .map((chip) => chip.props.label),
+    ).toEqual(["Mandatory", "+10 pts"]);
   });
 
   it("goes by the card's own answer for this viewer over the default (#4132)", () => {

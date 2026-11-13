@@ -88,9 +88,9 @@ import {
 import {
   ChannelListSkeleton,
   ChannelRow,
-  channelMarkFor,
   UnreadBadge,
 } from "@/components/chat/channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import {

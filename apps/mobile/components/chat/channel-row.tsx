@@ -13,7 +13,7 @@ import { initialsFor } from "@/lib/chat/display-name";
 import { AuditGlyph, LockGlyph } from "@/components/chat/card-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
-import { isSystemChannel } from "@repo/hooks/channel-start";
+import { type ChannelMark } from "@repo/hooks/channel-start";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
@@ -65,35 +65,13 @@ import {
 /** A DM row's avatar diameter. */
 const DIRECT_AVATAR_SIZE = 34;
 
-/**
- * The mark a channel row draws in its sigil slot, as web's rail does
- * (`ChannelIcon` in `apps/web/components/chat/channel-list.tsx`): the audit
- * shield for the chapter's audit channel, a lock for a channel not every
- * member can join, and `#` for the rest.
- */
-export type ChannelMark = "hash" | "lock" | "audit";
-
-/**
- * The mark for a channel by its `type` and name. The audit channel wins, as
- * on web; `PRIVATE` and `ROLE_GATED` take the lock (#4134).
- */
-export function channelMarkFor(channel: {
-  type: string;
-  name: string;
-}): ChannelMark {
-  if (isSystemChannel(channel)) return "audit";
-  if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED") {
-    return "lock";
-  }
-  return "hash";
-}
-
 export interface ChannelRowProps {
   name: string;
   /** DM/group rows draw an avatar; channel rows draw a `#` sigil. */
   isDirect?: boolean;
   /**
-   * A channel row's mark (`channelMarkFor`): `#`, a lock, or the audit
+   * A channel row's mark (`channelMarkFor` in `@repo/hooks/channel-start`):
+   * `#`, a lock for a private or role-gated channel (#4134), or the audit
    * shield. Unset, a channel row draws `#`. DM rows ignore it.
    */
   mark?: ChannelMark;
@@ -212,7 +190,11 @@ export function ChannelRow({
       accessibilityLabel={accessibilityLabelFor({
         name,
         isDirect,
-        isPrivate: !isDirect && mark === "lock",
+        restriction: isDirect
+          ? null
+          : mark === "private" || mark === "role-gated"
+            ? mark
+            : null,
         unreadCount,
         mentionCount,
         isMuted,
@@ -279,7 +261,7 @@ export function ChannelRow({
         </Text>
       ) : (
         <SigilGlyph
-          mark={mark}
+          mark={mark === "audit" ? "audit" : "lock"}
           // The sigil's own three states: read, unread, muted.
           color={
             looksUnread
@@ -444,7 +426,7 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
 export function accessibilityLabelFor({
   name,
   isDirect,
-  isPrivate = false,
+  restriction = null,
   unreadCount,
   mentionCount,
   isMuted = false,
@@ -452,8 +434,12 @@ export function accessibilityLabelFor({
 }: {
   name: string;
   isDirect: boolean;
-  /** A locked row: a `PRIVATE` or `ROLE_GATED` channel (#4134). */
-  isPrivate?: boolean;
+  /**
+   * A locked row (#4134): a `PRIVATE` channel is said to be private; a
+   * `ROLE_GATED` one is limited to some roles, which may be every member's,
+   * so it is not called private (`channelStartCopy`).
+   */
+  restriction?: "private" | "role-gated" | null;
   unreadCount: number;
   mentionCount: number;
   isMuted?: boolean;
@@ -461,7 +447,8 @@ export function accessibilityLabelFor({
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
-  if (isPrivate) parts.push("private channel");
+  if (restriction === "private") parts.push("private channel");
+  if (restriction === "role-gated") parts.push("limited to some roles");
   if (isMuted) parts.push("muted");
   if (mentionCount > 0) {
     parts.push(
@@ -513,10 +500,12 @@ function createStyles(tokens: SignetTokens) {
     },
     // One slot for every mark, the glyphs' width, so a locked row's name
     // lines up with a `#` row's, as web's rail sets both in one 16px slot.
-    // The `#` stays at the slot's start, on the gutter line.
+    // The `#` stays at the slot's start, on the gutter line. A minimum, not
+    // a width: the `#` scales with the system text size and the glyphs
+    // don't, so at a large setting it grows past the slot rather than clip.
     sigil: {
       ...typeRole(tokens.typography.role.title),
-      width: tokens.typography.role.title.size,
+      minWidth: tokens.typography.role.title.size,
       color: tokens.color.text.muted,
     },
     sigilUnread: {

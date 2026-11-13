@@ -8,7 +8,11 @@ import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useEventCardExcuse, type ExcuseCardEvent } from "./use-event-excuses";
+import {
+  useEventCardExcuse,
+  useRequiredOfViewer,
+  type ExcuseCardEvent,
+} from "./use-event-excuses";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters } from "./use-chapters";
 import { useRoles } from "./use-roles";
@@ -72,7 +76,10 @@ describe("useEventCardExcuse (#4660)", () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
-    return renderHook(() => useEventCardExcuse(event, now), { wrapper });
+    return renderHook(
+      () => useEventCardExcuse(event, now, useRequiredOfViewer()),
+      { wrapper },
+    );
   }
 
   test("offers Can't make it on a card whose roles require the viewer", async () => {

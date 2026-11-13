@@ -416,9 +416,10 @@ export function eventCardRequiresViewer(
  *
  * A channel holds many cards, so whether the event requires the viewer comes
  * from the card itself: `viewer_required` when it carries one, else its role
- * fields through {@link useRequiredOfViewer} (a card posted before them goes
- * by `is_mandatory`). That rule reads the viewer's memberships and the
- * chapter's roles, one shared cached read each, not one per card. The two
+ * fields through `requiredOf`, the card's own {@link useRequiredOfViewer} (a
+ * card posted before them goes by `is_mandatory`), which its Mandatory badge
+ * reads too (#4132), so the card asks once. That rule reads the viewer's
+ * memberships and the chapter's roles, one shared cached read each. The two
  * reads the view needs (the viewer's excuse and attendance row) run only for
  * a card that requires them, until its excuse window closes. Pass `null` for
  * a card whose payload didn't read.
@@ -426,8 +427,8 @@ export function eventCardRequiresViewer(
 export function useEventCardExcuse(
   card: ExcuseCardEvent | null,
   now: Date,
+  requiredOf: (event: EventAttendanceFields) => boolean,
 ): MyExcuseView {
-  const requiredOf = useRequiredOfViewer();
   const end = card ? new Date(card.end_time) : null;
   const windowOpen =
     !!end &&

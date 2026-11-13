@@ -32,10 +32,10 @@ import {
   badgeLabel,
   ChannelListSkeleton,
   ChannelRow,
-  channelMarkFor,
   HIDE_ACTION,
   PIN_ACTION,
 } from "./channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -508,17 +508,9 @@ describe("ChannelRow mark (#4134)", () => {
     );
   const marked = (tree: ReactTestRenderer, mark: string) =>
     tree.root.findAll((node) => node.props.testID === `channel-row-${mark}`);
-
-  it("picks the lock for PRIVATE and ROLE_GATED, the shield for the audit channel, # for the rest", () => {
-    expect(channelMarkFor({ type: "PUBLIC", name: "general" })).toBe("hash");
-    expect(channelMarkFor({ type: "PRIVATE", name: "exec" })).toBe("lock");
-    expect(channelMarkFor({ type: "ROLE_GATED", name: "officers" })).toBe(
-      "lock",
-    );
-    expect(channelMarkFor({ type: "PRIVATE", name: "chapter-audit" })).toBe(
-      "audit",
-    );
-  });
+  const labelOf = (tree: ReactTestRenderer) =>
+    tree.root.findByProps({ accessibilityRole: "button" }).props
+      .accessibilityLabel;
 
   it("draws a lock, not #, on a PRIVATE row", () => {
     const tree = renderRow({
@@ -537,9 +529,16 @@ describe("ChannelRow mark (#4134)", () => {
     expect(marked(tree, "lock")).toHaveLength(0);
   });
 
+  it("draws the lock on a ROLE_GATED row and the shield on the audit channel", () => {
+    expect(marked(renderRow({ mark: "role-gated" }), "lock")).toHaveLength(1);
+    expect(marked(renderRow({ mark: "audit" }), "audit")).toHaveLength(1);
+  });
+
   it("paints the lock in the sigil's read, unread and muted colours", () => {
-    const strokeOf = (props: Partial<React.ComponentProps<typeof ChannelRow>>) =>
-      renderRow({ name: "exec", mark: "lock", ...props })
+    const strokeOf = (
+      props: Partial<React.ComponentProps<typeof ChannelRow>>,
+    ) =>
+      renderRow({ name: "exec", mark: "private", ...props })
         .root.findAll((node) => (node.type as unknown) === "Path")
         .map((node) => node.props.stroke)[0];
     expect(strokeOf({})).toBe(signetDarkTokens.color.text.muted);
@@ -551,16 +550,22 @@ describe("ChannelRow mark (#4134)", () => {
     );
   });
 
-  it("says a locked row is a private channel", () => {
+  it("says a private row is private, and a role-gated one only that roles limit it", () => {
     expect(
-      renderRow({ name: "exec", mark: "lock", unreadCount: 2 }).root.findByProps(
-        { accessibilityRole: "button" },
-      ).props.accessibilityLabel,
+      labelOf(renderRow({ name: "exec", mark: "private", unreadCount: 2 })),
     ).toBe("#exec, private channel, 2 unread");
-    expect(
-      renderRow({ name: "general" }).root.findByProps({
-        accessibilityRole: "button",
-      }).props.accessibilityLabel,
-    ).toBe("#general");
+    // A role-gated channel may be open to every member, so it is never
+    // called private (`channelStartCopy`).
+    expect(labelOf(renderRow({ name: "officers", mark: "role-gated" }))).toBe(
+      "#officers, limited to some roles",
+    );
+    expect(labelOf(renderRow({ name: "general" }))).toBe("#general");
+  });
+
+  it("lets the # grow past its slot rather than clip at a large text size", () => {
+    const sigil = hashes(renderRow({}))[0]!;
+    const flat = flatten(sigil.props.style);
+    expect(flat.width).toBeUndefined();
+    expect(flat.minWidth).toBe(signetDarkTokens.typography.role.title.size);
   });
 });

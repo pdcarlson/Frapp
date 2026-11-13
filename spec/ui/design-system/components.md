@@ -216,7 +216,7 @@ The Chip step ([foundations.md](foundations.md) §9): height 24px on every point
 | ---- | ---- | ------ | ---- | --- |
 | Accent | `accent-3` | 1px `accent-7` | `accent-11` | accent-worthy stats: points, active filters |
 | Neutral | `rgba(255,255,255,.14)` | none | `#EDEAE3` | counts and unread markers ([foundations.md](foundations.md) §5) |
-| Hairline | transparent | 1px `rgba(255,255,255,.08)` | `#A9A399` | quiet metadata that must not read as a status: Mandatory on the Events list and the chat event card, and Activity's To do, Required and Closed, on both apps (mobile's `HairlineChip`, #4132) |
+| Hairline | transparent | 1px `rgba(255,255,255,.08)` | `#A9A399` | quiet metadata that must not read as a status: Mandatory on the Events list, the phone's Event detail and the chat event card, a chat card's +N pts, and Activity's To do, Required and Closed, on both apps (mobile's `HairlineChip`, #4132) |
 | Semantic | `--*-tint`: the status color @ 13%, as a token rather than an alpha utility ([foundations.md](foundations.md) §5) | none | status color | Paid / Overdue / status only — never decorative |
 | Mention / DM | mention/DM red | none | white | unread mentions and DMs only |
 

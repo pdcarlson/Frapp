@@ -63,6 +63,12 @@ function weeklySeries(name: string, count = 13) {
 }
 
 const eventsQuery: { data: unknown } = { data: EVENTS };
+type AttendanceFields = { is_mandatory?: boolean | null };
+// A viewer with no roles: the event's default decides.
+const byDefault = (fields: AttendanceFields) => fields.is_mandatory === true;
+const requiredOfViewer: { current: (fields: AttendanceFields) => boolean } = {
+  current: byDefault,
+};
 const permissionsRef: { current: string[] } = {
   current: ["events:create", "events:update", "members:view"],
 };
@@ -74,19 +80,23 @@ vi.mock("@/components/ai/suggested-events", () => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
-  // A viewer with no roles: the event's default decides (#4132). The rule
-  // itself is the hook's own spec.
-  useRequiredOfViewer:
-    () => (fields: { is_mandatory?: boolean | null }) =>
-      fields.is_mandatory === true,
+  // The rule itself is the hook's own spec; here the page has to follow
+  // whatever it answers (#4132).
+  useRequiredOfViewer: () => requiredOfViewer.current,
   // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
   useCalendarFeedLink: () => ({ data: undefined, isError: false }),
   useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
   calendarAppLinks: () => null,
   useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useStartGoogleCalendarConnect: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDisconnectGoogleCalendar: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   readGoogleCalendarReturn: () => null,
   GOOGLE_CALENDAR_RETURN_PARAMS: [],
   useActiveChapterId: () => "chap-1",
@@ -194,6 +204,7 @@ async function pick(
 }
 
 beforeEach(() => {
+  requiredOfViewer.current = byDefault;
   vi.clearAllMocks();
   window.localStorage.clear();
   viewerRef.current = { userId: "user-1", isLoading: false };
@@ -386,6 +397,27 @@ describe("EventsPage list", () => {
       screen.getByText("Nothing in the next two weeks."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /later/i })).toBeInTheDocument();
+  });
+
+  it("badges and filters Mandatory by what the event asks of this viewer, not its default (#4132)", async () => {
+    // A viewer whose roles turn both defaults around: Study Night (optional
+    // for everyone) is required of them, Chapter Meeting (required by
+    // default) isn't.
+    requiredOfViewer.current = (fields) => fields.is_mandatory !== true;
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    expect(
+      within(row(/study night/i)).getByText("Mandatory"),
+    ).toBeInTheDocument();
+    expect(
+      within(row(/chapter meeting/i)).queryByText("Mandatory"),
+    ).not.toBeInTheDocument();
+
+    await openFilters(user);
+    await pick(user, "Attendance", "Mandatory");
+    expect(screen.getByText("1 event")).toBeInTheDocument();
+    expect(row(/study night/i)).toBeInTheDocument();
   });
 
   it("badges a mandatory event in words, quietly", () => {

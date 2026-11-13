@@ -81,8 +81,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const eventId = payload?.event_id ?? "";
   const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
-  const excuse = useEventCardExcuse(payload, new Date(now));
+  // One rule for the Mandatory badge and the excuse offer (#4132).
   const requiredOf = useRequiredOfViewer();
+  const excuse = useEventCardExcuse(payload, new Date(now), requiredOf);
 
   if (!payload) {
     return (
