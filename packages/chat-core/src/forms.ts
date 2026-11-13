@@ -6,7 +6,7 @@ import {
   FORM_SHORT_ANSWER_MAX_LENGTH,
   type FormQuestionType,
 } from "@repo/validation";
-import { serverMessageOf } from "@repo/api-sdk";
+import { serverMessageOf, type components } from "@repo/api-sdk";
 import type { FrappApiClient } from "./chat-client";
 import { canActOnMessage, isOwnMessage } from "./message-actions";
 import { makePollOptionId } from "./polls";
@@ -39,6 +39,15 @@ export interface FormOption {
   id: string;
   label: string;
 }
+
+/**
+ * A yes/no question's two answers with their words, in the order the fill
+ * page offers them and the creator's summary counts them.
+ */
+export const FORM_YES_NO_OPTIONS: readonly FormOption[] = [
+  { id: FORM_YES, label: "Yes" },
+  { id: FORM_NO, label: "No" },
+];
 
 export interface FormQuestion {
   id: string;
@@ -369,11 +378,11 @@ export function formAnswersForSave(
   return out;
 }
 
-/** The viewer's own answers to a form, as the API returns them. */
-export interface OwnFormResponse {
-  answers: FormAnswers;
-  updated_at: string;
-}
+/**
+ * The viewer's own answers to a form, as the API returns them: the generated
+ * contract type, so a change to the route is a compile error here.
+ */
+export type OwnFormResponse = components["schemas"]["FormResponseDto"];
 
 /** The query key for the viewer's own answers to one form card. */
 export function formResponseKey(messageId: string): readonly unknown[] {
@@ -395,7 +404,7 @@ export async function fetchOwnFormResponse(
   if (error || !data) {
     throw new Error(serverMessageOf(error) ?? "Couldn't load your answers");
   }
-  return (data.response as OwnFormResponse | null) ?? null;
+  return data.response ?? null;
 }
 
 /**
@@ -416,5 +425,5 @@ export async function saveFormResponse(
   if (error || !data) {
     throw new Error(serverMessageOf(error) ?? "Couldn't send your answers");
   }
-  return data as OwnFormResponse;
+  return data;
 }

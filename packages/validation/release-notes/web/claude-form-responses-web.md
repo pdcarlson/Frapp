@@ -1,0 +1,1 @@
+When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them; a sign-up sheet's creator can export who signed up for what.

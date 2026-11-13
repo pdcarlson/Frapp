@@ -84,8 +84,8 @@ holding a double quote is quoted as in CSV, so a paste keeps every cell in its
 own column. The workbook
 writer loads only when Excel is picked. One menu component
 (`apps/web/components/shared/export-menu.tsx`) and one set of helpers
-(`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
-exports.
+(`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve every
+export on the web, these reports and the chat cards' alike.
 
 The API's own `format=csv` applies the same rule (#3976), through the same
 cell writer: `toCsvCell` in `@repo/formatting`

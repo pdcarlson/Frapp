@@ -21,6 +21,7 @@ import {
 } from "./polls";
 import type { PendingPollPicks } from "./polls";
 import type { ChatMessage } from "./types";
+import type { MemberLabel } from "./form-responses";
 
 /**
  * Sign-up sheet cards in chat (`kind: "signup"`, #3926), shared by web's
@@ -293,6 +294,68 @@ export function tallySignups(
     mine: payload.slots.map((s) => s.id).filter((id) => mine.has(id)),
     notes,
   };
+}
+
+/**
+ * Whether the viewer is offered Export on a sign-up card: its creator or a
+ * `channels:manage` holder, the people Close sign-ups is for, open or closed,
+ * on a card the server has. The names are on the card for every member
+ * already; the export is the organizer's list to work from, as SignUpGenius
+ * reports are.
+ */
+export function canExportSignup(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  viewerId: string | null,
+  canManageChannels: boolean,
+): boolean {
+  return (
+    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
+    canActOnMessage(message)
+  );
+}
+
+/** A sign-up's export columns. */
+export const SIGNUP_EXPORT_SLOT_COLUMN = "Slot";
+export const SIGNUP_EXPORT_ANSWER_COLUMN = "Answer";
+export const SIGNUP_EXPORT_NAME_COLUMN = "Name";
+export const SIGNUP_EXPORT_NOTE_COLUMN = "Note";
+export const SIGNUP_EXPORT_SIGNED_UP_COLUMN = "Signed up at";
+
+/**
+ * A sign-up card's claims as spreadsheet rows: one per member per slot, in
+ * the card's slot order and then the order members first signed up. A sheet
+ * names the Slot; a headcount names the Answer and adds each member's Note.
+ * `Signed up at` is when the member first claimed on the card (ISO; their
+ * row keeps it, so a later change doesn't move it). `labelOf` is the label
+ * the card shows for each member, so a row matches the name under its slot.
+ */
+export function signupExportRows(
+  message: ChatMessage,
+  payload: SignupPayload,
+  labelOf: MemberLabel,
+): Record<string, string>[] {
+  const tally = tallySignups(message, payload, null);
+  const headcount = isHeadcountSignup(payload);
+  const firstClaimed = new Map<string, string>();
+  for (const action of message.actions) {
+    if (action.action_type === SIGNUP_CLAIM_ACTION_TYPE) {
+      firstClaimed.set(action.user_id, action.created_at ?? "");
+    }
+  }
+  const rows: Record<string, string>[] = [];
+  for (const slot of payload.slots) {
+    for (const userId of tally.bySlot[slot.id] ?? []) {
+      const row: Record<string, string> = {
+        [headcount ? SIGNUP_EXPORT_ANSWER_COLUMN : SIGNUP_EXPORT_SLOT_COLUMN]:
+          slot.label,
+        [SIGNUP_EXPORT_NAME_COLUMN]: labelOf(userId),
+      };
+      if (headcount) row[SIGNUP_EXPORT_NOTE_COLUMN] = tally.notes[userId] ?? "";
+      row[SIGNUP_EXPORT_SIGNED_UP_COLUMN] = firstClaimed.get(userId) ?? "";
+      rows.push(row);
+    }
+  }
+  return rows;
 }
 
 /** Whether nobody else can take this slot: it has a limit and is at it. */
