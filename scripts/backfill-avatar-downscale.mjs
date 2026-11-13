@@ -28,8 +28,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
-import { pathToFileURL } from "node:url";
 import { requireEnv } from "./ci/lib/env.mjs";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 /** `AVATAR_MAX_EDGE` in `@repo/validation`; a script can't import its TS source. */
 export const AVATAR_MAX_EDGE = 512;
@@ -208,7 +208,7 @@ async function main() {
   if (!apply && shrunk > 0) console.log("Re-run with --apply to rewrite them.");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+if (isInvokedDirectly(import.meta.url)) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);
