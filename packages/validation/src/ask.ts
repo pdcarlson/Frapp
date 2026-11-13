@@ -29,9 +29,39 @@ export const ASK_STREAM_CONTENT_TYPE = "text/event-stream";
 
 export const ASK_QUESTION_MAX_LENGTH = 1000;
 
+/** The earlier turns of a conversation a client sends with a question. */
+export const ASK_HISTORY_MAX_TURNS = 6;
+/** An earlier answer is cut to this before it is sent back. */
+export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
+
+/**
+ * One earlier turn of the conversation: what the member typed, and what
+ * Frapp answered. `answer` is empty when the turn had no answer to carry (a
+ * proposal, "couldn't find that") or one that must not be sent again (it
+ * drew on channel messages; see `askHistory`).
+ */
+export const AskHistoryTurnSchema = z.object({
+  question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
+  answer: z.string().max(ASK_HISTORY_ANSWER_MAX_LENGTH),
+});
+export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
+
 /** `POST /v1/ai/ask`. */
 export const AskRequestSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
+  /**
+   * The conversation so far, oldest first, so "and the one after that?"
+   * means something. Nothing is kept on the server between questions: the
+   * client holds the conversation and sends it (`ai.md` § One conversation).
+   */
+  history: z.array(AskHistoryTurnSchema).max(ASK_HISTORY_MAX_TURNS).optional(),
+  /**
+   * The client can show a proposal card. With it, a member who may have
+   * Frapp act gets a `proposal` event instead of an answer when what they
+   * typed asks for something to be done. Without it the stream only ever
+   * answers, which is what every build before the conversation expects.
+   */
+  actions: z.boolean().optional(),
   /**
    * The client showed the "answers are being saved" line before this
    * question was sent. An exchange is kept by the beta diagnostics window
@@ -91,7 +121,12 @@ export const ASK_SOURCE_KINDS = [
 export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
 
 /** The live-data pages a source can open. */
-export const ASK_SOURCE_PAGES = ["members", "events", "points", "dues"] as const;
+export const ASK_SOURCE_PAGES = [
+  "members",
+  "events",
+  "points",
+  "dues",
+] as const;
 export type AskSourcePage = (typeof ASK_SOURCE_PAGES)[number];
 
 /**
@@ -153,6 +188,13 @@ export const AskAnswerSchema = z.object({
   /** This exchange was kept by the beta diagnostics window. */
   saved: z.boolean(),
   /**
+   * Channel messages were among what the model was given for this answer,
+   * whether or not the answer cites one. A client never sends such an answer
+   * back as `history` (`askHistory`). Absent from servers before
+   * conversations existed.
+   */
+  read_chat: z.boolean().nullish(),
+  /**
    * What "Report this" sends back (#4315): the exchange as the model saw it
    * and as the member was shown it, sealed by the server so only the server
    * can open it. Nothing is stored until the member reports. Null when the
@@ -170,6 +212,17 @@ export const AskStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ v: version, type: z.literal("status"), step: z.string() }),
   z.object({ v: version, type: z.literal("text"), delta: z.string() }),
   z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
+  /**
+   * The member asked for something to be done. Ends the stream in place of
+   * `done`, and only for a request sent with `actions`. `act` is the answer
+   * `POST /v1/ai/act` gives (`ActResponseDto`): a card to confirm, a choice
+   * of event, or what was left unsaid. Nothing has been changed.
+   */
+  z.object({
+    v: version,
+    type: z.literal("proposal"),
+    act: z.looseObject({ status: z.string() }),
+  }),
   /** The stream broke after it began. Nothing shown so far stands. */
   z.object({
     v: version,
@@ -237,6 +290,44 @@ export function createAskStreamReader(): {
   };
 }
 
+/**
+ * `text` cut to `max` UTF-16 units without leaving half of a two-unit
+ * character at the end. A lone half is not valid text to a provider, and a
+ * turn carrying one would fail every question after it.
+ */
+function cutWhole(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * What a client sends as `history`: the last few finished turns, oldest
+ * first. An answer the model wrote with channel messages in front of it is
+ * sent as its question only, cited or not (`read_chat`; a cited chat source
+ * says the same for a server that sends no flag). Chat is checked against
+ * each author's AI choice at the moment it is shown to a model (`ai.md`
+ * § Chat as a source), and an answer already on screen cannot be checked
+ * again, so its words are not sent a second time.
+ */
+export function askHistory(
+  turns: readonly { question: string; answer: AskAnswer | null }[],
+): AskHistoryTurn[] {
+  return turns.slice(-ASK_HISTORY_MAX_TURNS).map(({ question, answer }) => {
+    const carried =
+      answer !== null &&
+      answer.status === "answered" &&
+      answer.read_chat !== true &&
+      !answer.sources.some((source) => source.kind === "chat");
+    return {
+      question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
+      answer: carried
+        ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
+        : "",
+    };
+  });
+}
+
 /** A source's target as a known shape, or null when this build has no page for it. */
 export function askSourceTarget(source: AskSource): AskSourceTarget | null {
   const target = source.target as Record<string, unknown> | null;
@@ -275,10 +366,13 @@ export function askSourceTarget(source: AskSource): AskSourceTarget | null {
 export const ASK_COPY = {
   name: "Ask Frapp",
   close: "Close Ask Frapp",
-  placeholder: "Ask about your chapter",
+  placeholder: "Ask Frapp anything",
   empty_title: "Ask about your chapter",
   empty_body:
     "Answers come from your chapter's documents, minutes and records, with a link to each source.",
+  /** Added for a member Frapp can also act for. */
+  empty_body_act:
+    "Or say what needs doing. You'll see exactly what will happen, and nothing changes until you confirm.",
   examples: [
     "When is the next chapter meeting?",
     "What do the bylaws say about quorum?",
@@ -289,7 +383,8 @@ export const ASK_COPY = {
     reading: "Reading what it found",
     writing: "Writing",
   } satisfies Record<AskStep, string>,
-  not_found: "I couldn't find that in your chapter's documents, minutes or records.",
+  not_found:
+    "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
     "Ask can only answer from what your chapter has uploaded or posted in Frapp.",
   refused: "Ask can't help with that question.",
@@ -319,10 +414,10 @@ export const ASK_COPY = {
     points: "Points",
     dues: "Dues",
   } satisfies Record<AskSourceKind, string>,
-  send: "Ask",
+  send: "Send",
   try_again: "Try again",
-  /** Each question is answered on its own; Ask does not remember the last one. */
-  single_shot: "Each question is answered on its own.",
+  /** Clears the thread: the next question starts with nothing before it. */
+  new_conversation: "New conversation",
   consent_action: "Answer the AI question",
   entry_label: "Ask a question about your chapter",
 } as const;

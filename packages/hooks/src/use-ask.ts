@@ -5,11 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { codeOf, throwUnlessOk, type components } from "@repo/api-sdk";
 import {
   ASK_COPY,
+  askHistory,
   createAskStreamReader,
   type AskAnswer,
   type AskStreamEvent,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
+import type { ActResponse } from "./use-act";
 import { aiConsentKey, isAiNotAvailable } from "./use-ai";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -18,10 +20,15 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * and, when its slice comes, mobile.
  *
  * The answer arrives as a stream of events whose format lives in
- * `@repo/validation` (`ask.ts`). What this module adds is the reading: one
- * exchange at a time, the step the server is on, the text as it is written,
- * and then the checked answer, which replaces what streamed. Ask answers each
- * question on its own, so there is no conversation to keep.
+ * `@repo/validation` (`ask.ts`). What this module adds is the reading: the
+ * step the server is on, the text as it is written, and then the checked
+ * answer, which replaces what streamed, or the proposal card the member's
+ * words asked for.
+ *
+ * It also holds the conversation (`ai.md` § One conversation): every turn of
+ * this sitting, in order. The server keeps nothing between questions, so the
+ * turns before a question are sent with it (`askHistory`). The conversation
+ * lives as long as the screen that holds this hook, and is gone on reload.
  */
 
 /** `GET /v1/ai/ask`: whether exchanges are being kept, and who may change that. */
@@ -89,8 +96,23 @@ export function useSetAskDiagnostics() {
   });
 }
 
-/** One question and what has come back for it so far. */
+/** How a proposal card ended, so its turn can say so in the card's place. */
+export type AskProposalResolution =
+  | {
+      kind: "done";
+      /** "Task created", "Gave 5 points to 12 members". */
+      line: string;
+      /** The page the change can be seen on, or null for none. Open. */
+      page: string | null;
+    }
+  | { kind: "cancelled" }
+  /** It stopped waiting before the member decided: a day passed, or it was decided elsewhere. */
+  | { kind: "gone" };
+
+/** One turn: what the member typed and what has come back for it so far. */
 export interface AskExchange {
+  /** This turn's place in the conversation: a list key, and what the turn's changes name. */
+  id: string;
   question: string;
   /**
    * The server's id for this ask, from the stream's `start` event: what
@@ -104,6 +126,14 @@ export interface AskExchange {
   /** The text as it streams. A preview: `answer` replaces it. */
   preview: string;
   answer: AskAnswer | null;
+  /**
+   * The member asked for something to be done: the card, the choice of
+   * event, or what was left unsaid, in place of an answer. Nothing has
+   * changed until the card is confirmed.
+   */
+  proposal: ActResponse | null;
+  /** Set once the proposal was confirmed or dismissed. */
+  resolution: AskProposalResolution | null;
   /** Why it failed, in words to show, and whether asking again may work. */
   failure: { message: string; retryable: boolean } | null;
 }
@@ -135,7 +165,7 @@ export function applyAskEvent(
   exchange: AskExchange,
   event: AskStreamEvent,
 ): AskExchange {
-  // `done` and `error` are final: a late delta never reopens an answer.
+  // `done`, `proposal` and `error` are final: a late delta never reopens a turn.
   if (exchange.phase !== "working") return exchange;
   switch (event.type) {
     case "start":
@@ -151,6 +181,16 @@ export function applyAskEvent(
         step: null,
         preview: "",
         answer: event.answer,
+      };
+    case "proposal":
+      return {
+        ...exchange,
+        phase: "done",
+        step: null,
+        preview: "",
+        // The shape `POST /v1/ai/act` answers with; open on the wire, and
+        // the card shows a status it does not know as the generic line.
+        proposal: event.act as unknown as ActResponse,
       };
     case "error":
       // Nothing shown so far stands (`ask.ts`), so the preview goes too.
@@ -175,66 +215,167 @@ function failed(exchange: AskExchange, message: string): AskExchange {
 }
 
 /**
- * Asks, and holds the one exchange on screen.
+ * What is sent as the conversation before a new question: the turns that
+ * finished, oldest first. A turn that failed or never reached the server
+ * said nothing worth carrying.
+ */
+function askHistoryOf(exchanges: readonly AskExchange[]) {
+  return askHistory(
+    exchanges
+      .filter(
+        (exchange) =>
+          exchange.phase === "done" &&
+          exchange.answer?.status !== "unavailable",
+      )
+      .map(({ question, answer }) => ({ question, answer })),
+  );
+}
+
+export interface AskOptions {
+  /** The "answers are being saved" line was on screen (`ask.ts`). */
+  savedNoticeShown?: boolean;
+  /** This screen shows proposal cards, and the member may have Frapp act. */
+  actions?: boolean;
+  /**
+   * Runs after the question is on screen and before it is sent: the AI
+   * sheet's gate. False ends the turn as "answer the AI question first"; a
+   * throw ends it as a failure to try again.
+   */
+  gate?: () => Promise<boolean>;
+}
+
+let nextExchange = 0;
+
+/**
+ * Asks, and holds the conversation on screen.
  *
- * `ask` resolves when the exchange is over, however it ended; it never
- * rejects. `stop` abandons the question in flight (closing the panel, asking
- * another), and `reset` clears the screen.
+ * `ask` adds a turn and resolves when it is over, however it ended; it never
+ * rejects. `retry` asks a failed turn's question again in its place at the
+ * end. `stop` abandons the question in flight and takes its turn away
+ * (closing the panel), and `reset` starts a new conversation.
  */
 export function useAsk(): {
-  exchange: AskExchange | null;
-  ask: (
-    question: string,
-    options?: { savedNoticeShown?: boolean },
-  ) => Promise<void>;
+  exchanges: AskExchange[];
+  /** A turn is waiting on the server. */
+  working: boolean;
+  ask: (question: string, options?: AskOptions) => Promise<void>;
+  retry: (id: string, options?: AskOptions) => Promise<void>;
+  /** Replaces a turn's proposal: the event picked for "everyone who came". */
+  setProposal: (id: string, proposal: ActResponse) => void;
+  /** Records that a turn's card was confirmed or dismissed. */
+  resolveProposal: (id: string, resolution: AskProposalResolution) => void;
   stop: () => void;
   reset: () => void;
 } {
   const client = useFrappClient();
   const queryClient = useQueryClient();
-  const [exchange, setExchange] = useState<AskExchange | null>(null);
+  const [exchanges, setExchanges] = useState<AskExchange[]>([]);
+  // What `ask` reads the conversation from: state as of the last render is a
+  // turn behind when two calls land in one tick.
+  const latest = useRef<AskExchange[]>([]);
   const inFlight = useRef<AbortController | null>(null);
+
+  const write = useCallback(
+    (change: (current: AskExchange[]) => AskExchange[]) => {
+      latest.current = change(latest.current);
+      setExchanges(latest.current);
+    },
+    [],
+  );
 
   const stop = useCallback(() => {
     inFlight.current?.abort();
     inFlight.current = null;
-  }, []);
+    if (latest.current.some((exchange) => exchange.phase === "working")) {
+      write((current) =>
+        current.filter((exchange) => exchange.phase !== "working"),
+      );
+    }
+  }, [write]);
 
   const reset = useCallback(() => {
     stop();
-    setExchange(null);
-  }, [stop]);
+    write(() => []);
+  }, [stop, write]);
 
-  // A panel that unmounts mid-answer stops paying for the rest of it.
-  useEffect(() => stop, [stop]);
+  // A screen that unmounts mid-answer stops paying for the rest of it.
+  useEffect(
+    () => () => {
+      inFlight.current?.abort();
+      inFlight.current = null;
+    },
+    [],
+  );
 
-  const ask = useCallback(
-    async (question: string, options?: { savedNoticeShown?: boolean }) => {
+  const patch = useCallback(
+    (id: string, change: (current: AskExchange) => AskExchange) => {
+      write((current) =>
+        current.map((exchange) =>
+          exchange.id === id ? change(exchange) : exchange,
+        ),
+      );
+    },
+    [write],
+  );
+
+  const run = useCallback(
+    async (question: string, options: AskOptions | undefined, drop?: string) => {
       const trimmed = question.trim();
       if (!trimmed) return;
+      // One question at a time: a turn still waiting is abandoned.
       stop();
       const abort = new AbortController();
       inFlight.current = abort;
-      const mine = () => inFlight.current === abort;
-      /** Applies a change unless a newer question replaced this one. */
+      const id = `turn-${(nextExchange += 1)}`;
+      const earlier = latest.current.filter((exchange) => exchange.id !== drop);
+      const history = askHistoryOf(earlier);
+      /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
-        if (!mine()) return;
-        setExchange((current) => (current ? change(current) : current));
+        if (inFlight.current === abort) patch(id, change);
       };
 
-      setExchange({
-        question: trimmed,
-        phase: "working",
-        step: "searching",
-        preview: "",
-        answer: null,
-        failure: null,
-      });
+      write(() => [
+        ...earlier,
+        {
+          id,
+          question: trimmed,
+          phase: "working",
+          step: "searching",
+          preview: "",
+          answer: null,
+          proposal: null,
+          resolution: null,
+          failure: null,
+        },
+      ]);
 
       try {
+        if (options?.gate) {
+          let agreed: boolean;
+          try {
+            agreed = await options.gate();
+          } catch (error) {
+            update((current) =>
+              failed(current, errorCopy(error, ASK_COPY.failed)),
+            );
+            return;
+          }
+          if (!agreed) {
+            update((current) => ({
+              ...current,
+              phase: "done",
+              step: null,
+              answer: unavailable("consent_required"),
+            }));
+            return;
+          }
+          if (abort.signal.aborted) return;
+        }
         const result = await client.POST("/v1/ai/ask", {
           body: {
             question: trimmed,
+            ...(history.length > 0 ? { history } : {}),
+            ...(options?.actions ? { actions: true } : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
           },
           parseAs: "stream",
@@ -270,7 +411,13 @@ export function useAsk(): {
           if (done) break;
           for (const event of frames.feed(decoder.decode(value, { stream: true }))) {
             update((current) => applyAskEvent(current, event));
-            if (event.type === "done" || event.type === "error") ended = true;
+            if (
+              event.type === "done" ||
+              event.type === "proposal" ||
+              event.type === "error"
+            ) {
+              ended = true;
+            }
           }
         }
         if (ended) {
@@ -285,11 +432,52 @@ export function useAsk(): {
           update((current) => failed(current, ASK_COPY.failed));
         }
       } finally {
-        if (mine()) inFlight.current = null;
+        if (inFlight.current === abort) inFlight.current = null;
       }
     },
-    [client, queryClient, stop],
+    [client, patch, queryClient, stop, write],
   );
 
-  return { exchange, ask, stop, reset };
+  const ask = useCallback(
+    (question: string, options?: AskOptions) => run(question, options),
+    [run],
+  );
+
+  const retry = useCallback(
+    (id: string, options?: AskOptions) => {
+      // An older turn's Try again never abandons the turn being answered:
+      // the member asked that one last, and it would vanish from the thread.
+      const busy = latest.current.some(
+        (exchange) => exchange.phase === "working" && exchange.id !== id,
+      );
+      const again = latest.current.find((exchange) => exchange.id === id);
+      return again && !busy
+        ? run(again.question, options, id)
+        : Promise.resolve();
+    },
+    [run],
+  );
+
+  const setProposal = useCallback(
+    (id: string, proposal: ActResponse) =>
+      patch(id, (current) => ({ ...current, proposal, resolution: null })),
+    [patch],
+  );
+
+  const resolveProposal = useCallback(
+    (id: string, resolution: AskProposalResolution) =>
+      patch(id, (current) => ({ ...current, resolution })),
+    [patch],
+  );
+
+  return {
+    exchanges,
+    working: exchanges.some((exchange) => exchange.phase === "working"),
+    ask,
+    retry,
+    setProposal,
+    resolveProposal,
+    stop,
+    reset,
+  };
 }

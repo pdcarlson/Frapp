@@ -9,9 +9,12 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * Asking Frapp to do something (#718, `spec/behavior/ai.md` § Asking Frapp to
  * do something), shared by web and mobile.
  *
- * A request is answered with a proposal, never a change. The proposal is an
- * AI suggestion only the asker can open, so Confirm and Cancel are the
- * suggestion hooks (`useAcceptAiSuggestion`, `useDismissAiSuggestion`).
+ * A request is typed into the Ask conversation and arrives on its stream
+ * (`use-ask.ts`), answered with a proposal, never a change. The proposal is
+ * an AI suggestion only the asker can open, so Confirm and Cancel are the
+ * suggestion hooks (`useAcceptAiSuggestion`, `useDismissAiSuggestion`). What
+ * is here is what the card needs beside them. `POST /v1/ai/act` itself stays
+ * on the server for app builds shipped before the conversation.
  */
 
 export type ActResponse = components["schemas"]["ActResponseDto"];
@@ -24,8 +27,8 @@ const actStatusKey = (chapterId: string | null | undefined) =>
 /**
  * The actions the caller can ask for, or `null` when they cannot ask for any
  * at all: the server has no AI (404), or they do not hold `ai:use` and
- * `ai:act` (403). A screen offers the Do side of Ask only for a non-null,
- * non-empty answer.
+ * `ai:act` (403). A screen says a member may have Frapp act only for a
+ * non-null, non-empty answer.
  */
 export function useActStatus(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -60,22 +63,6 @@ function bodyOf(data: ActResponse | undefined): ActResponse {
   return data;
 }
 
-/** One request in the member's words; the answer is a proposal or a reason. */
-export function useActRequest() {
-  const client = useFrappClient();
-  const onError = useConsentRefresh();
-  return useMutation({
-    mutationKey: ["ai-act", "request"],
-    retry: false,
-    mutationFn: async (request: string): Promise<ActResponse> => {
-      const result = await client.POST("/v1/ai/act", { body: { request } });
-      throwUnlessOk(result);
-      return bodyOf(result.data);
-    },
-    onError,
-  });
-}
-
 /** The follow-up to `needs_event`: which event "everyone who came" means. */
 export function useActEventAudience() {
   const client = useFrappClient();
@@ -87,12 +74,15 @@ export function useActEventAudience() {
       eventId: string;
       amount: number;
       reason: string;
+      /** The conversation's other waiting cards stay (`ActEventAudienceDto`). */
+      keepEarlier?: boolean;
     }): Promise<ActResponse> => {
       const result = await client.POST("/v1/ai/act/event-audience", {
         body: {
           event_id: input.eventId,
           amount: input.amount,
           ...(input.reason ? { reason: input.reason } : {}),
+          ...(input.keepEarlier ? { keep_earlier: true } : {}),
         },
       });
       throwUnlessOk(result);

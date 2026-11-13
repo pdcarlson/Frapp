@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   ASK_STREAM_KEEPALIVE,
   ASK_STREAM_VERSION,
+  ASK_HISTORY_ANSWER_MAX_LENGTH,
+  ASK_HISTORY_MAX_TURNS,
+  ASK_QUESTION_MAX_LENGTH,
   AskRequestSchema,
   askAnswerSegments,
+  askHistory,
   askLeftOutLine,
   askSourceKindLabel,
   askSourceTarget,
@@ -108,6 +112,81 @@ describe("the Ask stream format", () => {
   });
 });
 
+describe("askHistory", () => {
+  const turn = (question: string, given: AskAnswer | null = answer) => ({
+    question,
+    answer: given,
+  });
+
+  it("sends a finished turn as its question and its answer", () => {
+    expect(askHistory([turn(" What is quorum? ")])).toEqual([
+      { question: "What is quorum?", answer: answer.text },
+    ]);
+  });
+
+  it("sends only the question of a turn with no answer to carry", () => {
+    const miss: AskAnswer = { ...answer, status: "not_found", text: "" };
+    const refused: AskAnswer = { ...answer, status: "refused", text: "" };
+    expect(
+      askHistory([turn("a", miss), turn("b", refused), turn("c", null)]),
+    ).toEqual([
+      { question: "a", answer: "" },
+      { question: "b", answer: "" },
+      { question: "c", answer: "" },
+    ]);
+  });
+
+  it("never sends back an answer that cites chat", () => {
+    const cited: AskAnswer = {
+      ...answer,
+      sources: [{ ...answer.sources[0]!, kind: "chat" }],
+    };
+    expect(askHistory([turn("Who is driving?", cited)])).toEqual([
+      { question: "Who is driving?", answer: "" },
+    ]);
+  });
+
+  it("never sends back an answer the model wrote with chat in front of it, cited or not", () => {
+    expect(
+      askHistory([turn("Who is driving?", { ...answer, read_chat: true })]),
+    ).toEqual([{ question: "Who is driving?", answer: "" }]);
+    // A server that says the model read none, or says nothing, is carried.
+    expect(
+      askHistory([
+        turn("a", { ...answer, read_chat: false }),
+        turn("b", { ...answer, read_chat: null }),
+      ]).map((sent) => sent.answer),
+    ).toEqual([answer.text, answer.text]);
+  });
+
+  it("keeps the last few turns, the newest last, within what the server accepts", () => {
+    const many = Array.from({ length: ASK_HISTORY_MAX_TURNS + 3 }, (_, index) =>
+      turn(`question ${index}`),
+    );
+    const sent = askHistory(many);
+    expect(sent).toHaveLength(ASK_HISTORY_MAX_TURNS);
+    expect(sent[0]!.question).toBe("question 3");
+    expect(sent.at(-1)!.question).toBe(`question ${ASK_HISTORY_MAX_TURNS + 2}`);
+  });
+
+  it("cuts a long question and a long answer to the server's limits", () => {
+    const [sent] = askHistory([
+      turn("q".repeat(ASK_QUESTION_MAX_LENGTH + 50), {
+        ...answer,
+        text: "a".repeat(ASK_HISTORY_ANSWER_MAX_LENGTH + 50),
+      }),
+    ]);
+    expect(sent!.question).toHaveLength(ASK_QUESTION_MAX_LENGTH);
+    expect(sent!.answer).toHaveLength(ASK_HISTORY_ANSWER_MAX_LENGTH);
+  });
+
+  it("never cuts a two-unit character in half", () => {
+    const text = `${"a".repeat(ASK_HISTORY_ANSWER_MAX_LENGTH - 1)}\u{1F600}tail`;
+    const [sent] = askHistory([turn("q", { ...answer, text })]);
+    expect(sent!.answer).toBe("a".repeat(ASK_HISTORY_ANSWER_MAX_LENGTH - 1));
+  });
+});
+
 describe("askSourceTarget", () => {
   it("reads each known target", () => {
     expect(askSourceTarget(answer.sources[0])).toEqual({
@@ -117,7 +196,10 @@ describe("askSourceTarget", () => {
     });
     const base = { ...answer.sources[0] };
     expect(
-      askSourceTarget({ ...base, target: { type: "meeting", meeting_id: "m" } }),
+      askSourceTarget({
+        ...base,
+        target: { type: "meeting", meeting_id: "m" },
+      }),
     ).toEqual({ type: "meeting", meeting_id: "m" });
     expect(
       askSourceTarget({
@@ -133,7 +215,9 @@ describe("askSourceTarget", () => {
   it("refuses a target missing its ids or naming a page this build lacks", () => {
     const base = { ...answer.sources[0] };
     expect(askSourceTarget({ ...base, target: null })).toBeNull();
-    expect(askSourceTarget({ ...base, target: { type: "meeting" } })).toBeNull();
+    expect(
+      askSourceTarget({ ...base, target: { type: "meeting" } }),
+    ).toBeNull();
     expect(
       askSourceTarget({ ...base, target: { type: "page", page: "vault" } }),
     ).toBeNull();
@@ -200,7 +284,9 @@ describe("askAnswerSegments", () => {
       ],
     });
     expect(
-      segments.flatMap((s) => (s.type === "citation" ? [s.citation.source] : [])),
+      segments.flatMap((s) =>
+        s.type === "citation" ? [s.citation.source] : [],
+      ),
     ).toEqual([0, 2]);
   });
 
@@ -212,11 +298,9 @@ describe("askAnswerSegments", () => {
         { source: 0, at: 0, quote: "early" },
       ],
     });
-    expect(segments.map((s) => (s.type === "text" ? s.text : s.index))).toEqual([
-      1,
-      "One.",
-      0,
-    ]);
+    expect(segments.map((s) => (s.type === "text" ? s.text : s.index))).toEqual(
+      [1, "One.", 0],
+    );
   });
 
   it("is the whole text when nothing is cited", () => {

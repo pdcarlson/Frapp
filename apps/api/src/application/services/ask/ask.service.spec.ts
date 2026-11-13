@@ -9,6 +9,7 @@ import type { CorpusPassage } from '../corpus/corpus-retrieval.service';
 import { openAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { AskService, type AskInput } from './ask.service';
+import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
 
 const CHAPTER = 'chapter-a';
@@ -193,6 +194,7 @@ describe('AskService', () => {
         unverified_citations: 0,
         truncated: false,
         saved: false,
+        read_chat: false,
         report_receipt: null,
       });
     });
@@ -271,6 +273,118 @@ describe('AskService', () => {
           unverified_citations: 2,
         }),
       );
+    });
+  });
+
+  describe('a question inside a conversation', () => {
+    const history = [
+      { question: 'When is the next chapter meeting?', answer: '' },
+      {
+        question: 'What is quorum?',
+        answer: 'Quorum is two thirds of active members.',
+      },
+    ];
+
+    it('searches the follow-up beside the question before it', async () => {
+      const { service, retrieval } = build({ passages: [passage()] });
+      await run(service, { question: 'And for a vote to expel?', history });
+      expect(retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: 'What is quorum?\nAnd for a vote to expel?',
+        }),
+        NOW,
+      );
+    });
+
+    it('shows the planner what the member asked before, and never an answer', async () => {
+      const { service, gateway } = build({
+        passages: [passage()],
+        tools: [tool()],
+      });
+      await run(service, { question: 'And for a vote to expel?', history });
+      const [, request] = gateway.generateObject.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages).toHaveLength(1);
+      expect(request.messages[0].content).toBe(
+        [
+          'Earlier in the conversation the member asked:',
+          '- When is the next chapter meeting?',
+          '- What is quorum?',
+          '',
+          'Question: And for a vote to expel?',
+          '',
+          'Tools:',
+          '- roster: Who is in the chapter.',
+        ].join('\n'),
+      );
+      expect(request.messages[0].content).not.toContain('two thirds');
+    });
+
+    it('gives the answer call the earlier turns as turns, ending on the question, and keeps the question of a turn whose answer is not carried', async () => {
+      const { service, gateway } = build({ passages: [passage()] });
+      await run(service, { question: 'And for a vote to expel?', history });
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages).toEqual([
+        { role: 'user', content: 'When is the next chapter meeting?' },
+        { role: 'assistant', content: ASK_ANSWER_NOT_CARRIED },
+        { role: 'user', content: 'What is quorum?' },
+        {
+          role: 'assistant',
+          content: 'Quorum is two thirds of active members.',
+        },
+        { role: 'user', content: 'And for a vote to expel?' },
+      ]);
+    });
+
+    it('drops half a character a cut left in an earlier turn, which a provider would refuse', async () => {
+      const { service, gateway } = build({ passages: [passage()] });
+      await run(service, {
+        question: 'And after that?',
+        history: [
+          { question: 'Formal \ud83c', answer: 'At the Hilton.\ud83c' },
+        ],
+      });
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: Array<{ role: string; content: string }> },
+      ];
+      expect(request.messages.slice(0, 2)).toEqual([
+        { role: 'user', content: 'Formal ' },
+        { role: 'assistant', content: 'At the Hilton.' },
+      ]);
+    });
+
+    it('still answers only from this question’s sources: an earlier answer backs nothing', async () => {
+      const { service } = build({
+        passages: [passage()],
+        answer: ok({ text: 'Three quarters, as I said.', citations: [] }),
+      });
+      const { answer } = await run(service, {
+        question: 'And for a vote to expel?',
+        history,
+      });
+      expect(answer.status).toBe('not_found');
+    });
+
+    it('a first question is searched and sent as it always was', async () => {
+      const { service, retrieval, gateway } = build({ passages: [passage()] });
+      await run(service);
+      expect(retrieval.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'What is quorum?' }),
+        NOW,
+      );
+      const [, request] = gateway.streamCited.mock.calls[0] as unknown as [
+        string,
+        { messages: unknown[] },
+      ];
+      expect(request.messages).toEqual([
+        { role: 'user', content: 'What is quorum?' },
+      ]);
     });
   });
 
@@ -568,6 +682,7 @@ describe('AskService', () => {
       });
       const { answer } = await run(service);
       expect(answer.left_out_messages).toBe(3);
+      expect(answer.read_chat).toBe(true);
       expect(answer.sources[0]).toEqual(
         expect.objectContaining({
           kind: 'chat',
@@ -579,6 +694,31 @@ describe('AskService', () => {
           },
         }),
       );
+    });
+
+    it('says the model read chat even when the answer cites none of it, so the client never sends the answer back', async () => {
+      const { service } = build({
+        passages: [chat(), passage()],
+        answer: ok({
+          text: 'Quorum is two thirds of active members. Formal is at the Hilton.',
+          citations: [
+            {
+              sourceId: 'p1',
+              quote: 'Quorum is two thirds of active members.',
+            },
+          ],
+        }),
+      });
+      const { answer } = await run(service);
+      expect(answer.sources.map((source) => source.kind)).not.toContain('chat');
+      expect(answer.read_chat).toBe(true);
+    });
+
+    it('says the model read no chat when it was given none', async () => {
+      const { service } = build({ passages: [passage()] });
+      const { answer } = await run(service);
+      expect(answer.status).toBe('answered');
+      expect(answer.read_chat).toBe(false);
     });
 
     it('drops a passage whose author said No since the search, before the model sees it, and counts its messages', async () => {

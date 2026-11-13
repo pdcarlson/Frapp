@@ -33,6 +33,7 @@ import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
+import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
@@ -43,6 +44,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
+import { ActResponseDto } from '../dtos/act.dto';
 import {
   AskDiagnosticsDto,
   AskRequestDto,
@@ -61,7 +63,10 @@ const KEEPALIVE_MS = 15_000;
 
 /**
  * Ask Frapp (#450, `spec/behavior/ai.md`): a member's question, answered
- * from their chapter's sources, streamed.
+ * from their chapter's sources, streamed. For a client that shows proposal
+ * cards (`actions`), words that ask for something to be done end in a card
+ * to confirm instead (`AskConversationService`); the route still changes
+ * nothing.
  *
  * `AiEnabledGuard` first, so a server with `AI_ENABLED` off answers 404
  * `ai.not_available` on every route here. Then the member, their chapter and
@@ -79,6 +84,7 @@ export class AskController {
 
   constructor(
     private readonly askService: AskService,
+    private readonly conversation: AskConversationService,
     private readonly diagnostics: AskDiagnosticsService,
   ) {}
 
@@ -107,7 +113,7 @@ export class AskController {
   @ThrottleFanOutWrite()
   @ApiOperation({
     summary: 'Ask a question; the answer is streamed',
-    description: `The response is Server-Sent Events. Each \`data:\` line is one JSON event of the Ask stream format, version ${ASK_STREAM_VERSION}, defined in \`@repo/validation\` (\`AskStreamEventSchema\`): \`start\`, \`status\`, \`text\` deltas, then one \`done\` carrying the checked answer with its citations and sources, or \`error\`. Text deltas are a preview; the answer is what \`done\` carries. Refusals that need the client to act arrive before the stream, as ordinary errors.`,
+    description: `The response is Server-Sent Events. Each \`data:\` line is one JSON event of the Ask stream format, version ${ASK_STREAM_VERSION}, defined in \`@repo/validation\` (\`AskStreamEventSchema\`): \`start\`, \`status\`, \`text\` deltas, then one \`done\` carrying the checked answer with its citations and sources, or \`error\`. Text deltas are a preview; the answer is what \`done\` carries. A request sent with \`actions\` can end with one \`proposal\` instead of \`done\`, carrying the answer \`POST /v1/ai/act\` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.`,
   })
   @ApiProduces(ASK_STREAM_CONTENT_TYPE)
   @ApiOkResponse({
@@ -149,10 +155,12 @@ export class AskController {
     }, KEEPALIVE_MS);
 
     try {
-      for await (const event of this.askService.ask({
+      for await (const event of this.conversation.converse({
         chapterId,
         userId,
         question: dto.question,
+        ...(dto.history === undefined ? {} : { history: dto.history }),
+        actions: dto.actions === true,
         enabledModules,
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader
@@ -161,7 +169,19 @@ export class AskController {
         signal: abort.signal,
       })) {
         if (abort.signal.aborted) break;
-        response.write(encodeAskStreamEvent(event));
+        response.write(
+          encodeAskStreamEvent(
+            event.type === 'act'
+              ? {
+                  v: ASK_STREAM_VERSION,
+                  type: 'proposal',
+                  // The same answer `POST /v1/ai/act` gives, so a card is
+                  // one shape wherever it came from.
+                  act: { ...ActResponseDto.from(event.outcome) },
+                }
+              : event,
+          ),
+        );
       }
     } catch (error) {
       // The member closed the panel or went offline: nobody to tell.

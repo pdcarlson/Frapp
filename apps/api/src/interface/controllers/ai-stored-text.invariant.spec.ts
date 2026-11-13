@@ -50,6 +50,7 @@ import { AskController } from './ask.controller';
 import type { CorpusPassage } from '../../application/services/corpus/corpus-retrieval.service';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import type { AskTool } from '../../application/services/ask/ask-tool';
+import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { AiGatewayService } from '../../application/services/ai/ai-gateway.service';
 import { AiSpendLedgerService } from '../../application/services/ai/ai-spend-ledger.service';
@@ -330,7 +331,12 @@ function build(model: ILanguageModel, captured: Captured) {
     diagnostics,
     [roster],
   );
-  return new AskController(ask, diagnostics);
+  return new AskController(
+    ask,
+    // The request lane is never reached: these asks do not send `actions`.
+    new AskConversationService(ask, {} as never),
+    diagnostics,
+  );
 }
 
 /** The response the controller streams to, keeping what the member gets. */

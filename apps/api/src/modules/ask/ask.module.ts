@@ -8,6 +8,7 @@ import {
   PointsLeaderboardAskTool,
   RosterAskTool,
 } from '../../application/services/ask/ask-tools';
+import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
@@ -24,6 +25,7 @@ import { ASK_DIAGNOSTICS_REPOSITORY } from '#domain/repositories/ask-diagnostics
 import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ActModule } from '../act/act.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { AiModule } from '../ai/ai.module';
 import { CorpusModule } from '../corpus/corpus.module';
@@ -39,6 +41,10 @@ import { RbacModule } from '../rbac/rbac.module';
  * A new live-data tool is a class added to the `ASK_TOOLS` list. The list is
  * closed: the plan step can only pick from it, and `AskService` checks each
  * pick against the asker's permissions before it runs.
+ *
+ * `AskConversationService` is what the route calls: it runs a question
+ * through `AskService` and, for a client that shows proposal cards, through
+ * `ActService` (`ActModule`) beside it.
  */
 @Module({
   imports: [
@@ -50,10 +56,12 @@ import { RbacModule } from '../rbac/rbac.module';
     EventModule,
     PointsModule,
     FinancialInvoiceModule,
+    ActModule,
   ],
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
     AskService,
+    AskConversationService,
     AskDiagnosticsService,
     AskDiagnosticsSweepService,
     AiEnabledGuard,

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { Text } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import type { AskExchange } from "@repo/hooks";
@@ -15,14 +16,15 @@ import {
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
-import { AskExchangeCard } from "./answer-card";
+import { AskTurn } from "./ask-turn";
 
 /**
- * The Ask card's states (`spec/behavior/ai.md` § Ask; #450, #451). Every word
- * is read from `ASK_COPY`, the same object web reads, so the two can't drift.
+ * One turn of the Ask conversation (`spec/behavior/ai.md` § Ask; #450, #451).
+ * Every word is read from `ASK_COPY`, the same object web reads, so the two
+ * can't drift.
  */
 
-// A purple chapter: the card is fixed gold, so nothing here may read it.
+// A purple chapter: Ask is fixed gold, so nothing here may read it.
 const branding = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => {
@@ -68,11 +70,14 @@ function answer(over: Partial<AskAnswer> = {}): AskAnswer {
 
 function exchange(over: Partial<AskExchange>): AskExchange {
   return {
+    id: "turn-1",
     question: "When are dues due?",
     phase: "done",
     step: null,
     preview: "",
     answer: null,
+    proposal: null,
+    resolution: null,
     failure: null,
     ...over,
   };
@@ -86,13 +91,13 @@ const handlers = () => ({
 
 function render(
   value: AskExchange,
-  props: Partial<React.ComponentProps<typeof AskExchangeCard>> = {},
+  props: Partial<React.ComponentProps<typeof AskTurn>> = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <AskExchangeCard
+        <AskTurn
           exchange={value}
           // Only the document has a screen in this build.
           canOpen={(source) => source.id === "s1"}
@@ -111,7 +116,31 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
       typeof node.type === "string" && node.props.accessibilityLabel === label,
   );
 
-describe("AskExchangeCard", () => {
+describe("AskTurn", () => {
+  it("shows what the member typed above what came back", () => {
+    const text = screenText(render(exchange({ answer: answer() })));
+    expect(text.indexOf("When are dues due?")).toBeLessThan(
+      text.indexOf("Dues are due on the first."),
+    );
+  });
+
+  it("shows the card in the answer's place for a turn that asked for something", () => {
+    const card = <Text>the card</Text>;
+    const asked = exchange({ proposal: { status: "proposed" } as never });
+    expect(screenText(render(asked, { proposal: card }))).toContain("the card");
+    // Never while the turn is still working, and never beside an answer.
+    expect(
+      screenText(
+        render(exchange({ phase: "working", step: "searching" }), {
+          proposal: card,
+        }),
+      ),
+    ).not.toContain("the card");
+    expect(
+      screenText(render(exchange({ answer: answer() }), { proposal: card })),
+    ).not.toContain("the card");
+  });
+
   it("names the step under the streamed words while it works", () => {
     const tree = render(
       exchange({ phase: "working", step: "reading", preview: "Dues are" }),
@@ -177,7 +206,11 @@ describe("AskExchangeCard", () => {
   it("states a refusal and a miss in plain words, with no sources", () => {
     const refused = render(exchange({ answer: answer({ status: "refused" }) }));
     expect(screenText(refused)).toContain(ASK_COPY.refused);
-    expect(screenText(refused)).not.toContain(ASK_COPY.sources);
+    expect(
+      refused.root.findAll((node) =>
+        String(node.props.accessibilityLabel).startsWith("Source "),
+      ),
+    ).toHaveLength(0);
 
     const missed = render(
       exchange({
@@ -190,30 +223,31 @@ describe("AskExchangeCard", () => {
     expect(screenText(missed)).toContain(askLeftOutLine(2));
   });
 
-  it("numbers each cited sentence and lists its source", () => {
+  it("numbers each cited sentence and gives each source a chip", () => {
     const props = handlers();
     const tree = render(exchange({ answer: answer() }), props);
     const text = screenText(tree);
     expect(text).toContain("Dues are due on the first.");
-    expect(text).toContain(ASK_COPY.sources);
     expect(text).toContain("Bylaws");
     expect(text).toContain("Roster");
 
-    // The marker and the row both open the source this build has a screen for.
+    // The marker and the chip both open the source this build has a screen for.
     const markers = byLabel(tree, "Source 1: Bylaws");
     expect(markers[0].props.accessibilityRole).toBe("link");
     act(() => markers[0].props.onPress());
-    const rows = tree.root.findAll(
+    const chips = tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith("Source 1: Bylaws."),
+        // What kind of source and its date are in the chip's spoken name.
+        node.props.accessibilityLabel ===
+          `Source 1: Bylaws. ${askSourceMetaLine(BYLAWS)}`,
     );
-    act(() => rows[0].props.onPress());
+    act(() => chips[0].props.onPress());
     expect(props.onOpenSource).toHaveBeenCalledTimes(2);
     expect(props.onOpenSource).toHaveBeenLastCalledWith(BYLAWS);
   });
 
-  it("lists a source with no screen as plain text, not a dead button", () => {
+  it("draws a source with no screen as a plain chip, not a dead button", () => {
     const tree = render(exchange({ answer: answer() }));
     const marker = byLabel(tree, "Source 2: Roster")[0];
     expect(marker.props.accessibilityRole).toBeUndefined();
@@ -226,12 +260,17 @@ describe("AskExchangeCard", () => {
     expect(pressable).toHaveLength(0);
   });
 
-  it("says a row's link is being fetched without changing its height", () => {
+  it("marks a chip busy while its link is fetched, without changing its words", () => {
     const tree = render(exchange({ answer: answer() }), {
       openingSourceId: "s1",
     });
-    expect(screenText(tree)).toContain("Opening");
-    expect(screenText(tree)).not.toContain(askSourceMetaLine(BYLAWS));
+    const chip = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Source 1: Bylaws."),
+    )[0];
+    expect(chip.props.accessibilityState).toEqual({ busy: true });
+    expect(screenText(tree)).toContain("Bylaws");
   });
 
   it("says what the member should know before relying on the answer", () => {

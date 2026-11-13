@@ -10,7 +10,6 @@ import {
   actPointsDoneLine,
   actPointsHeadline,
   actPointsTotalLine,
-  actUnavailableLine,
   actWhenLine,
 } from "./act";
 
@@ -68,9 +67,6 @@ describe("the acting agent's words", () => {
   it("falls back for a value a newer server sends", () => {
     expect(actMissingLine("something_new")).toBe(ACT_COPY.missing.request);
     expect(actMissingLine("amount")).toBe(ACT_COPY.missing.amount);
-    expect(actUnavailableLine("something_new")).toBe(
-      ACT_COPY.unavailable.not_available,
-    );
     expect(actActionLabel("something_new")).toBeNull();
   });
 

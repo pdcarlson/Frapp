@@ -7,6 +7,7 @@ import type { AnalyticsService } from '../analytics.service';
 import type { RbacService } from '../rbac.service';
 import { ActService } from './act.service';
 import type { ActDraft, ActTool } from './act-tool';
+import { GivePointsActTool } from './act-tools';
 import { CHAPTER, JORDAN, NOW, OFFICER, ZONE, plan } from './act-test-kit';
 
 function tool(
@@ -86,7 +87,13 @@ const input = (
   request,
 });
 
-const OFFICER_HOLDS = ['ai:use', 'ai:act', 'tasks:manage', 'points:adjust'];
+const OFFICER_HOLDS = [
+  'ai:use',
+  'ai:act',
+  'members:view',
+  'tasks:manage',
+  'points:adjust',
+];
 
 describe('ActService', () => {
   describe('who may act', () => {
@@ -130,9 +137,19 @@ describe('ActService', () => {
       ).toEqual(['create_task']);
     });
 
+    it('refuses a member who cannot see members, as the request route does, for a caller that is not that route', async () => {
+      const { service, generateObject } = build({
+        permissions: ['ai:use', 'ai:act', 'tasks:manage'],
+      });
+      await expect(
+        service.act(input('make a task'), NOW),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(generateObject).not.toHaveBeenCalled();
+    });
+
     it('ai:act alone offers nothing, and no model is called', async () => {
       const { service, generateObject } = build({
-        permissions: ['ai:use', 'ai:act'],
+        permissions: ['ai:use', 'ai:act', 'members:view'],
       });
       expect(await service.act(input('give Jordan 5 points'), NOW)).toEqual({
         status: 'no_action',
@@ -172,6 +189,56 @@ describe('ActService', () => {
       expect(request.system).toContain(
         'Today is 2026-11-12, Thursday, November 12, 2026',
       );
+    });
+  });
+
+  describe('a request inside a conversation', () => {
+    it("shows the planner the member's own earlier messages, the last three, before the request", async () => {
+      const { service, generateObject } = build({ permissions: OFFICER_HOLDS });
+      await service.act(
+        {
+          ...input('5, for cleaning the kitchen'),
+          earlier: [
+            'who is the treasurer?',
+            'when is formal?',
+            'what are the dues?',
+            'give Jordan points',
+          ],
+        },
+        NOW,
+      );
+      const [, request] = generateObject.mock.calls[0] as [
+        string,
+        { messages: { role: string; content: string }[] },
+      ];
+      expect(request.messages).toEqual([
+        {
+          role: 'user',
+          content: [
+            'Earlier in the conversation the officer wrote:',
+            '- when is formal?',
+            '- what are the dues?',
+            '- give Jordan points',
+            '',
+            'Request: 5, for cleaning the kitchen',
+            '',
+            'Actions:',
+            '- give_points: give_points description',
+            '- create_task: create_task description',
+          ].join('\n'),
+        },
+      ]);
+    });
+
+    it('leaves earlier cards waiting, so each one in the thread can still be confirmed', async () => {
+      const { service, suggestions } = build({ permissions: OFFICER_HOLDS });
+      const outcome = await service.act(
+        { ...input('make a task'), keepEarlier: true },
+        NOW,
+      );
+      expect(outcome).toMatchObject({ status: 'proposed' });
+      expect(suggestions.withdrawSource).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -346,13 +413,65 @@ describe('ActService', () => {
 
   describe('picking the event', () => {
     it('answers no_action to a member who is not offered points', async () => {
-      const { service } = build({ permissions: ['ai:act', 'tasks:manage'] });
+      const { service } = build({
+        permissions: ['ai:act', 'members:view', 'tasks:manage'],
+      });
       expect(
         await service.proposePointsForEvent(
           { ...input(''), eventId: JORDAN, amount: 5, reason: null },
           NOW,
         ),
       ).toEqual({ status: 'no_action', available: ['create_task'] });
+    });
+
+    /** The points action with its own reading of the event stubbed. */
+    function pointsTool() {
+      const draftFromEvent = jest.fn().mockResolvedValue({
+        status: 'draft',
+        payload: { amount: 5, target_user_ids: [JORDAN] },
+        notes: [],
+      });
+      const points = new GivePointsActTool(
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      points.draftFromEvent = draftFromEvent;
+      return { points, draftFromEvent };
+    }
+
+    const pick = { eventId: JORDAN, amount: 5, reason: null };
+
+    it('replaces what the member asked before, outside a conversation', async () => {
+      const { points } = pointsTool();
+      const { service, suggestions } = build({
+        permissions: OFFICER_HOLDS,
+        tools: [points],
+      });
+      expect(
+        await service.proposePointsForEvent({ ...input(''), ...pick }, NOW),
+      ).toMatchObject({ status: 'proposed' });
+      expect(suggestions.withdrawSource).toHaveBeenCalledWith(CHAPTER, {
+        type: 'request',
+        id: OFFICER,
+      });
+    });
+
+    it('leaves the other cards in the thread waiting when the pick was made in a conversation', async () => {
+      const { points, draftFromEvent } = pointsTool();
+      const { service, suggestions } = build({
+        permissions: OFFICER_HOLDS,
+        tools: [points],
+      });
+      expect(
+        await service.proposePointsForEvent(
+          { ...input(''), ...pick, keepEarlier: true },
+          NOW,
+        ),
+      ).toMatchObject({ status: 'proposed' });
+      expect(draftFromEvent).toHaveBeenCalledWith(pick, expect.anything());
+      expect(suggestions.withdrawSource).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).toHaveBeenCalledTimes(1);
     });
   });
 

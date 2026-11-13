@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ASK_STREAM_VERSION,
   type AskAnswer,
+  type AskHistoryTurn,
   type AskSource,
   type AskStep,
   type AskStreamEvent,
@@ -39,8 +40,11 @@ import {
   ASK_PLAN_PROMPT_VERSION,
   ASK_PLAN_SYSTEM,
   AskPlanSchema,
+  askAnswerMessages,
   askAnswerSystem,
   askPlanMessage,
+  askSearchQuery,
+  earlierQuestions,
 } from './ask-prompt';
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
@@ -65,6 +69,12 @@ export interface AskInput {
   /** The asker, from the auth guard. */
   userId: string;
   question: string;
+  /**
+   * The conversation before this question, oldest first, as the client holds
+   * it. Nothing here is trusted as a source: it is what the asker says was
+   * said, and it reaches only the asker's own answer.
+   */
+  history?: readonly AskHistoryTurn[];
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The asker's IANA time zone. */
@@ -217,9 +227,10 @@ function passageEntry(
  *    searches the chapter's index as the asker: one chapter, the one the
  *    request's guard resolved, and only sources the asker can open. A small
  *    planning call picks which live reads the question needs, from the
- *    tools the asker may use. The planner sees the question and nothing
- *    else, so no retrieved text and no tool result can cause a read (C3,
- *    C8: nothing is done because a document or a message asked).
+ *    tools the asker may use. The planner sees the question, the asker's
+ *    own earlier questions when there is a conversation, and nothing else,
+ *    so no retrieved text, no earlier answer and no tool result can cause a
+ *    read (C3, C8: nothing is done because a document or a message asked).
  * 2. **Live reads, as the asker.** Only a tool that was offered can be
  *    picked, and a tool is offered only after the route's permission and its
  *    module were checked for the asker. Each picked tool is checked to be
@@ -228,9 +239,11 @@ function passageEntry(
  * 3. **Nothing found, no model call.** With no passage and no tool result,
  *    the answer is "couldn't find that", and no text is generated (C7).
  * 4. **The answer, streamed.** The gateway gets the question as the user
- *    turn and the sources as sources: live data first, then official
+ *    turn, after the conversation's earlier turns when the client sent
+ *    them, and the sources as sources: live data first, then official
  *    passages, then chat, labelled as chat (C1, C8). Words are forwarded as
- *    they are written.
+ *    they are written. An earlier turn is context, never a source: the
+ *    answer still stands only on quotes found in this question's sources.
  * 5. **No answer without a source.** When the model stops, the gateway has
  *    kept only the quotes that are word for word in the source they name. An
  *    answer left with none is replaced by "couldn't find that" (C6, C7).
@@ -291,7 +304,7 @@ export class AskService {
         {
           chapterId: input.chapterId,
           actingUserId: input.userId,
-          query: input.question,
+          query: askSearchQuery(input.question, input.history),
           limit: PASSAGE_LIMIT,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
@@ -355,7 +368,7 @@ export class AskService {
       {
         promptVersion: ASK_ANSWER_PROMPT_VERSION,
         system: askAnswerSystem(longDate(now, input.timeZone)),
-        messages: [{ role: 'user', content: input.question }],
+        messages: askAnswerMessages(input.question, input.history),
         sources: entries.map((entry) => entry.model),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
       },
@@ -435,6 +448,10 @@ export class AskService {
       left_out_messages: leftOut,
       unverified_citations: result.droppedCitations,
       truncated: result.truncated,
+      // Said whether or not a chat source is cited: a sentence can draw on a
+      // message whose quote was dropped, and the client must not send it
+      // back as history either way.
+      read_chat: entries.some((entry) => entry.chat),
     });
   }
 
@@ -470,7 +487,14 @@ export class AskService {
           promptVersion: ASK_PLAN_PROMPT_VERSION,
           system: ASK_PLAN_SYSTEM,
           messages: [
-            { role: 'user', content: askPlanMessage(input.question, offered) },
+            {
+              role: 'user',
+              content: askPlanMessage(
+                input.question,
+                offered,
+                earlierQuestions(input.history),
+              ),
+            },
           ],
           schema: AskPlanSchema,
           ...(input.signal === undefined ? {} : { signal: input.signal }),

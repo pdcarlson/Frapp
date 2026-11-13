@@ -35,7 +35,8 @@ describe("mobile observability wiring", () => {
     // surfaces report nothing of their own; the API owns Ask's telemetry.
     for (const file of [
       "components/ask/ask-sheet.tsx",
-      "components/ask/answer-card.tsx",
+      "components/ask/ask-turn.tsx",
+      "components/ask/ask-proposal.tsx",
       "lib/ask/source-route.ts",
       "components/minutes/notes-draft-sheet.tsx",
     ]) {

@@ -1,18 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, X } from "lucide-react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import {
   errorCopy,
   useAcceptAiSuggestion,
   useActEventAudience,
-  useActRequest,
   useCurrentUser,
   useDismissAiSuggestion,
   useMembers,
   type ActResponse,
   type AiSuggestion,
+  type AskProposalResolution,
   type PointsSuggestionEdits,
   type TaskSuggestionEdits,
 } from "@repo/hooks";
@@ -21,7 +21,6 @@ import { codeOf } from "@repo/api-sdk";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import {
   ACT_COPY,
-  ACT_REQUEST_MAX_LENGTH,
   actActionLabel,
   actMissingLine,
   actNoteLine,
@@ -30,11 +29,9 @@ import {
   actConfirmRefusalLine,
   actPointsHeadline,
   actPointsTotalLine,
-  actUnavailableLine,
   actWhenLine,
 } from "@repo/validation";
 import { ReportAiButton } from "@/components/ai/report-ai";
-import { PanelBody } from "@/components/shared/panel";
 import {
   DueDateField,
   dueEntryPassed,
@@ -48,293 +45,197 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { EYEBROW } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * The Do side of Ask on web (#718, `spec/behavior/ai.md` § Asking Frapp to do
- * something): an officer says what to do, and gets back a card that says
- * exactly what would happen. Nothing changes until they press Confirm.
+ * A proposal in the Ask conversation on web (#718, `spec/behavior/ai.md` §
+ * Asking Frapp to do something): the member typed something to do, and this
+ * is the card that says exactly what would happen. Nothing changes until
+ * they press Confirm.
  *
- * **A card to confirm, in the panel that already answers.** Slack's
- * `/remind` and Linear's "create issue from text" both answer a typed request
- * with the thing filled in for the person to check, and Notion AI shows what
- * it would change before it changes it. The card here is that: the action as
- * a title, each detail on its own line, the size of a bulk change in words
- * ("Give 5 points to 42 members"), and Confirm beside Cancel.
+ * **A card to confirm, in the thread where it was asked.** Slack's `/remind`
+ * and Linear's "create issue from text" both answer a typed request with the
+ * thing filled in for the person to check, and Notion AI shows what it would
+ * change before it changes it. The card here is that: the action as a title,
+ * each detail on its own line, the size of a bulk change in words ("Give 5
+ * points to 42 members"), and Confirm beside Cancel.
  *
  * **What can be fixed on the card is what a request leaves unsaid.** Who a
  * points change is for (take a member off, add one a name did not find), and
- * who and when for a task. Everything else is asked again in other words:
- * the field stays under the card.
+ * who and when for a task. Everything else is said again in other words, in
+ * the same field: the conversation carries what was typed before.
  *
- * **Nothing above moves while it works.** The request sits where it was
- * typed, and one line under it says it is being worked out; the card takes
- * that line's place.
+ * **Every card in the thread stays live.** A card is not replaced by the next
+ * thing asked. Once it is confirmed or dismissed it becomes one line saying
+ * so, in the card's own frame, with a link to where the change can be seen.
  */
-
-type Turn =
-  | { phase: "working"; request: string }
-  | { phase: "failed"; request: string; message: string }
-  | { phase: "answered"; request: string; response: ActResponse }
-  | {
-      phase: "done";
-      request: string;
-      line: string;
-      link: { href: string; label: string } | null;
-    }
-  | { phase: "cancelled"; request: string };
 
 type Member = NonNullable<ReturnType<typeof useMembers>["data"]>[number];
 
-/**
- * What the Do side is showing. The panel holds it (not this pane), so a
- * waiting card is still there after a look at the Ask side or a close and
- * reopen, the way a finished answer is.
- */
-export function useActSession() {
-  const [turn, setTurn] = useState<Turn | null>(null);
-  // Only the latest request may write the answer: one sent, then replaced
-  // before it came back, is dropped.
-  const latestRef = useRef(0);
-  return { turn, setTurn, latestRef };
-}
-export type ActSession = ReturnType<typeof useActSession>;
+/** Where a confirmed change can be seen, by the page the card named. */
+const RESULT_LINKS: Record<string, { href: string; label: string }> = {
+  points: { href: "/points", label: ACT_COPY.open_points },
+  tasks: { href: "/tasks", label: ACT_COPY.open_tasks },
+  events: { href: "/events", label: ACT_COPY.open_events },
+};
 
-export function ActPane({
-  actions,
-  ensureConsent,
+const CARD_FRAME = "rounded-[14px] border border-border bg-card p-3";
+
+/** What an officer changed on a waiting card, by the proposal's id. */
+interface CardEdits {
+  targets: string[];
+  assigneeId: string;
+  due: string;
+}
+
+/**
+ * Where a waiting card's edits are kept while the panel is closed. The panel
+ * takes its thread off the page when it closes, and a card drawn again from
+ * the proposal alone would put back the member an officer took off, and
+ * Confirm would then give them the points. The panel holds one of these for
+ * the life of the conversation; a card outside a panel keeps its own.
+ */
+export type AskCardEditsStore = Map<string, CardEdits>;
+export const AskCardEditsContext = createContext<AskCardEditsStore | null>(
+  null,
+);
+
+export function AskProposal({
+  proposal,
+  resolution,
+  onProposal,
+  onResolved,
   onLeave,
-  session,
 }: {
-  /** Held by the panel so the card outlives this pane; its own when absent. */
-  session?: ActSession;
-  /** The actions this member can ask for (`GET /v1/ai/act`). */
-  actions: readonly string[];
-  /** The AI sheet's gate: asked before the first request leaves. */
-  ensureConsent: () => Promise<boolean>;
+  /** What the server answered the member's words with. */
+  proposal: ActResponse;
+  /** Set once the card was confirmed or dismissed. */
+  resolution: AskProposalResolution | null;
+  /** The event pick answered with a new proposal for this turn. */
+  onProposal: (proposal: ActResponse) => void;
+  onResolved: (resolution: AskProposalResolution) => void;
   /** A link out of the panel was followed. */
   onLeave?: () => void;
 }) {
-  const request = useActRequest();
   const audience = useActEventAudience();
-  const [draft, setDraft] = useState("");
-  const own = useActSession();
-  const { turn, setTurn, latestRef } = session ?? own;
-  const field = useRef<HTMLTextAreaElement>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => {
-    field.current?.focus({ preventScroll: true });
-  }, []);
+  if (resolution) {
+    return (
+      <ProposalReceipt
+        proposal={proposal}
+        resolution={resolution}
+        onLeave={onLeave}
+      />
+    );
+  }
 
-  const working = turn?.phase === "working";
-
-  async function settle(said: string, run: () => Promise<ActResponse>) {
-    const mine = ++latestRef.current;
-    setTurn({ phase: "working", request: said });
+  async function pickEvent(eventId: string) {
+    const choice = proposal.event_choice;
+    if (!choice || audience.isPending) return;
+    setProblem(null);
     try {
-      const agreed = await ensureConsent();
-      const response: ActResponse = agreed
-        ? await run()
-        : {
-            status: "unavailable",
-            action: null,
-            suggestion: null,
-            notes: [],
-            event_choice: null,
-            missing: null,
-            reason: "consent_required",
-            available_actions: [],
-          };
-      if (mine === latestRef.current) {
-        setTurn({ phase: "answered", request: said, response });
-      }
+      onProposal(
+        await audience.mutateAsync({
+          eventId,
+          amount: choice.amount,
+          reason: choice.reason,
+          // The other cards in the thread stay waiting.
+          keepEarlier: true,
+        }),
+      );
     } catch (error) {
-      if (mine === latestRef.current) {
-        setTurn({
-          phase: "failed",
-          request: said,
-          message: errorCopy(error, ACT_COPY.failed),
-        });
-      }
+      setProblem(errorCopy(error, ACT_COPY.failed));
     }
   }
 
-  function submit(text: string) {
-    const said = text.trim();
-    if (!said || working) return;
-    setDraft("");
-    void settle(said, () => request.mutateAsync(said));
-  }
-
-  const examples = actions.flatMap((action) => {
-    const example = (ACT_COPY.examples as Record<string, string>)[action];
-    return example ? [example] : [];
-  });
-
   return (
-    <>
-      <PanelBody>
-        {turn ? (
-          <article className="space-y-3">
-            <h3 className="rounded-md bg-surface-1 px-3 py-2 text-sm font-medium text-foreground">
-              {turn.request}
-            </h3>
-            <div aria-live="polite" className="space-y-3">
-              {turn.phase === "working" ? (
-                <p className="text-caption text-muted-foreground">
-                  {ACT_COPY.working}
-                </p>
-              ) : null}
-              {turn.phase === "failed" ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-foreground">{turn.message}</p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => submit(turn.request)}
-                  >
-                    {ACT_COPY.try_again}
-                  </Button>
-                </div>
-              ) : null}
-              {turn.phase === "cancelled" ? (
-                <p className="text-sm text-muted-foreground">
-                  {ACT_COPY.cancelled}
-                </p>
-              ) : null}
-              {turn.phase === "done" ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-foreground">{turn.line}</p>
-                  {turn.link ? (
-                    <Button asChild variant="secondary" size="sm">
-                      <Link href={turn.link.href} onClick={onLeave}>
-                        {turn.link.label}
-                      </Link>
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              {turn.phase === "answered" ? (
-                <ActAnswer
-                  response={turn.response}
-                  onAnswerConsent={() => submit(turn.request)}
-                  onPickEvent={(eventId) => {
-                    const choice = turn.response.event_choice;
-                    if (!choice) return;
-                    void settle(turn.request, () =>
-                      audience.mutateAsync({
-                        eventId,
-                        amount: choice.amount,
-                        reason: choice.reason,
-                      }),
-                    );
-                  }}
-                  onDone={(line, link) =>
-                    setTurn({
-                      phase: "done",
-                      request: turn.request,
-                      line,
-                      link,
-                    })
-                  }
-                  onCancelled={() =>
-                    setTurn({ phase: "cancelled", request: turn.request })
-                  }
-                />
-              ) : null}
-            </div>
-          </article>
-        ) : (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">
-                {ACT_COPY.empty_title}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {ACT_COPY.empty_body}
-              </p>
-            </div>
-            <ul className="space-y-1.5">
-              {examples.map((example) => (
-                <li key={example}>
-                  <button
-                    type="button"
-                    onClick={() => submit(example)}
-                    className={cn(
-                      "w-full rounded-md border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-card-hover",
-                      FOCUS_RING,
-                    )}
-                  >
-                    {example}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </PanelBody>
-      <form
-        className="shrink-0 space-y-2 border-t border-border px-5 py-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit(draft);
-        }}
-      >
-        <div className="flex items-end gap-2">
-          <Textarea
-            ref={field}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                submit(draft);
-              }
-            }}
-            rows={2}
-            maxLength={ACT_REQUEST_MAX_LENGTH}
-            placeholder={ACT_COPY.placeholder}
-            aria-label={ACT_COPY.placeholder}
-            className="min-h-[64px] resize-none"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="shrink-0"
-            aria-label={ACT_COPY.send}
-            title={ACT_COPY.send}
-            disabled={working || draft.trim().length === 0}
-          >
-            <ArrowUp className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
-        <p className="min-h-9 text-caption text-muted-foreground">
-          {ACT_COPY.footnote}
+    <div className="space-y-2">
+      <ActAnswer
+        response={proposal}
+        busy={audience.isPending}
+        onPickEvent={(eventId) => void pickEvent(eventId)}
+        onDone={(line, page) => onResolved({ kind: "done", line, page })}
+        onCancelled={() => onResolved({ kind: "cancelled" })}
+        onGone={() => onResolved({ kind: "gone" })}
+      />
+      {problem ? (
+        <p role="alert" className="text-sm text-destructive-text">
+          {problem}
         </p>
-      </form>
-    </>
+      ) : null}
+    </div>
+  );
+}
+
+/** What the card was about, in a few words, once it is one line. */
+function proposalHeadline(proposal: ActResponse): string | null {
+  const suggestion = proposal.suggestion;
+  if (!suggestion) return null;
+  if (suggestion.task) return suggestion.task.title;
+  if (suggestion.new_event) return suggestion.new_event.name;
+  return suggestion.points?.reason ?? null;
+}
+
+/** What a card that ended says in its place. */
+function resolutionLine(resolution: AskProposalResolution): string {
+  if (resolution.kind === "done") return resolution.line;
+  return resolution.kind === "gone" ? ACT_COPY.gone : ACT_COPY.cancelled;
+}
+
+/** A card that ended: what happened, in the frame the card had. */
+function ProposalReceipt({
+  proposal,
+  resolution,
+  onLeave,
+}: {
+  proposal: ActResponse;
+  resolution: AskProposalResolution;
+  onLeave?: () => void;
+}) {
+  const headline = proposalHeadline(proposal);
+  const link =
+    resolution.kind === "done" ? RESULT_LINKS[resolution.page ?? ""] : null;
+  return (
+    <section className={cn(CARD_FRAME, "space-y-1")}>
+      {headline ? (
+        <p className="break-words text-sm font-semibold text-foreground">
+          {headline}
+        </p>
+      ) : null}
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <p className="text-sm text-muted-foreground">
+          {resolutionLine(resolution)}
+        </p>
+        {link ? (
+          <Button asChild variant="ghost" size="sm" className="-mr-2">
+            <Link href={link.href} onClick={onLeave}>
+              {link.label}
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
 function ActAnswer({
   response,
-  onAnswerConsent,
+  busy,
   onPickEvent,
   onDone,
   onCancelled,
+  onGone,
 }: {
   response: ActResponse;
-  onAnswerConsent: () => void;
+  /** An event pick is on its way: the choices wait. */
+  busy: boolean;
   onPickEvent: (eventId: string) => void;
-  onDone: (line: string, link: { href: string; label: string } | null) => void;
+  onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
 }) {
   if (response.status === "proposed" && response.suggestion) {
     return (
@@ -343,6 +244,7 @@ function ActAnswer({
         notes={response.notes}
         onDone={onDone}
         onCancelled={onCancelled}
+        onGone={onGone}
       />
     );
   }
@@ -363,9 +265,10 @@ function ActAnswer({
             <li key={event.id}>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => onPickEvent(event.id)}
                 className={cn(
-                  "w-full rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-card-hover",
+                  "w-full rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-card-hover disabled:opacity-60",
                   FOCUS_RING,
                 )}
               >
@@ -381,28 +284,6 @@ function ActAnswer({
         </ul>
       </div>
     );
-  }
-  if (response.status === "unavailable") {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-foreground">
-          {actUnavailableLine(response.reason)}
-        </p>
-        {response.reason === "consent_required" ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={onAnswerConsent}
-          >
-            {ACT_COPY.consent_action}
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-  if (response.status === "refused") {
-    return <p className="text-sm text-foreground">{ACT_COPY.refused}</p>;
   }
   if (response.status === "no_action") {
     const labels = response.available_actions.flatMap((action) => {
@@ -425,7 +306,8 @@ function ActAnswer({
       </div>
     );
   }
-  // `unclear`, and any status a newer server sends.
+  // `unclear`. A card is never `unavailable` or `refused`: those end a turn
+  // as an answer, and an event pick that may not run is an error, not a card.
   return (
     <p className="text-sm text-foreground">
       {actMissingLine(response.missing)}
@@ -433,19 +315,21 @@ function ActAnswer({
   );
 }
 
+/** The proposal is no longer waiting: a day passed, or it was decided elsewhere. */
+function isGone(error: unknown): boolean {
+  return [
+    "ai.suggestion.decided",
+    "ai.suggestion.expired",
+    "ai.suggestion.not_found",
+  ].includes(codeOf(error) ?? "");
+}
+
 /** Why a Confirm or Cancel was refused, in words an officer can act on. */
 function refusalLine(error: unknown): string {
-  switch (codeOf(error)) {
-    case "ai.suggestion.decided":
-    case "ai.suggestion.expired":
-    case "ai.suggestion.not_found":
-      return ACT_COPY.gone;
-    default:
-      return (
-        actConfirmRefusalLine(codeOf(error) ?? null) ??
-        errorCopy(error, ACT_COPY.failed)
-      );
-  }
+  return (
+    actConfirmRefusalLine(codeOf(error) ?? null) ??
+    errorCopy(error, ACT_COPY.failed)
+  );
 }
 
 function CardRow({
@@ -468,11 +352,14 @@ function ActCard({
   notes,
   onDone,
   onCancelled,
+  onGone,
 }: {
   suggestion: AiSuggestion;
   notes: ActResponse["notes"];
-  onDone: (line: string, link: { href: string; label: string } | null) => void;
+  onDone: (line: string, page: string) => void;
   onCancelled: () => void;
+  /** The proposal stopped waiting before the member decided. */
+  onGone: () => void;
 }) {
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
@@ -492,15 +379,22 @@ function ActCard({
   };
 
   const { points, task, new_event: event } = suggestion;
+  const store = useContext(AskCardEditsContext);
+  const kept = store?.get(suggestion.id);
   const [targets, setTargets] = useState<string[]>(
-    points?.target_user_ids ?? [],
+    kept?.targets ?? points?.target_user_ids ?? [],
   );
-  const [assigneeId, setAssigneeId] = useState(task?.assignee_id ?? "");
+  const [assigneeId, setAssigneeId] = useState(
+    kept?.assigneeId ?? task?.assignee_id ?? "",
+  );
   // The suggestion's own due: kept even once its time has passed (#4512).
   const suggestedDue = task?.due_date
     ? dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at })
     : "";
-  const [due, setDue] = useState(suggestedDue);
+  const [due, setDue] = useState(kept?.due ?? suggestedDue);
+  useEffect(() => {
+    store?.set(suggestion.id, { targets, assigneeId, due });
+  }, [store, suggestion.id, targets, assigneeId, due]);
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with something still missing: say which, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -563,21 +457,17 @@ function ActCard({
             outcome?.adjusted ?? targets.length,
             outcome?.skipped ?? 0,
           ),
-          { href: "/points", label: ACT_COPY.open_points },
+          "points",
         );
       } else if (task) {
-        onDone(ACT_COPY.done_task, {
-          href: "/tasks",
-          label: ACT_COPY.open_tasks,
-        });
+        onDone(ACT_COPY.done_task, "tasks");
       } else {
-        onDone(ACT_COPY.done_event, {
-          href: "/events",
-          label: ACT_COPY.open_events,
-        });
+        onDone(ACT_COPY.done_event, "events");
       }
     } catch (error) {
-      setProblem(refusalLine(error));
+      // A card that stopped waiting says so in its place, with no buttons.
+      if (isGone(error)) onGone();
+      else setProblem(refusalLine(error));
     }
   }
 
@@ -586,12 +476,14 @@ function ActCard({
     try {
       await dismiss.mutateAsync(suggestion.id);
     } catch (error) {
+      // Already decided elsewhere: it may have been confirmed, so the card
+      // does not say cancelled.
+      if (codeOf(error) === "ai.suggestion.decided") {
+        onGone();
+        return;
+      }
       // Already gone is what Cancel wanted.
-      if (
-        !["ai.suggestion.not_found", "ai.suggestion.expired"].includes(
-          codeOf(error) ?? "",
-        )
-      ) {
+      if (!isGone(error)) {
         setProblem(refusalLine(error));
         return;
       }
@@ -625,10 +517,7 @@ function ActCard({
     ) : null;
 
   return (
-    <section
-      aria-label={title}
-      className="space-y-3 rounded-[14px] border border-border p-3"
-    >
+    <section aria-label={title} className={cn(CARD_FRAME, "space-y-3")}>
       <div className="flex min-h-8 items-center justify-between gap-2">
         <p className={cn(EYEBROW, "text-muted-foreground")}>{title}</p>
         {/* Report this (#4315): what the agent proposed, for the Frapp team. */}
