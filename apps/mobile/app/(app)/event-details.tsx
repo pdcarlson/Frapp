@@ -5,6 +5,7 @@ import {
   seriesRuleOf,
   statusLabel,
 } from "@repo/validation";
+import { formatPointsChip } from "@repo/formatting";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -246,7 +247,7 @@ export default function EventDetailsScreen() {
               <HairlineChip label="Mandatory" />
             ) : null}
             {event.point_value ? (
-              <AccentChip label={`+${event.point_value} pts`} />
+              <AccentChip label={formatPointsChip(event.point_value)} />
             ) : null}
           </View>
         ) : null}
@@ -393,7 +394,7 @@ function CheckInCard({
             : "Check-in is unavailable";
   const trailing = checkedInAt
     ? event.point_value
-      ? `+${event.point_value} pts`
+      ? formatPointsChip(event.point_value)
       : null
     : isOpen && !own
       ? `closes ${formatEventClock(window.closesAt)}`
