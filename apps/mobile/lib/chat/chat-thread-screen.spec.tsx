@@ -550,8 +550,15 @@ const catchUp = vi.hoisted(() => ({
   options: undefined as
     { onOpenPoint: (point: Record<string, unknown>) => void } | undefined,
 }));
+/** Whether the member has Ask, as the app knows it so far (#4713). */
+const askAccess = vi.hoisted(() => ({
+  value: "no" as "yes" | "no" | "unknown",
+}));
 vi.mock("@/lib/ai/availability", () => ({
-  useAiSurfaces: () => ({ catchUp: catchUp.surface }),
+  useAiSurfaces: () => ({
+    catchUp: catchUp.surface,
+    askAccess: askAccess.value,
+  }),
 }));
 vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
   ...(await importOriginal<
@@ -586,11 +593,16 @@ const channelAsk = vi.hoisted(() => ({
     renderTurn: (turn: { id: string }) => unknown;
     sheets: null;
   },
+  /** The channel each render asked from. */
+  channels: [] as (string | null | undefined)[],
 }));
 vi.mock("@/components/ask/ask-in-channel", async () => {
   const { createElement } = await import("react");
   return {
-    useChannelAsk: () => channelAsk.value,
+    useChannelAsk: (channelId: string | null | undefined) => {
+      channelAsk.channels.push(channelId);
+      return channelAsk.value;
+    },
     useAskTurnsPlacement: (byRow: unknown, renderTurn: unknown) => ({
       byRow,
       renderTurn,
@@ -750,6 +762,8 @@ beforeEach(() => {
   catchUp.waiting = false;
   catchUp.active = false;
   channelAsk.value = null;
+  channelAsk.channels = [];
+  askAccess.value = "no";
 });
 
 describe("chat thread way back", () => {
@@ -3101,6 +3115,101 @@ describe("chat thread asks Frapp instead of posting (#4713)", () => {
       act(() => tree.unmount());
     },
   );
+
+  it("asks from the channel that is open, and from the next one once it is", () => {
+    // A stale or wrong id here would draw the answer in another channel.
+    const { tree } = asking("");
+    expect(channelAsk.channels.at(-1)).toBe(CHANNEL);
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    expect(channelAsk.channels.at(-1)).toBe(OTHER_CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("never asks while a message is being edited: Save saves the edit", () => {
+    // Send reads the channel's draft, not the edit's text. Without the
+    // guard a saved draft naming `@Frapp` would be asked and cleared, and
+    // the edit never saved.
+    const { send, tree } = asking("@Frapp when is formal?", {
+      messages: [message("m1", { sender_id: VIEWER, content: "first" })],
+    });
+    expect(composer(tree).props.ask).toEqual({ naming: true });
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
+    expect(composer(tree).props.context?.kind).toBe("edit");
+    // No Frapp in the `@` list, and no promise the edit will be private.
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(send).not.toHaveBeenCalled();
+    expect(channel.setDraft).not.toHaveBeenCalledWith("");
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("drops a staged reply, which was context for a message that is not sent", () => {
+    const { send, tree } = asking("@Frapp what did he mean?");
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    expect(composer(tree).props.context?.kind).toBe("reply");
+    act(() => composer(tree).props.onSend());
+    expect(send).toHaveBeenCalledWith("what did he mean?", "c-m2");
+    // Or the next ordinary message would post as a reply to it.
+    expect(composer(tree).props.context ?? null).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("holds the message while it is not yet known whether the member has Ask", () => {
+    // Posting it could put a question meant for Frapp in front of the
+    // channel, and that can't be taken back.
+    askAccess.value = "unknown";
+    channel = channelState({ draft: "@Frapp what do I owe?" });
+    const tree = render();
+    // Nothing is promised: no Frapp row, no "only you" line.
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(channel.setDraft).not.toHaveBeenCalled();
+    expect(composer(tree).props.disabledHint).toBe(
+      "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
+    );
+    expect(composer(tree).props.hintTone).toBe("error");
+    // The answer arrives: this member has no Ask. The line is no longer
+    // true, so it goes, and the same text posts as ordinary text.
+    askAccess.value = "no";
+    rerender(tree);
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).toHaveBeenCalledWith(
+      "@Frapp what do I owe?",
+      expect.anything(),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("tells nobody the member is typing a question while Ask is not yet known", () => {
+    askAccess.value = "unknown";
+    const emitTyping = vi.fn();
+    channel = channelState({ draft: "", emitTyping });
+    const tree = render();
+    act(() => composer(tree).props.onChangeText("@Frapp what do"));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("takes a refusal away once what it was about is no longer so", () => {
+    // "Still answering" must not sit over the box after the answer landed.
+    const { tree } = asking("@Frapp and the one after?", {}, true);
+    act(() => composer(tree).props.onSend());
+    expect(composer(tree).props.disabledHint).toBe(
+      "Frapp is still answering your last question.",
+    );
+    channelAsk.value = { ...channelAsk.value!, busy: false };
+    rerender(tree);
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
 
   it("draws each turn under the message it was asked under, and adds no row", () => {
     asking("");

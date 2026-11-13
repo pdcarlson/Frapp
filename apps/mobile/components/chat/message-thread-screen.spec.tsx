@@ -205,7 +205,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionList: () => permissions,
   useActiveChapterId: () => "chapter-1",
   useChapterRoster: () => ({
-    data: [{ user_id: "u-fan", display_name: "Frapp Fan" }],
+    data: [
+      { user_id: "u-fan", display_name: "Frapp Fan" },
+      { user_id: "u-jf", display_name: "Jordan Frapp" },
+    ],
   }),
   useMentionRoles: () => ({ data: [] }),
   useMemberDisplayNames: () => ({
@@ -241,6 +244,8 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 const catchUp = vi.hoisted(() => ({
   /** Whether this member has Ask (`useAiSurfaces().ask`). */
   ask: false,
+  /** Set while that is not yet known (`useAiSurfaces().askAccess`). */
+  askUnknown: false,
   surface: false,
   waiting: false,
   active: false,
@@ -250,7 +255,11 @@ const catchUp = vi.hoisted(() => ({
   options: undefined as { onOpenPoint: (point: unknown) => void } | undefined,
 }));
 vi.mock("@/lib/ai/availability", () => ({
-  useAiSurfaces: () => ({ catchUp: catchUp.surface, ask: catchUp.ask }),
+  useAiSurfaces: () => ({
+    catchUp: catchUp.surface,
+    ask: catchUp.ask,
+    askAccess: catchUp.ask ? "yes" : catchUp.askUnknown ? "unknown" : "no",
+  }),
 }));
 vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
   ...(await importOriginal<
@@ -321,6 +330,7 @@ beforeEach(() => {
   writesInput = null;
   queryClient = new QueryClient();
   catchUp.surface = false;
+  catchUp.askUnknown = false;
   catchUp.waiting = false;
   catchUp.active = false;
 });
@@ -496,15 +506,42 @@ describe("MessageThreadScreen (#3785)", () => {
     // The line is about the words as they were.
     act(() => composer().props.onChangeText("who is driving"));
     expect(composer().props.disabledHint).toBeNull();
-    // A member whose name starts with the handle is still that member.
+    // No name reads on past the handle: a member named "Frapp Fan" does not
+    // turn the question into a reply to them.
     act(() => composer().props.onChangeText("@Frapp Fan are you in"));
     await act(async () => composer().props.onSend());
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(composer().props.value).toBe("@Frapp Fan are you in");
+    // A member whose name only ends on it is still that member.
+    act(() => composer().props.onChangeText("@Jordan Frapp are you in"));
+    await act(async () => composer().props.onSend());
     expect(thread.send).toHaveBeenCalledWith(
-      "@Frapp Fan are you in",
+      "@Jordan Frapp are you in",
       undefined,
       [],
     );
     catchUp.ask = false;
+    act(() => tree.unmount());
+  });
+
+  it("holds a reply naming @Frapp while it is not yet known whether the member has Ask (#4713)", async () => {
+    catchUp.askUnknown = true;
+    thread = threadState();
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText("@Frapp who is driving"));
+    await act(async () => composer().props.onSend());
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(composer().props.value).toBe("@Frapp who is driving");
+    expect(composer().props.disabledHint).toBe(
+      "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
+    );
+    // The line is about the words as they were.
+    act(() => composer().props.onChangeText("who is driving"));
+    expect(composer().props.disabledHint).toBeNull();
+    await act(async () => composer().props.onSend());
+    expect(thread.send).toHaveBeenCalledWith("who is driving", undefined, []);
+    catchUp.askUnknown = false;
     act(() => tree.unmount());
   });
 

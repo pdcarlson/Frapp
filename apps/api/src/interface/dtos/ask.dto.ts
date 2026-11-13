@@ -99,7 +99,7 @@ export class AskRequestDto {
   @ApiPropertyOptional({
     enum: ASK_DOORS,
     description:
-      'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. No door writes to a channel: this route never posts a message.',
+      'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.',
   })
   @IsOptional()
   @IsIn(ASK_DOORS)

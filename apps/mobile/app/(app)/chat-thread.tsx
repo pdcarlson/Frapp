@@ -68,7 +68,6 @@ import {
 } from "@repo/hooks";
 import {
   ASK_COPY,
-  ASK_QUESTION_MAX_LENGTH,
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_OFFER_AT,
   askMentionQuestion,
@@ -76,7 +75,9 @@ import {
   chatCatchUpOfferLine,
   draftWithMention,
   mentionPickLabel,
+  readChannelAsk,
   spacedMentionNames,
+  type AskAccess,
   type ChatCatchUpPoint,
   type ChatMessageFlag,
 } from "@repo/validation";
@@ -569,8 +570,13 @@ function ChannelThreadScreen() {
    */
   const [isPicking, setIsPicking] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
-  // Why a question for Frapp was not asked (#4713), until the draft changes.
-  const [askNotice, setAskNotice] = useState<string | null>(null);
+  // Why a question for Frapp was not asked (#4713), and what was so when it
+  // was said (`cause`): the line stands until the draft changes, or until
+  // what it is about does (the photos came off, the first answer finished).
+  const [askRefused, setAskRefused] = useState<{
+    reason: string;
+    cause: string;
+  } | null>(null);
   /**
    * Re-entry guard, a ref beside the state: two taps landing in one tick both
    * read the pre-commit state and both open a picker, and on Android the
@@ -638,7 +644,7 @@ function ChannelThreadScreen() {
     (next: string) => {
       setDraft(next);
       // A refusal to ask said what to change; the member is changing it.
-      setAskNotice(null);
+      setAskRefused(null);
       // The manager throttles to one broadcast per 3s, so this can ride every
       // keystroke without flooding the channel. An emptied box (the clear
       // after a send, the last character erased) is nobody typing, and
@@ -685,6 +691,7 @@ function ChannelThreadScreen() {
     whose `@Frapp` is ordinary text.
   */
   const channelAsk = useChannelAsk(channelId);
+  const askAccessRead = useAiSurfaces().askAccess;
   const askTurns = channelAsk?.turns;
   const askTurnsByRow = useMemo(
     () =>
@@ -1010,21 +1017,37 @@ function ChannelThreadScreen() {
     [mentionRoster.data, mentionRoles.data],
   );
   const mayAskHere = channelAsk !== null && !staging.isEditing;
+  // Three answers, not two: while it is not yet known whether this member
+  // has Ask, a message naming `@Frapp` is held, not posted (`readChannelAsk`).
+  const askAccess: AskAccess = staging.isEditing
+    ? "no"
+    : channelAsk !== null
+      ? "yes"
+      : askAccessRead === "unknown"
+        ? "unknown"
+        : "no";
   const namesFrapp = useCallback(
     (text: string) =>
-      mayAskHere && askMentionQuestion(text, spacedNames) !== null,
-    [mayAskHere, spacedNames],
+      askAccess !== "no" && askMentionQuestion(text, spacedNames) !== null,
+    [askAccess, spacedNames],
   );
   useEffect(() => {
     namesFrappRef.current = namesFrapp;
   }, [namesFrapp]);
-  const asksFrapp = namesFrapp(staging.value);
+  const asksFrapp = mayAskHere && namesFrapp(staging.value);
   // What the line above the composer says: who is typing, or, while the
   // draft is a question for Frapp, that only this member will see it.
   const composerLine = asksFrapp ? ASK_COPY.only_you_hint : typingLine;
   const newestRowKey = thread.rows.at(-1)?.message.client_message_id ?? null;
   const askBusy = channelAsk?.busy ?? false;
   const sendToFrapp = channelAsk?.send;
+  // What a refusal was about. When any of it changes the line no longer
+  // describes the composer, so it is not shown.
+  const askCause = `${askAccess}:${photos.length}:${askBusy}`;
+  const askNotice =
+    askRefused !== null && askRefused.cause === askCause
+      ? askRefused.reason
+      : null;
   const replyContext =
     staging.context?.kind === "reply" ? staging.context : null;
 
@@ -1033,29 +1056,24 @@ function ChannelThreadScreen() {
     // below, and a stale photo-permission line would hide the one report that
     // a message never reached the outbox.
     setAttachError(null);
-    const question =
-      sendToFrapp && mayAskHere ? askMentionQuestion(draft, spacedNames) : null;
-    if (sendToFrapp && question !== null) {
+    const reading = readChannelAsk({
+      text: draft,
+      names: spacedNames,
+      access: askAccess,
+      attachments: photos.length,
+      busy: askBusy,
+    });
+    if (reading.kind === "refused") {
       // Each refusal keeps the member's text, and says what to change.
-      const refusal =
-        photos.length > 0
-          ? ASK_COPY.no_attachments
-          : question.length === 0
-            ? ASK_COPY.no_question
-            : question.length > ASK_QUESTION_MAX_LENGTH
-              ? ASK_COPY.too_long
-              : askBusy
-                ? ASK_COPY.still_answering
-                : null;
-      if (refusal) {
-        setAskNotice(refusal);
-        return;
-      }
+      setAskRefused({ reason: reading.reason, cause: askCause });
+      return;
+    }
+    if (reading.kind === "ask" && sendToFrapp) {
       setDraft("");
-      setAskNotice(null);
+      setAskRefused(null);
       // A staged reply was context for a message that is not being sent.
       replyContext?.onCancel();
-      sendToFrapp(question, newestRowKey);
+      sendToFrapp(reading.question, newestRowKey);
       // Its turn is drawn under the newest message: go there, as a send does.
       followSend();
       return;
@@ -1064,7 +1082,8 @@ function ChannelThreadScreen() {
   }, [
     submitComposer,
     sendToFrapp,
-    mayAskHere,
+    askAccess,
+    askCause,
     draft,
     spacedNames,
     photos.length,
@@ -1915,8 +1934,10 @@ function ChannelThreadScreen() {
               // indicator). `lib/connection/state.ts` holds the rule for the
               // surfaces that have to block instead.
               disabledHint={
-                askNotice ??
+                // A failed pick is newer than a refusal to ask: Send clears
+                // `attachError` before it refuses.
                 attachError ??
+                askNotice ??
                 staging.editError ??
                 sendError ??
                 // `canSend` first. It is false until `ctx` resolves, and

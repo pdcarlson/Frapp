@@ -183,12 +183,8 @@ vi.mock("@/components/ui/avatar", async (importOriginal) => {
 // `ask-in-channel.spec.tsx` has its rules. Here it only has to be drawn in
 // the right place.
 vi.mock("@/components/ask/ask-in-channel", () => ({
-  AskChannelTurn: ({
-    exchange,
-  }: {
-    exchange: { id: string; question: string };
-  }) => (
-    <article data-ask-channel-turn={exchange.id}>{exchange.question}</article>
+  AskChannelTurn: ({ id }: { id: string }) => (
+    <article data-ask-channel-turn={id}>turn {id}</article>
   ),
 }));
 
@@ -2290,7 +2286,7 @@ describe("MessageTimeline draws the member's private Frapp turns (#4713)", () =>
     });
     expect(container.querySelectorAll("[data-index]")).toHaveLength(3);
     const drawn = turnEl("t1");
-    expect(drawn).toHaveTextContent("question t1");
+    expect(drawn).toHaveTextContent("turn t1");
     expect(rowOf(drawn)).toBe(rowOf(screen.getAllByText("hello")[1]!));
     // After that row's message, not before it.
     expect(
@@ -2322,7 +2318,7 @@ describe("MessageTimeline draws the member's private Frapp turns (#4713)", () =>
     renderTimeline([], {
       askTurns: [turn("t1", { after: null, at: at(4) })],
     });
-    expect(turnEl("t1")).toHaveTextContent("question t1");
+    expect(turnEl("t1")).toHaveTextContent("turn t1");
   });
 
   it("draws none without any, as for a member without Ask", () => {

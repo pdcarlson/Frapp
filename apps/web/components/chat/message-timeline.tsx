@@ -43,9 +43,11 @@ import {
   placeAskTurns,
   resolveAuthorAvatar,
   useAuthorAvatars,
-  type AskExchange,
 } from "@repo/hooks";
-import { AskChannelTurn } from "@/components/ask/ask-in-channel";
+import {
+  AskChannelTurn,
+  type AskChannelPlace,
+} from "@/components/ask/ask-in-channel";
 import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
 
 /**
@@ -594,7 +596,7 @@ export interface MessageTimelineProps {
    * was asked (`placeAskTurns`), for this member alone: it is not one of
    * `messages` and never becomes one. Omitted, nothing is drawn.
    */
-  askTurns?: readonly AskExchange[];
+  askTurns?: readonly AskChannelPlace[];
 }
 
 /**
@@ -1210,7 +1212,7 @@ export const MessageTimeline = forwardRef<
   // first message, and in an empty channel under its start.
   const askTurnsAbove = askTurnsByRow
     .get(ASK_TURNS_ABOVE_ALL)
-    ?.map((turn) => <AskChannelTurn key={turn.id} exchange={turn} />);
+    ?.map((turn) => <AskChannelTurn key={turn.id} id={turn.id} />);
 
   if (isLoading || viewerUnresolved) {
     return (
@@ -1396,7 +1398,7 @@ export const MessageTimeline = forwardRef<
               {askTurnsByRow
                 .get(entry.message.client_message_id ?? entry.message.id)
                 ?.map((turn) => (
-                  <AskChannelTurn key={turn.id} exchange={turn} />
+                  <AskChannelTurn key={turn.id} id={turn.id} />
                 ))}
             </>
           )}

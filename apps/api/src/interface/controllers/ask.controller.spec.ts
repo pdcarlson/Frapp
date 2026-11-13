@@ -242,6 +242,22 @@ describe('AskController', () => {
     expect(input.savedNoticeShown).toBe(false);
   });
 
+  it('never takes the saved notice as shown for a question from a channel (#4713)', async () => {
+    const { ask, conversation } = build(async function* () {
+      yield done;
+    });
+    // A channel's turn asked again from the Ask card carries the card's
+    // flag; the channel showed no notice, so nothing of it is kept.
+    await ask(undefined, { door: 'chat_private', saved_notice_shown: true });
+    await ask(undefined, { door: 'ask', saved_notice_shown: true });
+    const kept = conversation.converse.mock.calls.map(
+      (call) =>
+        (call as unknown as [{ savedNoticeShown: boolean }])[0]
+          .savedNoticeShown,
+    );
+    expect(kept).toEqual([false, true]);
+  });
+
   it('counts the question by its door, with none of its words (#4713)', async () => {
     const { ask, analytics } = build(async function* () {
       yield done;

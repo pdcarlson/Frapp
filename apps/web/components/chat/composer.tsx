@@ -59,14 +59,15 @@ import {
 } from "@/lib/chat/cold-load-marks";
 import {
   ASK_COPY,
-  ASK_QUESTION_MAX_LENGTH,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   askMentionQuestion,
   inspectUploadFile,
   isBetaOffModule,
+  readChannelAsk,
   readPreviewUpload,
   readSignedUpload,
+  type AskAccess,
   type MentionPick,
 } from "@repo/validation";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
@@ -482,6 +483,12 @@ interface ComposerBaseProps {
    * is ordinary text.
    */
   ask?: { busy: boolean; send: (question: string) => void } | null;
+  /**
+   * Whether it is not yet known that this member has Ask (the reads are in
+   * flight, or failed). A message that names `@Frapp` is then held, not
+   * posted: it may be a question meant for Frapp alone (`readChannelAsk`).
+   */
+  askUnknown?: boolean;
   /**
    * Send a GIF picked from the GIF button's picker as its own message
    * (#4631). Omitted (GIFs not set up on this server, or a surface that
@@ -993,6 +1000,7 @@ export function Composer({
   onChangeDraft,
   onSend,
   ask = null,
+  askUnknown = false,
   onSendGif,
   gifProvider,
   onSlashDispatch,
@@ -1023,11 +1031,16 @@ export function Composer({
   // Whether the `@` list offers Frapp, read on each keystroke: the editor's
   // extensions are built once, before it is known whether this member has Ask.
   const askRef = useRef(false);
+  // Whether a draft naming `@Frapp` may be a question (Ask, or not yet
+  // known): what the typing ping below goes by.
+  const mayAskRef = useRef(false);
   const spacedNamesRef = useRef(spacedNames);
+  const askAccess: AskAccess = ask ? "yes" : askUnknown ? "unknown" : "no";
   useEffect(() => {
     askRef.current = ask !== null;
+    mayAskRef.current = askAccess !== "no";
     spacedNamesRef.current = spacedNames;
-  }, [ask, spacedNames]);
+  }, [ask, askAccess, spacedNames]);
   // Whether Send will ask Frapp instead of posting, so the composer can say
   // so before it happens.
   const asksFrapp =
@@ -1162,7 +1175,7 @@ export function Composer({
       // for four seconds under the message that had just landed. Nor is a
       // question for Frapp, which nobody else will see arrive (#4713).
       const forFrapp =
-        askRef.current &&
+        mayAskRef.current &&
         askMentionQuestion(text, spacedNamesRef.current) !== null;
       if (text.trim().length > 0 && !forFrapp) onTyping();
       const parsed = parseSlashInput(text);
@@ -1450,26 +1463,24 @@ export function Composer({
     // A message that names `@Frapp` is a question for Frapp, from a member
     // with Ask (#4713). It is never posted: only the asker sees it and its
     // answer. Each refusal keeps the member's text, and says what to change.
-    const question = ask ? askMentionQuestion(text, spacedNames) : null;
-    if (ask && question !== null) {
-      const refusal =
-        pending.length > 0
-          ? ASK_COPY.no_attachments
-          : question.length === 0
-            ? ASK_COPY.no_question
-            : question.length > ASK_QUESTION_MAX_LENGTH
-              ? ASK_COPY.too_long
-              : ask.busy
-                ? ASK_COPY.still_answering
-                : null;
-      if (refusal) {
-        toast({ title: refusal });
-        return;
-      }
+    // While it is not yet known whether they have Ask, it is held the same
+    // way: posting it could put the question in front of the channel.
+    const reading = readChannelAsk({
+      text,
+      names: spacedNames,
+      access: askAccess,
+      attachments: pending.length,
+      busy: ask?.busy ?? false,
+    });
+    if (reading.kind === "refused") {
+      toast({ title: reading.reason });
+      return;
+    }
+    if (reading.kind === "ask" && ask) {
       editor.commands.clearContent(true);
       // A staged reply was context for a message that is not being sent.
       if (replyTo) onCancelReply?.();
-      ask.send(question);
+      ask.send(reading.question);
       return;
     }
     /*
@@ -1547,6 +1558,7 @@ export function Composer({
     });
   }, [
     ask,
+    askAccess,
     channelId,
     editor,
     onCancelReply,

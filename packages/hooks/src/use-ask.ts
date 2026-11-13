@@ -471,11 +471,11 @@ export const ASK_TURNS_ABOVE_ALL = "";
  * `rows` are the list's rows, oldest first. Both clients draw from this, so
  * a turn is in the same place on each.
  */
-export function placeAskTurns(
+export function placeAskTurns<T extends Pick<AskExchange, "origin">>(
   rows: readonly { key: string; at: string }[],
-  turns: readonly AskExchange[],
-): Map<string, AskExchange[]> {
-  const placed = new Map<string, AskExchange[]>();
+  turns: readonly T[],
+): Map<string, T[]> {
+  const placed = new Map<string, T[]>();
   if (turns.length === 0) return placed;
   const keys = new Set(rows.map((row) => row.key));
   for (const turn of turns) {

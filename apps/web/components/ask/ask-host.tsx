@@ -12,12 +12,13 @@ import {
 import {
   AskConversationProvider,
   aiAvailableFrom,
+  askAccessFrom,
   useActiveChapterId,
   useAiChapterSettings,
   useAiConsent,
   useMyPermissions,
 } from "@repo/hooks";
-import { ASK_COPY, can } from "@repo/validation";
+import { ASK_COPY, type AskAccess } from "@repo/validation";
 import { AskCard } from "@/components/ask/ask-card";
 import { AskInChannelBridge } from "@/components/ask/ask-in-channel";
 import { FrappCrest } from "@/components/ask/frapp-crest";
@@ -81,11 +82,16 @@ export function AskHost({ children }: { children: ReactNode }) {
   const permissions = useMyPermissions().data?.permissions;
   const previewing = useIsRolePreviewActive();
   const chapterId = useActiveChapterId();
-  const has =
-    available === true &&
-    settings.data?.ask === true &&
-    can("ai:use", permissions ?? []) &&
-    !previewing;
+  // Three answers, not two: until the reads are in, a channel's composer
+  // must not post a message that names `@Frapp` (#4713), and no entry shows.
+  const access: AskAccess = previewing
+    ? "no"
+    : askAccessFrom({
+        available,
+        ask: settings.data?.ask,
+        permissions,
+      });
+  const has = access === "yes";
 
   const [open, setOpen] = useState(false);
   // A member who lost Ask (a role preview began, the president turned Ask
@@ -106,7 +112,7 @@ export function AskHost({ children }: { children: ReactNode }) {
   return (
     // The conversation is one chapter's: it starts over in another.
     <AskConversationProvider scope={chapterId}>
-      <AskInChannelBridge enabled={has}>
+      <AskInChannelBridge access={access}>
         <AskEntryContext.Provider value={entry}>
           <AskSlotContext.Provider value={has ? setSlot : null}>
             {children}

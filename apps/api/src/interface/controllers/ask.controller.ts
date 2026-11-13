@@ -226,7 +226,12 @@ export class AskController {
         timeZone: isSupportedTimeZone(timeZoneHeader)
           ? timeZoneHeader
           : FALLBACK_TIME_ZONE,
-        savedNoticeShown: dto.saved_notice_shown === true,
+        // The notice is shown in Ask's own field and nowhere in a channel,
+        // so a question from a channel is never kept in the diagnostics
+        // window, whatever the request says: a channel's turn asked again
+        // from the Ask card would otherwise carry the card's flag (#4713).
+        savedNoticeShown:
+          dto.saved_notice_shown === true && dto.door !== 'chat_private',
         signal: abort.signal,
       })) {
         if (abort.signal.aborted) break;

@@ -4,8 +4,11 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { EyeOff } from "lucide-react";
@@ -18,7 +21,12 @@ import {
   type AskOptions,
   type AskProposalResolution,
 } from "@repo/hooks";
-import { ASK_COPY, ASK_MENTION_NAME, can } from "@repo/validation";
+import {
+  ASK_COPY,
+  ASK_MENTION_NAME,
+  can,
+  type AskAccess,
+} from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskReply } from "@/components/ask/ask-answer";
 import { FrappCrest } from "@/components/ask/frapp-crest";
@@ -60,13 +68,20 @@ import { cn } from "@/lib/utils";
  * **What it does not carry.** The "answers are being saved" line is shown
  * only in Ask's own field, so a question from a channel never says it was
  * shown and the beta diagnostics window keeps nothing from it.
+ *
+ * **An answer being written redraws its own row and nothing else.** The
+ * conversation changes with every piece of an answer that arrives, from any
+ * door. So it is not in the context the chat reads: the actions are (they
+ * change only when a question starts or ends), and the turns sit in a small
+ * store. The chat subscribes to which turns are in its channel and where
+ * (`useChannelAskTurns`), which a streamed answer does not change, and each
+ * row subscribes to its own turn (`AskChannelTurn`).
  */
 interface AskInChannel {
   /** A question is being answered: a second one waits its turn. */
   busy: boolean;
   /** Ask from `channelId`'s composer; `after` is its newest message's key. */
   send: (channelId: string, question: string, after: string | null) => void;
-  exchanges: readonly AskExchange[];
   retry: (id: string) => void;
   setProposal: (id: string, proposal: ActResponse) => void;
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
@@ -75,20 +90,54 @@ interface AskInChannel {
   edits: AskCardEditsStore;
 }
 
+/** A turn as a channel places it: which one, and where it was asked. */
+export type AskChannelPlace = Pick<AskExchange, "id" | "origin">;
+
+/** The conversation's turns, outside React's render path (see above). */
+interface AskTurnsStore {
+  subscribe: (listener: () => void) => () => void;
+  get: () => readonly AskExchange[];
+  set: (exchanges: readonly AskExchange[]) => void;
+}
+
+const NO_TURNS: readonly AskExchange[] = [];
+const NO_PLACES: readonly AskChannelPlace[] = [];
+
+function createAskTurnsStore(): AskTurnsStore {
+  let turns = NO_TURNS;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    get: () => turns,
+    set: (next) => {
+      if (next === turns) return;
+      turns = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
 const AskInChannelContext = createContext<AskInChannel | null>(null);
+const AskTurnsContext = createContext<AskTurnsStore | null>(null);
+const AskAccessContext = createContext<AskAccess>("no");
 
 /**
  * Holds what a channel needs to ask and to draw its turns. Always mounted
- * by `AskHost`, so the tree under it never changes shape; `enabled` is
- * whether this member has Ask, and without it every reader gets `null`.
+ * by `AskHost`, so the tree under it never changes shape; `access` is
+ * whether this member has Ask, and unless it is `yes` every reader gets
+ * `null` and no turn is drawn.
  */
 export function AskInChannelBridge({
-  enabled,
+  access,
   children,
 }: {
-  enabled: boolean;
+  access: AskAccess;
   children: ReactNode;
 }) {
+  const enabled = access === "yes";
   const {
     exchanges,
     working,
@@ -102,6 +151,12 @@ export function AskInChannelBridge({
   const permissions = useMyPermissions().data?.permissions;
   const mayAct = !!permissions && can("ai:act", permissions);
   const [edits] = useState<AskCardEditsStore>(() => new Map());
+  const [turns] = useState(createAskTurnsStore);
+  // Before paint, so a question's row is there in the frame its text leaves
+  // the composer.
+  useLayoutEffect(() => {
+    turns.set(enabled ? exchanges : NO_TURNS);
+  }, [turns, enabled, exchanges]);
 
   // The same asks the card makes, less the saved line (see above).
   const options = useCallback(
@@ -125,7 +180,6 @@ export function AskInChannelBridge({
         ? {
             busy: working,
             send,
-            exchanges,
             retry: retryTurn,
             setProposal,
             resolveProposal,
@@ -137,7 +191,6 @@ export function AskInChannelBridge({
       enabled,
       working,
       send,
-      exchanges,
       retryTurn,
       setProposal,
       resolveProposal,
@@ -147,11 +200,24 @@ export function AskInChannelBridge({
   );
 
   return (
-    <AskInChannelContext.Provider value={value}>
-      {children}
-      {enabled ? consentDialog : null}
-    </AskInChannelContext.Provider>
+    <AskAccessContext.Provider value={access}>
+      <AskTurnsContext.Provider value={turns}>
+        <AskInChannelContext.Provider value={value}>
+          {children}
+          {enabled ? consentDialog : null}
+        </AskInChannelContext.Provider>
+      </AskTurnsContext.Provider>
+    </AskAccessContext.Provider>
   );
+}
+
+/**
+ * Whether this member has Ask, for a composer deciding what Send does with
+ * a message that names `@Frapp`: asked on `yes`, posted on `no`, and held on
+ * `unknown` (`readChannelAsk`). `no` outside the dashboard.
+ */
+export function useChannelAskAccess(): AskAccess {
+  return useContext(AskAccessContext);
 }
 
 /** What was changed on waiting cards, for the Ask card to share. */
@@ -171,14 +237,53 @@ export function useChannelAsk(): Pick<AskInChannel, "busy" | "send"> | null {
   );
 }
 
-/** The turns asked in this channel and still shown there, oldest first. */
+const subscribeToNothing = () => () => {};
+
+/**
+ * The turns asked in this channel and still shown there, oldest first: which
+ * they are and where each was asked, for placing. The list is the same one
+ * until a turn is added, dismissed or asked again, so an answer being
+ * written does not redraw the channel.
+ */
 export function useChannelAskTurns(
   channelId: string | null | undefined,
-): AskExchange[] {
-  const exchanges = useContext(AskInChannelContext)?.exchanges;
-  return useMemo(
-    () => askTurnsInChannel(exchanges ?? [], channelId),
-    [exchanges, channelId],
+): readonly AskChannelPlace[] {
+  const store = useContext(AskTurnsContext);
+  const last = useRef(NO_PLACES);
+  const read = useCallback(() => {
+    const now = askTurnsInChannel(store?.get() ?? NO_TURNS, channelId);
+    const was = last.current;
+    const same =
+      was.length === now.length &&
+      now.every(
+        (turn, i) => was[i]!.id === turn.id && was[i]!.origin === turn.origin,
+      );
+    if (!same) {
+      last.current =
+        now.length === 0
+          ? NO_PLACES
+          : now.map(({ id, origin }) => ({ id, origin }));
+    }
+    return last.current;
+  }, [store, channelId]);
+  return useSyncExternalStore(
+    store?.subscribe ?? subscribeToNothing,
+    read,
+    () => NO_PLACES,
+  );
+}
+
+/** One turn of the conversation, redrawn as its answer arrives. */
+function useAskTurn(id: string): AskExchange | null {
+  const store = useContext(AskTurnsContext);
+  const read = useCallback(
+    () => store?.get().find((turn) => turn.id === id) ?? null,
+    [store, id],
+  );
+  return useSyncExternalStore(
+    store?.subscribe ?? subscribeToNothing,
+    read,
+    () => null,
   );
 }
 
@@ -188,9 +293,10 @@ export function useChannelAskTurns(
  * 12px to the words, 16px above a new speaker), so it lines up with the
  * messages either side of it.
  */
-export function AskChannelTurn({ exchange }: { exchange: AskExchange }) {
+export function AskChannelTurn({ id }: { id: string }) {
   const channel = useContext(AskInChannelContext);
-  if (!channel) return null;
+  const exchange = useAskTurn(id);
+  if (!channel || !exchange) return null;
   return (
     <article
       data-ask-channel-turn={exchange.id}

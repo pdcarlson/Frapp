@@ -1030,11 +1030,15 @@ const channelAskState = vi.hoisted(() => ({
     busy: boolean;
     send: (channelId: string, question: string, after: string | null) => void;
   },
+  /** Set to hold `@Frapp` while Ask is not yet known; else it follows `ask`. */
+  unknown: false,
   turns: [] as { id: string }[],
   turnsFor: [] as (string | null | undefined)[],
 }));
 vi.mock("@/components/ask/ask-in-channel", () => ({
   useChannelAsk: () => channelAskState.ask,
+  useChannelAskAccess: () =>
+    channelAskState.ask ? "yes" : channelAskState.unknown ? "unknown" : "no",
   useChannelAskTurns: (channelId: string | null | undefined) => {
     channelAskState.turnsFor.push(channelId);
     return channelAskState.turns;
@@ -1087,10 +1091,12 @@ vi.mock("./composer", () => ({
     dropAttachRef,
     onSendGif,
     ask,
+    askUnknown,
   }: {
     channelId: string;
     onSendGif?: unknown;
     ask?: { busy: boolean; send: (question: string) => void } | null;
+    askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
     renderPlusForm?: (
       command: "poll" | "event" | "task" | "hours" | "points",
@@ -1154,6 +1160,7 @@ vi.mock("./composer", () => ({
         data-audit-log={String(isAuditLog ?? false)}
         data-gif={onSendGif ? "on" : "off"}
         data-ask={ask ? (ask.busy ? "busy" : "ready") : "none"}
+        data-ask-unknown={String(askUnknown ?? false)}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
@@ -1521,15 +1528,15 @@ vi.mock("./thread-panel", () => ({
     onClose,
     onCatchUp,
     beside,
-    asksFrapp,
+    askRefusal,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
       aria-label="Thread"
       data-testid="thread-panel"
       data-beside={String(!!beside)}
       data-refuses-frapp={
-        asksFrapp
-          ? `${asksFrapp("@Frapp who is driving")},${asksFrapp("see you there")}`
+        askRefusal
+          ? `${askRefusal("@Frapp who is driving")},${askRefusal("see you there")}`
           : "none"
       }
     >
@@ -2707,14 +2714,30 @@ describe("ChatShell GIF button (#4631)", () => {
 describe("ChatShell carries @Frapp to the composer and the timeline (#4713)", () => {
   afterEach(() => {
     channelAskState.ask = null;
+    channelAskState.unknown = false;
     channelAskState.turns = [];
     channelAskState.turnsFor = [];
   });
 
   it("gives the composer no way to ask for a member without Ask", async () => {
     render(<ChatShell initialChannelId="chan-general" />);
-    expect((await screen.findByTestId("composer")).dataset.ask).toBe("none");
+    const composer = await screen.findByTestId("composer");
+    expect(composer.dataset.ask).toBe("none");
+    expect(composer.dataset.askUnknown).toBe("false");
     expect(screen.getByTestId("ask-turns")).toHaveTextContent("");
+  });
+
+  it("tells the composer and a thread to hold @Frapp while Ask is not yet known", async () => {
+    // Posting it then could put a question meant for Frapp in the channel.
+    channelAskState.unknown = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    const composer = await screen.findByTestId("composer");
+    expect(composer.dataset.ask).toBe("none");
+    expect(composer.dataset.askUnknown).toBe("true");
+    fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
+      "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.,null",
+    );
   });
 
   it("asks from the open channel, under the message that is newest now", async () => {
@@ -2745,7 +2768,7 @@ describe("ChatShell carries @Frapp to the composer and the timeline (#4713)", ()
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(await screen.findByTestId("trigger-thread-msg-1"));
     expect(screen.getByTestId("thread-panel").dataset.refusesFrapp).toBe(
-      "true,false",
+      "Ask Frapp from the channel, not from a reply.,null",
     );
   });
 

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { codeOf, throwUnlessOk, type components } from "@repo/api-sdk";
+import { can, type AskAccess } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -71,6 +72,34 @@ export function aiAvailableFrom(
 ): boolean | undefined {
   if (consent.data === undefined) return undefined;
   return consent.data !== null;
+}
+
+/**
+ * Whether this member has Ask Frapp, from the three reads that decide it:
+ * the server has AI, the president has Ask on, and the member holds `ai:use`.
+ * `unknown` until each read the answer rests on has data, in flight or
+ * failed alike. An entry point shows only on `yes`; a composer that would
+ * otherwise post a message naming `@Frapp` holds it on `unknown` (#4713).
+ */
+export function askAccessFrom(reads: {
+  /** {@link aiAvailableFrom}. */
+  available: boolean | undefined;
+  /** The chapter's Ask switch; `undefined` until its read has data. */
+  ask: boolean | undefined;
+  /** The member's permissions; `undefined` until their read has data. */
+  permissions: readonly string[] | undefined;
+}): AskAccess {
+  if (reads.available === false) return "no";
+  if (reads.ask === false) return "no";
+  if (reads.permissions && !can("ai:use", reads.permissions)) return "no";
+  if (
+    reads.available === undefined ||
+    reads.ask === undefined ||
+    reads.permissions === undefined
+  ) {
+    return "unknown";
+  }
+  return "yes";
 }
 
 /**

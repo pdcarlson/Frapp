@@ -2954,6 +2954,32 @@ describe("Composer asks Frapp instead of posting (#4713)", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("holds the message while it is not yet known whether the member has Ask", async () => {
+    // Posting it could put a question meant for Frapp in front of the
+    // channel, and that can't be taken back.
+    const { onSend, send } = typeAndSend(
+      "@Frapp what do I owe?",
+      { askUnknown: true },
+      null,
+    );
+    expect(mockToast).toHaveBeenCalledWith({
+      title:
+        "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(editor.commands.clearContent).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("@Frapp what do I owe?");
+    // No promise it will be private: that is not known either.
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("posts a message that names nobody's handle as ever while Ask is not yet known", async () => {
+    const { onSend } = typeAndSend("see you there", { askUnknown: true }, null);
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
   it("drops a staged reply, which was context for a message that is not sent", () => {
     const onCancelReply = vi.fn();
     const { send } = typeAndSend("@Frapp what did he mean?", {

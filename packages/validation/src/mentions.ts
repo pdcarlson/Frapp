@@ -249,6 +249,9 @@ export function spacedMentionNames(
   const add = (raw: string) => {
     const name = spacedMentionName(raw);
     if (name === null) return;
+    // `@Frapp` is the assistant's (#4713), so no name may read on past it:
+    // "Frapp What" must not take `@Frapp what do I owe` from Ask and post it.
+    if (opensOnAskHandle(name)) return;
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -354,6 +357,8 @@ export const MAX_MENTION_PICKS = 50;
 
 /** A pick's label as a spaced name, or `null` when it has no space or can't be one. */
 function spacedPickLabel(label: string): string | null {
+  // A label that opens on `@Frapp` is read as the handle, never as a pick.
+  if (opensOnAskHandle(label)) return null;
   return spacedMentionName(label) === label ? label : null;
 }
 
@@ -445,8 +450,9 @@ function pickedTargets(
     const folded = fold(pick.label);
     if (folded.length === 0 || fold(member.display_name) !== folded) continue;
     // `@Frapp` is the assistant's for every sender (#4713), a pick included:
-    // the label is claimed, so it reaches nobody, as the name tiers have it.
-    if (folded === ASK_FOLDED) continue;
+    // a label that is the handle, or opens on it, is claimed, so it reaches
+    // nobody, as the name tiers have it.
+    if (opensOnAskHandle(pick.label)) continue;
     ids.push(member.user_id);
   }
   return targets;
@@ -632,9 +638,24 @@ const HERE_FOLDED = "here";
 export const ASK_MENTION_NAME = "Frapp";
 const ASK_FOLDED = "frapp";
 
-/** Whether a name is the reserved `@Frapp` once folded. */
+/**
+ * Whether a token is the reserved `@Frapp`: one word that folds to it, so
+ * `@frapp` and `@FRAPP` are the handle and a member named "F Rapp" is not.
+ */
 function isAskHandle(value: string): boolean {
-  return fold(value) === ASK_FOLDED;
+  const word = value.trim();
+  return !/\s/.test(word) && fold(word) === ASK_FOLDED;
+}
+
+/**
+ * Whether a name is the handle or opens on it ("Frapp", "Frapp Fan"). Such a
+ * name can't be mentioned, typed or picked: `@Frapp` followed by anything is
+ * always the assistant's, or a member could rename themselves "Frapp What"
+ * and have `@Frapp what do I owe` posted to the channel and pushed to them.
+ */
+function opensOnAskHandle(name: string): boolean {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  return isAskHandle(first);
 }
 
 /**
@@ -666,9 +687,9 @@ function matchMentionRole(
     return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;
   }
   // `@Frapp` is the assistant's (#4713) and reaches nobody: a member whose
-  // name is or starts with "Frapp" must not be paged, past their mute, by a
+  // name is or opens on "Frapp" must not be paged, past their mute, by a
   // question someone meant for Ask.
-  if (folded === ASK_FOLDED) return null;
+  if (opensOnAskHandle(token)) return null;
   if (roles.length === 0) return undefined;
   // A role nobody holds is not a target: it would reach nobody, and letting
   // it claim the token would take the name from a member it collides with.
@@ -772,7 +793,7 @@ export function draftWithMention(
   // wouldn't read as a mention reaches nobody.
   if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
   // `@Frapp` is the assistant's (#4713): it would reach nobody, or be asked.
-  if (isAskHandle(label)) return null;
+  if (opensOnAskHandle(label)) return null;
   const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
   return `${draft}${gap}@${label} `;
 }
@@ -821,7 +842,7 @@ export function mentionSuggestions<T extends MentionCandidate>(
     // The tokenizer drops a longer token, so the pick would reach nobody.
     if (label.length > MAX_TOKEN_LENGTH) continue;
     // `@Frapp` is the assistant's, so this pick would reach nobody either.
-    if (isAskHandle(label)) continue;
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(member.display_name).includes(needle)) continue;
     offered.push({ member, label });
   }
@@ -888,7 +909,7 @@ export function mentionPickerEntries<
     const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
-    if (isAskHandle(label)) continue;
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
@@ -943,7 +964,11 @@ export function mentionPickerRows<
   const offered =
     options.ask &&
     limit > 0 &&
-    (typed ? needle.length > 0 && ASK_FOLDED.startsWith(needle) : true);
+    (typed
+      ? needle.length > 0 &&
+        !/\s/.test(query.trim()) &&
+        ASK_FOLDED.startsWith(needle)
+      : true);
   if (!offered) return mentionPickerEntries(roster, roles, query, limit);
   const rest = mentionPickerEntries(roster, roles, query, limit - 1);
   const ask: MentionAskEntry = { kind: "ask", label: ASK_MENTION_NAME };
@@ -963,17 +988,19 @@ export function mentionPickerRows<
  *
  * It is read from the text, not from a picked chip, so a draft restored as
  * plain text, a pasted handle and a typed one all behave the same.
- * `names` are the chapter's spaced names ({@link spacedMentionNames}): with a
- * member named "Frapp Fan", `@Frapp Fan` is that member, as a send reads it.
+ * `names` are the chapter's spaced names ({@link spacedMentionNames}), so
+ * `@Jordan Frapp` is the member and not the handle. No name reads on past
+ * the handle itself: with a member named "Frapp Fan", `@Frapp Fan are you
+ * in?` is still a question ("Fan are you in?"), as a send reads it too.
  * The question is empty when the handle is all there is.
  */
 export function askMentionQuestion(
   content: string,
   names: readonly string[] = [],
 ): string | null {
-  const spans = findMentionSpans(content, { names }).filter((span) =>
-    isAskHandle(span.token),
-  );
+  const spans = findMentionSpans(content, {
+    names: names.filter((name) => !opensOnAskHandle(name)),
+  }).filter((span) => isAskHandle(span.token));
   if (spans.length === 0) return null;
   let rest = "";
   let from = 0;

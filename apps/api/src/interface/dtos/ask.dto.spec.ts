@@ -30,6 +30,26 @@ describe('AskRequestDto', () => {
   });
   const turns = (count: number) => Array.from({ length: count }, () => turn());
 
+  it('takes a door from the closed set and refuses any other (#4713)', async () => {
+    // The door goes to analytics as written, so it must never be free text:
+    // a channel id or a sentence from a client bug would land there.
+    for (const door of ['ask', 'chat_private']) {
+      await expect(
+        transform({ question: 'What is quorum?', door }),
+      ).resolves.toMatchObject({ door });
+    }
+    for (const door of [
+      'chat_public',
+      'c0ffee00-0000-4000-8000-4000000000b2',
+      '',
+      7,
+    ]) {
+      await expect(
+        transform({ question: 'What is quorum?', door }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+  });
+
   it('takes a question alone, as every shipped build sends it', async () => {
     await expect(
       transform({ question: 'What is quorum?' }),

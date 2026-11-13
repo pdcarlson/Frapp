@@ -5,11 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockState = vi.hoisted(() => ({
   chapterId: null as string | null,
+  userId: null as string | null,
   supabase: null as unknown,
 }));
 
 vi.mock("./auth-session", () => ({
-  useAuthSession: () => ({ chapterId: mockState.chapterId }),
+  useAuthSession: () => ({
+    chapterId: mockState.chapterId,
+    userId: mockState.userId,
+  }),
 }));
 
 // Forces the store-build path: the suite-wide `expo-constants` mock in
@@ -37,10 +41,18 @@ vi.mock("@repo/hooks", () => ({
   FrappClientProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
-  // The Ask conversation it holds is `use-ask.spec.tsx`'s; here it only has
-  // to let the tree through.
-  AskConversationProvider: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
+  // The Ask conversation it holds is `use-ask.spec.tsx`'s; here it has to
+  // be over the whole app, and to be told whose it is.
+  AskConversationProvider: ({
+    scope,
+    children,
+  }: {
+    scope: string;
+    children: React.ReactNode;
+  }) => (
+    <div data-testid="ask-conversation" data-scope={scope}>
+      {children}
+    </div>
   ),
   // `query-client.ts` registers mark-read's retry default by this key (#3747).
   markChannelReadMutationKey: ["channels", "read"],
@@ -79,7 +91,49 @@ function renderAt(chapterId: string | null) {
 beforeEach(() => {
   queryClient.clear();
   mockState.chapterId = null;
+  mockState.userId = null;
   mockState.supabase = null;
+});
+
+describe("FrappProvider holds the one Ask conversation (#4713)", () => {
+  const app = () => (
+    <FrappProvider>
+      <div data-testid="screens" />
+    </FrappProvider>
+  );
+
+  it("puts it over every screen, so the Ask sheet and a channel read the same one", () => {
+    // Without it each reader would hold a conversation of its own: a
+    // question asked with `@Frapp` would be missing from the Ask sheet.
+    mockState.chapterId = "chapter-a";
+    mockState.userId = "user-1";
+    const view = render(app());
+    expect(view.getAllByTestId("ask-conversation")).toHaveLength(1);
+    expect(
+      view
+        .getByTestId("ask-conversation")
+        .contains(view.getByTestId("screens")),
+    ).toBe(true);
+  });
+
+  it("says whose it is, so another account or another chapter starts over", () => {
+    mockState.chapterId = "chapter-a";
+    mockState.userId = "user-1";
+    const view = render(app());
+    const scope = () =>
+      view.getByTestId("ask-conversation").getAttribute("data-scope");
+    const first = scope();
+    mockState.chapterId = "chapter-b";
+    view.rerender(app());
+    const otherChapter = scope();
+    mockState.userId = "user-2";
+    view.rerender(app());
+    const otherAccount = scope();
+    expect(new Set([first, otherChapter, otherAccount]).size).toBe(3);
+    // And the same member in the same chapter keeps theirs.
+    view.rerender(app());
+    expect(scope()).toBe(otherAccount);
+  });
 });
 
 describe("FrappProvider — API token (#3907)", () => {

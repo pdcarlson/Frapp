@@ -216,6 +216,18 @@ describe("useAiConsentGate", () => {
     await expect(asked).resolves.toBe(true);
   });
 
+  it("answers no when its screen goes away with the sheet up (#4713)", async () => {
+    // A question asked from a channel waits on this in the one Ask
+    // conversation, which outlives the channel's screen. Left unsettled it
+    // would hold every later question behind it.
+    const tree = render(<Host />);
+    const asked = gate.ensureConsent();
+    await act(async () => {});
+    expect(modal.present).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+    await expect(asked).resolves.toBe(false);
+  });
+
   it("is a no, with no sheet, where the server has no AI", async () => {
     choice.consent = null;
     render(<Host />);

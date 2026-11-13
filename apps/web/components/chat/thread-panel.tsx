@@ -44,7 +44,6 @@ import {
   type MessageTimelineProps,
 } from "./message-timeline";
 import {
-  ASK_COPY,
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_MIN_MESSAGES,
   type MentionPick,
@@ -148,11 +147,13 @@ export interface ThreadPanelProps extends Pick<
    */
   jumpTo?: { messageId: string; nonce: number } | null;
   /**
-   * Whether a reply's text is a question for Frapp (#4713), for a member with
-   * Ask; absent for everyone else. Such a reply is refused, since Frapp
-   * answers in the channel and a thread has nowhere to draw it.
+   * Why a reply's text can't be sent because it names `@Frapp` (#4713), or
+   * `null`: Frapp answers in the channel and a thread has nowhere to draw
+   * it, so a member with Ask is told to ask there, and one whose Ask is not
+   * yet known is told to wait (`replyAskRefusal`). Absent for a member
+   * without Ask.
    */
-  asksFrapp?: (text: string) => boolean;
+  askRefusal?: (text: string) => string | null;
   /**
    * Drawn beside the chat on a wide window (#4297) rather than over it: the
    * channel stays in view, so the header closes the thread (X) rather than
@@ -231,7 +232,7 @@ export function ThreadPanel({
   onClosePanel,
   onCatchUp,
   jumpTo,
-  asksFrapp,
+  askRefusal,
   beside = false,
   className,
 }: ThreadPanelProps) {
@@ -311,8 +312,9 @@ export function ThreadPanel({
     // asker alone, and a thread has no place to draw that. Refused, not
     // posted: a member who expects a private answer must not find their
     // question in the thread for everyone. The words stay to be moved.
-    if (asksFrapp?.(content)) {
-      toast({ title: ASK_COPY.not_in_reply });
+    const refusal = askRefusal?.(content) ?? null;
+    if (refusal !== null) {
+      toast({ title: refusal });
       return;
     }
     setDraft("");

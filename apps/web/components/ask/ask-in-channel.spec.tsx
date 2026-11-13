@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import type { AskAccess } from "@repo/validation";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,9 @@ const state = vi.hoisted(() => ({
   retry: vi.fn(),
   dismiss: vi.fn(),
   consent: vi.fn(),
+  // One identity each, as the conversation's own actions have.
+  setProposal: vi.fn(),
+  resolveProposal: vi.fn(),
   exchanges: [] as unknown[],
   permissions: ["ai:use"] as string[],
 }));
@@ -25,8 +29,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     ),
     ask: state.ask,
     retry: state.retry,
-    setProposal: vi.fn(),
-    resolveProposal: vi.fn(),
+    setProposal: state.setProposal,
+    resolveProposal: state.resolveProposal,
     dismissFromChannel: state.dismiss,
     stop: vi.fn(),
     reset: vi.fn(),
@@ -45,6 +49,7 @@ const {
   AskChannelTurn,
   AskInChannelBridge,
   useChannelAsk,
+  useChannelAskAccess,
   useChannelAskTurns,
   useSharedAskCardEdits,
 } = await import("./ask-in-channel");
@@ -76,14 +81,20 @@ const DONE = {
   },
 };
 
+/** How many times the channel's own reader drew. */
+const draws = { channel: 0 };
+
 /** What a channel's composer and timeline read, drawn so a test can too. */
 function Channel({ channelId = "chan-1" }: { channelId?: string }) {
   const ask = useChannelAsk();
+  const access = useChannelAskAccess();
   const turns = useChannelAskTurns(channelId);
   const edits = useSharedAskCardEdits();
+  draws.channel += 1;
   return (
     <div>
       <p data-testid="ask">{ask ? (ask.busy ? "busy" : "ready") : "none"}</p>
+      <p data-testid="access">{access}</p>
       <p data-testid="edits">{edits ? "shared" : "none"}</p>
       <button
         type="button"
@@ -92,18 +103,19 @@ function Channel({ channelId = "chan-1" }: { channelId?: string }) {
         send
       </button>
       {turns.map((turn) => (
-        <AskChannelTurn key={turn.id} exchange={turn} />
+        <AskChannelTurn key={turn.id} id={turn.id} />
       ))}
     </div>
   );
 }
 
+const tree = (access: AskAccess, channelId?: string) => (
+  <AskInChannelBridge access={access}>
+    <Channel channelId={channelId} />
+  </AskInChannelBridge>
+);
 const mount = (enabled = true, channelId?: string) =>
-  render(
-    <AskInChannelBridge enabled={enabled}>
-      <Channel channelId={channelId} />
-    </AskInChannelBridge>,
-  );
+  render(tree(enabled ? "yes" : "no", channelId));
 
 beforeEach(() => {
   state.ask.mockReset().mockResolvedValue(undefined);
@@ -112,6 +124,7 @@ beforeEach(() => {
   state.consent.mockReset().mockResolvedValue(true);
   state.exchanges = [];
   state.permissions = ["ai:use"];
+  draws.channel = 0;
 });
 
 describe("asking from a channel", () => {
@@ -119,11 +132,31 @@ describe("asking from a channel", () => {
     state.exchanges = [DONE];
     mount(false);
     expect(screen.getByTestId("ask")).toHaveTextContent("none");
+    expect(screen.getByTestId("access")).toHaveTextContent("no");
     expect(screen.getByTestId("edits")).toHaveTextContent("none");
     expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
     expect(screen.queryByTestId("consent-dialog")).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: "send" }));
     expect(state.ask).not.toHaveBeenCalled();
+  });
+
+  it("offers nothing while Ask is not yet known, and says that it is not known", async () => {
+    // The composer holds a message naming `@Frapp` on this answer, so it
+    // must be told apart from a member who has no Ask.
+    state.exchanges = [DONE];
+    render(tree("unknown"));
+    expect(screen.getByTestId("ask")).toHaveTextContent("none");
+    expect(screen.getByTestId("access")).toHaveTextContent("unknown");
+    expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
+    expect(screen.queryByTestId("consent-dialog")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "send" }));
+    expect(state.ask).not.toHaveBeenCalled();
+  });
+
+  it("reads as no Ask outside the bridge", () => {
+    render(<Channel />);
+    expect(screen.getByTestId("access")).toHaveTextContent("no");
+    expect(screen.getByTestId("ask")).toHaveTextContent("none");
   });
 
   it("asks with the channel and the message it was asked under, behind the consent gate", async () => {
@@ -176,6 +209,63 @@ describe("the turns a channel draws", () => {
         node.getAttribute("data-ask-channel-turn"),
       ),
     ).toEqual(["turn-1"]);
+  });
+
+  it("redraws only the turn's own row while its answer is written", () => {
+    // Every piece of an answer is a new conversation. The channel reads
+    // which turns it has and where, which a piece does not change. One
+    // element for the channel, so only a context or store it reads can
+    // draw it again.
+    const channel = <Channel />;
+    const bridge = () => (
+      <AskInChannelBridge access="yes">{channel}</AskInChannelBridge>
+    );
+    const working = { ...DONE, phase: "working", answer: null };
+    state.exchanges = [{ ...working, preview: "The budget" }];
+    const view = render(bridge());
+    expect(screen.getByRole("article")).toHaveTextContent("The budget");
+    const before = draws.channel;
+    state.exchanges = [{ ...working, preview: "The budget vote is" }];
+    view.rerender(bridge());
+    expect(screen.getByRole("article")).toHaveTextContent("The budget vote is");
+    // Nor does a turn asked through another door (the Ask card).
+    state.exchanges = [
+      { ...working, preview: "The budget vote is in" },
+      { ...DONE, id: "card-turn", origin: undefined },
+    ];
+    view.rerender(bridge());
+    expect(screen.getByRole("article")).toHaveTextContent(
+      "The budget vote is in",
+    );
+    expect(draws.channel).toBe(before);
+    // The answer landing ends the question, which the composer reads.
+    state.exchanges = [DONE];
+    view.rerender(bridge());
+    expect(screen.getByTestId("ask")).toHaveTextContent("ready");
+    expect(draws.channel).toBeGreaterThan(before);
+  });
+
+  it("draws a new turn, and takes a dismissed one away", () => {
+    state.exchanges = [DONE];
+    const view = mount();
+    state.exchanges = [
+      DONE,
+      { ...DONE, id: "turn-5", question: "And the formal?" },
+    ];
+    view.rerender(tree("yes"));
+    expect(document.querySelectorAll("[data-ask-channel-turn]")).toHaveLength(
+      2,
+    );
+    state.exchanges = [
+      { ...DONE, origin: { ...DONE.origin, dismissed: true } },
+      { ...DONE, id: "turn-5", question: "And the formal?" },
+    ];
+    view.rerender(tree("yes"));
+    expect(
+      [...document.querySelectorAll("[data-ask-channel-turn]")].map((node) =>
+        node.getAttribute("data-ask-channel-turn"),
+      ),
+    ).toEqual(["turn-5"]);
   });
 });
 
@@ -238,7 +328,7 @@ describe("AskChannelTurn", () => {
   });
 
   it("draws nothing outside the bridge", () => {
-    render(<AskChannelTurn exchange={DONE as never} />);
+    render(<AskChannelTurn id="turn-1" />);
     expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
   });
 });

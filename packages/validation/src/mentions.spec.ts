@@ -1371,13 +1371,61 @@ describe("@Frapp, the assistant's handle (#4713)", () => {
         ),
       ).toEqual([]);
       expect(draftWithMention("", "Frapp")).toBeNull();
-      expect(draftWithMention("", "Frapp Fan")).toBe("@Frapp Fan ");
+      expect(draftWithMention("", "Frapp Fan")).toBeNull();
     });
 
-    it("leaves a member with a longer name reachable by that name", () => {
-      expect(resolveMentions("@Frapp Fan hi", [JANE, FRAPP_FAN])).toEqual([
-        FRAPP_FAN.user_id,
+    it("lets no name read on past the handle, typed or picked", () => {
+      // A member could otherwise rename themselves "Frapp What" and have
+      // `@Frapp what do I owe` posted to the channel and pushed to them.
+      const what: MentionCandidate = {
+        user_id: "f0000000-0000-4000-8000-000000000003",
+        display_name: "Frapp What",
+      };
+      expect(spacedMentionNames([FRAPP_FAN, what, JANE])).toEqual(["Jane Doe"]);
+      expect(resolveMentions("@Frapp Fan hi", [JANE, FRAPP_FAN])).toEqual([]);
+      expect(resolveMentions("@Frapp what do I owe", [JANE, what])).toEqual([]);
+      expect(
+        resolveMentions(
+          "@Frapp Fan hi",
+          [JANE, FRAPP_FAN],
+          [],
+          [{ user_id: FRAPP_FAN.user_id, label: "Frapp Fan" }],
+        ),
+      ).toEqual([]);
+      expect(
+        mentionPicksIn("@Frapp Fan hi", [
+          { user_id: FRAPP_FAN.user_id, label: "Frapp Fan" },
+        ]),
+      ).toEqual([]);
+      const role: MentionRole = {
+        role_id: "r-frapp-team",
+        name: "Frapp Team",
+        member_ids: [JANE.user_id],
+        mentionable: true,
+      };
+      expect(resolveMentions("@Frapp Team hi", roster, [role])).toEqual([]);
+      expect(mentionSuggestions([FRAPP_FAN, JANE], "")).toEqual([
+        { member: JANE, label: "Jane Doe" },
       ]);
+    });
+
+    it("is one word: a member named F Rapp is still a member", () => {
+      const rapp: MentionCandidate = {
+        user_id: "f0000000-0000-4000-8000-000000000004",
+        display_name: "F Rapp",
+      };
+      expect(resolveMentions("@F Rapp hi", [JANE, rapp])).toEqual([
+        rapp.user_id,
+      ]);
+      expect(draftWithMention("", "F Rapp")).toBe("@F Rapp ");
+      expect(mentionSuggestions([rapp], "")).toEqual([
+        { member: rapp, label: "F Rapp" },
+      ]);
+      expect(
+        askMentionQuestion("@F Rapp are you in?", spacedMentionNames([rapp])),
+      ).toBeNull();
+      // The bare handle is still the assistant's with them on the roster.
+      expect(resolveMentions("@frapp hi", [JANE, rapp])).toEqual([]);
     });
 
     it("does not offer a member or a role a pick could not reach", () => {
@@ -1483,12 +1531,27 @@ describe("@Frapp, the assistant's handle (#4713)", () => {
       expect(askMentionQuestion("  @Frapp,  ")).toBe("");
     });
 
-    it("reads a member's spaced name as that member, as a send does", () => {
-      const names = spacedMentionNames([FRAPP_FAN]);
-      expect(askMentionQuestion("@Frapp Fan are you in?", names)).toBeNull();
-      expect(askMentionQuestion("@Frapp fans, are you in?", names)).toBe(
-        "fans, are you in?",
-      );
+    it("is still a question when a member's name opens on the handle", () => {
+      // Whatever names the caller passes: one that opens on the handle is
+      // dropped here too, so a caller with its own list can't be captured.
+      for (const names of [
+        spacedMentionNames([FRAPP_FAN]),
+        ["Frapp Fan", "Frapp What"],
+      ]) {
+        expect(askMentionQuestion("@Frapp Fan are you in?", names)).toBe(
+          "Fan are you in?",
+        );
+        expect(askMentionQuestion("@Frapp what do I owe", names)).toBe(
+          "what do I owe",
+        );
+      }
+    });
+
+    it("reads another member's spaced name as that member", () => {
+      const names = spacedMentionNames([
+        { user_id: "u-jf", display_name: "Jordan Frapp" },
+      ]);
+      expect(askMentionQuestion("@Jordan Frapp are you in?", names)).toBeNull();
     });
 
     it("leaves other mentions in the question as written", () => {

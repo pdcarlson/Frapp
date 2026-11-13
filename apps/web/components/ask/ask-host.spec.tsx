@@ -16,15 +16,28 @@ const who = vi.hoisted(() => ({
   ask: true as boolean | undefined,
   permissions: ["ai:use"] as string[] | undefined,
   previewing: false,
+  chapterId: "chapter-1",
   settingsEnabled: [] as boolean[],
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
   // The conversation and the channel's side of it have their own specs
-  // (`use-ask.spec.tsx`, `ask-in-channel.spec.tsx`).
-  AskConversationProvider: ({ children }: { children: React.ReactNode }) =>
+  // (`use-ask.spec.tsx`, `ask-in-channel.spec.tsx`). Here it only has to be
+  // the one conversation, over everything that reads it, and this chapter's.
+  AskConversationProvider: ({
+    scope,
     children,
-  useActiveChapterId: () => "chapter-1",
+  }: {
+    scope: string | null;
+    children: React.ReactNode;
+  }) => (
+    <div data-testid="ask-conversation" data-scope={scope ?? ""}>
+      {children}
+    </div>
+  ),
+  askAccessFrom: (await importOriginal<typeof import("@repo/hooks")>())
+    .askAccessFrom,
+  useActiveChapterId: () => who.chapterId,
   useAiConsent: () => ({ data: null }),
   aiAvailableFrom: () => who.available,
   useAiChapterSettings: (options: { enabled: boolean }) => {
@@ -38,14 +51,14 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/stores/role-preview-store", () => ({
   useIsRolePreviewActive: () => who.previewing,
 }));
-const bridge = vi.hoisted(() => ({ enabled: [] as boolean[] }));
+const bridge = vi.hoisted(() => ({ access: [] as string[] }));
 vi.mock("@/components/ask/ask-in-channel", () => ({
   AskInChannelBridge: (props: {
-    enabled: boolean;
+    access: string;
     children: React.ReactNode;
   }) => {
-    bridge.enabled.push(props.enabled);
-    return props.children;
+    bridge.access.push(props.access);
+    return <div data-testid="ask-bridge">{props.children}</div>;
   },
 }));
 
@@ -94,9 +107,10 @@ beforeEach(() => {
   who.ask = true;
   who.permissions = ["ai:use"];
   who.previewing = false;
+  who.chapterId = "chapter-1";
   who.settingsEnabled = [];
   card.mounts = 0;
-  bridge.enabled = [];
+  bridge.access = [];
 });
 
 describe("who gets Ask Frapp", () => {
@@ -108,29 +122,80 @@ describe("who gets Ask Frapp", () => {
     );
     expect(entry()).toBeInTheDocument();
     // And the same member may ask from a channel with `@Frapp` (#4713).
-    expect(bridge.enabled.at(-1)).toBe(true);
+    expect(bridge.access.at(-1)).toBe("yes");
   });
 
+  it("holds one conversation over the card and every channel, and it is this chapter's (#4713)", async () => {
+    // Without the one provider above both, a question asked with `@Frapp`
+    // would be missing from the card, and "one question at a time" would
+    // not hold across them. Scoped, so it starts over in another chapter.
+    const view = render(
+      <AskHost>
+        <Chat />
+      </AskHost>,
+    );
+    const conversation = screen.getByTestId("ask-conversation");
+    expect(conversation).toHaveAttribute("data-scope", "chapter-1");
+    expect(conversation).toContainElement(screen.getByTestId("ask-bridge"));
+    expect(conversation).toContainElement(entry());
+    await userEvent.setup().click(entry()!);
+    expect(conversation).toContainElement(screen.getByTestId("ask-card"));
+    expect(screen.getAllByTestId("ask-conversation")).toHaveLength(1);
+    who.chapterId = "chapter-2";
+    view.rerender(
+      <AskHost>
+        <Chat />
+      </AskHost>,
+    );
+    expect(screen.getByTestId("ask-conversation")).toHaveAttribute(
+      "data-scope",
+      "chapter-2",
+    );
+  });
+
+  // The last column is what a channel's composer is told (#4713): `no` and
+  // a message naming `@Frapp` is ordinary text; `unknown` and it is held,
+  // because the member may turn out to have Ask.
   it.each([
-    ["the server has no AI", () => (who.available = false)],
-    ["the server has not answered yet", () => (who.available = undefined)],
-    ["the president has Ask off", () => (who.ask = false)],
-    ["the chapter's switches have not loaded", () => (who.ask = undefined)],
+    ["the server has no AI", () => (who.available = false), "no"],
+    [
+      "the server has not answered yet",
+      () => (who.available = undefined),
+      "unknown",
+    ],
+    ["the president has Ask off", () => (who.ask = false), "no"],
+    [
+      "the chapter's switches have not loaded",
+      () => (who.ask = undefined),
+      "unknown",
+    ],
     [
       "the member's role may not use AI",
       () => (who.permissions = ["chat:send"]),
+      "no",
     ],
     [
       "the member's permissions have not loaded",
       () => (who.permissions = undefined),
+      "unknown",
+    ],
+    [
+      "the member's role may not use AI, before the server has answered",
+      () => {
+        who.available = undefined;
+        who.ask = undefined;
+        who.permissions = ["chat:send"];
+      },
+      "no",
     ],
     [
       "an officer is viewing the chapter as a role",
       () => (who.previewing = true),
+      "no",
     ],
   ])(
     "is nobody else: no button, no slot and no conversation when %s",
-    (_, set) => {
+    (_, set, access) => {
       set();
       const view = render(
         <AskHost>
@@ -140,8 +205,7 @@ describe("who gets Ask Frapp", () => {
       expect(entry()).toBeNull();
       expect(view.container.querySelector("[data-ask-slot]")).toBeNull();
       expect(card.mounts).toBe(0);
-      // `@Frapp` in a composer is ordinary text for them too (#4713).
-      expect(bridge.enabled.at(-1)).toBe(false);
+      expect(bridge.access.at(-1)).toBe(access);
       // And nothing stands in for it: no "not ready" control anywhere.
       expect(screen.queryByRole("button")).toBeNull();
     },

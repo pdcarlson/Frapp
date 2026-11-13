@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { formatAiAnswerDate, joinNames } from "./ai-copy";
+import { askMentionQuestion } from "./mentions";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -604,7 +605,83 @@ export const ASK_COPY = {
   no_question: "Type your question after @Frapp.",
   /** `@Frapp` in a reply inside a thread, where there is nowhere to answer. */
   not_in_reply: "Ask Frapp from the channel, not from a reply.",
+  /**
+   * `@Frapp` sent before the app knows whether this member has Ask (the
+   * reads are in flight, or failed). Posting it could put a question meant
+   * for Frapp in front of the channel, so it waits.
+   */
+  ask_unknown:
+    "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
 } as const;
+
+/**
+ * Whether this member has Ask, as a composer needs it: `unknown` while the
+ * reads behind the answer are in flight or failed.
+ */
+export type AskAccess = "yes" | "no" | "unknown";
+
+/** What Send does with a channel composer's text (#4713). */
+export type ChannelAskReading =
+  /** Not a question for Frapp: it is sent as a message. */
+  | { kind: "post" }
+  /** A question that can't be asked as it stands. The text is kept. */
+  | { kind: "refused"; reason: string }
+  | { kind: "ask"; question: string };
+
+/**
+ * What a channel's Send does with `text`, for both clients: post it, ask
+ * Frapp, or refuse and say why. One reading, so web and the phone refuse the
+ * same things in the same order.
+ *
+ * A message that names `@Frapp` is never posted by a member who has Ask, or
+ * who might: while that is `unknown` the send is refused, because the two
+ * ways to be wrong are not equal. A member without Ask posts it as ordinary
+ * text, which pings nobody.
+ */
+export function readChannelAsk(input: {
+  text: string;
+  /** The chapter's spaced names (`spacedMentionNames`). */
+  names: readonly string[];
+  access: AskAccess;
+  /** Files or photos staged on the message. */
+  attachments: number;
+  /** A question is already being answered. */
+  busy: boolean;
+}): ChannelAskReading {
+  if (input.access === "no") return { kind: "post" };
+  const question = askMentionQuestion(input.text, input.names);
+  if (question === null) return { kind: "post" };
+  const reason =
+    input.access === "unknown"
+      ? ASK_COPY.ask_unknown
+      : input.attachments > 0
+        ? ASK_COPY.no_attachments
+        : question.length === 0
+          ? ASK_COPY.no_question
+          : question.length > ASK_QUESTION_MAX_LENGTH
+            ? ASK_COPY.too_long
+            : input.busy
+              ? ASK_COPY.still_answering
+              : null;
+  return reason === null
+    ? { kind: "ask", question }
+    : { kind: "refused", reason };
+}
+
+/**
+ * Why a thread's reply box refuses `text`, or `null` to send it. A thread
+ * has nowhere private to draw an answer, so a reply naming `@Frapp` is
+ * refused for a member with Ask, and while that is unknown.
+ */
+export function replyAskRefusal(
+  text: string,
+  names: readonly string[],
+  access: AskAccess,
+): string | null {
+  if (access === "no") return null;
+  if (askMentionQuestion(text, names) === null) return null;
+  return access === "unknown" ? ASK_COPY.ask_unknown : ASK_COPY.not_in_reply;
+}
 
 /** An own entry only: the key is an open string from the wire. */
 function ownWords(

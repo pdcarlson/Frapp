@@ -85,7 +85,7 @@ import {
 } from "@repo/chat-core/channel-preview";
 import { TypingLine } from "./typing-line";
 import {
-  askMentionQuestion,
+  replyAskRefusal,
   can,
   canAll,
   isAnnouncementChannel,
@@ -146,6 +146,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { AskSlot } from "@/components/ask/ask-host";
 import {
   useChannelAsk,
+  useChannelAskAccess,
   useChannelAskTurns,
 } from "@/components/ask/ask-in-channel";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
@@ -1362,16 +1363,17 @@ export function ChatShell({
   );
   // A thread's reply box can't ask Frapp (the answer is drawn in the channel),
   // so it refuses a reply that would have been a question, by the same
-  // reading the composer makes.
-  const hasAsk = channelAsk !== null;
-  const replyAsksFrapp = useMemo(() => {
-    if (!hasAsk) return undefined;
+  // reading the composer makes. While it is not yet known whether this
+  // member has Ask, such a reply is held rather than posted.
+  const askAccess = useChannelAskAccess();
+  const replyAskRefusalFor = useMemo(() => {
+    if (askAccess === "no") return undefined;
     const names = spacedMentionNames(
       membersQuery.data ?? [],
       (mentionRoles.data ?? []).map((role) => role.name),
     );
-    return (text: string) => askMentionQuestion(text, names) !== null;
-  }, [hasAsk, membersQuery.data, mentionRoles.data]);
+    return (text: string) => replyAskRefusal(text, names, askAccess);
+  }, [askAccess, membersQuery.data, mentionRoles.data]);
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
   const { requestUnblock, reloadMaskedCopies } = unblockFlow;
@@ -3226,7 +3228,7 @@ export function ChatShell({
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
           jumpTo={threadJump}
-          asksFrapp={replyAsksFrapp}
+          askRefusal={replyAskRefusalFor}
         />
       </MentionChipTargetsContext.Provider>
     ) : null;
@@ -3957,6 +3959,7 @@ export function ChatShell({
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
             ask={composerAsk}
+            askUnknown={askAccess === "unknown"}
             onSend={(body, attachments, mentionPicks) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to
