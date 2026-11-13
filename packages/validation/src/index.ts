@@ -27,6 +27,8 @@ export * from "./api-error-codes";
 export * from "./ask";
 // People and channels named in an Ask answer (#4904).
 export * from "./ask-entities";
+// Thumbs on an Ask answer and the taps under it (#4902).
+export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-post";
 export * from "./backwork";
@@ -183,6 +185,8 @@ export * from "./role-colors";
 export * from "./screen-copy";
 export * from "./service-points";
 export * from "./service-receipt";
+// The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).
+export * from "./sign-up-links";
 export * from "./signed-upload";
 export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle

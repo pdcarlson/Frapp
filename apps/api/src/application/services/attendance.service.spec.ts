@@ -770,6 +770,47 @@ describe('AttendanceService', () => {
     });
   });
 
+  describe('getMyAttendanceForEvents', () => {
+    it("reads the caller's rows for this chapter's events in one read", async () => {
+      mockAttendanceRepo.findByUserForEvents.mockResolvedValue([
+        baseAttendance,
+      ]);
+
+      await expect(
+        service.getMyAttendanceForEvents('user-1', 'ch-1', [
+          { id: 'evt-1', chapter_id: 'ch-1' },
+          { id: 'evt-2', chapter_id: 'ch-1' },
+        ]),
+      ).resolves.toEqual([baseAttendance]);
+      expect(mockAttendanceRepo.findByUserForEvents).toHaveBeenCalledWith(
+        'user-1',
+        ['evt-1', 'evt-2'],
+      );
+    });
+
+    it("drops another chapter's event instead of reading it", async () => {
+      mockAttendanceRepo.findByUserForEvents.mockResolvedValue([]);
+
+      await service.getMyAttendanceForEvents('user-1', 'ch-1', [
+        { id: 'evt-1', chapter_id: 'ch-1' },
+        { id: 'evt-other', chapter_id: 'ch-2' },
+      ]);
+      expect(mockAttendanceRepo.findByUserForEvents).toHaveBeenCalledWith(
+        'user-1',
+        ['evt-1'],
+      );
+    });
+
+    it('reads nothing when no event is left', async () => {
+      await expect(
+        service.getMyAttendanceForEvents('user-1', 'ch-1', [
+          { id: 'evt-other', chapter_id: 'ch-2' },
+        ]),
+      ).resolves.toEqual([]);
+      expect(mockAttendanceRepo.findByUserForEvents).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getAttendance', () => {
     it('should return attendance list for event', async () => {
       mockEventRepo.findById.mockResolvedValue(baseEvent);

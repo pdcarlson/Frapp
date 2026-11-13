@@ -55,6 +55,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
 import { AskModule } from './modules/ask/ask.module';
 import { AskPostModule } from './modules/ask-post/ask-post.module';
+import { AskObserveModule } from './modules/ask-observe/ask-observe.module';
 import { ActModule } from './modules/act/act.module';
 import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
@@ -127,6 +128,7 @@ import { validateEnv } from './config/env.validation';
     AiConsentModule,
     AskModule,
     AskPostModule,
+    AskObserveModule,
     ActModule,
     ChatCatchUpModule,
     MemberNudgeModule,

@@ -151,6 +151,7 @@ export const FEATURE_EVENTS = {
     properties: ['kind', 'is_reply', 'attachment_count'],
   },
   'announcement-posted': { feature: 'announcements', properties: [] },
+  'message-forwarded': { feature: 'chat', properties: ['has_comment'] },
   'message-reacted': { feature: 'chat', properties: [] },
   'message-flagged': { feature: 'chat', properties: ['flag'] },
   'dm-opened': { feature: 'chat', properties: [] },

@@ -1,5 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
+import { signUpLinkKind } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   formatDueLabel,
@@ -241,39 +242,13 @@ function channelLabel(
 export function activityLinkKind(
   link: Pick<ActivityLink, "host" | "url">,
 ): string {
-  const host = link.host;
-  if (host === "forms.gle") return "Google Form";
-  if (host === "docs.google.com") {
-    let path = "";
-    try {
-      path = new URL(link.url).pathname;
-    } catch {
-      return host;
-    }
-    // A Workspace account's links carry `/a/<domain>` first.
-    const rest = path.replace(/^\/a\/[^/]+/, "");
-    if (rest.startsWith("/forms/")) return "Google Form";
-    if (rest.startsWith("/spreadsheets/")) return "Google Sheet";
-    if (rest.startsWith("/document/")) return "Google Doc";
-    return host;
+  let path = "";
+  try {
+    path = new URL(link.url).pathname;
+  } catch {
+    // An unparseable URL still names its host; only Google needs the path.
   }
-  if (
-    host === "forms.office.com" ||
-    host === "forms.microsoft.com" ||
-    host === "forms.cloud.microsoft"
-  ) {
-    return "Microsoft Form";
-  }
-  if (host === "typeform.com" || host.endsWith(".typeform.com")) {
-    return "Typeform";
-  }
-  if (host === "signupgenius.com" || host.endsWith(".signupgenius.com")) {
-    return "SignUpGenius";
-  }
-  if (host === "calendly.com" || host.endsWith(".calendly.com")) {
-    return "Calendly";
-  }
-  return host;
+  return signUpLinkKind(link.host, path) ?? link.host;
 }
 
 /**
