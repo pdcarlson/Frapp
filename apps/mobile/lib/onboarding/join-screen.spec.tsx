@@ -140,17 +140,17 @@ import {
   FrappClientProvider,
   pendingInviteTitle as offerTitle,
 } from "@repo/hooks";
-import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
+import {
+  LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+  NEW_ACCOUNT_TITLE,
+} from "@repo/validation";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import {
   consumeRememberedInviteToken,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
-import {
-  NEW_ACCOUNT_CONTINUE,
-  NEW_ACCOUNT_TITLE,
-} from "@/components/onboarding/new-account-notice";
+import { NEW_ACCOUNT_CONTINUE } from "@/components/onboarding/new-account-notice";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
   JOIN_CONFIRM_TITLE,
@@ -1786,9 +1786,7 @@ describe("join screen — New account created (#4769)", () => {
           .map((text) => String(text.props.children ?? ""))
           .join(""),
       )
-      .filter((label) =>
-        [NEW_ACCOUNT_CONTINUE, "Sign out"].includes(label),
-      );
+      .filter((label) => [NEW_ACCOUNT_CONTINUE, "Sign out"].includes(label));
   }
 
   it("says the account is new, names it, and leads with Sign out", () => {
@@ -1822,6 +1820,34 @@ describe("join screen — New account created (#4769)", () => {
       signOuts[signOuts.length - 1].props.onPress();
     });
     expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a remembered invite through the notice's Sign out, as web keeps `next`", async () => {
+    rememberInviteToken("inv-keep-1234");
+    const tree = render();
+    const signOuts = tree.root
+      .findAllByType("Pressable" as never, { deep: true })
+      .filter((pressable) =>
+        pressable
+          .findAllByType("Text" as never, { deep: true })
+          .some((text) => text.props.children === "Sign out"),
+      );
+    // The notice's Sign out is the last one drawn (Signed-in-as comes first).
+    await act(async () => {
+      signOuts[signOuts.length - 1].props.onPress();
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(consumeRememberedInviteToken()).toBe("inv-keep-1234");
+  });
+
+  it("still forgets the invite on the Signed-in-as line's Sign out", async () => {
+    rememberInviteToken("inv-drop-5678");
+    const tree = render();
+    await act(async () => {
+      control(tree.root, "Sign out")?.props.onPress();
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(consumeRememberedInviteToken()).toBeNull();
   });
 
   it("carries on with the new account", () => {

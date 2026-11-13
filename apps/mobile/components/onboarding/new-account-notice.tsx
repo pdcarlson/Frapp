@@ -1,20 +1,12 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { NEW_ACCOUNT_TITLE, newAccountDescription } from "@repo/validation";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-export const NEW_ACCOUNT_TITLE = "New account created";
 export const NEW_ACCOUNT_CONTINUE = "Continue with the new account";
-
-/** Web `/new-account`'s line (`spec/ui/design-system/writing.md` § New account). */
-export function newAccountDescription(email: string | null): string {
-  const lead = email
-    ? `This is a new Frapp account for ${email}.`
-    : "This is a new Frapp account.";
-  return `${lead} Already a member? Sign out and use the method you joined with.`;
-}
 
 /**
  * The phone's "New account created" (#4769), web `/new-account`'s card at the

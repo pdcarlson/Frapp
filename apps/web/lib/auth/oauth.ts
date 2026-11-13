@@ -5,8 +5,7 @@ import {
   describeAuthError,
 } from "@/lib/auth/redirect";
 
-const OAUTH_PROVIDERS = ["apple", "google"] as const;
-export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
+export type OAuthProvider = "apple" | "google";
 
 const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
 const PLACEHOLDER_EMAIL_HOST = "users.invalid";
@@ -94,54 +93,4 @@ export async function startWebOAuth(
   return {
     error: { message: error.message, code: error.code },
   };
-}
-
-/**
- * How close `created_at` and `last_sign_in_at` must be for the session to be
- * the account's first. With PKCE they are two requests apart: GoTrue creates
- * the user at its provider callback, and writes `last_sign_in_at` only when
- * the app exchanges the code (`/token?grant_type=pkce`). The gap is the
- * browser's redirect back here plus the exchange, normally a second or two,
- * but a slow phone or network can stretch it, so the window is generous. A
- * returning member's `created_at` is days or months old; the only account it
- * misreads is one created minutes ago and signed into again, for which the
- * notice is still true.
- */
-export const FIRST_SIGN_IN_WINDOW_MS = 5 * 60_000;
-
-type FirstSignInUser = {
-  created_at?: string | null;
-  last_sign_in_at?: string | null;
-  app_metadata?: { provider?: unknown } | null;
-};
-
-/**
- * True when this OAuth sign-in just created the account (#3786).
- *
- * GoTrue does not hand the `user_signedup` event to the code exchange, so this
- * reads it off the user: the account was created by Google or Apple
- * (`app_metadata.provider`, set from the first identity) and its first sign-in
- * is this one. A member whose Google identity GoTrue auto-linked onto an older
- * account by verified email keeps the old `created_at` and is not flagged.
- *
- * Email accounts are out of scope here: a magic link creates the user when it
- * is requested, not when it is opened, so these timestamps can't tell. Their
- * check is `isNewEmailAccount` in `new-account-detection.ts` (#3801).
- */
-export function isFirstOAuthSignIn(
-  user: FirstSignInUser | null | undefined,
-): boolean {
-  if (!user) return false;
-  const provider = user.app_metadata?.provider;
-  if (
-    typeof provider !== "string" ||
-    !(OAUTH_PROVIDERS as readonly string[]).includes(provider)
-  ) {
-    return false;
-  }
-  if (!user.created_at || !user.last_sign_in_at) return false;
-  const created = Date.parse(user.created_at);
-  const signedIn = Date.parse(user.last_sign_in_at);
-  if (Number.isNaN(created) || Number.isNaN(signedIn)) return false;
-  return Math.abs(signedIn - created) <= FIRST_SIGN_IN_WINDOW_MS;
 }

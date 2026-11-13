@@ -208,6 +208,13 @@ function appRedirectTo(): string {
  */
 export const SIGN_IN_LINK_INTENT = "sign-in-link";
 
+/**
+ * A sign-in made in this app run (#4769): who, and whether it came back
+ * through the sign-in screen's tagged magic link.
+ */
+type FreshSignIn = { userId: string; signInLink: boolean };
+type SignedInHandler = (signIn: FreshSignIn) => void;
+
 /** `frapp:///?intent=sign-in-link`; GoTrue's template appends `&token_hash=…`. */
 export function signInLinkRedirectTo(): string {
   const base = appRedirectTo();
@@ -226,7 +233,7 @@ export function signInLinkRedirectTo(): string {
 async function createSessionFromUrl(
   supabase: SupabaseClient,
   url: string,
-  onSignInLink?: (userId: string) => void,
+  onSignedIn?: SignedInHandler,
 ): Promise<string | null> {
   const {
     accessToken,
@@ -239,9 +246,12 @@ async function createSessionFromUrl(
     error: errorIdentifier,
     intent,
   } = readAuthParams(url);
-  // The user a tagged sign-in link signed in, for `isNewAccount` (#4769).
+  // Who this return signed in, and whether it was the sign-in screen's
+  // tagged magic link, for `isNewAccount` (#4769).
   const noteSignIn = (userId: string | undefined) => {
-    if (userId && intent === SIGN_IN_LINK_INTENT) onSignInLink?.(userId);
+    if (userId) {
+      onSignedIn?.({ userId, signInLink: intent === SIGN_IN_LINK_INTENT });
+    }
   };
 
   // A link or provider return that didn't become a session (#3832). Only the
@@ -267,11 +277,15 @@ async function createSessionFromUrl(
 
   try {
     if (accessToken && refreshToken) {
-      const { error } = await supabase.auth.setSession({
+      // The implicit flow's return, and the one a new address's link takes
+      // today: the hosted Confirm signup template still links
+      // `ConfirmationURL` (#1925), which lands tokens in the fragment.
+      const { data, error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
       if (error) reportCallback(error);
+      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     if (tokenHash) {
@@ -344,12 +358,15 @@ export function AuthSessionProvider({
   );
   const [callbackError, setCallbackError] = useState<string | null>(null);
   /**
-   * The user the sign-in screen's magic link last signed in (#4769). Only that
-   * return asks the email rule: a Confirm-signup link passes it too.
-   * In memory, so a cold start forgets it and the notice with it; a Google or
-   * Apple account needs no marker, its timestamps say it all.
+   * The last sign-in made in this app run (#4769): a link or provider return,
+   * or a native Google or Apple sign-in. `isNewAccount` asks only about that
+   * sign-in, as web asks only at its callback: a session restored from
+   * storage keeps `last_sign_in_at` from whenever it signed in, so a
+   * long-time Google member would otherwise read as new on every cold start.
+   * Only the tagged magic link asks the email rule, since a Confirm-signup
+   * link passes it too and its sign-up isn't news.
    */
-  const [signInLinkUserId, setSignInLinkUserId] = useState<string | null>(null);
+  const [freshSignIn, setFreshSignIn] = useState<FreshSignIn | null>(null);
   /** The account whose new-account notice was dismissed this run. */
   const [dismissedNewAccountId, setDismissedNewAccountId] = useState<
     string | null
@@ -603,11 +620,9 @@ export function AuthSessionProvider({
 
     let cancelled = false;
     lastHandledCallbackUrl.current = url;
-    void createSessionFromUrl(supabase, url, setSignInLinkUserId).then(
-      (message) => {
-        if (!cancelled && message) setCallbackError(message);
-      },
-    );
+    void createSessionFromUrl(supabase, url, setFreshSignIn).then((message) => {
+      if (!cancelled && message) setCallbackError(message);
+    });
 
     return () => {
       cancelled = true;
@@ -689,17 +704,30 @@ export function AuthSessionProvider({
       if (!supabase) throw startFailed(new Error(NOT_CONFIGURED_MESSAGE));
       setCallbackError(null);
 
+      let native: "completed" | "cancelled" | "unavailable" = "unavailable";
       try {
         if (provider === "apple") {
-          const native = await signInWithNativeApple(supabase);
-          if (native === "completed" || native === "cancelled") return;
-        }
-        if (provider === "google") {
-          const native = await signInWithNativeGoogle(supabase);
-          if (native === "completed" || native === "cancelled") return;
+          native = await signInWithNativeApple(supabase);
+        } else if (provider === "google") {
+          native = await signInWithNativeGoogle(supabase);
         }
       } catch (error) {
         throw startFailed(error);
+      }
+      if (native === "cancelled") return;
+      if (native === "completed") {
+        // A native sign-in set the session itself; note who, for the
+        // new-account notice (#4769). A failed read only skips the notice.
+        try {
+          const { data } = await supabase.auth.getSession();
+          const signedInId = data.session?.user?.id;
+          if (signedInId) {
+            setFreshSignIn({ userId: signedInId, signInLink: false });
+          }
+        } catch {
+          // The sign-in itself succeeded.
+        }
+        return;
       }
 
       const redirectTo = appRedirectTo();
@@ -745,7 +773,7 @@ export function AuthSessionProvider({
       const message = await createSessionFromUrl(
         supabase,
         result.url,
-        setSignInLinkUserId,
+        setFreshSignIn,
       );
       if (message) {
         throw new MemberFacingError(message);
@@ -801,9 +829,11 @@ export function AuthSessionProvider({
   const isNewAccount =
     status === "authenticated" &&
     sessionUser !== null &&
+    freshSignIn !== null &&
+    freshSignIn.userId === sessionUser.id &&
     dismissedNewAccountId !== sessionUser.id &&
     (isFirstOAuthSignIn(sessionUser) ||
-      (signInLinkUserId === sessionUser.id && isNewEmailSignIn(sessionUser)));
+      (freshSignIn.signInLink && isNewEmailSignIn(sessionUser)));
   const dismissNewAccount = useCallback(() => {
     setDismissedNewAccountId(userId);
   }, [userId]);

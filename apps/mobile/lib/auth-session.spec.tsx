@@ -791,12 +791,22 @@ describe("AuthSessionProvider — chapter context", () => {
       throw notFound;
     });
     await queryClient
-      .fetchQuery({ queryKey: ["channels", "refused"], queryFn: refusedFn, retry: false })
+      .fetchQuery({
+        queryKey: ["channels", "refused"],
+        queryFn: refusedFn,
+        retry: false,
+      })
       .catch(() => undefined);
     await queryClient
-      .fetchQuery({ queryKey: ["channels", "missing"], queryFn: missingFn, retry: false })
+      .fetchQuery({
+        queryKey: ["channels", "missing"],
+        queryFn: missingFn,
+        retry: false,
+      })
       .catch(() => undefined);
-    expect(queryClient.getQueryState(["channels", "refused"])?.status).toBe("error");
+    expect(queryClient.getQueryState(["channels", "refused"])?.status).toBe(
+      "error",
+    );
 
     await act(async () => {
       emitAuthChange({
@@ -843,7 +853,11 @@ describe("AuthSessionProvider — chapter context", () => {
       return ["tasks"];
     });
     const pending = queryClient
-      .fetchQuery({ queryKey: ["tasks", "late"], queryFn: lateFn, retry: false })
+      .fetchQuery({
+        queryKey: ["tasks", "late"],
+        queryFn: lateFn,
+        retry: false,
+      })
       .catch(() => undefined);
 
     await act(async () => {
@@ -878,7 +892,11 @@ describe("AuthSessionProvider — chapter context", () => {
       throw refused;
     });
     await queryClient
-      .fetchQuery({ queryKey: ["events", "refused"], queryFn: refusedFn, retry: false })
+      .fetchQuery({
+        queryKey: ["events", "refused"],
+        queryFn: refusedFn,
+        retry: false,
+      })
       .catch(() => undefined);
 
     await act(async () => {
@@ -912,12 +930,19 @@ describe("AuthSessionProvider — chapter context", () => {
       throw refused;
     });
     await queryClient
-      .fetchQuery({ queryKey: ["dues", "refused"], queryFn: refusedFn, retry: false })
+      .fetchQuery({
+        queryKey: ["dues", "refused"],
+        queryFn: refusedFn,
+        retry: false,
+      })
       .catch(() => undefined);
 
     await act(async () => {
       emitAuthChange({
-        access_token: jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-2" }),
+        access_token: jwt({
+          sub: "user-1",
+          active_chapter_id: "chapter-uuid-2",
+        }),
         user: { email: "officer@university.edu", id: "user-1" },
       });
     });
@@ -973,7 +998,10 @@ describe("AuthSessionProvider — sign-in", () => {
 
     await act(async () => {
       await result.current
-        .signInWithPassword({ email: "officer@university.edu", password: "wrong" })
+        .signInWithPassword({
+          email: "officer@university.edu",
+          password: "wrong",
+        })
         .catch(() => undefined);
     });
 
@@ -1034,7 +1062,8 @@ describe("AuthSessionProvider — confirmation resend (#3833)", () => {
   it("reports and rethrows a refused resend", async () => {
     mockState.resendResult = {
       error: {
-        message: "For security purposes, you can only request this after 30 seconds.",
+        message:
+          "For security purposes, you can only request this after 30 seconds.",
         code: "over_email_send_rate_limit",
       },
     };
@@ -1176,7 +1205,9 @@ describe("AuthSessionProvider — magic-link callback", () => {
       error: undefined,
       code: "otp_expired",
     });
-    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("frapp:");
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain(
+      "frapp:",
+    );
   });
 
   it("reports a provider's bare `error` identifier when the link has no error_code", async () => {
@@ -1193,7 +1224,9 @@ describe("AuthSessionProvider — magic-link callback", () => {
       error: undefined,
       code: "access_denied",
     });
-    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("denied access");
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain(
+      "denied access",
+    );
   });
 
   it("reports a code exchange Auth refused, with nothing from the link", async () => {
@@ -1201,7 +1234,12 @@ describe("AuthSessionProvider — magic-link callback", () => {
     mockState.deepLinkUrl = "frapp:///?code=single-use-secret";
     const { getSupabaseClient } = await import("./supabase");
     const client = vi.mocked(getSupabaseClient)();
-    const refusal = { name: "AuthApiError", status: 400, code: "bad_code_verifier", message: "invalid" };
+    const refusal = {
+      name: "AuthApiError",
+      status: 400,
+      code: "bad_code_verifier",
+      message: "invalid",
+    };
     vi.mocked(client!.auth.exchangeCodeForSession).mockResolvedValueOnce({
       data: { session: null, user: null },
       error: refusal,
@@ -1216,7 +1254,9 @@ describe("AuthSessionProvider — magic-link callback", () => {
       error: refusal,
       code: undefined,
     });
-    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain("single-use-secret");
+    expect(JSON.stringify(reportAuthFailure.mock.calls)).not.toContain(
+      "single-use-secret",
+    );
   });
 
   it("maps an OAuth identity collision on the callback URL", async () => {
@@ -1359,7 +1399,9 @@ describe("AuthSessionProvider — OAuth", () => {
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
 
     await act(async () => {
-      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+      await result.current
+        .signInWithOAuthProvider("google")
+        .catch(() => undefined);
     });
     expect(reportAuthFailure).toHaveBeenCalledTimes(1);
     expect(reportAuthFailure).toHaveBeenCalledWith({
@@ -1379,7 +1421,9 @@ describe("AuthSessionProvider — OAuth", () => {
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
 
     await act(async () => {
-      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+      await result.current
+        .signInWithOAuthProvider("google")
+        .catch(() => undefined);
     });
     expect(reportAuthFailure).toHaveBeenCalledTimes(1);
     expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
@@ -1400,10 +1444,14 @@ describe("AuthSessionProvider — OAuth", () => {
 
     mockState.authSessionResult = { type: "locked" };
     await act(async () => {
-      await result.current.signInWithOAuthProvider("google").catch(() => undefined);
+      await result.current
+        .signInWithOAuthProvider("google")
+        .catch(() => undefined);
     });
     expect(reportAuthFailure).toHaveBeenCalledTimes(1);
-    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({ flow: "oauth_start" });
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "oauth_start",
+    });
   });
 
   it("does not exchange a single-use code twice when the deep link repeats", async () => {
@@ -1598,6 +1646,20 @@ describe("AuthSessionProvider — new account (#4769)", () => {
     return vi.mocked(getSupabaseClient)()!;
   }
 
+  // An earlier test's unused `mockResolvedValueOnce` survives
+  // `clearAllMocks`, so the returns these tests drive start clean.
+  beforeEach(async () => {
+    const auth = (await client()).auth;
+    for (const fn of [
+      auth.setSession,
+      auth.verifyOtp,
+      auth.exchangeCodeForSession,
+    ]) {
+      vi.mocked(fn).mockReset();
+      vi.mocked(fn).mockResolvedValue({ data: {}, error: null } as never);
+    }
+  });
+
   it("flags the sign-in link landing in an email account it just confirmed", async () => {
     const auth = (await client()).auth;
     vi.mocked(auth.verifyOtp).mockResolvedValueOnce({
@@ -1610,7 +1672,10 @@ describe("AuthSessionProvider — new account (#4769)", () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(auth.verifyOtp).toHaveBeenCalled());
     act(() => {
-      emitAuthChange({ access_token: "token-new", user: newEmailUser } as never);
+      emitAuthChange({
+        access_token: "token-new",
+        user: newEmailUser,
+      } as never);
     });
 
     await waitFor(() => expect(result.current.isNewAccount).toBe(true));
@@ -1631,7 +1696,10 @@ describe("AuthSessionProvider — new account (#4769)", () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(auth.verifyOtp).toHaveBeenCalled());
     act(() => {
-      emitAuthChange({ access_token: "token-new", user: newEmailUser } as never);
+      emitAuthChange({
+        access_token: "token-new",
+        user: newEmailUser,
+      } as never);
     });
 
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -1662,23 +1730,107 @@ describe("AuthSessionProvider — new account (#4769)", () => {
     expect(result.current.isNewAccount).toBe(false);
   });
 
-  it("flags a first Google or Apple sign-in from its timestamps alone", async () => {
-    const { result } = renderHook(() => useAuthSession(), { wrapper });
-    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+  const newAppleUser = {
+    id: "user-apple",
+    email: "abc@privaterelay.appleid.com",
+    created_at: iso(-2_000),
+    last_sign_in_at: iso(0),
+    app_metadata: { provider: "apple" },
+  };
 
+  it("flags the tagged link when it comes back as fragment tokens (implicit flow, #1925)", async () => {
+    const auth = (await client()).auth;
+    vi.mocked(auth.setSession).mockResolvedValueOnce({
+      data: { user: newEmailUser },
+      error: null,
+    } as never);
+    mockState.deepLinkUrl =
+      "frapp:///?intent=sign-in-link#access_token=at-1&refresh_token=rt-1&type=signup";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(auth.setSession).toHaveBeenCalled());
+    act(() => {
+      emitAuthChange({ access_token: "at-1", user: newEmailUser } as never);
+    });
+
+    await waitFor(() => expect(result.current.isNewAccount).toBe(true));
+  });
+
+  it("flags the tagged link when it comes back as a PKCE code", async () => {
+    const auth = (await client()).auth;
+    vi.mocked(auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { user: newEmailUser },
+      error: null,
+    } as never);
+    mockState.deepLinkUrl = "frapp:///?intent=sign-in-link&code=link-code";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(auth.exchangeCodeForSession).toHaveBeenCalled());
     act(() => {
       emitAuthChange({
-        access_token: "token-apple",
-        user: {
-          id: "user-apple",
-          email: "abc@privaterelay.appleid.com",
-          created_at: iso(-2_000),
-          last_sign_in_at: iso(0),
-          app_metadata: { provider: "apple" },
-        },
+        access_token: "token-new",
+        user: newEmailUser,
       } as never);
     });
 
     await waitFor(() => expect(result.current.isNewAccount).toBe(true));
+  });
+
+  it("flags a first Google or Apple sign-in made in this run", async () => {
+    const auth = (await client()).auth;
+    vi.mocked(auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { user: newAppleUser },
+      error: null,
+    } as never);
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("apple");
+    });
+    act(() => {
+      emitAuthChange({
+        access_token: "token-apple",
+        user: newAppleUser,
+      } as never);
+    });
+
+    await waitFor(() => expect(result.current.isNewAccount).toBe(true));
+  });
+
+  it("flags a first native Apple sign-in", async () => {
+    mockState.nativeAppleResult = "completed";
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    // The native sign-in sets the session itself; getSession now returns it.
+    mockState.initialSession = {
+      access_token: "token-apple",
+      user: newAppleUser,
+    } as never;
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("apple");
+    });
+    act(() => {
+      emitAuthChange({
+        access_token: "token-apple",
+        user: newAppleUser,
+      } as never);
+    });
+
+    await waitFor(() => expect(result.current.isNewAccount).toBe(true));
+  });
+
+  it("doesn't flag a session restored on a cold start, whatever its timestamps", async () => {
+    // A Google account whose last real sign-in created it, months ago or
+    // minutes ago: restored from storage, it isn't this run's sign-in.
+    mockState.initialSession = {
+      access_token: "token-apple",
+      user: newAppleUser,
+    } as never;
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isNewAccount).toBe(false);
   });
 });

@@ -551,6 +551,16 @@ export default function JoinChapter() {
     </View>
   );
 
+  // "New account created"'s Sign out (#4769): the person is leaving to come
+  // back with the account they meant, so an invite that opened this screen
+  // goes with them, as web's `/new-account` keeps `next`. The screen took a
+  // remembered invite out of memory into the field, so it goes back first.
+  const signOutKeepingInvite = async () => {
+    const invite = arrivedWithInvite ? token.trim() : "";
+    if (invite) rememberInviteToken(invite);
+    await signOutToSignIn({ keepInvite: true });
+  };
+
   // Each view fades in (`stepFadeIn`, as setup's steps do).
   const entering = stepFadeIn(tokens);
 
@@ -606,7 +616,7 @@ export default function JoinChapter() {
                 <NewAccountNotice
                   email={email}
                   inviteFirst={arrivedWithInvite}
-                  signOut={signOutToSignIn}
+                  signOut={signOutKeepingInvite}
                   signingOut={signingOut}
                   disabled={submitting}
                   onContinue={dismissNewAccount}

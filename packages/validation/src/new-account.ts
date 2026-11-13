@@ -115,3 +115,17 @@ export function isNewEmailSignIn(
 ): boolean {
   return isEmailOnlyAccount(user) && isConfirmedByThisSignIn(user);
 }
+
+/** The notice's title, on web `/new-account` and the phone's s02 card. */
+export const NEW_ACCOUNT_TITLE = "New account created";
+
+/**
+ * The notice's line (`spec/ui/design-system/writing.md` § New account, Paul's
+ * wording, 2026-11-09), naming the account when it has an address.
+ */
+export function newAccountDescription(email: string | null | undefined): string {
+  const lead = email
+    ? `This is a new Frapp account for ${email}.`
+    : "This is a new Frapp account.";
+  return `${lead} Already a member? Sign out and use the method you joined with.`;
+}

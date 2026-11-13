@@ -3,7 +3,12 @@
 // with the member's own token, so it must never be bundled into the browser.
 
 import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
-import { FIRST_SIGN_IN_WINDOW_MS, isFirstOAuthSignIn } from "@/lib/auth/oauth";
+import {
+  isConfirmedByThisSignIn,
+  isEmailOnlyAccount,
+  isFirstOAuthSignIn,
+  type NewAccountUser,
+} from "@repo/validation";
 
 /**
  * Deciding whether a sign-in from the sign-in screen just created a brand-new,
@@ -22,8 +27,8 @@ import { FIRST_SIGN_IN_WINDOW_MS, isFirstOAuthSignIn } from "@/lib/auth/oauth";
  * **The rule.** All three must hold:
  * 1. The account's only identity is `email` (no Google or Apple attached).
  * 2. This sign-in is the one that confirmed the address: `email_confirmed_at`
- *    is within {@link FIRST_SIGN_IN_WINDOW_MS} of `last_sign_in_at`, and no
- *    more than {@link EMAIL_LINK_MAX_AGE_MS} after `created_at` (the longest
+ *    is within `FIRST_SIGN_IN_WINDOW_MS` of `last_sign_in_at`, and no
+ *    more than `EMAIL_LINK_MAX_AGE_MS` after `created_at` (the longest
  *    an email link lives). Hosted projects require that confirmation (#3776),
  *    so GoTrue stamps it when the new account's first link is opened. An older
  *    account confirmed its address long ago and fails this, which is what keeps
@@ -40,55 +45,13 @@ import { FIRST_SIGN_IN_WINDOW_MS, isFirstOAuthSignIn } from "@/lib/auth/oauth";
  * rule 2 only matches a link opened within five minutes of asking for it.
  */
 
-type DetectionUser = {
-  identities?: Array<{ provider?: string | null } | null> | null;
-  created_at?: string | null;
-  email_confirmed_at?: string | null;
-  last_sign_in_at?: string | null;
-  app_metadata?: { provider?: unknown } | null;
-};
+// The pure rules (1 and 2, and Google or Apple's timestamps) live in
+// `@repo/validation`'s `new-account`, shared with the phone's s02 notice
+// (#4769). Rule 3, the chapters read, is the server's own, here.
+type DetectionUser = NewAccountUser;
 
 /** How long to wait on the chapters read before falling open to sign-in. */
 export const CHAPTERS_READ_TIMEOUT_MS = 4000;
-
-/**
- * The longest an email link can live: GoTrue caps the OTP expiry at 86400s.
- * A brand-new magic-link account is confirmed no later than this after it was
- * created (when the link was asked for).
- */
-export const EMAIL_LINK_MAX_AGE_MS = 24 * 60 * 60_000;
-
-/**
- * True when the account's only sign-in identity is `email`. An empty or absent
- * identity list is "can't tell", so not flagged.
- */
-export function isEmailOnlyAccount(user: DetectionUser | null | undefined): boolean {
-  if (!user || !Array.isArray(user.identities) || user.identities.length === 0) {
-    return false;
-  }
-  return user.identities.every((identity) => identity?.provider === "email");
-}
-
-function timestamp(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-/**
- * True when this sign-in is the one that confirmed the address, on an account
- * no older than an email link lives (rule 2 above).
- */
-export function isConfirmedByThisSignIn(user: DetectionUser | null | undefined): boolean {
-  const created = timestamp(user?.created_at);
-  const confirmed = timestamp(user?.email_confirmed_at);
-  const signedIn = timestamp(user?.last_sign_in_at);
-  if (created === null || confirmed === null || signedIn === null) return false;
-  return (
-    Math.abs(signedIn - confirmed) <= FIRST_SIGN_IN_WINDOW_MS &&
-    confirmed - created <= EMAIL_LINK_MAX_AGE_MS
-  );
-}
 
 /**
  * Whether the caller belongs to any chapter, from `GET /v1/chapters`
