@@ -7,7 +7,7 @@ const CHAT: AskSource = {
   kind: "chat",
   title: "#general",
   detail: null,
-  date: "2026-11-09T18:00:00.000Z",
+  date: "2026-11-09T12:00:00.000Z",
   target: null,
 };
 
