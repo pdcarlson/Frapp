@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
-import { FormFillDialog, useOpenForm } from "../form-fill-dialog";
+import {
+  FormFillDialog,
+  useOpenForm,
+  useSyncOpenForm,
+} from "../form-fill-dialog";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CLOSE_FORM_LABEL,
@@ -58,6 +62,7 @@ export function FormCard({
     useMyPermissions().data?.permissions,
   );
   const openInHost = useOpenForm();
+  useSyncOpenForm(message);
   // Only outside the chat shell, which hosts the form for every card.
   const [openHere, setOpenHere] = useState(false);
   const own = useQuery({

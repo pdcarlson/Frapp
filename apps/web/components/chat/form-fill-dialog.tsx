@@ -4,8 +4,10 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -69,9 +71,13 @@ import { cn } from "@/lib/utils";
  * can't take the form down with it.
  */
 
-const FormFillContext = createContext<((message: ChatMessage) => void) | null>(
-  null,
-);
+interface FormFillApi {
+  open: (message: ChatMessage) => void;
+  /** Swaps in a newer copy of the open form's row; ignores any other. */
+  refresh: (message: ChatMessage) => void;
+}
+
+const FormFillContext = createContext<FormFillApi | null>(null);
 
 /**
  * How a form card opens its form: the host's opener, or `null` outside one
@@ -79,13 +85,33 @@ const FormFillContext = createContext<((message: ChatMessage) => void) | null>(
  * its own.
  */
 export function useOpenForm(): ((message: ChatMessage) => void) | null {
-  return useContext(FormFillContext);
+  return useContext(FormFillContext)?.open ?? null;
+}
+
+/**
+ * Keeps the host's open form on the card's live row, so a Close form or a
+ * delete that reaches the timeline while a member is answering reaches the
+ * open page too, instead of leaving it on the copy taken when it opened.
+ */
+export function useSyncOpenForm(message: ChatMessage) {
+  const refresh = useContext(FormFillContext)?.refresh;
+  useEffect(() => {
+    refresh?.(message);
+  }, [refresh, message]);
 }
 
 export function FormFillHost({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<ChatMessage | null>(null);
+  const api = useMemo<FormFillApi>(
+    () => ({
+      open: setMessage,
+      refresh: (next) =>
+        setMessage((open) => (open && open.id === next.id ? next : open)),
+    }),
+    [],
+  );
   return (
-    <FormFillContext.Provider value={setMessage}>
+    <FormFillContext.Provider value={api}>
       {children}
       <FormFillDialog
         message={message}
@@ -109,10 +135,12 @@ export function FormFillDialog({
     () => (message ? readFormPayload(message) : null),
     [message],
   );
+  // A form deleted while it is open has nothing left to answer.
+  const live = !!message && !!payload && !message.is_deleted;
   return (
-    <Dialog open={!!message && !!payload} onOpenChange={onOpenChange}>
+    <Dialog open={live} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(100dvh,56rem)] max-h-[100dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0 max-sm:rounded-none">
-        {message && payload ? (
+        {live && message && payload ? (
           <FormFillBody
             key={message.id}
             messageId={message.id}
@@ -149,11 +177,19 @@ function FormFillBody({
   // shows the answers they last sent.
   const [edited, setEdited] = useState<FormAnswers | null>(null);
   const saved = response.data?.answers;
+  // Loaded at least once (`null` is "not answered yet"). A failed background
+  // refetch keeps the last answers on screen rather than swapping the
+  // questions for an error mid-edit.
+  const loaded = response.data !== undefined;
 
   const [showProblems, setShowProblems] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const current = useMemo(() => edited ?? saved ?? {}, [edited, saved]);
+  // A closed form shows what was sent, never edits that didn't go out.
+  const current = useMemo(
+    () => (closed ? (saved ?? {}) : (edited ?? saved ?? {})),
+    [closed, edited, saved],
+  );
   const problems = useMemo(
     () => formAnswerProblems(payload.questions, current),
     [payload.questions, current],
@@ -174,8 +210,18 @@ function FormFillBody({
     [saved],
   );
 
+  // A save that lands after this page closed (or another form opened in its
+  // place) must not close whatever is open by then.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const send = async () => {
-    if (closed || sending || !response.isSuccess) return;
+    if (closed || sending || !loaded) return;
     if (problemCount > 0) {
       setShowProblems(true);
       return;
@@ -190,13 +236,14 @@ function FormFillBody({
       );
       queryClient.setQueryData(formResponseKey(messageId), saved);
       toast({ title: answered ? "Answers updated" : "Answers sent" });
-      onDone();
+      if (mounted.current) onDone();
     } catch (cause) {
+      if (!mounted.current) return;
       setFailure(
         cause instanceof Error ? cause.message : "Couldn't send your answers",
       );
     } finally {
-      setSending(false);
+      if (mounted.current) setSending(false);
     }
   };
 
@@ -229,10 +276,12 @@ function FormFillBody({
         )}
         <p className="mt-3 text-caption text-muted-foreground">
           {closed
-            ? answered
-              ? "This form is closed. These are the answers you sent."
-              : "This form is closed. You didn't answer it."
-            : "Only you and the person who posted this form see your answers."}
+            ? !loaded
+              ? "This form is closed."
+              : answered
+                ? "This form is closed. These are the answers you sent."
+                : "This form is closed. You didn't answer it."
+            : "Your answers aren't posted in the chat. Only you and the person who posted this form can see them."}
         </p>
 
         {response.isPending ? (
@@ -240,10 +289,10 @@ function FormFillBody({
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your answers…
           </div>
-        ) : response.isError ? (
+        ) : !loaded ? (
           <div className="mt-8 space-y-2 text-sm">
             <p role="alert" className="text-destructive-text">
-              {response.error.message}
+              {response.error?.message ?? "Couldn't load your answers"}
             </p>
             <Button
               type="button"
@@ -287,7 +336,7 @@ function FormFillBody({
           {closed ? "Done" : "Cancel"}
         </Button>
         {closed ? null : (
-          <Button type="submit" disabled={sending || !response.isSuccess}>
+          <Button type="submit" disabled={sending || !loaded}>
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {sending ? "Sending…" : answered ? "Update answers" : "Send"}
           </Button>

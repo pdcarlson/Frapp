@@ -1434,6 +1434,9 @@ vi.mock("./message-timeline", async () => {
         <button onClick={() => onCloseCard?.("signup-1", "signup")}>
           trigger-close-signup
         </button>
+        <button onClick={() => onCloseCard?.("form-1", "form")}>
+          trigger-close-form
+        </button>
         <button onClick={() => onOpenProfile?.("u-author")}>
           open-author-profile
         </button>
@@ -3032,7 +3035,34 @@ describe("ChatShell Close sign-ups wiring (#3926)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close sign-ups" }));
 
     await waitFor(() => {
-      expect(channel.closeCard).toHaveBeenCalledWith("signup-1", undefined, "signup");
+      expect(channel.closeCard).toHaveBeenCalledWith(
+        "signup-1",
+        undefined,
+        "signup",
+      );
+    });
+  });
+});
+
+describe("ChatShell Close form wiring (#3926 step 3)", () => {
+  it("asks in the form's own words, then closes it as a form", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-form"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this form?")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Close sign-ups?")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close form" }));
+
+    await waitFor(() => {
+      expect(channel.closeCard).toHaveBeenCalledWith(
+        "form-1",
+        undefined,
+        "form",
+      );
     });
   });
 });
@@ -6220,7 +6250,10 @@ describe("ChatShell's two lists (#3774)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Find someone to message" }),
     );
-    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
   });
 
@@ -6270,7 +6303,10 @@ describe("ChatShell's two lists (#3774)", () => {
     // The pencil opens the search, as iMessage's opens a "To:" field, rather
     // than sending the member to the Directory.
     fireEvent.click(screen.getByRole("button", { name: "New message" }));
-    expect(screen.getByTestId("dm-search")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("dm-search")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
   });
 
   it("opens a conversation picked in the people search as a row click would (#4668)", () => {

@@ -352,7 +352,8 @@ function ThreadMessageRowBody({
  * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
  * `loading`, the placeholder for a heavy write in flight, which the + sheet's
  * Task, Service hours and Event forms send (#3865); it reads as its text
- * ("Creating task …") until the server's card replaces it.
+ * ("Creating task …") until the server's card replaces it. And `form`
+ * (#3926 step 3), drawn as its title until the phone's form card lands.
  */
 function cardFor(
   frame: ChatCardFrameProps,

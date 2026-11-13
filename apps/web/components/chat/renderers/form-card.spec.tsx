@@ -62,12 +62,23 @@ function wrap(node: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const tree = (inner: ReactNode) => (
     <QueryClientProvider client={client}>
-      <FormFillHost>{node}</FormFillHost>
-    </QueryClientProvider>,
+      <FormFillHost>{inner}</FormFillHost>
+    </QueryClientProvider>
   );
+  const result = render(tree(node));
+  return {
+    ...result,
+    rerender: (next: ReactNode) => result.rerender(tree(next)),
+  };
 }
+
+const SAVED = {
+  data: {
+    response: { answers: { room: "single" }, updated_at: "2026-11-13" },
+  },
+};
 
 beforeEach(() => {
   api.GET.mockReset();
@@ -190,5 +201,157 @@ describe("FormCard (#3926 step 3)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Close form" }));
     expect(onClose).toHaveBeenCalledWith("m1", "form");
+  });
+  it("opens a closed form read-only, with the answers that were sent", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    wrap(
+      <FormCard
+        message={form({ closed_at: "2026-11-12T00:00:00Z", closed_by: "u9" })}
+        viewerId="u1"
+        isConfirmed
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "View your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        "This form is closed. These are the answers you sent.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
+    expect(
+      within(dialog).getByRole("radio", { name: "Double" }),
+    ).toBeDisabled();
+    expect(within(dialog).getByRole("textbox")).toHaveAttribute("readonly");
+    expect(
+      within(dialog).queryByRole("button", { name: /Send|Update answers/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens Edit your answers with the saved answers, to update", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue(SAVED);
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByRole("radio", { name: "Single" }),
+    ).toBeChecked();
+    expect(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    ).toBeEnabled();
+  });
+
+  it("turns the open form read-only when it is closed while open", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue({ data: { response: null } });
+    const { rerender } = wrap(
+      <FormCard message={form()} viewerId="u1" isConfirmed />,
+    );
+    await user.click(await screen.findByRole("button", { name: "Fill out" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: "Double" }));
+
+    rerender(
+      <FormCard
+        message={form({ closed_at: "2026-11-13T00:00:00Z", closed_by: "u9" })}
+        viewerId="u1"
+        isConfirmed
+      />,
+    );
+    expect(
+      await within(dialog).findByText(
+        "This form is closed. You didn't answer it.",
+      ),
+    ).toBeInTheDocument();
+    // The unsent pick isn't shown as sent.
+    expect(
+      within(dialog).getByRole("radio", { name: "Double" }),
+    ).not.toBeChecked();
+    expect(
+      within(dialog).queryByRole("button", { name: "Send" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("takes the open form down when its card is deleted", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue({ data: { response: null } });
+    const { rerender } = wrap(
+      <FormCard message={form()} viewerId="u1" isConfirmed />,
+    );
+    await user.click(await screen.findByRole("button", { name: "Fill out" }));
+    await screen.findByRole("dialog");
+    rerender(
+      <FormCard
+        message={{ ...form(), is_deleted: true } as ChatMessage}
+        viewerId="u1"
+        isConfirmed
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps a second form open when the first one's save lands late", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue({ data: { response: null } });
+    let land: (value: unknown) => void = () => {};
+    api.PUT.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    const second = {
+      ...form({ title: "Rides" }),
+      id: "m2",
+      content: "Rides",
+    } as ChatMessage;
+    wrap(
+      <>
+        <FormCard message={form()} viewerId="u1" isConfirmed />
+        <FormCard message={second} viewerId="u1" isConfirmed />
+      </>,
+    );
+    // Both cards read Fill out once their own answers have loaded.
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Fill out" })).toHaveLength(
+        2,
+      ),
+    );
+    const [first, other] = screen.getAllByRole("button", { name: "Fill out" });
+    await user.click(first!);
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: "Single" }));
+    await user.click(within(dialog).getByRole("button", { name: "Send" }));
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    await user.click(other!);
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Rides")).toBeInTheDocument();
+    land({ data: { answers: { room: "single" }, updated_at: "2026-11-13" } });
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("offers Close form to a channels:manage holder who didn't post it", () => {
+    api.GET.mockResolvedValue({ data: { response: null } });
+    api.permissions = ["channels:manage"];
+    wrap(
+      <FormCard
+        message={{ ...form(), _status: "confirmed" } as ChatMessage}
+        viewerId="u1"
+        isConfirmed
+        onCloseCard={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Close form" }),
+    ).toBeInTheDocument();
   });
 });
