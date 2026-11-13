@@ -55,7 +55,6 @@ export * from "./use-chapters";
 export * from "./use-chat";
 export * from "./use-chat-background";
 export * from "./use-chat-catch-up";
-export * from "./use-member-nudge";
 export * from "./use-chat-reports";
 export * from "./use-chat-safety";
 // `useChatSidebar` and its query keys stay module-private: every surface reads
@@ -89,6 +88,7 @@ export * from "./use-important-messages";
 export * from "./use-invites";
 export * from "./use-invoices";
 export * from "./use-meetings";
+export * from "./use-member-nudge";
 export * from "./use-members";
 export * from "./use-notifications";
 export * from "./use-now";
