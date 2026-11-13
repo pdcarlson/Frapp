@@ -241,9 +241,9 @@ export type NavGlyphName = keyof typeof NAV_GLYPHS;
  * The pin and the star Documents marks folders and files with (#3934), on
  * the §1 stroke recipe's 24 grid rather than this set's 256 one: no Phosphor
  * entry here covers them, and chat's pin was drawn on that grid first. One
- * copy of the path data for web (`chat-glyphs.tsx`'s `PinGlyph`, and
- * `resources-glyphs.tsx`'s own `PinGlyph` and `StarGlyph`, which fill solid
- * while on since #4289) and mobile (`components/documents/document-glyphs.tsx`),
+ * copy of the path data for web (`chat-glyphs.tsx`'s `PinGlyph`, which
+ * Documents re-exports, and `resources-glyphs.tsx`'s `StarGlyph`; both fill
+ * solid while on, #4289 and #4292) and mobile (`components/documents/document-glyphs.tsx`),
  * so the two apps draw one shape for one idea. `body` takes the fill while
  * on; `detail` is stroke only.
  */
