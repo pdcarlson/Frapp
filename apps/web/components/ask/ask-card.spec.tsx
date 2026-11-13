@@ -468,6 +468,23 @@ describe("AskCard", () => {
       expect(state.reset).not.toHaveBeenCalled();
     });
 
+    it("leaves a question asked from a channel to finish when the card closes (#4713)", () => {
+      // Its answer is drawn in the channel, which closing the card does not
+      // take away, so the question goes on being answered.
+      state.exchanges = [
+        {
+          ...DONE,
+          id: "turn-2",
+          phase: "working",
+          answer: null,
+          origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
+        },
+      ];
+      const view = render(<Card />);
+      view.rerender(<Card open={false} />);
+      expect(state.stop).not.toHaveBeenCalled();
+    });
+
     it("keeps a finished answer across a close, and gives focus back to what opened it", () => {
       state.exchanges = [DONE];
       const opener = { current: null as HTMLButtonElement | null };

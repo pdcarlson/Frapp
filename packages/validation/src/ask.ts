@@ -53,6 +53,15 @@ export const AskHistoryTurnSchema = z.object({
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
+/**
+ * The doors a question can come through (#4713): Ask's own screen (`ask`),
+ * or `@Frapp` typed in a chat composer and answered to the asker alone
+ * (`chat_private`). A closed set, so it can be counted without saying
+ * anything about the question.
+ */
+export const ASK_DOORS = ["ask", "chat_private"] as const;
+export type AskDoor = (typeof ASK_DOORS)[number];
+
 /** `POST /v1/ai/ask`. */
 export const AskRequestSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
@@ -76,6 +85,12 @@ export const AskRequestSchema = z.object({
    * never has an answer saved (`ai.md` § Stored AI text).
    */
   saved_notice_shown: z.boolean().optional(),
+  /**
+   * Where the member asked from ({@link ASK_DOORS}). Counted, never read:
+   * the answer is the same from every door. Left out by builds before #4713,
+   * which only have the Ask screen.
+   */
+  door: z.enum(ASK_DOORS).optional(),
 });
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
@@ -566,6 +581,27 @@ export const ASK_COPY = {
   copy_answer: "Copy answer",
   copied_answer: "Copied",
   entry_label: "Ask a question about your chapter",
+  /** Under Frapp's name in a composer's mention list (#4713). */
+  mention_hint: "Only you see the answer",
+  /**
+   * By the composer while its draft names `@Frapp`: what Send will do, said
+   * before it does it.
+   */
+  only_you_hint: "Only you will see this question and Frapp's answer.",
+  /** On an answer drawn in a channel for the asker alone. */
+  only_you: "Only you can see this",
+  dismiss: "Dismiss",
+  /** A second `@Frapp` question while the first is still being answered. */
+  still_answering: "Frapp is still answering your last question.",
+  /** `@Frapp` with files staged: a question carries words only. */
+  no_attachments:
+    "Frapp can't read attachments. Remove them, or take @Frapp out to post this.",
+  /** `@Frapp` on a message longer than a question may be. */
+  too_long: "That's too long for a question. Keep it under 1,000 characters.",
+  /** `@Frapp` and nothing else. */
+  no_question: "Type your question after @Frapp.",
+  /** `@Frapp` in a reply inside a thread, where there is nowhere to answer. */
+  not_in_reply: "Ask Frapp from the channel, not from a reply.",
 } as const;
 
 /** An own entry only: the key is an open string from the wire. */

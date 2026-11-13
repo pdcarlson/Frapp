@@ -3,6 +3,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import {
   ASK_STREAM_VERSION,
+  assertContentFreeProperties,
   createAskStreamReader,
   type AskStreamEvent,
 } from '@repo/validation';
@@ -12,7 +13,11 @@ import { reportSwallowed } from '../../infrastructure/observability/report-swall
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { AskController, AskDiagnosticsStopController } from './ask.controller';
+import {
+  ASK_QUESTION_EVENT,
+  AskController,
+  AskDiagnosticsStopController,
+} from './ask.controller';
 
 jest.mock('../../infrastructure/observability/report-swallowed', () => ({
   reportSwallowed: jest.fn(),
@@ -98,14 +103,20 @@ function build(
       },
     ]),
   };
+  const analytics = { track: jest.fn(async () => undefined) };
   const controller = new AskController(
     askService as never,
     conversation as never,
     diagnostics as never,
     suggestions as never,
+    analytics as never,
   );
   const response = new FakeResponse();
-  const ask = (zone?: string, body: Record<string, unknown> = {}) =>
+  const ask = (
+    zone?: string,
+    body: Record<string, unknown> = {},
+    headers: Record<string, string> = {},
+  ) =>
     controller.ask(
       'chapter-a',
       'user-1',
@@ -113,6 +124,7 @@ function build(
       zone,
       { question: 'What is quorum?', ...body },
       response as never,
+      { headers },
     );
   const stopController = new AskDiagnosticsStopController(diagnostics as never);
   return {
@@ -122,6 +134,7 @@ function build(
     conversation,
     diagnostics,
     suggestions,
+    analytics,
     response,
     ask,
   };
@@ -226,6 +239,59 @@ describe('AskController', () => {
     ];
     expect(input.timeZone).not.toBe('Mars/Olympus');
     expect(input.savedNoticeShown).toBe(false);
+  });
+
+  it('counts the question by its door, with none of its words (#4713)', async () => {
+    const { ask, analytics } = build(async function* () {
+      yield done;
+    });
+    await ask(
+      undefined,
+      {
+        door: 'chat_private',
+        history: [{ question: 'What is quorum?', answer: 'Two thirds.' }],
+      },
+      { origin: 'https://app.frapp.live' },
+    );
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    const [name, userId, options] = analytics.track.mock
+      .calls[0] as unknown as [
+      string,
+      string,
+      { chapterId: string; properties: Record<string, unknown> },
+    ];
+    expect(name).toBe(ASK_QUESTION_EVENT);
+    expect(userId).toBe('user-1');
+    expect(options.chapterId).toBe('chapter-a');
+    expect(options.properties).toEqual({
+      door: 'chat_private',
+      is_follow_up: true,
+    });
+    expect(() =>
+      assertContentFreeProperties({ name, properties: options.properties }),
+    ).not.toThrow();
+  });
+
+  it('counts a question from a build that names no door as Ask’s own screen', async () => {
+    const { ask, analytics } = build(async function* () {
+      yield done;
+    });
+    await ask();
+    const [, , options] = analytics.track.mock.calls[0] as unknown as [
+      string,
+      string,
+      { properties: Record<string, unknown> },
+    ];
+    expect(options.properties).toEqual({ door: 'ask', is_follow_up: false });
+  });
+
+  it('answers all the same when the count cannot be sent', async () => {
+    const { ask, analytics, response } = build(async function* () {
+      yield done;
+    });
+    analytics.track.mockRejectedValueOnce(new Error('posthog down'));
+    await ask();
+    expect(response.events().map((event) => event.type)).toEqual(['done']);
   });
 
   it('refuses before the stream opens when the member may not ask', async () => {

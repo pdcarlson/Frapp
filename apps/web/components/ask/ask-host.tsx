@@ -10,13 +10,16 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AskConversationProvider,
   aiAvailableFrom,
+  useActiveChapterId,
   useAiChapterSettings,
   useAiConsent,
   useMyPermissions,
 } from "@repo/hooks";
 import { ASK_COPY, can } from "@repo/validation";
 import { AskCard } from "@/components/ask/ask-card";
+import { AskInChannelBridge } from "@/components/ask/ask-in-channel";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import { Button } from "@/components/ui/button";
 import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
@@ -39,8 +42,10 @@ import { cn } from "@/lib/utils";
  * Three pieces, because the conversation has to outlive what it is drawn in:
  *
  * - `AskHost` wraps the dashboard. It decides whether this member has Ask at
- *   all, and it owns the conversation (`AskCard`), so the thread survives a
- *   change of channel, a tool page covering the chat and the chat closing.
+ *   all, and it owns the conversation (`AskConversationProvider`), so the
+ *   thread survives a change of channel, a tool page covering the chat and
+ *   the chat closing, and is the same thread in the card and in a channel a
+ *   member asked `@Frapp` from (`ask-in-channel.tsx`, #4713).
  * - `AskSlot` is where the card is drawn: chat puts one above its composer.
  * - `AskComposerButton` is the entry, drawn by the composer.
  *
@@ -75,6 +80,7 @@ export function AskHost({ children }: { children: ReactNode }) {
   const settings = useAiChapterSettings({ enabled: available === true });
   const permissions = useMyPermissions().data?.permissions;
   const previewing = useIsRolePreviewActive();
+  const chapterId = useActiveChapterId();
   const has =
     available === true &&
     settings.data?.ask === true &&
@@ -98,19 +104,24 @@ export function AskHost({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AskEntryContext.Provider value={entry}>
-      <AskSlotContext.Provider value={has ? setSlot : null}>
-        {children}
-        {has ? (
-          <AskCard
-            open={open}
-            onOpenChange={setOpen}
-            returnFocus={opener}
-            container={slot}
-          />
-        ) : null}
-      </AskSlotContext.Provider>
-    </AskEntryContext.Provider>
+    // The conversation is one chapter's: it starts over in another.
+    <AskConversationProvider scope={chapterId}>
+      <AskInChannelBridge enabled={has}>
+        <AskEntryContext.Provider value={entry}>
+          <AskSlotContext.Provider value={has ? setSlot : null}>
+            {children}
+            {has ? (
+              <AskCard
+                open={open}
+                onOpenChange={setOpen}
+                returnFocus={opener}
+                container={slot}
+              />
+            ) : null}
+          </AskSlotContext.Provider>
+        </AskEntryContext.Provider>
+      </AskInChannelBridge>
+    </AskConversationProvider>
   );
 }
 

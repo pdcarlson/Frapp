@@ -8,6 +8,7 @@ import {
   TOMBSTONE_TEXT,
 } from "@repo/chat-core/block-copy";
 import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
+import type { AskExchange } from "@repo/hooks";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { blockState, timelineBlockProps } from "@/tests/block-list";
 
@@ -176,6 +177,20 @@ vi.mock("@/components/ui/avatar", async (importOriginal) => {
     ),
   };
 });
+
+// A turn asked of Frapp from this channel (#4713). The row itself reads the
+// Ask conversation through `AskHost`, which a bare `render()` does not mount;
+// `ask-in-channel.spec.tsx` has its rules. Here it only has to be drawn in
+// the right place.
+vi.mock("@/components/ask/ask-in-channel", () => ({
+  AskChannelTurn: ({
+    exchange,
+  }: {
+    exchange: { id: string; question: string };
+  }) => (
+    <article data-ask-channel-turn={exchange.id}>{exchange.question}</article>
+  ),
+}));
 
 const { MessageTimeline } = await import("./message-timeline");
 type MessageTimelineHandle = import("./message-timeline").MessageTimelineHandle;
@@ -2230,5 +2245,134 @@ describe("MessageTimeline own sends and Jump to latest (#4537)", () => {
     expect(jumpButton()).not.toBeInTheDocument();
     scrollTo(element, 3300);
     expect(jumpButton()).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4713: a question asked of Frapp from a channel is drawn in that channel,
+ * for the asker alone, under the message that was newest when it was asked.
+ * It is not a message: the rows the list is virtualized on stay the
+ * messages' own.
+ */
+describe("MessageTimeline draws the member's private Frapp turns (#4713)", () => {
+  const at = (minute: number) =>
+    new Date(2026, 7, 16, 17, minute).toISOString();
+  const turn = (
+    id: string,
+    origin: { after?: string | null; at: string },
+  ): AskExchange => ({
+    id,
+    question: `question ${id}`,
+    phase: "done",
+    step: null,
+    preview: "",
+    answer: null,
+    proposal: null,
+    resolution: null,
+    failure: null,
+    origin: { channelId: "chan-1", ...origin },
+  });
+  const messages = [
+    message({ id: "m1", client_message_id: "c1", created_at: at(1) }),
+    message({ id: "m2", client_message_id: "c2", created_at: at(3) }),
+    message({ id: "m3", client_message_id: "c3", created_at: at(5) }),
+  ];
+  const rowOf = (element: Element) =>
+    element.closest("[data-index]")?.getAttribute("data-index");
+  const turnEl = (id: string) =>
+    document.querySelector(`[data-ask-channel-turn="${id}"]`)!;
+
+  beforeEach(() => virtuosoProps.scrollToIndex.mockClear());
+
+  it("puts a turn under the message that was newest when it was asked, and adds no row", () => {
+    const { container } = renderTimeline(messages, {
+      askTurns: [turn("t1", { after: "c2", at: at(4) })],
+    });
+    expect(container.querySelectorAll("[data-index]")).toHaveLength(3);
+    const drawn = turnEl("t1");
+    expect(drawn).toHaveTextContent("question t1");
+    expect(rowOf(drawn)).toBe(rowOf(screen.getAllByText("hello")[1]!));
+    // After that row's message, not before it.
+    expect(
+      screen.getAllByText("hello")[1]!.compareDocumentPosition(drawn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps a turn in place by its time once its message is gone", () => {
+    renderTimeline(messages, {
+      askTurns: [turn("t1", { after: "gone", at: at(4) })],
+    });
+    expect(rowOf(turnEl("t1"))).toBe(rowOf(screen.getAllByText("hello")[1]!));
+  });
+
+  it("draws a turn older than every loaded message above the first one", () => {
+    renderTimeline(messages, {
+      askTurns: [turn("t0", { after: null, at: at(0) })],
+    });
+    const drawn = turnEl("t0");
+    const first = screen.getAllByText("hello")[0]!;
+    expect(rowOf(drawn)).toBe(rowOf(first));
+    expect(
+      drawn.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("draws a turn asked in an empty channel under the channel's start", () => {
+    renderTimeline([], {
+      askTurns: [turn("t1", { after: null, at: at(4) })],
+    });
+    expect(turnEl("t1")).toHaveTextContent("question t1");
+  });
+
+  it("draws none without any, as for a member without Ask", () => {
+    renderTimeline(messages);
+    expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
+  });
+
+  it("brings the list to a question just asked under the newest message", () => {
+    const view = renderTimeline(messages, { askTurns: [] });
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+    const props = {
+      channelId: "chan-1",
+      messages,
+      viewerId: VIEWER,
+      nameFor,
+      avatarFor,
+      isLoading: false,
+      loadError: null,
+      onReact: vi.fn(),
+      onUnreact: vi.fn(),
+      ...timelineBlockProps(messages, VIEWER),
+    };
+    view.rerender(
+      <MessageTimeline
+        {...props}
+        askTurns={[turn("t1", { after: "c3", at: at(6) })]}
+      />,
+    );
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(
+      expect.objectContaining({ index: "LAST" }),
+    );
+  });
+
+  it("moves nothing for a turn that sits further up the channel", () => {
+    const view = renderTimeline(messages, { askTurns: [] });
+    view.rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+        askTurns={[turn("t1", { after: "c1", at: at(2) })]}
+      />,
+    );
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 });

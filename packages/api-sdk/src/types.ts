@@ -9156,6 +9156,11 @@ export interface components {
             history?: components["schemas"]["AskHistoryTurnDto"][];
             /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
             actions?: boolean;
+            /**
+             * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. No door writes to a channel: this route never posts a message.
+             * @enum {string}
+             */
+            door?: "ask" | "chat_private";
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */

@@ -142,6 +142,10 @@ import {
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { AskSlot } from "@/components/ask/ask-host";
+import {
+  useChannelAsk,
+  useChannelAskTurns,
+} from "@/components/ask/ask-in-channel";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
@@ -1333,6 +1337,26 @@ export function ChatShell({
       ).length,
     }),
     [thread.rows, channel.messages, drawnMessageIds],
+  );
+  // `@Frapp` from this channel's composer (#4713): the question is asked, not
+  // sent, and its answer is drawn here for this member alone, under the
+  // message that is newest now. Null for a member without Ask.
+  const channelAsk = useChannelAsk();
+  const askTurns = useChannelAskTurns(activeChannelId);
+  const newestRow = thread.rows.at(-1)?.message ?? null;
+  const newestRowKey = newestRow
+    ? (newestRow.client_message_id ?? newestRow.id)
+    : null;
+  const composerAsk = useMemo(
+    () =>
+      channelAsk && activeChannelId
+        ? {
+            busy: channelAsk.busy,
+            send: (question: string) =>
+              channelAsk.send(activeChannelId, question, newestRowKey),
+          }
+        : null,
+    [channelAsk, activeChannelId, newestRowKey],
   );
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
@@ -3773,6 +3797,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  askTurns={askTurns}
                   threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
@@ -3916,6 +3941,7 @@ export function ChatShell({
             // `replyTo?.id`, not `replyToId`: the derived target is the one the
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
+            ask={composerAsk}
             onSend={(body, attachments, mentionPicks) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to

@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createPortal } from "react-dom";
@@ -19,6 +20,11 @@ const who = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  // The conversation and the channel's side of it have their own specs
+  // (`use-ask.spec.tsx`, `ask-in-channel.spec.tsx`).
+  AskConversationProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
+  useActiveChapterId: () => "chapter-1",
   useAiConsent: () => ({ data: null }),
   aiAvailableFrom: () => who.available,
   useAiChapterSettings: (options: { enabled: boolean }) => {
@@ -31,6 +37,16 @@ vi.mock("@repo/hooks", () => ({
 }));
 vi.mock("@/lib/stores/role-preview-store", () => ({
   useIsRolePreviewActive: () => who.previewing,
+}));
+const bridge = vi.hoisted(() => ({ enabled: [] as boolean[] }));
+vi.mock("@/components/ask/ask-in-channel", () => ({
+  AskInChannelBridge: (props: {
+    enabled: boolean;
+    children: React.ReactNode;
+  }) => {
+    bridge.enabled.push(props.enabled);
+    return props.children;
+  },
 }));
 
 // The conversation has its own spec (`ask-card.spec.tsx`). Here it only has
@@ -80,6 +96,7 @@ beforeEach(() => {
   who.previewing = false;
   who.settingsEnabled = [];
   card.mounts = 0;
+  bridge.enabled = [];
 });
 
 describe("who gets Ask Frapp", () => {
@@ -90,6 +107,8 @@ describe("who gets Ask Frapp", () => {
       </AskHost>,
     );
     expect(entry()).toBeInTheDocument();
+    // And the same member may ask from a channel with `@Frapp` (#4713).
+    expect(bridge.enabled.at(-1)).toBe(true);
   });
 
   it.each([
@@ -121,6 +140,8 @@ describe("who gets Ask Frapp", () => {
       expect(entry()).toBeNull();
       expect(view.container.querySelector("[data-ask-slot]")).toBeNull();
       expect(card.mounts).toBe(0);
+      // `@Frapp` in a composer is ordinary text for them too (#4713).
+      expect(bridge.enabled.at(-1)).toBe(false);
       // And nothing stands in for it: no "not ready" control anywhere.
       expect(screen.queryByRole("button")).toBeNull();
     },

@@ -1,7 +1,7 @@
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
-import { mentionPickerEntries } from "@repo/validation";
+import { mentionPickerRows } from "@repo/validation";
 import {
   MentionList,
   type MentionListHandle,
@@ -28,39 +28,51 @@ export interface MentionRoleEntry {
 
 /**
  * The roster and the roles as this popup offers them. Which rows, in what
- * order, and the label each inserts are `mentionPickerEntries`'s
+ * order, and the label each inserts are `mentionPickerRows`'s
  * (`@repo/validation`), shared with mobile's composer so a pick on either
  * client sends the same body; `mentionPickLabel` there says when the label is
  * the name as written and when it is reduced to letters, digits and marks. Roles come after members,
- * at most three, and only the ones the viewer may ping (2026-11-06).
+ * at most three, and only the ones the viewer may ping (2026-11-06). `ask`
+ * adds Frapp's own row, for a member with Ask in a composer that can ask
+ * from where it is (#4713).
  */
 function filterMentionEntries(
   roster: readonly MentionRosterEntry[],
   roles: readonly MentionRoleEntry[],
   query: string,
+  ask: boolean,
 ): MentionSuggestionItem[] {
-  return mentionPickerEntries(roster, roles, query).map((entry) =>
-    entry.kind === "member"
+  return mentionPickerRows(roster, roles, query, { ask }).map((entry) =>
+    entry.kind === "ask"
       ? {
-          kind: "member",
-          id: entry.member.user_id,
-          memberId: entry.member.user_id,
+          kind: "ask",
+          id: "ask-frapp",
           label: entry.label,
-          displayName: entry.member.display_name,
-          avatarUrl: entry.member.avatar_url,
-          avatarTint: memberAvatarTint(
-            memberAvatarHue(entry.member.user_id, entry.member.role_color),
-          ),
-        }
-      : {
-          kind: "role",
-          id: entry.role.role_id,
-          label: entry.label,
-          displayName: entry.role.name,
-          roleKind: entry.role.kind,
+          displayName: entry.label,
           avatarUrl: null,
           avatarTint: null,
-        },
+        }
+      : entry.kind === "member"
+        ? {
+            kind: "member",
+            id: entry.member.user_id,
+            memberId: entry.member.user_id,
+            label: entry.label,
+            displayName: entry.member.display_name,
+            avatarUrl: entry.member.avatar_url,
+            avatarTint: memberAvatarTint(
+              memberAvatarHue(entry.member.user_id, entry.member.role_color),
+            ),
+          }
+        : {
+            kind: "role",
+            id: entry.role.role_id,
+            label: entry.label,
+            displayName: entry.role.name,
+            roleKind: entry.role.kind,
+            avatarUrl: null,
+            avatarTint: null,
+          },
   );
 }
 
@@ -78,6 +90,8 @@ function filterMentionEntries(
 export function createMentionSuggestion(
   rosterRef: { current: readonly MentionRosterEntry[] },
   rolesRef: { current: readonly MentionRoleEntry[] } = { current: [] },
+  /** Whether Frapp is offered, read on each keystroke like the roster. */
+  askRef: { current: boolean } = { current: false },
 ): Omit<SuggestionOptions<MentionSuggestionItem>, "editor"> {
   return {
     char: "@",
@@ -89,7 +103,12 @@ export function createMentionSuggestion(
     // absent key leaves the default in place while an explicit `undefined`
     // would overwrite it — silently turning "pick a mention" into a no-op.
     items: ({ query }) =>
-      filterMentionEntries(rosterRef.current, rolesRef.current, query),
+      filterMentionEntries(
+        rosterRef.current,
+        rolesRef.current,
+        query,
+        askRef.current,
+      ),
     render: () => {
       let component: ReactRenderer<MentionListHandle> | null = null;
       let unmount: (() => void) | null = null;

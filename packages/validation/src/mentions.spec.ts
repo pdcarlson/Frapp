@@ -14,8 +14,11 @@ import {
   sendMentionReading,
   spacedMentionNames,
   mentionPickerEntries,
+  mentionPickerRows,
   mentionSuggestions,
   resolveMentions,
+  askMentionQuestion,
+  ASK_MENTION_NAME,
   type MentionCandidate,
   type MentionPick,
   type MentionRole,
@@ -1325,5 +1328,159 @@ describe("picked mentions (#3835)", () => {
         { user_id: "u-2" },
       ]),
     ).toEqual([{ user_id: "u-1", label: "Jane Doe" }]);
+  });
+});
+
+describe("@Frapp, the assistant's handle (#4713)", () => {
+  const FRAPP: MentionCandidate = {
+    user_id: "f0000000-0000-4000-8000-000000000001",
+    display_name: "Frapp",
+  };
+  const FRAPP_FAN: MentionCandidate = {
+    user_id: "f0000000-0000-4000-8000-000000000002",
+    display_name: "Frapp Fan",
+  };
+  const roster = [JANE, BOB];
+
+  describe("reaches nobody", () => {
+    it("never resolves to a member named Frapp, or one whose name starts with it", () => {
+      expect(resolveMentions("@Frapp what's quorum", [JANE, FRAPP])).toEqual(
+        [],
+      );
+      expect(resolveMentions("@frapp hi", [JANE, FRAPP_FAN])).toEqual([]);
+    });
+
+    it("never resolves to a role named Frapp", () => {
+      const role: MentionRole = {
+        role_id: "r-frapp",
+        name: "Frapp",
+        member_ids: [JANE.user_id],
+        mentionable: true,
+      };
+      expect(resolveMentions("@Frapp", roster, [role])).toEqual([]);
+    });
+
+    it("leaves a member with a longer name reachable by that name", () => {
+      expect(resolveMentions("@Frapp Fan hi", [JANE, FRAPP_FAN])).toEqual([
+        FRAPP_FAN.user_id,
+      ]);
+    });
+
+    it("does not offer a member or a role a pick could not reach", () => {
+      expect(mentionSuggestions([FRAPP, JANE], "")).toEqual([
+        { member: JANE, label: "Jane Doe" },
+      ]);
+      expect(
+        mentionPickerEntries(
+          roster,
+          [{ name: "Frapp", mentionable: true }],
+          "",
+        ),
+      ).toEqual([
+        { kind: "member", member: JANE, label: "Jane Doe" },
+        { kind: "member", member: BOB, label: "Bob Stone" },
+      ]);
+    });
+  });
+
+  describe("mentionPickerRows", () => {
+    const ask = { kind: "ask", label: ASK_MENTION_NAME };
+
+    it("is mentionPickerEntries for a member without Ask", () => {
+      for (const query of ["", "f", "frapp", "jane"]) {
+        expect(mentionPickerRows(roster, [], query, { ask: false })).toEqual(
+          mentionPickerEntries(roster, [], query),
+        );
+      }
+    });
+
+    it("puts Frapp last on a bare @, so the first row is still a person", () => {
+      expect(mentionPickerRows(roster, [], "", { ask: true })).toEqual([
+        { kind: "member", member: JANE, label: "Jane Doe" },
+        { kind: "member", member: BOB, label: "Bob Stone" },
+        ask,
+      ]);
+    });
+
+    it("puts Frapp first once its name is being typed, in any case", () => {
+      for (const query of ["f", "Fr", "FRAPP", "frapp"]) {
+        expect(
+          mentionPickerRows(roster, [], query, { ask: true })[0],
+          query,
+        ).toEqual(ask);
+      }
+    });
+
+    it("offers no Frapp for text that is not the start of its name", () => {
+      for (const query of ["rapp", "frappe", "jane", "fx"]) {
+        expect(
+          mentionPickerRows(roster, [], query, { ask: true }).some(
+            (row) => row.kind === "ask",
+          ),
+          query,
+        ).toBe(false);
+      }
+    });
+
+    it("takes one of the rows, never one more", () => {
+      const many = Array.from({ length: 20 }, (_, index) => ({
+        user_id: `m-${index}`,
+        display_name: `Frank ${index}`,
+      }));
+      const bare = mentionPickerRows(many, [], "", { ask: true });
+      expect(bare).toHaveLength(8);
+      expect(bare.at(-1)).toEqual(ask);
+      const typed = mentionPickerRows(many, [], "fr", { ask: true });
+      expect(typed).toHaveLength(8);
+      expect(typed[0]).toEqual(ask);
+    });
+  });
+
+  describe("askMentionQuestion", () => {
+    it("is null for a message that does not name Frapp", () => {
+      expect(askMentionQuestion("what's quorum?")).toBeNull();
+      expect(askMentionQuestion("@Jane what's quorum?")).toBeNull();
+      expect(askMentionQuestion("mail frapp@example.com")).toBeNull();
+      expect(askMentionQuestion("@Frappe is a drink")).toBeNull();
+    });
+
+    it("is the words without the handle, wherever the handle is", () => {
+      expect(askMentionQuestion("@Frapp what's quorum?")).toBe(
+        "what's quorum?",
+      );
+      expect(askMentionQuestion("@frapp, what's quorum?")).toBe(
+        "what's quorum?",
+      );
+      expect(askMentionQuestion("what do I owe @Frapp")).toBe("what do I owe");
+      expect(askMentionQuestion("hey @FRAPP: when is chapter")).toBe(
+        "hey when is chapter",
+      );
+      expect(askMentionQuestion("@Frapp @Frapp twice")).toBe("twice");
+    });
+
+    it("keeps the lines of a longer question", () => {
+      expect(askMentionQuestion("@Frapp two things\n1. dues\n2. quorum")).toBe(
+        "two things\n1. dues\n2. quorum",
+      );
+    });
+
+    it("is empty when the handle is all there is", () => {
+      expect(askMentionQuestion("@Frapp")).toBe("");
+      expect(askMentionQuestion("  @Frapp,  ")).toBe("");
+    });
+
+    it("reads a member's spaced name as that member, as a send does", () => {
+      const names = spacedMentionNames([FRAPP_FAN]);
+      expect(askMentionQuestion("@Frapp Fan are you in?", names)).toBeNull();
+      expect(askMentionQuestion("@Frapp fans, are you in?", names)).toBe(
+        "fans, are you in?",
+      );
+    });
+
+    it("leaves other mentions in the question as written", () => {
+      expect(askMentionQuestion("@Frapp what does @Jane owe")).toBe(
+        "what does @Jane owe",
+      );
+    });
   });
 });

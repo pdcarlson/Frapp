@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import type { JSONContent } from "@tiptap/react";
 import Mention from "@tiptap/extension-mention";
 import { Extension, type Editor } from "@tiptap/core";
@@ -9,6 +9,7 @@ import { useChapterRoster, useMentionRoles } from "@repo/hooks";
 import {
   findMentionSpans,
   mentionPicksIn,
+  spacedMentionNames,
   type MentionChipTest,
   type MentionPick,
 } from "@repo/validation";
@@ -36,6 +37,13 @@ import {
 export function useMentionSourceRefs(): {
   rosterRef: MutableRefObject<MentionRosterEntry[]>;
   rolesRef: MutableRefObject<MentionRoleEntry[]>;
+  /**
+   * The chapter's names with a space in them (`spacedMentionNames`), which a
+   * reader of the text needs to tell `@Frapp` from a member whose name
+   * starts with it (`askMentionQuestion`). For render, where a ref can't be
+   * read.
+   */
+  spacedNames: readonly string[];
 } {
   const chapterRoster = useChapterRoster();
   const rosterRef = useRef<MentionRosterEntry[]>([]);
@@ -47,7 +55,15 @@ export function useMentionSourceRefs(): {
   useEffect(() => {
     rolesRef.current = mentionRoles.data ?? [];
   }, [mentionRoles.data]);
-  return { rosterRef, rolesRef };
+  const spacedNames = useMemo(
+    () =>
+      spacedMentionNames(
+        chapterRoster.data ?? [],
+        (mentionRoles.data ?? []).map((role) => role.name),
+      ),
+    [chapterRoster.data, mentionRoles.data],
+  );
+  return { rosterRef, rolesRef, spacedNames };
 }
 
 /**
@@ -117,9 +133,17 @@ export function chatText(editor: Pick<Editor, "getText">): string {
 export function chatMentionExtension(
   rosterRef: MutableRefObject<MentionRosterEntry[]>,
   rolesRef: MutableRefObject<MentionRoleEntry[]>,
-  options: { onlyOnceTyped?: boolean } = {},
+  options: {
+    onlyOnceTyped?: boolean;
+    /** Offers Frapp in the list while it reads true (#4713). */
+    askRef?: { current: boolean };
+  } = {},
 ) {
-  const suggestion = createMentionSuggestion(rosterRef, rolesRef);
+  const suggestion = createMentionSuggestion(
+    rosterRef,
+    rolesRef,
+    options.askRef,
+  );
   if (options.onlyOnceTyped) {
     // An edit opens with the caret at the end of the message, so one that
     // ends in an `@token` the row left as text ("hey @shawn") would pop the

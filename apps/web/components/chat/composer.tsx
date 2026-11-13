@@ -57,8 +57,11 @@ import {
   noteComposerShellFocusable,
 } from "@/lib/chat/cold-load-marks";
 import {
+  ASK_COPY,
+  ASK_QUESTION_MAX_LENGTH,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
+  askMentionQuestion,
   inspectUploadFile,
   isBetaOffModule,
   readPreviewUpload,
@@ -469,6 +472,15 @@ interface ComposerBaseProps {
      */
     mentionPicks: MentionPick[],
   ) => void | Promise<void>;
+  /**
+   * Asking Frapp from this composer (#4713), for a member with Ask: Frapp is
+   * offered in the `@` list, and a message that names `@Frapp` is asked, not
+   * sent. `send` takes the question, with the handle taken out. Nothing is
+   * posted, and the answer is drawn in the channel for the member alone
+   * (`ask-in-channel.tsx`). Null or absent for everyone else, whose `@Frapp`
+   * is ordinary text.
+   */
+  ask?: { busy: boolean; send: (question: string) => void } | null;
   /**
    * Send a GIF picked from the GIF button's picker as its own message
    * (#4631). Omitted (GIFs not set up on this server, or a surface that
@@ -979,6 +991,7 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  ask = null,
   onSendGif,
   gifProvider,
   onSlashDispatch,
@@ -1005,7 +1018,17 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement | null>(null);
   // The `@` list's roster and roles (`useMentionSourceRefs`, shared with the
   // inline editor a message turns into on Edit).
-  const { rosterRef, rolesRef } = useMentionSourceRefs();
+  const { rosterRef, rolesRef, spacedNames } = useMentionSourceRefs();
+  // Whether the `@` list offers Frapp, read on each keystroke: the editor's
+  // extensions are built once, before it is known whether this member has Ask.
+  const askRef = useRef(false);
+  useEffect(() => {
+    askRef.current = ask !== null;
+  }, [ask]);
+  // Whether Send will ask Frapp instead of posting, so the composer can say
+  // so before it happens.
+  const asksFrapp =
+    ask !== null && askMentionQuestion(draft, spacedNames) !== null;
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -1090,7 +1113,8 @@ export function Composer({
       // colour the instant you pressed Enter. `createMentionSuggestion`
       // only reads the refs later, inside `items()` callbacks invoked from
       // keystroke events, never synchronously during render.
-      chatMentionExtension(rosterRef, rolesRef),
+      // eslint-disable-next-line react-hooks/refs -- read in items(), on a keystroke
+      chatMentionExtension(rosterRef, rolesRef, { askRef }),
       // Submit on Enter; Shift+Enter falls through to StarterKit's hard
       // break. Tiptap registers this shortcut while constructing the editor;
       // the handler reads `sendRef.current` only on Enter, not during render.
@@ -1416,6 +1440,31 @@ export function Composer({
         return;
       }
     }
+    // A message that names `@Frapp` is a question for Frapp, from a member
+    // with Ask (#4713). It is never posted: only the asker sees it and its
+    // answer. Each refusal keeps the member's text, and says what to change.
+    const question = ask ? askMentionQuestion(text, spacedNames) : null;
+    if (ask && question !== null) {
+      const refusal =
+        pending.length > 0
+          ? ASK_COPY.no_attachments
+          : question.length === 0
+            ? ASK_COPY.no_question
+            : question.length > ASK_QUESTION_MAX_LENGTH
+              ? ASK_COPY.too_long
+              : ask.busy
+                ? ASK_COPY.still_answering
+                : null;
+      if (refusal) {
+        toast({ title: refusal });
+        return;
+      }
+      editor.commands.clearContent(true);
+      // A staged reply was context for a message that is not being sent.
+      if (replyTo) onCancelReply?.();
+      ask.send(question);
+      return;
+    }
     /*
       Cleared optimistically, and put back whole if the send is refused (#1728).
 
@@ -1490,8 +1539,10 @@ export function Composer({
       });
     });
   }, [
+    ask,
     channelId,
     editor,
+    onCancelReply,
     onChangeDraft,
     onRestoreReply,
     onSend,
@@ -1502,6 +1553,7 @@ export function Composer({
     replyTo,
     showPlusForm,
     slashRefusal,
+    spacedNames,
     toast,
     uploading.length,
   ]);
@@ -2088,6 +2140,21 @@ export function Composer({
             */}
             <AskComposerButton className="ml-1" />
           </div>
+          {/*
+            What Send will do while the draft names `@Frapp` (#4713), said
+            before it does it. On the row's own line between the controls and
+            Send, so it arrives and leaves without moving anything; it
+            shortens before it wraps.
+          */}
+          {asksFrapp ? (
+            <p
+              role="status"
+              data-ask-hint=""
+              className="min-w-0 flex-1 truncate text-right text-caption text-muted-foreground"
+            >
+              {ASK_COPY.only_you_hint}
+            </p>
+          ) : null}
           {/*
             A round arrow, the mobile composer's send (principles.md P6.5):
             one glyph for one action on both apps. 32px to a mouse and 44px to

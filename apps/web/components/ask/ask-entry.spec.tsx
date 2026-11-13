@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,9 @@ const who = vi.hoisted(() => ({ previewing: false }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  AskConversationProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
+  useActiveChapterId: () => "chapter-1",
   useAiConsent: () => ({ data: null }),
   aiAvailableFrom: () => true,
   useAiChapterSettings: () => ({ data: { ask: true } }),
