@@ -2628,6 +2628,15 @@ describe("chat thread flags from the actions sheet", () => {
     return tree.root.findByType("MessageActionsSheet" as never);
   };
 
+  it("offers Copy message link as the message's app.frapp.live link (#3723)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.link).toBe(
+      `https://app.frapp.live/chat?channel=${CHANNEL}&message=m1`,
+    );
+    act(() => tree.unmount());
+  });
+
   it("offers Flag on an unflagged message and sends the pick", () => {
     const flag = vi.fn(async () => {});
     channel = channelState({ messages: [message("m1")], flag });

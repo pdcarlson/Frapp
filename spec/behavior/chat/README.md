@@ -243,6 +243,8 @@ A second shape beside reply-with-quote, which stays exactly as above: **Start th
   - **An object a report holds is kept too**, until the report resolves and releases it (§ Report and block → Report, #2481). Unlike a shared object, nothing in chat shows it any more and no new URL is minted for it except through the report, for the officers reviewing it. A URL a reader was handed before the delete keeps working until it expires, as the bullet above says; for a held object nothing cuts that short.
   - The attachment **rows** are not deleted. They disappear only with the message itself via `ON DELETE CASCADE`; keeping them is what lets the reference check above stay correct, and the read path already refuses them for a deleted message.
 
+**Message links** (#3723): a message's link is `https://app.frapp.live/chat?channel=<id>&message=<id>` (`packages/validation/src/message-link.ts`, on the build's dashboard origin). The phone's long-press sheet copies it with Copy message link, after Copy text, as Discord's does. The web opens it on the message (the same `?channel=`/`?message=` link a notification or a search hit uses), and the app claims `/chat` (`APP_LINK_PATHS`), so on a phone with the app it opens the channel on that message: on iOS through the web's apple-app-site-association, on Android once a native build carries the intent filter (#4763). A message link tapped inside a message opens in the app rather than in the browser sheet. Only a channel message's sheet offers it, never a thread reply's, which the link would open on a timeline it isn't in. Reading the message still needs access to its channel.
+
 **Pinned messages (chapter-elevated):**
 
 - Users with `channels:manage` permission can pin messages in a channel.

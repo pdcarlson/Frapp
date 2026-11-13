@@ -29,6 +29,7 @@ import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
 const APP_LINK_COMMENTS: Record<(typeof APP_LINK_PATHS)[number], string> = {
   "/join": "An invite link opens the app's join step (#4002)",
   "/check-in": "The check-in code a phone camera reads opens check-in",
+  "/chat": "A message's link (Copy message link) opens the message (#3723)",
 };
 
 /** An Apple Team ID: ten uppercase letters and digits. */

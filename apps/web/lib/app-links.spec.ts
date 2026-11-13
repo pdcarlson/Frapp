@@ -13,7 +13,7 @@ const PLAY_KEY =
 const UPLOAD_KEY_BARE = "0f".repeat(32);
 
 describe("apple-app-site-association (#4002)", () => {
-  it("claims /join and /check-in for the Team ID's live.frapp.mobile", () => {
+  it("claims /join, /check-in and /chat for the Team ID's live.frapp.mobile", () => {
     expect(appleAppSiteAssociation(" ABCDE12345 ")).toEqual({
       applinks: {
         details: [
@@ -28,6 +28,11 @@ describe("apple-app-site-association (#4002)", () => {
                 "/": "/check-in",
                 comment:
                   "The check-in code a phone camera reads opens check-in",
+              },
+              {
+                "/": "/chat",
+                comment:
+                  "A message's link (Copy message link) opens the message (#3723)",
               },
             ],
           },

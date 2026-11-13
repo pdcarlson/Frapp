@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { router } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LINK_OPEN_FAILED_BODY,
@@ -49,5 +50,22 @@ describe("openMessageLink", () => {
       LINK_OPEN_FAILED_TITLE,
       LINK_OPEN_FAILED_BODY,
     );
+  });
+
+  it("opens a message's own link in the app, not the browser (#3723)", async () => {
+    vi.mocked(router.push).mockClear();
+    await openMessageLink("https://app.frapp.live/chat?channel=c1&message=m1");
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m1" },
+    });
+    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+  });
+
+  it("opens any other dashboard page in the browser as before", async () => {
+    vi.mocked(router.push).mockClear();
+    await openMessageLink("https://app.frapp.live/chat?channel=c1");
+    expect(router.push).not.toHaveBeenCalled();
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalled();
   });
 });

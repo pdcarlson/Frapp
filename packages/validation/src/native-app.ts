@@ -30,15 +30,17 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 
 /**
  * The paths on the dashboard origin the app claims as universal links (iOS)
- * and App Links (Android). The invite, and the event check-in code a phone's
- * camera reads (`./check-in-link`, 2026-11-13): every other dashboard page stays
+ * and App Links (Android). The invite, the event check-in code a phone's
+ * camera reads (`./check-in-link`, 2026-11-13), and a message's link
+ * (`./message-link`, #3723), so Copy message link opens the message in the
+ * app on a phone that has it: every other dashboard page stays
  * on the web (the phone dashboard suggests the app with a card it can close). The web's `/.well-known` files publish
  * these; the binary claims them through `apps/mobile/app.json`
  * (`ios.associatedDomains`, Android `intentFilters`), which must list the same
  * paths. Until a store build carries that native half (#4002), no installed
  * app claims them and every invite link opens the web.
  */
-export const APP_LINK_PATHS = ["/join", "/check-in"] as const;
+export const APP_LINK_PATHS = ["/join", "/check-in", "/chat"] as const;
 
 /**
  * The phone a user agent belongs to, or null for anything else.

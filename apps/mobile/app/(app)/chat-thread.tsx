@@ -110,6 +110,8 @@ import {
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
+import { messageLinkUrl } from "@repo/validation";
+import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
@@ -1115,6 +1117,11 @@ function ChannelThreadScreen() {
       setActionTarget({
         messageId: message.id,
         copyText: copyableText(message),
+        // Copy message link (#3723). A channel message only: this sheet never
+        // holds a thread reply, whose link would open on a timeline it's not in.
+        link: channelId
+          ? messageLinkUrl(webAppOrigin(), { channelId, messageId: message.id })
+          : null,
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
@@ -1145,6 +1152,7 @@ function ChannelThreadScreen() {
     },
     [
       canManageChannel,
+      channelId,
       canReplyHere,
       canThreadHere,
       channelCanPost,

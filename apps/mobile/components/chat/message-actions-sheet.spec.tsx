@@ -58,6 +58,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
+  COPY_LINK_LABEL,
   MessageActionsSheet,
   quickReactionLabel,
   type MessageActionsSheetHandle,
@@ -257,6 +258,35 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("offers Copy message link after Copy text, copies the link, and says Copied on that row only (#3723)", async () => {
+    const link = "https://app.frapp.live/chat?channel=c1&message=m1";
+    const tree = render({ ...OWN, copyText: "hi", link });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(COPY_LINK_LABEL),
+    );
+
+    pressByLabel(tree, COPY_LINK_LABEL);
+    await flush();
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(link);
+    expect(hasRow(tree, COPIED_LABEL)).toBe(true);
+    // Copy text still says what it does.
+    expect(hasRow(tree, "Copy text")).toBe(true);
+    expect(hasRow(tree, COPY_LINK_LABEL)).toBe(false);
+  });
+
+  it("draws no Copy message link without a link", () => {
+    expect(hasRow(render({ ...OWN, copyText: "hi" }), COPY_LINK_LABEL)).toBe(
+      false,
+    );
   });
 
   it("draws no Copy text when the message has nothing to copy", () => {

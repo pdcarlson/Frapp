@@ -44,6 +44,7 @@ export * from "./chat-notification-defaults";
 export * from "./chat-sidebar";
 // The check-in QR as a link the phone camera opens. See ./check-in-link.
 export * from "./check-in-link";
+export * from "./message-link";
 export * from "./check-in-window";
 export * from "./check-in-zone-copy";
 // Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
