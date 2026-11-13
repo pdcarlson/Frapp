@@ -2880,7 +2880,7 @@
             "bearer": []
           }
         ],
-        "summary": "Mark all unread notifications read, or only those pointing at the named screens",
+        "summary": "Mark all unread notifications read, or only those pointing at the named screens, or only the named ids",
         "tags": [
           "Notifications"
         ]
@@ -19368,6 +19368,15 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "ids": {
+            "description": "Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         }

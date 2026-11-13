@@ -379,6 +379,24 @@ describe("marking many notifications read in one request (#3929)", () => {
     expect(readIds(queryClient)).toEqual(["event"]);
   });
 
+  it("with ids, reads only those rows: one inbox entry's (#3948)", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
+    const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 2 }));
+    const { result } = renderHook(() => useMarkNotificationsRead(), {
+      wrapper: createWrapper({ POST: post }, queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ ids: ["chat", "task"] });
+    });
+
+    expect(post).toHaveBeenCalledWith("/v1/notifications/read", {
+      body: { ids: ["chat", "task"] },
+    });
+    expect(readIds(queryClient)).toEqual(["task", "chat"]);
+  });
+
   it("a refused request leaves every dot where it was", async () => {
     const queryClient = makeQueryClient();
     queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);

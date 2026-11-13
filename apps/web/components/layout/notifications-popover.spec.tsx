@@ -89,6 +89,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     }),
     useMarkNotificationsRead: () => ({
       mutate: mockMarkManyRead,
+      mutateAsync: mockMarkManyRead,
       isPending: false,
     }),
     useMarkNotificationScreensSeen: mockScreensSeen,
@@ -809,8 +810,26 @@ describe("NotificationsPopover: grouped by conversation, Unread / All (#3948)", 
     expect(links[0]).toHaveTextContent("3 messages");
     expect(links[0]).toHaveTextContent("Unread:");
 
+    // Opening it reads both unread rows in one request, not only the newest.
+    mockMarkManyRead.mockClear();
     await userEvent.click(links[0]!);
-    expect(mockMarkRead).toHaveBeenCalledWith("g3");
+    expect(mockMarkManyRead).toHaveBeenCalledWith({ ids: ["g3", "g2"] });
+    expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+
+  it("stays unread while an older row is, and opening it reads that row", async () => {
+    notifications.value = [
+      inGeneral("g1", "2026-09-22T08:00:00Z"),
+      inGeneral("g2", "2026-09-22T10:00:00Z", true),
+    ];
+    mockMarkRead.mockClear();
+    renderDrawer();
+
+    const [entry] = screen.getAllByRole("link");
+    expect(entry).toHaveTextContent("message g2");
+    expect(entry).toHaveTextContent("Unread:");
+    await userEvent.click(entry!);
+    expect(mockMarkRead).toHaveBeenCalledWith("g1");
   });
 
   it("Unread hides read rows, and says so when none are left", async () => {

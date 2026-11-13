@@ -210,12 +210,12 @@ describe("groupNotificationsBySource (#3948)", () => {
   });
   const isUnread = (r: Row) => r.unread;
 
-  it("collapses one channel's rows into its newest, counting bundles", () => {
+  it("collapses one channel's rows into its newest", () => {
     const entries = groupNotificationsBySource(
       [
         row("a", inChannel("c1")),
         row("b", { target: { screen: "events" } }),
-        row("c", inChannel("c1", { bundled: true, count: 5 }), false),
+        row("c", inChannel("c1"), false),
         row("d", inChannel("c2")),
         row("e", inChannel("c1")),
       ],
@@ -224,12 +224,40 @@ describe("groupNotificationsBySource (#3948)", () => {
     expect(entries.map((e) => e.key)).toEqual(["chat:c1", "b", "chat:c2"]);
     expect(entries[0]).toMatchObject({
       lead: { id: "a" },
-      messageCount: 7,
+      messageCount: 3,
+      bundled: false,
       unreadIds: ["a", "e"],
     });
     expect(entries[0]!.rows.map((r) => r.id)).toEqual(["a", "c", "e"]);
-    expect(notificationEntryCount(entries[0]!)).toBe("7 messages");
+    expect(notificationEntryCount(entries[0]!)).toBe("3 messages");
     expect(notificationEntryCount(entries[1]!)).toBeNull();
+  });
+
+  it("counts a bundled burst as a floor, not on top of the rows it covers", () => {
+    // burst-bundler: messages 1 and 2 push a row each, message 3 pushes a
+    // bundle of 3 that covers them, and later messages write no row.
+    const bundle = (id: string, sender: string, count: number) =>
+      row(id, inChannel("c1", { senderId: sender, bundled: true, count }));
+    const single = (id: string, sender: string) =>
+      row(id, inChannel("c1", { senderId: sender }));
+    const [ryan] = groupNotificationsBySource(
+      [bundle("r3", "ryan", 3), single("r2", "ryan"), single("r1", "ryan")],
+      { isUnread },
+    );
+    expect(ryan!.messageCount).toBe(3);
+    expect(notificationEntryCount(ryan!)).toBe("3+ messages");
+
+    const [two] = groupNotificationsBySource(
+      [single("d1", "devin"), bundle("r3", "ryan", 3), single("r1", "ryan")],
+      { isUnread },
+    );
+    expect(two!.messageCount).toBe(4);
+
+    // A bundle on its own already says "3 new messages": no second count.
+    const [alone] = groupNotificationsBySource([bundle("r3", "ryan", 3)], {
+      isUnread,
+    });
+    expect(notificationEntryCount(alone!)).toBeNull();
   });
 
   it("keeps a mention on its own and a thread apart from its channel", () => {

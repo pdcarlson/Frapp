@@ -93,7 +93,7 @@ export class NotificationController {
   @FreeTier()
   @ApiOperation({
     summary:
-      'Mark all unread notifications read, or only those pointing at the named screens',
+      'Mark all unread notifications read, or only those pointing at the named screens, or only the named ids',
   })
   @ApiOkResponse({ type: MarkNotificationsReadResultDto })
   async markAllRead(
@@ -103,6 +103,7 @@ export class NotificationController {
   ): Promise<MarkNotificationsReadResultDto> {
     return this.notificationService.markNotificationsRead(userId, chapterId, {
       screens: dto.screens,
+      ids: dto.ids,
     });
   }
 

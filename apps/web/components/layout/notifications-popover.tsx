@@ -198,6 +198,8 @@ export function NotificationsPopover({
   const notificationsQuery = useNotifications();
   const markRead = useMarkNotificationRead();
   const markManyRead = useMarkNotificationsRead();
+  // Its own instance, so opening an entry doesn't disable Mark all read.
+  const markEntryRead = useMarkNotificationsRead();
   const invalidateReports = useInvalidateChatReports();
 
   // A notification is read once the member has seen what it is about
@@ -274,13 +276,23 @@ export function NotificationsPopover({
     if (newestReportNotification) void invalidateReports();
   }, [newestReportNotification, invalidateReports]);
 
-  async function handleMarkRead(notification: Notification) {
-    if (notification.read_at) return;
+  /*
+    Opening an entry reads every unread row it stands for (#3948): one row
+    by its own PATCH, as before, and a conversation's rows in one
+    `POST /v1/notifications/read` naming them. Reading only the newest left
+    the rest to the channel read, which never clears a thread's rows (this
+    list opens a thread entry's channel) and can't run once the member has
+    lost the channel.
+  */
+  async function handleMarkRead(unreadIds: readonly string[]) {
     try {
-      await markRead.mutateAsync(notification.id);
+      if (unreadIds.length === 1) {
+        await markRead.mutateAsync(unreadIds[0]!);
+      } else if (unreadIds.length > 1) {
+        await markEntryRead.mutateAsync({ ids: unreadIds });
+      }
     } catch {
-      // Silent — the mark-read button re-enables automatically since the
-      // query invalidation will re-fetch. The user can retry by clicking.
+      // Silent: the entry keeps its dot, and the next open tries again.
     }
   }
 
@@ -410,10 +422,7 @@ export function NotificationsPopover({
                               if (isReportNotification(notification)) {
                                 void invalidateReports();
                               }
-                              // The newest row; opening its channel reads the
-                              // rest on the server (notifications.md § How an
-                              // in-app row is marked read).
-                              void handleMarkRead(notification);
+                              void handleMarkRead(entry.unreadIds);
                               onOpenChange(false);
                             }}
                           />
@@ -470,8 +479,8 @@ type MemberNames = ReturnType<typeof useMemberDisplayNames>;
  * One notification (#4346): the picture of who it is about with a badge for
  * its kind, or a tile where no person is behind it; the title with the
  * person's name in their colour; the preview with chat's mention chips; the
- * time. A row that mentions the viewer wears the @ badge in the chapter
- * accent, the colour chat lights a mention in, and is not tinted (Shawn's
+ * time. A row that mentions the viewer wears the @ badge in the mention
+ * chip's fixed gold, never the chapter accent, and is not tinted (Shawn's
  * pick, 2026-11-11: the list stays flat). A conversation's entry draws its
  * newest row, with how many messages it stands for under the preview
  * (#3948), and is unread while any of its rows is.

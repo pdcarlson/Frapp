@@ -947,7 +947,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark all unread notifications read, or only those pointing at the named screens */
+        /** Mark all unread notifications read, or only those pointing at the named screens, or only the named ids */
         post: operations["NotificationController_markAllRead_v1"];
         delete?: never;
         options?: never;
@@ -5849,6 +5849,8 @@ export interface components {
              *     ]
              */
             screens?: string[];
+            /** @description Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both. */
+            ids?: string[];
         };
         MarkNotificationsReadResultDto: {
             /**

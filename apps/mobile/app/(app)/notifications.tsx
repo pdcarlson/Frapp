@@ -122,6 +122,8 @@ export default function NotificationsScreen() {
   const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkNotificationsRead();
+  // Its own instance, so opening an entry doesn't spin Mark all read.
+  const markEntry = useMarkNotificationsRead();
   const isMarkingAll = markAll.isPending;
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
 
@@ -182,10 +184,14 @@ export default function NotificationsScreen() {
                 row={row}
                 people={people}
                 onPress={() => {
-                  // A conversation's entry is its newest row; opening the
-                  // channel reads the rest on the server (notifications.md §
-                  // How an in-app row is marked read).
-                  if (row.isUnread) markRead.mutate(row.id);
+                  // Reads every unread row the entry stands for (#3948): one
+                  // by its PATCH, a conversation's in one request naming
+                  // them, so none is left to a channel read that may never
+                  // clear it.
+                  const unread =
+                    row.unreadIds ?? (row.isUnread ? [row.id] : []);
+                  if (unread.length === 1) markRead.mutate(unread[0]!);
+                  else if (unread.length > 1) markEntry.mutate({ ids: unread });
                   // Resolves to this screen when the target is unrecognized,
                   // so the tap marks the row read and stays put rather than
                   // pushing the notification list on top of itself.
@@ -279,7 +285,7 @@ const NO_PEOPLE: NotificationPeople = {
  * who it is about with a badge for its kind, or a tile where no person is
  * behind it; the title with the person's name in their colour and the time
  * beside it; the preview with chat's mention chips. A row that mentions you
- * wears the @ badge in the chapter accent and is not tinted (Shawn's pick,
+ * wears the @ badge in the mention chip's fixed gold and is not tinted (Shawn's pick,
  * 2026-11-11). Exported so a spec can render one row without the screen.
  */
 export function NotificationListRow({
@@ -314,9 +320,10 @@ export function NotificationListRow({
       // The Pressable is one node, so its texts aren't read on their own: the
       // label says the kind (the badge can't be seen), then the title and the
       // body, all of it, though the row shows two lines.
+      // The row is one node, so the count line is read only if it is here.
       accessibilityLabel={listRowHint(
         `${kindLabel}: ${shownTitle}`,
-        previewText || undefined,
+        [previewText, row.count].filter(Boolean).join(". ") || undefined,
       )}
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}

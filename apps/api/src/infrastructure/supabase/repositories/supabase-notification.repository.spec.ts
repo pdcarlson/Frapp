@@ -267,6 +267,26 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       });
     });
 
+    it('marks only the named rows, in the caller chapter only (#3948)', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH, undefined, [
+          'b-chat',
+          'b-task',
+          'a-event',
+        ]),
+      );
+
+      expect(updated).toBe(2);
+      expect(readAtById()).toEqual({
+        ...chapterAUntouched,
+        'b-chat': READ_THROUGH,
+        'b-event': null,
+        'b-task': READ_THROUGH,
+        'b-late': null,
+        'b-read': '2025-12-31T00:00:00.000Z',
+      });
+    });
+
     it('marks only the rows that point at the named screens', async () => {
       const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
         repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH, [

@@ -725,6 +725,39 @@ describe("Notifications: Unread / All (#3948)", () => {
     act(() => unread.props.onPress());
     expect(screenText(tree)).not.toContain("Dues reminder");
     expect(screenText(tree)).toContain("You're all caught up.");
+    // The switch stays, so the way back to All is still there.
+    expect(
+      tree.root.findAll((node) => node.props.accessibilityRole === "radiogroup")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("draws a conversation as one row that says, and speaks, how many", () => {
+    const chat = (id: string, minute: number) => ({
+      id,
+      title: "Ryan Castellano in #general",
+      body: `message ${id}`,
+      created_at: new Date(2026, 8, 30, 23, minute).toISOString(),
+      read_at: null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u-ryan" },
+    });
+    inbox.data = [chat("old", 10), chat("new", 40)];
+    markAll.mutate.mockClear();
+    markRead.mutate.mockClear();
+    const tree = render();
+
+    expect(screenText(tree)).toContain("2 messages");
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("message new"),
+    );
+    expect(row.props.accessibilityLabel).toContain("2 messages");
+
+    act(() => row.props.onPress());
+    expect(markAll.mutate).toHaveBeenCalledWith({ ids: ["new", "old"] });
+    expect(markRead.mutate).not.toHaveBeenCalled();
   });
 
   it("draws no switch on an empty inbox", () => {

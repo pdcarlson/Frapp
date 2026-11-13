@@ -321,11 +321,15 @@ export interface NotificationEntry<Row> {
   /** Every row in the entry, newest first. */
   rows: Row[];
   /**
-   * How many messages the entry stands for: each row counts one, a bundled
-   * burst (`data.bundled`, "5 new messages") its `data.count`. Only chat
-   * entries go above one.
+   * At least how many messages the entry stands for (see
+   * `groupNotificationsBySource`). Only chat entries go above one.
    */
   messageCount: number;
+  /**
+   * Whether a row in the entry was a bundled burst ("3 new messages"), so
+   * more messages may have been sent than any row records.
+   */
+  bundled: boolean;
   /** Ids of the entry's unread rows. */
   unreadIds: string[];
 }
@@ -351,12 +355,40 @@ export function notificationSourceKey(data: unknown): string | null {
     : `chat:${channelId}`;
 }
 
-function messagesIn(data: unknown): number {
-  if (!isRecord(data) || data.bundled !== true) return 1;
+/** A bundled burst's `data.count`, or `null` for a row that isn't one. */
+function bundleCount(data: unknown): number | null {
+  if (!isRecord(data) || data.bundled !== true) return null;
   const count = data.count;
   return typeof count === "number" && Number.isInteger(count) && count > 1
     ? count
-    : 1;
+    : null;
+}
+
+function senderOf(data: unknown): string {
+  return (isRecord(data) && stringAt(data, "senderId")) || "";
+}
+
+/**
+ * At least how many messages `rows` stand for. The push worker bundles one
+ * sender's burst (`burst-bundler.ts`): the first messages in a window push
+ * one row each, the next pushes a bundle whose `count` is the window's total
+ * so far ("3 new messages", covering those rows too), and later ones write
+ * no row at all. So per sender, the larger of their row count and their
+ * biggest bundle is a floor, never a sum, and the true number can be higher.
+ */
+function messageFloor(rows: readonly { data?: unknown }[]): number {
+  const bySender = new Map<string, { rows: number; bundle: number }>();
+  for (const row of rows) {
+    const sender = senderOf(row.data);
+    const seen = bySender.get(sender) ?? { rows: 0, bundle: 0 };
+    seen.rows += 1;
+    seen.bundle = Math.max(seen.bundle, bundleCount(row.data) ?? 0);
+    bySender.set(sender, seen);
+  }
+  let total = 0;
+  for (const seen of bySender.values())
+    total += Math.max(seen.rows, seen.bundle);
+  return total;
 }
 
 /**
@@ -364,7 +396,8 @@ function messagesIn(data: unknown): number {
  * `rows` (newest first) narrowed by `filter`, then one entry per conversation
  * (`notificationSourceKey`) and one per other row, in the order of each
  * entry's newest row. Under "unread" only unread rows count, so an entry's
- * `messageCount` is what is still new there.
+ * `messageCount` is what is still new there. `messageCount` is a floor
+ * (`messageFloor`): a bundled burst's later messages write no row.
  */
 export function groupNotificationsBySource<
   Row extends { id: string; data?: unknown },
@@ -384,7 +417,7 @@ export function groupNotificationsBySource<
     const existing = source ? byKey.get(source) : undefined;
     if (existing) {
       existing.rows.push(row);
-      existing.messageCount += messagesIn(row.data);
+      existing.bundled ||= bundleCount(row.data) !== null;
       if (unread) existing.unreadIds.push(row.id);
       continue;
     }
@@ -392,21 +425,28 @@ export function groupNotificationsBySource<
       key: source ?? row.id,
       lead: row,
       rows: [row],
-      messageCount: messagesIn(row.data),
+      messageCount: 1,
+      bundled: bundleCount(row.data) !== null,
       unreadIds: unread ? [row.id] : [],
     };
     entries.push(entry);
     if (source) byKey.set(source, entry);
   }
+  for (const entry of entries) entry.messageCount = messageFloor(entry.rows);
   return entries;
 }
 
 /**
- * The words under an entry that stands for more than one message ("14
- * messages"), or `null` for a single one.
+ * The words under a conversation's entry ("14 messages", or "5+ messages"
+ * when a bundled burst may have held more than its rows say), or `null` for
+ * an entry of one row, whose own body already says what it is ("3 new
+ * messages" on a bundle).
  */
 export function notificationEntryCount(entry: {
+  rows: readonly unknown[];
   messageCount: number;
+  bundled: boolean;
 }): string | null {
-  return entry.messageCount > 1 ? `${entry.messageCount} messages` : null;
+  if (entry.rows.length < 2 || entry.messageCount < 2) return null;
+  return `${entry.messageCount}${entry.bundled ? "+" : ""} messages`;
 }

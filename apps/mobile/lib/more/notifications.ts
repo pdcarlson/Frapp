@@ -51,6 +51,11 @@ export interface NotificationRow {
    * first, collapsed into one (#3948); absent or `null` for a single row.
    */
   count?: string | null;
+  /**
+   * Ids of the entry's unread rows, which opening it reads (#3948); absent
+   * means just `id` when `isUnread`.
+   */
+  unreadIds?: string[];
 }
 
 export interface NotificationGroup {
@@ -118,6 +123,7 @@ export function selectNotificationGroups(
     ...entry.lead,
     isUnread: entry.unreadIds.length > 0,
     count: notificationEntryCount(entry),
+    unreadIds: entry.unreadIds,
   }));
 
   const groups: NotificationGroup[] = [
