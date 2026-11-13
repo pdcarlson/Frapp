@@ -1,0 +1,1 @@
+You can now post a form in chat from the + menu, with short answer, multiple choice, checkbox, dropdown and yes or no questions, and only you and whoever posted it see your answers, which you can change until it closes.

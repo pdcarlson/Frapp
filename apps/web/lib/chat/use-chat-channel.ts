@@ -68,6 +68,7 @@ import {
   actOnCard,
   closePoll as closePollAction,
   closeCard as closeCardAction,
+  type ClosableCardKind,
   setMessageFlag as setMessageFlagAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
@@ -91,6 +92,7 @@ import {
   postHours,
   postEvent,
   postPointsAdjustment,
+  postForm,
   postPoll,
   postSignup,
   postTask,
@@ -107,6 +109,7 @@ import {
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { PollPayload } from "@repo/chat-core/polls";
 import type { SignupPayload } from "@repo/chat-core/signups";
+import type { FormPayload } from "@repo/chat-core/forms";
 import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
@@ -176,12 +179,14 @@ export interface UseChatChannelResult {
    */
   closePoll: (messageId: string, threadRootId?: string | null) => Promise<void>;
   /**
-   * Closes a sign-up card early (#3926): its creator's or a `channels:manage`
-   * holder's, enforced on the server. Toasts and rejects on failure.
+   * Closes a sign-up or form card early (#3926): its creator's or a
+   * `channels:manage` holder's, enforced on the server. Toasts and rejects on
+   * failure.
    */
-  closeSignup: (
+  closeCard: (
     messageId: string,
-    threadRootId?: string | null,
+    threadRootId: string | null | undefined,
+    kind: ClosableCardKind,
   ) => Promise<void>;
   /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
@@ -242,6 +247,15 @@ export interface UseChatChannelResult {
     targetChannelId: string,
     signup: { content: string; payload: SignupPayload },
   ) => ReturnType<typeof postSignup>;
+  /**
+   * The + card's Form builder (#3926 step 3): queues a `kind: "form"` card in
+   * `targetChannelId` through the outbox, as `sendSignup` does a sign-up.
+   * `postForm` in `@repo/chat-core/dispatch`.
+   */
+  sendForm: (
+    targetChannelId: string,
+    form: { content: string; payload: FormPayload },
+  ) => ReturnType<typeof postForm>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** The + card's Event form (#3983): the write `/event` makes, into `targetChannelId`. */
@@ -663,11 +677,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  // A sign-up card's Close sign-ups (#3926), pessimistic like Close poll.
-  const closeSignupCb = useCallback(
-    async (messageId: string, threadRootId?: string | null) => {
+  // A sign-up card's Close sign-ups and a form card's Close form (#3926),
+  // pessimistic like Close poll.
+  const closeCardCb = useCallback(
+    async (
+      messageId: string,
+      threadRootId: string | null | undefined,
+      kind: ClosableCardKind,
+    ) => {
       if (!channelId) return;
-      await closeCardAction(ctx, { channelId, messageId, threadRootId });
+      await closeCardAction(ctx, { channelId, messageId, threadRootId, kind });
     },
     [channelId, ctx],
   );
@@ -806,6 +825,19 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
+  const sendForm = useCallback(
+    (targetChannelId: string, form: { content: string; payload: FormPayload }) =>
+      postForm(ctx, targetChannelId, form).then((result) => {
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "form_builder" },
+          });
+        }
+        return result;
+      }),
+    [ctx],
+  );
+
   // The event form's card bookkeeping, for whichever channel the form posts to
   // (#3773). Takes the channel rather than this hook's, since a form can
   // outlive a channel switch.
@@ -873,7 +905,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     edit: editCb,
     delete: deleteCb,
     closePoll: closePollCb,
-    closeSignup: closeSignupCb,
+    closeCard: closeCardCb,
     flag: flagCb,
     draft,
     setDraft,
@@ -886,6 +918,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     dispatchSlash,
     sendPoll,
     sendSignup,
+    sendForm,
     trackEventCard: trackEventCardCb,
     postEvent: postEventCb,
     postTask: postTaskCb,

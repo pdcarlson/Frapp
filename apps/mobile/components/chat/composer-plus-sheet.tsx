@@ -66,6 +66,9 @@ export interface ComposerPlusSheetProps {
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
   poll: PollGlyph,
   signup: SignupGlyph,
+  // Never drawn yet: the phone's + doesn't offer a form until #3926 step 3's
+  // phone PR, which gives it its own glyph.
+  form: SignupGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceHoursGlyph,

@@ -58,7 +58,7 @@ interface SignupCardProps {
    * Close sign-ups, offered to the card's creator or a `channels:manage`
    * holder (`canCloseSignup`). The caller confirms first (`ChatShell`).
    */
-  onCloseSignup?: (messageId: string) => void;
+  onCloseCard?: (messageId: string, kind: "signup") => void;
 }
 
 /**
@@ -83,7 +83,7 @@ export function SignupCard({
   nameFor,
   isConfirmed,
   onClaim,
-  onCloseSignup,
+  onCloseCard,
 }: SignupCardProps) {
   const payload = useMemo(() => readSignupPayload(message), [message]);
   const tally = useMemo(
@@ -115,7 +115,7 @@ export function SignupCard({
   const headcount = isHeadcountSignup(payload);
   const canClaim = isConfirmed && !!viewerId && !closed;
   const showClose =
-    !!onCloseSignup &&
+    !!onCloseCard &&
     canCloseSignup(message, payload, viewerId, now, canManageChannels);
   const deadline = signupDeadlineLine(payload, now);
   const myNote = tally.notes[viewerId] ?? "";
@@ -265,7 +265,7 @@ export function SignupCard({
             variant="link"
             size="sm"
             className="h-auto px-0"
-            onClick={() => onCloseSignup?.(message.id)}
+            onClick={() => onCloseCard?.(message.id, "signup")}
           >
             {CLOSE_SIGNUP_LABEL}
           </Button>

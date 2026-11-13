@@ -1277,6 +1277,9 @@ export interface CloseCardArgs extends RowTarget {
   kind?: "signup" | "form";
 }
 
+/** The cards Close takes: a sign-up sheet and a form. */
+export type ClosableCardKind = NonNullable<CloseCardArgs["kind"]>;
+
 /**
  * Close a sign-up card (#3926 step 2) or a form card (step 3) early: its
  * creator or a `channels:manage` holder, refused on a card already closed or

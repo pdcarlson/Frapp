@@ -192,7 +192,7 @@ describe("SignupCard (#3926)", () => {
         nameFor={nameFor}
         isConfirmed
         onClaim={vi.fn()}
-        onCloseSignup={onClose}
+        onCloseCard={onClose}
       />,
     );
     expect(screen.getByText("Sign-up · Closed")).toBeInTheDocument();
@@ -213,11 +213,11 @@ describe("SignupCard (#3926)", () => {
         nameFor={nameFor}
         isConfirmed
         onClaim={vi.fn()}
-        onCloseSignup={onClose}
+        onCloseCard={onClose}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Close sign-ups" }));
-    expect(onClose).toHaveBeenCalledWith("m1");
+    expect(onClose).toHaveBeenCalledWith("m1", "signup");
     myPermissions.current = [];
   });
 });

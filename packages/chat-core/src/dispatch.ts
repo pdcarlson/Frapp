@@ -22,6 +22,7 @@ import {
   type SlashCommand,
 } from "./integrations";
 import { buildPollMessage, type PollPayload } from "./polls";
+import type { FormPayload } from "./forms";
 import type { SignupPayload } from "./signups";
 import {
   sendMessage,
@@ -224,13 +225,13 @@ type PostFormCardResult =
   | { ok: false; error: string; cause?: unknown };
 
 /**
- * The one way a + form posts a card that queues like a message: a poll and a
- * sign-up sheet. Never rejects; the outcomes are `postPoll`'s.
+ * The one way a + form posts a card that queues like a message: a poll, a
+ * sign-up sheet and a form. Never rejects; the outcomes are `postPoll`'s.
  */
 async function postFormCard(
   ctx: ChatActionContext,
   channelId: string,
-  kind: "poll" | "signup",
+  kind: "poll" | "signup" | "form",
   card: { content: string; payload: object },
   failureCopy: string,
 ): Promise<PostFormCardResult> {
@@ -272,6 +273,26 @@ export function postSignup(
     "signup",
     signup,
     "Couldn't post that sign-up sheet. Try again.",
+  );
+}
+
+/**
+ * Posts a form card the New form builder built (`buildFormMessage`, #3926
+ * step 3). Through the outbox like a sign-up sheet: optimistic, survives
+ * going offline, and leaves the channel's saved draft alone. Never rejects;
+ * the outcomes are `postPoll`'s.
+ */
+export function postForm(
+  ctx: ChatActionContext,
+  channelId: string,
+  form: { content: string; payload: FormPayload },
+): Promise<PostFormCardResult> {
+  return postFormCard(
+    ctx,
+    channelId,
+    "form",
+    form,
+    "Couldn't post that form. Try again.",
   );
 }
 

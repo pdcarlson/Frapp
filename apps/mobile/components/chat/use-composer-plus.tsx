@@ -244,7 +244,9 @@ export function useComposerPlus({
         signupRef.current?.present();
         return;
       }
-      if (command === "points") return;
+      // Points and forms aren't on the phone's + yet (forms: #3926 step 3,
+      // the phone's PR), so `PHONE_PLUS_COMMANDS` never offers them.
+      if (command === "points" || command === "form") return;
       setNow(new Date());
       if (mountedForms.has(command)) {
         formRefs[command].current?.present();

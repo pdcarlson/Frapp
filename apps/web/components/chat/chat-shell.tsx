@@ -197,6 +197,13 @@ import {
   CLOSE_SIGNUP_CONFIRM_LABEL,
   CLOSE_SIGNUP_CONFIRM_TITLE,
 } from "@repo/chat-core/signups";
+import {
+  CLOSE_FORM_CONFIRM_BODY,
+  CLOSE_FORM_CONFIRM_LABEL,
+  CLOSE_FORM_CONFIRM_TITLE,
+} from "@repo/chat-core/forms";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
+import { emptyFormDraft, type FormDraft } from "@repo/chat-core/form-draft";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -245,6 +252,7 @@ import {
 } from "@repo/chat-core/poll-draft";
 import { PollForm } from "./poll-form";
 import { SignupForm } from "./signup-form";
+import { FormBuilder } from "./form-builder";
 import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import {
   EventQuickForm,
@@ -1604,6 +1612,24 @@ export function ChatShell({
               }}
             />
           );
+        case "form":
+          return (
+            <FormBuilder
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<FormDraft>(channelId, "form") ?? emptyFormDraft()
+              }
+              onDiscard={discard}
+              onPost={async (form) => {
+                const result = await channel.sendForm(channelId, form);
+                if (result.ok && result.warning) {
+                  toast({ title: "Form posted", description: result.warning });
+                }
+                return result;
+              }}
+            />
+          );
         case "event":
           return (
             <EventQuickForm
@@ -1806,18 +1832,34 @@ export function ChatShell({
       ),
     [confirmThen, closePoll],
   );
-  const closeSignup = channel.closeSignup;
-  const handleCloseSignup = useCallback(
-    (messageId: string, threadRootId?: string | null) =>
+  const closeCard = channel.closeCard;
+  // Close sign-ups and Close form (#3926) ask first, each in its own words.
+  const handleCloseCard = useCallback(
+    (
+      messageId: string,
+      threadRootId: string | null | undefined,
+      kind: ClosableCardKind,
+    ) =>
       confirmThen(
-        {
-          title: CLOSE_SIGNUP_CONFIRM_TITLE,
-          description: CLOSE_SIGNUP_CONFIRM_BODY,
-          confirmLabel: CLOSE_SIGNUP_CONFIRM_LABEL,
-        },
-        () => closeSignup(messageId, threadRootId),
+        kind === "form"
+          ? {
+              title: CLOSE_FORM_CONFIRM_TITLE,
+              description: CLOSE_FORM_CONFIRM_BODY,
+              confirmLabel: CLOSE_FORM_CONFIRM_LABEL,
+            }
+          : {
+              title: CLOSE_SIGNUP_CONFIRM_TITLE,
+              description: CLOSE_SIGNUP_CONFIRM_BODY,
+              confirmLabel: CLOSE_SIGNUP_CONFIRM_LABEL,
+            },
+        () => closeCard(messageId, threadRootId, kind),
       ),
-    [confirmThen, closeSignup],
+    [confirmThen, closeCard],
+  );
+  const handleTimelineCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) =>
+      handleCloseCard(messageId, undefined, kind),
+    [handleCloseCard],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -2586,7 +2628,7 @@ export function ChatShell({
       edit: channelEdit,
       delete: handleDeleteMessage,
       closePoll: handleClosePoll,
-      closeSignup: handleCloseSignup,
+      closeCard: handleCloseCard,
       act: channelAct,
     }),
     [
@@ -2596,7 +2638,7 @@ export function ChatShell({
       channelAct,
       handleDeleteMessage,
       handleClosePoll,
-      handleCloseSignup,
+      handleCloseCard,
     ],
   );
   // The parent as the timeline's cache holds it, kept live by its realtime.
@@ -3755,7 +3797,7 @@ export function ChatShell({
                   }
                   onDelete={handleDeleteMessage}
                   onClosePoll={handleClosePoll}
-                  onCloseSignup={handleCloseSignup}
+                  onCloseCard={handleTimelineCloseCard}
                   onFlag={(messageId, flag) =>
                     // The action toasts a refusal itself; nothing to add here.
                     void channel.flag(messageId, flag).catch(() => {})
