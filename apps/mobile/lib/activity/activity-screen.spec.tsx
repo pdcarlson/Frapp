@@ -244,6 +244,7 @@ import {
   ActivityListRow,
 } from "@/components/activity/activity-row";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { OFFLINE_COPY } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
@@ -1516,16 +1517,42 @@ describe("Activity screen (#3897)", () => {
 
     it("says any other refusal in the sheet's words, naming the item, and can be pressed again", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      writes.review.mockRejectedValueOnce(new Error("boom"));
+      writes.review.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
-      expect(alert).toHaveBeenCalledWith(
-        "Food bank",
-        "Only a pending entry someone else submitted can be approved.",
-      );
+      // No answer came back, so asking again may work: Try again beside
+      // Not now, and it sends the same approval.
+      expect(alert).toHaveBeenCalledWith("Food bank", OFFLINE_COPY, [
+        expect.objectContaining({ text: "Not now", style: "cancel" }),
+        expect.objectContaining({ text: "Try again" }),
+      ]);
       expect(button(tree, "Food bank").props.disabled).toBe(false);
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = writes.review.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(sent + 1);
+      alert.mockRestore();
+    });
+
+    it("offers no Try again for a refusal asking again can't change", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.review.mockRejectedValueOnce({
+        statusCode: 409,
+        error: "Conflict",
+        message: "x",
+      });
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0]).toHaveLength(2);
       alert.mockRestore();
     });
 
@@ -2026,7 +2053,9 @@ describe("Activity screen (#3897)", () => {
 
     it("says a failed write with the platform alert, and offers no Undo", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      links.hidden.mockRejectedValueOnce(new Error("nope"));
+      links.hidden.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         sheet.props!.linkActions.hide(linkRow());
@@ -2034,8 +2063,21 @@ describe("Activity screen (#3897)", () => {
       expect(alert).toHaveBeenCalledWith(
         "Couldn't hide it",
         expect.any(String),
+        [
+          expect.objectContaining({ text: "Not now" }),
+          expect.objectContaining({ text: "Try again" }),
+        ],
       );
       expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+      // Try again sends the same hide, and this time it lands with its Undo.
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = links.hidden.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(links.hidden).toHaveBeenCalledTimes(sent + 1);
+      expect(links.hidden).toHaveBeenLastCalledWith("l1");
+      expect(tree.root.findAllByType(UndoBar)).toHaveLength(1);
     });
 
     it("opens the link in the in-app browser", () => {

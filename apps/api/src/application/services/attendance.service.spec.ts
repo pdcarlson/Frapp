@@ -38,6 +38,17 @@ jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
   enqueueSanitizedLog: jest.fn(),
 }));
 
+/** The machine `code` on the refusal `pending` rejects with. */
+async function refusalCode(pending: Promise<unknown>): Promise<unknown> {
+  try {
+    await pending;
+  } catch (error) {
+    const body = (error as { getResponse?: () => unknown }).getResponse?.();
+    return (body as { code?: unknown } | undefined)?.code;
+  }
+  throw new Error('expected a refusal');
+}
+
 describe('AttendanceService', () => {
   let service: AttendanceService;
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
@@ -597,6 +608,9 @@ describe('AttendanceService', () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         'Already checked in for this event',
       );
+      expect(
+        await refusalCode(service.checkIn('evt-1', 'user-1', 'ch-1')),
+      ).toBe('attendance.already_checked_in');
       jest.useRealTimers();
     });
 
@@ -648,6 +662,9 @@ describe('AttendanceService', () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         'Check-in is only allowed during the event time window',
       );
+      expect(
+        await refusalCode(service.checkIn('evt-1', 'user-1', 'ch-1')),
+      ).toBe('attendance.check_in.window_closed');
 
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
@@ -664,6 +681,10 @@ describe('AttendanceService', () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         ConflictException,
       );
+      // The code keeps a second scan out of the clients' Sentry reports.
+      expect(
+        await refusalCode(service.checkIn('evt-1', 'user-1', 'ch-1')),
+      ).toBe('attendance.already_checked_in');
 
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });

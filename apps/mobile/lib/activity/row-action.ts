@@ -1,4 +1,4 @@
-import { errorCopy } from "@repo/hooks/error-copy";
+import { canTryAgain, errorCopy } from "@repo/hooks/error-copy";
 import { isSubscriptionStatus, subscriptionWriteState } from "@repo/validation";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
@@ -82,10 +82,18 @@ export function hoursReviewFailure(
     return SUBSCRIPTION_REFUSAL_COPY.serviceReview;
   }
   if (moduleRefusalOf(error)) return MODULE_REFUSAL_COPY.serviceReview;
+  // A failure asking again can fix (a 5xx) is offered Try again, so it can't
+  // read as the refusal below.
+  if (status === "APPROVED" && !canTryAgain(error)) {
+    return errorCopy(
+      error,
+      "Only a pending entry someone else submitted can be approved.",
+    );
+  }
   return errorCopy(
     error,
     status === "APPROVED"
-      ? "Only a pending entry someone else submitted can be approved."
+      ? "Couldn't approve this entry. Try again in a moment."
       : "Couldn't reject this entry. Try again in a moment.",
   );
 }

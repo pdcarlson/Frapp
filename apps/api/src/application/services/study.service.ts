@@ -420,12 +420,21 @@ export class StudyService {
         throw new NotFoundException('Geofence not found');
       }
       if (!geofence.is_active) {
-        throw new BadRequestException('Geofence is not active');
+        throw new BadRequestException({
+          code: 'study.zone_inactive',
+          message: 'Geofence is not active',
+        });
       }
 
       const inside = pointInPolygon(lat, lng, geofence.coordinates);
       if (!inside) {
-        throw new BadRequestException('Location is outside the geofence');
+        // A member pressing Start away from the zone: normal use, not a bug.
+        // The code lets the clients leave it out of Sentry; the message is
+        // what their error map words ("You're outside the zone…").
+        throw new BadRequestException({
+          code: 'study.outside_zone',
+          message: 'Location is outside the geofence',
+        });
       }
 
       const activeSession = await this.sessionRepo.findActiveByUserAndChapter(

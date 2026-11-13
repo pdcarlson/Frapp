@@ -26,6 +26,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { Can } from "@/components/shared/can";
@@ -215,10 +216,11 @@ export function AttendancePanel({
           "Members required to attend who weren't checked in or excused are now marked absent.",
       });
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't run auto-absent",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
+        error,
+        fallback: "Try again in a moment.",
+        retry: runAutoAbsent,
       });
     }
   }

@@ -173,6 +173,35 @@ export function defaultEventStart(now: Date): Date {
   );
 }
 
+/**
+ * Where an event made from an hour of the Calendar's 3 days or Day grid
+ * starts (#4818): that hour, or for the hour under way the next quarter
+ * hour, since the form refuses a start that has passed. `null` for an hour
+ * already over, which the grid doesn't offer.
+ */
+export function calendarHourStart(
+  day: Date,
+  hour: number,
+  now: Date,
+): Date | null {
+  const start = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    hour,
+  );
+  const end = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    hour + 1,
+  );
+  if (end <= now) return null;
+  if (start >= now) return start;
+  const quarter = 15 * 60_000;
+  return new Date(Math.ceil((now.getTime() + 1) / quarter) * quarter);
+}
+
 /** The draft's start and end, defaults filled in against `now`. */
 export function resolveEventTimes(
   draft: Pick<NewEventDraft, "start" | "end">,

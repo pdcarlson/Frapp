@@ -426,6 +426,11 @@ describe('StudyService', () => {
       await expect(
         service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
       ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'study.zone_inactive' }),
+      });
     });
 
     it('throws BadRequestException when location is outside geofence', async () => {
@@ -434,6 +439,16 @@ describe('StudyService', () => {
       await expect(
         service.startSession('user-1', 'ch-1', 'geo-1', 15, 15),
       ).rejects.toThrow(BadRequestException);
+      // Coded, so the clients leave it out of Sentry; the message is what
+      // their error map words.
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 15, 15),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'study.outside_zone',
+          message: 'Location is outside the geofence',
+        },
+      });
       expect(mockSessionRepo.create).not.toHaveBeenCalled();
     });
 

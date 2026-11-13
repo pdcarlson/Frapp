@@ -1,4 +1,7 @@
-import { isClientContractErrorCode } from "./api-error-codes";
+import {
+  isClientContractErrorCode,
+  isUnreportedRefusalCode,
+} from "./api-error-codes";
 import { createKeyedRateLimiter } from "./rate-limit";
 import { httpStatusClass } from "./sentry-http";
 
@@ -20,6 +23,9 @@ import { httpStatusClass } from "./sentry-http";
  * (`api-error-codes.ts`), which is a bug and goes at `error` (#4096). Not
  * reported at all:
  * - a 401 or 403, which is the auth flow answering, not a bug;
+ * - a 4xx whose `code` is a member-caused code (`api-error-codes.ts`): the
+ *   API refusing something a member did in normal use, which the screen
+ *   words and nobody needs to fix;
  * - a cancelled query, an error named `AbortError`, or `expo/fetch`'s
  *   already-aborted rejection (see {@link EXPO_FETCH_FAILED_PREFIX});
  * - a failure with no HTTP status while the app reads offline. A response, any
@@ -253,7 +259,17 @@ function classify(
   }
   const status = statusOf(error);
   if (status !== undefined) {
-    return AUTH_FLOW_STATUSES.has(status) ? null : { kind: "http", status };
+    if (AUTH_FLOW_STATUSES.has(status)) return null;
+    // The API naming a refusal a member meets in normal use (outside the
+    // study zone, check-in not open yet): the screen words it, and Sentry
+    // has nothing to fix. A 5xx is reported whatever its code.
+    if (
+      httpStatusClass(status) === "4xx" &&
+      isUnreportedRefusalCode(codeOf(error))
+    ) {
+      return null;
+    }
+    return { kind: "http", status };
   }
   if (!options.isOnline()) return null;
   const deadFetch = deadFetchMessage(error);

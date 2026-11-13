@@ -18,6 +18,8 @@ vi.mock("@repo/hooks", () => ({
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
+  // `toastFailure` (`@/lib/failure-toast`) calls the module's `toast`.
+  toast: mockToast,
 }));
 
 const { useServiceReview } = await import("./use-service-review");
@@ -69,6 +71,17 @@ describe("useServiceReview", () => {
       }),
     );
     expect(recorded).toBe(false);
+  });
+
+  it("leaves the retry to the caller's button, even when the server died", async () => {
+    // The Activity row and sheet act on approve's answer; a Try again from
+    // the toast would land with neither told, so none is offered.
+    mockMutateAsync.mockRejectedValueOnce({ statusCode: 503, message: "x" });
+    const { result } = renderHook(() => useServiceReview());
+    await act(async () => {
+      await result.current.approve(entry);
+    });
+    expect(mockToast.mock.calls.at(-1)?.[0]).not.toHaveProperty("action");
   });
 
   function Harness({ onDone }: { onDone: (recorded: boolean) => void }) {

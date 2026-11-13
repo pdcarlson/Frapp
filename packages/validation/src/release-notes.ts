@@ -138,6 +138,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "While Ask Frapp works, it now says what it is really doing, like which records it is reading and how many sources it found.",
       "A pinned message's pin now fills in, so it's easy to spot.",
       "A muted channel stays quiet in the channel list: its new messages no longer light a folded section's heading or keep it under Unread only, unless one mentions you. Direct messages still show.",
+      "When something you save doesn't go through because the connection dropped or our server hiccuped, the error now offers Try again.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -150,6 +151,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Pinning a channel or saving a message now fills in its pin or ribbon, so it's clear which ones are on.",
       "If an email sign-in link opens a brand-new account instead of the one you already have, you're now told so and can sign out in one step.",
       "When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them; a sign-up sheet's creator can export who signed up for what.",
+      "Activity now opens with the same week ring as the phone app: how much of your week is done, your next thing to do, and the rest listed by day.",
+      "Ask Frapp now lives in the chat box next to GIF, and the conversation opens over your chat instead of in a side panel.",
+      "The Events calendar has Week and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -164,6 +168,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Check in by pointing your phone's camera at the code on the officer's screen, and Frapp asks for your location right there if it needs it.",
       "Activity now opens with one ring that shows how much of your week is done, your next thing to do under it, and the rest listed by day.",
       "When you post a form, Responses on its card shows a summary of the answers, each person's answers and who hasn't answered yet, and you can export them as a spreadsheet; a sign-up sheet's creator can export who signed up for what.",
+      "Ask Frapp has its own bar above the tabs on every tab, and it opens full screen.",
+      "Signing in with an email or a Google or Apple account that has no Frapp account yet now says it made a new one, with Sign out a tap away so you can use the way you joined.",
+      "The Calendar has 3 days and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
     ],
   },
   {

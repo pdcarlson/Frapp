@@ -349,7 +349,11 @@ export class ChatController {
 
   @Patch(':id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
-  @ApiOperation({ summary: 'Update a channel' })
+  @ApiOperation({
+    summary: 'Update a channel',
+    description:
+      'Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).',
+  })
   async updateChannel(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
@@ -389,7 +393,11 @@ export class ChatController {
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
-  @ApiOperation({ summary: 'Delete a channel' })
+  @ApiOperation({
+    summary: 'Delete a channel',
+    description:
+      'Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.',
+  })
   async deleteChannel(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,

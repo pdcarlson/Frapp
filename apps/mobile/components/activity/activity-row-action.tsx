@@ -12,6 +12,7 @@ import {
   type ActivityRowAction,
 } from "@repo/hooks";
 import { useConnection } from "@/lib/connection/use-connection";
+import { alertFailure } from "@/lib/failure-alert";
 import {
   CHECK_IN_LOCATION_DENIED_COPY,
   needsLocationRefusal,
@@ -216,7 +217,14 @@ export function useActivityRowActions({
         ]);
         return;
       }
-      Alert.alert(row.title, failure.text);
+      alertFailure({
+        title: row.title,
+        error,
+        message: failure.text,
+        retry: () => {
+          void run(row, action);
+        },
+      });
       return;
     }
     inFlight.current.delete(key);

@@ -344,9 +344,12 @@ export class AttendanceService {
     );
     if (now < opensAt || now > closesAt) {
       logCheckInRefusal('window', userId, options);
-      throw new BadRequestException(
-        'Check-in is only allowed during the event time window',
-      );
+      // Scanning before the doors open or after they close is normal use;
+      // the code keeps it out of the clients' Sentry reports.
+      throw new BadRequestException({
+        code: 'attendance.check_in.window_closed',
+        message: 'Check-in is only allowed during the event time window',
+      });
     }
 
     // Window first, deliberately. Ordering only changes *which* error a caller
@@ -401,7 +404,10 @@ export class AttendanceService {
       userId,
     );
     if (existing) {
-      throw new ConflictException('Already checked in for this event');
+      throw new ConflictException({
+        code: 'attendance.already_checked_in',
+        message: 'Already checked in for this event',
+      });
     }
 
     // ── Rotating token ──────────────────────────────────────────────────
@@ -553,7 +559,10 @@ export class AttendanceService {
       event.name,
     );
     if (!attendance) {
-      throw new ConflictException('Already checked in for this event');
+      throw new ConflictException({
+        code: 'attendance.already_checked_in',
+        message: 'Already checked in for this event',
+      });
     }
 
     // They came after all: a pending excuse no longer asks anything of its
