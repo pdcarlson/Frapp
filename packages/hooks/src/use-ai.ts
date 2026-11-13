@@ -115,6 +115,9 @@ export function useAnswerAiConsent() {
     },
     onSuccess: (state) => {
       queryClient.setQueryData(aiConsentKey, state);
+      // A No deletes the member's nudge cards on the server; drop the
+      // cached one so Activity stops drawing it. A Yes may be due one.
+      void queryClient.resetQueries({ queryKey: ["member-nudge"] });
     },
     onError: (error) => {
       if (codeOf(error) === "ai.consent.stale_sheet") {
