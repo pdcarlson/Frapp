@@ -12,7 +12,6 @@ import {
   canRemoveSignupSlot,
   checkSignupDraft,
   SIGNUP_END_PASSED_PROBLEM,
-  defaultSignupEnd,
   emptySignupDraft,
   SIGNUP_FORMAT_CHOICES,
   removeSignupSlot,
@@ -21,7 +20,6 @@ import {
   type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
-import { localClock, localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SIGNUP_NOTE_MAX_LENGTH,
@@ -48,11 +46,9 @@ import {
 } from "@/components/sheet-scaffold";
 import { IconButton } from "@/components/icon-button";
 import { Segmented } from "@/components/segmented";
-import { Toggle } from "@/components/toggle";
-import { DueDateField } from "@/components/tasks/due-date-field";
-import { DueTimeField } from "@/components/tasks/due-time-field";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
+import { EndTimeField } from "./end-time-field";
 
 /**
  * The New sign-up sheet (#3926), opened from the composer's +: a title,
@@ -343,48 +339,14 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
             </>
           )}
 
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Ends at a set time</Text>
-            <Toggle
-              value={draft.closesAt !== null}
-              accessibilityLabel="Ends at a set time"
-              onValueChange={(on) => {
-                if (posting) return;
-                edit((current) => ({
-                  ...current,
-                  closesAt: on ? defaultSignupEnd(new Date()) : null,
-                }));
-              }}
-            />
-          </View>
-          {draft.closesAt ? (
-            <View style={styles.endRow}>
-              <DueDateField
-                value={localIsoDate(draft.closesAt)}
-                today={localIsoDate(new Date())}
-                disabled={posting}
-                onChange={(day) =>
-                  edit((current) => ({
-                    ...current,
-                    closesAt: withDay(current.closesAt, day),
-                  }))
-                }
-              />
-              <DueTimeField
-                value={localClock(draft.closesAt)}
-                suggested="18:00"
-                disabled={posting}
-                onChange={(time) =>
-                  edit((current) => ({
-                    ...current,
-                    // Clearing the time takes the end time off.
-                    closesAt:
-                      time === null ? null : withTime(current.closesAt, time),
-                  }))
-                }
-              />
-            </View>
-          ) : null}
+          <EndTimeField
+            label="Ends at a set time"
+            value={draft.closesAt}
+            disabled={posting}
+            onChange={(closesAt) =>
+              edit((current) => ({ ...current, closesAt }))
+            }
+          />
 
           {problem ? (
             <Text accessibilityLiveRegion="polite" style={styles.error}>
@@ -412,29 +374,6 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
     );
   },
 );
-
-/**
- * The end time moved to another day (`YYYY-MM-DD`), its time kept. Shared
- * with the New form sheet's end time.
- */
-export function withDay(at: Date | null, day: string): Date | null {
-  if (!at) return at;
-  const [y, m, d] = day.split("-").map(Number);
-  if (!y || !m || !d) return at;
-  const next = new Date(at);
-  next.setFullYear(y, m - 1, d);
-  return next;
-}
-
-/** The end time moved to another time of day (`HH:MM`), its day kept. */
-export function withTime(at: Date | null, time: string): Date | null {
-  if (!at) return at;
-  const [hh, mm] = time.split(":").map(Number);
-  if (hh === undefined || mm === undefined || Number.isNaN(hh + mm)) return at;
-  const next = new Date(at);
-  next.setHours(hh, mm, 0, 0);
-  return next;
-}
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
@@ -490,22 +429,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
-    },
-    toggleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      marginTop: tokens.spacing.xs,
-    },
-    toggleLabel: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-      flexShrink: 1,
-    },
-    endRow: {
-      gap: tokens.spacing.sm,
     },
   });
 }

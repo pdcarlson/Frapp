@@ -17,6 +17,7 @@ import {
   CLOSE_FORM_LABEL,
   canCloseForm,
   fetchOwnFormResponse,
+  formAnsweredState,
   formCardAction,
   formDeadlineLine,
   formQuestionCountLine,
@@ -81,10 +82,7 @@ export function FormCard({
   }
 
   const closed = isFormClosed(payload, now);
-  const action = formCardAction(
-    own.isSuccess ? own.data !== null : undefined,
-    closed,
-  );
+  const action = formCardAction(formAnsweredState(own.data), closed);
   const deadline = formDeadlineLine(payload, now);
   const showClose =
     !!onCloseCard &&

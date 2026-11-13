@@ -90,8 +90,7 @@ import {
 import {
   FormFillContext,
   FormFillPage,
-  formFillLive,
-  useFormFill,
+  useFormFillHost,
 } from "@/components/chat/form-fill-page";
 import { JumpToLatestButton } from "@/components/chat/jump-to-latest-button";
 import {
@@ -1329,27 +1328,14 @@ function ChannelThreadScreen() {
   }
   const imageViewerOpen = imageViewer.target !== null;
 
-  // The form page (#3926 step 3) covers the thread like the image viewer and
-  // closes for the same reasons: a blur or a channel switch, and its card
-  // being deleted, tombstoned or gone. It is handed the card's live row on
-  // every render, so a Close form reaches an open page.
-  const formFill = useFormFill();
-  const closeFormFill = formFill.close;
-  useFocusEffect(
-    useCallback(() => {
-      if (!channelId) return;
-      return () => closeFormFill();
-    }, [channelId, closeFormFill]),
+  // The form page (#3926 step 3) covers the thread like the image viewer. It
+  // is handed the card's live row on every render, so a Close form reaches an
+  // open page, and closes on a blur, a channel switch or the card's delete
+  // (`useFormFillHost`).
+  const { state: formFill, message: filledRow } = useFormFillHost(
+    thread.rows,
+    channelId,
   );
-  const filledRow = formFill.messageId
-    ? thread.rows.find(
-        (row) =>
-          row.message.id === formFill.messageId && row.visibility === "visible",
-      )?.message
-    : undefined;
-  if (formFill.messageId && !formFillLive(filledRow)) {
-    closeFormFill();
-  }
   const overlayOpen = imageViewerOpen || formFill.messageId !== null;
 
   // The app-wide connection pill (`components/network-banner.tsx`) says what

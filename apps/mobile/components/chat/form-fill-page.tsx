@@ -25,6 +25,8 @@ import {
   formAnswerProblems,
   formAnswersForSave,
   formDeadlineLine,
+  formPageNotice,
+  formProblemCountLine,
   formResponseKey,
   isFormClosed,
   readFormPayload,
@@ -45,6 +47,7 @@ import {
   useChapterBranding,
   type ChapterBranding,
 } from "@/lib/chapter-branding";
+import { useFocusEffect } from "expo-router";
 import { useHoldSwipeBack } from "@/lib/back-target";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -149,6 +152,63 @@ export function formFillLive(message: ChatMessage | null | undefined): boolean {
   );
 }
 
+/** A row the host draws, as `applyBlockList` hands them out. */
+interface HostRow {
+  message: ChatMessage;
+  visibility: string;
+}
+
+/**
+ * Everything a screen needs to host the page, shared by the channel and a
+ * message thread so the two can't drift: the state, the card's live row, and
+ * the closes. It closes the page
+ *
+ * - when the screen loses focus or `scope` (the channel) changes, so a page
+ *   left under a pushed screen can't take that screen's back press;
+ * - when the card is deleted, stops being drawn in full (tombstoned or held
+ *   by the block list), or no longer reads as a form.
+ *
+ * A card that only left the loaded rows (a reconnect backfill that came back
+ * full trims every older row) still exists, so the page keeps the last copy
+ * it saw rather than throwing away what the member typed.
+ */
+export function useFormFillHost(
+  rows: readonly HostRow[],
+  scope: string | null | undefined,
+): { state: FormFillState; message: ChatMessage | undefined } {
+  const state = useFormFill();
+  const { messageId, close } = state;
+  useFocusEffect(
+    useCallback(() => {
+      // No channel, no card to have opened a page from.
+      if (!scope) return;
+      return () => close();
+    }, [scope, close]),
+  );
+  const [lastSeen, setLastSeen] = useState<ChatMessage | null>(null);
+  let message: ChatMessage | undefined;
+  let gone = false;
+  if (messageId) {
+    const found = rows.find((row) => row.message.id === messageId);
+    if (found) {
+      if (found.visibility === "visible" && formFillLive(found.message)) {
+        message = found.message;
+      } else {
+        gone = true;
+      }
+    } else if (lastSeen?.id === messageId) {
+      message = lastSeen;
+    } else {
+      gone = true;
+    }
+  }
+  // Reset during render, as the image viewer does, so no frame draws a form
+  // the thread no longer shows.
+  if (gone) close();
+  if (message && message !== lastSeen) setLastSeen(message);
+  return { state, message };
+}
+
 export function FormFillPage({
   state,
   message,
@@ -194,10 +254,20 @@ function FormFillBody({
 
   const response = useOwnFormResponse(messageId, true);
   // Read again on open: the card's copy can be a minute old, and answers
-  // sent from web since must not be overwritten by a stale prefill.
+  // sent from web since must not be overwritten by a stale prefill. Until
+  // that read settles the questions are drawn but not editable, so the first
+  // edit is made on the newest answers; if it fails, they become editable on
+  // the copy there is (a send then reaches the server, which has the say).
   const { refetch } = response;
+  const [synced, setSynced] = useState(false);
   useEffect(() => {
-    void refetch();
+    let live = true;
+    void refetch().finally(() => {
+      if (live) setSynced(true);
+    });
+    return () => {
+      live = false;
+    };
   }, [refetch]);
   const saved = response.data?.answers;
   // Loaded at least once (`null` is "not answered yet"). A failed background
@@ -248,7 +318,7 @@ function FormFillBody({
   }, []);
 
   const send = async () => {
-    if (closed || sending || !loaded) return;
+    if (closed || sending || !loaded || !synced) return;
     if (problemCount > 0) {
       setShowProblems(true);
       return;
@@ -262,8 +332,16 @@ function FormFillBody({
         messageId,
         formAnswersForSave(payload.questions, current),
       );
+      if (!mounted.current) {
+        // The page closed while the save was in flight, maybe for a sign-out:
+        // writing these answers into the cache could hand them to whoever is
+        // signed in now, so the card reads its own again instead.
+        void queryClient.invalidateQueries({
+          queryKey: formResponseKey(messageId),
+        });
+        return;
+      }
       queryClient.setQueryData(formResponseKey(messageId), next);
-      if (!mounted.current) return;
       successHaptic();
       onDone();
     } catch (cause) {
@@ -279,13 +357,7 @@ function FormFillBody({
   const heading = useRef<View>(null);
   useFocusOnOpen(heading, true);
 
-  const notice = closed
-    ? !loaded
-      ? "This form is closed."
-      : answered
-        ? "This form is closed. These are the answers you sent."
-        : "This form is closed. You didn't answer it."
-    : "Your answers aren't posted in the chat. Only you and the person who posted this form can see them.";
+  const notice = formPageNotice(closed, loaded, answered);
 
   return (
     <View accessibilityViewIsModal style={styles.fill}>
@@ -363,7 +435,7 @@ function FormFillBody({
                   question={question}
                   value={current[question.id]}
                   onChange={(value) => setAnswer(question.id, value)}
-                  readOnly={closed || sending}
+                  readOnly={closed || sending || !synced}
                   problem={showProblems ? problems[question.id] : undefined}
                 />
               ))
@@ -376,9 +448,7 @@ function FormFillBody({
               </Text>
             ) : showProblems && problemCount > 0 ? (
               <Text accessibilityLiveRegion="polite" style={styles.error}>
-                {problemCount === 1
-                  ? "One question needs an answer."
-                  : `${problemCount} questions need an answer.`}
+                {formProblemCountLine(problemCount)}
               </Text>
             ) : null}
             {closed ? (
@@ -394,7 +464,7 @@ function FormFillBody({
                   sending ? "Sending…" : answered ? "Update answers" : "Send"
                 }
                 onPress={() => void send()}
-                disabled={sending || !loaded}
+                disabled={sending || !loaded || !synced}
                 busy={sending}
                 accent={brand.accent}
                 onAccent={tokens.color.gold.onHouse}

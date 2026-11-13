@@ -69,7 +69,7 @@ export interface SignupCardProps extends ChatCardFrameProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  /** Close sign-ups; the caller confirms first (`confirmCloseSignup`). */
+  /** Close sign-ups; the caller confirms first (`confirmCloseCard`). */
   onCloseSignup?: (messageId: string) => void;
 }
 

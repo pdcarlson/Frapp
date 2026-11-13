@@ -133,4 +133,20 @@ describe("New form sheet (#3926 step 3)", () => {
     expect(field(tree, "Title").props.value).toBe("Formal housing");
     act(() => tree.unmount());
   });
+
+  it("keeps the draft across a close, and clears it on Cancel", () => {
+    const tree = render(vi.fn());
+    type(tree, "Title", "Formal housing");
+    const sheet = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetModal",
+    );
+    act(() => sheet.props.onDismiss());
+    expect(field(tree, "Title").props.value).toBe("Formal housing");
+    const header = tree.root.find(
+      (node) => typeof node.props.onCancel === "function",
+    );
+    act(() => header.props.onCancel());
+    expect(field(tree, "Title").props.value).toBe("");
+    act(() => tree.unmount());
+  });
 });

@@ -29,8 +29,6 @@ import {
   type FormPayload,
   type FormQuestionType,
 } from "@repo/chat-core/forms";
-import { defaultSignupEnd } from "@repo/chat-core/signups";
-import { localClock, localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   FORM_DESCRIPTION_MAX_LENGTH,
@@ -59,12 +57,10 @@ import {
 } from "@/components/sheet-scaffold";
 import { IconButton } from "@/components/icon-button";
 import { Toggle } from "@/components/toggle";
-import { DueDateField } from "@/components/tasks/due-date-field";
-import { DueTimeField } from "@/components/tasks/due-time-field";
 import { CloseGlyph, DisclosureGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
+import { EndTimeField } from "./end-time-field";
 import { InlinePicker } from "./form-controls";
-import { withDay, withTime } from "./new-signup-sheet";
 
 /**
  * The New form sheet (#3926 step 3), opened from the composer's +: a title,
@@ -454,48 +450,14 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
             </Text>
           )}
 
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Closes at a set time</Text>
-            <Toggle
-              value={draft.closesAt !== null}
-              accessibilityLabel="Closes at a set time"
-              onValueChange={(on) => {
-                if (posting) return;
-                edit((current) => ({
-                  ...current,
-                  closesAt: on ? defaultSignupEnd(new Date()) : null,
-                }));
-              }}
-            />
-          </View>
-          {draft.closesAt ? (
-            <View style={styles.endRow}>
-              <DueDateField
-                value={localIsoDate(draft.closesAt)}
-                today={localIsoDate(new Date())}
-                disabled={posting}
-                onChange={(day) =>
-                  edit((current) => ({
-                    ...current,
-                    closesAt: withDay(current.closesAt, day),
-                  }))
-                }
-              />
-              <DueTimeField
-                value={localClock(draft.closesAt)}
-                suggested="18:00"
-                disabled={posting}
-                onChange={(time) =>
-                  edit((current) => ({
-                    ...current,
-                    // Clearing the time takes the end time off.
-                    closesAt:
-                      time === null ? null : withTime(current.closesAt, time),
-                  }))
-                }
-              />
-            </View>
-          ) : null}
+          <EndTimeField
+            label="Closes at a set time"
+            value={draft.closesAt}
+            disabled={posting}
+            onChange={(closesAt) =>
+              edit((current) => ({ ...current, closesAt }))
+            }
+          />
 
           {problem ? (
             <Text accessibilityLiveRegion="polite" style={styles.error}>
@@ -600,9 +562,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
       flexShrink: 1,
-    },
-    endRow: {
-      gap: tokens.spacing.sm,
     },
   });
 }

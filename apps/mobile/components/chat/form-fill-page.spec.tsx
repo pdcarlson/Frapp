@@ -8,8 +8,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   FormFillPage,
-  formFillLive,
-  useFormFill,
+  useFormFillHost,
   type FormFillState,
 } from "./form-fill-page";
 
@@ -117,28 +116,33 @@ function form(
   } as unknown as ChatMessage;
 }
 
-/**
- * The host as `chat-thread.tsx` is: it looks the open form's row up on every
- * render and closes the page when the row can't be answered any more.
- */
-const Host = forwardRef<FormFillState, { rows: Map<string, ChatMessage> }>(
-  function Host({ rows }, ref) {
-    const state = useFormFill();
-    useImperativeHandle(ref, () => state, [state]);
-    const row = state.messageId ? rows.get(state.messageId) : undefined;
-    if (state.messageId && !formFillLive(row)) state.close();
-    return <FormFillPage state={state} message={row} />;
-  },
-);
+/** A host as the channel and a thread are, through the hook they share. */
+type Row = { message: ChatMessage; visibility: string };
+const Host = forwardRef<FormFillState, { rows: Row[] }>(function Host(
+  { rows },
+  ref,
+) {
+  const { state, message } = useFormFillHost(rows, "c1");
+  useImperativeHandle(ref, () => state, [state]);
+  return <FormFillPage state={state} message={message} />;
+});
+
+const visible = (m: ChatMessage): Row => ({
+  message: m,
+  visibility: "visible",
+});
 
 function setup(rows: ChatMessage[]) {
   const ref: { current: FormFillState | null } = { current: null };
   const client = new QueryClient();
   const tree: { current: ReactTestRenderer | null } = { current: null };
-  const draw = (next: ChatMessage[]) => (
+  const draw = (next: (ChatMessage | Row)[]) => (
     <QueryClientProvider client={client}>
       <FrappThemeProvider>
-        <Host ref={ref} rows={new Map(next.map((m) => [m.id, m]))} />
+        <Host
+          ref={ref}
+          rows={next.map((m) => ("visibility" in m ? m : visible(m)))}
+        />
       </FrappThemeProvider>
     </QueryClientProvider>
   );
@@ -148,7 +152,7 @@ function setup(rows: ChatMessage[]) {
   return {
     tree: tree.current!,
     host: () => ref.current!,
-    rerender: (next: ChatMessage[]) =>
+    rerender: (next: (ChatMessage | Row)[]) =>
       act(() => tree.current!.update(draw(next))),
     client,
   };
@@ -184,7 +188,7 @@ const answerField = (tree: ReactTestRenderer) =>
 describe("FormFillPage (#3926 step 3)", () => {
   it("draws every question with the privacy line, and sends checked answers", async () => {
     const { tree, host } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     const drawn = text(tree);
     expect(drawn).toContain("Formal housing");
     expect(drawn).toContain(
@@ -211,17 +215,17 @@ describe("FormFillPage (#3926 step 3)", () => {
     expect(host().messageId).toBeNull();
   });
 
-  it("prefills the answers already sent and offers Update answers", () => {
+  it("prefills the answers already sent and offers Update answers", async () => {
     own.data = { answers: { q1: "Sam" }, updated_at: "x" };
     const { tree, host } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     expect(answerField(tree).props.value).toBe("Sam");
     expect(pressable(tree, "Update answers")).toBeDefined();
   });
 
-  it("closes when its card is deleted while open, and follows a Close form", () => {
+  it("closes when its card is deleted while open, and follows a Close form", async () => {
     const { tree, host, rerender } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     rerender([form("m1", { closed_at: "2026-11-12T00:00:00Z" })]);
     expect(host().messageId).toBe("m1");
     expect(text(tree)).toContain("This form is closed.");
@@ -233,10 +237,10 @@ describe("FormFillPage (#3926 step 3)", () => {
     expect(text(tree)).not.toContain("Formal housing");
   });
 
-  it("shows a closed form's sent answers, never unsent edits", () => {
+  it("shows a closed form's sent answers, never unsent edits", async () => {
     own.data = { answers: { q1: "Sam" }, updated_at: "x" };
     const { tree, host, rerender } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     act(() => answerField(tree).props.onChangeText("Edited, never sent"));
     rerender([form("m1", { closed_at: "2026-11-12T00:00:00Z" })]);
     expect(answerField(tree).props.value).toBe("Sam");
@@ -245,20 +249,20 @@ describe("FormFillPage (#3926 step 3)", () => {
     );
   });
 
-  it("keeps the questions on screen when a reload fails after a load", () => {
+  it("keeps the questions on screen when a reload fails after a load", async () => {
     own.data = { answers: { q1: "Sam" }, updated_at: "x" };
     own.error = new Error("Network down");
     const { tree, host } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     expect(text(tree)).toContain("Which room?");
     expect(text(tree)).not.toContain("Network down");
   });
 
-  it("offers Try again when the answers never loaded", () => {
+  it("offers Try again when the answers never loaded", async () => {
     own.data = undefined;
     own.error = new Error("Network down");
     const { tree, host } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     expect(text(tree)).toContain("Network down");
     expect(text(tree)).not.toContain("Which room?");
     act(() => pressable(tree, "Try again")!.props.onPress());
@@ -267,11 +271,11 @@ describe("FormFillPage (#3926 step 3)", () => {
 
   it("lets a save that lands after its page closed close nothing else", async () => {
     const { tree, host } = setup([form("m1"), form("m2")]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     act(() => answerField(tree).props.onChangeText("Sam"));
     await act(async () => pressable(tree, "Send")!.props.onPress());
     const late = save.next!;
-    act(() => host().open("m2"));
+    await act(async () => host().open("m2"));
     await act(async () => {
       late.resolve({ answers: { q1: "Sam" }, updated_at: "x" });
     });
@@ -279,9 +283,9 @@ describe("FormFillPage (#3926 step 3)", () => {
     expect(text(tree)).toContain("Spring retreat");
   });
 
-  it("closes on Android's back button while open", () => {
+  it("closes on Android's back button while open", async () => {
     const { host } = setup([form()]);
-    act(() => host().open("m1"));
+    await act(async () => host().open("m1"));
     const handler = vi
       .mocked(BackHandler.addEventListener)
       .mock.calls.at(-1)?.[1] as () => boolean;
@@ -290,6 +294,72 @@ describe("FormFillPage (#3926 step 3)", () => {
       held = handler();
     });
     expect(held).toBe(true);
+    expect(host().messageId).toBeNull();
+  });
+
+  it("holds edits and Send until the open-time read lands, then shows the newest answers", async () => {
+    own.data = { answers: { q1: "Old" }, updated_at: "x" };
+    let land!: () => void;
+    own.refetch.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    const { tree, host, rerender } = setup([form()]);
+    await act(async () => host().open("m1"));
+    expect(answerField(tree).props.editable).toBe(false);
+    expect(pressable(tree, "Update answers")!.props.disabled).toBe(true);
+    // Answers sent from web since land, then the read settles.
+    own.data = { answers: { q1: "From web" }, updated_at: "y" };
+    rerender([form()]);
+    await act(async () => land());
+    expect(answerField(tree).props.editable).toBe(true);
+    expect(answerField(tree).props.value).toBe("From web");
+  });
+
+  it("re-reads rather than writes the cache when a save lands after the page closed", async () => {
+    const { tree, host, client } = setup([form()]);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const write = vi.spyOn(client, "setQueryData");
+    await act(async () => host().open("m1"));
+    act(() => answerField(tree).props.onChangeText("Sam"));
+    await act(async () => pressable(tree, "Send")!.props.onPress());
+    const late = save.next!;
+    act(() => host().close());
+    await act(async () => {
+      late.resolve({ answers: { q1: "Sam" }, updated_at: "x" });
+    });
+    expect(write).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["chat", "form-response", "m1"],
+    });
+  });
+
+  it("stays open with its answers when the card only leaves the loaded rows", async () => {
+    const { tree, host, rerender } = setup([form()]);
+    await act(async () => host().open("m1"));
+    act(() => answerField(tree).props.onChangeText("Half typed"));
+    // A full reconnect backfill trims older rows out of the cache.
+    rerender([]);
+    expect(host().messageId).toBe("m1");
+    expect(answerField(tree).props.value).toBe("Half typed");
+  });
+
+  it("closes when its card is held by the block list", async () => {
+    const { host, rerender } = setup([form()]);
+    await act(async () => host().open("m1"));
+    rerender([{ message: form(), visibility: "tombstone" }]);
+    expect(host().messageId).toBeNull();
+  });
+
+  it("closes when its screen loses focus", async () => {
+    const { host } = setup([form()]);
+    await act(async () => host().open("m1"));
+    const router = (await import("expo-router")) as unknown as {
+      __blur: () => void;
+    };
+    act(() => router.__blur());
     expect(host().messageId).toBeNull();
   });
 });

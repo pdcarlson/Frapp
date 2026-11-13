@@ -94,8 +94,7 @@ import { confirmCloseCard } from "@/lib/chat/confirm-close-card";
 import {
   FormFillContext,
   FormFillPage,
-  formFillLive,
-  useFormFill,
+  useFormFillHost,
 } from "./form-fill-page";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
@@ -304,19 +303,17 @@ export function MessageThreadScreen({
   );
 
   // A form card's page (#3926 step 3), over the thread as it is over the
-  // channel: handed the card's live row, the parent or a reply, and closed
-  // when that row is deleted, held by the block list or gone.
-  const formFill = useFormFill();
-  const closeFormFill = formFill.close;
-  const filledRow = formFill.messageId
-    ? [...(rootRow ? [rootRow] : []), ...rows].find(
-        (row) =>
-          row.message.id === formFill.messageId && row.visibility === "visible",
-      )?.message
-    : undefined;
-  if (formFill.messageId && !formFillLive(filledRow)) {
-    closeFormFill();
-  }
+  // channel (`useFormFillHost`): handed the card's live row, the parent or a
+  // reply, and closed on a blur or when that row is deleted or held by the
+  // block list.
+  const hostRows = useMemo(
+    () => (rootRow ? [rootRow, ...rows] : rows),
+    [rootRow, rows],
+  );
+  const { state: formFill, message: filledRow } = useFormFillHost(
+    hostRows,
+    channelId,
+  );
   const formFillOpen = formFill.messageId !== null;
 
   const { writeBlockedReason } = useConnection();

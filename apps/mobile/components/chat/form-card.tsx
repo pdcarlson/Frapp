@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text } from "react-native";
 import {
   CLOSE_FORM_LABEL,
   canCloseForm,
+  formAnsweredState,
   formCardAction,
   formDeadlineLine,
   formQuestionCountLine,
@@ -18,7 +19,7 @@ import {
 } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useOwnFormResponse } from "@/lib/chat/use-own-form-response";
-import { CheckGlyph } from "@/components/control-glyphs";
+import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import {
   CardActions,
   CardButton,
@@ -71,10 +72,7 @@ export function FormCard(props: FormCardProps) {
   }
 
   const closed = isFormClosed(payload, now);
-  const action = formCardAction(
-    own.isSuccess ? own.data !== null : undefined,
-    closed,
-  );
+  const action = formCardAction(formAnsweredState(own.data), closed);
   const deadline = formDeadlineLine(payload, now);
   const showClose =
     !!onCloseForm &&
@@ -109,9 +107,7 @@ export function FormCard(props: FormCardProps) {
             isConfirmed ? undefined : "Opens once the form has posted."
           }
           icon={
-            action.done
-              ? (color) => <CheckGlyph color={color} size={16} />
-              : undefined
+            action.done ? (color) => <CheckGlyph color={color} /> : undefined
           }
           onPress={() => openForm?.(message.id)}
         />

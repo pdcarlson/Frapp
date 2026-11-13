@@ -74,7 +74,7 @@ vi.mock("@repo/hooks", async () => {
 // The form card's own read of the viewer's answers (#3926 step 3); its own
 // spec covers what the card does with it.
 vi.mock("@/lib/chat/use-own-form-response", () => ({
-  useOwnFormResponse: () => ({ isSuccess: false, data: undefined }),
+  useOwnFormResponse: () => ({ data: undefined }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -150,6 +150,7 @@ function renderRow(
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
     onClosePoll?: (messageId: string) => void;
+    onCloseCard?: (messageId: string, kind: "signup" | "form") => void;
     onJumpToMessage?: (messageId: string) => void;
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
@@ -175,7 +176,7 @@ function renderRow(
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
           onClosePoll={overrides.onClosePoll ?? vi.fn()}
-          onCloseCard={vi.fn()}
+          onCloseCard={overrides.onCloseCard ?? vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -1368,6 +1369,61 @@ describe("ThreadMessageRow Close poll wiring (#3794)", () => {
     expect(close).toBeDefined();
     act(() => close.props.onPress());
     expect(onClosePoll).toHaveBeenCalledWith("poll-1");
+  });
+
+  it("closes a form card as a form, and a sign-up card as a sign-up (#3926)", () => {
+    const onCloseCard = vi.fn();
+    const closeOf = (tree: ReactTestRenderer, label: string) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "button" &&
+          node.props.accessibilityLabel === label &&
+          typeof node.props.onPress === "function",
+      )[0]!;
+    const form = renderRow(
+      {
+        message: message({
+          id: "form-1",
+          sender_id: VIEWER,
+          kind: "form",
+          content: "Formal housing",
+          payload: {
+            title: "Formal housing",
+            questions: [
+              {
+                id: "q1",
+                type: "short_answer",
+                title: "Room?",
+                required: false,
+              },
+            ],
+          },
+        }),
+        visibility: "visible",
+      },
+      { onCloseCard },
+    );
+    act(() => closeOf(form, "Close form").props.onPress());
+    expect(onCloseCard).toHaveBeenLastCalledWith("form-1", "form");
+
+    const signup = renderRow(
+      {
+        message: message({
+          id: "signup-1",
+          sender_id: VIEWER,
+          kind: "signup",
+          content: "Drivers",
+          payload: {
+            title: "Drivers",
+            slots: [{ id: "fri", label: "Friday", capacity: null }],
+          },
+        }),
+        visibility: "visible",
+      },
+      { onCloseCard },
+    );
+    act(() => closeOf(signup, "Close sign-ups").props.onPress());
+    expect(onCloseCard).toHaveBeenLastCalledWith("signup-1", "signup");
   });
 });
 

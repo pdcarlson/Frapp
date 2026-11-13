@@ -26,10 +26,7 @@ const own = vi.hoisted(() => ({
 vi.mock("@/lib/chat/use-own-form-response", () => ({
   useOwnFormResponse: (_id: string, enabled: boolean) => {
     own.enabled.push(enabled);
-    return {
-      isSuccess: own.data !== undefined,
-      data: own.data,
-    };
+    return { data: own.data };
   },
 }));
 
