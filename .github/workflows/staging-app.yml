@@ -45,20 +45,26 @@ name: Staging app
 # A dispatch can target any branch and runs that branch's copy of this file.
 # Every job that names a secret names the `automation` environment, whose
 # deployment-branch rule admits `main` only (#2583), so a branch's copy never
-# sees `EXPO_TOKEN`. `plan` holds no secret and names the commit; the three
-# jobs that hold the token check out that commit by SHA, set up Node by hand
+# sees `EXPO_TOKEN`. `plan` holds no secret and names the commit; `update`,
+# `ios` and `android` check out that commit by SHA, set up Node by hand
 # (node-setup would restore `node_modules` from a cache into a job with a
-# token) and run no local action. Installs run before any step that names
-# the token. Honest limits, the same ones `_mobile-update.yml`
-# states: the export and the native build run the tree's own lockfile-pinned
-# dependencies in a process that holds `EXPO_TOKEN`, and eas-cli and the
-# local-build plugin it fetches (an exact version, eas-cli's own pin) resolve
-# their dependencies at install time, not from a lockfile (#3118).
+# token) and run no local action. `confirm` holds the token too, but runs the
+# workflow's own ref with nothing installed: it only reads each submission's
+# status from EAS's API. Honest limits: each job's own `npm ci` runs before
+# any step names the token, but `eas build --local` then copies the project
+# and installs its dependencies again, install scripts included, inside the
+# step that holds `EXPO_TOKEN`; the export and the native build run the
+# tree's lockfile-pinned dependencies in that process too; and eas-cli and
+# the local-build plugin it fetches (an exact version, eas-cli's own pin)
+# resolve their dependencies at install time, not from a lockfile (#3118).
 #
 # ── One run at a time ───────────────────────────────────────────────────────
-# Two runs planning at once would both build the same missing binary. Runs
-# queue; `confirm` can hold the queue for the length of Expo's submission
-# queue, which delays the next update, not the store app.
+# Two runs planning at once would both build the same missing binary, so runs
+# share one concurrency group. GitHub keeps one waiting run per group: while a
+# run is in flight (`confirm` can hold it for the length of Expo's submission
+# queue), a newer dispatch replaces the one already waiting, which shows as
+# cancelled. The newest commit still gets its run. A run that was cancelled
+# while it asked for a named platform has to be dispatched again.
 
 on:
   workflow_dispatch:

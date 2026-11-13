@@ -784,6 +784,9 @@ the people building Frapp, never a chapter. The **Staging app** workflow
 ([`staging-app.yml`](../../../.github/workflows/staging-app.yml)) builds, uploads and updates it.
 Its header owns how; this section is how to use it.
 
+One run at a time: while a run is in flight, GitHub keeps only the newest waiting run and cancels
+an older waiting one, so dispatch again if a run you asked a named platform from shows as cancelled.
+
 Run it from `main` in GitHub Actions. It is started by hand until a first run has proved both
 store uploads; after that it will follow every staging deploy (#4917).
 
