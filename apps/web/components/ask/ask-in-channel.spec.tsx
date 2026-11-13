@@ -81,8 +81,8 @@ const DONE = {
   },
 };
 
-/** How many times the channel's own reader drew. */
-const draws = { channel: 0 };
+/** Called each time the channel's own reader draws. */
+const drew = vi.fn();
 
 /** What a channel's composer and timeline read, drawn so a test can too. */
 function Channel({ channelId = "chan-1" }: { channelId?: string }) {
@@ -90,7 +90,7 @@ function Channel({ channelId = "chan-1" }: { channelId?: string }) {
   const access = useChannelAskAccess();
   const turns = useChannelAskTurns(channelId);
   const edits = useSharedAskCardEdits();
-  draws.channel += 1;
+  drew();
   return (
     <div>
       <p data-testid="ask">{ask ? (ask.busy ? "busy" : "ready") : "none"}</p>
@@ -124,7 +124,7 @@ beforeEach(() => {
   state.consent.mockReset().mockResolvedValue(true);
   state.exchanges = [];
   state.permissions = ["ai:use"];
-  draws.channel = 0;
+  drew.mockClear();
 });
 
 describe("asking from a channel", () => {
@@ -224,7 +224,7 @@ describe("the turns a channel draws", () => {
     state.exchanges = [{ ...working, preview: "The budget" }];
     const view = render(bridge());
     expect(screen.getByRole("article")).toHaveTextContent("The budget");
-    const before = draws.channel;
+    const before = drew.mock.calls.length;
     state.exchanges = [{ ...working, preview: "The budget vote is" }];
     view.rerender(bridge());
     expect(screen.getByRole("article")).toHaveTextContent("The budget vote is");
@@ -237,12 +237,12 @@ describe("the turns a channel draws", () => {
     expect(screen.getByRole("article")).toHaveTextContent(
       "The budget vote is in",
     );
-    expect(draws.channel).toBe(before);
+    expect(drew).toHaveBeenCalledTimes(before);
     // The answer landing ends the question, which the composer reads.
     state.exchanges = [DONE];
     view.rerender(bridge());
     expect(screen.getByTestId("ask")).toHaveTextContent("ready");
-    expect(draws.channel).toBeGreaterThan(before);
+    expect(drew.mock.calls.length).toBeGreaterThan(before);
   });
 
   it("draws a new turn, and takes a dismissed one away", () => {
