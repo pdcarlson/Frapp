@@ -10,11 +10,12 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import {
   AI_SUGGESTIONS_NOTIFICATION_SCREEN,
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   DISCORD_IMPORT_NOTIFICATION_SCREEN,
+  useClearNotifications,
   useInvalidateChatReports,
   useMarkNotificationRead,
   useMarkNotificationScreensSeen,
@@ -50,6 +51,7 @@ import {
 } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -200,6 +202,7 @@ export function NotificationsPopover({
   const markManyRead = useMarkNotificationsRead();
   // Its own instance, so opening an entry doesn't disable Mark all read.
   const markEntryRead = useMarkNotificationsRead();
+  const clear = useClearNotifications();
   const invalidateReports = useInvalidateChatReports();
 
   // A notification is read once the member has seen what it is about
@@ -410,7 +413,7 @@ export function NotificationsPopover({
                     {group.rows.map(({ entry, time }) => {
                       const notification = entry.lead;
                       return (
-                        <li key={entry.key}>
+                        <li key={entry.key} className="group/entry relative">
                           <NotificationRow
                             notification={notification}
                             time={time}
@@ -426,6 +429,21 @@ export function NotificationsPopover({
                               onOpenChange(false);
                             }}
                           />
+                          {/* Clear (#3948), as Discord's inbox and GitHub's
+                              Done clear one: shown over the time on hover or
+                              focus, as Gmail's row actions are, and always
+                              to a finger. A conversation's entry clears every
+                              row it stands for. */}
+                          <IconButton
+                            label={`Clear: ${notificationTitle(notification.title)}`}
+                            onClick={() => {
+                              contentRef.current?.focus();
+                              clear.mutate(entry.rows.map((row) => row.id));
+                            }}
+                            className="absolute right-1 top-1.5 bg-popover text-muted-foreground opacity-0 group-hover/entry:opacity-100 group-focus-within/entry:opacity-100 pointer-coarse:opacity-100"
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </IconButton>
                         </li>
                       );
                     })}

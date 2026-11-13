@@ -183,6 +183,41 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('deleteMany (#3948)', () => {
+    it('deletes only the caller rows in the caller chapter', async () => {
+      const otherUsers = '0b000000-0000-4000-8000-000000000141';
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...seed().notifications,
+            inB({
+              id: otherUsers,
+              user_id: USER_A,
+              title: 'Not yours',
+              body: '',
+              data: {},
+              read_at: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+            }),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteMany(USER_SHARED, CHAPTER_B, [NOTIF_A, NOTIF_B, otherUsers]),
+      );
+
+      expect(cleared).toBe(1);
+      expect(
+        harness
+          .rows('notifications')
+          .map((n) => n.id)
+          .sort(),
+      ).toEqual([NOTIF_A, otherUsers].sort());
+    });
+  });
+
   describe('markAllRead (#3929)', () => {
     const rows = [
       {

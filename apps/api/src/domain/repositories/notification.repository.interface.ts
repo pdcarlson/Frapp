@@ -74,6 +74,15 @@ export interface INotificationRepository {
    * `messageId` (an edit, #4418), for the members in `userIds` only. Deletes need no call: a trigger on
    * `chat_messages` removes those rows with the message.
    */
+  /**
+   * Delete the named rows that belong to `userId` in `chapterId` (#3948),
+   * answering how many went. An id that isn't theirs matches nothing.
+   */
+  deleteMany(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number>;
   rewriteChatMessageBody(
     chapterId: string,
     messageId: string,

@@ -206,7 +206,10 @@ export function useNotifications(limit?: number) {
   // Every pending receipt, the push tap's `on-open` ones included: mutation
   // filters match by key prefix.
   const pendingReads = useMutationState({
-    filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
+    filters: {
+      mutationKey: markNotificationReadMutationKey,
+      status: "pending",
+    },
     select: (mutation) => {
       const id = mutation.state.variables;
       return typeof id === "string"
@@ -214,17 +217,29 @@ export function useNotifications(limit?: number) {
         : null;
     },
   });
+  // Rows a clear still in flight names (#3948) are left out the same way, so
+  // they go on the tap and a refetch that lands first can't bring them back.
+  const pendingClears = useMutationState({
+    filters: { mutationKey: clearNotificationsMutationKey, status: "pending" },
+    select: (mutation) => {
+      const ids = mutation.state.variables;
+      return Array.isArray(ids) ? ids.join("\n") : null;
+    },
+  });
   // Reduced to a string, so the `select` below keeps its identity (and the
   // query its memoized result) until the set of pending receipts changes.
   const pendingKey = pendingReads.filter(Boolean).sort().join("\n");
+  const clearingKey = pendingClears.filter(Boolean).sort().join("\n");
   const select = useMemo(() => {
     const pending = new Map<string, string>();
     for (const entry of pendingKey ? pendingKey.split("\n") : []) {
       const [id = "", sentAt = ""] = entry.split("\t");
       pending.set(id, sentAt);
     }
-    return <T,>(data: T): T => withPendingReads(data, pending);
-  }, [pendingKey]);
+    const clearing = new Set(clearingKey ? clearingKey.split("\n") : []);
+    return <T>(data: T): T =>
+      withPendingReads(withoutRows(data, clearing), pending);
+  }, [pendingKey, clearingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
@@ -316,7 +331,10 @@ export function useRemovePushToken() {
  * own defaults. Its failures group in Sentry under `notifications`, not
  * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
  */
-export const markNotificationReadMutationKey = ["notifications", "read"] as const;
+export const markNotificationReadMutationKey = [
+  "notifications",
+  "read",
+] as const;
 
 /**
  * The read receipt a push tap sends as it opens the app: the same write, under
@@ -399,6 +417,57 @@ export function invalidateNotificationLists(queryClient: QueryClient) {
   });
 }
 
+/** The cached list without the rows `ids` names; the same list if none. */
+function withoutRows<T>(data: T, ids: ReadonlySet<string>): T {
+  if (ids.size === 0 || !Array.isArray(data)) return data;
+  const kept = data.filter(
+    (row: unknown) =>
+      !(
+        row &&
+        typeof row === "object" &&
+        ids.has((row as CachedNotificationRow).id as string)
+      ),
+  );
+  return (kept.length === data.length ? data : kept) as T;
+}
+
+/** Identifies {@link useClearNotifications}'s writes. */
+const clearNotificationsMutationKey = ["notifications", "clear"] as const;
+
+/**
+ * Clear notifications from the member's list (#3948):
+ * `POST /v1/notifications/clear` with the rows' ids, the caller's own in the
+ * active chapter. A conversation's entry clears every row it stands for.
+ *
+ * The rows leave the list on the tap, through `useNotifications`' overlay of
+ * pending clears, and on success leave the cache before the overlay lifts;
+ * a failed clear simply stops hiding them. The lists then refetch.
+ */
+export function useClearNotifications() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: clearNotificationsMutationKey,
+    mutationFn: async (ids: readonly string[]) => {
+      const result = await client.POST("/v1/notifications/clear", {
+        body: { ids: [...ids] },
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+    onSuccess: (_result, ids) => {
+      const gone = new Set(ids);
+      for (const [queryKey, rows] of queryClient.getQueriesData({
+        predicate: (query) => isNotificationListKey(query.queryKey),
+      })) {
+        const next = withoutRows(rows, gone);
+        if (next !== rows) queryClient.setQueryData(queryKey, next);
+      }
+      return invalidateNotificationLists(queryClient);
+    },
+  });
+}
+
 /**
  * The cached list with every row a pending read receipt names shown read
  * (#3788). `pending` maps a notification id to when its receipt was sent.
@@ -411,7 +480,8 @@ function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   return withRowsRead(
     data,
     (row) => {
-      const sentAt = typeof row.id === "string" ? pending.get(row.id) : undefined;
+      const sentAt =
+        typeof row.id === "string" ? pending.get(row.id) : undefined;
       if (sentAt === undefined) return false;
       stamp = sentAt;
       return true;
@@ -471,7 +541,9 @@ export function refetchIfChannelNotificationsShown(
   channelId: string,
 ): void {
   const shown = queryClient
-    .getQueriesData({ predicate: (query) => isNotificationListKey(query.queryKey) })
+    .getQueriesData({
+      predicate: (query) => isNotificationListKey(query.queryKey),
+    })
     .some(
       ([, rows]) =>
         Array.isArray(rows) &&
@@ -533,7 +605,9 @@ export function useMarkNotificationRead({
       );
       const firstFetchInFlight = queryClient
         .getQueryCache()
-        .findAll({ predicate: (query) => isNotificationListKey(query.queryKey) })
+        .findAll({
+          predicate: (query) => isNotificationListKey(query.queryKey),
+        })
         .some(
           (query) =>
             query.state.data === undefined &&
@@ -698,7 +772,12 @@ export function useUpdateNotificationPreference() {
       const restore = previousEnabledFor(previous, body.category);
       const next = applyPreferenceToRows(previous, body);
       if (next) queryClient.setQueryData(queryKey, next);
-      return { queryKey, category: body.category, restore, wrote: next !== null };
+      return {
+        queryKey,
+        category: body.category,
+        restore,
+        wrote: next !== null,
+      };
     },
     onError: (_error, _body, context) => {
       if (!context?.wrote) return;

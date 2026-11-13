@@ -191,6 +191,27 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     return data?.length ?? 0;
   }
 
+  async deleteMany(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number> {
+    // Scoped to the caller and the chapter as well as the ids: the table is
+    // RLS-on with no policy, so this filter is the whole of the check. The
+    // statement-level delete trigger pings `notif:<user>`, so the member's
+    // other devices refetch.
+    const { data, error } = await this.supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .in('id', [...ids])
+      .select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
   async rewriteChatMessageBody(
     chapterId: string,
     messageId: string,

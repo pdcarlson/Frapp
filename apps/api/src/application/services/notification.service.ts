@@ -941,6 +941,22 @@ export class NotificationService {
     return { read_at: readAt, updated };
   }
 
+  /**
+   * Clear notifications from the member's list (#3948): the rows named, if
+   * they are the caller's in this chapter. A clear is a delete; a cleared row
+   * comes back nowhere, as Discord's and GitHub's do not.
+   */
+  async clearNotifications(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<{ cleared: number }> {
+    const cleared = await this.notificationRepo.deleteMany(userId, chapterId, [
+      ...new Set(ids),
+    ]);
+    return { cleared };
+  }
+
   async registerPushToken(
     userId: string,
     token: string,

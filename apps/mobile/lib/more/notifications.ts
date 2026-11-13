@@ -56,6 +56,11 @@ export interface NotificationRow {
    * means just `id` when `isUnread`.
    */
   unreadIds?: string[];
+  /**
+   * Every row id the entry stands for, newest first, which a clear removes
+   * (#3948); absent means just `id`.
+   */
+  ids?: string[];
 }
 
 export interface NotificationGroup {
@@ -124,6 +129,7 @@ export function selectNotificationGroups(
     isUnread: entry.unreadIds.length > 0,
     count: notificationEntryCount(entry),
     unreadIds: entry.unreadIds,
+    ids: entry.rows.map((row) => row.id),
   }));
 
   const groups: NotificationGroup[] = [

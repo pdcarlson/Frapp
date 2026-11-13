@@ -2,6 +2,7 @@ import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import { useRouter } from "expo-router";
 import {
   memberAvatarTint,
   useActiveChapterId,
+  useClearNotifications,
   useChapterRoster,
   useMarkNotificationRead,
   useMarkNotificationsRead,
@@ -124,6 +126,26 @@ export default function NotificationsScreen() {
   const markAll = useMarkNotificationsRead();
   // Its own instance, so opening an entry doesn't spin Mark all read.
   const markEntry = useMarkNotificationsRead();
+  const clear = useClearNotifications();
+
+  // Clear (#3948), from a long press as Discord's inbox and GitHub's app
+  // offer theirs, confirmed in one tap so a press held too long removes
+  // nothing. A conversation's entry clears every row it stands for.
+  function confirmClear(row: NotificationRow) {
+    Alert.alert(
+      notificationTitle(row.title),
+      undefined,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => clear.mutate(row.ids ?? [row.id]),
+        },
+      ],
+      { cancelable: true },
+    );
+  }
   const isMarkingAll = markAll.isPending;
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
 
@@ -183,6 +205,7 @@ export default function NotificationsScreen() {
                 key={row.id}
                 row={row}
                 people={people}
+                onLongPress={() => confirmClear(row)}
                 onPress={() => {
                   // Reads every unread row the entry stands for (#3948): one
                   // by its PATCH, a conversation's in one request naming
@@ -292,10 +315,13 @@ export function NotificationListRow({
   row,
   people = NO_PEOPLE,
   onPress,
+  onLongPress,
 }: {
   row: NotificationRow;
   people?: NotificationPeople;
   onPress: () => void;
+  /** Offers Clear (#3948); also a named action to a screen reader. */
+  onLongPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -327,6 +353,13 @@ export function NotificationListRow({
       )}
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityActions={
+        onLongPress ? [{ name: "clear", label: "Clear" }] : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "clear") onLongPress?.();
+      }}
       android_ripple={feedback.ripple}
       style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
       testID={`notification-row-${look.kind}`}

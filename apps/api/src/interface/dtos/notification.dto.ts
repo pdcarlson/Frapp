@@ -161,6 +161,30 @@ export class MarkNotificationsReadDto {
   ids?: string[];
 }
 
+/** Most notifications one clear may name: the client's page is 50 rows. */
+export const CLEAR_NOTIFICATIONS_MAX = 100;
+
+export class ClearNotificationsDto {
+  @ApiProperty({
+    description:
+      "The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped.",
+    type: [String],
+    format: 'uuid',
+    minItems: 1,
+    maxItems: CLEAR_NOTIFICATIONS_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(CLEAR_NOTIFICATIONS_MAX)
+  @IsUUID('all', { each: true })
+  ids: string[];
+}
+
+export class ClearNotificationsResultDto {
+  @ApiProperty({ description: 'How many notifications this call cleared' })
+  cleared: number;
+}
+
 export class MarkNotificationsReadResultDto {
   @ApiProperty({
     description: 'The instant written to `read_at` on every row this call read',
