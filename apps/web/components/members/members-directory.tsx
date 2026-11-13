@@ -19,7 +19,7 @@ import {
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { parseInstant } from "@repo/formatting";
+import { formatPoints, parseInstant } from "@repo/formatting";
 import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -70,7 +70,7 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
-import { isEveryoneRole } from "@repo/validation";
+import { directoryNoSearchMatches, isEveryoneRole } from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -958,7 +958,7 @@ export function MembersDirectory() {
          */
         usingSearch ? (
           <InlineNote>
-            Nobody matches “{deferredQuery}”.{" "}
+            {directoryNoSearchMatches(deferredQuery)}{" "}
             <InlineNoteAction onClick={() => setQuery("")}>
               Clear search
             </InlineNoteAction>
@@ -1171,7 +1171,7 @@ export function MembersDirectory() {
                         </span>
                       </span>
                       <span className="shrink-0 text-caption tabular-nums text-muted">
-                        {points} pts
+                        {formatPoints(points)}
                       </span>
                     </button>
                   </li>

@@ -12,6 +12,15 @@ import type {
   IActivityItemReadRepository,
 } from '#domain/repositories/activity-item-read.repository.interface';
 import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
+import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
+import type { IChatFormResponseRepository } from '#domain/repositories/chat-form-response.repository.interface';
+import { isCardClosed } from '#domain/utils/card-closing';
+import { formQuestions } from '#domain/utils/form-card-rules';
+import {
+  SIGNUP_ACTION_TYPE,
+  isHeadcountCard,
+  signupClaimSlotIds,
+} from '#domain/utils/signup-card-rules';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -59,6 +68,7 @@ export const ACTIVITY_SECTIONS = [
   'tasks',
   'hours_approvals',
   'polls',
+  'cards',
   'coming_up',
   'made_events',
   'links',
@@ -158,6 +168,34 @@ export interface ActivityPoll {
   message: MaskedChatMessage;
 }
 
+/**
+ * A sign-up sheet, headcount or form card waiting on the caller's answer
+ * (#3926 step 4), as a pointer to its chat message plus what a list row
+ * shows. The card itself is answered in chat, where it lives: a client opens
+ * the message.
+ */
+export interface ActivityCard {
+  /** `signup` for a sheet of slots, `headcount` for Going / Can't make it. */
+  kind: 'signup' | 'headcount' | 'form';
+  message_id: string;
+  channel_id: string;
+  /** The channel's name; a direct message's is server-generated, so use `channel_type`. */
+  channel_name: string;
+  channel_type: ChannelType;
+  sender_id: string | null;
+  title: string;
+  /** A sheet's slots, or a form's questions; 2 for a headcount. */
+  item_count: number;
+  /** When it stops taking answers; `null` when it has no end time. */
+  closes_at: string | null;
+  created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread).
+   */
+  unread: boolean;
+}
+
 /** An upcoming event the member is invited to. */
 export interface ActivityEvent {
   id: string;
@@ -208,6 +246,12 @@ export interface ActivityView {
     hours_approvals: ActivityHoursEntry[];
     /** Open polls the caller can read and hasn't voted on, soonest closing first. */
     polls: ActivityPoll[];
+    /**
+     * Open sign-up sheets, headcounts and forms from other members, in
+     * channels the caller can read, that the caller hasn't answered.
+     * Soonest closing first.
+     */
+    cards: ActivityCard[];
   };
   /** Upcoming events, soonest first. */
   coming_up: ActivityEvent[];
@@ -256,6 +300,8 @@ export interface ActivityView {
 const LIST_LIMIT = 25;
 /** How many of the chapter's newest poll cards are checked for "open and unvoted". */
 const POLL_SCAN_LIMIT = 100;
+/** The same, for each of sign-up and form cards. */
+const CARD_SCAN_LIMIT = 100;
 /** How far ahead "coming up" looks. */
 const COMING_UP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const COMING_UP_LIMIT = 10;
@@ -319,6 +365,11 @@ function readPollCard(message: ChatMessage): PollCardFields | null {
  */
 function pollCardClosed(card: PollCardFields, now: Date): boolean {
   return card.closed_at !== null || isPollClosed(card.closes_at, now);
+}
+
+/** The Activity read kind a card's id is recorded under. */
+function cardReadKind(card: Pick<ActivityCard, 'kind'>): ActivityItemKind {
+  return card.kind === 'form' ? 'form' : 'signup';
 }
 
 /** The later of two timestamps; one that is null or doesn't parse loses. */
@@ -392,6 +443,8 @@ export class ActivityService {
     private readonly attendanceRepo: IAttendanceRepository,
     @Inject(ACTIVITY_ITEM_READ_REPOSITORY)
     private readonly readRepo: IActivityItemReadRepository,
+    @Inject(CHAT_FORM_RESPONSE_REPOSITORY)
+    private readonly formResponseRepo: IChatFormResponseRepository,
   ) {}
 
   async getActivity(
@@ -428,44 +481,50 @@ export class ActivityService {
         this.chatBlocks.listBlockedUserIds(chapterId, userId),
       ]).then(([channels, blockedUserIds]) => ({ channels, blockedUserIds })));
 
-    const [tasks, hours, polls, events, madeEvents, links] = await Promise.all([
-      this.settle('tasks', chapterId, () =>
-        on('tasks')
-          ? this.readTasks(chapterId, userId, permissions)
-          : Promise.resolve({
-              mine: [],
-              confirmations: [],
-              confirmationsWaiting: 0,
-              assigned: [],
-            }),
-      ),
-      this.settle('hours_approvals', chapterId, () =>
-        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-          ? this.readHoursApprovals(chapterId, userId)
-          : Promise.resolve([]),
-      ),
-      this.settle('polls', chapterId, () =>
-        on('polls')
-          ? this.readPolls(chapterId, userId, now, chatReads)
-          : Promise.resolve({ unvoted: [], mine: [] }),
-      ),
-      this.settle('coming_up', chapterId, () =>
-        on('events')
-          ? this.readComingUp(chapterId, userId, now, viewer)
-          : Promise.resolve([]),
-      ),
-      this.settle('made_events', chapterId, () =>
-        on('events')
-          ? this.readMadeEvents(chapterId, userId, now, viewer)
-          : Promise.resolve([]),
-      ),
-      // Chat has no module switch, so neither does this section.
-      this.settle('links', chapterId, () =>
-        chatReads().then((reads) =>
-          this.linkService.listFor(chapterId, userId, now, reads),
+    const [tasks, hours, polls, cards, events, madeEvents, links] =
+      await Promise.all([
+        this.settle('tasks', chapterId, () =>
+          on('tasks')
+            ? this.readTasks(chapterId, userId, permissions)
+            : Promise.resolve({
+                mine: [],
+                confirmations: [],
+                confirmationsWaiting: 0,
+                assigned: [],
+              }),
         ),
-      ),
-    ]);
+        this.settle('hours_approvals', chapterId, () =>
+          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+            ? this.readHoursApprovals(chapterId, userId)
+            : Promise.resolve([]),
+        ),
+        this.settle('polls', chapterId, () =>
+          on('polls')
+            ? this.readPolls(chapterId, userId, now, chatReads)
+            : Promise.resolve({ unvoted: [], mine: [] }),
+        ),
+        // Sign-ups and forms are chat cards with no module switch, as a
+        // message has none (#3926).
+        this.settle('cards', chapterId, () =>
+          this.readCards(chapterId, userId, now, chatReads),
+        ),
+        this.settle('coming_up', chapterId, () =>
+          on('events')
+            ? this.readComingUp(chapterId, userId, now, viewer)
+            : Promise.resolve([]),
+        ),
+        this.settle('made_events', chapterId, () =>
+          on('events')
+            ? this.readMadeEvents(chapterId, userId, now, viewer)
+            : Promise.resolve([]),
+        ),
+        // Chat has no module switch, so neither does this section.
+        this.settle('links', chapterId, () =>
+          chatReads().then((reads) =>
+            this.linkService.listFor(chapterId, userId, now, reads),
+          ),
+        ),
+      ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -486,6 +545,7 @@ export class ActivityService {
     });
     const hoursApprovals = valueOf('hours_approvals', hours, []);
     const pollLists = valueOf('polls', polls, { unvoted: [], mine: [] });
+    const openCards = valueOf('cards', cards, []);
     const comingUp = valueOf('coming_up', events, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
@@ -495,6 +555,7 @@ export class ActivityService {
       taskLists.confirmationsWaiting +
       hoursApprovals.length +
       pollLists.unvoted.length +
+      openCards.length +
       comingUp.filter((event) => event.check_in_open && !event.checked_in)
         .length;
 
@@ -504,6 +565,7 @@ export class ActivityService {
         task_confirmations: taskLists.confirmations.slice(0, LIST_LIMIT),
         hours_approvals: hoursApprovals.slice(0, LIST_LIMIT),
         polls: pollLists.unvoted.slice(0, LIST_LIMIT),
+        cards: openCards.slice(0, LIST_LIMIT),
       },
       coming_up: comingUp,
       links: myLinks,
@@ -625,6 +687,9 @@ export class ActivityService {
     for (const poll of needs_you.polls) {
       consider('poll', poll.message_id, poll.created_at);
     }
+    for (const card of needs_you.cards) {
+      consider(cardReadKind(card), card.message_id, card.created_at);
+    }
     for (const event of view.coming_up) {
       consider(
         'event',
@@ -688,6 +753,11 @@ export class ActivityService {
           (row) => row.id,
         ),
         polls: mark('poll', needs_you.polls, (row) => row.message_id),
+        cards: needs_you.cards.map((row) =>
+          unread.has(`${cardReadKind(row)}:${row.message_id}`)
+            ? { ...row, unread: true }
+            : row,
+        ),
       },
       coming_up: mark('event', view.coming_up, (row) => row.id),
       links: mark('link', view.links, (row) => row.id),
@@ -859,10 +929,12 @@ export class ActivityService {
     // blocked member's question.
     const [{ channels, blockedUserIds }, recent, own] = await Promise.all([
       chatReads(),
-      this.messageRepo.findPollCardsByChapter(chapterId, {
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
         limit: POLL_SCAN_LIMIT,
       }),
-      this.messageRepo.findPollCardsByChapter(chapterId, {
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
         senderId: userId,
         // Wider than the list: the open and closed lists are cut apart below,
         // so closed polls can't crowd an open one out of the read.
@@ -943,6 +1015,148 @@ export class ActivityService {
           .slice(0, LIST_LIMIT),
       ].sort(byNewest),
     };
+  }
+
+  /**
+   * Open sign-up sheets, headcounts and forms from other members that the
+   * caller hasn't answered (#3926 step 4), read the way {@link readPolls}
+   * reads polls: the channel list is the access rule, a blocked member's
+   * card is left out, and the caller's own cards are never listed (they
+   * have nothing to answer on them).
+   *
+   * Answered means: a sign-up claim that holds a slot (a claim that gave up
+   * every slot is a cleared answer, as a cleared vote is), either answer to
+   * a headcount, or any saved form response. The form check reads only which
+   * forms have a row of the caller's, never what they wrote.
+   */
+  private async readCards(
+    chapterId: string,
+    userId: string,
+    now: number,
+    chatReads: () => Promise<ChatReads>,
+  ): Promise<ActivityCard[]> {
+    const [{ channels, blockedUserIds }, signups, forms] = await Promise.all([
+      chatReads(),
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'signup',
+        limit: CARD_SCAN_LIMIT,
+      }),
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'form',
+        limit: CARD_SCAN_LIMIT,
+      }),
+    ]);
+    const channelById = new Map(
+      channels.map((channel) => [channel.id, channel]),
+    );
+    const blocked = new Set(blockedUserIds);
+    const waiting = (message: ChatMessage) =>
+      channelById.has(message.channel_id) &&
+      message.sender_id !== userId &&
+      !(message.sender_id && blocked.has(message.sender_id)) &&
+      !isCardClosed(message.payload, now);
+
+    const openSignups = signups.filter(waiting);
+    const openForms = forms.filter(waiting);
+    // Every member's claims, not only the caller's: a sheet whose every
+    // slot is at its limit can't be signed up for, so it no longer waits on
+    // anyone who doesn't hold a slot. Claims are channel-readable (the card
+    // names each holder), so reading them all reveals nothing.
+    const [claims, answeredForms] = await Promise.all([
+      this.actionRepo.findAllActionsOnMessages(
+        openSignups.map((message) => message.id),
+        SIGNUP_ACTION_TYPE,
+      ),
+      this.formResponseRepo.findAnsweredMessageIds(
+        openForms.map((message) => message.id),
+        userId,
+      ),
+    ]);
+    const heldBySlot = new Map<string, number>();
+    const answered = new Set<string>(answeredForms);
+    for (const row of claims) {
+      const slotIds = signupClaimSlotIds(row.payload) ?? [];
+      if (slotIds.length === 0) continue;
+      if (row.user_id === userId) answered.add(row.message_id);
+      for (const slotId of slotIds) {
+        const key = `${row.message_id}:${slotId}`;
+        heldBySlot.set(key, (heldBySlot.get(key) ?? 0) + 1);
+      }
+    }
+    // Full: every slot has a limit and has reached it. A headcount's slots
+    // have none, so a headcount is never full.
+    const isFull = (message: ChatMessage) => {
+      const slots = (message.payload as { slots?: unknown } | null)?.slots;
+      if (!Array.isArray(slots) || slots.length === 0) return false;
+      return slots.every((slot: unknown) => {
+        const { id, capacity } = (slot ?? {}) as {
+          id?: unknown;
+          capacity?: unknown;
+        };
+        return (
+          typeof id === 'string' &&
+          typeof capacity === 'number' &&
+          (heldBySlot.get(`${message.id}:${id}`) ?? 0) >= capacity
+        );
+      });
+    };
+
+    const toRow = (
+      message: ChatMessage,
+      kind: ActivityCard['kind'],
+      itemCount: number,
+    ): ActivityCard | null => {
+      const channel = channelById.get(message.channel_id);
+      const payload = message.payload as {
+        title?: unknown;
+        closes_at?: unknown;
+      } | null;
+      const title =
+        typeof payload?.title === 'string' ? payload.title.trim() : '';
+      if (!channel || !title || itemCount === 0) return null;
+      return {
+        kind,
+        message_id: message.id,
+        channel_id: message.channel_id,
+        channel_name: channel.name,
+        channel_type: channel.type,
+        sender_id: message.sender_id,
+        title,
+        item_count: itemCount,
+        closes_at:
+          typeof payload?.closes_at === 'string' &&
+          !Number.isNaN(Date.parse(payload.closes_at))
+            ? payload.closes_at
+            : null,
+        created_at: message.created_at,
+        unread: false,
+      };
+    };
+    const slotCount = (message: ChatMessage) => {
+      const slots = (message.payload as { slots?: unknown } | null)?.slots;
+      return Array.isArray(slots) ? slots.length : 0;
+    };
+    const rows = [
+      ...openSignups
+        .filter((message) => !isFull(message))
+        .map((message) =>
+          toRow(
+            message,
+            isHeadcountCard(message.payload) ? 'headcount' : 'signup',
+            slotCount(message),
+          ),
+        ),
+      ...openForms.map((message) =>
+        toRow(message, 'form', formQuestions(message.payload).length),
+      ),
+    ].filter(
+      (row): row is ActivityCard =>
+        row !== null && !answered.has(row.message_id),
+    );
+    // No end time sorts last, then newest first.
+    const closesAtMs = (row: ActivityCard) =>
+      row.closes_at ? Date.parse(row.closes_at) : Number.MAX_VALUE;
+    return rows.sort((a, b) => closesAtMs(a) - closesAtMs(b) || byNewest(a, b));
   }
 
   private async readComingUp(

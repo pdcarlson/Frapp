@@ -129,6 +129,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A task with no points and nothing to prove counts as done as soon as you mark it done.",
       "When someone submits a task you gave them, the notification says who submitted what, and tapping it opens a review with their proof up front. With several waiting, Confirm moves on to the next.",
       "Can't make it is now on a required event's chat card too, and opens the event with your excuse ready to write.",
+      "Mandatory now shows only on the events that need you, as a quiet label instead of a red badge.",
+      "A sign-up sheet, headcount or form you haven't answered yet now shows under Needs you on Activity until you answer it or it closes, and tapping it takes you straight to it in chat.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -144,6 +146,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Cards and lists are a shade darker, so they sit more quietly on the black behind them.",
       "Chat home shows you the swipe to Messages the first time you rest on it, and the screen now gives under your finger as you swipe.",
       "Tasks can now carry photos, you can mark a task done with a photo or a link as proof, and officers can see that proof and say what needs to change when they send a task back.",
+      "Private channels now show a lock in your channel list, so you can tell which ones not everyone can see.",
     ],
   },
   {

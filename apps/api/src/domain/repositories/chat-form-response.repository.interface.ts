@@ -24,6 +24,15 @@ export interface IChatFormResponseRepository {
   /** The member's answers to one form, or `null` before they answer. */
   findOwn(messageId: string, userId: string): Promise<ChatFormResponse | null>;
   /**
+   * Which of these forms the member has answered: the ids among
+   * `messageIds` that have a row of theirs. Reads no answers, so Activity can
+   * tell a form that still needs them without loading what they wrote.
+   */
+  findAnsweredMessageIds(
+    messageIds: string[],
+    userId: string,
+  ): Promise<string[]>;
+  /**
    * Write the member's answers (inserted, or replacing their last ones).
    * Throws {@link FormResponseRefusedError} when the card is missing or
    * closed, decided under a lock on the card. No chapter argument: the caller

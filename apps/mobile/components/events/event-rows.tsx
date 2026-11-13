@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatPointsChip, parseInstant } from "@repo/formatting";
+import { formatPoints, formatPointsChip, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { gutterBleed, PressableRow } from "@/components/list-section";
@@ -124,7 +124,8 @@ export function EventRowCard({
 
 /**
  * Any other event: on the floor with a hairline between rows. Points move
- * into the meta line, as web writes them ("7:00 PM · Great Room · 10 pts"),
+ * into the meta line, as web writes them ("7:00 PM · Great Room · 10 points",
+ * `formatPoints`: a count read as text is written out; a chip says "+10 pts"),
  * and Mandatory sits at the row's end, so a row is one line of chips at most.
  */
 export function EventRowFlat({
@@ -146,7 +147,7 @@ export function EventRowFlat({
   const meta = [
     clockOf(event),
     event.location,
-    event.point_value ? `${event.point_value} pts` : null,
+    event.point_value ? formatPoints(event.point_value) : null,
   ]
     .filter(Boolean)
     .join(" · ");

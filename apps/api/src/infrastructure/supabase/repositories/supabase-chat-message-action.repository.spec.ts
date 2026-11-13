@@ -148,6 +148,19 @@ describe('SupabaseChatMessageActionRepository — tenant scope', () => {
     ).toEqual([]);
   });
 
+  it('findAllActionsOnMessages names every member on the messages asked about, by action type', async () => {
+    const rows = await repo.findAllActionsOnMessages(
+      [MESSAGE_B, MISSING_MESSAGE],
+      'vote',
+    );
+    expect(rows.map((row) => [row.message_id, row.user_id])).toEqual([
+      [MESSAGE_B, USER_SHARED],
+    ]);
+    expect(await repo.findAllActionsOnMessages([MESSAGE_B], 'rsvp')).toEqual(
+      [],
+    );
+  });
+
   it('findActionsOnMessages asks nothing for an empty list', async () => {
     expect(await repo.findActionsOnMessages([], USER_SHARED, 'vote')).toEqual(
       [],

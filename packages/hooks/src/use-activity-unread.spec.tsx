@@ -168,6 +168,42 @@ describe("markActivityItemsRead", () => {
     expect(next.links[0]!.unread).toBe(true);
   });
 
+  it("clears a sign-up or form row under its own kind (#3926)", () => {
+    const card = (message_id: string, kind: string) => ({
+      kind,
+      message_id,
+      channel_id: "c1",
+      channel_name: "general",
+      channel_type: "PUBLIC",
+      sender_id: "officer",
+      title: "Sober drivers",
+      item_count: 2,
+      closes_at: null,
+      created_at: "2026-11-01T00:00:00.000Z",
+      unread: true,
+    });
+    const data = read({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+        cards: [card("s1", "headcount"), card("f1", "form")],
+      },
+    });
+
+    const next = markActivityItemsRead(data, [
+      { kind: "signup", item_id: "s1" },
+      // The wrong kind for a form: not this row.
+      { kind: "signup", item_id: "f1" },
+    ]);
+
+    expect(next.needs_you.cards?.map((row) => row.unread)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it("returns the same read when nothing it names was unread", () => {
     const data = read();
     expect(

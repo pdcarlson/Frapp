@@ -12,6 +12,8 @@ import { HttpsLinkTitleFetcher } from '../../infrastructure/link-title/https-lin
 import { LINK_TITLE_FETCHER } from '#domain/adapters/link-title.interface';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
 import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
+import { SupabaseChatFormResponseRepository } from '../../infrastructure/supabase/repositories/supabase-chat-form-response.repository';
+import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import { SupabaseAttendanceRepository } from '../../infrastructure/supabase/repositories/supabase-attendance.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
@@ -92,6 +94,12 @@ import { TaskModule } from '../task/task.module';
     {
       provide: CHAT_MESSAGE_ACTION_REPOSITORY,
       useClass: SupabaseChatMessageActionRepository,
+    },
+    // Which form cards the member has answered (#3926 step 4), read by id
+    // and never their answers.
+    {
+      provide: CHAT_FORM_RESPONSE_REPOSITORY,
+      useClass: SupabaseChatFormResponseRepository,
     },
     // The member's role ids (their own answer to each event) and their
     // attendance rows, read directly: the event list has already settled

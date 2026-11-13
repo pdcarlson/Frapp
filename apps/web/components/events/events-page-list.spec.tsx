@@ -62,7 +62,7 @@ function weeklySeries(name: string, count = 13) {
   }));
 }
 
-const eventsQuery: { data: unknown } = { data: EVENTS };
+const eventsQuery: { data: unknown; isError?: boolean } = { data: EVENTS };
 type AttendanceFields = { is_mandatory?: boolean | null };
 // A viewer with no roles: the event's default decides.
 const byDefault = (fields: AttendanceFields) => fields.is_mandatory === true;
@@ -114,7 +114,8 @@ vi.mock("@repo/hooks", () => ({
   useEvents: () => ({
     data: eventsQuery.data,
     isLoading: false,
-    isError: false,
+    isError: eventsQuery.isError ?? false,
+    error: eventsQuery.isError ? new Error("boom") : null,
     refetch: vi.fn(),
   }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -209,6 +210,7 @@ beforeEach(() => {
   window.localStorage.clear();
   viewerRef.current = { userId: "user-1", isLoading: false };
   eventsQuery.data = EVENTS;
+  eventsQuery.isError = false;
   permissionsRef.current = ["events:create", "events:update", "members:view"];
   searchRef.current = new URLSearchParams();
 });
@@ -758,6 +760,13 @@ describe("EventsPage empty states", () => {
     expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
   });
 
+  it("says the phone's words when the events fail to load (#4135)", () => {
+    eventsQuery.data = undefined;
+    eventsQuery.isError = true;
+    render(<EventsPage />);
+    expect(screen.getByText("Couldn't load events")).toBeInTheDocument();
+  });
+
   it("says so in one line if the list is opened anyway", async () => {
     const user = userEvent.setup();
     eventsQuery.data = [];
@@ -765,7 +774,7 @@ describe("EventsPage empty states", () => {
 
     await user.click(screen.getByRole("radio", { name: "List" }));
 
-    expect(screen.getByText("No events yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
   });
 
@@ -828,7 +837,7 @@ describe("EventsPage view memory", () => {
     render(<EventsPage />);
 
     expect(screen.getByRole("radio", { name: "List" })).toBeChecked();
-    expect(screen.getByText("No events yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
   });
 });
 
