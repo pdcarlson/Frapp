@@ -2,6 +2,7 @@
 
 import React, {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -98,7 +99,9 @@ export function FolderImportPanel({
   // The latest mutations, read when a batch goes out rather than when the
   // import was made.
   const live = useRef({ requestUrls, confirmUploads, chapterId });
-  live.current = { requestUrls, confirmUploads, chapterId };
+  useLayoutEffect(() => {
+    live.current = { requestUrls, confirmUploads, chapterId };
+  });
 
   const [run, setRun] = useState<FolderImport | null>(null);
   function start(collected: CollectedFiles) {
