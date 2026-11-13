@@ -30,3 +30,14 @@ GET /v1/events/{id}/ics api path removed without deprecation
 POST /v1/custom-roles api removed without deprecation
 DELETE /v1/custom-roles/{id} api path removed without deprecation
 PATCH /v1/custom-roles/{id} api path removed without deprecation
+
+# #4635 moves task photos into task_photos rows and replaces #4565's single-photo fields and photo
+# route. Only the web dashboard used them: #4565's phone half never shipped. At the shipped SHA
+# c85e2c3a (ios 0.12.0+22, android 0.12.0+14), `git grep 'photo-url\|photo_required\|reference_photo_path\|proof_photo_path\|useTaskPhotoUrl' c85e2c3a -- apps/mobile`
+# finds no caller (one hit is a comment about the chat-background photo route). The bundled
+# packages/hooks reads the three fields through `nonEmptyString` / `=== true`, so their absence reads
+# as no photo, and its `useTaskPhotoUrl` has no mobile caller. Earlier shipped SHAs predate #4565.
+POST /v1/tasks removed the required property 'photo_required' from the response with the '201' status
+POST /v1/tasks removed the required property 'proof_photo_path' from the response with the '201' status
+POST /v1/tasks removed the required property 'reference_photo_path' from the response with the '201' status
+GET /v1/tasks/{id}/photo-url api path removed without deprecation

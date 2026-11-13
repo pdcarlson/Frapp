@@ -6,6 +6,7 @@ import {
   Get,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -46,7 +47,6 @@ import {
   RejectTaskCompletionDto,
   RequestTaskPhotoUploadUrlDto,
   TaskPhotoUploadUrlResponseDto,
-  TaskPhotoUrlQueryDto,
   TaskPhotoUrlResponseDto,
 } from '../dtos/task.dto';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
@@ -119,7 +119,7 @@ export class TaskController {
     summary:
       'Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)',
     description:
-      'PUT the photo to `upload_url`, then send `storage_path` as `reference_photo_path` on create or edit, or as `proof_photo_path` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.',
+      'PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.',
   })
   @ApiCreatedResponse({ type: TaskPhotoUploadUrlResponseDto })
   async requestPhotoUploadUrl(
@@ -140,20 +140,20 @@ export class TaskController {
     return { upload_url: ticket.signedUrl, storage_path: ticket.storagePath };
   }
 
-  @Get(':id/photo-url')
+  @Get(':id/photos/:photoId/url')
   @ApiOperation({
     summary:
-      "A short-lived link to a task's reference or proof photo (assignee or tasks:manage, #4565)",
+      "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635)",
   })
   @ApiOkResponse({ type: TaskPhotoUrlResponseDto })
   async getPhotoUrl(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Query() query: TaskPhotoUrlQueryDto,
+    @Param('photoId', new ParseUUIDPipe()) photoId: string,
   ): Promise<TaskPhotoUrlResponseDto> {
     const task = await this.readableTask(chapterId, userId, id);
-    return this.taskService.getPhotoDownloadUrl(task, chapterId, query.photo);
+    return this.taskService.getPhotoDownloadUrl(task.id, chapterId, photoId);
   }
 
   @Post()
@@ -172,8 +172,8 @@ export class TaskController {
       has_due_time: !!result.due_at,
       has_subtasks: (body?.subtasks?.length ?? 0) > 0,
       has_point_reward: (result.point_reward ?? 0) > 0,
-      has_reference_photo: !!result.reference_photo_path,
-      photo_required: result.photo_required === true,
+      has_reference_photo: (result.photos?.length ?? 0) > 0,
+      proof_kind: result.proof_kind,
       posted_to_chat: result.card_posted === true,
     }),
   )
@@ -192,8 +192,8 @@ export class TaskController {
       due_at: dto.due_at ?? null,
       subtasks: dto.subtasks,
       point_reward: dto.point_reward ?? null,
-      reference_photo_path: dto.reference_photo_path,
-      photo_required: dto.photo_required,
+      reference_photo_paths: dto.reference_photo_paths,
+      proof_kind: dto.proof_kind,
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
     });
@@ -222,7 +222,9 @@ export class TaskController {
     'task-status-changed',
     ({ body }: FeatureEventInput<UpdateTaskStatusDto>) => ({
       status: body.status,
-      has_proof_photo: !!body.proof_photo_path,
+      has_proof_photo: (body.proof_photo_paths?.length ?? 0) > 0,
+      has_proof_link: !!body.proof_link,
+      has_completion_note: !!body.completion_note,
     }),
   )
   async updateStatus(
@@ -242,7 +244,11 @@ export class TaskController {
       userId,
       isAdmin,
       dto.status,
-      dto.proof_photo_path,
+      {
+        proof_photo_paths: dto.proof_photo_paths,
+        proof_link: dto.proof_link,
+        completion_note: dto.completion_note,
+      },
     );
   }
 
@@ -261,17 +267,20 @@ export class TaskController {
   @Post(':id/reject')
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Reject task completion (revert to IN_PROGRESS)' })
-  @FeatureEvent('task-completion-rejected')
+  @FeatureEvent(
+    'task-completion-rejected',
+    ({ body }: FeatureEventInput<RejectTaskCompletionDto>) => ({
+      asked_for_photo: body.require_photo === true,
+    }),
+  )
   async rejectCompletion(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: RejectTaskCompletionDto,
   ) {
-    return this.taskService.rejectCompletion(
-      id,
-      chapterId,
-      dto.comment ?? null,
-    );
+    return this.taskService.rejectCompletion(id, chapterId, dto.comment, {
+      requirePhoto: dto.require_photo,
+    });
   }
 
   @Post(':id/subtasks')

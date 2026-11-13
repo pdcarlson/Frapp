@@ -89,8 +89,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.settings.president_only",
   "legal.acceptance_required",
   "service_entry.receipt_required",
-  // A task with "Photo required" marked done without its photo (#4565).
+  // A task marked done without the proof its kind asks for (#4565, #4635).
   "task.proof_required",
+  // A sent-back task marked done again with nothing new (#4635).
+  "task.resubmit_needs_change",
   // AI suggestions (#4309): one another officer decided first, one that
   // expired or whose source went away, a caller whose permission or access
   // changed since the list loaded, and a task accepted before its owner or

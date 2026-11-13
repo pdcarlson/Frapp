@@ -5,14 +5,19 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { TaskService } from './task.service';
+import { TaskService, type CreateTaskInput } from './task.service';
 import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import { Task, TaskStatus } from '#domain/entities/task.entity';
+import {
+  Task,
+  TaskStatus,
+  type TaskPhoto,
+  type TaskPhotoKind,
+} from '#domain/entities/task.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
@@ -21,7 +26,10 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { TASK_PROOF_REQUIRED_CODE } from '@repo/validation';
+import {
+  TASK_PROOF_REQUIRED_CODE,
+  TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+} from '@repo/validation';
 import { memberFixture, userFixture } from '#test/helpers/entity-fixtures';
 
 describe('TaskService', () => {
@@ -58,9 +66,10 @@ describe('TaskService', () => {
     completed_at: null,
     confirmed_at: null,
     sent_back_at: null,
-    reference_photo_path: null,
-    proof_photo_path: null,
-    photo_required: false,
+    proof_kind: 'none',
+    proof_link: null,
+    sent_back_reason: null,
+    completion_note: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -86,6 +95,7 @@ describe('TaskService', () => {
       countByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateIfMatches: jest.fn(),
       confirmCompletionAtomic: jest.fn(),
       reopenCompletion: jest.fn(),
       delete: jest.fn(),
@@ -96,6 +106,9 @@ describe('TaskService', () => {
       updateUnconfirmed: jest.fn(),
       releaseReminderClaims: jest.fn().mockResolvedValue(undefined),
       isPhotoPathInUse: jest.fn().mockResolvedValue(false),
+      findPhotos: jest.fn().mockResolvedValue([]),
+      createPhotos: jest.fn().mockResolvedValue([]),
+      deletePhotos: jest.fn().mockResolvedValue([]),
     };
 
     mockMemberRepo = {
@@ -179,12 +192,11 @@ describe('TaskService', () => {
         status: TaskStatus.TODO,
         point_reward: 10,
         points_awarded: false,
-        reference_photo_path: null,
-        photo_required: false,
+        proof_kind: 'none',
         completed_at: null,
         confirmed_at: null,
       });
-      expect(result).toEqual(baseTask);
+      expect(result).toEqual({ ...baseTask, photos: [] });
     });
 
     it('adds the subtasks in order after the task (#4003)', async () => {
@@ -380,7 +392,11 @@ describe('TaskService', () => {
         client_message_id: 'cmid-1',
       });
 
-      expect(result).toEqual({ ...baseTask, card_posted: false });
+      expect(result).toEqual({
+        ...baseTask,
+        photos: [],
+        card_posted: false,
+      });
     });
 
     // #1717: the client renders an optimistic `loading` placeholder keyed on
@@ -416,7 +432,11 @@ describe('TaskService', () => {
 
         const result = await service.create(chatInput);
 
-        expect(result).toEqual({ ...baseTask, card_posted: true });
+        expect(result).toEqual({
+          ...baseTask,
+          photos: [],
+          card_posted: true,
+        });
       });
 
       it('reports card_posted: false when the card post throws', async () => {
@@ -426,7 +446,11 @@ describe('TaskService', () => {
 
         const result = await service.create(chatInput);
 
-        expect(result).toEqual({ ...baseTask, card_posted: false });
+        expect(result).toEqual({
+          ...baseTask,
+          photos: [],
+          card_posted: false,
+        });
       });
 
       it('omits card_posted entirely for a dashboard create', async () => {
@@ -441,7 +465,7 @@ describe('TaskService', () => {
           due_date: '2099-03-15',
         });
 
-        expect(result).toEqual(baseTask);
+        expect(result).toEqual({ ...baseTask, photos: [] });
         expect('card_posted' in result).toBe(false);
         expect(mockChatService.sendMessage).not.toHaveBeenCalled();
       });
@@ -495,7 +519,7 @@ describe('TaskService', () => {
         completed_at: '2026-02-26T18:30:00.000Z',
       };
       mockTaskRepo.findById.mockResolvedValue(inProgress);
-      mockTaskRepo.update.mockResolvedValue(completed);
+      mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
 
       const result = await service.updateStatus(
         'task-1',
@@ -505,9 +529,10 @@ describe('TaskService', () => {
         TaskStatus.COMPLETED,
       );
 
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+      expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
+        expect.anything(),
         expect.objectContaining({
           status: TaskStatus.COMPLETED,
           completed_at: expect.any(String),
@@ -542,8 +567,10 @@ describe('TaskService', () => {
         expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
           'task-1',
           'ch-1',
-          undefined,
-          null,
+          {
+            expectedCompletedAt: '2026-02-26T18:30:00.000Z',
+            pointsAwarded: false,
+          },
         );
         expect(mockTaskRepo.update).not.toHaveBeenCalled();
         expect(result.status).toBe(TaskStatus.IN_PROGRESS);
@@ -721,12 +748,13 @@ describe('TaskService', () => {
       expect(result.points_awarded).toBe(true);
     });
 
-    it('should confirm completion without points (no point_reward)', async () => {
+    it('should confirm a completion without points that needed proof', async () => {
       const completed: Task = {
         ...baseTask,
         status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
         point_reward: null,
+        proof_kind: 'photo',
       };
       const confirmed: Task = {
         ...completed,
@@ -896,10 +924,88 @@ describe('TaskService', () => {
       expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-        null,
+        {
+          sentBackAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+          sentBackReason: 'Needs more work',
+          expectedCompletedAt: '2026-02-26T18:30:00.000Z',
+          pointsAwarded: false,
+        },
       );
       expect(result.status).toBe(TaskStatus.IN_PROGRESS);
+      // The push carries the reason (#4635).
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({ body: 'Sent back: Needs more work' }),
+      );
+    });
+
+    it.each([undefined, null, '', '   '])(
+      'refuses a send-back with no reason (%p)',
+      async (comment) => {
+        await expect(
+          service.rejectCompletion('task-1', 'ch-1', comment),
+        ).rejects.toThrow('Say what needs to change to send it back');
+        expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses a reason over 200 characters', async () => {
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'x'.repeat(201)),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+    });
+
+    it('stores the trimmed reason, and "ask for a photo" raises the proof kind', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      });
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.IN_PROGRESS,
+        proof_kind: 'photo',
+      });
+
+      await service.rejectCompletion('task-1', 'ch-1', '  Blurry  ', {
+        requirePhoto: true,
+      });
+
+      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        expect.objectContaining({
+          sentBackReason: 'Blurry',
+          proofKind: 'photo',
+        }),
+      );
+    });
+
+    it('sends back a task that needed no sign-off, though it reads confirmed', async () => {
+      // No points, no proof: confirmed as it was marked done (#4635).
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        point_reward: null,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+        confirmed_at: '2026-02-26T18:30:00.000Z',
+        points_awarded: true,
+      });
+      mockTaskRepo.reopenCompletion.mockResolvedValue({
+        ...baseTask,
+        point_reward: null,
+        status: TaskStatus.IN_PROGRESS,
+      });
+
+      await service.rejectCompletion('task-1', 'ch-1', 'Not finished');
+
+      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        expect.objectContaining({ pointsAwarded: true }),
+      );
     });
 
     it('refuses when a confirm lands between the guard and the write', async () => {
@@ -910,9 +1016,9 @@ describe('TaskService', () => {
       });
       mockTaskRepo.reopenCompletion.mockResolvedValue(null);
 
-      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+      ).rejects.toThrow(BadRequestException);
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
@@ -926,10 +1032,12 @@ describe('TaskService', () => {
       };
       mockTaskRepo.findById.mockResolvedValue(confirmed);
 
-      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+      ).rejects.toThrow(
         'Cannot reject a task that has already been confirmed and points awarded',
       );
 
@@ -939,12 +1047,12 @@ describe('TaskService', () => {
     it('should reject when task is not COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
-      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
-        'Only completed tasks can be rejected',
-      );
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+      ).rejects.toThrow('Only completed tasks can be rejected');
 
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
     });
@@ -958,7 +1066,11 @@ describe('TaskService', () => {
 
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {});
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
+      expect(result[0]).toEqual({
+        ...asView(baseTask),
+        photos: [],
+        subtasks: [],
+      });
     });
 
     it('should list tasks by assignee when not admin', async () => {
@@ -970,7 +1082,11 @@ describe('TaskService', () => {
         assigneeId: 'user-1',
       });
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
+      expect(result[0]).toEqual({
+        ...asView(baseTask),
+        photos: [],
+        subtasks: [],
+      });
     });
 
     it('passes paging and filters through, and keeps a member to their own tasks', async () => {
@@ -1127,7 +1243,11 @@ describe('TaskService', () => {
       const result = await service.findById('task-1', 'ch-1');
 
       expect(mockTaskRepo.findById).toHaveBeenCalledWith('task-1', 'ch-1');
-      expect(result).toEqual({ ...asView(baseTask), subtasks: [] });
+      expect(result).toEqual({
+        ...asView(baseTask),
+        photos: [],
+        subtasks: [],
+      });
     });
 
     it('should throw NotFoundException when task not found', async () => {
@@ -1250,7 +1370,9 @@ describe('TaskService', () => {
           status: TaskStatus.TODO,
           completed_at: null,
           sent_back_at: null,
-          proof_photo_path: null,
+          sent_back_reason: null,
+          proof_link: null,
+          completion_note: null,
         },
       );
       expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalled();
@@ -1464,7 +1586,7 @@ describe('TaskService', () => {
           ...baseTask,
           status: TaskStatus.IN_PROGRESS,
         });
-        mockTaskRepo.update.mockResolvedValue(completed);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
 
         await service.updateStatus(
@@ -1497,7 +1619,7 @@ describe('TaskService', () => {
           ...baseTask,
           status: TaskStatus.IN_PROGRESS,
         });
-        mockTaskRepo.update.mockResolvedValue(completed);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
 
         await service.updateStatus(
@@ -1523,7 +1645,7 @@ describe('TaskService', () => {
           status: TaskStatus.IN_PROGRESS,
         };
         mockTaskRepo.findById.mockResolvedValue(selfAssigned);
-        mockTaskRepo.update.mockResolvedValue({
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
           ...selfAssigned,
           status: TaskStatus.COMPLETED,
         });
@@ -1545,7 +1667,7 @@ describe('TaskService', () => {
           ...baseTask,
           status: TaskStatus.IN_PROGRESS,
         });
-        mockTaskRepo.update.mockResolvedValue(completed);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
 
         await service.updateStatus(
@@ -1583,7 +1705,7 @@ describe('TaskService', () => {
           ...baseTask,
           status: TaskStatus.IN_PROGRESS,
         });
-        mockTaskRepo.update.mockResolvedValue(completed);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
         mockNotificationService.notifyUser.mockRejectedValueOnce(
           new Error('push provider down'),
@@ -1605,9 +1727,10 @@ describe('TaskService', () => {
           expect.objectContaining({ level: 'warning', site: 'task-notify' }),
         );
         reported.mockRestore();
-        expect(mockTaskRepo.update).toHaveBeenCalledWith(
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
           'task-1',
           'ch-1',
+          expect.anything(),
           expect.objectContaining({ status: TaskStatus.COMPLETED }),
         );
       });
@@ -1617,7 +1740,7 @@ describe('TaskService', () => {
           ...baseTask,
           status: TaskStatus.IN_PROGRESS,
         });
-        mockTaskRepo.update.mockResolvedValue(completed);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(completed);
         mockMemberRepo.findByUserAndChapter.mockRejectedValueOnce(
           new Error('connection pool exhausted'),
         );
@@ -1741,11 +1864,47 @@ describe('TaskService', () => {
       ).rejects.toThrow('up to 20 subtasks');
     });
   });
-  describe('photos (#4565)', () => {
-    const PHOTO = 'chapters/ch-1/tasks/p1/mess.jpg';
+  describe('photos and proof kinds (#4565, #4635)', () => {
+    const REF = 'chapters/ch-1/tasks/p1/mess.jpg';
     const PROOF = 'chapters/ch-1/tasks/p2/done.jpg';
     const uploaded = (...paths: string[]) =>
       mockStorage.listFiles.mockResolvedValue(paths);
+    const photo = (
+      id: string,
+      kind: TaskPhotoKind,
+      storage_path: string,
+      position = 0,
+    ): TaskPhoto => ({
+      id,
+      task_id: 'task-1',
+      chapter_id: 'ch-1',
+      kind,
+      storage_path,
+      position,
+      created_by: 'user-1',
+      created_at: '2026-02-26T00:00:00.000Z',
+    });
+    const inProgress = (overrides: Partial<Task> = {}): Task => ({
+      ...baseTask,
+      status: TaskStatus.IN_PROGRESS,
+      ...overrides,
+    });
+    const markDone = (
+      completion?: Parameters<TaskService['updateStatus']>[5],
+    ) =>
+      service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.COMPLETED,
+        completion,
+      );
+    const refusalOf = async (promise: Promise<unknown>) => {
+      const error = await promise.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (error as BadRequestException).getResponse();
+    };
 
     it('mints an upload URL under the chapter tasks prefix, photos only', async () => {
       const ticket = await service.requestPhotoUploadUrl({
@@ -1770,295 +1929,891 @@ describe('TaskService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('keeps a checked reference photo and the switch on create', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
-      mockTaskRepo.create.mockResolvedValue(baseTask);
-      uploaded(PHOTO);
-      await service.create({
-        chapter_id: 'ch-1',
-        title: 'Clean',
-        assignee_id: 'user-1',
-        created_by: 'admin-1',
-        due_date: '2099-03-15',
-        reference_photo_path: PHOTO,
-        photo_required: true,
+    describe('create', () => {
+      const createWith = (extra: Partial<CreateTaskInput>) =>
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Clean',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+          ...extra,
+        });
+
+      beforeEach(() => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue(baseTask);
       });
-      expect(mockTaskRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          reference_photo_path: PHOTO,
-          photo_required: true,
-        }),
+
+      it('inserts checked, de-duplicated reference photos after the task, with the proof kind', async () => {
+        const SECOND = 'chapters/ch-1/tasks/p3/b.jpg';
+        uploaded(REF, SECOND);
+        const rows = [photo('ph-1', 'reference', REF)];
+        mockTaskRepo.createPhotos.mockResolvedValue(rows);
+
+        const result = await createWith({
+          reference_photo_paths: [REF, ` ${REF} `, SECOND],
+          proof_kind: 'photo',
+        });
+
+        expect(mockTaskRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ proof_kind: 'photo' }),
+        );
+        expect(mockTaskRepo.createPhotos).toHaveBeenCalledWith([
+          expect.objectContaining({
+            task_id: 'task-1',
+            kind: 'reference',
+            storage_path: REF,
+            position: 0,
+            created_by: 'admin-1',
+          }),
+          expect.objectContaining({ storage_path: SECOND, position: 1 }),
+        ]);
+        expect(mockTaskRepo.create.mock.invocationCallOrder[0]).toBeLessThan(
+          mockTaskRepo.createPhotos.mock.invocationCallOrder[0],
+        );
+        expect(result.photos).toEqual(rows);
+      });
+
+      it('defaults the proof kind to none and inserts no photo rows', async () => {
+        const result = await createWith({});
+        expect(mockTaskRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ proof_kind: 'none' }),
+        );
+        expect(mockTaskRepo.createPhotos).not.toHaveBeenCalled();
+        expect(result.photos).toEqual([]);
+      });
+
+      it('keeps the task when the photo insert fails', async () => {
+        uploaded(REF);
+        mockTaskRepo.createPhotos.mockRejectedValue(new Error('db down'));
+        const result = await createWith({ reference_photo_paths: [REF] });
+        expect(result.id).toBe('task-1');
+        expect(result.photos).toEqual([]);
+      });
+
+      it('refuses a 7th reference photo', async () => {
+        const paths = Array.from(
+          { length: 7 },
+          (_, i) => `chapters/ch-1/tasks/p${i}/x.jpg`,
+        );
+        uploaded(...paths);
+        await expect(
+          createWith({ reference_photo_paths: paths }),
+        ).rejects.toThrow('at most 6');
+        expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['another chapter', 'chapters/ch-2/tasks/p1/mess.jpg', []],
+        [
+          'a climb out of the prefix',
+          'chapters/ch-1/tasks/../service/x.jpg',
+          [],
+        ],
+        ['nothing uploaded', REF, []],
+      ])('refuses a reference photo from %s', async (_, path, objects) => {
+        uploaded(...objects);
+        await expect(
+          createWith({ reference_photo_paths: [path] }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a path another photo already holds', async () => {
+        uploaded(REF);
+        mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
+        await expect(
+          createWith({ reference_photo_paths: [REF] }),
+        ).rejects.toThrow('already attached');
+      });
+    });
+
+    describe('Mark done', () => {
+      it('refuses a Photo task without photos, by code', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        expect(await refusalOf(markDone())).toMatchObject({
+          code: TASK_PROOF_REQUIRED_CODE,
+        });
+        expect(mockTaskRepo.createPhotos).not.toHaveBeenCalled();
+        expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
+      });
+
+      it('refuses a Link task without a link, by code', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'link' }),
+        );
+        expect(await refusalOf(markDone({ proof_link: '  ' }))).toMatchObject({
+          code: TASK_PROOF_REQUIRED_CODE,
+        });
+        expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
+      });
+
+      it.each(['javascript:alert(1)', 'not a link', 'ftp://example.com/x'])(
+        'refuses an invalid link (%s)',
+        async (link) => {
+          mockTaskRepo.findById.mockResolvedValue(
+            inProgress({ proof_kind: 'link' }),
+          );
+          await expect(markDone({ proof_link: link })).rejects.toThrow(
+            'proof_link must be a web link',
+          );
+          expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
+        },
       );
-    });
 
-    it.each([
-      ['another chapter', 'chapters/ch-2/tasks/p1/mess.jpg', []],
-      ['a climb out of the prefix', 'chapters/ch-1/tasks/../service/x.jpg', []],
-      ['nothing uploaded', PHOTO, []],
-    ])('refuses a reference photo from %s', async (_, path, objects) => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
-      uploaded(...objects);
-      await expect(
-        service.create({
-          chapter_id: 'ch-1',
-          title: 'Clean',
-          assignee_id: 'user-1',
-          created_by: 'admin-1',
-          due_date: '2099-03-15',
-          reference_photo_path: path,
-        }),
-      ).rejects.toThrow(BadRequestException);
-      expect(mockTaskRepo.create).not.toHaveBeenCalled();
-    });
-
-    it('refuses a path another task already holds', async () => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
-      uploaded(PHOTO);
-      mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
-      await expect(
-        service.create({
-          chapter_id: 'ch-1',
-          title: 'Clean',
-          assignee_id: 'user-1',
-          created_by: 'admin-1',
-          due_date: '2099-03-15',
-          reference_photo_path: PHOTO,
-        }),
-      ).rejects.toThrow('already attached');
-    });
-
-    it('refuses Mark done without proof when a photo is required, by code', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        status: TaskStatus.IN_PROGRESS,
-        photo_required: true,
+      it('stores a Link task’s trimmed link with the completion', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'link' }),
+        );
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        await markDone({ proof_link: ' https://docs.example.com/x ' });
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.anything(),
+          expect.objectContaining({
+            status: TaskStatus.COMPLETED,
+            proof_link: 'https://docs.example.com/x',
+            completion_note: null,
+          }),
+        );
       });
-      const refusal = await service
-        .updateStatus('task-1', 'ch-1', 'user-1', false, TaskStatus.COMPLETED)
-        .catch((error: BadRequestException) => error);
-      expect(refusal).toBeInstanceOf(BadRequestException);
-      expect((refusal as BadRequestException).getResponse()).toMatchObject({
-        code: TASK_PROOF_REQUIRED_CODE,
+
+      it('refuses a 7th proof photo', async () => {
+        const paths = Array.from(
+          { length: 7 },
+          (_, i) => `chapters/ch-1/tasks/q${i}/x.jpg`,
+        );
+        uploaded(...paths);
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        await expect(markDone({ proof_photo_paths: paths })).rejects.toThrow(
+          'at most 6',
+        );
+        expect(mockTaskRepo.createPhotos).not.toHaveBeenCalled();
+        expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
       });
-      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+
+      it('inserts the proof rows before the task moves, and returns them', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        uploaded(PROOF);
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.createPhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          proof_kind: 'photo',
+          status: TaskStatus.COMPLETED,
+        });
+        mockTaskRepo.findPhotos.mockResolvedValue([proofRow]);
+
+        const result = await markDone({ proof_photo_paths: [PROOF] });
+
+        expect(mockTaskRepo.createPhotos).toHaveBeenCalledWith([
+          expect.objectContaining({
+            kind: 'proof',
+            storage_path: PROOF,
+            position: 0,
+            created_by: 'user-1',
+          }),
+        ]);
+        expect(
+          mockTaskRepo.createPhotos.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          mockTaskRepo.updateIfMatches.mock.invocationCallOrder[0],
+        );
+        expect(result.photos).toEqual([proofRow]);
+      });
+
+      it('deletes the proof rows again when the task update throws', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        uploaded(PROOF);
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.createPhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.updateIfMatches.mockRejectedValue(new Error('db down'));
+
+        await expect(markDone({ proof_photo_paths: [PROOF] })).rejects.toThrow(
+          'db down',
+        );
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-2'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+      });
+
+      it.each([
+        ['another chapter', 'chapters/ch-2/tasks/p2/done.jpg', true],
+        ['nothing uploaded', PROOF, false],
+      ])('refuses a proof photo from %s', async (_, path, uploadedIt) => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        uploaded(...(uploadedIt ? [path] : []));
+        await expect(markDone({ proof_photo_paths: [path] })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
+      });
+
+      it('refuses as proof a photo another task holds', async () => {
+        mockTaskRepo.findById.mockResolvedValue(inProgress());
+        uploaded(PROOF);
+        mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
+        await expect(markDone({ proof_photo_paths: [PROOF] })).rejects.toThrow(
+          'already attached',
+        );
+      });
+
+      it('refuses a sent-back task marked done again with nothing new', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({
+            sent_back_at: '2026-02-27T00:00:00.000Z',
+            sent_back_reason: 'Blurry',
+          }),
+        );
+        expect(await refusalOf(markDone())).toMatchObject({
+          code: TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+        });
+        expect(mockTaskRepo.updateIfMatches).not.toHaveBeenCalled();
+      });
+
+      it('takes a sent-back task back with a reply', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ sent_back_at: '2026-02-27T00:00:00.000Z' }),
+        );
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        await markDone({ completion_note: '  Fixed the corner  ' });
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.anything(),
+          expect.objectContaining({ completion_note: 'Fixed the corner' }),
+        );
+      });
+
+      it('marks a points task with no proof done, waiting on sign-off', async () => {
+        mockTaskRepo.findById.mockResolvedValue(inProgress());
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        await markDone();
+        const patch = mockTaskRepo.updateIfMatches.mock.calls[0][3];
+        expect(patch).not.toHaveProperty('confirmed_at');
+        expect(patch).not.toHaveProperty('points_awarded');
+        expect(mockTaskRepo.createPhotos).toHaveBeenCalledWith([]);
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'admin-1',
+          'ch-1',
+          expect.objectContaining({
+            body: expect.stringContaining('Confirm it to award the points.'),
+          }),
+        );
+      });
+
+      it('signs off at once a task with no points and no proof, and the push asks nothing', async () => {
+        const free = inProgress({ point_reward: null });
+        mockTaskRepo.findById.mockResolvedValue(free);
+        mockTaskRepo.updateIfMatches.mockImplementation(
+          (_id, _ch, _match, patch) => Promise.resolve({ ...free, ...patch }),
+        );
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+
+        const result = await markDone();
+
+        const patch = mockTaskRepo.updateIfMatches.mock.calls[0][3];
+        expect(patch.points_awarded).toBe(true);
+        expect(patch.confirmed_at).toBe(patch.completed_at);
+        expect(result.points_awarded).toBe(true);
+        const push = mockNotificationService.notifyUser.mock.calls[0][2];
+        expect(push.body).toContain('marked it done.');
+        expect(push.body).not.toContain('Confirm it');
+      });
+
+      it('compare-and-sets on the status, points and proof kind it judged', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ point_reward: null, proof_kind: 'link' }),
+        );
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        await markDone({ proof_link: 'https://example.com/x' });
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          {
+            status: TaskStatus.IN_PROGRESS,
+            point_reward: null,
+            proof_kind: 'link',
+          },
+          expect.objectContaining({ status: TaskStatus.COMPLETED }),
+        );
+        expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('a lost compare-and-set refuses with 400 and drops the proof rows it inserted', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({ proof_kind: 'photo' }),
+        );
+        uploaded(PROOF);
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.createPhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.updateIfMatches.mockResolvedValue(null);
+
+        await expect(markDone({ proof_photo_paths: [PROOF] })).rejects.toThrow(
+          'This task changed while you were marking it done',
+        );
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-2'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('takes a sent-back Link task back with only a new link', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({
+            proof_kind: 'link',
+            sent_back_at: '2026-02-27T00:00:00.000Z',
+            sent_back_reason: 'Wrong doc',
+          }),
+        );
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        await markDone({ proof_link: 'https://docs.example.com/right' });
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.anything(),
+          expect.objectContaining({
+            proof_link: 'https://docs.example.com/right',
+            completion_note: null,
+          }),
+        );
+      });
+
+      it('takes a sent-back Photo task back with only new photos', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          inProgress({
+            proof_kind: 'photo',
+            sent_back_at: '2026-02-27T00:00:00.000Z',
+            sent_back_reason: 'Blurry',
+          }),
+        );
+        uploaded(PROOF);
+        mockTaskRepo.createPhotos.mockResolvedValue([
+          photo('ph-2', 'proof', PROOF),
+        ]);
+        mockTaskRepo.updateIfMatches.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+        });
+        await markDone({ proof_photo_paths: [PROOF] });
+        expect(mockTaskRepo.updateIfMatches).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.anything(),
+          expect.objectContaining({
+            status: TaskStatus.COMPLETED,
+            proof_link: null,
+            completion_note: null,
+          }),
+        );
+      });
     });
 
-    it('stores the proof with the completion', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        status: TaskStatus.IN_PROGRESS,
-        photo_required: true,
-      });
-      uploaded(PROOF);
-      mockTaskRepo.update.mockResolvedValue({
+    describe('reopening a completion', () => {
+      const done = (overrides: Partial<Task> = {}): Task => ({
         ...baseTask,
         status: TaskStatus.COMPLETED,
-        proof_photo_path: PROOF,
+        completed_at: '2026-02-26T18:30:00.000Z',
+        ...overrides,
       });
-      await service.updateStatus(
-        'task-1',
-        'ch-1',
-        'user-1',
-        false,
-        TaskStatus.COMPLETED,
-        PROOF,
-      );
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
-        'task-1',
-        'ch-1',
-        expect.objectContaining({
-          status: TaskStatus.COMPLETED,
-          proof_photo_path: PROOF,
-        }),
-      );
-    });
 
-    it.each([
-      ['another chapter', 'chapters/ch-2/tasks/p2/done.jpg', true],
-      ['nothing uploaded', PROOF, false],
-    ])(
-      'refuses a proof photo from %s at Mark done',
-      async (_, path, uploadedIt) => {
-        mockTaskRepo.findById.mockResolvedValue({
-          ...baseTask,
-          status: TaskStatus.IN_PROGRESS,
-          photo_required: true,
-        });
-        uploaded(...(uploadedIt ? [path] : []));
+      it('take-back reopens only the completion it read and deletes only its proof rows', async () => {
+        mockTaskRepo.findById.mockResolvedValue(done());
+        const ref = photo('ph-1', 'reference', REF);
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.findPhotos.mockResolvedValue([ref, proofRow]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.reopenCompletion.mockResolvedValue(
+          inProgress({ completed_at: null }),
+        );
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        );
+
+        expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          {
+            expectedCompletedAt: '2026-02-26T18:30:00.000Z',
+            pointsAwarded: false,
+          },
+        );
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-2'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+      });
+
+      it('take-back reopens a task that needed no sign-off, though it reads confirmed', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          done({
+            point_reward: null,
+            confirmed_at: '2026-02-26T18:30:00.000Z',
+            points_awarded: true,
+          }),
+        );
+        mockTaskRepo.reopenCompletion.mockResolvedValue(
+          inProgress({ point_reward: null }),
+        );
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        );
+
+        expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.objectContaining({ pointsAwarded: true }),
+        );
+      });
+
+      it('take-back still refuses a task whose points were paid', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          done({ points_awarded: true, confirmed_at: '2026-02-27T00:00:00Z' }),
+        );
         await expect(
           service.updateStatus(
             'task-1',
             'ch-1',
             'user-1',
             false,
-            TaskStatus.COMPLETED,
-            path,
+            TaskStatus.IN_PROGRESS,
           ),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockTaskRepo.update).not.toHaveBeenCalled();
-      },
-    );
-
-    it('refuses as proof a photo another task holds', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        status: TaskStatus.IN_PROGRESS,
+        ).rejects.toThrow('stays done');
+        expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
       });
-      uploaded(PROOF);
-      mockTaskRepo.isPhotoPathInUse.mockResolvedValue(true);
-      await expect(
-        service.updateStatus(
+
+      it('a send-back deletes the proof it read', async () => {
+        mockTaskRepo.findById.mockResolvedValue(done());
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.findPhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([proofRow]);
+        mockTaskRepo.reopenCompletion.mockResolvedValue(inProgress());
+
+        await service.rejectCompletion('task-1', 'ch-1', 'Redo it');
+
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-2'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+      });
+
+      it('a lost compare-and-set deletes nothing', async () => {
+        mockTaskRepo.findById.mockResolvedValue(done());
+        mockTaskRepo.findPhotos.mockResolvedValue([
+          photo('ph-2', 'proof', PROOF),
+        ]);
+        mockTaskRepo.reopenCompletion.mockResolvedValue(null);
+
+        await expect(
+          service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockTaskRepo.deletePhotos).not.toHaveBeenCalled();
+        expect(mockStorage.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      describe('an officer-confirmed task with no points (confirmed after it was done)', () => {
+        const officerConfirmed = done({
+          point_reward: null,
+          points_awarded: true,
+          confirmed_at: '2026-02-27T09:00:00.000Z',
+        });
+
+        it('take-back refuses it', async () => {
+          mockTaskRepo.findById.mockResolvedValue(officerConfirmed);
+          await expect(
+            service.updateStatus(
+              'task-1',
+              'ch-1',
+              'user-1',
+              false,
+              TaskStatus.IN_PROGRESS,
+            ),
+          ).rejects.toThrow('stays done');
+          expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+        });
+
+        it('send-back refuses it', async () => {
+          mockTaskRepo.findById.mockResolvedValue(officerConfirmed);
+          await expect(
+            service.rejectCompletion('task-1', 'ch-1', 'Redo it'),
+          ).rejects.toThrow('already been confirmed');
+          expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+        });
+      });
+
+      it('send-back reopens a task signed off automatically (same instant, other offset)', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          done({
+            point_reward: null,
+            points_awarded: true,
+            completed_at: '2026-02-26T18:30:00.000Z',
+            confirmed_at: '2026-02-26T18:30:00+00:00',
+          }),
+        );
+        mockTaskRepo.reopenCompletion.mockResolvedValue(inProgress());
+
+        await service.rejectCompletion('task-1', 'ch-1', 'Redo it');
+
+        expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
           'task-1',
           'ch-1',
-          'user-1',
-          false,
-          TaskStatus.COMPLETED,
-          PROOF,
-        ),
-      ).rejects.toThrow('already attached');
-    });
-
-    it('signs nothing outside the chapter', async () => {
-      await expect(
-        service.getPhotoDownloadUrl(
-          { ...baseTask, proof_photo_path: 'chapters/ch-2/tasks/p/x.jpg' },
-          'ch-1',
-          'proof',
-        ),
-      ).rejects.toThrow(NotFoundException);
-      expect(mockStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
-    });
-
-    it('reopens only the completion whose proof it read', async () => {
-      const done = {
-        ...baseTask,
-        status: TaskStatus.COMPLETED,
-        proof_photo_path: PROOF,
-      };
-      mockTaskRepo.findById.mockResolvedValue(done);
-      mockTaskRepo.reopenCompletion.mockResolvedValue({
-        ...done,
-        status: TaskStatus.IN_PROGRESS,
-        proof_photo_path: null,
+          expect.objectContaining({ pointsAwarded: true }),
+        );
       });
-      await service.updateStatus(
-        'task-1',
-        'ch-1',
-        'user-1',
-        false,
-        TaskStatus.IN_PROGRESS,
-      );
-      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
-        'task-1',
-        'ch-1',
-        undefined,
-        PROOF,
-      );
-      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+
+      it('confirm refuses a task that needs no sign-off', async () => {
+        mockTaskRepo.findById.mockResolvedValue(
+          done({
+            point_reward: null,
+            confirmed_at: '2026-02-26T18:30:00.000Z',
+            points_awarded: true,
+          }),
+        );
+        await expect(
+          service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+        ).rejects.toThrow("doesn't need an officer to confirm it");
+        expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
+      });
     });
 
-    it('marks done without proof when no photo is required', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        status: TaskStatus.IN_PROGRESS,
-      });
-      mockTaskRepo.update.mockResolvedValue({
-        ...baseTask,
-        status: TaskStatus.COMPLETED,
-      });
-      await service.updateStatus(
-        'task-1',
-        'ch-1',
-        'user-1',
-        false,
-        TaskStatus.COMPLETED,
-      );
-      expect(mockTaskRepo.update.mock.calls[0][2]).not.toHaveProperty(
-        'proof_photo_path',
-      );
-    });
-
-    it('deletes the proof when an officer sends the completion back', async () => {
-      const done = {
-        ...baseTask,
-        status: TaskStatus.COMPLETED,
-        proof_photo_path: PROOF,
-      };
-      mockTaskRepo.findById.mockResolvedValue(done);
-      mockTaskRepo.reopenCompletion.mockResolvedValue({
-        ...done,
-        status: TaskStatus.IN_PROGRESS,
-        proof_photo_path: null,
-      });
-      await service.rejectCompletion('task-1', 'ch-1');
-      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
-    });
-
-    it('replaces a reference photo on edit and deletes the old one', async () => {
+    describe('edit', () => {
       const NEW = 'chapters/ch-1/tasks/p3/new.jpg';
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        reference_photo_path: PHOTO,
+
+      it('adds new reference photos after the held ones and removes missing ones', async () => {
+        const KEEP = 'chapters/ch-1/tasks/p4/keep.jpg';
+        const keep = photo('ph-1', 'reference', KEEP, 0);
+        const gone = photo('ph-3', 'reference', REF, 1);
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.findPhotos.mockResolvedValue([keep, gone]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([gone]);
+        // Only the new path is uploaded: a held one is not re-checked.
+        uploaded(NEW);
+        mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
+
+        await service.update('task-1', 'ch-1', 'admin-1', {
+          reference_photo_paths: [KEEP, NEW],
+        });
+
+        // A photos-only edit still goes through the compare-and-set.
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          { title: baseTask.title },
+        );
+        expect(mockTaskRepo.isPhotoPathInUse).toHaveBeenCalledTimes(1);
+        expect(mockTaskRepo.isPhotoPathInUse).toHaveBeenCalledWith('ch-1', NEW);
+        expect(mockTaskRepo.createPhotos).toHaveBeenCalledWith([
+          expect.objectContaining({
+            kind: 'reference',
+            storage_path: NEW,
+            position: 2,
+            created_by: 'admin-1',
+          }),
+        ]);
+        expect(
+          mockTaskRepo.updateUnconfirmed.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockTaskRepo.createPhotos.mock.invocationCallOrder[0]);
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-3'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [REF]);
       });
-      uploaded(NEW);
-      mockTaskRepo.updateUnconfirmed.mockResolvedValue({
-        ...baseTask,
-        reference_photo_path: NEW,
+
+      it('removes every reference photo with []', async () => {
+        const held = photo('ph-1', 'reference', REF);
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.findPhotos.mockResolvedValue([held]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([held]);
+        mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
+
+        await service.update('task-1', 'ch-1', 'admin-1', {
+          reference_photo_paths: [],
+        });
+
+        expect(mockTaskRepo.createPhotos).not.toHaveBeenCalled();
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-1'],
+        );
       });
-      await service.update('task-1', 'ch-1', 'admin-1', {
-        reference_photo_path: NEW,
+
+      it('writes nothing when the reference set is unchanged', async () => {
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.findPhotos.mockResolvedValue([
+          photo('ph-1', 'reference', REF),
+        ]);
+        await service.update('task-1', 'ch-1', 'admin-1', {
+          reference_photo_paths: [REF],
+        });
+        expect(mockTaskRepo.updateUnconfirmed).not.toHaveBeenCalled();
+        expect(mockTaskRepo.deletePhotos).not.toHaveBeenCalled();
       });
-      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
-        'task-1',
-        'ch-1',
-        { reference_photo_path: NEW },
-      );
-      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PHOTO]);
+
+      it('changes the proof kind', async () => {
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.updateUnconfirmed.mockResolvedValue({
+          ...baseTask,
+          proof_kind: 'link',
+        });
+        await service.update('task-1', 'ch-1', 'admin-1', {
+          proof_kind: 'link',
+        });
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          { proof_kind: 'link' },
+        );
+      });
+
+      it('reads no photos for an edit without photos or a new assignee', async () => {
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.updateUnconfirmed.mockResolvedValue({
+          ...baseTask,
+          title: 'New',
+        });
+        await service.update('task-1', 'ch-1', 'admin-1', { title: 'New' });
+        expect(mockTaskRepo.findPhotos).toHaveBeenCalledTimes(1);
+        // The one read is the response's own (viewWithPhotos), after the write.
+        expect(
+          mockTaskRepo.updateUnconfirmed.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockTaskRepo.findPhotos.mock.invocationCallOrder[0]);
+      });
+
+      describe('a completion waiting on sign-off', () => {
+        const waiting: Task = {
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+          completed_at: '2026-02-26T18:30:00.000Z',
+        };
+
+        it('signs it off, stamped with its completion time, when an edit zeroes its points', async () => {
+          mockTaskRepo.findById.mockResolvedValue(waiting);
+          mockTaskRepo.updateUnconfirmed.mockResolvedValue(waiting);
+          await service.update('task-1', 'ch-1', 'admin-1', {
+            point_reward: 0,
+          });
+          expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+            'task-1',
+            'ch-1',
+            {
+              point_reward: null,
+              confirmed_at: '2026-02-26T18:30:00.000Z',
+              completed_at: '2026-02-26T18:30:00.000Z',
+              points_awarded: true,
+            },
+          );
+        });
+
+        it('signs it off when an edit drops the last proof it needed', async () => {
+          mockTaskRepo.findById.mockResolvedValue({
+            ...waiting,
+            point_reward: null,
+            proof_kind: 'link',
+          });
+          mockTaskRepo.updateUnconfirmed.mockResolvedValue(waiting);
+          await service.update('task-1', 'ch-1', 'admin-1', {
+            proof_kind: 'none',
+          });
+          expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+            'task-1',
+            'ch-1',
+            expect.objectContaining({
+              proof_kind: 'none',
+              points_awarded: true,
+            }),
+          );
+        });
+
+        it('leaves it waiting when the edit still leaves something to check', async () => {
+          mockTaskRepo.findById.mockResolvedValue({
+            ...waiting,
+            proof_kind: 'photo',
+          });
+          mockTaskRepo.updateUnconfirmed.mockResolvedValue(waiting);
+          await service.update('task-1', 'ch-1', 'admin-1', {
+            point_reward: 0,
+          });
+          const patch = mockTaskRepo.updateUnconfirmed.mock.calls[0][2];
+          expect(patch).toEqual({ point_reward: null });
+        });
+
+        it('leaves it waiting when the edit touches neither points nor proof', async () => {
+          mockTaskRepo.findById.mockResolvedValue({
+            ...waiting,
+            point_reward: null,
+          });
+          mockTaskRepo.updateUnconfirmed.mockResolvedValue(waiting);
+          await service.update('task-1', 'ch-1', 'admin-1', { title: 'New' });
+          expect(mockTaskRepo.updateUnconfirmed.mock.calls[0][2]).toEqual({
+            title: 'New',
+          });
+        });
+
+        it('hands it over instead of signing it off when it is also reassigned', async () => {
+          mockTaskRepo.findById.mockResolvedValue(waiting);
+          mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+          mockTaskRepo.updateUnconfirmed.mockResolvedValue(waiting);
+          await service.update('task-1', 'ch-1', 'admin-1', {
+            point_reward: 0,
+            assignee_id: 'user-2',
+          });
+          const patch = mockTaskRepo.updateUnconfirmed.mock.calls[0][2];
+          expect(patch).toMatchObject({
+            status: TaskStatus.TODO,
+            completed_at: null,
+          });
+          expect(patch).not.toHaveProperty('confirmed_at');
+          expect(patch).not.toHaveProperty('points_awarded');
+        });
+      });
+
+      it('a hand-over drops the proof rows and clears the reason, link and reply', async () => {
+        const ref = photo('ph-1', 'reference', REF);
+        const proofRow = photo('ph-2', 'proof', PROOF);
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+          sent_back_at: '2026-02-27T00:00:00.000Z',
+          sent_back_reason: 'Blurry',
+          proof_link: 'https://example.com',
+          completion_note: 'Done',
+        });
+        mockTaskRepo.findPhotos.mockResolvedValue([ref, proofRow]);
+        mockTaskRepo.deletePhotos.mockResolvedValue([proofRow]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.updateUnconfirmed.mockResolvedValue({
+          ...baseTask,
+          assignee_id: 'user-2',
+        });
+
+        await service.update('task-1', 'ch-1', 'admin-1', {
+          assignee_id: 'user-2',
+        });
+
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.objectContaining({
+            assignee_id: 'user-2',
+            status: TaskStatus.TODO,
+            completed_at: null,
+            sent_back_at: null,
+            sent_back_reason: null,
+            proof_link: null,
+            completion_note: null,
+          }),
+        );
+        expect(mockTaskRepo.deletePhotos).toHaveBeenCalledWith(
+          'ch-1',
+          'task-1',
+          ['ph-2'],
+        );
+        expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PROOF]);
+      });
     });
 
-    it('removes the reference photo with null', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        reference_photo_path: PHOTO,
-      });
-      mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
-      await service.update('task-1', 'ch-1', 'admin-1', {
-        reference_photo_path: null,
-      });
-      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
-        'task-1',
-        'ch-1',
-        { reference_photo_path: null },
-      );
-      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [PHOTO]);
-    });
-
-    it('a failed delete never fails the write', async () => {
-      mockTaskRepo.findById.mockResolvedValue({
-        ...baseTask,
-        reference_photo_path: PHOTO,
-        proof_photo_path: PROOF,
-      });
+    it('delete releases every photo the task held, and a failed delete never fails it', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.findPhotos.mockResolvedValue([
+        photo('ph-1', 'reference', REF),
+        photo('ph-2', 'proof', PROOF),
+      ]);
       mockStorage.deleteFiles.mockRejectedValue(new Error('storage down'));
       await expect(service.delete('task-1', 'ch-1')).resolves.toBeUndefined();
       expect(mockTaskRepo.delete).toHaveBeenCalled();
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [
+        REF,
+        PROOF,
+      ]);
     });
 
-    it('signs only a photo the task has', async () => {
-      await expect(
-        service.getPhotoDownloadUrl(baseTask, 'ch-1', 'proof'),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.getPhotoDownloadUrl(
-          { ...baseTask, proof_photo_path: PROOF },
-          'ch-1',
-          'proof',
-        ),
-      ).resolves.toEqual({ url: 'https://view' });
-      expect(mockStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
-        'tasks',
-        PROOF,
-      );
+    describe('getPhotoDownloadUrl', () => {
+      it('signs one of the task’s photos by id', async () => {
+        mockTaskRepo.findPhotos.mockResolvedValue([
+          photo('ph-1', 'reference', REF),
+          photo('ph-2', 'proof', PROOF),
+        ]);
+        await expect(
+          service.getPhotoDownloadUrl('task-1', 'ch-1', 'ph-2'),
+        ).resolves.toEqual({ url: 'https://view' });
+        expect(mockTaskRepo.findPhotos).toHaveBeenCalledWith('ch-1', [
+          'task-1',
+        ]);
+        expect(mockStorage.getSignedDownloadUrl).toHaveBeenCalledWith(
+          'tasks',
+          PROOF,
+        );
+      });
+
+      it('404s a photo the task does not have', async () => {
+        await expect(
+          service.getPhotoDownloadUrl('task-1', 'ch-1', 'ph-9'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+      });
+
+      it('signs nothing outside the chapter', async () => {
+        mockTaskRepo.findPhotos.mockResolvedValue([
+          photo('ph-1', 'proof', 'chapters/ch-2/tasks/p/x.jpg'),
+        ]);
+        await expect(
+          service.getPhotoDownloadUrl('task-1', 'ch-1', 'ph-1'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockStorage.getSignedDownloadUrl).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -410,7 +410,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
 | Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
 | Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
-| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` |
+| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` (A task with no points and no proof is Done when marked, so its push ends at `marked it done.`, #4635.) |
 | Task confirmed | `Book the venue` | `Confirmed · +10 points` |
 | Task sent back | `Book the venue` | `Sent back: <officer's comment>` |
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |

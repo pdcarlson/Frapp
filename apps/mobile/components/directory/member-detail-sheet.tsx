@@ -75,8 +75,8 @@ import {
 } from "@repo/hooks/member-removal-copy";
 import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
+import { dmChannelIdOf } from "@repo/hooks";
 import {
-  dmChannelIdOf,
   messageRowDescription,
   messageRowState,
   otherRealMemberId,
