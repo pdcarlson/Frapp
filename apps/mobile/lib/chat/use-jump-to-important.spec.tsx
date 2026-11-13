@@ -99,4 +99,27 @@ describe("useJumpToImportant (#4186)", () => {
 
     expect(jumpToMessage).not.toHaveBeenCalled();
   });
+
+  it("says why it gave up when the caller asked (#3723), and only then", () => {
+    const missing = setup({ hasOlder: false });
+    const onMiss = vi.fn();
+    act(() => missing.result.current.jumpToImportant("gone", { onMiss }));
+    expect(onMiss).toHaveBeenCalledWith("missing");
+
+    const failed = setup({ olderError: true });
+    act(() => failed.result.current.jumpToImportant("x", { onMiss }));
+    expect(onMiss).toHaveBeenLastCalledWith("error");
+
+    const far = setup();
+    act(() => far.result.current.jumpToImportant("far", { onMiss }));
+    for (let i = 0; i < IMPORTANT_JUMP_MAX_OLDER_PAGES + 1; i++) {
+      far.rerender({ ...far.props, isLoadingOlder: true });
+      far.rerender({
+        ...far.props,
+        r: rows(`p${i}`, ...far.props.r.map((x) => x.message.id)),
+      });
+    }
+    expect(onMiss).toHaveBeenLastCalledWith("far");
+    expect(onMiss).toHaveBeenCalledTimes(3);
+  });
 });

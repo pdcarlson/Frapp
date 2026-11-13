@@ -6392,6 +6392,11 @@ export interface components {
             content: string;
             is_deleted: boolean;
             created_at: string;
+            /**
+             * Format: uuid
+             * @description The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row.
+             */
+            thread_root_id: string | null;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };

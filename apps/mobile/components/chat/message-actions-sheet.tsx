@@ -76,7 +76,7 @@ import type { ChatMessageFlag } from "@repo/validation";
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
  * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
- * text, Copy message link, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * text, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
@@ -107,10 +107,17 @@ import type { ChatMessageFlag } from "@repo/validation";
  * confirmation in a native alert, so each row closes the sheet and tells the
  * screen which message it was for.
  *
+ * **Pin message and Save message** (#3723) sit after Copy message link, where
+ * Discord's long-press puts Pin. Pin is the chapter-public elevation and shows
+ * only to a `channels:manage` holder, the server's gate; Save is the viewer's
+ * private bookmark, on any confirmed message. Each reads its current state
+ * live and flips it, "Unpin message" and "Remove from Saved" once set. The
+ * lists they feed open from the thread header's menu (`MessageListSheet`).
+ *
  * **Separate sheets, not one with panes.** The menu is the quick reactions and
- * at most five rows (Reply, Edit, Copy text and Delete on your own message;
- * Reply, Copy text, Mention, Report and Delete on someone else's) and sizes to
- * its content; the emoji picker and the report form each scroll. The report
+ * a handful of rows (Reply, Edit, Copy text, Save and Delete on your own
+ * message; Reply, Copy text, Save, Mention, Report and Delete on someone
+ * else's, and Pin for an officer) and sizes to its content; the emoji picker and the report form each scroll. The report
  * form is seven reasons, a text field and a button, which
  * on a small phone with the keyboard up is taller than the screen. A bounded
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
@@ -143,6 +150,15 @@ type CopyKind = "text" | "link";
 
 /** The row that copies the message's link (#3723), Discord's words. */
 export const COPY_LINK_LABEL = "Copy message link";
+/** The Pin row's labels (#3723), Discord's words. */
+export const PIN_LABEL = "Pin message";
+export const UNPIN_LABEL = "Unpin message";
+/**
+ * The Save row's labels (#3723): web's Save control and Saved list, in
+ * Slack's words for taking one back.
+ */
+export const SAVE_LABEL = "Save message";
+export const UNSAVE_LABEL = "Remove from Saved";
 
 /** The Copy text row's label once the text is on the clipboard. */
 export const COPIED_LABEL = "Copied";
@@ -222,6 +238,20 @@ export interface MessageActionsTarget {
    * (`canFlagMessage` in `@repo/chat-core/flags`), which draws no row.
    */
   flag?: { current: ChatMessageFlag | null };
+  /**
+   * Pin message / Unpin message (#3723): whether it is pinned now, read from
+   * the cache on every render like `reactedWith`. Absent where the viewer
+   * lacks `channels:manage`, the server's gate (the caller checks it), which
+   * draws no row.
+   */
+  pin?: { pinned: boolean };
+  /**
+   * Save message / Remove from Saved (#3723), the viewer's private bookmark:
+   * whether it is saved now, read from the viewer's bookmarks on every
+   * render. Absent where there is nothing to save (a row the server never
+   * confirmed), which draws no row.
+   */
+  save?: { saved: boolean };
 }
 
 /** What the report form shows once a request has come back. */
@@ -267,6 +297,10 @@ export interface MessageActionsSheetProps {
   onUnreact?: (messageId: string, emoji: string) => void;
   /** Put a flag on the message, or (`null`) take its flag off (#3921). */
   onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
+  /** Pin (`true`) or unpin (`false`) the message for the channel (#3723). */
+  onSetPinned?: (messageId: string, pinned: boolean) => void;
+  /** Save (`true`) or unsave (`false`) the message for the viewer (#3723). */
+  onSetSaved?: (messageId: string, saved: boolean) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
@@ -284,6 +318,8 @@ export const MessageActionsSheet = forwardRef<
     onReact,
     onUnreact,
     onFlag,
+    onSetPinned,
+    onSetSaved,
   },
   ref,
 ) {
@@ -723,6 +759,8 @@ export const MessageActionsSheet = forwardRef<
           ) : null}
           {target?.copyText ||
           target?.link ||
+          (target?.pin && onSetPinned) ||
+          (target?.save && onSetSaved) ||
           (target?.canMention && onMention) ? (
             <ListSection>
               {target.copyText ? (
@@ -737,6 +775,26 @@ export const MessageActionsSheet = forwardRef<
                   label={isCopied("link") ? COPIED_LABEL : COPY_LINK_LABEL}
                   action
                   onPress={() => copy("link")}
+                />
+              ) : null}
+              {target.pin && onSetPinned ? (
+                <ListRow
+                  label={target.pin.pinned ? UNPIN_LABEL : PIN_LABEL}
+                  action
+                  onPress={() => {
+                    const next = !target.pin?.pinned;
+                    handOff((id) => onSetPinned(id, next));
+                  }}
+                />
+              ) : null}
+              {target.save && onSetSaved ? (
+                <ListRow
+                  label={target.save.saved ? UNSAVE_LABEL : SAVE_LABEL}
+                  action
+                  onPress={() => {
+                    const next = !target.save?.saved;
+                    handOff((id) => onSetSaved(id, next));
+                  }}
                 />
               ) : null}
               {target.canMention && onMention ? (
@@ -920,7 +978,9 @@ export const MessageActionsSheet = forwardRef<
  * divider names it, then the time. The only place a phone shows a follow-on
  * row's time.
  */
-function sentAtLabel(sentAt: string): string {
+/** `Today at 9:41 PM`: when a message was sent, as the sheet's header line
+ * and the Pinned and Saved lists (`message-list-sheet.tsx`) say it. */
+export function sentAtLabel(sentAt: string): string {
   const day = dayDividerLabel(sentAt);
   const time = formatTimeOfDay(sentAt);
   return day && time ? `${day} at ${time}` : time;

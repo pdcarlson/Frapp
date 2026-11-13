@@ -59,6 +59,10 @@ import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
   COPY_LINK_LABEL,
+  PIN_LABEL,
+  SAVE_LABEL,
+  UNPIN_LABEL,
+  UNSAVE_LABEL,
   MessageActionsSheet,
   quickReactionLabel,
   type MessageActionsSheetHandle,
@@ -97,6 +101,8 @@ function render(
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
     onMention?: (messageId: string) => void;
+    onSetPinned?: (messageId: string, pinned: boolean) => void;
+    onSetSaved?: (messageId: string, saved: boolean) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -938,6 +944,85 @@ describe("MessageActionsSheet — menu", () => {
       "Report message",
       "Delete message",
     ]);
+  });
+
+  it("puts Pin and Save after Copy text and before Mention, as Discord does (#3723)", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canReply: true,
+        canDelete: true,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+        pin: { pinned: false },
+        save: { saved: false },
+      },
+      undefined,
+      { onMention: vi.fn(), onSetPinned: vi.fn(), onSetSaved: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(labels.slice(labels.indexOf("Copy text"))).toEqual([
+      "Copy text",
+      PIN_LABEL,
+      SAVE_LABEL,
+      "Mention",
+      "Report message",
+      "Delete message",
+    ]);
+  });
+
+  it("flips Pin and Save from their current state, and draws no Pin without the permission", () => {
+    const onSetPinned = vi.fn();
+    const onSetSaved = vi.fn();
+    const base = {
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      copyText: null,
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    };
+    // No `pin` is a viewer without `channels:manage`.
+    const member = render({ ...base, save: { saved: false } }, undefined, {
+      onSetPinned,
+      onSetSaved,
+    });
+    expect(hasRow(member, PIN_LABEL)).toBe(false);
+    expect(hasRow(member, UNPIN_LABEL)).toBe(false);
+    pressByLabel(member, SAVE_LABEL);
+    expect(onSetSaved).toHaveBeenCalledWith("m1", true);
+
+    const officer = render(
+      { ...base, pin: { pinned: true }, save: { saved: true } },
+      undefined,
+      { onSetPinned, onSetSaved },
+    );
+    pressByLabel(officer, UNPIN_LABEL);
+    expect(onSetPinned).toHaveBeenCalledWith("m1", false);
+    pressByLabel(officer, UNSAVE_LABEL);
+    expect(onSetSaved).toHaveBeenLastCalledWith("m1", false);
   });
 
   it("hands Mention's message to the thread, and offers it only when allowed", () => {

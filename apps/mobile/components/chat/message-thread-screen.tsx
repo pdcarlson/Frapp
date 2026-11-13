@@ -108,6 +108,7 @@ import {
 } from "@/lib/chat/use-message-thread";
 import { useThreadRowWrites } from "@/lib/chat/use-thread-row-writes";
 import { selectionHaptic } from "@/lib/haptics";
+import { useSaveMessage } from "@/lib/chat/save-message";
 import { useConnection } from "@/lib/connection/use-connection";
 import { goBackTo } from "@/lib/href";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -612,8 +613,11 @@ export function MessageThreadScreen({
       nameFor,
     ],
   );
-  // The viewer's reactions on the sheet's message, read live, as the
-  // channel's sheet reads them.
+  // Save message on the root and on replies (#3723), as web's thread panel
+  // offers it. Pin stays on the channel's sheet: no client pins a reply.
+  const { savedIds, setSaved } = useSaveMessage();
+  // The viewer's reactions on the sheet's message, and whether it is saved,
+  // read live, as the channel's sheet reads them.
   const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
     if (!actionTarget) return null;
     const current = byId.get(actionTarget.messageId);
@@ -622,8 +626,9 @@ export function MessageThreadScreen({
       ...actionTarget,
       reactedWith: groups.filter((group) => group.mine).map((g) => g.emoji),
       messageEmojis: groups.map((group) => group.emoji),
+      save: { saved: savedIds.has(actionTarget.messageId) },
     };
-  }, [actionTarget, byId, viewerId]);
+  }, [actionTarget, byId, viewerId, savedIds]);
   // Deleted, or gone, while its sheet is open: the sheet closes, as the
   // channel's does.
   const sheetMessageGone = actionTarget
@@ -961,6 +966,7 @@ export function MessageThreadScreen({
         onDelete={onDelete}
         onReact={onReact}
         onUnreact={onUnreact}
+        onSetSaved={setSaved}
       />
       <FormFillPage state={formFill} message={filledRow} nameFor={nameFor} />
     </SafeAreaView>

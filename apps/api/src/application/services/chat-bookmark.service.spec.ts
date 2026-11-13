@@ -22,7 +22,7 @@ const MESSAGE = 'msg-1';
 const message = (
   overrides: Partial<StoredBookmarkedMessage> = {},
 ): StoredBookmarkedMessage => ({
-  // Exactly what the repository reads — the nine-column projection. The
+  // Exactly what the repository reads — the ten-column projection. The
   // service adds the per-viewer `sender_blocked`; a wider fixture would let a
   // test assert redaction of a field production never sends.
   id: MESSAGE,
@@ -33,6 +33,7 @@ const message = (
   author_external_id: null,
   content: 'keep this',
   is_deleted: false,
+  thread_root_id: null,
   created_at: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
@@ -213,7 +214,7 @@ describe('ChatBookmarkService', () => {
       // Stronger than redacting them: pin state, edits, payload, mentions and
       // metadata are not in the endpoint's projection at all, so there is no
       // value to get wrong. This asserts the redacted row is exactly the
-      // nine-field shape rather than a wider object with blanks in it — a
+      // ten-field shape rather than a wider object with blanks in it — a
       // redacted row that differed structurally from an available one would be
       // the same "carries fields its declared shape omits" problem inverted.
       mockRepo.findByUserAndChapter.mockResolvedValue([
@@ -234,6 +235,7 @@ describe('ChatBookmarkService', () => {
         'is_deleted',
         'sender_blocked',
         'sender_id',
+        'thread_root_id',
       ]);
     });
 

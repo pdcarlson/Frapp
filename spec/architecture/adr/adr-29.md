@@ -5,8 +5,13 @@
 build it on Electron rather than Tauri. The rest (decisions 3 to 8) are the drafting session's
 defaults, listed so he can object to any of them in review. ADR-24 asked for the shell choice to
 be recorded in its own ADR when desktop work started ([#2512](https://github.com/pdcarlson/Frapp/issues/2512)).
-As of 2026-11-13 nothing here is built: there is no `apps/desktop`, and `apps/web` has no web
-manifest and no service worker.
+When this record was written nothing here was built: there was no `apps/desktop`, and `apps/web`
+has no web manifest and no service worker.
+
+> **Updated 2026-11-13 ([#4840](https://github.com/pdcarlson/Frapp/issues/4840)).** Decisions 3
+> and 4 are built in `apps/desktop`: the window, tray, Open at Login, the navigation and
+> permission rules, the `window.frappDesktop` bridge, and an unsigned `Desktop build` workflow
+> ([`../README.md` §3.4a](../README.md#34a-desktop-appsdesktop)). Decisions 5 to 8 are not.
 
 **Decision.**
 
@@ -22,7 +27,10 @@ manifest and no service worker.
    the web app is not bundled or statically exported, because it needs its server
    (`apps/web/proxy.ts`, `apps/web/app/auth/callback/route.ts`). UI changes ship as web deploys and
    reach desktop users on their next load. The shell carries no environment (ADR-24 rule I2):
-   staging is an internal launch option, allow-listed to `*.frapp.live`, never a separate build.
+   staging is an internal launch option, never a separate build. *Corrected 2026-11-13:* this
+   said the option was allow-listed to `*.frapp.live`; the shell accepts exactly
+   `https://app.frapp.live` and `https://app.staging.frapp.live`, plus `http://localhost:3000`
+   from an unpackaged run (`apps/desktop/src/shared/app-url.ts`).
 4. **The renderer is locked down.** `contextIsolation` and `sandbox` on, `nodeIntegration` off.
    Navigation stays on the app's origin; every other link opens in the system browser. The web app
    reaches the OS only through a small preload bridge, `window.frappDesktop`, whose presence is
@@ -93,6 +101,7 @@ channels that both use production, Developer ID plus Azure signing.
 **What this record does not decide.**
 
 - Linux. `electron-builder` can produce an AppImage cheaply, but it is unsigned and untested;
-  ship it only if someone asks.
+  ship it only if someone asks. *Updated 2026-11-13:* the `Desktop build` workflow does build an
+  AppImage, to catch packaging breaks, but it isn't offered to members.
 - The Mac App Store and Microsoft Store. Direct download first.
 - Whether the desktop app counts as presence for phone push (decision 6, settled in #4842).

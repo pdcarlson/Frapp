@@ -282,9 +282,15 @@ module.exports = {
       severity: "error",
       comment:
         "Shipped code must not import a devDependency: it is absent from the production " +
-        "install and fails at runtime, not at build time.",
+        "install and fails at runtime, not at build time. The one exception is `electron` " +
+        "in apps/desktop: Electron provides that module itself at runtime, and " +
+        "electron-builder refuses to package an app that lists it under dependencies.",
       from: { pathNot: NOT_SHIPPED_CODE },
-      to: { dependencyTypes: ["npm-dev"], dependencyTypesNot: ["type-only"] },
+      to: {
+        dependencyTypes: ["npm-dev"],
+        dependencyTypesNot: ["type-only"],
+        ...(WORKSPACE === "apps/desktop" ? { pathNot: "(^|/)node_modules/electron/" } : {}),
+      },
     },
     {
       name: "no-deprecated-core",
