@@ -188,7 +188,8 @@ export const MemberRolesSheet = forwardRef<
         setStatus("idle");
       }
       const status = statusOf(caught);
-      if (status === 400) void rolesQuery.refetch();
+      // A 409 (#4830) also re-reads the member, in useUpdateMemberRoles.
+      if (status === 400 || status === 409) void rolesQuery.refetch();
       // Said even when the officer has moved on, so no change is lost quietly.
       Alert.alert(
         ROLES_SAVE_FAILED_TITLE,

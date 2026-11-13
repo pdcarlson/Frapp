@@ -14,6 +14,7 @@ const {
   mockInvites,
   mockRefetchRoles,
   mockRefetchInvites,
+  mockInvitableRoleIds,
   activeChapterId,
 } = vi.hoisted(() => ({
   activeChapterId: { current: "chapter-1" as string | null },
@@ -27,6 +28,8 @@ const {
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
+  // Undefined: the list hasn't loaded, so every role is offered.
+  mockInvitableRoleIds: vi.fn((): string[] | undefined => undefined),
 }));
 
 const NOW = Date.now();
@@ -49,6 +52,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // `refetch`: opening the panel re-reads invites and roles.
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
+  useInvitableRoleIds: () => ({
+    data: mockInvitableRoleIds(),
+    refetch: vi.fn(),
+  }),
   useInvites: () => ({
     data: mockInvites(),
     isError: false,
@@ -98,6 +105,7 @@ async function revoke() {
 
 /** Default hook state every test starts from; individual tests override. */
 function primeHooks() {
+  mockInvitableRoleIds.mockReturnValue(undefined);
   mockRoles.mockReturnValue({
     data: [{ id: "r1", name: "Member" }],
     isError: false,
@@ -262,6 +270,34 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("New Member");
   });
 
+  // #4546: a chair invites a peer or a brother, never a role above them.
+  it("offers only the roles the sender may invite into", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("combobox", { name: /role they join as/i }),
+    );
+
+    expect(
+      await screen.findByRole("option", { name: "New Member" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Alumni" })).toBeNull();
+  });
+
+  it("skips a configured default ranked above the sender", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-alumni" },
+      isError: false,
+    });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Member");
+  });
+
   it("keeps an explicit pick over the configured default", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({
@@ -353,8 +389,8 @@ describe("InviteMemberDialog default role", () => {
     await pick("Alumni");
     expect(rolePicker().value).toBe("Alumni");
 
-    // The panel's X is its only close control now that the Done footer is
-    // gone; it goes through `handleOpenChange`, which owns the reset.
+    // A role picked with no addresses is not a draft (#4593), so the next
+    // invite starts on the default.
     await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
     await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
@@ -592,5 +628,122 @@ describe("InviteMemberDialog share link and list", () => {
     expect(
       screen.getByRole("button", { name: /^More for Invite link, sent / }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Leaving the panel keeps the addresses being written and the role picked for
+ * them (#4593): no "are you sure", and the panel opens on them next time.
+ */
+describe("InviteMemberDialog keeps its draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    mockEmailInvites.mockResolvedValue({ invites: [], failed: [] });
+  });
+
+  const close = () =>
+    userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+  const reopen = () =>
+    userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+  it("opens on the addresses after it was closed, and says so", async () => {
+    await openDialog();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await userEvent.type(emailField(), "a@school.edu, b@school.edu");
+    await close();
+    await reopen();
+
+    // Leaving the field turned the address being typed into a chip.
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(screen.getByText("b@school.edu")).toBeInTheDocument();
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("opens on them after the Directory was left with the panel open", async () => {
+    const first = await openDialog();
+    await userEvent.type(emailField(), "a@school.edu ");
+    first.unmount();
+
+    render(<InviteMemberDialog trigger={<button>Invite</button>} />);
+    expect(await screen.findByText("Draft restored")).toBeInTheDocument();
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+  });
+
+  it("keeps nothing for a panel opened and left untouched", async () => {
+    await openDialog();
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu ");
+    await close();
+    await reopen();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.queryByText("a@school.edu")).toBeNull();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("keeps nothing once the invites are sent", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Invite sent to a@school.edu",
+      }),
+    );
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    expect(emailField()).toHaveValue("");
+  });
+
+  it("doesn't offer a send still on its way to send again", async () => {
+    let land: (value: { invites: []; failed: [] }) => void = () => {};
+    mockEmailInvites.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const first = await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    first.unmount();
+
+    const second = render(
+      <InviteMemberDialog trigger={<button>Invite</button>} />,
+    );
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    second.unmount();
+    land({ invites: [], failed: [] });
+  });
+
+  it("reopened while a send is on its way, shows what was sent and can't send it twice", async () => {
+    let land: (value: { invites: []; failed: [] }) => void = () => {};
+    mockEmailInvites.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    await close();
+    await reopen();
+
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    land({ invites: [], failed: [] });
+    await waitFor(() => expect(screen.queryByText("a@school.edu")).toBeNull());
+    expect(mockEmailInvites).toHaveBeenCalledTimes(1);
   });
 });

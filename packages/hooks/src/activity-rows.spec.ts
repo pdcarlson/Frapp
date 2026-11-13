@@ -59,6 +59,7 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   check_in_opens_minutes: 10,
   check_in_open: false,
   check_in_needs_location: false,
+  check_in_needs_code: false,
   checked_in: null,
   ...overrides,
 });
@@ -747,6 +748,42 @@ describe("activityRowAction (#4402)", () => {
     expect(activityRowAction(zoned, { canSupplyLocation: true })).toBe(
       "check-in",
     );
+  });
+
+  it("leaves Check in off web's row while the officer's code is required (#4808)", () => {
+    const data = activity({
+      coming_up: [
+        event({
+          check_in_open: true,
+          checked_in: false,
+          check_in_needs_code: true,
+        }),
+      ],
+    });
+    const row = allRows(data, new Date("2026-11-12T00:00:00.000Z")).find(
+      (each) => each.kind === "event",
+    )!;
+    expect(activityRowAction(row)).toBeNull();
+    // The phone scans, and asks for the code if the press is refused.
+    expect(
+      activityRowAction(row, { canSupplyLocation: true, canScan: true }),
+    ).toBe("check-in");
+  });
+
+  it("offers Check in when a read doesn't say whether the code is required", () => {
+    const data = activity({
+      coming_up: [
+        event({
+          check_in_open: true,
+          checked_in: false,
+          check_in_needs_code: undefined,
+        }),
+      ],
+    });
+    const row = allRows(data, new Date("2026-11-12T00:00:00.000Z")).find(
+      (each) => each.kind === "event",
+    )!;
+    expect(activityRowAction(row)).toBe("check-in");
   });
 
   it("treats an event from a read that doesn't say as needing a location", () => {

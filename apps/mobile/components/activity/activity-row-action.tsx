@@ -272,7 +272,7 @@ export function ActivityRowItem({
 }) {
   // The phone can supply a location, so a zoned event checks in here too.
   const action = actions
-    ? activityRowAction(row, { canSupplyLocation: true })
+    ? activityRowAction(row, { canSupplyLocation: true, canScan: true })
     : null;
   const control: ActivityRowActionControl | null =
     action && actions ? rowActionControl(row, action, actions) : null;

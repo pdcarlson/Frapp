@@ -223,6 +223,16 @@ export class InviteListItemDto implements InviteListItem {
   created_at: string;
 }
 
+/** `GET /v1/invites/roles` (#4546). */
+export class InvitableRolesDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      'Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names.',
+  })
+  role_ids: string[];
+}
+
 /** `POST /v1/invites/email`'s answer (`BulkEmailInviteResult`). */
 export class BulkEmailInviteResponseDto implements BulkEmailInviteResult {
   @ApiProperty({ type: InviteListItemDto, isArray: true })

@@ -101,8 +101,9 @@ vi.mock("@/lib/chat/use-message-thread", () => ({
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: offline }),
 }));
+const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: toastSpy }),
 }));
 
 import {
@@ -157,6 +158,7 @@ function renderPanel(
     avatarFor: (id: string) => string | null;
     onClosePanel: () => void;
     beside: boolean;
+    askRefusal: (text: string) => string | null;
   }> = {},
 ) {
   const onClose = vi.fn();
@@ -182,6 +184,7 @@ function renderPanel(
       onClose={onClose}
       onClosePanel={overrides.onClosePanel}
       beside={overrides.beside}
+      askRefusal={overrides.askRefusal}
     />,
   );
   return { onClose, writes, onUnblock };
@@ -216,6 +219,29 @@ describe("ThreadPanel (#3785)", () => {
       "Me too{Enter}",
     );
     expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {
+    toastSpy.mockClear();
+    renderPanel({
+      askRefusal: (text) =>
+        text.includes("@Frapp")
+          ? "Ask Frapp from the channel, not from a reply."
+          : null,
+    });
+    const user = userEvent.setup();
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    await user.type(box, "@Frapp who is driving{Enter}");
+    // Nothing is posted to the thread, where everyone would read it.
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith({
+      title: "Ask Frapp from the channel, not from a reply.",
+    });
+    expect(box).toHaveValue("@Frapp who is driving");
+    // A reply that is not a question is sent as ever.
+    await user.clear(box);
+    await user.type(box, "see you there{Enter}");
+    expect(thread.send).toHaveBeenCalledWith("see you there");
   });
 
   it("keeps an unsent reply when the panel remounts, and clears it once sent (#4297)", async () => {

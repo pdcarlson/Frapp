@@ -111,6 +111,11 @@ vi.mock("@repo/hooks", () => ({
   useEvent: () => ({ data: undefined, isPending: false, isError: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [], isError: false }),
+  // The editor itself, opened by the draft cases (#4593).
+  useEventTypes: () => ({ data: [], isLoading: false }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEvents: () => ({
     data: eventsQuery.data,
     isLoading: false,
@@ -851,5 +856,56 @@ describe("EventsPage calendar", () => {
     expect(screen.queryByText("Chapter Calendar")).toBeNull();
     expect(screen.queryByText(/click a date to schedule/i)).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+});
+
+describe("EventsPage keeps the editor's draft (#4593)", () => {
+  const tree = () => (
+    <div data-tool-column="">
+      <div data-tool-page="">
+        <EventsPage />
+      </div>
+    </div>
+  );
+
+  async function startDraft(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: /^new event$/i }));
+    await user.type(screen.getByLabelText("Event name"), "Formal");
+  }
+
+  it("reopens New event on its draft when the page was left with it open", async () => {
+    const user = userEvent.setup();
+    const first = render(tree());
+    await startDraft(user);
+    first.unmount();
+
+    render(tree());
+    const editor = await screen.findByRole("region", { name: "Create event" });
+    expect(within(editor).getByLabelText("Event name")).toHaveValue("Formal");
+    expect(within(editor).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("comes back to the page after Back, and New event opens on the draft", async () => {
+    const user = userEvent.setup();
+    const first = render(tree());
+    await startDraft(user);
+    await user.click(screen.getByRole("button", { name: "Back to events" }));
+    first.unmount();
+
+    render(tree());
+    expect(screen.queryByRole("region", { name: "Create event" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^new event$/i }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Formal");
+  });
+
+  it("doesn't reopen the editor for a viewer who can no longer create events", async () => {
+    const user = userEvent.setup();
+    const first = render(tree());
+    await startDraft(user);
+    first.unmount();
+
+    permissionsRef.current = ["members:view"];
+    render(tree());
+    expect(screen.queryByRole("region", { name: "Create event" })).toBeNull();
   });
 });

@@ -84,6 +84,7 @@ describe('RbacService', () => {
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
       findByUser: jest.fn(),
       findChapterMemberIdentities: jest.fn(),
     };

@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -338,6 +339,12 @@ export function useAiConsentGate(): {
     settle.current?.(ok);
     settle.current = null;
   }, []);
+  // A screen that goes away with the sheet up answers No. Nothing else would
+  // settle the promise: the sheet's own close is not promised on unmount,
+  // and a caller that outlives the screen (a question asked from a channel,
+  // which waits in the one Ask conversation, #4713) would wait forever and
+  // hold every later question behind it.
+  useEffect(() => () => finish(false), [finish]);
 
   const ensureConsent = useCallback(async (): Promise<boolean> => {
     const state = await readConsent();

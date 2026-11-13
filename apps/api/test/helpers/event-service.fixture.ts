@@ -11,6 +11,10 @@ import { NotificationService } from '../../src/application/services/notification
 import { ChatService } from '../../src/application/services/chat.service';
 import { RbacService } from '../../src/application/services/rbac.service';
 import { EventTypeService } from '../../src/application/services/event-type.service';
+import {
+  EVENT_CHECK_IN_SCREEN_REPOSITORY,
+  type IEventCheckInScreenRepository,
+} from '#domain/repositories/event-check-in-screen.repository.interface';
 import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repository.interface';
 import type { IEventTypeRepository } from '#domain/repositories/event-type.repository.interface';
 
@@ -119,6 +123,13 @@ export async function createEventServiceFixture() {
     delete: jest.fn(),
   };
 
+  // No officer's screen is live unless a test says so (#4808).
+  const mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository> = {
+    findLive: jest.fn().mockResolvedValue([]),
+    recordShown: jest.fn(),
+    deleteExpired: jest.fn(),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       EventService,
@@ -132,6 +143,7 @@ export async function createEventServiceFixture() {
       { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       { provide: ChatService, useValue: mockChatService },
       { provide: RbacService, useValue: mockRbacService },
+      { provide: EVENT_CHECK_IN_SCREEN_REPOSITORY, useValue: mockScreenRepo },
     ],
   }).compile();
 
@@ -144,6 +156,7 @@ export async function createEventServiceFixture() {
     mockChatService,
     mockRbacService,
     mockEventTypeRepo,
+    mockScreenRepo,
   };
 }
 

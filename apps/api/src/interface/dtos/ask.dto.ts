@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -11,9 +12,11 @@ import {
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ASK_DOORS,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
   ASK_HISTORY_MAX_TURNS,
   ASK_QUESTION_MAX_LENGTH,
+  type AskDoor,
 } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
@@ -92,6 +95,15 @@ export class AskRequestDto {
   @IsOptional()
   @IsStrictBoolean()
   actions?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ASK_DOORS,
+    description:
+      'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.',
+  })
+  @IsOptional()
+  @IsIn(ASK_DOORS)
+  door?: AskDoor;
 }
 
 export class AskDiagnosticsDto {

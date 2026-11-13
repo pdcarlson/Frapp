@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { formatAiAnswerDate, joinNames } from "./ai-copy";
+import { askMentionQuestion } from "./mentions";
 
 /**
  * Ask Frapp (#450, #451, `spec/behavior/ai.md`): the request, the streamed
@@ -53,6 +54,15 @@ export const AskHistoryTurnSchema = z.object({
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
+/**
+ * The doors a question can come through (#4713): Ask's own screen (`ask`),
+ * or `@Frapp` typed in a chat composer and answered to the asker alone
+ * (`chat_private`). A closed set, so it can be counted without saying
+ * anything about the question.
+ */
+export const ASK_DOORS = ["ask", "chat_private"] as const;
+export type AskDoor = (typeof ASK_DOORS)[number];
+
 /** `POST /v1/ai/ask`. */
 export const AskRequestSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
@@ -76,6 +86,12 @@ export const AskRequestSchema = z.object({
    * never has an answer saved (`ai.md` § Stored AI text).
    */
   saved_notice_shown: z.boolean().optional(),
+  /**
+   * Where the member asked from ({@link ASK_DOORS}). Counted, never read:
+   * the answer is the same from every door. Left out by builds before #4713,
+   * which only have the Ask screen.
+   */
+  door: z.enum(ASK_DOORS).optional(),
 });
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
@@ -566,7 +582,106 @@ export const ASK_COPY = {
   copy_answer: "Copy answer",
   copied_answer: "Copied",
   entry_label: "Ask a question about your chapter",
+  /** Under Frapp's name in a composer's mention list (#4713). */
+  mention_hint: "Only you see the answer",
+  /**
+   * By the composer while its draft names `@Frapp`: what Send will do, said
+   * before it does it.
+   */
+  only_you_hint: "Only you will see this question and Frapp's answer.",
+  /** The same, where there is room for two words beside the private mark. */
+  only_you_short: "Only you",
+  /** On an answer drawn in a channel for the asker alone. */
+  only_you: "Only you can see this",
+  dismiss: "Dismiss",
+  /** A second `@Frapp` question while the first is still being answered. */
+  still_answering: "Frapp is still answering your last question.",
+  /** `@Frapp` with files staged: a question carries words only. */
+  no_attachments:
+    "Frapp can't read attachments. Remove them, or take @Frapp out to post this.",
+  /** `@Frapp` on a message longer than a question may be. */
+  too_long: "That's too long for a question. Keep it under 1,000 characters.",
+  /** `@Frapp` and nothing else. */
+  no_question: "Type your question after @Frapp.",
+  /** `@Frapp` in a reply inside a thread, where there is nowhere to answer. */
+  not_in_reply: "Ask Frapp from the channel, not from a reply.",
+  /**
+   * `@Frapp` sent before the app knows whether this member has Ask (the
+   * reads are in flight, or failed). Posting it could put a question meant
+   * for Frapp in front of the channel, so it waits.
+   */
+  ask_unknown:
+    "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
 } as const;
+
+/**
+ * Whether this member has Ask, as a composer needs it: `unknown` while the
+ * reads behind the answer are in flight or failed.
+ */
+export type AskAccess = "yes" | "no" | "unknown";
+
+/** What Send does with a channel composer's text (#4713). */
+export type ChannelAskReading =
+  /** Not a question for Frapp: it is sent as a message. */
+  | { kind: "post" }
+  /** A question that can't be asked as it stands. The text is kept. */
+  | { kind: "refused"; reason: string }
+  | { kind: "ask"; question: string };
+
+/**
+ * What a channel's Send does with `text`, for both clients: post it, ask
+ * Frapp, or refuse and say why. One reading, so web and the phone refuse the
+ * same things in the same order.
+ *
+ * A message that names `@Frapp` is never posted by a member who has Ask, or
+ * who might: while that is `unknown` the send is refused, because the two
+ * ways to be wrong are not equal. A member without Ask posts it as ordinary
+ * text, which pings nobody.
+ */
+export function readChannelAsk(input: {
+  text: string;
+  /** The chapter's spaced names (`spacedMentionNames`). */
+  names: readonly string[];
+  access: AskAccess;
+  /** Files or photos staged on the message. */
+  attachments: number;
+  /** A question is already being answered. */
+  busy: boolean;
+}): ChannelAskReading {
+  if (input.access === "no") return { kind: "post" };
+  const question = askMentionQuestion(input.text, input.names);
+  if (question === null) return { kind: "post" };
+  const reason =
+    input.access === "unknown"
+      ? ASK_COPY.ask_unknown
+      : input.attachments > 0
+        ? ASK_COPY.no_attachments
+        : question.length === 0
+          ? ASK_COPY.no_question
+          : question.length > ASK_QUESTION_MAX_LENGTH
+            ? ASK_COPY.too_long
+            : input.busy
+              ? ASK_COPY.still_answering
+              : null;
+  return reason === null
+    ? { kind: "ask", question }
+    : { kind: "refused", reason };
+}
+
+/**
+ * Why a thread's reply box refuses `text`, or `null` to send it. A thread
+ * has nowhere private to draw an answer, so a reply naming `@Frapp` is
+ * refused for a member with Ask, and while that is unknown.
+ */
+export function replyAskRefusal(
+  text: string,
+  names: readonly string[],
+  access: AskAccess,
+): string | null {
+  if (access === "no") return null;
+  if (askMentionQuestion(text, names) === null) return null;
+  return access === "unknown" ? ASK_COPY.ask_unknown : ASK_COPY.not_in_reply;
+}
 
 /** An own entry only: the key is an open string from the wire. */
 function ownWords(

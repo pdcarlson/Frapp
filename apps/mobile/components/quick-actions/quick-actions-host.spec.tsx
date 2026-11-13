@@ -11,6 +11,8 @@ const data = vi.hoisted(() => ({
   present: vi.fn(),
   /** A sheet name that throws while rendering. */
   throws: null as string | null,
+  /** The Ask conversation's New conversation. */
+  resetAsk: vi.fn(),
 }));
 vi.mock("@/components/route-error", () => ({ reportRouteError: vi.fn() }));
 
@@ -18,6 +20,7 @@ vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => data.chapterId,
   useEvents: () => ({ data: data.events }),
   useDocumentFolders: () => ({ data: [] }),
+  useAsk: () => ({ reset: data.resetAsk }),
 }));
 
 // Each sheet stands in as a host node that can be presented, so a spec sees
@@ -33,6 +36,9 @@ function sheet(name: string) {
     },
   );
 }
+vi.mock("@/components/ask/ask-sheet", () => ({
+  AskSheet: sheet("AskSheet"),
+}));
 vi.mock("@/components/events/new-event-sheet", () => ({
   NewEventSheet: sheet("NewEventSheet"),
 }));
@@ -251,6 +257,42 @@ describe("a sheet that fails to render", () => {
       run("logHours");
       expect(hosts(tree, "LogHoursSheet")).toHaveLength(1);
       expect(data.present).toHaveBeenCalledWith("LogHoursSheet");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("the Ask sheet failing to render (#4713)", () => {
+  it("starts a new conversation, so the next open does not draw the turn that threw", () => {
+    // The conversation is held above the sheet, so dropping the sheet alone
+    // would bring the same turn, and the same failure, back on every open.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tree = render();
+      data.throws = "AskSheet";
+      act(() => latest.ask());
+      expect(hosts(tree, "AskSheet")).toHaveLength(0);
+      expect(data.resetAsk).toHaveBeenCalledTimes(1);
+      expect(reportRouteError).toHaveBeenCalledWith(expect.any(Error), {
+        boundary: "sheet",
+      });
+      data.throws = null;
+      act(() => latest.ask());
+      expect(hosts(tree, "AskSheet")).toHaveLength(1);
+      expect(data.resetAsk).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("leaves the conversation alone when another sheet fails", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render();
+      data.throws = "LogHoursSheet";
+      run("logHours");
+      expect(data.resetAsk).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
     }

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -639,6 +640,35 @@ describe("Log service hours sheet", () => {
       }),
     );
     act(() => tree.unmount());
+  });
+
+  // Paul, 2026-11-13 (#4593): "keep the draft". The screen's sheet goes when
+  // the member goes back, and the entry is there next time.
+  it("keeps the entry past the screen, until Cancel gives it up", () => {
+    const first = render();
+    fill(first);
+    act(() => stepButton(first, "Half an hour more").props.onPress());
+    act(() => first.unmount());
+
+    const second = render();
+    expect(descriptionField(second).props.value).toBe("Food bank");
+    act(() => cancelButton(second).props.onPress());
+    act(() => second.unmount());
+
+    const third = render();
+    expect(descriptionField(third).props.value).toBe("");
+    act(() => third.unmount());
+  });
+
+  it("doesn't offer an entry whose save was running when the screen was left", () => {
+    mutate.mockImplementation(() => {});
+    const first = render();
+    submitEntry(first);
+    act(() => first.unmount());
+
+    const second = render();
+    expect(descriptionField(second).props.value).toBe("");
+    act(() => second.unmount());
   });
 
   it("gives the entry up on Cancel", () => {
@@ -1436,6 +1466,8 @@ describe("Log service hours photo proof", () => {
     expect(screenText(tree)).toContain(TRY_AGAIN);
 
     chapterId = "chapter-b";
+    // As `FrappProvider` does on a chapter switch: no kept entry crosses it.
+    dropAllKeptDrafts();
     rerender(tree);
 
     expect(screenText(tree)).not.toContain("receipt.jpg");

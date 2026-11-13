@@ -48,6 +48,7 @@ import { ThreadSkeleton } from "./chat/thread-skeleton";
 import { ChannelListSkeleton } from "./chat/channel-row";
 import { JoinedChannelsSkeleton } from "./onboarding/joined-channels-card";
 import { EventListSkeleton } from "@/app/(app)/(tabs)/events";
+import { LEAD_TILE_SIZE } from "@/components/lead-tile";
 import { EventDetailSkeleton } from "@/app/(app)/event-details";
 import {
   NotificationListRow,
@@ -294,12 +295,29 @@ describe("Screen skeletons sit on their screen's frames", () => {
     });
     // No date column: the day is the caption over the rows (#3707).
     expect(views(tree).filter((style) => style.width === 52)).toHaveLength(0);
+    // A flat row leads with its tile (#4679), so it takes the tile row's
+    // small padding and a block the tile's size.
     const flat = views(tree).filter(
       (style) =>
         style.minHeight === tokens.touch.minimum &&
-        style.paddingVertical === tokens.spacing.md,
+        style.paddingVertical === tokens.spacing.sm,
     );
     expect(flat).toHaveLength(3);
+    expect(
+      tree.root
+        .findAllByType(SkeletonBlock)
+        .filter(
+          (block) =>
+            block.props.width === LEAD_TILE_SIZE.lead &&
+            block.props.height === LEAD_TILE_SIZE.lead,
+        ),
+    ).toHaveLength(3);
+    // Each flat row's name bar is the label role's, the loaded row's name.
+    expect(
+      tree.root
+        .findAllByType(SkeletonText)
+        .filter((line) => line.props.role === tokens.typography.role.label),
+    ).toHaveLength(3);
     // Hairline-split: no rule above the first row.
     expect(flat.map((style) => style.borderTopWidth ?? 0)).toEqual([
       0,

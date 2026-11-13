@@ -85,6 +85,7 @@ import {
 } from "@repo/chat-core/channel-preview";
 import { TypingLine } from "./typing-line";
 import {
+  replyAskRefusal,
   can,
   canAll,
   isAnnouncementChannel,
@@ -94,6 +95,7 @@ import {
   isDirectChannel,
   type MentionCandidate,
   type MentionChipTargets,
+  spacedMentionNames,
 } from "@repo/validation";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, SquarePen, X } from "lucide-react";
@@ -142,6 +144,11 @@ import {
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { AskSlot } from "@/components/ask/ask-host";
+import {
+  useChannelAsk,
+  useChannelAskAccess,
+  useChannelAskTurns,
+} from "@/components/ask/ask-in-channel";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
@@ -1334,6 +1341,39 @@ export function ChatShell({
     }),
     [thread.rows, channel.messages, drawnMessageIds],
   );
+  // `@Frapp` from this channel's composer (#4713): the question is asked, not
+  // sent, and its answer is drawn here for this member alone, under the
+  // message that is newest now. Null for a member without Ask.
+  const channelAsk = useChannelAsk();
+  const askTurns = useChannelAskTurns(activeChannelId);
+  const newestRow = thread.rows.at(-1)?.message ?? null;
+  const newestRowKey = newestRow
+    ? (newestRow.client_message_id ?? newestRow.id)
+    : null;
+  const composerAsk = useMemo(
+    () =>
+      channelAsk && activeChannelId
+        ? {
+            busy: channelAsk.busy,
+            send: (question: string) =>
+              channelAsk.send(activeChannelId, question, newestRowKey),
+          }
+        : null,
+    [channelAsk, activeChannelId, newestRowKey],
+  );
+  // A thread's reply box can't ask Frapp (the answer is drawn in the channel),
+  // so it refuses a reply that would have been a question, by the same
+  // reading the composer makes. While it is not yet known whether this
+  // member has Ask, such a reply is held rather than posted.
+  const askAccess = useChannelAskAccess();
+  const replyAskRefusalFor = useMemo(() => {
+    if (askAccess === "no") return undefined;
+    const names = spacedMentionNames(
+      membersQuery.data ?? [],
+      (mentionRoles.data ?? []).map((role) => role.name),
+    );
+    return (text: string) => replyAskRefusal(text, names, askAccess);
+  }, [askAccess, membersQuery.data, mentionRoles.data]);
   const unblockFlow = useUnblockFlow();
   const maskedRefresh = useMaskedRefresh();
   const { requestUnblock, reloadMaskedCopies } = unblockFlow;
@@ -3188,6 +3228,7 @@ export function ChatShell({
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
           jumpTo={threadJump}
+          askRefusal={replyAskRefusalFor}
         />
       </MentionChipTargetsContext.Provider>
     ) : null;
@@ -3773,6 +3814,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  askTurns={askTurns}
                   threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
@@ -3916,6 +3958,8 @@ export function ChatShell({
             // `replyTo?.id`, not `replyToId`: the derived target is the one the
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
+            ask={composerAsk}
+            askUnknown={askAccess === "unknown"}
             onSend={(body, attachments, mentionPicks) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to

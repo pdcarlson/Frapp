@@ -120,6 +120,7 @@ describe("rolesSaveFailedBody", () => {
   it("only offers a retry when trying again could work", () => {
     expect(rolesSaveFailedBody(400)).toContain("deleted");
     expect(rolesSaveFailedBody(403)).toContain("isn't allowed any more");
+    expect(rolesSaveFailedBody(409)).toContain("at the same time");
     expect(rolesSaveFailedBody(undefined)).toContain("Try again");
     expect(rolesSaveFailedBody(undefined, "Ada")).toMatch(
       /^Your change to Ada's roles didn't reach the server/,

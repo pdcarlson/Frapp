@@ -101,12 +101,15 @@ export * from "./meeting-draft";
 export * from "./meeting-recording";
 // ── Meeting minutes (#4312) ──────────────────────────────────────────────────
 export * from "./meetings";
+// Member nudges (#4781): the one card on Activity the AI writes for a member.
+export * from "./member-nudge";
 // ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────
 // Shared because the API's authoritative pass and any client-side preview must
 // not disagree about who `@jane` is — but only the API's result is persisted,
 // since mentions override a per-channel mute in the push rules and a
 // client-supplied list would be forgeable.
 export * from "./mentions";
+export * from "./message-link";
 export * from "./message-text";
 export * from "./module-enablement";
 export * from "./module-refusal";

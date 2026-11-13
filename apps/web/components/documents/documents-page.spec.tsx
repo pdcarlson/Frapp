@@ -477,6 +477,86 @@ describe("DocumentsPage subscription gating", () => {
     await waitFor(() => expect(uploadTrigger()).toHaveFocus());
   });
 
+  it("reopens Upload on its draft when the page was left mid-form (#4593)", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <DocumentsPage />
+        </div>
+      </div>
+    );
+    const first = render(tree());
+    await userEvent.click(uploadTrigger());
+    await userEvent.type(screen.getByLabelText("Title"), "Bylaws 2026");
+    // A nav link: the page goes, the form with it, no question asked.
+    first.unmount();
+
+    render(tree());
+    const region = await screen.findByRole("region", {
+      name: "Upload document",
+    });
+    expect(within(region).getByLabelText("Title")).toHaveValue("Bylaws 2026");
+    expect(within(region).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("comes back to the page, not the form, after going back from it (#4593)", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <DocumentsPage />
+        </div>
+      </div>
+    );
+    const first = render(tree());
+    await userEvent.click(uploadTrigger());
+    await userEvent.type(screen.getByLabelText("Title"), "Bylaws 2026");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to documents" }),
+    );
+    first.unmount();
+
+    render(tree());
+    expect(
+      screen.queryByRole("region", { name: "Upload document" }),
+    ).not.toBeInTheDocument();
+    // Still kept: Upload opens on it, and says so.
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByLabelText("Title")).toHaveValue("Bylaws 2026");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps nothing for an Upload opened and left untouched (#4593)", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <DocumentsPage />
+        </div>
+      </div>
+    );
+    const first = render(tree());
+    await userEvent.click(uploadTrigger());
+    first.unmount();
+    render(tree());
+    expect(
+      screen.queryByRole("region", { name: "Upload document" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(uploadTrigger());
+    expect(screen.queryByText("Draft restored")).not.toBeInTheDocument();
+  });
+
+  it("drops the draft on Cancel (#4593)", async () => {
+    chapter.active();
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+    await userEvent.type(screen.getByLabelText("Title"), "Bylaws 2026");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+  });
+
   it("sends focus to the notice, not Upload, when a lapse closes the docked form", async () => {
     chapter.active();
     const tree = () => (

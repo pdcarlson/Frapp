@@ -5,11 +5,13 @@ import Link from "next/link";
 import {
   useMeetings,
   useMemberDisplayNames,
+  useMyPermissions,
   useViewerUserId,
   type MeetingSummary,
 } from "@repo/hooks";
 import {
   MEETING_LIST_COPY,
+  can,
   meetingTypeLabel,
   type MeetingType,
 } from "@repo/validation";
@@ -22,7 +24,11 @@ import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { cn } from "@/lib/utils";
-import { StartMinutesPanel } from "@/components/meetings/start-minutes-panel";
+import {
+  MINUTES_DRAFT,
+  StartMinutesPanel,
+} from "@/components/meetings/start-minutes-panel";
+import { useKeptPanel } from "@repo/hooks/kept-drafts";
 import { MeetingRowsSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -46,6 +52,19 @@ function ChapterMeetingsPage() {
   const viewerId = useViewerUserId();
   const names = useMemberDisplayNames();
   const [starting, setStarting] = useState(false);
+  // Reopens on return when the page was left mid-form (#4593), once the
+  // viewer is known to still start minutes, as the button that opens it is.
+  const canRecord = can(
+    "meetings:record",
+    useMyPermissions().data?.permissions ?? [],
+  );
+  useKeptPanel({
+    page: "meetings",
+    form: MINUTES_DRAFT,
+    open: starting,
+    setOpen: setStarting,
+    ready: canRecord,
+  });
   const { drafts, posted } = useMemo(() => {
     const rows = meetingsQuery.data ?? [];
     return {

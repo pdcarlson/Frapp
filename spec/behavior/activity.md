@@ -60,6 +60,12 @@ member's own answer, not the event's default:
   client that can't supply a location (web) leaves Check in off the row and opens the event,
   which says to use the phone; the phone checks in from the row and asks for the location then
   ([#4427](https://github.com/pdcarlson/Frapp/issues/4427)).
+- `check_in_needs_code` is whether checking in needs the code on an officer's screen: one is live
+  for the event ([`events.md`](events.md) § Check-In). Read only while `check_in_open` is true;
+  false otherwise. No screen location is served. A client that can't scan (web) leaves Check in
+  off the row and opens the event, which says to point the phone's camera at the code; the phone
+  checks in from the row and asks for the code if the press is refused
+  ([#4808](https://github.com/pdcarlson/Frapp/issues/4808)).
 
 **Made by you**
 

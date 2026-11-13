@@ -85,6 +85,10 @@ import {
   type ValidatedNewTask,
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
+import {
+  useKeptSheetDraft,
+  useKeptSheetOpening,
+} from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -188,7 +192,27 @@ export interface NewTaskSheetProps {
   suggestion?: TaskSuggestionSeed;
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
+  /**
+   * Keeps a new task's draft past this sheet's host, under this name
+   * (#4593): the Tasks screen's sheet goes when the member goes back, and its
+   * draft is there the next time they make a task from that screen. Not for
+   * an edit or a suggestion, whose sheets start from what they open on.
+   */
+  keptDraft?: string;
 }
+
+/** What a kept new-task draft holds (`keptDraft`). */
+type KeptTask = {
+  title: string;
+  pointsInput: string;
+  due: DueChoice;
+  dueTime: string | null;
+  subtasks: string[];
+  subtaskText: string;
+  assigneeId: string | null;
+  proofKind: TaskProofKind;
+  pickedPhotos: PendingTaskPhoto[];
+};
 
 export interface TaskSuggestionSeed {
   title: string;
@@ -241,6 +265,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onSaved,
       onClosed,
       suggestion,
+      keptDraft,
     },
     ref,
   ) {
@@ -291,13 +316,21 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    const [title, setTitle] = useState(
-      original?.title ?? suggestion?.title ?? "",
+    // A new task's draft kept from the screen's last visit (`keptDraft`).
+    const opening = useKeptSheetOpening<KeptTask>(
+      keptDraft && !editing && !suggestion ? keptDraft : null,
     );
-    const [pointsInput, setPointsInput] = useState(original?.pointsInput ?? "");
+    const [title, setTitle] = useState(
+      opening?.title ?? original?.title ?? suggestion?.title ?? "",
+    );
+    const [pointsInput, setPointsInput] = useState(
+      opening?.pointsInput ?? original?.pointsInput ?? "",
+    );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
-      original
+      opening
+        ? opening.due
+        : original
         ? { kind: "date", date: original.dueDate }
         : suggested
           ? { kind: "date", date: suggested.dueDate }
@@ -305,27 +338,62 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
-      original?.dueTime ?? suggested?.dueTime ?? null,
+      opening
+        ? opening.dueTime
+        : (original?.dueTime ?? suggested?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>(() => [
-      ...(suggestion?.subtasks ?? []),
+      ...(opening?.subtasks ?? suggestion?.subtasks ?? []),
     ]);
-    const [subtaskText, setSubtaskText] = useState("");
+    const [subtaskText, setSubtaskText] = useState(
+      () => opening?.subtaskText ?? "",
+    );
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(
-      original?.assigneeId ?? suggestion?.assigneeId ?? null,
+      opening
+        ? opening.assigneeId
+        : (original?.assigneeId ?? suggestion?.assigneeId ?? null),
     );
     // Photos and proof (#4635): the task's own reference photos still kept
     // (an edit), the ones picked here, which go up on Save, and the proof
     // control. A suggestion carries none, so its form leaves them out.
     const [proofKind, setProofKind] = useState<TaskProofKind>(
-      original?.proofKind ?? "none",
+      opening?.proofKind ?? original?.proofKind ?? "none",
     );
     const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(
       () => editing?.referencePhotos ?? [],
     );
-    const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>([]);
+    const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>(
+      () => opening?.pickedPhotos ?? [],
+    );
+    const kept = useKeptSheetDraft<KeptTask>(
+      keptDraft && !editing && !suggestion ? keptDraft : null,
+      {
+        title,
+        pointsInput,
+        due,
+        dueTime,
+        subtasks,
+        subtaskText,
+        assigneeId,
+        proofKind,
+        pickedPhotos,
+      },
+      JSON.stringify([
+        title,
+        pointsInput,
+        due,
+        dueTime,
+        subtasks,
+        subtaskText,
+        assigneeId,
+        proofKind,
+        pickedPhotos.map(({ image }) => image.uri),
+      ]),
+      opening,
+    );
+    const { clear: clearKept, hold: holdKept, release: releaseKept } = kept;
     const [photoProblem, setPhotoProblem] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [addingPhotos, setAddingPhotos] = useState(false);
@@ -420,6 +488,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     /** The draft itself: what a create sends. */
     const clearDraft = useCallback(() => {
+      clearKept();
       setTitle("");
       setPointsInput("");
       setDue(DEFAULT_DUE_CHOICE);
@@ -430,7 +499,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setProofKind("none");
       setPickedPhotos([]);
       setPhotoProblem(null);
-    }, []);
+    }, [clearKept]);
 
     /** Add photos from the library, several at once, up to the room left. */
     const addPhotos = useCallback(async () => {
@@ -638,6 +707,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       // reached a render; `sending` stops a second tap in the same batch.
       if (!body || !canSubmit || sending.current) return;
       sending.current = true;
+      // Out of the kept store until it lands or fails, so the screen reopened
+      // mid-create can't send it twice.
+      holdKept();
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
@@ -662,6 +734,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         },
         onError: (error: unknown) => {
           sending.current = false;
+          releaseKept();
           // A visit that has ended doesn't latch its outcome into the next
           // one, which would greet the member with a stale error.
           if (!isSameVisit(sentFrom)) return;
@@ -700,6 +773,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       void uploadPicked(sentFrom).then((paths) => {
         if (!paths) {
           sending.current = false;
+          releaseKept();
           return;
         }
         dispatchBody(attachPhotos(body, paths), sentFrom, handlers);
@@ -719,6 +793,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onCreated,
       assigneeName,
       onPosted,
+      holdKept,
+      releaseKept,
     ]);
 
     const filteredRoster = useMemo(() => {

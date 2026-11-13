@@ -435,8 +435,7 @@ describe("ChatAdminPage — the create panel", () => {
     );
   });
 
-  // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
-  // it has to drop the draft itself the way the X and Escape do.
+  // Cancel gives the draft up; leaving keeps it (#4593).
   it("drops the draft on Cancel, so the next New channel starts empty", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
@@ -452,7 +451,7 @@ describe("ChatAdminPage — the create panel", () => {
 });
 
 describe("ChatAdminPage — the create panel docked (#4593)", () => {
-  it("opens in place of Chat admin beside chat, and the arrow drops the draft", () => {
+  it("opens in place of Chat admin beside chat, and the arrow keeps the draft", () => {
     render(
       <div data-tool-column="">
         <div data-tool-page="">
@@ -479,7 +478,55 @@ describe("ChatAdminPage — the create panel docked (#4593)", () => {
       screen.queryByRole("region", { name: "Create a channel" }),
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    expect(screen.getByLabelText("Name")).toHaveValue("rush-planning");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+
+    // Discard starts over in place.
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.getByLabelText("Name")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("reopens New channel on its draft when the page was left with it open", async () => {
+    const first = render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <ChatAdminPage />
+        </div>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+    first.unmount();
+
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <ChatAdminPage />
+        </div>
+      </div>,
+    );
+    const region = await screen.findByRole("region", {
+      name: "Create a channel",
+    });
+    expect(within(region).getByLabelText("Name")).toHaveValue("rush-planning");
+    expect(within(region).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps nothing for a New channel opened and left untouched", () => {
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <ChatAdminPage />
+        </div>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat admin" }));
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    expect(screen.queryByText("Draft restored")).toBeNull();
   });
 });
 

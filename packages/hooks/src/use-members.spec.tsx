@@ -585,6 +585,43 @@ describe("membership writes refetch the alumni list", () => {
     );
   });
 
+  it("useUpdateMemberRoles re-reads the member and the roles after a 409, and nothing after a 400 (#4830)", async () => {
+    const queryClient = new QueryClient();
+    const keys = invalidatedKeys(queryClient);
+    const PATCH = vi.fn();
+    mockUseFrappClient.mockReturnValue({
+      PATCH,
+    } as unknown as ReturnType<typeof useFrappClient>);
+    const { result } = renderHook(() => useUpdateMemberRoles(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    PATCH.mockResolvedValueOnce({
+      data: undefined,
+      error: { statusCode: 400 },
+    });
+    await expect(
+      result.current.mutateAsync({ id: "member-1", role_ids: ["gone"] }),
+    ).rejects.toBeTruthy();
+    expect(keys()).toEqual([]);
+
+    PATCH.mockResolvedValueOnce({
+      data: undefined,
+      error: { statusCode: 409 },
+    });
+    await expect(
+      result.current.mutateAsync({ id: "member-1", role_ids: ["r1"] }),
+    ).rejects.toBeTruthy();
+    await waitFor(() =>
+      expect(keys()).toEqual(
+        expect.arrayContaining([
+          ["members", CHAPTER_ID],
+          ["roles", CHAPTER_ID],
+        ]),
+      ),
+    );
+  });
+
   it("useCorrectMemberProfile refetches every read showing the name, not the viewer's own", async () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);

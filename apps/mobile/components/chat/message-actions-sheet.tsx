@@ -76,8 +76,7 @@ import type { ChatMessageFlag } from "@repo/validation";
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
  * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
- * text, Mark unread, Pin message, Save message, Mention), then Report and
- * Delete last. Rows are bare labels: a menu
+ * text, Mark unread, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
@@ -98,8 +97,10 @@ import type { ChatMessageFlag } from "@repo/validation";
  * the sheet closes: the chip under the message is the confirmation.
  *
  * **Copy text** copies the message's text as written, for a card-free message
- * with a body (`copyableText`). The row turns to "Copied" in place, then the
- * sheet closes.
+ * with a body (`copyableText`). **Copy message link** (#3723) copies a link
+ * that opens the message in the app or on the web, on any message the thread
+ * offers it for, cards included, as Discord's does. Either row turns to
+ * "Copied" in place, then the sheet closes.
  *
  * **Mark unread** (#3723) sits after Copy text, where Discord's long-press
  * puts it. The thread moves the read cursor back and leaves the channel.
@@ -109,7 +110,7 @@ import type { ChatMessageFlag } from "@repo/validation";
  * confirmation in a native alert, so each row closes the sheet and tells the
  * screen which message it was for.
  *
- * **Pin message and Save message** (#3723) sit after Copy text, where
+ * **Pin message and Save message** (#3723) sit after Copy message link, where
  * Discord's long-press puts Pin. Pin is the chapter-public elevation and shows
  * only to a `channels:manage` holder, the server's gate; Save is the viewer's
  * private bookmark, on any confirmed message. Each reads its current state
@@ -147,6 +148,11 @@ import type { ChatMessageFlag } from "@repo/validation";
 
 const REPORT_SNAP_POINTS = ["85%"];
 
+/** What a copy row puts on the clipboard. */
+type CopyKind = "text" | "link";
+
+/** The row that copies the message's link (#3723), Discord's words. */
+export const COPY_LINK_LABEL = "Copy message link";
 /** The Pin row's labels (#3723), Discord's words. */
 export const PIN_LABEL = "Pin message";
 export const UNPIN_LABEL = "Unpin message";
@@ -185,6 +191,13 @@ export interface MessageActionsTarget {
    * channel, so it reads as unread on the list.
    */
   canMarkUnread?: boolean;
+  /**
+   * What "Copy message link" copies (#3723): the message's
+   * `app.frapp.live/chat?…` link (`messageLinkUrl` in `@repo/validation`),
+   * which opens it in the app or on the web. Absent where there's no link to
+   * give, which draws no row.
+   */
+  link?: string | null;
   canReply: boolean;
   /**
    * Start thread (#3785): a message in a channel that offers threads, with no
@@ -425,11 +438,15 @@ export const MessageActionsSheet = forwardRef<
   );
 
   /**
-   * Which message's text was just copied. "Copy text" confirms in place: the
-   * row reads "Copied" with a tick of haptics, then the sheet closes, so the
-   * member sees it worked without a toast landing over the thread.
+   * Which message's text or link was just copied. "Copy text" and "Copy
+   * message link" confirm in place: the row reads "Copied" with a tick of
+   * haptics, then the sheet closes, so the member sees it worked without a
+   * toast landing over the thread.
    */
-  const [copiedFor, setCopiedFor] = useState<string | null>(null);
+  const [copiedFor, setCopiedFor] = useState<{
+    messageId: string;
+    what: CopyKind;
+  } | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -447,29 +464,34 @@ export const MessageActionsSheet = forwardRef<
     copyTimer.current = null;
     setCopiedFor(null);
   }, []);
-  const copyText = useCallback(() => {
-    const text = target?.copyText;
-    const messageId = target?.messageId;
-    if (!text || !messageId) return;
-    // The visit the copy was tapped in: a clipboard write that settles after
-    // the menu closed arms no timer, since nothing would clear it (#3795).
-    const visit = menuVisitNow();
-    void Clipboard.setStringAsync(text)
-      .then(() => {
-        if (!isSameMenuVisit(visit)) return;
-        selectionHaptic();
-        setCopiedFor(messageId);
-        announce(COPIED_LABEL);
-        if (copyTimer.current) clearTimeout(copyTimer.current);
-        copyTimer.current = setTimeout(() => {
-          copyTimer.current = null;
-          dismissMenu();
-        }, COPIED_HOLD_MS);
-      })
-      .catch(() => {
-        Alert.alert("Couldn't copy", "Try again in a moment.");
-      });
-  }, [dismissMenu, isSameMenuVisit, menuVisitNow, target]);
+  const copy = useCallback(
+    (what: CopyKind) => {
+      const text = what === "text" ? target?.copyText : target?.link;
+      const messageId = target?.messageId;
+      if (!text || !messageId) return;
+      // The visit the copy was tapped in: a clipboard write that settles after
+      // the menu closed arms no timer, since nothing would clear it (#3795).
+      const visit = menuVisitNow();
+      void Clipboard.setStringAsync(text)
+        .then(() => {
+          if (!isSameMenuVisit(visit)) return;
+          selectionHaptic();
+          setCopiedFor({ messageId, what });
+          announce(COPIED_LABEL);
+          if (copyTimer.current) clearTimeout(copyTimer.current);
+          copyTimer.current = setTimeout(() => {
+            copyTimer.current = null;
+            dismissMenu();
+          }, COPIED_HOLD_MS);
+        })
+        .catch(() => {
+          Alert.alert("Couldn't copy", "Try again in a moment.");
+        });
+    },
+    [dismissMenu, isSameMenuVisit, menuVisitNow, target],
+  );
+  const isCopied = (what: CopyKind) =>
+    copiedFor?.messageId === target?.messageId && copiedFor?.what === what;
 
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
@@ -752,17 +774,16 @@ export const MessageActionsSheet = forwardRef<
           ) : null}
           {target?.copyText ||
           (target?.canMarkUnread && onMarkUnread) ||
+          target?.link ||
           (target?.pin && onSetPinned) ||
           (target?.save && onSetSaved) ||
           (target?.canMention && onMention) ? (
             <ListSection>
               {target.copyText ? (
                 <ListRow
-                  label={
-                    copiedFor === target.messageId ? COPIED_LABEL : "Copy text"
-                  }
+                  label={isCopied("text") ? COPIED_LABEL : "Copy text"}
                   action
-                  onPress={copyText}
+                  onPress={() => copy("text")}
                 />
               ) : null}
               {target.canMarkUnread && onMarkUnread ? (
@@ -770,6 +791,13 @@ export const MessageActionsSheet = forwardRef<
                   label={MARK_UNREAD_LABEL}
                   action
                   onPress={() => handOff(onMarkUnread)}
+                />
+              ) : null}
+              {target.link ? (
+                <ListRow
+                  label={isCopied("link") ? COPIED_LABEL : COPY_LINK_LABEL}
+                  action
+                  onPress={() => copy("link")}
                 />
               ) : null}
               {target.pin && onSetPinned ? (

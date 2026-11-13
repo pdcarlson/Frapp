@@ -59,6 +59,7 @@ import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
   MARK_UNREAD_LABEL,
+  COPY_LINK_LABEL,
   PIN_LABEL,
   SAVE_LABEL,
   UNPIN_LABEL,
@@ -292,6 +293,78 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
         MARK_UNREAD_LABEL,
       ),
     ).toBe(false);
+  });
+
+  it("offers Copy message link after Copy text, copies the link, and says Copied on that row only (#3723)", async () => {
+    const link = "https://app.frapp.live/chat?channel=c1&message=m1";
+    const tree = render({ ...OWN, copyText: "hi", link });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(COPY_LINK_LABEL),
+    );
+
+    pressByLabel(tree, COPY_LINK_LABEL);
+    await flush();
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(link);
+    expect(hasRow(tree, COPIED_LABEL)).toBe(true);
+    // Copy text still says what it does.
+    expect(hasRow(tree, "Copy text")).toBe(true);
+    expect(hasRow(tree, COPY_LINK_LABEL)).toBe(false);
+  });
+
+  it("puts Copy message link right after Copy text, before Pin, Save and Mention", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        link: "https://app.frapp.live/chat?channel=c1&message=m1",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+        pin: { pinned: false },
+        save: { saved: false },
+      },
+      undefined,
+      { onMention: vi.fn(), onSetPinned: vi.fn(), onSetSaved: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(labels.slice(labels.indexOf("Copy text"))).toEqual([
+      "Copy text",
+      COPY_LINK_LABEL,
+      PIN_LABEL,
+      SAVE_LABEL,
+      "Mention",
+      "Report message",
+    ]);
+  });
+
+  it("draws no Copy message link without a link", () => {
+    expect(hasRow(render({ ...OWN, copyText: "hi" }), COPY_LINK_LABEL)).toBe(
+      false,
+    );
   });
 
   it("draws no Copy text when the message has nothing to copy", () => {

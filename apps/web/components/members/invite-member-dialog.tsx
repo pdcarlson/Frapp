@@ -5,6 +5,7 @@ import { AlertTriangle, Link2, Mail, RotateCw, Trash2 } from "lucide-react";
 import {
   useActiveChapterId,
   useEmailInvites,
+  useInvitableRoleIds,
   useInvites,
   useOrgConfig,
   useRevokeInvite,
@@ -15,6 +16,7 @@ import {
   type InviteListItem,
 } from "@repo/hooks";
 import { formatSentLabel } from "@repo/formatting";
+import { useKeptFormDraft, useKeptPanel } from "@repo/hooks/kept-drafts";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,8 +41,11 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
 import {
   InviteComposer,
+  NO_ADDRESSES,
   copyWhenReady,
+  type InviteAddresses,
 } from "@/components/members/invite-composer";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { parseChapterRoles, toRoleOptions } from "@repo/hooks/chapter-roles";
 import { EVERYONE_ROLE_NAME } from "@repo/validation";
@@ -63,6 +68,16 @@ const SEEDED_MEMBER_ROLE_NAME = "Member";
 /** What the picker calls the Everyone role (#4191). */
 const NO_ROLE_LABEL = "No role";
 
+/** The kept draft's name (#4593). */
+const INVITE_DRAFT = "invite-members";
+
+/** What the panel keeps when it is left: the addresses and a picked role. */
+type InviteDraft = {
+  addresses: InviteAddresses;
+  roleName: string;
+  hasPickedRole: boolean;
+};
+
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
 };
@@ -71,6 +86,11 @@ type InviteMemberDialogProps = {
  * Members → Invite: send invites by email, or copy a link to share, and see
  * who was invited and who has joined. Nobody sees a token (Paul, 2026-11-06:
  * the old panel generated and listed raw UUIDs).
+ *
+ * Leaving it keeps the addresses being written and a role picked for them
+ * (#4593): the back arrow, Escape and leaving the Directory all keep them,
+ * and the panel opens on them next time, saying so. A Directory left with
+ * the panel open reopens it. Sending drops them.
  */
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
@@ -78,10 +98,32 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
+  // A send from this panel still on its way, even if the panel was closed
+  // and reopened since: the reopened composer is a new one, and would
+  // otherwise offer the same addresses to send again.
+  const [sending, setSending] = useState(false);
+  const [addresses, setAddresses] = useState<InviteAddresses>(NO_ADDRESSES);
+  // Whether there is a draft is the addresses, and the role picked for them.
+  // A role picked with no addresses is not one: the next invite starts on the
+  // chapter's default, as it did before drafts were kept. Nor is the default
+  // role landing after the panel opens.
+  const hasAddresses =
+    addresses.chips.length > 0 || addresses.draft.trim() !== "";
+  const kept = useKeptFormDraft<InviteDraft>(
+    INVITE_DRAFT,
+    open,
+    { addresses, roleName, hasPickedRole },
+    {
+      signature: hasAddresses
+        ? JSON.stringify([addresses, hasPickedRole ? roleName : null])
+        : "",
+    },
+  );
   const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
+  const invitableRolesQuery = useInvitableRoleIds();
   const emailInvites = useEmailInvites();
   const revokeInviteMutation = useRevokeInvite();
   // `POST /invites` and `POST /invites/email` are `@FreeTier` +
@@ -108,17 +150,23 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   );
   const everyoneRoleId = everyoneRole?.id;
   // A role holding `*` is left out: an invite can't grant it (the API answers
-  // 403); it changes hands only through Transfer presidency.
-  const roleOptions = useMemo(
-    () =>
-      toRoleOptions(rolesQuery.data, "keep", { dropLocked: true }).sort(
+  // 403); it changes hands only through Transfer presidency. So is a role
+  // ranked above the sender, or carrying a permission they lack (#4546, Paul
+  // 2026-11-13): a chair invites a peer or a brother, never an officer. Until
+  // that list loads, or if it fails, every role is offered and the API still
+  // refuses the rest.
+  const invitableRoleIds = invitableRolesQuery.data;
+  const roleOptions = useMemo(() => {
+    const allowed = invitableRoleIds ? new Set(invitableRoleIds) : null;
+    return toRoleOptions(rolesQuery.data, "keep", { dropLocked: true })
+      .filter((role) => !allowed || allowed.has(role.id))
+      .sort(
         (first, second) =>
           Number(second.id === everyoneRoleId) -
             Number(first.id === everyoneRoleId) ||
           first.name.localeCompare(second.name),
-      ),
-    [rolesQuery.data, everyoneRoleId],
-  );
+      );
+  }, [rolesQuery.data, everyoneRoleId, invitableRoleIds]);
 
   // The Everyone role's current name: by `system_key` (`parseChapterRoles`),
   // then by the seeded Member name. `undefined` when neither exists.
@@ -206,14 +254,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   );
 
   /**
-   * Reopening starts a fresh invite, so the chapter default applies again
-   * rather than the role picked during a previous session.
+   * Opening comes back to the kept draft, its addresses and any role picked
+   * for them. Without one it starts a fresh invite, so the chapter default
+   * applies again rather than a role picked for invites already sent.
    *
-   * Every open and close path routes through here: the trigger, and the
-   * panel's own ways out (the back arrow, Escape; the sheet's X and overlay
-   * where it falls back to one), so none of them skips the reset.
-   *
-   * Opening re-reads invites and roles: the list is mounted with the page and
+   * Opening re-reads invites and roles (and which roles the sender may
+   * invite into): the list is mounted with the page and
    * cached for a minute, so an invite another officer revoked, or someone
    * joining, would otherwise not show here.
    */
@@ -223,16 +269,33 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     if (!activeChapterId) return;
     void invitesQuery.refetch();
     void rolesQuery.refetch();
+    void invitableRolesQuery.refetch();
   }
 
   function handleOpenChange(next: boolean) {
     if (next) {
       refetchLiveData();
-    } else {
-      setHasPickedRole(false);
+      const draft = kept.take();
+      setAddresses(draft?.addresses ?? NO_ADDRESSES);
+      setHasPickedRole(draft?.hasPickedRole ?? false);
+      if (draft?.hasPickedRole) setRoleName(draft.roleName);
     }
     setOpen(next);
   }
+
+  /** Discard: the addresses go, and the role goes back to the default. */
+  function discardDraft() {
+    kept.discard();
+    setAddresses(NO_ADDRESSES);
+    setHasPickedRole(false);
+  }
+
+  useKeptPanel({
+    page: "members",
+    form: INVITE_DRAFT,
+    open,
+    setOpen: handleOpenChange,
+  });
 
   async function copyInviteLink(invite: InviteListItem) {
     const link = buildJoinUrl(window.location.origin, invite.token);
@@ -412,12 +475,38 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               </div>
             ) : null}
 
-            <InviteComposer
-              role={roleName}
-              roleControl={roleControl}
-              disabled={hasLiveDataError || roleOptions.length === 0}
-              gate={gate}
-            />
+            <div className="space-y-3">
+              <InviteComposer
+                role={roleName}
+                roleControl={roleControl}
+                disabled={hasLiveDataError || roleOptions.length === 0}
+                gate={gate}
+                addresses={addresses}
+                onAddressesChange={(patch) =>
+                  setAddresses((current) => ({ ...current, ...patch }))
+                }
+                busy={sending}
+                onSendStart={() => {
+                  setSending(true);
+                  kept.hold();
+                }}
+                onSendFailed={() => {
+                  setSending(false);
+                  kept.release();
+                }}
+                onInvited={(how) => {
+                  if (how !== "email") return;
+                  setSending(false);
+                  // Sent: what the field is left holding (an address that
+                  // couldn't be emailed, listed under Invited) is not a draft.
+                  kept.drop();
+                  kept.rebase();
+                }}
+              />
+              {kept.restored ? (
+                <KeptDraftNote onDiscard={discardDraft} />
+              ) : null}
+            </div>
             <SubscriptionNotice gate={gate} feature="sending invites" />
 
             <section aria-labelledby="invite-list-label" className="space-y-2">

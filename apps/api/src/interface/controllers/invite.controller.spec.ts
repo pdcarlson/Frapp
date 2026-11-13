@@ -27,6 +27,7 @@ describe('InviteController', () => {
       findByChapter: jest.fn(),
       findPendingForVerifiedEmail: jest.fn(),
       revoke: jest.fn(),
+      findInvitableRoleIds: jest.fn(),
     };
 
     const mockAuthService = {
@@ -182,10 +183,30 @@ describe('InviteController', () => {
         .spyOn(inviteService, 'findByChapter')
         .mockResolvedValue(expectedResult as any);
 
-      const result = await controller.list(chapterId);
+      const result = await controller.list(chapterId, 'user-1');
 
-      expect(inviteService.findByChapter).toHaveBeenCalledWith(chapterId);
+      // The caller decides which invites they see (#4546).
+      expect(inviteService.findByChapter).toHaveBeenCalledWith(
+        chapterId,
+        'user-1',
+      );
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('listInvitableRoles (#4546)', () => {
+    it("answers the caller's invitable role ids", async () => {
+      jest
+        .spyOn(inviteService, 'findInvitableRoleIds')
+        .mockResolvedValue(['role-a', 'role-b']);
+
+      const result = await controller.listInvitableRoles('chapter-1', 'user-1');
+
+      expect(inviteService.findInvitableRoleIds).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+      expect(result).toEqual({ role_ids: ['role-a', 'role-b'] });
     });
   });
 
@@ -261,9 +282,13 @@ describe('InviteController', () => {
 
       jest.spyOn(inviteService, 'revoke').mockResolvedValue(undefined);
 
-      const result = await controller.revoke(chapterId, inviteId);
+      const result = await controller.revoke(chapterId, 'user-1', inviteId);
 
-      expect(inviteService.revoke).toHaveBeenCalledWith(inviteId, chapterId);
+      expect(inviteService.revoke).toHaveBeenCalledWith(
+        inviteId,
+        chapterId,
+        'user-1',
+      );
       expect(result).toEqual({ success: true });
     });
   });

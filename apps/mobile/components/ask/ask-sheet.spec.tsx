@@ -463,6 +463,21 @@ describe("AskSheet", () => {
     expect(hooks.stop).not.toHaveBeenCalled();
   });
 
+  it("leaves a question asked from a channel to finish when the sheet closes (#4713)", () => {
+    // Its answer is drawn in the channel, which closing the sheet does not
+    // take away, so the question goes on being answered.
+    hooks.exchanges = [
+      answered(),
+      {
+        ...working(),
+        origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
+      },
+    ];
+    const tree = render();
+    act(() => sheet(tree).props.onDismiss());
+    expect(hooks.stop).not.toHaveBeenCalled();
+  });
+
   it("reports an answer by the ask's id, with the receipt exactly as it came", () => {
     hooks.exchanges = [
       {

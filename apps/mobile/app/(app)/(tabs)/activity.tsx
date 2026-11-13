@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   ACTIVITY_SHOW_EVERYTHING,
   ACTIVITY_TO_DO_EMPTY,
@@ -18,9 +19,12 @@ import {
   useNowDate,
   useCurrentChapter,
   useClearActivityLinkState,
+  useMemberNudge,
+  useMemberNudgeActions,
   useMyPermissions,
   useRemoveActivityLink,
   useRestoreActivityLink,
+  useSetMemberNudgesEnabled,
   useSetActivityLinkState,
   useViewerUserId,
   useActivityFaces,
@@ -31,7 +35,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled, memberNudgeAskPrompt } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -46,6 +50,7 @@ import {
   ActivitySheet,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
+import { NudgeCard } from "@/components/activity/nudge-card";
 import { ReviewCard } from "@/components/activity/review-card";
 import {
   SemesterStrip,
@@ -53,6 +58,7 @@ import {
   type StandingDestination,
 } from "@/components/activity/semester-strip";
 import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
+import { AskSheet } from "@/components/ask/ask-sheet";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -61,6 +67,7 @@ import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
+import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
@@ -282,6 +289,34 @@ export default function ActivityScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewTaskId, refetchActivity, router]);
 
+  // The nudge card (#4781): one card Frapp's AI wrote about one of the
+  // member's own tasks, or nothing. Asked for only where the server offers
+  // this member AI; any failure is no card. It is asked again after the task
+  // sheet closes, since acting on the task is what the card was for.
+  const ai = useAiSurfaces();
+  const nudgeRead = useMemberNudge({ enabled: ai.ask && moduleOn("tasks") });
+  const nudge = ai.ask ? (nudgeRead.data ?? null) : null;
+  const nudgeActions = useMemberNudgeActions();
+  const setNudgesEnabled = useSetMemberNudgesEnabled();
+  const askRef = useRef<BottomSheetModal>(null);
+  const [askDraft, setAskDraft] = useState<string | null>(null);
+  // Mounted on the first "Ask about this", then presented once it has.
+  useEffect(() => {
+    if (askDraft !== null) askRef.current?.present();
+  }, [askDraft]);
+  const openNudgeTask = () => {
+    if (!nudge) return;
+    const row = activity.data
+      ? findActivityTaskRow(activity.data, nudge.task_id, new Date())
+      : null;
+    if (row) {
+      open(row);
+    } else {
+      // Past the read's cap, or finished since: the board has every task.
+      router.push("/tasks");
+    }
+  };
+
   function renderBody() {
     if (activity.isPending) {
       return (
@@ -327,6 +362,17 @@ export default function ActivityScreen() {
           rowActions={rowActions}
           onOpenNext={open}
         />
+        {nudge ? (
+          <NudgeCard
+            nudge={nudge}
+            canAsk={ai.ask}
+            onOpenTask={openNudgeTask}
+            onAsk={() => setAskDraft(memberNudgeAskPrompt(nudge.task_title))}
+            onDismiss={(reason) => nudgeActions.dismiss(nudge.id, reason)}
+            onTurnOff={() => setNudgesEnabled.mutate(false)}
+            onSeen={() => nudgeActions.markSeen(nudge.id)}
+          />
+        ) : null}
         {standing.isPending ? (
           <SemesterStripSkeleton />
         ) : standing.data ? (
@@ -373,9 +419,19 @@ export default function ActivityScreen() {
           onClosed={() => {
             setOpenedKey(null);
             if (rereadOnClose()) reread();
+            // The member may have just done what the card asked.
+            if (nudge) void nudgeActions.recheck();
           }}
           linkActions={linkActions}
         />
+        {askDraft !== null ? (
+          <AskSheet
+            key={askDraft}
+            ref={askRef}
+            initialDraft={askDraft}
+            onClosed={() => setAskDraft(null)}
+          />
+        ) : null}
       </ScreenShell>
       {undo ? (
         <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
