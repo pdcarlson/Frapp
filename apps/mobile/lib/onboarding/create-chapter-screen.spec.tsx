@@ -11,6 +11,7 @@ import { ReduceMotion } from "react-native-reanimated";
 import type { ChapterDirectoryResult } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 import { flatStyle } from "@/test/flat-style";
 
 /**
@@ -83,8 +84,26 @@ let inviteList: { token: string; used_at: string | null }[] = [];
 let invitesOptions: { enabled?: boolean; refetchInterval?: number } | undefined;
 let currentChapter: { logo_url: string | null } | undefined;
 
+// Meet Frapp AI's answers (#4790). AI is off unless a spec turns it on, so
+// the other beats' specs run as before.
+const aiChoice = vi.hoisted(() => ({
+  consent: null as unknown,
+  consentFailed: false,
+  readConsent: () => Promise.resolve(null),
+  providers: ["Anthropic", "Google"],
+  forChapter: false,
+  turnOn: vi.fn(() => Promise.resolve(true)),
+  notNow: vi.fn(() => Promise.resolve()),
+  pending: false,
+  lastOptions: undefined as { includeChapter?: boolean } | undefined,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useFrappAiChoice: (options?: { includeChapter?: boolean }) => {
+    aiChoice.lastOptions = options;
+    return aiChoice;
+  },
   useChapterDirectorySearch: () => ({
     data: directoryRows,
     isFetching: false,
@@ -376,6 +395,49 @@ describe("chapter setup — step order", () => {
 
     await press(root, "Go to chat");
     expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
+  });
+
+  it("asks the founder to meet Frapp AI after the display pick, for the new chapter too (#4790)", async () => {
+    aiChoice.consent = {
+      answer: null,
+      answered_at: null,
+      sheet_changed: false,
+      sheet: { version: 2, providers: [], data: [] },
+    };
+    aiChoice.forChapter = true;
+    aiChoice.turnOn.mockClear();
+    try {
+      const { root } = await render();
+      await pickRow(root, "Phi Gamma Delta");
+      await press(root, "Continue");
+      await press(root, "agree");
+      await act(async () => {
+        primary(root).props.onPress();
+      });
+      await settle();
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.display);
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.ai);
+      // The chapter's switches are only touched once the new chapter is the
+      // active one.
+      expect(aiChoice.lastOptions).toEqual({ includeChapter: true });
+      // Read through `drawnText`: the line nests the privacy link's Text.
+      expect(
+        root
+          .findAllByType("Text" as never, { deep: true })
+          .map((text) => drawnText(text))
+          .join("\n"),
+      ).toContain(
+        "Frapp AI works with Anthropic and Google. Continuing turns it on for you and your chapter.",
+      );
+      await press(root, "Continue");
+      expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);
+      expect(title(root)).toBe(SETUP_TITLES.invite);
+    } finally {
+      aiChoice.consent = null;
+      aiChoice.forChapter = false;
+    }
   });
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {

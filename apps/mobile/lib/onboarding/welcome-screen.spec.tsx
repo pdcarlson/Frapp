@@ -2,10 +2,11 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 import { flatStyle } from "@/test/flat-style";
 
 /**
@@ -77,8 +78,22 @@ vi.mock("@/components/profile/profile-photo", () => ({
     React.createElement("ProfilePhoto", props),
 }));
 
+// Meet Frapp AI's answers (#4790). AI is off unless a spec turns it on, so
+// the other beats' specs run as before.
+const aiChoice = vi.hoisted(() => ({
+  consent: null as unknown,
+  consentFailed: false,
+  readConsent: () => Promise.resolve(null),
+  providers: ["Anthropic", "Google"],
+  forChapter: false,
+  turnOn: vi.fn(() => Promise.resolve(true)),
+  notNow: vi.fn(() => Promise.resolve()),
+  pending: false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useFrappAiChoice: () => aiChoice,
   useListChapters: () => ({
     data: [
       {
@@ -357,6 +372,95 @@ describe("s03 welcome, notifications step", () => {
  * display (#3787), then handed over to chat, marking the first-run tour due
  * for that member on the way out.
  */
+/**
+ * Meet Frapp AI (#4790): after the display beat, for a member who has never
+ * answered it on a server with AI. Continue turns it on, Not now leaves it
+ * off, and either moves on.
+ */
+describe("s03 welcome, Meet Frapp AI beat", () => {
+  const UNANSWERED = {
+    answer: null,
+    answered_at: null,
+    sheet_changed: false,
+    sheet: { version: 2, providers: [], data: [] },
+  };
+  const allText = (root: Node) =>
+    root
+      .findAllByType("Text" as never, { deep: true })
+      .map((text) => drawnText(text))
+      .join("\n");
+  const onAiBeat = (root: Node) => allText(root).includes("Meet Frapp AI");
+
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    currentUser = COMPLETE_USER;
+    aiChoice.consent = UNANSWERED;
+    aiChoice.turnOn.mockClear().mockResolvedValue(true);
+    aiChoice.notNow.mockClear().mockResolvedValue(undefined);
+    completeOnboarding.mockClear();
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
+  });
+
+  afterEach(() => {
+    aiChoice.consent = null;
+  });
+
+  it("follows the display beat, naming the companies, then goes to chat on Continue", async () => {
+    const { root } = await render();
+
+    expect(onAiBeat(root)).toBe(true);
+    expect(allText(root)).toContain(
+      "Frapp AI works with Anthropic and Google.",
+    );
+    expect(completeOnboarding).not.toHaveBeenCalled();
+
+    await press(button(root, "Continue"));
+    expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("records Not now and moves on", async () => {
+    const { root } = await render();
+
+    await press(button(root, "Not now"));
+    expect(aiChoice.notNow).toHaveBeenCalledTimes(1);
+    expect(aiChoice.turnOn).not.toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("comes before the notifications beat", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    expect(onAiBeat(root)).toBe(true);
+    await press(button(root, "Continue"));
+    expect(button(root, "Turn on notifications")).toBeDefined();
+  });
+
+  it("stays, with the reason, when Continue can't be saved", async () => {
+    aiChoice.turnOn.mockRejectedValue(new Error("offline"));
+    const { root } = await render();
+
+    await press(button(root, "Continue"));
+    expect(onAiBeat(root)).toBe(true);
+    expect(allText(root)).toMatch(/try again/i);
+    expect(vi.mocked(useRouter)().replace).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the server has no AI", null],
+    ["the member already answered", { ...UNANSWERED, answer: "no" }],
+  ])("isn't shown when %s", async (_why, consent) => {
+    aiChoice.consent = consent;
+    const { root } = await render();
+
+    expect(onAiBeat(root)).toBe(false);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+});
+
 describe("s03 welcome, only the display to pick", () => {
   beforeEach(() => {
     pushAvailable = false;

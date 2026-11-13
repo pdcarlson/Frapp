@@ -61,6 +61,7 @@ import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
+import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { GetTheAppCard } from "@/components/layout/get-the-app-card";
 import { RolePreviewBanner } from "@/components/roles/role-preview-banner";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
@@ -517,6 +518,8 @@ export function DashboardShell({
       <OnboardingTutorial />
       {/* What's new, by itself once after an update (#3943). */}
       <WhatsNewHost />
+      {/* Meet Frapp AI, once, for an account that never answered it (#4790). */}
+      <MeetFrappAiHost />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         {/*

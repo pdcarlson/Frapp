@@ -136,7 +136,7 @@ export const ASK_ANSWER_STATUSES = [
 export type AskAnswerStatus = (typeof ASK_ANSWER_STATUSES)[number];
 
 export const ASK_UNAVAILABLE_REASONS = [
-  /** The member has not said yes on the AI sheet. Show the sheet. */
+  /** The member has not turned Frapp AI on. Show Meet Frapp AI. */
   "consent_required",
   /** The president turned Ask off. Hide the entry point. */
   "chapter_off",
@@ -536,7 +536,7 @@ export const ASK_COPY = {
     "Part of this answer could not be matched to a source. Check the sources before you rely on it.",
   sources: "Sources",
   unavailable: {
-    consent_required: "Answer the AI question in Settings to use Ask.",
+    consent_required: "Turn on Frapp AI to use Ask.",
     chapter_off: "Your chapter's president has turned Ask off.",
     chapter_limit:
       "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
@@ -561,7 +561,7 @@ export const ASK_COPY = {
   try_again: "Try again",
   /** Clears the thread: the next question starts with nothing before it. */
   new_conversation: "New conversation",
-  consent_action: "Answer the AI question",
+  consent_action: "Turn on Frapp AI",
   entry_label: "Ask a question about your chapter",
 } as const;
 

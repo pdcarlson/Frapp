@@ -1,14 +1,10 @@
 "use client";
 
-import { useId } from "react";
-import { errorCopy, useAiConsent, useAnswerAiConsent } from "@repo/hooks";
-import {
-  AI_CONSENT_COPY,
-  AI_SETTINGS_COPY,
-  formatAiAnswerDate,
-} from "@repo/validation";
+import { useId, useState } from "react";
+import { errorCopy, useAiConsent, useFrappAiChoice } from "@repo/hooks";
+import { AI_SETTINGS_COPY, FRAPP_AI_COPY, joinNames } from "@repo/validation";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { AiConsentDetails } from "@/components/ai/ai-consent-sheet";
+import { MeetFrappAiDialog } from "@/components/ai/meet-frapp-ai";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { Switch } from "@/components/ui/switch";
@@ -16,15 +12,15 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 
 /**
- * Settings → AI: the member's answer on the AI sheet, changed any time
- * (`spec/behavior/ai.md` § Consent: "A member can change the answer later in
- * Settings"). It sits in "My account" because the answer is the person's,
- * not a chapter's: one Yes or No covers every chapter they are in.
+ * Settings → Frapp AI: the member's own switch, changed any time
+ * (`spec/behavior/ai.md` § Consent). It sits in "My account" because the
+ * answer is the person's, not a chapter's: one answer covers every chapter
+ * they are in.
  *
- * The whole sheet is on the page under the switch, so turning it on here is
- * as informed as answering the sheet: the switch says Yes or No to exactly
- * the rows shown. Turning it off is a No, which the server answers by
- * dropping what was made from the member's words (`onConsentWithdrawn`).
+ * Turning it on opens Meet Frapp AI, so the yes is given where the companies
+ * are named and the privacy policy is linked, as everywhere else. Turning it
+ * off is immediate, and the server drops what was made from the member's
+ * words (`onConsentWithdrawn`).
  *
  * The rail shows the row only while the server has AI (`useAiConsent`
  * answers `null` otherwise).
@@ -33,7 +29,8 @@ export function AiSection() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const consentQuery = useAiConsent();
-  const answer = useAnswerAiConsent();
+  const choice = useFrappAiChoice();
+  const [meetOpen, setMeetOpen] = useState(false);
   const switchId = useId();
   const statusId = `${switchId}-status`;
   const consent = consentQuery.data;
@@ -42,8 +39,8 @@ export function AiSection() {
     return (
       <NestedOffline
         sole
-        title={AI_CONSENT_COPY.offlineTitle}
-        description={AI_CONSENT_COPY.offlineDescription}
+        title={FRAPP_AI_COPY.offlineTitle}
+        description={FRAPP_AI_COPY.offlineDescription}
         onRetry={() => void consentQuery.refetch()}
       />
     );
@@ -52,7 +49,7 @@ export function AiSection() {
     return (
       <NestedError
         sole
-        title={AI_CONSENT_COPY.loadFailed}
+        title={FRAPP_AI_COPY.loadFailed}
         description={AI_SETTINGS_COPY.retryLater}
         onRetry={() => void consentQuery.refetch()}
       />
@@ -62,63 +59,54 @@ export function AiSection() {
   // hand-typed `?section=ai` lands on nothing rather than a dead switch.
   if (!consent) return null;
 
-  async function change(next: boolean) {
-    if (!consent) return;
+  async function turnOff() {
     try {
-      await answer.mutateAsync({
-        sheet_version: consent.sheet.version,
-        answer: next ? "yes" : "no",
-      });
-      toast({
-        title: next ? AI_CONSENT_COPY.turnedOn : AI_CONSENT_COPY.turnedOff,
-      });
+      await choice.notNow();
+      toast({ title: FRAPP_AI_COPY.turnedOff });
     } catch (error) {
       toast({
-        title: AI_CONSENT_COPY.saveFailed,
+        title: FRAPP_AI_COPY.turnOffFailed,
         description: errorCopy(error),
         variant: "destructive",
       });
     }
   }
 
-  let status: string;
-  if (consent.answer !== null && consent.answered_at) {
-    const date = formatAiAnswerDate(consent.answered_at);
-    status =
-      consent.answer === "yes"
-        ? AI_CONSENT_COPY.answeredYes(date)
-        : AI_CONSENT_COPY.answeredNo(date);
-  } else if (consent.sheet_changed) {
-    status = AI_CONSENT_COPY.changedSince;
-  } else {
-    status = AI_CONSENT_COPY.unanswered;
-  }
-
   return (
-    <ProfileSection id="ai" title={AI_CONSENT_COPY.settingsTitle}>
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-8 rounded-[14px] border border-border px-4 py-4">
-          <div className="min-w-0 space-y-0.5">
-            <label
-              htmlFor={switchId}
-              className="text-sm font-medium text-foreground"
-            >
-              {AI_CONSENT_COPY.settingsSwitch}
-            </label>
-            <p id={statusId} className="text-caption text-muted-foreground">
-              {status}
-            </p>
-          </div>
-          <Switch
-            id={switchId}
-            checked={consent.answer === "yes"}
-            disabled={isOffline || answer.isPending}
-            onCheckedChange={(next) => void change(next)}
-            aria-describedby={statusId}
-          />
+    <ProfileSection id="ai" title={FRAPP_AI_COPY.settingsTitle}>
+      <div className="flex items-start justify-between gap-8 rounded-[14px] border border-border px-4 py-4">
+        <div className="min-w-0 space-y-0.5">
+          <label
+            htmlFor={switchId}
+            className="text-sm font-medium text-foreground"
+          >
+            {FRAPP_AI_COPY.settingsSwitch}
+          </label>
+          <p id={statusId} className="text-caption text-muted-foreground">
+            {FRAPP_AI_COPY.settingsCaption(
+              joinNames(consent.sheet.providers.map((p) => p.name)),
+            )}
+          </p>
         </div>
-        <AiConsentDetails sheet={consent.sheet} />
+        <Switch
+          id={switchId}
+          checked={consent.answer === "yes"}
+          disabled={isOffline || choice.pending}
+          onCheckedChange={(next) => {
+            if (next) setMeetOpen(true);
+            else void turnOff();
+          }}
+          aria-describedby={statusId}
+        />
       </div>
+      <MeetFrappAiDialog
+        open={meetOpen}
+        onAnswered={(on) => {
+          setMeetOpen(false);
+          if (on) toast({ title: FRAPP_AI_COPY.turnedOn });
+        }}
+        onDismiss={() => setMeetOpen(false)}
+      />
     </ProfileSection>
   );
 }

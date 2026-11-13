@@ -47,7 +47,7 @@ vi.mock("@/components/ai/report-ai", () => ({
   ),
 }));
 
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({ ensureConsent: state.consent, consentDialog: null }),
 }));
 

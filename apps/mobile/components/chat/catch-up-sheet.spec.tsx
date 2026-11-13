@@ -40,7 +40,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: gate.ensureConsent,
     consentSheet: null,

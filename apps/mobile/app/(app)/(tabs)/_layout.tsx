@@ -11,6 +11,7 @@ import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
 import { TourHost } from "@/components/onboarding/tour";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
+import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { SCREEN_TITLES } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { floatingScreenLayout } from "@/lib/floating-chrome";
@@ -127,6 +128,9 @@ export default function TabLayout() {
       {/* What's new opens by itself once after an update brings a new entry
           or new lines, never on a launch the tour is due (`lib/whats-new.ts`). */}
       <WhatsNewHost />
+      {/* Meet Frapp AI, once, for an account that never answered it, after
+          What's new if both are due (`lib/startup-sheets.ts`). */}
+      <MeetFrappAiHost />
     </TourHost>
   );
 }

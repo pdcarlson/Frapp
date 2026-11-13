@@ -1011,7 +1011,7 @@ const catchUpState = vi.hoisted(() => ({
   unread: 2,
   run: vi.fn(async () => undefined),
 }));
-vi.mock("@/components/ai/ai-consent-sheet", () => ({
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
     ensureConsent: async () => true,
     consentDialog: null,

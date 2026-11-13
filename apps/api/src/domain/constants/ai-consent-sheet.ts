@@ -1,24 +1,26 @@
 import type { AiFeatureFamily } from '../adapters/ai-call-context';
 
 /**
- * The AI sheet a member answers before any of their data reaches a model
- * (`spec/behavior/ai.md` § Consent, gate 2; ADR-28 decision 5).
+ * What a member's Frapp AI answer is given against (`spec/behavior/ai.md` §
+ * Consent, gate 2; ADR-28 decision 5).
  *
- * It names every provider Frapp sends member data to and every kind of data
- * that is sent. **Adding a provider or a kind of data is a new version**:
- * bump `version`, and every member is asked again, because a Yes counts only
- * for the version it was given on (`user_ai_consents.sheet_version`).
- * `ai-consent-sheet.spec.ts` fails when the providers or the kinds change
- * without a bump, and when the model catalog uses a provider the sheet does
- * not name.
+ * Since #4790 (Paul, 2026-11-13) the member answers on Meet Frapp AI, one
+ * onboarding screen that names the companies Frapp AI works with in one line
+ * and links the privacy policy, which carries the detail. So `providers` is
+ * what the screen names, and **adding a provider is a new version**: bump
+ * `version`, and every member is asked again, because a Yes counts only for
+ * the version it was given on (`user_ai_consents.sheet_version`).
+ * `ai-consent-sheet.spec.ts` fails when the providers change without a bump,
+ * and when the model catalog uses a provider this list does not name.
+ *
+ * `data` lists the kinds of data that are sent, in a member's words. A new
+ * kind is no longer a new version: the privacy policy names the kinds. Current
+ * clients don't draw it; it is still served because store builds from before
+ * #4790 draw the old sheet from it (`GET /v1/ai/consent`).
  *
  * Only the API reads it, as with the Terms version (`LEGAL_POLICY_VERSION`):
- * clients render the sheet from `GET /v1/ai/consent`, so a store binary
+ * clients render the companies from `GET /v1/ai/consent`, so a store binary
  * compiled before a new version still shows, and answers, the current one.
- *
- * The labels are working copy for Paul's copy pass with the first screen
- * that shows the sheet (#4312, store answers #3297). Changing only a label is
- * not a new version; changing what a row covers is.
  */
 export interface AiConsentSheetProvider {
   key: 'anthropic' | 'google' | 'assemblyai';

@@ -179,6 +179,10 @@ vi.mock("@/components/auth/terms-prompt", () => ({
 vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
   OnboardingTutorial: () => null,
 }));
+// Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
+vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
+  MeetFrappAiHost: () => null,
+}));
 vi.mock("@/components/layout/notifications-popover", () => ({
   NotificationsPopover: ({ children }: { children: unknown }) => children,
 }));
