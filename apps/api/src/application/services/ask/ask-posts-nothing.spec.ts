@@ -116,6 +116,30 @@ const CALLS = new Set([
   'service.findByChapterFiltered',
   'service.leaderboard',
   'standing.getStanding',
+  // The agent's conversation tools (#4900, `agent/tools-conversation/`):
+  // reads of channels, messages, documents and minutes, as the asker.
+  'catchUp.readStretch',
+  'catchUp.readableAmong',
+  'channelReads.list',
+  'channelReads.unreadCounts',
+  'meetings.get',
+  'meetings.list',
+  'retrieval.readSource',
+  'scope.findChannel',
+  'scope.findMember',
+  'scope.openChannels',
+  'search.searchMessagesIn',
+  // The trace of a turn and its thumbs (#4902, `observe/`): rows about the
+  // turn with no text in them, and their removal. No message, no notice.
+  'traces.deleteByUser',
+  'traces.deleteExpired',
+  'traces.deleteFeedback',
+  'traces.deleteTrace',
+  'traces.findFeedback',
+  'traces.findForAsker',
+  'traces.insertTrace',
+  'traces.lastStartedAt',
+  'traces.upsertFeedback',
   // The model.
   'gateway.generateObject',
   'gateway.streamAgentRound',
