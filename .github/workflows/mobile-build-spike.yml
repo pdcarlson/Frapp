@@ -172,7 +172,10 @@ jobs:
         working-directory: apps/mobile/android
         run: |
           trap 'echo "- gradle bundleRelease: $(( SECONDS / 60 )) min $(( SECONDS % 60 )) s (exit $?)" >> "$GITHUB_STEP_SUMMARY"' EXIT
-          ./gradlew :app:bundleRelease --no-daemon
+          # The template's default JVM settings ran out in the release
+          # lint tasks ("Metaspace", run 43494274899, after 16 min 40 s), so the
+          # JVM gets room the runner has.
+          ./gradlew :app:bundleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
           find app/build/outputs/bundle -name '*.aab' -exec du -sh {} \; | sed 's/^/- bundle: /' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Whole job time
