@@ -52,6 +52,7 @@ export function MyExcuseCard({
   end,
   opensMinutes,
   now,
+  startWriting = false,
 }: {
   eventId: string;
   required: boolean;
@@ -59,6 +60,8 @@ export function MyExcuseCard({
   end: string;
   opensMinutes: number;
   now: Date;
+  /** Open the line on arrival: the chat card's Can't make it (#4660). */
+  startWriting?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -72,7 +75,7 @@ export function MyExcuseCard({
   const own = useMyAttendance(eventId);
   const send = useSendEventExcuse();
   const withdraw = useWithdrawEventExcuse();
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(startWriting);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);

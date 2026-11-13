@@ -1,4 +1,5 @@
 import { SupabaseRoleRepository } from './supabase-role.repository';
+import { runWithRequestReads } from '../request-reads';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -127,4 +128,26 @@ describe('SupabaseRoleRepository — tenant scope', () => {
       expect(foreign?.chapter_id).toBe(CHAPTER_A);
     });
   });
+
+  // An app open's GET requests join one roles read (#3752); a request that
+  // may write reads its own.
+  it.each([
+    ['GET', 1],
+    ['POST', 2],
+  ])(
+    'findByIds in two %s requests at once makes %i read(s)',
+    async (method, reads) => {
+      const from = jest.spyOn(harness.client, 'from');
+      const roles = () =>
+        runWithRequestReads(String(method), () =>
+          repo.findByIds([ROLE_B], CHAPTER_B),
+        );
+
+      const [a, b] = await Promise.all([roles(), roles()]);
+
+      expect(from).toHaveBeenCalledTimes(Number(reads));
+      expect(a.map((r) => r.id)).toEqual([ROLE_B]);
+      expect(a).not.toBe(b);
+    },
+  );
 });

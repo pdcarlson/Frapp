@@ -8,7 +8,7 @@ import type {
 import { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Role } from '#domain/entities/role.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
-import { readOncePerRequest } from '../request-reads';
+import { readOncePerRequest, readSharedInBurst } from '../request-reads';
 
 /**
  * The roles a member holds, by id, optionally re-scoped to one chapter.
@@ -22,23 +22,26 @@ export function readRolesByIds(
   ids: readonly string[],
   chapterId?: string,
 ): Promise<Role[]> {
-  return readOncePerRequest(rolesReadKey(ids, chapterId), async () => {
-    let query = supabase
-      .from('roles')
-      .select('*')
-      .in('id', [...ids]);
+  const key = rolesReadKey(ids, chapterId);
+  return readOncePerRequest(key, () =>
+    readSharedInBurst(key, async () => {
+      let query = supabase
+        .from('roles')
+        .select('*')
+        .in('id', [...ids]);
 
-    // Callers resolving a member's permissions pass their active chapter, so an
-    // id that no longer belongs to it (stale membership, cross-chapter id)
-    // drops out here instead of contributing another chapter's permissions.
-    if (chapterId) {
-      query = query.eq('chapter_id', chapterId);
-    }
+      // Callers resolving a member's permissions pass their active chapter, so an
+      // id that no longer belongs to it (stale membership, cross-chapter id)
+      // drops out here instead of contributing another chapter's permissions.
+      if (chapterId) {
+        query = query.eq('chapter_id', chapterId);
+      }
 
-    const { data, error } = await query;
-    if (error) throw new SupabaseQueryError(error);
-    return data || [];
-  });
+      const { data, error } = await query;
+      if (error) throw new SupabaseQueryError(error);
+      return data || [];
+    }),
+  );
 }
 
 /** The request-store key `readRolesByIds` reads under. */

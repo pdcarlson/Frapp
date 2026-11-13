@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { moduleDisabledMessage } from "@repo/validation";
+import { copyForErrorCode, moduleDisabledMessage } from "@repo/validation";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import {
-  taskProofRequiredRefusal,
-  taskStatusGateRefusal,
-} from "./status-refusal";
+import { taskProofRefusal, taskStatusGateRefusal } from "./status-refusal";
 
 describe("taskStatusGateRefusal", () => {
   it("puts each gate's refusal in the member's words", () => {
@@ -31,26 +28,43 @@ describe("taskStatusGateRefusal", () => {
       taskStatusGateRefusal({ statusCode: 403, message: "Forbidden resource" }),
     ).toBeNull();
     expect(
-      taskStatusGateRefusal({ statusCode: 400, message: "Invalid status transition" }),
+      taskStatusGateRefusal({
+        statusCode: 400,
+        message: "Invalid status transition",
+      }),
     ).toBeNull();
     expect(taskStatusGateRefusal(undefined)).toBeNull();
   });
 });
 
-describe("taskProofRequiredRefusal (#4565)", () => {
-  it("says where to add the photo when the task needs one, by code", () => {
+describe("taskProofRefusal (#4565, #4635)", () => {
+  it("asks for proof when the task needs it, by code, not sentence", () => {
     expect(
-      taskProofRequiredRefusal({
+      taskProofRefusal({
         statusCode: 400,
         code: "task.proof_required",
         message: "reworded someday",
       }),
-    ).toMatch(/on the web/);
+    ).toBe(copyForErrorCode("task.proof_required"));
+    expect(copyForErrorCode("task.proof_required")).not.toMatch(/web/);
   });
 
-  it("reads nothing into any other 400", () => {
+  it("asks for something new on a sent-back task", () => {
     expect(
-      taskProofRequiredRefusal({ statusCode: 400, message: "Bad Request" }),
+      taskProofRefusal({
+        statusCode: 400,
+        code: "task.resubmit_needs_change",
+        message: "anything",
+      }),
+    ).toBe(copyForErrorCode("task.resubmit_needs_change"));
+  });
+
+  it("reads nothing into any other refusal", () => {
+    expect(taskProofRefusal({ statusCode: 400, message: "Bad Request" })).toBe(
+      null,
+    );
+    expect(
+      taskProofRefusal({ statusCode: 403, code: "task.proof_required" }),
     ).toBeNull();
   });
 });

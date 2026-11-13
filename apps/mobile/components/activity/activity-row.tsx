@@ -23,7 +23,7 @@ import {
 import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
-import { StatusChip } from "@/components/status-chip";
+import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -99,6 +99,8 @@ export function ActivityListRow({
           <ActivityAskButton action={action} />
         ) : activityBadgeIsAsk(row) ? (
           <ActivityAsk label={row.badge.label} />
+        ) : row.badge.variant === "outline" ? (
+          <HairlineChip label={row.badge.label} />
         ) : (
           <StatusChip
             label={row.badge.label}

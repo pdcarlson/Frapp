@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import type { AskExchange } from "@repo/hooks";
+import type {
+  ActResponse,
+  AskExchange,
+  AskProposalResolution,
+} from "@repo/hooks";
 import {
   ASK_COPY,
   askAnswerSegments,
@@ -13,20 +17,29 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { EYEBROW } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
+import { AskProposal } from "@/components/ask/ask-proposal";
 import { askSourceHref } from "@/components/ask/ask-source-link";
 import { ReportAiButton } from "@/components/ai/report-ai";
 
 /**
- * One Ask exchange: the question, the answer with a numbered marker at each
- * cited sentence, and the sources those markers open (#451).
+ * One turn of the Ask conversation: what the member typed, then what Frapp
+ * came back with. That is an answer with a numbered marker at each cited
+ * sentence and the sources those markers open (#451), or the card for
+ * something the member asked to have done (`ask-proposal.tsx`).
  *
- * The markers and the list follow what members already read elsewhere: Notion
- * AI and Perplexity put a small numbered chip at the end of the sentence it
- * backs, and Slack AI lists the messages and files an answer drew on under
- * it. Both are here, and both open the source: the document in the viewer,
- * the minutes, the message in its channel, or the page live data came from.
+ * **Who said what is told by shape, not by labels.** The member's words sit
+ * in a bubble on the right; Frapp's answer is plain text on the left with no
+ * bubble, the way ChatGPT, Claude and Slack's assistant all draw a
+ * conversation with one person and one assistant. An answer is the thing
+ * being read, so it gets the full width and no frame; only a proposal, which
+ * is a thing to act on, is a card.
+ *
+ * The markers and the sources follow what members already read elsewhere:
+ * Notion AI and Perplexity put a small numbered chip at the end of the
+ * sentence it backs and the same numbers on a row of source chips under the
+ * answer. Each opens its source: the document in the viewer, the minutes,
+ * the message in its channel, or the page live data came from.
  *
  * **Nothing above the fold moves while it works.** The step line ("Searching
  * your chapter's sources") sits under the text, in the place the notes and
@@ -34,23 +47,35 @@ import { ReportAiButton } from "@/components/ai/report-ai";
  * question never shifts. The streamed text is a preview: the server decides
  * what stands after the model stops, and `done` replaces it (`ask.ts`).
  */
-export function AskExchangeView({
+export function AskTurn({
   exchange,
+  busy = false,
   onRetry,
   onAnswerConsent,
   onFollowSource,
+  onProposal,
+  onResolved,
 }: {
   exchange: AskExchange;
-  /** A source link was followed, for a panel that then gets out of the way. */
+  /**
+   * Another turn is being answered. Asking this one again would abandon it,
+   * so this turn's Try again and consent buttons wait.
+   */
+  busy?: boolean;
+  /** A link out of the panel was followed, for a panel that then gets out of the way. */
   onFollowSource?: () => void;
-  /** Asks the same question again, after a failure that may not repeat. */
+  /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
-  /** Opens the AI sheet, for an answer refused because it is unanswered. */
+  /** Opens the AI sheet, for a turn refused because it is unanswered. */
   onAnswerConsent: () => void;
+  /** An event pick answered with a new proposal for this turn. */
+  onProposal: (proposal: ActResponse) => void;
+  /** This turn's card was confirmed or dismissed. */
+  onResolved: (resolution: AskProposalResolution) => void;
 }) {
   return (
     <article className="space-y-3">
-      <h3 className="rounded-md bg-surface-1 px-3 py-2 text-sm font-medium text-foreground">
+      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-surface-1 px-3.5 py-2 text-sm font-normal text-foreground">
         {exchange.question}
       </h3>
       <div aria-live="polite" className="space-y-3">
@@ -62,25 +87,44 @@ export function AskExchangeView({
               </p>
             ) : null}
             <p className="text-caption text-muted-foreground">
-              {(ASK_COPY.steps as Record<string, string>)[exchange.step ?? ""] ??
-                ASK_COPY.steps.searching}
+              {(ASK_COPY.steps as Record<string, string>)[
+                exchange.step ?? ""
+              ] ?? ASK_COPY.steps.searching}
             </p>
           </>
         ) : null}
         {exchange.phase === "failed" && exchange.failure ? (
           <div className="space-y-2">
-            <p className="text-sm text-foreground">{exchange.failure.message}</p>
+            <p className="text-sm text-foreground">
+              {exchange.failure.message}
+            </p>
             {exchange.failure.retryable ? (
-              <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={onRetry}
+              >
                 {ASK_COPY.try_again}
               </Button>
             ) : null}
           </div>
         ) : null}
+        {exchange.phase === "done" && exchange.proposal ? (
+          <AskProposal
+            proposal={exchange.proposal}
+            resolution={exchange.resolution}
+            onProposal={onProposal}
+            onResolved={onResolved}
+            onLeave={onFollowSource}
+          />
+        ) : null}
         {exchange.phase === "done" && exchange.answer ? (
           <>
             <AskAnswerBody
               answer={exchange.answer}
+              busy={busy}
               onAnswerConsent={onAnswerConsent}
               onFollowSource={onFollowSource}
             />
@@ -107,10 +151,12 @@ export function AskExchangeView({
 
 function AskAnswerBody({
   answer,
+  busy,
   onAnswerConsent,
   onFollowSource,
 }: {
   answer: AskAnswer;
+  busy: boolean;
   onFollowSource?: () => void;
   onAnswerConsent: () => void;
 }) {
@@ -125,6 +171,7 @@ function AskAnswerBody({
             type="button"
             variant="secondary"
             size="sm"
+            disabled={busy}
             onClick={onAnswerConsent}
           >
             {ASK_COPY.consent_action}
@@ -149,7 +196,7 @@ function AskAnswerBody({
   }
   return (
     <>
-      <p className="whitespace-pre-wrap text-sm text-foreground">
+      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
         {askAnswerSegments(answer).map((segment, position) =>
           segment.type === "text" ? (
             <span key={position}>{segment.text}</span>
@@ -166,21 +213,16 @@ function AskAnswerBody({
       </p>
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
-        <section className="space-y-1.5">
-          <h4 className={cn(EYEBROW, "text-muted-foreground")}>
-            {ASK_COPY.sources}
-          </h4>
-          <ol className="space-y-1">
-            {answer.sources.map((source, index) => (
-              <SourceRow
-                key={source.id}
-                number={index + 1}
-                source={source}
-                onFollow={onFollowSource}
-              />
-            ))}
-          </ol>
-        </section>
+        <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
+          {answer.sources.map((source, index) => (
+            <SourceChip
+              key={source.id}
+              number={index + 1}
+              source={source}
+              onFollow={onFollowSource}
+            />
+          ))}
+        </ol>
       ) : null}
     </>
   );
@@ -249,7 +291,12 @@ function CitationMarker({
   );
 }
 
-function SourceRow({
+/**
+ * One source as a chip: the number its markers carry, then its name. What
+ * kind of source it is and its date are the chip's tooltip and its
+ * accessible name, so a thread of several answers stays short.
+ */
+function SourceChip({
   number,
   source,
   onFollow,
@@ -259,39 +306,45 @@ function SourceRow({
   onFollow?: () => void;
 }) {
   const href = askSourceHref(source);
+  const meta = askSourceMetaLine(source);
+  const name = [`Source ${number}: ${source.title}`, meta]
+    .filter(Boolean)
+    .join(", ");
+  const chip =
+    "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-1 pl-2.5 pr-3 text-caption pointer-coarse:h-11";
   const body = (
     <>
       <span
         aria-hidden="true"
-        className="mt-px w-5 shrink-0 text-caption font-bold tabular-nums text-gold-ask-text"
+        className="shrink-0 font-bold tabular-nums text-gold-ask-text"
       >
         {number}
       </span>
-      <span className="min-w-0">
-        <span className="block break-words text-sm font-medium text-foreground">
-          {source.title}
-        </span>
-        <span className="block break-words text-caption text-muted-foreground">
-          {askSourceMetaLine(source)}
-        </span>
+      <span className="min-w-0 truncate font-medium text-foreground">
+        {source.title}
       </span>
     </>
   );
   return (
-    <li>
+    <li className="min-w-0 max-w-full">
       {href ? (
         <Link
           href={href}
           onClick={onFollow}
+          aria-label={name}
+          title={meta}
           className={cn(
-            "-mx-2 flex gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-card-hover",
+            chip,
+            "transition-colors hover:bg-card-hover",
             FOCUS_RING,
           )}
         >
           {body}
         </Link>
       ) : (
-        <div className="-mx-2 flex gap-1 px-2 py-1.5">{body}</div>
+        <span className={chip} aria-label={name} title={meta}>
+          {body}
+        </span>
       )}
     </li>
   );

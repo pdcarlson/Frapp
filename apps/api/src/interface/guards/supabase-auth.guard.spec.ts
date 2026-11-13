@@ -420,4 +420,135 @@ describe('SupabaseAuthGuard', () => {
       expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
     });
   });
+
+  // An app open sends dozens of requests at once with one token and chapter.
+  // Paul accepted sharing their checks within IN_FLIGHT_JOIN_WINDOW_MS
+  // (#3752, 2026-11-13); these pin what is shared and under which key.
+  describe("shares a burst's checks (#3752)", () => {
+    const CHAPTER_A = '44444444-4444-4444-8444-444444444444';
+    const CHAPTER_B = '55555555-5555-4555-8555-555555555555';
+    let caseNo = 0;
+    let token: string;
+    let sub: string;
+    beforeEach(() => {
+      caseNo += 1;
+      token = `burst-token-${caseNo}`;
+      sub = `auth-burst-${caseNo}`;
+    });
+
+    const inGet = <T>(fn: () => T): T => runWithRequestReads('GET', fn);
+    const request = (
+      bearer: string,
+      controller: new () => unknown = AuthOnlyController,
+      verified?: object,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: `Bearer ${bearer}` },
+        controller,
+      );
+      const req = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      req.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+
+    it('makes one session check for requests that arrive together with one token', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const first = request(token);
+      const second = request(token);
+
+      await Promise.all([
+        inGet(() => guard.canActivate(first)),
+        inGet(() => guard.canActivate(second)),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      const a = first.switchToHttp().getRequest().supabaseUser;
+      const b = second.switchToHttp().getRequest().supabaseUser;
+      expect(a).toEqual({ id: sub });
+      expect(b).toEqual({ id: sub });
+      // Each request gets its own copy of the shared answer.
+      expect(a).not.toBe(b);
+    });
+
+    it('checks each token on its own', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+
+      await Promise.all([
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(`${token}-other`))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('checks the session itself in a request that may write', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+
+      await Promise.all([
+        inGet(() => guard.canActivate(request(token))),
+        runWithRequestReads('POST', () => guard.canActivate(request(token))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses every request that joined a rejected session check', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new Error('session revoked'),
+      });
+
+      const verdicts = await Promise.allSettled([
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(token))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      for (const verdict of verdicts) {
+        expect(verdict.status).toBe('rejected');
+      }
+    });
+
+    it('makes one request-context call per user and chapter', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const inChapter = (chapter: string, method = 'GET') =>
+        runWithRequestReads(method, () =>
+          guard.canActivate(
+            request(token, ChapterController, {
+              sub,
+              active_chapter_id: chapter,
+            }),
+          ),
+        );
+
+      await Promise.all([
+        inChapter(CHAPTER_A),
+        inChapter(CHAPTER_A),
+        inChapter(CHAPTER_B),
+        // A request that may write makes its own call.
+        inChapter(CHAPTER_B, 'PATCH'),
+      ]);
+
+      const calls = mockRpc.mock.calls.filter(
+        ([name]) => name === 'get_request_context',
+      );
+      expect(calls).toEqual([
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_A }],
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
+      ]);
+    });
+  });
 });

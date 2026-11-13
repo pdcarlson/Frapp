@@ -23,6 +23,7 @@ import {
   useEvents,
   useMyPermissions,
   useNow,
+  useRequiredOfViewer,
 } from "@repo/hooks";
 import {
   ALL_CALENDAR_LAYERS,
@@ -47,7 +48,6 @@ import {
   can,
   canAll,
   EVENT_CREATE_PERMISSIONS,
-  eventDefaultAttendance,
   eventSetsRolesApart,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -231,6 +231,13 @@ export function EventsPage() {
   // What starts past the two-week horizon waits behind "Later" (#3707).
   const [laterOpen, setLaterOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  // The chat card's Can't make it opens the sheet with the line open (#4660):
+  // one ask for one event, counted so a repeat ask reaches a sheet already
+  // showing it, and keyed so another occurrence never inherits it.
+  const [excuseAsk, setExcuseAsk] = useState<{
+    eventId: string;
+    count: number;
+  } | null>(null);
   // Set by the editor when a series save rebuilt the event it was opened on.
   const leftEditedEvent = useRef(false);
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
@@ -376,6 +383,7 @@ export function EventsPage() {
         : memberLabel(names.get(memberUserId), memberUserId);
   }, [rosterQuery.data, userId]);
 
+  const requiredOf = useRequiredOfViewer();
   // Shared by both views: search text, attendance policy, cadence. Time
   // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
   // ("what's coming up"), and applying it to the calendar would silently
@@ -390,10 +398,9 @@ export function EventsPage() {
       // rule, so reading `recurrence_rule` alone filed every generated
       // occurrence as one-time.
       const isRecurring = isSeriesEvent(event);
-      // Required of everyone by default, as the row's Mandatory badge and the
-      // calendar say; an event that sets roles apart also carries "By role".
-      const isMandatory =
-        eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
+      // Required of this viewer, as the row's Mandatory badge and the
+      // calendar say (#4132).
+      const isMandatory = requiredOf(attendanceFieldsOf(event));
 
       if (
         queryLower &&
@@ -416,7 +423,7 @@ export function EventsPage() {
       }
       return true;
     },
-    [query, attendanceFilter, recurrenceFilter],
+    [query, attendanceFilter, recurrenceFilter, requiredOf],
   );
 
   const calendarEvents = useMemo(
@@ -716,7 +723,12 @@ export function EventsPage() {
   // Any meeting of a series opens with its series, from a list row, a past
   // row or the calendar: the sheet then has the head's rule (a generated
   // meeting carries none) and the series' upcoming meetings.
-  function openDetails(event: EventRow) {
+  function openDetails(event: EventRow, linked = { excuse: false }) {
+    setExcuseAsk((ask) =>
+      linked.excuse
+        ? { eventId: eventIdOf(event), count: (ask?.count ?? 0) + 1 }
+        : null,
+    );
     setActiveEvent(event);
     setActiveSeriesKey(eventSeriesKey(event));
     setDetailSheetOpen(true);
@@ -727,9 +739,10 @@ export function EventsPage() {
     const eventId = eventIdOf(event);
     const eventName = String(event.name ?? "Untitled event");
     const fields = attendanceFieldsOf(event);
-    // "Mandatory" means required of everyone; an event that sets roles apart
-    // says so with its own badge instead.
-    const isMandatory = eventDefaultAttendance(fields) === "required";
+    // "Mandatory" means required of this viewer, by default or by a role of
+    // theirs, as the phone says it (#4132, `spec/behavior/events.md`). An
+    // event that sets roles apart also says so with its own badge.
+    const isMandatory = requiredOf(fields);
     const isTargeted = eventSetsRolesApart(fields);
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.
@@ -1201,8 +1214,12 @@ export function EventsPage() {
         event={activeEvent}
         series={activeSeries}
         seriesRule={activeSeriesHead?.recurrence_rule}
-        onSelectOccurrence={(occurrence) => setActiveEvent(occurrence)}
+        onSelectOccurrence={(occurrence) => {
+          setExcuseAsk(null);
+          setActiveEvent(occurrence);
+        }}
         usingPreviewData={false}
+        excuseAsk={excuseAsk}
         onRequestEdit={(event) => {
           setActiveEvent(event);
           setDetailSheetOpen(false);

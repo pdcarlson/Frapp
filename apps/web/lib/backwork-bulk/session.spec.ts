@@ -5,6 +5,8 @@ import {
   bulkDropNotice,
   endBulkSessions,
   getBulkSession,
+  trimPrepared,
+  BACKWORK_MAX_HELD_BYTES,
   type BulkSession,
 } from "./session";
 
@@ -28,8 +30,8 @@ vi.mock("@/lib/supabase/client", () => ({
 vi.mock("@repo/hooks", () => ({ putSignedUpload: async () => undefined }));
 // The real hash, with a hook a test can use to hold one call back.
 const hashGate = vi.hoisted(() => ({ hold: null as null | ((call: number) => Promise<void> | undefined), calls: 0 }));
-vi.mock("./finish", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./finish")>();
+vi.mock("@/lib/bulk-upload/hash", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/bulk-upload/hash")>();
   return {
     ...actual,
     sha256Hex: async (bytes: Uint8Array) => {
@@ -255,5 +257,53 @@ describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
     stageBulkUpload({ files: [pdf], skipped: 0 });
     endBulkSessions({ except: "u2" });
     expect(takeStagedBulkUpload()).toBeNull();
+  });
+});
+
+describe("trimPrepared (#3540)", () => {
+  it("revokes a submitted document's page previews and keeps what finishing needs", async () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const doc = { numPages: 2 } as never;
+    const previews = new Map([
+      [1, Promise.resolve({ url: "blob:one", width: 1, height: 1 })],
+      [2, Promise.resolve({ url: "blob:two", width: 1, height: 1 })],
+    ]);
+
+    const trimmed = trimPrepared({ bytes, hash: "h", doc, pageCount: 2, previews });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(trimmed.previews.size).toBe(0);
+    expect(trimmed.bytes).toBe(bytes);
+    expect(trimmed.doc).toBe(doc);
+    expect(revoke.mock.calls.map(([url]) => url).sort()).toEqual(["blob:one", "blob:two"]);
+    revoke.mockRestore();
+  });
+
+  it("is what backwork's queue trims a submitted document with", { timeout: TEST_TIMEOUT }, async () => {
+    expect(BACKWORK_MAX_HELD_BYTES).toBe(200 * 1024 * 1024);
+    const session = getBulkSession("u1", "c1");
+    bindMutations(session);
+    session.queue.add([pdf("a.pdf")]);
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
+    const before = session.queue.getSnapshot().items[0]!.prepared!;
+    expect(before.previews.size).toBe(1);
+    // Hold the upload so the submitted item can be looked at while it waits.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const requestSpy = vi.fn(async () => {
+      await held;
+      return {};
+    });
+    session.bind({
+      requestUpload: { mutateAsync: requestSpy },
+      confirmUpload: { mutateAsync: vi.fn() },
+    } as never);
+    session.queue.submit(idOf(session, "a.pdf"), { fields, boxes: {}, flatten: false });
+    const waiting = session.queue.getSnapshot().items[0]!;
+    expect(waiting.prepared!.previews.size).toBe(0);
+    expect(waiting.prepared!.bytes).toBe(before.bytes);
+    release();
   });
 });

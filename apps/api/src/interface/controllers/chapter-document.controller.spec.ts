@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
+import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -23,6 +24,7 @@ describe('ChapterDocumentController', () => {
           provide: ChapterDocumentService,
           useValue: mockChapterDocumentService,
         },
+        { provide: ChapterDocumentTypeService, useValue: {} },
       ],
     }).compile();
 
@@ -110,5 +112,35 @@ describe('ChapterDocumentController', () => {
         Reflect.getMetadata(PERMISSIONS_KEY, ChapterDocumentController),
       ).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
+  });
+
+  describe('folder import batches (#2242)', () => {
+    it.each(['requestUploadUrls', 'confirmUploads'] as const)(
+      '%s requires chapter_docs:upload, as the single routes do',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+      },
+    );
+  });
+
+  describe('document types (#3642)', () => {
+    // Every member reads the list (the upload form and filters show it);
+    // only document managers change it.
+    it('listTypes adds no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.listTypes as object),
+      ).toBeUndefined();
+    });
+
+    it.each(['createType', 'updateType', 'deleteType'] as const)(
+      '%s requires chapter_docs:manage',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_MANAGE]);
+      },
+    );
   });
 });

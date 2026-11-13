@@ -23,6 +23,7 @@ import type {
   ChapterDocument,
   ChapterDocumentFolder,
   ChapterDocumentStar,
+  ChapterDocumentType,
   ChapterDuesConfig,
   ChapterGoalRow,
   ChapterGroup,
@@ -163,6 +164,7 @@ export interface Database {
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
+      chapter_document_types: TableDefinition<ChapterDocumentType>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
@@ -455,6 +457,15 @@ export interface Database {
           p_mark_absent: boolean;
         };
         Returns: EventExcuse[];
+      };
+      /**
+       * `20261113053718` (#3642). Clears a document type from its documents
+       * (by `document_type_key`) and deletes it, in one transaction; false
+       * when the chapter has no such type.
+       */
+      delete_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string };
+        Returns: boolean;
       };
       /**
        * `20261105220000`. Deletes the channel groups a `purging` import
@@ -829,6 +840,15 @@ export interface Database {
           p_user_id: string;
         };
         Returns: string[];
+      };
+      /**
+       * `20261113053718` (#3642). Renames a document type and every document
+       * of it (by `document_type_key`) in one transaction; no row when the
+       * chapter has no such type, unique_violation when the name is taken.
+       */
+      rename_chapter_document_type: {
+        Args: { p_chapter_id: string; p_type_id: string; p_name: string };
+        Returns: ChapterDocumentType[];
       };
       /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
       reorder_chapter_pledge_classes: {

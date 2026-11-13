@@ -17,6 +17,7 @@ import {
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
 import type { ActOutcome } from '../../application/services/act/act.service';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { AiSuggestionDto } from './ai-suggestion.dto';
 
 export class ActRequestDto {
@@ -62,6 +63,14 @@ export class ActEventAudienceDto {
   @IsString()
   @MaxLength(POINTS_REASON_MAX_LENGTH)
   reason?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  keep_earlier?: boolean;
 }
 
 export class ActStatusDto {

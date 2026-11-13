@@ -11,7 +11,11 @@ import { InlineNote } from "@/components/shared/inline-note";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
 import { useIsNarrow } from "@/lib/use-is-narrow";
-import { attendanceFieldsOf, eventDefaultAttendance } from "@repo/validation";
+import { useRequiredOfViewer } from "@repo/hooks";
+import {
+  attendanceFieldsOf,
+  type EventAttendanceFields,
+} from "@repo/validation";
 import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import {
   CalendarTaskChip,
@@ -93,15 +97,18 @@ const MAX_VISIBLE_EVENTS_PER_DAY = 3;
 const COMPACT_BELOW_WIDTH = 600;
 const MAX_DOTS_PER_DAY = 3;
 
+/** `useRequiredOfViewer`'s answer: whether an event requires the viewer. */
+type RequiredOf = (event: EventAttendanceFields) => boolean;
+
 /**
  * What both months draw for one event, so the wide grid's chip and the
  * compact month's row name it, mark it and badge its series the same way.
  */
-function calendarEventFacts(event: EventRow) {
+function calendarEventFacts(event: EventRow, requiredOf: RequiredOf) {
   const eventName = String(event.name ?? "Untitled event");
-  // Required of everyone by default, as the list's badge.
-  const isMandatory =
-    eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
+  // Required of this viewer, by default or by a role of theirs, as the
+  // list's badge (#4132).
+  const isMandatory = requiredOf(attendanceFieldsOf(event));
   // The time of day only: the day is the cell's (or the day list's) own.
   const clockLabel = formatTimeOfDay(event.start_time);
   return {
@@ -189,6 +196,7 @@ export function EventsCalendar({
   const [pickedKey, setPickedKey] = useState<string | null>(null);
 
   const days = useMemo(() => buildMonthGrid(monthAnchor), [monthAnchor]);
+  const requiredOf = useRequiredOfViewer();
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, EventRow[]>();
@@ -309,6 +317,7 @@ export function EventsCalendar({
       {compact ? (
         <CompactMonth
           days={days}
+          requiredOf={requiredOf}
           monthAnchor={monthAnchor}
           todayKey={todayKey}
           eventsByDay={eventsByDay}
@@ -434,7 +443,7 @@ export function EventsCalendar({
                         isSeriesHead,
                         isSeriesInstance,
                         viewLabel,
-                      } = calendarEventFacts(event);
+                      } = calendarEventFacts(event, requiredOf);
 
                       return (
                         <button
@@ -505,6 +514,7 @@ export function EventsCalendar({
 
 type CompactMonthProps = {
   days: Date[];
+  requiredOf: RequiredOf;
   monthAnchor: Date;
   todayKey: string;
   eventsByDay: Map<string, EventRow[]>;
@@ -532,6 +542,7 @@ type CompactMonthProps = {
  */
 function CompactMonth({
   days,
+  requiredOf,
   monthAnchor,
   todayKey,
   eventsByDay,
@@ -681,7 +692,7 @@ function CompactMonth({
                 isSeriesInstance,
                 clockLabel,
                 viewLabel,
-              } = calendarEventFacts(event);
+              } = calendarEventFacts(event, requiredOf);
               return (
                 <li key={eventId}>
                   <button

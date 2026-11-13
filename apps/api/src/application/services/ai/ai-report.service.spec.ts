@@ -489,7 +489,7 @@ describe('AiReportService', () => {
         { ...base, subject: 'ai_suggestion', subjectId: SUGGESTION },
         NOW,
       );
-      expect(reports.rows[0].promptVersion).toBe('act.plan@v1');
+      expect(reports.rows[0].promptVersion).toBe('act.plan@v2');
       expect(reports.rows[0].model).toEqual(expect.any(String));
     });
 

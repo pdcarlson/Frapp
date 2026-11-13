@@ -3,6 +3,7 @@ import {
   TASK_PROOF_LINK_MAX,
   normalizeProofLink,
   taskNeedsSignOff,
+  taskMarkDoneCheck,
   taskSignedOffAutomatically,
 } from "./task-proof";
 
@@ -81,5 +82,72 @@ describe("taskSignedOffAutomatically", () => {
     ["it asks for proof", { proof_kind: "photo" }],
   ])("is false when %s", (_, overrides) => {
     expect(taskSignedOffAutomatically({ ...auto, ...overrides })).toBe(false);
+  });
+});
+
+describe("taskMarkDoneCheck mirrors the server's refusals (#4635)", () => {
+  const draft = { photoCount: 0, link: "", note: "" };
+
+  it("needs at least one photo on a Photo task", () => {
+    expect(
+      taskMarkDoneCheck({ proofKind: "photo", sentBack: false }, draft),
+    ).toEqual({
+      ok: false,
+      problem: "Add at least one photo of the finished job.",
+    });
+    expect(
+      taskMarkDoneCheck(
+        { proofKind: "photo", sentBack: false },
+        { ...draft, photoCount: 2 },
+      ),
+    ).toEqual({ ok: true, proof: {} });
+  });
+
+  it("needs a valid http(s) link on a Link task", () => {
+    expect(
+      taskMarkDoneCheck({ proofKind: "link", sentBack: false }, draft),
+    ).toMatchObject({ ok: false, problem: "Add a link to show it's done." });
+    expect(
+      taskMarkDoneCheck(
+        { proofKind: "link", sentBack: false },
+        { ...draft, link: "javascript:alert(1)" },
+      ),
+    ).toMatchObject({
+      ok: false,
+      problem: expect.stringMatching(/https:\/\//),
+    });
+    expect(
+      taskMarkDoneCheck(
+        { proofKind: "link", sentBack: false },
+        { ...draft, link: "  https://docs.example.com/x  " },
+      ),
+    ).toEqual({ ok: true, proof: { proofLink: "https://docs.example.com/x" } });
+  });
+
+  it("needs proof or a reply on a sent-back task", () => {
+    expect(
+      taskMarkDoneCheck({ proofKind: "none", sentBack: true }, draft),
+    ).toMatchObject({
+      ok: false,
+      problem: "Add proof or reply to the officer before marking it done.",
+    });
+    expect(
+      taskMarkDoneCheck(
+        { proofKind: "none", sentBack: true },
+        { ...draft, note: "  Mopped it again  " },
+      ),
+    ).toEqual({ ok: true, proof: { completionNote: "Mopped it again" } });
+    expect(
+      taskMarkDoneCheck(
+        { proofKind: "none", sentBack: true },
+        { ...draft, photoCount: 1 },
+      ),
+    ).toEqual({ ok: true, proof: {} });
+  });
+
+  it("lets a task that asks for nothing go with nothing", () => {
+    expect(
+      taskMarkDoneCheck({ proofKind: "none", sentBack: false }, draft),
+    ).toEqual({ ok: true, proof: {} });
   });
 });

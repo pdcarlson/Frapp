@@ -26,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
+import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -52,6 +53,13 @@ import {
   ChapterDocumentDto,
   DocumentFolderDto,
   DocumentPreviewUrlDto,
+  CreateDocumentTypeDto,
+  RequestDocumentUploadUrlsDto,
+  DocumentUploadUrlsResponseDto,
+  ConfirmDocumentUploadsDto,
+  DocumentConfirmResultsDto,
+  UpdateDocumentTypeDto,
+  DocumentTypeDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -63,6 +71,7 @@ import {
 export class ChapterDocumentController {
   constructor(
     private readonly chapterDocumentService: ChapterDocumentService,
+    private readonly chapterDocumentTypeService: ChapterDocumentTypeService,
   ) {}
 
   @Post('upload-url')
@@ -93,6 +102,89 @@ export class ChapterDocumentController {
       storage_path: ticket.storagePath,
       document_id: ticket.documentId,
     };
+  }
+
+  @Post('upload-urls')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary: 'Get signed upload URLs for up to 25 files (folder import)',
+  })
+  @ApiCreatedResponse({ type: DocumentUploadUrlsResponseDto })
+  async requestUploadUrls(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestDocumentUploadUrlsDto,
+  ): Promise<DocumentUploadUrlsResponseDto> {
+    const tickets = await this.chapterDocumentService.requestUploadUrls(
+      chapterId,
+      dto.files.map((file) => ({
+        filename: file.filename,
+        contentType: file.content_type,
+        sizeBytes: file.size_bytes,
+      })),
+    );
+    if (tickets.some((ticket) => !ticket.signedUrl || !ticket.storagePath)) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      tickets: tickets.map((ticket) => ({
+        upload_url: ticket.signedUrl,
+        storage_path: ticket.storagePath,
+        document_id: ticket.documentId,
+      })),
+    };
+  }
+
+  @Post('batch')
+  @ThrottleFanOutWrite()
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @ApiOperation({
+    summary:
+      'Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own',
+  })
+  @ApiCreatedResponse({ type: DocumentConfirmResultsDto })
+  @FeatureEvent(
+    'documents-imported',
+    ({
+      result,
+    }: FeatureEventInput<
+      ConfirmDocumentUploadsDto,
+      DocumentConfirmResultsDto
+    >) => {
+      // Counted from what was filed, not what was sent: a document the
+      // service refused on its own isn't an import.
+      const filed = (Array.isArray(result?.results) ? result.results : [])
+        .map((entry) => entry?.document)
+        .filter((doc): doc is ChapterDocumentDto => Boolean(doc));
+      return {
+        count: filed.length,
+        typed_count: filed.filter((doc) => hasText(doc.document_type)).length,
+        filed_count: filed.filter((doc) => hasText(doc.folder)).length,
+      };
+    },
+  )
+  async confirmUploads(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ConfirmDocumentUploadsDto,
+  ): Promise<DocumentConfirmResultsDto> {
+    const results = await this.chapterDocumentService.confirmUploads(
+      dto.documents.map((doc) => ({
+        chapter_id: chapterId,
+        title: doc.title,
+        description: doc.description,
+        folder: doc.folder,
+        storage_path: doc.storage_path,
+        uploaded_by: userId,
+        content_type: doc.content_type,
+        byte_size: doc.byte_size,
+        document_type: doc.document_type,
+        effective_date: doc.effective_date,
+      })),
+    );
+    return { results };
   }
 
   @Post()
@@ -151,6 +243,66 @@ export class ChapterDocumentController {
         ? { ...folderFilter, ...searchFilter }
         : undefined;
     return this.chapterDocumentService.findByChapter(chapterId, filter);
+  }
+
+  // Type routes, like the folder routes below, are declared before `:id` so
+  // `@Get(':id')` doesn't take `/documents/types` for a document id.
+
+  @Get('types')
+  @ApiOperation({
+    summary: "List the chapter's document types in display order",
+  })
+  @ApiOkResponse({ type: DocumentTypeDto, isArray: true })
+  async listTypes(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<DocumentTypeDto[]> {
+    return this.chapterDocumentTypeService.list(chapterId);
+  }
+
+  @Post('types')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Add a document type' })
+  @ApiCreatedResponse({ type: DocumentTypeDto })
+  async createType(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: CreateDocumentTypeDto,
+  ): Promise<DocumentTypeDto> {
+    return this.chapterDocumentTypeService.create(
+      chapterId,
+      dto.name,
+      dto.sort_order,
+    );
+  }
+
+  @Patch('types/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Rename or reorder a document type (a rename renames it on its documents)',
+  })
+  @ApiOkResponse({ type: DocumentTypeDto })
+  async updateType(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDocumentTypeDto,
+  ): Promise<DocumentTypeDto> {
+    return this.chapterDocumentTypeService.update(id, chapterId, {
+      name: dto.name,
+      sort_order: dto.sort_order,
+    });
+  }
+
+  @Delete('types/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary: 'Delete a document type (its documents keep everything else)',
+  })
+  async deleteType(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.chapterDocumentTypeService.delete(id, chapterId);
+    return { success: true };
   }
 
   // Folder routes are declared before `:id` on purpose — Nest matches in

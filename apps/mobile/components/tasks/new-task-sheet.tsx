@@ -6,15 +6,25 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { codeOf } from "@repo/api-sdk";
+import { codeOf, statusOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
-import { AI_SUGGESTION_COPY, aiSuggestionRefusalLine } from "@repo/validation";
+import {
+  AI_SUGGESTION_COPY,
+  TASK_PHOTOS_MAX,
+  TASK_PROOF_KIND_HINTS,
+  TASK_PROOF_KIND_LABELS,
+  TASK_PROOF_KINDS,
+  aiSuggestionRefusalLine,
+  type TaskProofKind,
+} from "@repo/validation";
 import {
   memberFallbackLabel,
   useChapterRoster,
   useCreateTask,
+  useRequestTaskPhotoUploadUrl,
   useUpdateTask,
   useViewerUserId,
+  type LiveTaskPhoto,
 } from "@repo/hooks";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
@@ -46,6 +56,15 @@ import {
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
+import { TaskPhotoPicker } from "@/components/tasks/task-photos";
+import { Segmented } from "@/components/segmented";
+import {
+  photoRoom,
+  pickTaskPhotos,
+  uploadTaskPhotos,
+  TASK_PHOTO_GATE_COPY,
+  type PendingTaskPhoto,
+} from "@/lib/tasks/task-photos";
 import {
   dueTimePassed,
   localIsoDate,
@@ -258,6 +277,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               dueAt: suggestion.dueAt,
               pointReward: null,
               storedStatus: null,
+              referencePhotos: [],
+              proofKind: "none",
             })
           : null,
       [suggestion],
@@ -295,6 +316,21 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [assigneeId, setAssigneeId] = useState<string | null>(
       original?.assigneeId ?? suggestion?.assigneeId ?? null,
     );
+    // Photos and proof (#4635): the task's own reference photos still kept
+    // (an edit), the ones picked here, which go up on Save, and the proof
+    // control. A suggestion carries none, so its form leaves them out.
+    const [proofKind, setProofKind] = useState<TaskProofKind>(
+      original?.proofKind ?? "none",
+    );
+    const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(
+      () => editing?.referencePhotos ?? [],
+    );
+    const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>([]);
+    const [photoProblem, setPhotoProblem] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [addingPhotos, setAddingPhotos] = useState(false);
+    const pickingPhotos = useRef(false);
+    const requestPhotoUrl = useRequestTaskPhotoUploadUrl();
     const [titleFocused, setTitleFocused] = useState(false);
     const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
@@ -358,7 +394,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { date: dueDate, chipId: dueChipId } = keepsPastDue
       ? { date: original.dueDate, chipId: null }
       : resolveDue(due, at);
-    const pending = createTask.isPending || updateTask.isPending || posting;
+    const pending =
+      createTask.isPending || updateTask.isPending || posting || uploading;
 
     const draft = {
       title,
@@ -367,6 +404,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       subtasks: [...subtasks, subtaskText],
       assigneeId: effectiveAssigneeId,
       pointsInput,
+      proofKind,
     };
     const body = validateNewTask(draft, at, original ?? undefined);
     const timePassed = dueTimePassed(draft, at, original ?? undefined);
@@ -389,7 +427,86 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setSubtasks([]);
       setSubtaskText("");
       setAssigneeId(null);
+      setProofKind("none");
+      setPickedPhotos([]);
+      setPhotoProblem(null);
     }, []);
+
+    /** Add photos from the library, several at once, up to the room left. */
+    const addPhotos = useCallback(async () => {
+      if (pickingPhotos.current || sending.current) return;
+      pickingPhotos.current = true;
+      setAddingPhotos(true);
+      try {
+        const result = await pickTaskPhotos(
+          photoRoom(keptPhotos.length + pickedPhotos.length),
+        );
+        if (result.status === "picked") {
+          setPickedPhotos((current) => [
+            ...current,
+            ...result.images
+              .slice(0, photoRoom(keptPhotos.length + current.length))
+              .map((image) => ({ image })),
+          ]);
+          setPhotoProblem(result.refused);
+        } else if (result.status === "refused") {
+          setPhotoProblem(result.reason);
+        }
+      } finally {
+        pickingPhotos.current = false;
+        setAddingPhotos(false);
+      }
+    }, [keptPhotos.length, pickedPhotos.length]);
+
+    /**
+     * The body with its `reference_photo_paths` (#4635): the newly uploaded
+     * ones on a create, the whole set as it should stand on an edit.
+     */
+    const attachPhotos = useCallback(
+      (base: ValidatedNewTask, paths: string[]): ValidatedNewTask => {
+        if (editing) {
+          return {
+            ...base,
+            reference_photo_paths: [
+              ...keptPhotos.map((photo) => photo.storage_path),
+              ...paths,
+            ],
+          };
+        }
+        return paths.length > 0
+          ? { ...base, reference_photo_paths: paths }
+          : base;
+      },
+      [editing, keptPhotos],
+    );
+
+    /**
+     * Uploads the photos picked here that aren't up yet: their paths, in
+     * order, or `null` when one didn't go, having said why. A gate's refusal
+     * takes the button, as a create's does.
+     */
+    const uploadPicked = useCallback(
+      async (sentFrom: number): Promise<string[] | null> => {
+        setUploading(true);
+        setPhotoProblem(null);
+        const up = await uploadTaskPhotos(
+          pickedPhotos,
+          (request) => requestPhotoUrl.mutateAsync(request),
+          TASK_PHOTO_GATE_COPY.task,
+        );
+        setUploading(false);
+        setPickedPhotos(up.photos);
+        if (up.status === "uploaded") return up.paths;
+        // A gate's refusal belongs to the visit that asked: one landing after
+        // the sheet was closed must not hold the next visit's Create, which
+        // a reopen promises is a fresh try (`closed`).
+        if (up.final) {
+          if (isSameVisit(sentFrom)) setRefusal(up.reason);
+        } else setPhotoProblem(up.reason);
+        return null;
+      },
+      [pickedPhotos, requestPhotoUrl, isSameVisit],
+    );
 
     /** Gives the draft up, and the visit's state with it: Cancel. */
     const reset = useCallback(() => {
@@ -425,6 +542,94 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       if (!editing) reset();
       dismiss();
     }, [reset, dismiss, editing]);
+
+    /** Sends the body, photos already up, by whichever route opened the sheet. */
+    const dispatchBody = useCallback(
+      (
+        body: ValidatedNewTask,
+        sentFrom: number,
+        handlers: {
+          onSuccess: (posted?: DispatchResult) => void;
+          onError: (error: unknown) => void;
+        },
+      ) => {
+        if (editing) {
+          const changes = taskEditBody(editing, body);
+          if (Object.keys(changes).length === 0) {
+            sending.current = false;
+            dismiss();
+            return;
+          }
+          updateTask.mutate(
+            { id: editing.id, body: changes },
+            {
+              onSuccess: () => {
+                sending.current = false;
+                successHaptic();
+                if (isSameVisit(sentFrom)) dismiss();
+                onSaved?.();
+              },
+              onError: handlers.onError,
+            },
+          );
+          return;
+        }
+        if (suggestion) {
+          setPosting(true);
+          void suggestion.accept(body).then(
+            () => {
+              setPosting(false);
+              handlers.onSuccess();
+            },
+            (error: unknown) => {
+              setPosting(false);
+              // Decided by someone else, expired, or its minutes changed:
+              // asking again can't work, so the reason takes the button.
+              const line = aiSuggestionRefusalLine(codeOf(error));
+              if (line && isSameVisit(sentFrom)) {
+                sending.current = false;
+                setRefusal(line);
+                return;
+              }
+              handlers.onError(error);
+            },
+          );
+          return;
+        }
+        if (!postToChannel) {
+          createTask.mutate(body, {
+            onSuccess: () => handlers.onSuccess(),
+            onError: handlers.onError,
+          });
+          return;
+        }
+        setPosting(true);
+        void postToChannel(body)
+          .catch((cause: unknown): DispatchResult => ({
+            ok: false,
+            error: "Couldn't create task",
+            cause,
+          }))
+          .then((result) => {
+            setPosting(false);
+            if (!result.ok) {
+              handlers.onError(result.cause ?? new Error(result.error));
+              return;
+            }
+            handlers.onSuccess(result);
+          });
+      },
+      [
+        createTask,
+        dismiss,
+        isSameVisit,
+        postToChannel,
+        editing,
+        updateTask,
+        onSaved,
+        suggestion,
+      ],
+    );
 
     const submit = useCallback(() => {
       // `canSubmit`, not just `body`, as in s20's log sheet: otherwise only the
@@ -471,91 +676,49 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             setRefusal(MODULE_REFUSAL_COPY.task);
             return;
           }
+          // A 400 may be a photo path the server turned down (one a create
+          // that landed, its answer lost, already holds), which can't win
+          // again: upload anew on the retry. A 5xx or a dropped connection
+          // keeps the paths, so a retry doesn't upload twice.
+          if (statusOf(error) === 400) {
+            setPickedPhotos((current) =>
+              current.map(({ image }) => ({ image })),
+            );
+          }
           setSubmitFailed(true);
         },
       };
-      if (editing) {
-        const changes = taskEditBody(editing, body);
-        if (Object.keys(changes).length === 0) {
+      // Photos already up (or none picked) send in this tap; any still on
+      // the device go up first.
+      const uploaded = pickedPhotos.flatMap((photo) =>
+        photo.storagePath ? [photo.storagePath] : [],
+      );
+      if (uploaded.length === pickedPhotos.length) {
+        dispatchBody(attachPhotos(body, uploaded), sentFrom, handlers);
+        return;
+      }
+      void uploadPicked(sentFrom).then((paths) => {
+        if (!paths) {
           sending.current = false;
-          dismiss();
           return;
         }
-        updateTask.mutate(
-          { id: editing.id, body: changes },
-          {
-            onSuccess: () => {
-              sending.current = false;
-              successHaptic();
-              if (isSameVisit(sentFrom)) dismiss();
-              onSaved?.();
-            },
-            onError: handlers.onError,
-          },
-        );
-        return;
-      }
-      if (suggestion) {
-        setPosting(true);
-        void suggestion.accept(body).then(
-          () => {
-            setPosting(false);
-            handlers.onSuccess();
-          },
-          (error: unknown) => {
-            setPosting(false);
-            // Decided by someone else, expired, or its minutes changed:
-            // asking again can't work, so the reason takes the button.
-            const line = aiSuggestionRefusalLine(codeOf(error));
-            if (line && isSameVisit(sentFrom)) {
-              sending.current = false;
-              setRefusal(line);
-              return;
-            }
-            handlers.onError(error);
-          },
-        );
-        return;
-      }
-      if (!postToChannel) {
-        createTask.mutate(body, {
-          onSuccess: () => handlers.onSuccess(),
-          onError: handlers.onError,
-        });
-        return;
-      }
-      setPosting(true);
-      void postToChannel(body)
-        .catch((cause: unknown): DispatchResult => ({
-          ok: false,
-          error: "Couldn't create task",
-          cause,
-        }))
-        .then((result) => {
-          setPosting(false);
-          if (!result.ok) {
-            handlers.onError(result.cause ?? new Error(result.error));
-            return;
-          }
-          handlers.onSuccess(result);
-        });
+        dispatchBody(attachPhotos(body, paths), sentFrom, handlers);
+      });
     }, [
       body,
       canSubmit,
-      createTask,
+      visit,
+      pickedPhotos,
+      attachPhotos,
+      uploadPicked,
+      dispatchBody,
       viewerUserId,
       clearDraft,
-      dismiss,
-      visit,
       isSameVisit,
+      dismiss,
       onCreated,
       assigneeName,
-      postToChannel,
       onPosted,
-      editing,
-      updateTask,
-      onSaved,
-      suggestion,
     ]);
 
     const filteredRoster = useMemo(() => {
@@ -679,6 +842,59 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 disabled={pending}
                 fieldStyle={styles.field}
               />
+            )}
+
+            {/* Photos of what the job is, and what Mark done needs (#4635),
+              the way Google Classroom and Canvas set what a submission takes.
+              Web puts them under More options; this sheet has none, so they
+              sit here, quiet until used. */}
+            {suggestion ? null : (
+              <>
+                <View style={styles.group}>
+                  <Text style={styles.groupLabel}>Photos</Text>
+                  <Text style={styles.note}>
+                    What the job looks like (optional, up to {TASK_PHOTOS_MAX}).
+                  </Text>
+                  <TaskPhotoPicker
+                    taskId={editing?.id}
+                    kept={keptPhotos}
+                    picked={pickedPhotos.map(({ image }) => image)}
+                    onRemoveKept={(photoId) =>
+                      setKeptPhotos((current) =>
+                        current.filter((photo) => photo.id !== photoId),
+                      )
+                    }
+                    onRemovePicked={(index) =>
+                      setPickedPhotos((current) =>
+                        current.filter((_, i) => i !== index),
+                      )
+                    }
+                    onAdd={() => void addPhotos()}
+                    disabled={pending}
+                    adding={addingPhotos}
+                  />
+                  {photoProblem ? (
+                    <Text style={styles.error}>{photoProblem}</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.group}>
+                  <Text style={styles.groupLabel}>Proof</Text>
+                  <Segmented
+                    options={TASK_PROOF_KINDS.map((kind) => ({
+                      value: kind,
+                      label: TASK_PROOF_KIND_LABELS[kind],
+                    }))}
+                    value={proofKind}
+                    onChange={setProofKind}
+                    accessibilityLabel="Proof to mark it done"
+                    disabled={pending}
+                  />
+                  <Text style={styles.note}>
+                    {TASK_PROOF_KIND_HINTS[proofKind]}
+                  </Text>
+                </View>
+              </>
             )}
 
             <Pressable
@@ -941,6 +1157,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     note: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    group: {
+      gap: tokens.spacing.xs,
+    },
+    groupLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isCardReadMiss } from "./card-read-miss";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { invalidatePointReads } from "./use-points";
+import { semesterSince } from "./document-library";
 
 /**
  * `userId` is not a convenience — on this endpoint it is the difference between
@@ -51,6 +52,104 @@ export function useServiceEntries(
     },
     staleTime: 30_000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * One row of `GET /v1/service-entries/leaderboard`: a member's APPROVED
+ * service time in the window. The route declares no OpenAPI response schema,
+ * so this mirrors the API's `ServiceLeaderboardRow`
+ * (`apps/api/src/domain/entities/service-entry.entity.ts`), and
+ * {@link selectServiceLeaderboard} narrows the untyped body into it.
+ */
+export type ServiceLeaderboardRow = {
+  user_id: string;
+  member_name: string;
+  total_minutes: number;
+  entry_count: number;
+};
+
+/**
+ * The leaderboard body as rows, dropping any that lack an id or a number. The
+ * server's order is the ranking (approved minutes descending, then name), so
+ * this keeps it rather than sorting again.
+ */
+export function selectServiceLeaderboard(
+  data: unknown,
+): ServiceLeaderboardRow[] {
+  if (!Array.isArray(data)) return [];
+  const rows: ServiceLeaderboardRow[] = [];
+  for (const raw of data) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const minutes = Number(row.total_minutes);
+    if (typeof row.user_id !== "string" || !Number.isFinite(minutes)) continue;
+    const count = Number(row.entry_count);
+    rows.push({
+      user_id: row.user_id,
+      member_name: typeof row.member_name === "string" ? row.member_name : "",
+      total_minutes: minutes,
+      entry_count: Number.isFinite(count) ? count : 0,
+    });
+  }
+  return rows;
+}
+
+/**
+ * The first day of "this semester" as a bare `YYYY-MM-DD`: the day after the
+ * latest archive's `end_date` ({@link semesterSince}), which is the day the
+ * Activity page's Service hours tile counts from
+ * (`ActivityStandingService`, `spec/behavior/semester-rollover.md`). `null`
+ * when the chapter has never rolled over, so this semester is all time.
+ */
+export function serviceSemesterStartDate(
+  archives: readonly { end_date: string; created_at?: string }[],
+): string | null {
+  const since = semesterSince(archives);
+  return since
+    ? new Date(since.getTime() + 1).toISOString().slice(0, 10)
+    : null;
+}
+
+/**
+ * The chapter's service leaderboard (`GET /v1/service-entries/leaderboard`,
+ * `members:view`): members ranked by APPROVED minutes, with an optional
+ * inclusive `start_date` / `end_date` on the service date; omit both for all
+ * time. Under the `["service-entries"]` prefix, so an approval re-ranks it.
+ * Pass `enabled: false` to hold it, such as while the semester's start is
+ * still being read.
+ */
+export function useServiceLeaderboard(
+  range?: { start_date?: string; end_date?: string },
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      "service-entries",
+      chapterId,
+      "leaderboard",
+      range?.start_date ?? null,
+      range?.end_date ?? null,
+    ],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/service-entries/leaderboard",
+        {
+          params: {
+            query: {
+              start_date: range?.start_date,
+              end_date: range?.end_date,
+            },
+          },
+        },
+      );
+      if (error) throw error;
+      return selectServiceLeaderboard(data);
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && (options?.enabled ?? true),
   });
 }
 

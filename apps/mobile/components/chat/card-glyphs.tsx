@@ -1,4 +1,4 @@
-import { Path } from "react-native-svg";
+import { Path, Rect } from "react-native-svg";
 import {
   GlyphFrame,
   glyphPaint,
@@ -8,7 +8,8 @@ import {
 } from "@/components/tab-glyphs";
 
 /**
- * The eyebrow glyphs of the chat cards that have no tab of their own.
+ * The eyebrow glyphs of the chat cards that have no tab of their own, and
+ * the channel row's lock and audit marks (`channel-row.tsx`).
  *
  * Geometry is transcribed from web's chat family
  * (`apps/web/components/chat/chat-glyphs.tsx` and the shell's
@@ -92,6 +93,38 @@ export function AuditGlyph(props: TabGlyphProps) {
       />
       <Path
         d="M9.2 10.4h5.6M9.2 13.4h3.6"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * Lock: a private or role-gated channel's row on chat home (#4134), as web's
+ * rail draws it (`apps/web/components/chat/chat-glyphs.tsx` `LockGlyph`).
+ * Body filled, shackle stroke-only.
+ */
+export function LockGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={4.8}
+        y={10.5}
+        width={14.4}
+        height={9.5}
+        rx={3}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M8.4 10.5V8a3.6 3.6 0 0 1 7.2 0v2.5"
         fill="none"
         stroke={stroke}
         strokeWidth={STROKE_WIDTH}

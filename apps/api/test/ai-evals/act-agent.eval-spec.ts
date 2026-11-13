@@ -196,6 +196,8 @@ function build(options: {
 const EVERYTHING = [
   'ai:use',
   'ai:act',
+  // Asked for beside `ai:act` since #4699: a card names members.
+  'members:view',
   'points:adjust',
   'tasks:manage',
   'events:create',
@@ -302,7 +304,7 @@ describe('the acting agent, against a model that misbehaves', () => {
 
     it('does not offer an action the member has no permission for, and ignores a planner that names it', async () => {
       const { ask, requests, proposed } = build({
-        permissions: ['ai:use', 'ai:act', 'tasks:manage'],
+        permissions: ['ai:use', 'ai:act', 'members:view', 'tasks:manage'],
         plan: planOf({
           action: 'give_points',
           amount: 5000,
@@ -330,7 +332,7 @@ describe('the acting agent, against a model that misbehaves', () => {
 
     it('does not read attendance for a member who could not open it', async () => {
       const { ask, proposed, events } = build({
-        permissions: ['ai:use', 'ai:act', 'points:adjust'],
+        permissions: ['ai:use', 'ai:act', 'members:view', 'points:adjust'],
         plan: planOf({
           action: 'give_points',
           amount: 5,

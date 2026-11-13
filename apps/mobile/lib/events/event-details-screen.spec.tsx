@@ -314,8 +314,9 @@ describe("Event details layout", () => {
 
     expect(screenText(tree)).toMatch(/· .+ · Chapter House — Great Room\n/);
     expect(textNode(tree, "Chapter House — Great Room")).toBeUndefined();
+    // The hairline kind, as the list draws it (#4132).
     expect(flat(textNode(tree, "Mandatory")!).color).toBe(
-      signetDarkTokens.color.semantic.destructiveText,
+      signetDarkTokens.color.text.mutedForeground,
     );
     expect(flat(textNode(tree, "+10 pts")!).color).toBe(ACCENT);
   });

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { InFlightLookups } from './in-flight-lookups';
 
 /**
  * One read per request for the lookups every chat request repeats (#3728).
@@ -16,11 +17,16 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * chapter rows through `readOncePerRequest` as before, the membership and
  * roles recorded with `keepForRequest`.
  *
- * **Never across requests.** `spec/behavior/rbac.md` § Permission Check
- * Algorithm and `spec/behavior/multi-tenancy.md` promise that each request resolves
- * membership and roles afresh, and Paul kept that promise in #3752. The store
- * is created per request by `requestReadsMiddleware` and dies with it, so a
- * role change or a removal still takes effect on the very next request.
+ * **Across requests, only a burst's in-flight reads.** The store is created
+ * per request by `requestReadsMiddleware` and dies with it. `GET` and `HEAD`
+ * requests that arrive together may also join a membership or role read (and
+ * the guards' session and `get_request_context` checks) that another such
+ * request started at most `IN_FLIGHT_JOIN_WINDOW_MS` earlier
+ * (`sharesBurstLookups`, `readSharedInBurst`), the bound Paul accepted on
+ * 2026-11-13 (#3752; `spec/behavior/rbac.md` § Permission Check Algorithm,
+ * `spec/behavior/multi-tenancy.md`). A request that may write makes every
+ * check itself, so a role change or a removal stops a write at once, and
+ * every read that arrives after the window sees it too.
  *
  * **A write's handler reads afresh.** A `GET` or `HEAD` keeps its store to the
  * end. Any other method keeps it only through the guards:
@@ -33,6 +39,23 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * by hand) has no store and reads straight through.
  */
 const READ_METHODS = new Set(['GET', 'HEAD']);
+
+const burstReads = new InFlightLookups<unknown>();
+
+/**
+ * Runs `read`, or joins the same `key`'s read that another request started at
+ * most `IN_FLIGHT_JOIN_WINDOW_MS` ago (#3752). Only in a `GET` or `HEAD`
+ * request (`sharesBurstLookups`): a request that may write, a worker or a
+ * cron reads the database itself. The answer is shared by reference, so call
+ * it inside `readOncePerRequest`, which hands each caller a copy.
+ */
+export function readSharedInBurst<T>(
+  key: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!sharesBurstLookups()) return read();
+  return burstReads.run(key, read) as Promise<T>;
+}
 
 interface RequestReads {
   readonly reads: Map<string, Promise<unknown>>;
@@ -62,6 +85,17 @@ export function runWithRequestReads<T>(method: string, fn: () => T): T {
 export function sealRequestReadsForWrites(): void {
   const store = storage.getStore();
   if (store?.writes) store.sealed = true;
+}
+
+/**
+ * Whether this request may join a lookup another request already started
+ * (#3752): only a `GET` or `HEAD` request, inside its store. A request that
+ * may write checks its session, membership and roles itself, so a revocation
+ * committed a moment earlier still stops it.
+ */
+export function sharesBurstLookups(): boolean {
+  const store = storage.getStore();
+  return store !== undefined && !store.writes;
 }
 
 /** Whether a read made now would be kept for the rest of the request. */

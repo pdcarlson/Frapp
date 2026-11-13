@@ -69,6 +69,7 @@ export function MyExcuse({
   start,
   end,
   opensMinutes,
+  writeAsk = 0,
 }: {
   eventId: string;
   /** Whether the event requires the viewer (`useRequiredOfViewer`). */
@@ -76,6 +77,11 @@ export function MyExcuse({
   start: unknown;
   end: unknown;
   opensMinutes: unknown;
+  /**
+   * The chat card's Can't make it (#4660): a nonzero count opens the line,
+   * on arrival and again each time it changes while this stays mounted.
+   */
+  writeAsk?: number;
 }) {
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId);
@@ -84,7 +90,14 @@ export function MyExcuse({
   const gate = useSubscriptionGate();
   const { toast } = useToast();
   const now = new Date(useNow());
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(writeAsk > 0);
+  // A new ask while mounted reopens the line: state adjusted during render,
+  // React's pattern for following a prop, rather than an effect.
+  const [seenAsk, setSeenAsk] = useState(writeAsk);
+  if (writeAsk !== seenAsk) {
+    setSeenAsk(writeAsk);
+    if (writeAsk > 0) setWriting(true);
+  }
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputId = useId();

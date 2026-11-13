@@ -90,6 +90,7 @@ import {
   ChannelRow,
   UnreadBadge,
 } from "@/components/chat/channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import {
@@ -586,6 +587,7 @@ export default function ChatHomeScreen() {
       <ChannelRow
         key={channel.id}
         name={name}
+        mark={channelMarkFor(channel)}
         isPinned={pinned}
         isMuted={mutedChannelIds?.has(channel.id) ?? false}
         unreadCount={counts?.unreadCount ?? 0}

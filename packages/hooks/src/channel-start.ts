@@ -88,3 +88,24 @@ const SYSTEM_CHANNEL_NAMES: ReadonlySet<string> = new Set(["chapter-audit"]);
 export function isSystemChannel(channel: { name: string }): boolean {
   return SYSTEM_CHANNEL_NAMES.has(channel.name);
 }
+
+/**
+ * The mark a (non-direct) channel draws beside its name, in a channel list and
+ * at its start: the audit shield for the audit channel, a lock for a channel
+ * not every member can join, and `#` for the rest. `PRIVATE` and `ROLE_GATED`
+ * both draw the lock, but only a `PRIVATE` one is called private (see
+ * {@link channelStartCopy}): a role-gated channel such as the seeded #alumni
+ * may be open to every member. Web's rail and channel start draw the same
+ * marks (`apps/web/components/chat/channel-list.tsx`, `channel-start.tsx`).
+ */
+export type ChannelMark = "hash" | "private" | "role-gated" | "audit";
+
+export function channelMarkFor(channel: {
+  name: string;
+  type: string;
+}): ChannelMark {
+  if (isSystemChannel(channel)) return "audit";
+  if (channel.type === "PRIVATE") return "private";
+  if (channel.type === "ROLE_GATED") return "role-gated";
+  return "hash";
+}

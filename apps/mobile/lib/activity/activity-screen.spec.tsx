@@ -211,7 +211,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { FilterChips } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
-import { StatusChip } from "@/components/status-chip";
+import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
 import { UndoBar } from "@/components/tasks/undo-bar";
@@ -420,9 +420,11 @@ describe("Activity screen (#3897)", () => {
     );
     expect(pressable.props.accessibilityValue).toEqual({ text: "Approve" });
     expect(pressable.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
-    // A state is a status chip, never the ask.
+    // A state is a chip, never the ask: "To do" is quiet metadata, so the
+    // hairline kind, as web's outline badge (#4132).
     const task = row(tree, "Book the venue");
-    expect(task.findByType(StatusChip).props.label).toBe("To do");
+    expect(task.findByType(HairlineChip).props.label).toBe("To do");
+    expect(task.findAllByType(StatusChip)).toHaveLength(0);
     expect(task.findAllByType(ActivityAsk)).toHaveLength(0);
   });
 
