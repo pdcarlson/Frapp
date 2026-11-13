@@ -254,10 +254,7 @@ async function encodeJpeg(asset: {
 }
 
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
-async function byteSizeOf(
-  uri: string,
-  hinted?: number,
-): Promise<number> {
+async function byteSizeOf(uri: string, hinted?: number): Promise<number> {
   if (typeof hinted === "number" && Number.isFinite(hinted) && hinted >= 0) {
     return hinted;
   }
@@ -328,8 +325,7 @@ export type ImageUploadResult =
   | { status: "uploaded"; image: UploadedImage }
   | { status: "refused"; reason: string };
 
-const UPLOAD_FAILED =
-  "Couldn't upload that photo. Try again in a moment.";
+const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.";
 
 /** A pick that threw: an unguarded native call, read as a sentence. */
 const PICK_FAILED = "Couldn't add that photo. Try again in a moment.";
@@ -486,6 +482,47 @@ export async function pickImage(
   }
 }
 
+/** What a pick of several photos came back with. */
+export type ImagesPickResult =
+  | { status: "cancelled" }
+  /**
+   * The photos that passed the gate, in the order they were tapped. `refused`
+   * is the first refusal among the rest, when any was turned away, so the
+   * caller can say why one is missing.
+   */
+  | { status: "picked"; images: PickedImage[]; refused: string | null }
+  | { status: "refused"; reason: string };
+
+/**
+ * Pick up to `limit` photos from the library at once and gate each, uploading
+ * nothing: {@link pickImage} for a caller that holds several (a task's
+ * photos and its proof, #4635). A photo the gate refuses is left out and its
+ * reason handed back beside the rest. Never throws.
+ */
+export async function pickImages(
+  options: ImagePickOptions,
+  limit: number,
+): Promise<ImagesPickResult> {
+  if (limit < 1) return { status: "cancelled" };
+  try {
+    const launched = await launchLibrary(options, limit);
+    if (launched.status !== "picked") return launched;
+    const images: PickedImage[] = [];
+    let refused: string | null = null;
+    for (const asset of launched.assets) {
+      const prepared = await preparePickedAsset(asset, options);
+      if (prepared.status === "picked") images.push(prepared.image);
+      else refused ??= prepared.reason;
+    }
+    if (images.length === 0) {
+      return { status: "refused", reason: refused ?? options.copy.type };
+    }
+    return { status: "picked", images, refused };
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+}
+
 /**
  * PUT a picked photo to a freshly minted signed URL. Never throws: a refused
  * mint or a failed PUT comes back as a sentence.
@@ -542,7 +579,6 @@ export async function uploadPickedImage(
     return { status: "refused", reason: uploadFailureReason(err) };
   }
 }
-
 
 /** PUT the file at `uri` to a signed upload URL; true on a 2xx. */
 async function putFile(
