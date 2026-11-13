@@ -312,6 +312,76 @@ describe('ChannelAccessService', () => {
     });
   });
 
+  describe('readersOf', () => {
+    const member = (user_id: string, channel_access: ChannelAccessHolder) => ({
+      user_id,
+      permissions: new Set<string>(),
+      top_role_order: null,
+      top_role: null,
+      channel_access,
+    });
+
+    it('answers each channel by the reader rule, from one chapter-wide resolve', async () => {
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        member('president', WILDCARD),
+        member('secret-holder', holderOf(SECRET)),
+        member('member-of-private', EMPTY_ACCESS_HOLDER),
+      ]);
+
+      const readers = await service.readersOf('chap-1', [
+        publicChannel,
+        privateChannel,
+        roleGatedChannel,
+      ]);
+
+      expect(readers.get('ch-public')).toEqual(
+        new Set(['president', 'secret-holder', 'member-of-private']),
+      );
+      expect(readers.get('ch-private')).toEqual(new Set(['member-of-private']));
+      expect(readers.get('ch-role')).toEqual(
+        new Set(['president', 'secret-holder']),
+      );
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledTimes(1);
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        false,
+      );
+    });
+
+    it('reads group memberships when a channel is opened by a group, so a committee counts its members', async () => {
+      mockRbac.getChapterMemberAccess.mockImplementation(
+        (_chapterId: string, withGroups: boolean) =>
+          Promise.resolve([
+            member(
+              'committee-member',
+              withGroups ? holderOf('group:g-social') : EMPTY_ACCESS_HOLDER,
+            ),
+            member('outsider', EMPTY_ACCESS_HOLDER),
+          ]),
+      );
+
+      const readers = await service.readersOf('chap-1', [
+        publicChannel,
+        {
+          ...roleGatedChannel,
+          id: 'ch-social',
+          who_can_see: ['group:g-social'],
+        },
+      ]);
+
+      expect(readers.get('ch-social')).toEqual(new Set(['committee-member']));
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        true,
+      );
+    });
+
+    it('reads nothing for no channels', async () => {
+      await expect(service.readersOf('chap-1', [])).resolves.toEqual(new Map());
+      expect(mockRbac.getChapterMemberAccess).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listChannelMembers', () => {
     const access = [
       {

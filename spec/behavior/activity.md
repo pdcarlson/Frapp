@@ -204,6 +204,48 @@ judged for an average member, a committee chair and the president
   (ADR-07). A pick changed this week on an older poll adds one done and one to the total, which
   moves the ring by a sliver; a first-voted time would cost a schema change to remove it.
 
+## Progress
+
+`progress` on a row of Made by you is how far along it is: `{ done, total }`, how many have
+answered of how many can ([#4792](https://github.com/pdcarlson/Frapp/issues/4792); Paul,
+2026-11-13, part of the week ring's concept: "Waiting on others" with a bar per thing the member
+made). The clients draw it as a thin bar with "41 of 60" under the row
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md),
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)). It is
+`null` on every other row.
+
+- **Polls:** on an open poll the caller posted, `done` is the members who have voted (a cleared
+  vote is not one, #3793) and `total` the members who can read its channel, by chat's own reader
+  rule, the one its member list uses and a vote is checked against
+  ([Polls and channel access](#polls-and-channel-access)). A member who has blocked the caller
+  is on neither side: the poll is masked for them and they can't vote on it
+  ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)),
+  so counting them would hold the bar short of full for good. A closed poll waits on nobody and
+  has none.
+- **Events:** on an event the caller made, once its check-in has opened, and only for a caller
+  holding `events:update`, `done` is the members
+  marked present or late and `total` the members check-in admits: the event invites them
+  (attendance by role), and an alumnus only through a role the event names
+  ([`alumni.md`](alumni.md)). An excused member is on neither side, as the [Week](#week) leaves
+  them out. Before check-in opens nobody can check in, and a bar at nothing says nothing, so the
+  row has none. Who has checked in is the attendance roster's, which needs `events:update`
+  ([`events.md`](events.md)), and making an event grants nothing, so a maker without it (every
+  member may make one) gets no count either: the count is never a way around the roster.
+- **The caller is on neither side.** The section is "Waiting on others": their own vote or
+  check-in is not what they are waiting on.
+- **Never "0 of 0".** A poll nobody else can read, or an event that holds nobody else to it, has
+  `progress: null`, and the row draws no bar. `done` counts only members still on `total`'s side
+  (a voter who has since lost the channel is not counted), so it never passes `total`.
+- **Bounded.** The same reads whatever the number of rows, never one per row. For polls: the
+  chapter-wide resolve chat's member list uses (the roster, the roles, and group memberships when
+  a channel is opened by a group), every vote on the caller's open polls, and who among the
+  readers has blocked the caller. For events: the roster, the Alumni role and every attendance
+  row on the open ones. The vote and attendance reads are paged, so a busy chapter's rows past
+  the server's row cap are still counted. None of it runs for a member with no open poll and no
+  event open for check-in, which is most members on most opens.
+- **A hint, not a section.** When a count can't be read the rows are served with
+  `progress: null` and the failure is reported; nothing lands in `unavailable`.
+
 ## Standing
 
 `GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (under the week card on both clients since #4766; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
@@ -282,9 +324,11 @@ the same rule search and the poll list follow
   the block list cannot be read, the polls section fails (empty, named in `unavailable`) instead
   of listing unmasked. The other sections are chapter records, which a block leaves alone.
 - A row is the poll's chat message (`message`, as chat serves it) plus what a list shows: the
-  question, the channel, when it closes, whether the caller voted. It carries **no tallies**. A
-  client reads its votes the way chat does and draws chat's own poll card from it, so the same
-  access rule and the same live updates apply, and the card counts the votes.
+  question, the channel, when it closes, whether the caller voted. It carries **no tallies by
+  option**. A client reads its votes the way chat does and draws chat's own poll card from it, so
+  the same access rule and the same live updates apply, and the card counts the votes. The one
+  count a row carries is how many have voted on an open poll the caller posted, of how many can
+  ([Progress](#progress)).
 - A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
   a question and two options with an id and a label (a card without them draws as "Malformed
   poll" and is not listed), and it is open until it is closed early (by its creator or a `channels:manage` holder) or its closing time

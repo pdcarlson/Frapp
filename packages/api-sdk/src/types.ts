@@ -8670,10 +8670,16 @@ export interface components {
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
         };
+        ActivityProgressDto: {
+            /** @description How many have answered: voted, or checked in. */
+            done: number;
+            /** @description Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`. */
+            total: number;
+        };
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.
              */
             message_id: string;
             /** Format: uuid */
@@ -8698,6 +8704,8 @@ export interface components {
             closed_at: string | null;
             is_closed: boolean;
             has_voted: boolean;
+            /** @description In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
@@ -8778,6 +8786,8 @@ export interface components {
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */
             created_by: string | null;
+            /** @description In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */

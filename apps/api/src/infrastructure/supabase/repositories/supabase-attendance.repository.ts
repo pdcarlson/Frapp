@@ -1,3 +1,4 @@
+import { fetchAllPages } from '../supabase.utils';
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
@@ -58,6 +59,29 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
         .in('event_id', ids.slice(start, start + IN_CHUNK));
       if (error) throw new SupabaseQueryError(error);
       rows.push(...(data ?? []));
+    }
+    return rows;
+  }
+
+  async findByEvents(eventIds: readonly string[]): Promise<EventAttendance[]> {
+    const ids = [...new Set(eventIds)];
+    const rows: EventAttendance[] = [];
+    for (let start = 0; start < ids.length; start += IN_CHUNK) {
+      const chunk = ids.slice(start, start + IN_CHUNK);
+      // Paged within the chunk: a row per invited member per event passes
+      // the server's row cap in a big chapter, silently (#4792).
+      rows.push(
+        ...(await fetchAllPages(
+          (from, to) =>
+            this.supabase
+              .from('event_attendance')
+              .select('*')
+              .in('event_id', chunk)
+              .order('id', { ascending: true })
+              .range(from, to),
+          { pageSize: 1000 },
+        )),
+      );
     }
     return rows;
   }

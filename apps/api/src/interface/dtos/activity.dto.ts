@@ -38,6 +38,7 @@ import type {
   ActivityEvent,
   ActivityHoursEntry,
   ActivityPoll,
+  ActivityProgress,
   ActivitySection,
   ActivityTask,
   ActivityView,
@@ -186,11 +187,22 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
   unread: boolean;
 }
 
+export class ActivityProgressDto implements ActivityProgress {
+  @ApiProperty({ description: 'How many have answered: voted, or checked in.' })
+  done: number;
+
+  @ApiProperty({
+    description:
+      'Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`.',
+  })
+  total: number;
+}
+
 export class ActivityPollDto implements ActivityPoll {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.',
+      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.',
   })
   message_id: string;
 
@@ -238,6 +250,14 @@ export class ActivityPollDto implements ActivityPoll {
 
   @ApiProperty()
   has_voted: boolean;
+
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -377,6 +397,14 @@ export class ActivityEventDto implements ActivityEvent {
       'Who made it. Null for an event made before makers were recorded (2026-11-11).',
   })
   created_by: string | null;
+
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;

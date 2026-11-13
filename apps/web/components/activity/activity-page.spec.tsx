@@ -1821,3 +1821,45 @@ describe("ActivityPage", () => {
     expect(screen.queryByText("Chapter meeting")).toBeNull();
   });
 });
+
+describe("Waiting on others: how far along each thing is (#4792)", () => {
+  it("draws a bar and the count under a poll the member posted, said whole to a screen reader", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        made_by_you: {
+          polls: [
+            {
+              ...poll,
+              message_id: "p9",
+              sender_id: "me",
+              question: "Where should formal be?",
+              progress: { done: 17, total: 25 },
+            },
+            // Nobody else can answer it: no bar, never "0 of 0".
+            {
+              ...poll,
+              message_id: "p10",
+              sender_id: "me",
+              question: "Exec only?",
+              progress: null,
+            },
+          ],
+          tasks: [],
+          events: [],
+        },
+      }),
+    );
+
+    render(<ActivityPage />);
+
+    const formal = screen
+      .getByText("Where should formal be?")
+      .closest("li") as HTMLElement;
+    expect(within(formal).getByText("17 of 25 voted")).toBeTruthy();
+    expect(
+      within(formal).getByText("17 of 25").getAttribute("aria-hidden"),
+    ).toBe("true");
+    const alone = screen.getByText("Exec only?").closest("li") as HTMLElement;
+    expect(within(alone).queryByText(/ of /)).toBeNull();
+  });
+});

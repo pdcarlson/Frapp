@@ -6,6 +6,7 @@ import {
   activityDetailParts,
   type ActivityFace,
   type ActivityRow,
+  type ActivityRowProgress,
 } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -23,6 +24,7 @@ import {
   leadRowStyles,
 } from "@/components/lead-tile";
 import { MemberAvatar } from "@/components/member-avatar";
+import { meterStyles } from "@/components/meter";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonText } from "@/components/state-block";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
@@ -94,7 +96,9 @@ export function ActivityListRow({
   const faceFor = useContext(ActivityFaces);
   const poster =
     row.kind === "poll" && row.faceId ? faceFor(row.faceId)?.name : null;
-  const label = poster ? `${row.title}, from ${poster}` : row.title;
+  const titled = poster ? `${row.title}, from ${poster}` : row.title;
+  // "41 of 60 voted" is said with the title: the bar beside it is decoration.
+  const label = row.progress ? `${titled}, ${row.progress.spoken}` : titled;
   const rowStyle = [
     styles.row,
     onCard ? styles.rowOnCard : null,
@@ -118,6 +122,9 @@ export function ActivityListRow({
           {row.title}
         </Text>
         <ActivityRowDetail row={row} lines={solo ? 2 : 1} />
+        {row.progress ? (
+          <ActivityRowProgressLine progress={row.progress} onCard={onCard} />
+        ) : null}
       </View>
       {row.badge ? (
         action ? (
@@ -271,6 +278,59 @@ function ActivityRowDetail({
         </Text>
       ) : null}
     </Text>
+  );
+}
+
+/**
+ * How far along a Waiting on others row is (#4792): a thin bar and "41 of
+ * 60", the week card's line recipe (`WeekLine`) under the row's detail, so
+ * an officer sees how many have voted or checked in without opening it.
+ * Google Forms' response count and GitHub's "2 of 3 approvals" are the
+ * comparables: a count where the list is, the detail one tap away.
+ *
+ * The groove is `meterStyles`' `trackOnPage`: these rows sit on the screen's
+ * floor, where the usual recess would vanish; on a card it is the recess
+ * again. A finished
+ * count closes in the success hue, as the week card's lines do. Decoration:
+ * the row's label says the count.
+ */
+function ActivityRowProgressLine({
+  progress,
+  onCard,
+}: {
+  progress: ActivityRowProgress;
+  onCard: boolean;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accentPrimary } = useChapterBranding();
+  const styles = createActivityRowStyles(tokens);
+  const share = Math.min(1, progress.done / progress.total);
+  return (
+    <View
+      style={styles.progress}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID="activity-row-progress"
+    >
+      <View
+        style={[
+          styles.progressTrack,
+          onCard ? styles.progressTrackOnCard : null,
+        ]}
+      >
+        <View
+          style={[
+            styles.progressFill,
+            {
+              width: `${Math.round(share * 100)}%`,
+              backgroundColor:
+                share === 1 ? tokens.color.semantic.success : accentPrimary,
+            },
+          ]}
+        />
+      </View>
+      <Text style={styles.progressCount}>{progress.label}</Text>
+    </View>
   );
 }
 
@@ -441,6 +501,7 @@ function askTinted(
 function createActivityRowStyles(tokens: SignetTokens) {
   // The frame the Calendar's rows share (`leadRowStyles`).
   const lead = leadRowStyles(tokens);
+  const meter = meterStyles(tokens);
   return StyleSheet.create({
     row: {
       ...lead.row,
@@ -462,6 +523,31 @@ function createActivityRowStyles(tokens: SignetTokens) {
     detail: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    progress: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.xs,
+    },
+    progressTrack: {
+      ...meter.trackOnPage,
+      width: 160,
+      flexShrink: 1,
+    },
+    progressTrackOnCard: { backgroundColor: meter.track.backgroundColor },
+    progressFill: meter.fill,
+    progressCount: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      fontVariant: ["tabular-nums"],
+      color: tokens.color.text.mutedForeground,
+      // A fixed column, as the week card's counts, so every bar ends on one
+      // edge whatever its count says.
+      minWidth: 54,
+      textAlign: "right",
     },
     // The caption's size, at semibold: a weight is its own Figtree family.
     soon: {

@@ -20,6 +20,10 @@ import {
 } from "@/components/shared/async-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
+  meterFillClassName,
+  meterTrackOnPageClassName,
+} from "@/components/shared/meter";
+import {
   useSubscriptionGate,
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
@@ -79,6 +83,7 @@ import {
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
+  type ActivityRowProgress,
 } from "@repo/hooks";
 import { ActivityPageSkeleton } from "./activity-skeleton";
 
@@ -105,6 +110,7 @@ function RowContent({
           {row.title}
         </span>
         <ActivityRowDetail row={row} />
+        {row.progress ? <RowProgress progress={row.progress} /> : null}
       </span>
       {row.badge ? (
         askOnRow ? (
@@ -126,6 +132,40 @@ function RowContent({
         aria-hidden="true"
       />
     </>
+  );
+}
+
+/**
+ * How far along a Waiting on others row is (#4792), as the phone draws it: a
+ * thin bar and "41 of 60" under the detail, on the week card's line recipe.
+ * Google Forms' response count and GitHub's "2 of 3 approvals" are the
+ * comparables. The groove is the meter's on-page track
+ * (`meterTrackOnPageClassName`), since the row sits on the page. The bar is
+ * decoration; the text says the count, whole for a screen reader.
+ */
+function RowProgress({ progress }: { progress: ActivityRowProgress }) {
+  const share = Math.min(1, progress.done / progress.total);
+  return (
+    <span className="mt-1 flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className={cn(meterTrackOnPageClassName, "w-40 min-w-0 shrink")}
+      >
+        <span
+          className={cn(
+            "block",
+            meterFillClassName,
+            share === 1 && "bg-success",
+          )}
+          style={{ width: `${Math.round(share * 100)}%` }}
+        />
+      </span>
+      {/* A fixed column, as the week card's counts, so every bar ends on one edge. */}
+      <span className="min-w-14 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
+        <span aria-hidden="true">{progress.label}</span>
+        <span className="sr-only">{progress.spoken}</span>
+      </span>
+    </span>
   );
 }
 

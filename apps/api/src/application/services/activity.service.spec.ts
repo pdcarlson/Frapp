@@ -105,7 +105,21 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
       .fn()
       .mockResolvedValue([{ id: READABLE, name: 'general', type: 'PUBLIC' }]),
   };
-  const chatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
+  const chatBlocks = {
+    listBlockedUserIds: jest.fn().mockResolvedValue([]),
+    filterOutBlockers: jest.fn(
+      (_chapterId: string, _sender: string, ids: string[]) =>
+        Promise.resolve(ids),
+    ),
+  };
+  // Everyone the tests name reads every channel unless a test says otherwise.
+  const channelAccess = {
+    readersOf: jest.fn((_chapterId: string, channels: { id: string }[]) =>
+      Promise.resolve(
+        new Map(channels.map((channel) => [channel.id, new Set([ME, OTHER])])),
+      ),
+    ),
+  };
   const rbacService = {
     getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
     isAlumni: jest.fn().mockResolvedValue(false),
@@ -158,9 +172,11 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     attendanceRepo as never,
     readRepo,
     formResponseRepo as never,
+    channelAccess as never,
   );
   return {
     service,
+    channelAccess,
     readRepo,
     formResponseRepo,
     taskService,
@@ -2344,6 +2360,309 @@ describe('ActivityService', () => {
         cards: null,
         unavailable: ['polls', 'cards'],
       });
+    });
+  });
+
+  describe('progress on what the caller made (#4792)', () => {
+    const A = 'user-a';
+    const B = 'user-b';
+    const ALUMNUS = 'user-alumnus';
+    /** The vote reads only: the cards section reads its claims too. */
+    const voteReads = (actionRepo: { findAllActionsOnMessages: jest.Mock }) =>
+      actionRepo.findAllActionsOnMessages.mock.calls.filter(
+        ([, type]) => type === 'vote',
+      );
+    /** Who reads `READABLE`, as chat's reader rule would answer. */
+    const readersAre = (
+      channelAccess: { readersOf: jest.Mock },
+      readers: string[],
+    ) =>
+      channelAccess.readersOf.mockResolvedValue(
+        new Map([[READABLE, new Set(readers)]]),
+      );
+    const vote = (messageId: string, userId: string, picks = ['a']) => ({
+      message_id: messageId,
+      user_id: userId,
+      payload: { option_id: picks },
+    });
+
+    it('counts who voted on an open poll, of the other members who can read its channel, in one read for every poll', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME, OTHER, A, B]);
+      servePolls(
+        messageRepo,
+        [pollCard({ id: 'theirs' })],
+        [
+          pollCard({ id: 'mine-open', sender_id: ME }),
+          pollCard({
+            id: 'mine-closed',
+            sender_id: ME,
+            payload: {
+              ...pollCard({ id: 'x' }).payload,
+              closed_at: iso(-HOUR),
+            },
+          }),
+        ],
+      );
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine-open', OTHER),
+        // A cleared vote (#3793) is not a vote.
+        vote('mine-open', A, []),
+        // The poster's own vote is not something waiting on others.
+        vote('mine-open', ME, ['b']),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      const byId = new Map(
+        view.made_by_you.polls.map((poll) => [poll.message_id, poll]),
+      );
+      expect(byId.get('mine-open')?.progress).toEqual({ done: 1, total: 3 });
+      // A closed poll waits on nobody.
+      expect(byId.get('mine-closed')?.progress).toBeNull();
+      expect(view.needs_you.polls[0].progress).toBeNull();
+      expect(voteReads(actionRepo)).toEqual([[['mine-open'], 'vote']]);
+      // Chat's own reader rule, once for every channel.
+      expect(channelAccess.readersOf).toHaveBeenCalledTimes(1);
+      expect(channelAccess.readersOf).toHaveBeenCalledWith(CHAPTER, [
+        expect.objectContaining({ id: READABLE }),
+      ]);
+    });
+
+    it('leaves out of the count a member who blocked the poster, who can never vote', async () => {
+      const { service, messageRepo, actionRepo, channelAccess, chatBlocks } =
+        build();
+      readersAre(channelAccess, [ME, OTHER, A, B]);
+      chatBlocks.filterOutBlockers.mockImplementation(
+        (_chapterId: string, _sender: string, ids: string[]) =>
+          Promise.resolve(ids.filter((id) => id !== B)),
+      );
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine', OTHER),
+        vote('mine', A),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      // Full, not "2 of 3" for good.
+      expect(view.made_by_you.polls[0].progress).toEqual({
+        done: 2,
+        total: 2,
+      });
+      expect(chatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.arrayContaining([OTHER, A, B]),
+      );
+    });
+
+    it('serves no count, never 0 of 0, for a poll nobody else can read', async () => {
+      const { service, messageRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME]);
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.polls).toEqual([
+        expect.objectContaining({ message_id: 'mine', progress: null }),
+      ]);
+    });
+
+    it('counts only voters who can still read the channel, so done never passes total', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME, OTHER]);
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine', OTHER),
+        vote('mine', A),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.polls[0].progress).toEqual({
+        done: 1,
+        total: 1,
+      });
+    });
+
+    it('reads nothing more for a member who posted no open poll', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      servePolls(messageRepo, [pollCard({ id: 'theirs' })]);
+
+      await service.getActivity(CHAPTER, ME, null);
+
+      expect(channelAccess.readersOf).not.toHaveBeenCalled();
+      expect(voteReads(actionRepo)).toEqual([]);
+    });
+
+    it('still lists the polls, without a count, when the count cannot be read', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      jest.spyOn(caughtFailure, 'reportCaughtFailure').mockImplementation();
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockImplementation(
+        (_ids: string[], type: string) =>
+          type === 'vote'
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve([]),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unavailable).toEqual([]);
+      expect(view.made_by_you.polls).toEqual([
+        expect.objectContaining({ message_id: 'mine', progress: null }),
+      ]);
+    });
+
+    /** An event the caller made, happening now, so its check-in is open. */
+    const happeningNow = (overrides: Partial<Event> = {}) =>
+      event({
+        id: 'now',
+        start_time: iso(-30 * 60 * 1000),
+        end_time: iso(30 * 60 * 1000),
+        created_by: ME,
+        ...overrides,
+      });
+    const serveEventCount = (
+      deps: ReturnType<typeof build>,
+      members: { user_id: string; role_ids: string[] }[],
+      attendance: { event_id: string; user_id: string; status: string }[],
+    ) => {
+      const findByChapter = jest.fn().mockResolvedValue(members);
+      const findByEvents = jest.fn().mockResolvedValue(attendance);
+      Object.assign(deps.memberRepo, { findByChapter });
+      Object.assign(deps.attendanceRepo, { findByEvents });
+      Object.assign(deps.rbacService, {
+        getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni'),
+      });
+      return { findByChapter, findByEvents };
+    };
+    const officer = () =>
+      build([SystemPermissions.MEMBERS_VIEW, SystemPermissions.EVENTS_UPDATE]);
+
+    it('counts who checked in to an event the caller made once its check-in opens, of the others it holds to it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: OTHER, role_ids: ['role-member'] },
+          { user_id: A, role_ids: ['role-member'] },
+          { user_id: B, role_ids: ['role-member'] },
+          // Invited only by the default, so check-in refuses them.
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+        ],
+        [
+          { event_id: 'now', user_id: ME, status: 'PRESENT' },
+          { event_id: 'now', user_id: OTHER, status: 'LATE' },
+          // Excused: on neither side.
+          { event_id: 'now', user_id: B, status: 'EXCUSED' },
+        ],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 1,
+        total: 2,
+      });
+    });
+
+    it('counts an alumnus the event names by role, whom check-in admits', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        // The caller is listed only through a role the event names too.
+        happeningNow({ required_role_ids: ['role-alumni', 'role-member'] }),
+      ]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-alumni'] },
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+          { user_id: OTHER, role_ids: ['role-alumni'] },
+        ],
+        [{ event_id: 'now', user_id: ALUMNUS, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 1,
+        total: 2,
+      });
+    });
+
+    it('serves no count, never 0 of 0, for an event that holds nobody else to it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+        ],
+        [],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+    });
+
+    it('counts every open event in one attendance read', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        happeningNow(),
+        happeningNow({ id: 'also-now', name: 'Rush table' }),
+      ]);
+      const { findByEvents, findByChapter } = serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: OTHER, role_ids: ['role-member'] },
+        ],
+        [{ event_id: 'also-now', user_id: OTHER, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events.map((row) => row.progress)).toEqual([
+        { done: 0, total: 1 },
+        { done: 1, total: 1 },
+      ]);
+      expect(findByEvents).toHaveBeenCalledTimes(1);
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives no count to a maker without events:update, who cannot see the roster', async () => {
+      const deps = build();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      const { findByEvents } = serveEventCount(
+        deps,
+        [{ user_id: OTHER, role_ids: ['role-member'] }],
+        [{ event_id: 'now', user_id: OTHER, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+      expect(findByEvents).not.toHaveBeenCalled();
+    });
+
+    it('serves no count for an event whose check-in has not opened, and reads nothing for it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        event({ id: 'later', created_by: ME }),
+      ]);
+      const { findByChapter, findByEvents } = serveEventCount(deps, [], []);
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(findByEvents).not.toHaveBeenCalled();
     });
   });
 });
