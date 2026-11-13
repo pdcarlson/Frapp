@@ -606,7 +606,9 @@ A JS-only fix can reach installed beta builds as an over-the-air update instead 
 Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
 publish from a laptop. Both go through the same guard. The staging app variant's profile and
 config exist (`staging` in `eas.json`, #4917) but nothing builds or publishes it yet; #2511 still
-owns promotion and staged rollout.
+owns promotion and staged rollout. Its runtime is the version plus a hash of its native inputs, not
+the version alone ([`spec/environments`](../../../spec/environments/README.md#mobile-eas)), so what
+follows about `expo.version` is about the store app.
 
 An update only reaches phones whose store build has the same `expo.version` (the `appVersion`
 runtime policy). Once a PR changes native code and bumps that version on `main`, nothing more
@@ -685,8 +687,8 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
   sets, so the API, Supabase and app URL fences run as they would for a store build. A
   production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
   visibility is Plain text or Sensitive, never Secret, so keep the § 6.3 variables Plain text.
-- **How far an update reaches.** `runtimeVersion` uses the `appVersion` policy, so an update
-  reaches every installed build whose `expo.version` matches, on that channel. If native code
+- **How far an update reaches.** The store app's `runtimeVersion` uses the `appVersion` policy, so an
+  update reaches every installed build whose `expo.version` matches, on that channel. If native code
   changed since one of those builds, the update calls a module the binary lacks, and the app
   crashes at launch. For `production`, the guard reads every store build of the current
   `expo.version` from `apps/mobile/store/shipped-builds.json`. It refuses unless `app.json`,

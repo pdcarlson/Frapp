@@ -80,6 +80,7 @@ function loadConfig() {
     STAGING_PROFILE: string;
     STAGING_IDENTITY: { name: string; scheme: string; applicationId: string };
     APP_VARIANT_VALUE_ERROR: string;
+    STAGING_RUNTIME_ERROR: string;
     APP_VARIANT_PROFILE_ERROR: string;
     STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR: string;
   };
@@ -538,9 +539,11 @@ describe("the staging variant (#2511)", () => {
       build: { staging: { channel: string; env: Record<string, string> } };
     }
   ).build.staging;
+  const stagingRuntime = `${appJson.version as string}-0123456789ab`;
   const stagingBuildEnv = {
     EAS_BUILD_PROFILE: "staging",
     EAS_BUILD_PLATFORM: "ios",
+    FRAPP_STAGING_RUNTIME: stagingRuntime,
     ...easStagingEnv.env,
     EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin,
     EXPO_PUBLIC_SUPABASE_ANON_KEY: PUBLISHABLE_KEY_FIXTURE,
@@ -581,6 +584,53 @@ describe("the staging variant (#2511)", () => {
     expect(result.android.adaptiveIcon).toEqual(
       (appJson.android as { adaptiveIcon: unknown }).adaptiveIcon,
     );
+  });
+
+  it("takes its runtime version from the native-input hash, for a build and a guarded update", () => {
+    const { applyMobileConfig } = loadConfig();
+    const { EAS_BUILD_PROFILE: profile, ...rest } = stagingBuildEnv;
+    for (const env of [
+      stagingBuildEnv,
+      { ...rest, FRAPP_EAS_UPDATE_PROFILE: profile },
+    ]) {
+      const result = applyMobileConfig(appJson, { env, existsSync: missing });
+      expect(result.runtimeVersion).toBe(stagingRuntime);
+    }
+  });
+
+  it("refuses the staging profile with no runtime, a malformed one, or another version's", () => {
+    const { applyMobileConfig, STAGING_RUNTIME_ERROR } = loadConfig();
+    for (const value of [
+      "",
+      appJson.version as string,
+      `${appJson.version as string}-xyz`,
+      `${appJson.version as string}-0123456789AB`,
+      "0.0.1-0123456789ab",
+      ` ${stagingRuntime}`,
+    ]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { ...stagingBuildEnv, FRAPP_STAGING_RUNTIME: value },
+          existsSync: missing,
+        }),
+      ).toThrow(STAGING_RUNTIME_ERROR);
+    }
+  });
+
+  it("keeps app.json's runtime policy by hand with no profile, and never touches the production app's", () => {
+    const { applyMobileConfig } = loadConfig();
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_APP_VARIANT: "staging" },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_STAGING_RUNTIME: stagingRuntime },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
   });
 
   it("leaves app.json's config untouched", () => {

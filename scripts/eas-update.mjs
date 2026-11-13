@@ -53,13 +53,15 @@
 //
 // The staging variant's channel (`staging`, #2511) goes through the same argument and env handling
 // as `preview`: its profile's eas.json `env` carries `FRAPP_APP_VARIANT`, so the bundle is exported
-// under the variant's scheme and name. Nothing here yet stops a staging update from reaching a
-// staging binary with older native code; the pipeline that publishes them owns that (#2511).
+// under the variant's scheme and name. Its runtime is not `expo.version` alone but that plus a hash
+// of the native inputs (`stagingRuntimeVersion` below, #4917), which the guard computes and sets,
+// so a staging update never reaches a staging binary built from other native code.
 //
 // NOT HERE (#2511): `update:republish` promotion, staged rollout gates, OTA code signing (off for
 // 0.9.x, #2526).
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +72,9 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export const UPDATE_PROFILE_ENV = "FRAPP_EAS_UPDATE_PROFILE";
 export const UPDATE_GIT_SHA_ENV = "FRAPP_EAS_UPDATE_GIT_SHA";
+/** The build profile of the staging variant (Frapp Staging), and the variable its runtime rides in. */
+export const STAGING_PROFILE = "staging";
+export const STAGING_RUNTIME_ENV = "FRAPP_STAGING_RUNTIME";
 export const EAS_JSON = "apps/mobile/eas.json";
 export const APP_JSON = "apps/mobile/app.json";
 export const APP_CONFIG = "apps/mobile/app.config.js";
@@ -171,6 +176,16 @@ export function parsePulledEnv(text) {
   return vars;
 }
 
+/** Every variable name in the file `eas env:pull` writes, Secret ones (commented out) included. */
+export function pulledNames(text) {
+  const names = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /^(?:#\s*)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(line);
+    if (m) names.push(m[1]);
+  }
+  return names;
+}
+
 /** True when an installed package directory carries iOS or Android code a binary links. */
 export function isNativePackage(dir, { exists = existsSync, readdir = readdirSync } = {}) {
   // Any android/, ios/ or apple/ directory counts, not only a module's build.gradle: tooling such
@@ -235,6 +250,14 @@ export function staleInstall(headLock, installedLock) {
     const want = headLock?.packages?.[key]?.version;
     if (entry?.version && want && entry.version !== want) stale.push(`${key} ${entry.version} (lockfile: ${want})`);
   }
+  // A lockfile package that isn't installed can't be asked whether it is native, so it would drop
+  // out of the comparison unseen. Optional ones are absent on other platforms by design, and an
+  // `--omit=dev` install has no dev ones.
+  const installed = installedLock.packages ?? {};
+  for (const [key, entry] of Object.entries(headLock?.packages ?? {})) {
+    if (!packageNameFromLockPath(key) || entry?.link || entry?.optional || entry?.dev || entry?.devOptional) continue;
+    if (!(key in installed)) stale.push(`${key} is in the lockfile but not installed`);
+  }
   return stale;
 }
 
@@ -276,6 +299,61 @@ export function compareNativeInputs({ builds, git, headLock, isNative, head = "H
     results.push({ build, label, changed });
   }
   return results;
+}
+
+/**
+ * The staging variant's runtime version: `expo.version`, a dash, and twelve hex digits of a hash
+ * over its native inputs, the same three the production comparison reads (`app.json`,
+ * `app.config.js`, and the lockfile version of every installed package that carries native code).
+ *
+ * WHY. The store app's runtime is `expo.version` alone, and a person bumps it with each native
+ * change. The staging app follows `main`, where native inputs move between bumps, so its binary
+ * and its updates both carry this string instead: an update built from newer native inputs has a
+ * different runtime, and an older staging binary never downloads it. No record of past staging
+ * builds is needed to make an update safe.
+ *
+ * `apps/mobile/app.config.js` takes it from `STAGING_RUNTIME_ENV` and refuses a staging build or
+ * update without it. The guard sets it for an update. A build gets it from the shell that runs
+ * `eas build --local` (`node scripts/staging-runtime.mjs` prints it); a build on Expo's workers
+ * never sees that shell, and the variable must not be stored in the EAS environment, where it would
+ * go stale and an update's export would take it over the computed one (the guard refuses that).
+ */
+export function stagingRuntimeVersion({
+  readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
+  isNative = (lockPath) => isNativePackage(path.join(ROOT, lockPath)),
+} = {}) {
+  const appJson = readFile(APP_JSON);
+  const version = JSON.parse(appJson)?.expo?.version;
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
+    return { error: `${APP_JSON} has no x.y.z expo.version, so the staging runtime has no version.` };
+  }
+  let headLock;
+  try {
+    headLock = JSON.parse(readFile(LOCKFILE));
+  } catch (error) {
+    return { error: `Couldn't read ${LOCKFILE}: ${error.message}` };
+  }
+  const stale = installProblems(readFile, headLock);
+  if (stale.length) {
+    return {
+      error:
+        `node_modules doesn't match ${LOCKFILE}, so which packages are native can't be read from it. ` +
+        `Run \`npm ci\` first. First mismatch: ${stale[0]}.`,
+    };
+  }
+  const native = [];
+  for (const [key, entry] of Object.entries(headLock?.packages ?? {})) {
+    const name = packageNameFromLockPath(key);
+    if (!name || entry?.link || !entry?.version || !isNative(key)) continue;
+    native.push(`${name}@${entry.version}`);
+  }
+  const hash = createHash("sha256");
+  // Line endings are a checkout setting (`core.autocrlf` on Windows), not a native input.
+  const text = (t) => String(t).replace(/\r\n/g, "\n");
+  for (const part of [text(appJson), text(readFile(APP_CONFIG)), [...new Set(native)].sort().join("\n")]) {
+    hash.update(String(part.length)).update("\0").update(part).update("\0");
+  }
+  return { runtime: `${version}-${hash.digest("hex").slice(0, 12)}` };
 }
 
 /** A git runner in `dir` that never throws: `(args) => { status, stdout, stderr }`. */
@@ -417,6 +495,7 @@ export function prepareUpdate(
     readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
     git = defaultGit,
     production = productionChecks,
+    stagingRuntime = () => stagingRuntimeVersion({ readFile }),
     pullEnv = () => ({ error: "no way to read the EAS environment was given" }),
   } = {},
 ) {
@@ -440,10 +519,20 @@ export function prepareUpdate(
     );
   }
   const notes = [];
+  let stagingRuntimeValue;
   if (profileName === "production") {
     const checks = production({ git, readFile });
     errors.push(...checks.errors);
     notes.push(...checks.notes);
+  } else if (profileName === STAGING_PROFILE) {
+    const computed = stagingRuntime();
+    if (computed.error) errors.push(computed.error);
+    else {
+      stagingRuntimeValue = computed.runtime;
+      notes.push(
+        `Runtime ${computed.runtime}: this update reaches only Frapp Staging builds with the same native inputs as HEAD.`,
+      );
+    }
   } else {
     notes.push(
       `Channel ${parsed.channel} has no store-build record, so the native-compatibility check is skipped. ` +
@@ -454,6 +543,15 @@ export function prepareUpdate(
   const pulled = pullEnv(profile.environment);
   if (pulled.error) {
     return { ok: false, errors: [`Couldn't read the ${profile.environment} EAS environment's variables: ${pulled.error}`] };
+  }
+  if (profileName === STAGING_PROFILE && (pulled.names ?? Object.keys(pulled.vars)).includes(STAGING_RUNTIME_ENV)) {
+    return {
+      ok: false,
+      errors: [
+        `${STAGING_RUNTIME_ENV} is stored in the ${profile.environment} EAS environment. It names one tree's native inputs, ` +
+          "and an update's export would take it over the value computed for HEAD: delete the EAS variable.",
+      ],
+    };
   }
   // A build takes eas.json's value when both set a name (eas-cli build/evaluateConfigWithEnvVarsAsync)
   // and an update's export takes EAS's, so a difference would make the bundle disagree with its binary.
@@ -475,6 +573,9 @@ export function prepareUpdate(
     gitSha: head.status === 0 ? head.stdout.trim() : undefined,
     easVars: pulled.vars,
   });
+  // Always the computed value: one inherited from the shell could name another commit's natives.
+  if (stagingRuntimeValue) outEnv[STAGING_RUNTIME_ENV] = stagingRuntimeValue;
+  else delete outEnv[STAGING_RUNTIME_ENV];
   if (stripped.length) notes.push(`Dropped from your shell for this run: ${stripped.join(", ")}.`);
   for (const [k, v] of Object.entries(profile.env ?? {})) notes.push(`${k}=${v} (from ${EAS_JSON} build.${profileName}.env)`);
   const fromEas = Object.keys(pulled.vars);

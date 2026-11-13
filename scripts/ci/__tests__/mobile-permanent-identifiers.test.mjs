@@ -568,6 +568,8 @@ test("app.config.js, as a build evaluates it, leaves every permanent identifier 
         }
       : {}),
     ...(platform === "android" ? { GOOGLE_SERVICES_JSON: googleServicesFile } : {}),
+    // The staging profile refuses to build without its runtime, which the pipeline computes.
+    ...(profile === STAGING_PROFILE ? { FRAPP_STAGING_RUNTIME: `${staticExpo.version}-000000000000` } : {}),
   });
   try {
     const builds = easBuildEnvs(liveEas(), dashboard);
@@ -755,6 +757,14 @@ for (const [label, override, expected, envFrom] of [
   });
 }
 
+function stagingIosBuild(staticExpo) {
+  const build = easBuildEnvs(liveEas(), (profile) =>
+    profile === STAGING_PROFILE ? { FRAPP_STAGING_RUNTIME: `${staticExpo.version}-000000000000` } : {},
+  ).find((candidate) => candidate.kind === `${STAGING_PROFILE} ios`);
+  assert.ok(build, "no staging ios build in easBuildEnvs");
+  return build;
+}
+
 // The staging variant: each drift must fail too.
 for (const [label, mutate, expected] of [
   ["keeping the production scheme", (expo) => (expo.scheme = SCHEME), "expo.scheme"],
@@ -771,8 +781,7 @@ for (const [label, mutate, expected] of [
 ]) {
   test(`a staging build ${label} fails the dynamic-layer check`, () => {
     const staticExpo = liveAppJson().expo;
-    const build = easBuildEnvs(liveEas()).find((candidate) => candidate.kind === `${STAGING_PROFILE} ios`);
-    assert.ok(build, "no staging ios build in easBuildEnvs");
+    const build = stagingIosBuild(staticExpo);
     const resolved = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, build.env);
     assert.deepEqual(dynamicLayerProblems(staticExpo, resolved, { staging: true }), []);
     mutate(resolved);
@@ -786,7 +795,7 @@ for (const [label, mutate, expected] of [
 
 test("a production build that comes out as the staging variant fails the dynamic-layer check", () => {
   const staticExpo = liveAppJson().expo;
-  const build = easBuildEnvs(liveEas()).find((candidate) => candidate.kind === `${STAGING_PROFILE} ios`);
+  const build = stagingIosBuild(staticExpo);
   const staging = resolveConfigFile(join(REPO_ROOT, APP_CONFIG), staticExpo, build.env);
   const problems = dynamicLayerProblems(staticExpo, staging);
   for (const field of ["expo.name", "expo.scheme", "expo.ios.bundleIdentifier", "expo.android.package"]) {
