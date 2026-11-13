@@ -84,14 +84,16 @@ holding a double quote is quoted as in CSV, so a paste keeps every cell in its
 own column. The workbook
 writer loads only when Excel is picked. One menu component
 (`apps/web/components/shared/export-menu.tsx`) and one set of helpers
-(`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve every
-export on the web, these reports and the chat cards' alike.
+(`exportRows` and its neighbors in `apps/web/lib/utils.ts`, over the CSV
+writer and file name in `@repo/formatting`) serve every export on the web,
+these reports and the chat cards' alike.
 
 The API's own `format=csv` applies the same rule (#3976), through the same
 cell writer: `toCsvCell` in `@repo/formatting`
 (`packages/formatting/src/spreadsheet-cell.ts`) makes a formula-shaped cell
 inert, then quotes a cell holding a comma, double quote, semicolon or line
-break, and both the dashboard's `rowsToCsv` and the API's `toCSV`
+break, and both the clients' `rowsToCsv` (in `@repo/formatting`, which the
+dashboard and the phone's chat-card Export share) and the API's `toCSV`
 (`apps/api/src/domain/utils/csv.ts`) call it. The semicolon is quoted because
 Excel in a locale whose list separator is `;` splits a CSV on it, which would
 start a new cell, possibly a formula, mid-text. In the API a text cell (a name,

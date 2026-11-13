@@ -295,6 +295,25 @@ export function formatDueLabel(
 }
 
 /**
+ * When an end time still ahead comes, in the countdown's words led by `verb`:
+ * `"Closes tomorrow at 6 PM"` (a form card), `"Ends Friday at 6 PM"` (a
+ * sign-up card). `null` unless `value` is a date string still to come (a
+ * `Date` included, which `formatDueLabel` can't read): a card past its end
+ * says Closed itself. The one adapter both chat cards' end
+ * lines take, so neither hands `formatDueLabel` a `Date` (which it answers
+ * with `null`) or reads its "Due" prefix on its own (#3926).
+ */
+export function formatEndsLabel(
+  verb: string,
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  if (typeof value !== "string" || !parseInstant(value)) return null;
+  const due = formatDueLabel(value, now);
+  return due?.startsWith("Due ") ? `${verb} ${due.slice("Due ".length)}` : null;
+}
+
+/**
  * Whether a due date has passed: a bare day once that day is over, a task
  * due at a time (#4003) from that minute. The one rule both apps draw a due
  * date in red by (Shawn's pick, #4133, 2026-11-12): due today or tomorrow

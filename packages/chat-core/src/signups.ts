@@ -1,4 +1,4 @@
-import { formatDueLabel, parseInstant } from "@repo/formatting";
+import { formatEndsLabel, parseInstant } from "@repo/formatting";
 import {
   HEADCOUNT_GOING_SLOT_ID,
   HEADCOUNT_NOT_GOING_SLOT_ID,
@@ -230,12 +230,8 @@ export function signupDeadlineLine(
   payload: SignupPayload,
   now: number,
 ): string | null {
-  if (isSignupClosed(payload, now) || !parseInstant(payload.closes_at)) {
-    return null;
-  }
-  // A task's countdown words, which name the day and time the same way.
-  const due = formatDueLabel(payload.closes_at, new Date(now));
-  return due ? due.replace(/^Due /, "Ends ") : null;
+  if (isSignupClosed(payload, now)) return null;
+  return formatEndsLabel("Ends", payload.closes_at, new Date(now));
 }
 
 export interface SignupTally {

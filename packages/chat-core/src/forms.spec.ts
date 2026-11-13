@@ -108,7 +108,7 @@ describe("forms (#3926 step 3)", () => {
     expect(formDeadlineLine(card, NOW)).toBeNull();
     expect(
       formDeadlineLine({ ...card, closes_at: "2026-11-14T12:00:00Z" }, NOW),
-    ).toMatch(/^Closes /);
+    ).toMatch(/^Closes (today|tomorrow|[A-Z][a-z]+day|[A-Z][a-z]{2} \d+) at \d/);
     expect(formQuestionCountLine(card)).toBe("3 questions");
   });
 
