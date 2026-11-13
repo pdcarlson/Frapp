@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,6 +7,7 @@ import {
   HttpCode,
   InternalServerErrorException,
   Param,
+  ParseArrayPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -22,6 +24,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { isUUID } from 'class-validator';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -48,6 +51,7 @@ import {
   DocumentStarsDto,
   ChapterDocumentDto,
   DocumentFolderDto,
+  DocumentPreviewUrlDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -153,6 +157,32 @@ export class ChapterDocumentController {
   // declaration order, so `@Get(':id')` above would swallow `/documents/folders`
   // and try to load a document whose id is the literal string "folders".
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
+
+  // Signed links for the web grid's previews (#4647), many in one request so
+  // a grid spends one read, not one per tile, of the member's read budget.
+  // No `@FeatureEvent`: a tile coming into view isn't a member opening the
+  // file, which is what `document-viewed` counts (observability.md).
+  @Get('previews')
+  @ApiOperation({
+    summary: 'Inline preview links for up to 100 documents at once',
+  })
+  @ApiQuery({
+    name: 'ids',
+    required: true,
+    description:
+      'Document ids, at most 100: the parameter repeated, or one comma-separated value',
+  })
+  @ApiOkResponse({ type: DocumentPreviewUrlDto, isArray: true })
+  async previewUrls(
+    @CurrentChapterId() chapterId: string,
+    @Query('ids', new ParseArrayPipe({ items: String, separator: ',' }))
+    ids: string[],
+  ): Promise<DocumentPreviewUrlDto[]> {
+    if (ids.some((id) => !isUUID(id))) {
+      throw new BadRequestException('ids must be document ids');
+    }
+    return this.chapterDocumentService.previewUrls(ids, chapterId);
+  }
 
   @Get('folders')
   @ApiOperation({ summary: 'List document folders in display order' })

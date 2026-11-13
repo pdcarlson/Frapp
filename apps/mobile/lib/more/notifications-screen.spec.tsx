@@ -23,6 +23,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 import { useRouter } from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { HeaderButton } from "@/components/header-button";
 import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -481,6 +482,16 @@ describe("Mark all read sends one request (#3929)", () => {
     markAll.mutate.mockClear();
     markRead.mutate.mockClear();
     markRead.mutateAsync.mockClear();
+  });
+
+  // #4610 step 3: a bare glyph beside the title was what "buttons are
+  // unclear" meant. Every header action sits in the round Chat home drew.
+  it("draws Mark all read as a round header button", () => {
+    inbox.data = [NOTIFICATIONS[0]];
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toContain("Mark all notifications read");
   });
 
   it("asks the server once, naming no screens", () => {

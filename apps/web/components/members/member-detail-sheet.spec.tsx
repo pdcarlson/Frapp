@@ -48,7 +48,11 @@ const {
   rolesState: { isError: false, refetch: vi.fn() },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The pure reader of the DM response runs for real.
+  dmChannelIdOf: (
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
+  ).dmChannelIdOf,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (userId: string) => {
     memberByUserId(userId);

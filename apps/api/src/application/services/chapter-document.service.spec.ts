@@ -57,6 +57,7 @@ describe('ChapterDocumentService', () => {
   beforeEach(async () => {
     mockDocumentRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([]),
       findByChapter: jest.fn(),
       findByStoragePath: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
@@ -620,6 +621,67 @@ describe('ChapterDocumentService', () => {
         folder: 'Governance',
         search: 'bylaws',
       });
+    });
+  });
+
+  // #4647: the web grid's previews, signed in one batch rather than one
+  // `findById` per tile.
+  describe('previewUrls', () => {
+    it("signs only the chapter's documents, in one batch, as inline links", async () => {
+      mockDocumentRepo.findByIds.mockResolvedValue([
+        baseDocument,
+        { ...baseDocument, id: 'doc-2', storage_path: 'ch-1/photo.jpg' },
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [baseDocument.storage_path]: 'https://signed/1',
+        'ch-1/photo.jpg': 'https://signed/2',
+      });
+
+      const result = await service.previewUrls(
+        [baseDocument.id, 'doc-2', baseDocument.id, 'other-chapter-doc'],
+        'ch-1',
+      );
+
+      expect(mockDocumentRepo.findByIds).toHaveBeenCalledWith(
+        [baseDocument.id, 'doc-2', 'other-chapter-doc'],
+        'ch-1',
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        1,
+      );
+      const [bucket, paths, ttl, forceDownload] =
+        mockStorageProvider.getSignedDownloadUrls.mock.calls[0];
+      expect(bucket).toBe('documents');
+      expect(paths).toEqual([baseDocument.storage_path, 'ch-1/photo.jpg']);
+      expect(ttl).toBe(3600);
+      // Inline: the tile draws the file, never saves it.
+      expect(forceDownload).toBeFalsy();
+      expect(result).toEqual([
+        { id: baseDocument.id, url: 'https://signed/1' },
+        { id: 'doc-2', url: 'https://signed/2' },
+      ]);
+    });
+
+    it('leaves out a path storage could not sign', async () => {
+      mockDocumentRepo.findByIds.mockResolvedValue([baseDocument]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({});
+      await expect(
+        service.previewUrls([baseDocument.id], 'ch-1'),
+      ).resolves.toEqual([]);
+    });
+
+    it('asks storage for nothing when no id is in the chapter', async () => {
+      mockDocumentRepo.findByIds.mockResolvedValue([]);
+      await expect(service.previewUrls(['x'], 'ch-1')).resolves.toEqual([]);
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('refuses more than 100 ids', async () => {
+      const ids = Array.from({ length: 101 }, (_, i) => `doc-${i}`);
+      await expect(service.previewUrls(ids, 'ch-1')).rejects.toThrow(
+        'At most 100 documents per request',
+      );
+      expect(mockDocumentRepo.findByIds).not.toHaveBeenCalled();
     });
   });
 

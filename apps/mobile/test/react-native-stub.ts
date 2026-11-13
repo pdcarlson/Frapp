@@ -44,6 +44,9 @@ export const reactNativeStub = {
     // (`components/state-block.tsx`). Off by default; a spec flips it, or
     // runs the listener a block registered.
     isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    // The Messages swipe hint stays quiet under a screen reader
+    // (`components/chat/messages-swipe-area.tsx`). Off by default.
+    isScreenReaderEnabled: vi.fn().mockResolvedValue(false),
     // Glass falls back to solid under Reduce Transparency
     // (`components/glass-surface.tsx`). Off by default.
     isReduceTransparencyEnabled: vi.fn().mockResolvedValue(false),

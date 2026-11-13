@@ -12544,6 +12544,59 @@
         ]
       }
     },
+    "/v1/documents/previews": {
+      "get": {
+        "operationId": "ChapterDocumentController_previewUrls_v1",
+        "parameters": [
+          {
+            "name": "ids",
+            "required": true,
+            "in": "query",
+            "description": "Document ids, at most 100: the parameter repeated, or one comma-separated value",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentPreviewUrlDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Inline preview links for up to 100 documents at once",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/folders": {
       "get": {
         "operationId": "ChapterDocumentController_listFolders_v1",
@@ -25191,6 +25244,22 @@
           "document_type",
           "effective_date",
           "pinned_at"
+        ]
+      },
+      "DocumentPreviewUrlDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Inline signed URL, valid for an hour"
+          }
+        },
+        "required": [
+          "id",
+          "url"
         ]
       },
       "DocumentFolderDto": {

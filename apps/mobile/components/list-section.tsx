@@ -15,6 +15,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { guardedBySwipe, useSwipeClaim } from "@/lib/swipe-claim";
 
@@ -248,8 +249,8 @@ export function usePressFeedback({
  * stays on the gutter line while its press feedback (ripple or lift) clears
  * the content on both sides instead of stopping flush with it. One value for
  * every such row, because the alignment holds only while they all bleed the
- * same: Chat home's section header and Hidden toggle, its channel rows and UP
- * NEXT rows line their captions, sigils and glyphs up on that line, and the
+ * same: Chat home's section header and Hidden toggle and its channel rows
+ * line their captions, sigils and glyphs up on that line, and the
  * Directory's member rows keep the gutter Chat home does.
  *
  * `rounded` adds the control radius a rounded row's lift and clip take; a
@@ -489,7 +490,7 @@ export function ListRow({
           style={styles.trailingSlot}
         />
       ) : onPress && !disabled && !action ? (
-        <Text style={styles.chevron}>›</Text>
+        <ForwardGlyph color={tokens.color.text.muted} />
       ) : null}
     </View>
   );
@@ -643,11 +644,6 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flex: 1,
       textAlign: "right",
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
     },
     trailingSlot: {
       flexShrink: 0,

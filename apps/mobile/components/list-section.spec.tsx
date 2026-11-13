@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Platform } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { expectRoundedRipple } from "@/test/pressable-row";
 import {
   ListRow,
@@ -81,12 +82,7 @@ describe("ListRow — press feedback", () => {
       (node) => (node.type as unknown) === "Pressable",
     );
     expect(row.props.android_ripple).toBeUndefined();
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" && node.props.children === "›",
-      ),
-    ).toHaveLength(0);
+    expect(tree.root.findAllByType(ForwardGlyph)).toHaveLength(0);
   });
 });
 
@@ -100,10 +96,7 @@ describe("ListRow — chevron", () => {
         </FrappThemeProvider>,
       );
     });
-    return tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Text" && node.props.children === "›",
-    ).length;
+    return tree.root.findAllByType(ForwardGlyph).length;
   }
 
   it("draws one on a row that opens somewhere", () => {
@@ -151,12 +144,7 @@ describe("ListRow — busy", () => {
         (node) => (node.type as unknown) === "ActivityIndicator",
       ),
     ).toHaveLength(1);
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" && node.props.children === "›",
-      ),
-    ).toHaveLength(0);
+    expect(tree.root.findAllByType(ForwardGlyph)).toHaveLength(0);
 
     const row = tree.root.find(
       (node) => (node.type as unknown) === "Pressable",

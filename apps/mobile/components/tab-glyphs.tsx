@@ -70,8 +70,7 @@ export type TabGlyphProps = {
    * Drawn size in points; the glyph's grid scales with it. The tab bar uses
    * the default {@link TAB_GLYPH_SIZE}. A chat card's eyebrow draws the same
    * glyph at 16, as web's card eyebrow does, so the card and the tab it
-   * belongs to share one silhouette. Chat home's UP NEXT rows draw it at 20,
-   * the list-row icon size (spec/ui/design-system/iconography.md § 6.1).
+   * belongs to share one silhouette.
    */
   size?: number;
 };
@@ -145,7 +144,7 @@ export function EventsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="events" {...props} />;
 }
 
-/** Tasks: the seal with a check. Off the tab bar since #4610; chat's task card and Up next still draw it. */
+/** Tasks: the seal with a check. Off the tab bar since #4610; chat's task card and the composer's + sheet still draw it. */
 export function TasksGlyph(props: TabGlyphProps) {
   return <TabGlyph name="tasks" {...props} />;
 }

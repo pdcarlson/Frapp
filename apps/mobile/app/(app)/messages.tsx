@@ -46,7 +46,7 @@ import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { SearchField } from "@/components/filter-chips";
 import {
@@ -292,13 +292,13 @@ export default function MessagesScreen() {
       // New message, where iMessage and Instagram keep it. It focuses the
       // search below, as their pencil opens a "To:" field (#4668).
       headerAction={
-        <IconButton
+        <HeaderButton
           label="New message"
           hint="Opens the search to find someone."
           onPress={() => searchRef.current?.focus()}
         >
           <PencilGlyph color={tokens.color.text.foreground} />
-        </IconButton>
+        </HeaderButton>
       }
     >
       {/* The order comes from the latest messages, so the list waits for
