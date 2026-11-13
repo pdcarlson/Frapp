@@ -64,7 +64,9 @@ export interface IEventRepository {
    * Delete the upcoming occurrences a series edit rebuilt (#4620), carrying
    * each `carry` pair's excuses, and an approved one's EXCUSED attendance
    * row, from the old meeting to the new one in the same transaction (RPC
-   * `delete_replaced_occurrences`). Returns the pending and approved excuses
+   * `delete_replaced_occurrences`). Each pair's new meeting also takes over
+   * the old one's `agenda` and `attachments` (#4934), replacing its own, so
+   * pair only a rebuilt meeting with the one it replaces. Returns the pending and approved excuses
    * left on old rows no pair carried, deleted with them.
    */
   deleteReplacedOccurrences(

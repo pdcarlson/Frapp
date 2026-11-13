@@ -1,4 +1,5 @@
 import type { GeofenceCoordinate } from './study.entity';
+import type { EventAgendaItem, EventAttachment } from '@repo/validation';
 
 export interface Event {
   id: string;
@@ -60,5 +61,17 @@ export interface Event {
    * recorded (#3897) and for rows written outside that route.
    */
   created_by: string | null;
+  /**
+   * This meeting's agenda, in order (#4934): short items whoever can edit the
+   * event writes and checks off. Belongs to this one meeting, never to a
+   * series: a new occurrence starts with none, and only a rebuilt meeting
+   * inherits the one it replaces (`delete_replaced_occurrences`).
+   */
+  agenda: EventAgendaItem[];
+  /**
+   * Titled links and Chapter Files documents for this meeting (#4934), owned
+   * the same way as `agenda`.
+   */
+  attachments: EventAttachment[];
   created_at: string;
 }

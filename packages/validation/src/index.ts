@@ -65,6 +65,9 @@ export * from "./discord-export";
 // offers a Clear the API refuses. See ./discord-import.
 export * from "./discord-import";
 export * from "./error-copy";
+// An event's agenda and attachments (#4934): their limits and shapes, which
+// the API enforces and both editors read.
+export * from "./event-agenda";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
