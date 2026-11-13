@@ -18,6 +18,7 @@ import {
   shiftRepeatRule,
   checkSeriesLength,
   isRepeatRule,
+  isRecurrenceRule,
   seriesChildStarts,
 } from '@repo/validation';
 import {
@@ -153,7 +154,26 @@ export class EventSeriesService {
    * decides what a failure means for it (`EventService.create` deletes it).
    */
   async generateRecurringInstances(parent: Event): Promise<Event[]> {
-    return this.eventRepo.createMany(this.buildOccurrencePayloads(parent));
+    const zone = await this.legacyZoneFor(parent);
+    return this.eventRepo.createMany(
+      this.buildOccurrencePayloads(parent, zone),
+    );
+  }
+
+  /**
+   * The zone a series' legacy token keeps the wall clock of (#4505): its
+   * creator's, as their device last reported it (`timeZoneFor`). Chapters
+   * keep no zone of their own, and the officer who scheduled a meeting is on
+   * its campus. `null` (step in UTC, as tokens always did) for a structured
+   * rule, which names its own zone and needs no read; for a series made
+   * before `created_by` was recorded (2026-11-11); and for a creator with no
+   * zone on file.
+   */
+  private async legacyZoneFor(series: Event): Promise<string | null> {
+    if (!isRecurrenceRule(series.recurrence_rule) || !series.created_by) {
+      return null;
+    }
+    return this.notifications.timeZoneFor(series.created_by);
   }
 
   /**
@@ -255,7 +275,8 @@ export class EventSeriesService {
    * stepper the Repeat controls caption a series from, so what an officer is
    * told and what gets written cannot drift apart. A structured rule steps in
    * its own zone, keeping the wall-clock time across DST (#3662); a legacy
-   * token steps in UTC as it always did.
+   * token steps in `legacyZone`, the creator's (`legacyZoneFor`, #4505), or
+   * UTC without one. The zone is read before this, so it stays pure.
    *
    * For a legacy token, skipping rather than filtering is load-bearing: its
    * run is counted from `skipBefore`, not from the head. Filtering a fixed
@@ -268,12 +289,14 @@ export class EventSeriesService {
    */
   private buildOccurrencePayloads(
     parent: Event,
+    legacyZone: string | null,
     skipBefore?: number,
   ): Partial<Event>[] {
     const starts = seriesChildStarts(
       parent.recurrence_rule,
       parent.start_time,
       skipBefore,
+      { legacyTimeZone: legacyZone },
     );
     if (!starts) return [];
 
@@ -540,12 +563,13 @@ export class EventSeriesService {
         recurrence_rule: nextRule,
       };
       const template: Event = { ...parent, ...written };
+      const zone = await this.legacyZoneFor(template);
       await this.replaceOccurrences({
         headId: parent.id,
         chapterId,
         existingIds: children.map((child) => child.id),
         old: future,
-        replacements: this.buildOccurrencePayloads(template, now),
+        replacements: this.buildOccurrencePayloads(template, zone, now),
         shiftMs: startShiftMs,
         name: template.name,
       });
@@ -766,15 +790,14 @@ export class EventSeriesService {
       // over the occurrences it already had, under the old rule. That is a
       // consistent series, just not regenerated; the request fails, and
       // repeating a rule change against the new head finishes the rebuild.
+      const template: Event = { ...newHead, recurrence_rule: seriesRule };
+      const zone = await this.legacyZoneFor(template);
       await this.replaceOccurrences({
         headId: newHead.id,
         chapterId,
         existingIds: rest.map((child) => child.id),
         old: rest,
-        replacements: this.buildOccurrencePayloads(
-          { ...newHead, recurrence_rule: seriesRule },
-          now,
-        ),
+        replacements: this.buildOccurrencePayloads(template, zone, now),
         shiftMs: startShiftMs,
         name: newHead.name,
       });

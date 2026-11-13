@@ -398,6 +398,109 @@ describe('EventSeriesService', () => {
       reportedAt('event-create-series-rollback', 'error');
     });
 
+    // #4505: a legacy token, stepped in its creator's zone.
+    describe('a legacy token across DST', () => {
+      /** "HH:MM" on New York's wall clock. */
+      const nyTime = (iso: string) =>
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'America/New_York',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).format(new Date(iso));
+      // Thu 2027-02-25, 7 PM EST; DST starts Sun 2027-03-14.
+      const head: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        start_time: '2027-02-26T00:00:00.000Z',
+        end_time: '2027-02-26T01:00:00.000Z',
+        created_by: OFFICER,
+      };
+      const create = () =>
+        service.create({
+          created_by: OFFICER,
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: head.start_time,
+          end_time: head.end_time,
+          recurrence_rule: 'WEEKLY',
+        });
+
+      it("keeps 7 PM in the creator's zone after the clocks change", async () => {
+        mockEventRepo.create.mockResolvedValue(head);
+        mockNotificationService.timeZoneFor.mockResolvedValue(
+          'America/New_York',
+        );
+
+        await create();
+
+        expect(mockNotificationService.timeZoneFor).toHaveBeenCalledWith(
+          OFFICER,
+        );
+        const rows = occurrenceRows(mockEventRepo);
+        expect(rows).toHaveLength(12);
+        expect(rows.map((row) => nyTime(row.start_time as string))).toEqual(
+          Array(12).fill('19:00'),
+        );
+        expect(rows.map((row) => nyTime(row.end_time as string))).toEqual(
+          Array(12).fill('20:00'),
+        );
+        expect(rows[2].start_time).toBe('2027-03-18T23:00:00.000Z');
+      });
+
+      it('steps in UTC when the creator has no zone on file', async () => {
+        mockEventRepo.create.mockResolvedValue(head);
+        mockNotificationService.timeZoneFor.mockResolvedValue(null);
+
+        await create();
+
+        const rows = occurrenceRows(mockEventRepo);
+        expect(rows).toHaveLength(12);
+        expect(rows[2].start_time).toBe('2027-03-19T00:00:00.000Z');
+      });
+
+      it('steps in UTC for a series with no recorded creator', async () => {
+        // The announcement reads the actor's zone; the series has no creator
+        // of its own to read one for.
+        mockEventRepo.create.mockResolvedValue({ ...head, created_by: null });
+        mockNotificationService.timeZoneFor.mockResolvedValue(
+          'America/New_York',
+        );
+
+        await create();
+
+        expect(occurrenceRows(mockEventRepo)[2].start_time).toBe(
+          '2027-03-19T00:00:00.000Z',
+        );
+      });
+
+      it('keeps the 6-meeting runs of BIWEEKLY and MONTHLY', async () => {
+        mockNotificationService.timeZoneFor.mockResolvedValue(
+          'America/New_York',
+        );
+        for (const rule of ['BIWEEKLY', 'MONTHLY']) {
+          mockEventRepo.createMany.mockClear();
+          mockEventRepo.create.mockResolvedValue({
+            ...head,
+            recurrence_rule: rule,
+          });
+          await service.create({
+            created_by: OFFICER,
+            chapter_id: 'ch-1',
+            name: 'Chapter Meeting',
+            start_time: head.start_time,
+            end_time: head.end_time,
+            recurrence_rule: rule,
+          });
+          const rows = occurrenceRows(mockEventRepo);
+          expect(rows).toHaveLength(6);
+          expect(
+            rows.every((row) => nyTime(row.start_time as string) === '19:00'),
+          ).toBe(true);
+        }
+      });
+    });
+
     // #4488 / #3662: a structured rule, stepped in its own zone.
     it('meets on each chosen weekday at the same New York wall clock across DST', async () => {
       const rule =
@@ -723,6 +826,44 @@ describe('EventSeriesService', () => {
         for (const started of createdStarts) {
           expect(started).toBeGreaterThan(NOW);
         }
+      });
+
+      // #4505: a rule change regenerates a legacy token in its creator's zone.
+      it("regenerates a legacy token on its creator's wall clock", async () => {
+        // Thu 2027-02-25, 7 PM EST, still to come at the stubbed clock.
+        const upcoming: Event = {
+          ...parent,
+          recurrence_rule: 'MONTHLY',
+          start_time: '2027-02-26T00:00:00.000Z',
+          end_time: '2027-02-26T01:00:00.000Z',
+          created_by: OFFICER,
+        };
+        mockEventRepo.findById.mockResolvedValue(upcoming);
+        mockEventRepo.findChildren.mockResolvedValue([]);
+        mergeUpdate([upcoming]);
+        mockNotificationService.timeZoneFor.mockResolvedValue(
+          'America/New_York',
+        );
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'WEEKLY' },
+          'series',
+        );
+
+        expect(mockNotificationService.timeZoneFor).toHaveBeenCalledWith(
+          OFFICER,
+        );
+        const starts = occurrenceRows(mockEventRepo).map(
+          (row) => row.start_time,
+        );
+        expect(starts).toHaveLength(12);
+        expect(starts.slice(1, 4)).toEqual([
+          '2027-03-12T00:00:00.000Z',
+          '2027-03-18T23:00:00.000Z',
+          '2027-03-25T23:00:00.000Z',
+        ]);
       });
 
       it('resolves a series edit issued against a child to its parent', async () => {

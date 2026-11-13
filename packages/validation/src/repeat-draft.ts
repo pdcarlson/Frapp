@@ -351,9 +351,11 @@ function wholeNumber(text: string): number | null {
  * cadence and treat the head as one-time), so a client sends a token where
  * it says the same series (#4488): weekly on the first meeting's weekday or
  * every 2 weeks, or monthly on its day of the month, at the token's own
- * length. A token steps in UTC, so its meetings are compared with the rule's
- * instant by instant: a run a DST change moves, or a monthly series whose
- * UTC date differs, keeps the structured rule and its wall-clock time.
+ * length. The API steps a token in its creator's zone, or in UTC when it has
+ * none on file (#4505), so the token is compared with the rule stepped in
+ * UTC, instant by instant: a run a DST change moves, or a monthly series
+ * whose UTC date differs, keeps the structured rule and its wall-clock time
+ * whichever zone the server ends up stepping the token in.
  * What stays different is regeneration: a series edit that rebuilds a token
  * makes its run again from now, where a `COUNT` holds (spec § Recurring).
  */
@@ -482,7 +484,9 @@ export function repeatCaption(
   if (!result.ok) return { text: result.error, problem: true };
   if (!result.rule) return null;
   const from = series ? repeatEditAnchor(series) : start;
-  const text = describeSeriesLength(from, result.rule);
+  const text = describeSeriesLength(from, result.rule, {
+    legacyTimeZone: draft.timeZone,
+  });
   return text ? { text, problem: false } : null;
 }
 
@@ -538,7 +542,11 @@ function defaultUntil(draft: RepeatDraft, start: Date): string | null {
     start,
   );
   const rule = counted.ok ? counted.rule : fallback.ok ? fallback.rule : null;
-  const starts = rule ? seriesChildStarts(rule, start) : null;
+  const starts = rule
+    ? seriesChildStarts(rule, start, undefined, {
+        legacyTimeZone: draft.timeZone,
+      })
+    : null;
   const last = starts?.[starts.length - 1];
   if (!last) return null;
   return dayString(last, draft.timeZone);
@@ -575,13 +583,17 @@ export interface RepeatEditSeries {
  * API splits it off, the series' next meeting moved by the same shift. The
  * next meeting is read from the stored rule's pattern; one moved by hand
  * since isn't known here, and the API checks the rule against the real one.
+ * A legacy token is stepped on this device's clock, as the API steps one in
+ * its creator's zone (#4505).
  */
 export function repeatEditAnchor(series: RepeatEditSeries): Date {
   const { headStart, headRule, shiftMs, now } = series;
   if (headStart.getTime() > now.getTime() || !headRule) {
     return new Date(headStart.getTime() + shiftMs);
   }
-  const next = seriesChildStarts(headRule, headStart, now.getTime())?.[0];
+  const next = seriesChildStarts(headRule, headStart, now.getTime(), {
+    legacyTimeZone: localTimeZone(),
+  })?.[0];
   return new Date((next ?? headStart).getTime() + shiftMs);
 }
 
