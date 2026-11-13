@@ -787,7 +787,7 @@ describe("Event details excuses (#3735)", () => {
 
   it("offers Can't make it to a member the event requires, and sends the line", async () => {
     const tree = render();
-    act(() => pressable(tree, "Can't make it").props.onPress());
+    act(() => pressable(tree, "Can't make it?").props.onPress());
     const input = tree.root.find(
       (node) => (node.type as unknown) === "TextInput",
     );

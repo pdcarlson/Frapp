@@ -34,6 +34,7 @@ import {
 } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -79,7 +80,7 @@ type EventCheckInFields = {
  * the chapter it offers neither control and says why.
  *
  * Can't make it (#4660): a member the event requires, by the card's own role
- * fields (`useEventCardExcuse`), gets a secondary Can't make it that opens the
+ * fields (`useEventCardExcuse`), gets a quiet underlined Can't make it? that opens the
  * event's sheet with the excuse line open (`/events?event=<id>&excuse=1`), as
  * a calendar invite in Gmail or Slack carries its RSVP on the message. Once
  * they've sent one, the card says where it stands instead. Nobody else sees
@@ -251,11 +252,17 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
             </Button>
           ) : null}
           {offerExcuse ? (
-            <Button asChild size="sm" variant="secondary">
-              <Link href={eventDeepLink(payload.event_id, { excuse: true })}>
-                Can&apos;t make it
-              </Link>
-            </Button>
+            // A quiet underlined line, not a second button: declining reads
+            // quieter than checking in (#4933).
+            <Link
+              href={eventDeepLink(payload.event_id, { excuse: true })}
+              className={cn(
+                "self-center rounded-sm text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground",
+                FOCUS_RING_OFFSET,
+              )}
+            >
+              Can&apos;t make it?
+            </Link>
           ) : null}
           {/*
             Scoped to the open check-in window, like the button it explains — a

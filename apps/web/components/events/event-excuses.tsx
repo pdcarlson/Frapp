@@ -21,6 +21,7 @@ import {
 import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { Badge, type BadgeKind } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import {
   SubscriptionNotice,
@@ -28,6 +29,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 /**
  * Absence excuses on the event sheet (`spec/behavior/events.md` § Excuses,
@@ -154,80 +156,79 @@ export function MyExcuse({
   }
 
   if (view.kind === "offer") {
+    // Closed, the offer is one quiet underlined line, not a bordered row with
+    // a button: declining reads quieter than going (#4933, the way Google
+    // Calendar's and Luma's RSVP rows keep No secondary).
+    if (!writing) {
+      return (
+        <button
+          type="button"
+          className={cn(
+            "self-start rounded-sm text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground",
+            FOCUS_RING_OFFSET,
+          )}
+          onClick={() => setWriting(true)}
+        >
+          Can&apos;t make it?
+        </button>
+      );
+    }
     return (
       <section
         aria-label="Can't make it"
         className="rounded-lg border border-border p-3"
       >
-        {writing ? (
-          <form onSubmit={(event) => void submit(event)} className="grid gap-2">
-            <label htmlFor={inputId} className="text-sm font-semibold">
-              Can&apos;t make it
-            </label>
-            <p className="text-sm text-muted-foreground">
-              Say why in one line. It goes to whoever runs this event.
+        <form onSubmit={(event) => void submit(event)} className="grid gap-2">
+          <label htmlFor={inputId} className="text-sm font-semibold">
+            Can&apos;t make it
+          </label>
+          <p className="text-sm text-muted-foreground">
+            Say why in one line. It goes to whoever runs this event.
+          </p>
+          <Input
+            id={inputId}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Exam review, away game, sick…"
+            maxLength={EVENT_EXCUSE_REASON_MAX}
+            autoFocus
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+          />
+          {error ? (
+            <p id={errorId} className="text-sm text-destructive-text">
+              {error}
             </p>
-            <Input
-              id={inputId}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Exam review, away game, sick…"
-              maxLength={EVENT_EXCUSE_REASON_MAX}
-              autoFocus
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? errorId : undefined}
-            />
-            {error ? (
-              <p id={errorId} className="text-sm text-destructive-text">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="submit"
-                size="sm"
-                {...gate.controlProps(send.isPending || !trimmed)}
-              >
-                {send.isPending ? (
-                  <Loader2
-                    className="h-4 w-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                Send excuse
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setWriting(false);
-                  setError(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-            <SubscriptionNotice
-              gate={gate}
-              feature="excuses"
-              className="mb-0 w-full"
-            />
-          </form>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">
-              Required, and you can&apos;t be there?
-            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
             <Button
+              type="submit"
               size="sm"
-              variant="secondary"
-              onClick={() => setWriting(true)}
+              {...gate.controlProps(send.isPending || !trimmed)}
             >
-              Can&apos;t make it
+              {send.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : null}
+              Send excuse
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setWriting(false);
+                setError(null);
+              }}
+            >
+              Cancel
             </Button>
           </div>
-        )}
+          <SubscriptionNotice
+            gate={gate}
+            feature="excuses"
+            className="mb-0 w-full"
+          />
+        </form>
       </section>
     );
   }

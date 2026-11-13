@@ -151,10 +151,9 @@ describe("EventCard", () => {
   it("offers Can't make it, linking to the sheet with the line open", () => {
     mockEventCardExcuse.mockReturnValue({ kind: "offer" });
     render(<EventCard message={makeMessage()} isConfirmed />);
-    expect(screen.getByRole("link", { name: "Can't make it" })).toHaveAttribute(
-      "href",
-      "/events?event=evt-1&excuse=1",
-    );
+    expect(
+      screen.getByRole("link", { name: "Can't make it?" }),
+    ).toHaveAttribute("href", "/events?event=evt-1&excuse=1");
   });
 
   it("says where a sent excuse stands instead", () => {
@@ -168,12 +167,12 @@ describe("EventCard", () => {
     });
     render(<EventCard message={makeMessage()} isConfirmed />);
     expect(screen.getByText("Excuse sent to Jake")).toBeInTheDocument();
-    expect(screen.queryByText("Can't make it")).not.toBeInTheDocument();
+    expect(screen.queryByText("Can't make it?")).not.toBeInTheDocument();
   });
 
   it("offers nothing to a member the event doesn't require", () => {
     render(<EventCard message={makeMessage()} isConfirmed />);
-    expect(screen.queryByText("Can't make it")).not.toBeInTheDocument();
+    expect(screen.queryByText("Can't make it?")).not.toBeInTheDocument();
   });
 
   it("hands the rule the card's own payload", () => {
@@ -386,7 +385,7 @@ describe("EventCard", () => {
         screen.queryByText(/Check-in is turned off/),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("link", { name: "Can't make it" }),
+        screen.queryByRole("link", { name: "Can't make it?" }),
       ).not.toBeInTheDocument();
     });
 
@@ -405,7 +404,7 @@ describe("EventCard", () => {
         screen.queryByRole("button", { name: /check in/i }),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("link", { name: "Can't make it" }),
+        screen.queryByRole("link", { name: "Can't make it?" }),
       ).not.toBeInTheDocument();
       expect(
         screen.getByText(

@@ -611,7 +611,7 @@ describe("EventCard — Can't make it (#4660)", () => {
     state.excuse = { kind: "offer" };
     const tree = render();
     expect(screenText(tree)).toContain("Check in");
-    await press(tree, "Can't make it");
+    await press(tree, "Can't make it?");
     expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1", excuse: "1" },
@@ -622,7 +622,7 @@ describe("EventCard — Can't make it (#4660)", () => {
     state.now = new Date("2026-11-04T12:00:00.000Z");
     state.excuse = { kind: "offer" };
     const tree = render();
-    expect(screenText(tree)).toContain("Can't make it");
+    expect(screenText(tree)).toContain("Can't make it?");
     expect(screenText(tree)).not.toContain("Check in");
   });
 
@@ -663,7 +663,7 @@ describe("EventCard — Can't make it (#4660)", () => {
     vi.mocked(push).mockClear();
     state.excuse = { kind: "offer" };
     const tree = render({ onNavigate });
-    await press(tree, "Can't make it");
+    await press(tree, "Can't make it?");
     expect(onNavigate).toHaveBeenCalledTimes(1);
     expect(onNavigate.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(push).mock.invocationCallOrder[0],

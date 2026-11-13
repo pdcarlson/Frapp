@@ -98,7 +98,7 @@ describe("MyExcuse", () => {
   it("sends one trimmed line from Can't make it", async () => {
     const user = userEvent.setup();
     renderMine();
-    await user.click(screen.getByRole("button", { name: "Can't make it" }));
+    await user.click(screen.getByRole("button", { name: "Can't make it?" }));
     await user.type(screen.getByRole("textbox"), "  Away game ");
     await user.click(screen.getByRole("button", { name: "Send excuse" }));
     expect(state.send).toHaveBeenCalledWith({
@@ -110,7 +110,7 @@ describe("MyExcuse", () => {
   it("opens the line on arrival when the chat card asked (#4660)", () => {
     renderMine(true, 1);
     expect(screen.getByRole("textbox")).toHaveFocus();
-    expect(screen.queryByRole("button", { name: "Can't make it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Can't make it/ })).toBeNull();
   });
 
   it("opens it again for a new ask while already showing (#4660)", async () => {
@@ -124,7 +124,7 @@ describe("MyExcuse", () => {
 
   it("offers nothing on an event that doesn't require the viewer", () => {
     renderMine(false);
-    expect(screen.queryByRole("button", { name: "Can't make it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Can't make it/ })).toBeNull();
   });
 
   it("says who a pending excuse went to, and withdraws it", async () => {
