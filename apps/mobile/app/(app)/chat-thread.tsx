@@ -28,8 +28,10 @@ import {
 import {
   isBlockableSender,
   visibleTypingUsers,
+  withForwardedMasked,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { forwardTargetOf } from "@/lib/chat/forward";
 import {
   channelAllowsReplies,
   channelAllowsThreads,
@@ -1195,10 +1197,20 @@ function ChannelThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
-        copyText: copyableText(message),
+        // A forward's copy is copied only where the block list clears its
+        // author, as its card draws it (#4864).
+        copyText: copyableText(
+          withForwardedMasked(message, blockState, viewerId),
+        ),
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
+        forward: forwardTargetOf(
+          message,
+          actions.canForward,
+          blockState,
+          viewerId,
+        ),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -1228,6 +1240,7 @@ function ChannelThreadScreen() {
       actionsSheetRef.current?.present();
     },
     [
+      blockState,
       canManageChannel,
       canReplyHere,
       canThreadHere,
@@ -1920,6 +1933,8 @@ function ChannelThreadScreen() {
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        nameFor={nameFor}
+        viewerId={viewerId}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onStartThread={openThreadFor}

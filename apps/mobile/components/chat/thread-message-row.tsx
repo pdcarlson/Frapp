@@ -12,10 +12,12 @@ import {
   readTaskPayload,
 } from "@repo/chat-core/cards";
 import {
+  hiddenForwardedText,
   hiddenQuoteText,
   threadPreviewVisible,
   tombstoneCanUnblock,
   visibleReactions,
+  withForwardedMasked,
   type BlockState,
   type MaskedRefreshState,
   type ThreadRow,
@@ -61,7 +63,10 @@ import { TaskCard } from "./task-card";
  *   own included: a reaction is its author's own text, and the server's mask
  *   (#2494) does not reach reaction rows cached before a block.
  * - **A quoted parent** the list hides is never handed down. The row gets
- *   `replyParent: null` and the placeholder to draw instead (#2312 §1).
+ *   `replyParent: null` and the placeholder to draw instead (#2312 §1). A
+ *   forwarded parent's copy is masked the same way (`withForwardedMasked`).
+ * - **A forward's copy** (#4864) is classified by its original author, so a
+ *   blocked author's words draw as the placeholder inside the forwarder's row.
  */
 export interface ThreadMessageRowProps {
   row: ThreadRow;
@@ -209,8 +214,21 @@ function ThreadMessageRowBody({
   const hiddenParent = replyParent
     ? hiddenQuoteText(replyParent, blockState, viewerId)
     : null;
-  const quotedParent = hiddenParent === null ? replyParent : null;
+  // A forwarded parent's copy previews only where the list clears its
+  // author, as its own card draws it (#4864).
+  const quotedParent =
+    hiddenParent === null && replyParent
+      ? withForwardedMasked(replyParent, blockState, viewerId)
+      : hiddenParent === null
+        ? replyParent
+        : null;
   const replyParentHidden = hiddenParent ?? undefined;
+  // A forward's copy is its original author's words, classified on their own
+  // (#4864): a blocked author's copy draws as the block placeholder.
+  const forwardedHidden =
+    cached.forwarded_from && !cached.is_deleted
+      ? hiddenForwardedText(cached.forwarded_from, cached, blockState, viewerId)
+      : null;
 
   const openActions = canOpenMessageActions(cached, viewerId)
     ? () => onOpenActions(cached)
@@ -329,6 +347,7 @@ function ThreadMessageRowBody({
       endsRun={endsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
+      forwardedHidden={forwardedHidden}
       onRetry={onRetry}
       onDiscard={onDiscard}
       onReact={onReact}
