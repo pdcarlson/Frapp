@@ -70,6 +70,7 @@ function wrap(node: ReactNode) {
   const result = render(tree(node));
   return {
     ...result,
+    client,
     rerender: (next: ReactNode) => result.rerender(tree(next)),
   };
 }
@@ -337,6 +338,74 @@ describe("FormCard (#3926 step 3)", () => {
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("holds edits and Send until the open-time read lands, then shows the newest answers", async () => {
+    const user = userEvent.setup();
+    // The card's copy says Single; answers sent from the phone since say
+    // Double, and the dialog's read of them is still in flight.
+    let land: (value: unknown) => void = () => {};
+    const fresh = new Promise((resolve) => (land = resolve));
+    api.GET.mockResolvedValueOnce(SAVED).mockReturnValue(fresh);
+    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit your answers" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeChecked();
+    expect(
+      within(dialog).getByRole("radio", { name: "Double" }),
+    ).toBeDisabled();
+    expect(within(dialog).getByRole("textbox")).toHaveAttribute("readonly");
+    expect(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    ).toBeDisabled();
+
+    land({
+      data: {
+        response: { answers: { room: "double" }, updated_at: "2026-11-14" },
+      },
+    });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("radio", { name: "Double" }),
+      ).toBeChecked(),
+    );
+    expect(within(dialog).getByRole("radio", { name: "Single" })).toBeEnabled();
+    expect(within(dialog).getByRole("textbox")).not.toHaveAttribute("readonly");
+    expect(
+      within(dialog).getByRole("button", { name: "Update answers" }),
+    ).toBeEnabled();
+  });
+
+  it("re-reads rather than writes the cache when a save lands after the page closed", async () => {
+    const user = userEvent.setup();
+    api.GET.mockResolvedValue({ data: { response: null } });
+    let land: (value: unknown) => void = () => {};
+    api.PUT.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    const { client } = wrap(
+      <FormCard message={form()} viewerId="u1" isConfirmed />,
+    );
+    const write = vi.spyOn(client, "setQueryData");
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await user.click(await screen.findByRole("button", { name: "Fill out" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      await within(dialog).findByRole("radio", { name: "Single" }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Send" }));
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    land({ data: { answers: { room: "single" }, updated_at: "2026-11-13" } });
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["chat", "form-response", "m1"],
+      }),
+    );
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("offers Close form to a channels:manage holder who didn't post it", () => {

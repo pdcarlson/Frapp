@@ -173,6 +173,23 @@ function FormFillBody({
     queryKey: formResponseKey(messageId),
     queryFn: () => fetchOwnFormResponse(apiClient, messageId),
   });
+  // Read again on open: the card's copy can be a minute old, and answers
+  // sent from the phone since must not be overwritten by a stale prefill.
+  // Until that read settles the questions are drawn but not editable, so the
+  // first edit is made on the newest answers; if it fails, they become
+  // editable on the copy there is (a send then reaches the server, which has
+  // the say).
+  const { refetch } = response;
+  const [synced, setSynced] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void refetch().finally(() => {
+      if (live) setSynced(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [refetch]);
   // The member's edits, or `null` before their first: until then the form
   // shows the answers they last sent.
   const [edited, setEdited] = useState<FormAnswers | null>(null);
@@ -221,7 +238,7 @@ function FormFillBody({
   }, []);
 
   const send = async () => {
-    if (closed || sending || !loaded) return;
+    if (closed || sending || !loaded || !synced) return;
     if (problemCount > 0) {
       setShowProblems(true);
       return;
@@ -229,14 +246,24 @@ function FormFillBody({
     setSending(true);
     setFailure(null);
     try {
-      const saved = await saveFormResponse(
+      const next = await saveFormResponse(
         apiClient,
         messageId,
         formAnswersForSave(payload.questions, current),
       );
-      queryClient.setQueryData(formResponseKey(messageId), saved);
       toast({ title: answered ? "Answers updated" : "Answers sent" });
-      if (mounted.current) onDone();
+      if (!mounted.current) {
+        // The dialog closed while the save was in flight: the card reads its
+        // own answers again rather than taking these, as the phone does. The
+        // key holds no user id; every web sign-out reloads the page, which
+        // drops the cache, but nothing here should rely on that.
+        void queryClient.invalidateQueries({
+          queryKey: formResponseKey(messageId),
+        });
+        return;
+      }
+      queryClient.setQueryData(formResponseKey(messageId), next);
+      onDone();
     } catch (cause) {
       if (!mounted.current) return;
       setFailure(
@@ -312,7 +339,7 @@ function FormFillBody({
                 question={question}
                 value={current[question.id]}
                 onChange={(value) => setAnswer(question.id, value)}
-                readOnly={closed || sending}
+                readOnly={closed || sending || !synced}
                 problem={showProblems ? problems[question.id] : undefined}
               />
             ))}
@@ -336,7 +363,7 @@ function FormFillBody({
           {closed ? "Done" : "Cancel"}
         </Button>
         {closed ? null : (
-          <Button type="submit" disabled={sending || !loaded}>
+          <Button type="submit" disabled={sending || !loaded || !synced}>
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {sending ? "Sending…" : answered ? "Update answers" : "Send"}
           </Button>
