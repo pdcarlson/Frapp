@@ -18,7 +18,9 @@
 --   deletes the role,
 --
 -- and returns `{ role, stripped_member_ids, given_everyone_member_ids }` for
--- the audit row, or null when the chapter has no such role. A system role is
+-- the audit row, or null when the chapter has no such role. Ids in
+-- `role_ids` (text[]) are compared lower-cased, as the guard compares uuids
+-- and 20261111210000 does, since a stored copy may be upper-case. A system role is
 -- refused (`insufficient_privilege`, 42501); the API refuses it first.
 --
 -- 2. reorder_role_tiers gains a floor
@@ -27,10 +29,11 @@
 -- members can never claim the presidency, whose claim walk stops at that tier.
 -- The reorder only protected the tiers above the caller, so a Vice President
 -- could put the New members tier above the Everyone tier. Under the same tier
--- lock, with the keyed roles' rows locked too, the function now refuses
--- (`invalid_parameter_value`, 22023; the API answers 400) an order that puts a
--- tier holding a NEW_MEMBER or ALUMNI keyed role above the tier holding the
--- Everyone role. A chapter whose Everyone role sits outside the tiers (the
+-- lock the function now refuses (`invalid_parameter_value`, 22023; the API
+-- answers 400) an order that lifts a tier holding a NEW_MEMBER or ALUMNI keyed
+-- role from at or below the Everyone role's tier to above it. A tier already
+-- above it may stay or come down, so a chapter already in that state can
+-- still reorder. A chapter whose Everyone role sits outside the tiers (the
 -- legacy gap) has no floor to hold.
 --
 -- Security invoker, like the reorder: the API calls both with the service
@@ -68,7 +71,9 @@ begin
   perform 1
      from public.members m
     where m.chapter_id = p_chapter_id
-      and p_role_id::text = any(m.role_ids)
+      and exists (
+        select 1 from unnest(m.role_ids) as x where lower(x) = p_role_id::text
+      )
       for update;
 
   select r.id into v_everyone
@@ -78,19 +83,28 @@ begin
    limit 1;
 
   with holders as (
-    select m.id, array_remove(m.role_ids, p_role_id::text) as remaining
+    select m.id,
+           array(
+             select x from unnest(m.role_ids) with ordinality as u(x, n)
+              where lower(u.x) <> p_role_id::text
+              order by u.n
+           ) as remaining
       from public.members m
      where m.chapter_id = p_chapter_id
-       and p_role_id::text = any(m.role_ids)
+       and exists (
+         select 1 from unnest(m.role_ids) as x where lower(x) = p_role_id::text
+       )
   ),
   decided as (
     select h.id,
            h.remaining,
            v_everyone is not null
-             and not (v_everyone::text = any(h.remaining))
+             and not exists (
+               select 1 from unnest(h.remaining) as x where lower(x) = v_everyone::text
+             )
              and not exists (
                select 1 from public.roles r
-                where r.id::text = any(h.remaining)
+                where r.id::text in (select lower(x) from unnest(h.remaining) as x)
                   and r.chapter_id = p_chapter_id
                   and (
                     r.system_key in ('NEW_MEMBER', 'ALUMNI')
@@ -142,6 +156,7 @@ declare
   v_current uuid[];
   v_fixed integer := coalesce(cardinality(p_fixed_ids), 0);
   v_everyone_at integer;
+  v_everyone_was integer;
 begin
   perform 1
      from public.role_tiers t
@@ -171,16 +186,17 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- The Everyone floor (#4548). Locking the keyed roles keeps a concurrent
-  -- role update from moving one between this check and the write.
-  perform 1
-     from public.roles r
-    where r.chapter_id = p_chapter_id
-      and r.system_key in ('MEMBER', 'NEW_MEMBER', 'ALUMNI')
-      for share;
-
-  select min(array_position(p_ids, r.tier_id))
-    into v_everyone_at
+  -- The Everyone floor (#4548). Only a tier the order newly lifts above
+  -- Everyone's is refused: a chapter already in that state (a reorder from
+  -- before this, or a role moved before the API refused it) can still
+  -- reorder, and every step that brings the tier down goes through. The
+  -- keyed roles' rows are not locked: a role update locks its row before its
+  -- tier trigger reads role_tiers, so locking them here could deadlock with
+  -- it. A role moved in the gap is still never a claimant, since presidency's
+  -- claim walk skips New Member and Alumni wherever they sit.
+  select min(array_position(p_ids, r.tier_id)),
+         min(array_position(v_current, r.tier_id))
+    into v_everyone_at, v_everyone_was
     from public.roles r
    where r.chapter_id = p_chapter_id
      and r.system_key = 'MEMBER'
@@ -193,6 +209,7 @@ begin
           and r.system_key in ('NEW_MEMBER', 'ALUMNI')
           and r.tier_id is not null
           and array_position(p_ids, r.tier_id) < v_everyone_at
+          and array_position(v_current, r.tier_id) >= v_everyone_was
      )
   then
     raise exception 'reorder_role_tiers: New members and Alumni stay at or below the Everyone tier'
@@ -228,7 +245,8 @@ $$;
 
 -- 3. Repair what earlier deletes left behind
 --
--- `members.role_ids` is text[], so role ids are compared as text throughout.
+-- `members.role_ids` is text[] and may hold an upper-case copy of an id, so
+-- ids are compared lower-cased, as the guard compares uuids.
 --
 -- Before this, a deleted role's id stayed on its holders. Strip every id that
 -- names no role of the member's chapter, and give Everyone to a member the
@@ -241,7 +259,7 @@ with stale as (
            select x from unnest(m.role_ids) with ordinality as u(x, n)
             where exists (
               select 1 from public.roles r
-               where r.id::text = u.x and r.chapter_id = m.chapter_id
+               where r.id::text = lower(u.x) and r.chapter_id = m.chapter_id
             )
             order by u.n
          ) as remaining
@@ -250,7 +268,7 @@ with stale as (
      select 1 from unnest(m.role_ids) as x
       where not exists (
         select 1 from public.roles r
-         where r.id::text = x and r.chapter_id = m.chapter_id
+         where r.id::text = lower(x) and r.chapter_id = m.chapter_id
       )
    )
 ),
@@ -259,10 +277,12 @@ decided as (
          s.remaining,
          e.id as everyone,
          e.id is not null
-           and not (e.id::text = any(s.remaining))
+           and not exists (
+             select 1 from unnest(s.remaining) as x where lower(x) = e.id::text
+           )
            and not exists (
              select 1 from public.roles r
-              where r.id::text = any(s.remaining)
+              where r.id::text in (select lower(x) from unnest(s.remaining) as x)
                 and (
                   r.system_key in ('NEW_MEMBER', 'ALUMNI')
                   or r.permissions && array['members:view', '*']::text[]

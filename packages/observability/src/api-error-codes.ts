@@ -72,9 +72,12 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.config.invalid_default_invite_role",
   // An officer named a role so it reads as @everyone (#4191) or @here.
   "role.everyone_name",
-  // A tier reorder that would put New members or Alumni above Everyone
+  // A tier reorder that would lift New members or Alumni above Everyone
   // (#4548). The Roles page lets an officer drag tiers freely.
   "role_tier.below_everyone",
+  // The New Member or Alumni role moved into a tier above Everyone's
+  // (#4548). A role page's tier picker offers every tier below the officer.
+  "role.below_everyone",
   "chat.since_not_found",
   // An AI route while `AI_ENABLED` is off on the server (#4310, and
   // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a

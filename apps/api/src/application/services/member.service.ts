@@ -362,9 +362,11 @@ export class MemberService {
     const roles = await this.roleRepo.findByChapter(chapterId);
     const roleIds = rolesAfterSave(requestedRoleIds, member.role_ids, roles);
 
-    // Ids the member ALREADY holds are exempt from validation: deleting a role leaves its id on member rows by design (spec
-    // fail-safe — it resolves to no row and grants nothing), and a client
-    // echoing that leftover back must not have its whole save rejected.
+    // Ids the member ALREADY holds are exempt from validation: a row may
+    // still carry an id that resolves to no role (fail-safe: it grants
+    // nothing), and a client echoing it back must not have its whole save
+    // rejected. A role delete strips its id from holders (`delete_role`,
+    // #4547), so a client still sending a deleted id is reading stale data.
     const validRoleIds = new Set(roles.map((r) => r.id));
     const heldRoleIds = new Set(member.role_ids);
     const unknownRoleIds = roleIds.filter(

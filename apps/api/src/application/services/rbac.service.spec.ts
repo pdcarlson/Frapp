@@ -566,6 +566,53 @@ describe('RbacService', () => {
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
 
+    // #4548: New Member and Alumni stay at or below Everyone, so neither
+    // moves into a tier above Everyone's; a move at or below it goes through.
+    it.each(['NEW_MEMBER', 'ALUMNI'])(
+      'keeps the %s role out of tiers above Everyone',
+      async (key) => {
+        const keyed = roleFixture({
+          id: 'role-keyed',
+          system_key: key,
+          is_system: true,
+          tier_id: 'tier-4',
+        });
+        const tier = (id: string, position: number) => ({
+          id,
+          chapter_id: 'ch-1',
+          position,
+          name: id,
+          permissions: [],
+          mentionable: true,
+          created_at: '2026-11-13T00:00:00Z',
+          updated_at: '2026-11-13T00:00:00Z',
+        });
+        mockRoleRepo.findById.mockResolvedValue(keyed);
+        mockRoleRepo.findByChapter.mockResolvedValue([everyone, keyed]);
+        mockTierRepo.findByChapter.mockResolvedValue([
+          tier('tier-2', 2),
+          tier('tier-3', 3),
+          tier('tier-4', 4),
+        ]);
+        mockRoleRepo.update.mockResolvedValue(keyed);
+
+        await expect(
+          service.update('role-keyed', 'ch-1', ACTOR, { tier_id: 'tier-2' }),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'role.below_everyone' }),
+        });
+        expect(mockRoleRepo.update).not.toHaveBeenCalled();
+
+        await service.update('role-keyed', 'ch-1', ACTOR, {
+          tier_id: 'tier-3',
+        });
+        expect(mockRoleRepo.update).toHaveBeenCalledWith(
+          'role-keyed',
+          expect.objectContaining({ tier_id: 'tier-3' }),
+        );
+      },
+    );
+
     it('lets it take the name Everyone, and go into a tier from outside them', async () => {
       // A row the previous API seeded as Member after the migration ran.
       const stray: Role = { ...everyone, name: 'Member', tier_id: null };
@@ -1169,41 +1216,44 @@ describe('RbacService', () => {
 
       // #4548: a New Member role moved into a tier above Everyone's (by a
       // role edit; the reorder refuses it) still never makes a claimant.
-      it('never counts a New Member role as a claimant, whatever tier it sits in', async () => {
-        mockChapterRepo.findById.mockResolvedValue(
-          makeChapter({ needs_president: true }),
-        );
-        const newMemberRole = roleFixture({
-          id: 'role-new-member',
-          tier_id: 'tier-officers',
-          name: 'New Member',
-          system_key: SystemRoleKeys.NEW_MEMBER,
-          permissions: [SystemPermissions.MEMBERS_VIEW],
-          is_system: true,
-          display_order: 6,
-        });
-        mockRoleRepo.findByChapter.mockResolvedValue([
-          presidentRole,
-          treasurerRole,
-          secretaryRole,
-          memberRole,
-          newMemberRole,
-        ]);
-        mockMemberRepo.findByChapter.mockResolvedValue([
-          makeMember({ id: 'member-1', role_ids: [newMemberRole.id] }),
-        ]);
+      it.each([SystemRoleKeys.NEW_MEMBER, SystemRoleKeys.ALUMNI])(
+        'never counts the %s role as a claimant, whatever tier it sits in',
+        async (key) => {
+          mockChapterRepo.findById.mockResolvedValue(
+            makeChapter({ needs_president: true }),
+          );
+          const newMemberRole = roleFixture({
+            id: 'role-new-member',
+            tier_id: 'tier-officers',
+            name: 'New Member',
+            system_key: key,
+            permissions: [SystemPermissions.MEMBERS_VIEW],
+            is_system: true,
+            display_order: 6,
+          });
+          mockRoleRepo.findByChapter.mockResolvedValue([
+            presidentRole,
+            treasurerRole,
+            secretaryRole,
+            memberRole,
+            newMemberRole,
+          ]);
+          mockMemberRepo.findByChapter.mockResolvedValue([
+            makeMember({ id: 'member-1', role_ids: [newMemberRole.id] }),
+          ]);
 
-        const result = await service.getPresidencyClaimStatus(
-          'ch-1',
-          'member-1',
-        );
+          const result = await service.getPresidencyClaimStatus(
+            'ch-1',
+            'member-1',
+          );
 
-        expect(result).toEqual({
-          needs_president: true,
-          eligible: false,
-          next_role_name: null,
-        });
-      });
+          expect(result).toEqual({
+            needs_president: true,
+            eligible: false,
+            next_role_name: null,
+          });
+        },
+      );
 
       it('ranks claimants by tier, so an empty role outside the tiers listed first makes no one a claimant (#4071)', async () => {
         // A roles:manage holder could make this role and give it to themselves.
