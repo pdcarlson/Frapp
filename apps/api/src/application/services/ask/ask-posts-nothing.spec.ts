@@ -74,6 +74,7 @@ const CALLS = new Set([
   'retrieval.retrieve',
   'roles.findByChapterAndSystemKey',
   'tasks.list',
+  'users.findDisplayIdentitiesByIds',
   // Consent, permission and the lanes' own plumbing.
   'act.availableActions',
   'actService.act',

@@ -19,10 +19,12 @@ import { SupabaseAskDiagnosticsRepository } from '../../infrastructure/supabase/
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import { SupabaseUserRepository } from '../../infrastructure/supabase/repositories/supabase-user.repository';
 import { ASK_DIAGNOSTICS_REPOSITORY } from '#domain/repositories/ask-diagnostics.repository.interface';
 import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { ActModule } from '../act/act.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
@@ -89,6 +91,7 @@ import { TaskModule } from '../task/task.module';
     },
     // The window is the president's to start and stop, and both are audited.
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     ChapterAuditLogService,
     {

@@ -9,6 +9,7 @@ import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
 import { TaskService } from '../task.service';
+import { nameInLine, oneLine } from './ask-lines';
 import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
 
 /**
@@ -29,7 +30,6 @@ const EVENTS_BACK_DAYS = 30;
 const EVENTS_AHEAD_DAYS = 120;
 const EVENTS_LIMIT = 60;
 const DUES_LIMIT = 20;
-const FREE_TEXT_LIMIT = 300;
 const TRANSACTIONS_LIMIT = 10;
 const LEADERBOARD_LIMIT = 25;
 /** How many of the asker's unconfirmed tasks are read, and how many shown. */
@@ -95,24 +95,6 @@ function longDate(iso: string, timeZone: string): string {
     year: 'numeric',
     timeZone: DATE_ONLY.test(iso) ? 'UTC' : timeZone,
   }).format(new Date(iso));
-}
-
-/** One line of member-written text: no line breaks, cut to a sane length. */
-function oneLine(text: string | null | undefined): string {
-  const flat = (text ?? '').replace(/\s+/g, ' ').trim();
-  return flat.length > FREE_TEXT_LIMIT
-    ? `${flat.slice(0, FREE_TEXT_LIMIT).trimEnd()}...`
-    : flat;
-}
-
-/**
- * A member's name inside a `name: fact` line. Members choose their own
- * display name, so the characters that separate a name from its fact are
- * taken out: "Jordan Lee: Treasurer" as a name would otherwise read as a
- * role the roster never gave.
- */
-function nameInLine(name: string | null | undefined): string {
-  return oneLine((name ?? '').replace(/[:;.,|()[\]]+/g, ' '));
 }
 
 function dollars(cents: number): string {
