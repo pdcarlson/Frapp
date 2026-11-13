@@ -605,7 +605,7 @@ describe('ChatMentionService.resolveForSend', () => {
           null,
           '@here',
         ),
-      ).resolves.toEqual(['u3', 'u4', 'u1']);
+      ).resolves.toEqual(['u3', 'u4']);
       expect(officer.onlineUserIds).not.toHaveBeenCalled();
     });
 
@@ -626,7 +626,7 @@ describe('ChatMentionService.resolveForSend', () => {
           '@Ben Stone @here',
           { previous: picks, next: picks },
         ),
-      ).resolves.toEqual(['u2', 'u1']);
+      ).resolves.toEqual(['u2']);
     });
 
     it('drops a name the edit removes, though the message keeps @here', async () => {
@@ -657,6 +657,22 @@ describe('ChatMentionService.resolveForSend', () => {
           '@Ann',
         ),
       ).resolves.toEqual(['u1']);
+    });
+
+    it('adds not even the sender when an edit adds @here', async () => {
+      // The send stored no @here, so the edit keeps what it stored: the
+      // sender's row does not start lighting on an edit.
+      const officer = service(members, roles, ['channels:manage'], ['u1']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          'lunch? @here',
+          [],
+          null,
+          'lunch?',
+        ),
+      ).resolves.toEqual([]);
     });
 
     it('keeps member mentions when the roles read fails', async () => {

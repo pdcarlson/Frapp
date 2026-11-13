@@ -1369,6 +1369,15 @@ describe("bubbles", () => {
     expect(byTestId(tree, "message-avatar")).toHaveLength(0);
   });
 
+  it("lights the viewer's own bubble row when it reaches them, as their own @here does", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(
+      message({ content: "@here hi", sender_id: VIEWER, mentions: [VIEWER] }),
+    );
+    expect(byTestId(tree, "bubble-row-self").length).toBeGreaterThan(0);
+    expect(byTestId(tree, "message-mentions-viewer").length).toBeGreaterThan(0);
+  });
+
   it("tucks a stacked bubble's corners and holds the avatar back", () => {
     act(() => setChatDensity("bubbles"));
     const tree = renderItem(message({ content: "hello" }), undefined, {
