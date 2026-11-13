@@ -24,7 +24,11 @@
 // - `apps/mobile/app.config.js`, evaluated the way a build evaluates it
 //   (required afresh inside that build's `process.env`, then its default
 //   export called with `{ config }`), leaves every one of them, and
-//   `expo.name`, exactly as app.json has them. It runs once with no EAS
+//   `expo.name`, exactly as app.json has them, on every build but one. The
+//   `staging` profile builds the staging variant (#2511, #4917), a second app
+//   beside the store app: there the name, scheme, bundle id and package must
+//   be the STAGING_* values below, the production app's https link claims
+//   must be gone, and everything else stays as app.json has it. It runs once with no EAS
 //   profile (`expo start`, a bare `eas update`), then for every `eas.json` build
 //   profile on each platform, with that profile's `env` block (and any profile
 //   it `extends`) and the `EAS_BUILD*` values easBuildEnvs lists. The lock
@@ -53,7 +57,8 @@
 //
 // WHAT OTHER LOCKS OWN. Not restated here:
 // - `expo.name` is `Frapp`: frapp-naming.test.mjs. This lock checks only
-//   that app.config.js doesn't change it.
+//   that app.config.js doesn't change it, and that the staging variant's is
+//   `Frapp Staging`, which no other lock owns.
 // - The exact API origin production and preview bake in:
 //   eas-production-profile.test.mjs pins it, and `app.config.js` refuses a
 //   production build whose `EXPO_PUBLIC_API_URL` differs. This lock's eas.json
@@ -64,7 +69,8 @@
 // - The magic-link callback (`frapp:///?`) needs `frapp://**` on both hosted
 //   projects' redirect allow lists: staging and production Auth conformance
 //   check it daily. From the binary's side it needs only the scheme, pinned
-//   below.
+//   below. The staging variant's `frapp-staging://**` entry is not checked
+//   anywhere yet (#4917).
 //
 // THE PROVIDER HOSTNAMES THAT STAY. A binary can't avoid baking some provider
 // hosts: `<ref>.supabase.co` (EXPO_PUBLIC_SUPABASE_URL, which `app.config.js`

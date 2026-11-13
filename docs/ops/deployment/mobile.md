@@ -92,6 +92,8 @@ npm run eas -- build --profile preview --platform android
 `eas.json` carries the values that are the same for everyone and safe in git (`EXPO_PUBLIC_API_URL`,
 `EXPO_PUBLIC_SENTRY_ENVIRONMENT`) per build profile, and since 2026-09-06 **binds each profile to
 the EAS environment of the same name** (`"environment": "development" | "preview" | "production"`).
+The two exceptions are `e2e` and `staging` (the Frapp Staging variant, #4917), which both bind to
+`preview`: there is no `staging` EAS environment, and a value set on `preview` reaches all three.
 Everything else the bundle inlines is an **EAS environment variable**, created once per EAS
 environment so a `preview` build gets the *staging* Supabase project and a `production` build the
 *production* one:
@@ -602,8 +604,9 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
 Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
-publish from a laptop. Both go through the same guard. #2511 still owns a staging app variant,
-promotion and staged rollout.
+publish from a laptop. Both go through the same guard. The staging app variant's profile and
+config exist (`staging` in `eas.json`, #4917) but nothing builds or publishes it yet; #2511 still
+owns promotion and staged rollout.
 
 An update only reaches phones whose store build has the same `expo.version` (the `appVersion`
 runtime policy). Once a PR changes native code and bumps that version on `main`, nothing more

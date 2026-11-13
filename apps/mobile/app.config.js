@@ -93,7 +93,11 @@
 // production API and Supabase origins, so a binary called Frapp Staging can
 // never hold a member's real chapter. Everything else (the EAS project, the
 // update URL, the Sentry project) is shared, which is why its updates go to
-// a channel of their own.
+// a channel of their own. A new bundle id, package and scheme each need
+// registering before a build of it is usable (the stores and signing, the
+// Firebase Android app the Google services file must list, the staging
+// Supabase redirect allow list for `frapp-staging://`, the Apple and Google
+// sign-in providers); #4917 lists them.
 //
 // Source of truth for the credential inventory:
 // docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
