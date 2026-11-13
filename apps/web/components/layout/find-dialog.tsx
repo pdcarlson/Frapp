@@ -597,13 +597,15 @@ function FindPanel({
           </button>
         ) : null}
 
-        {!showResults ? (
+        {!showResults && !(askRow && asksFirst(query)) ? (
           <p className="px-2.5 py-3 text-sm text-muted-foreground">
             Type at least {SEARCH_MIN_QUERY_LENGTH} characters.
           </p>
         ) : null}
 
-        {statusMessage ? (
+        {/* Under a question the Ask row is the answer to "nothing found";
+            the live region above still says it. */}
+        {statusMessage && !(askRow && asksFirst(query) && !isLoading) ? (
           <p className="px-2.5 py-3 text-sm text-muted-foreground">
             {statusMessage}
           </p>
