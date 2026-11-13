@@ -146,7 +146,7 @@ export function TaskCard({
   const rejectTask = useRejectTask();
   // The refusal's lifecycle is the rush card's too (`useCardWrite`): a gate's
   // withdraws the controls until the member comes back to the thread or app.
-  const { refusal, act, disabled, hint } = useCardWrite({
+  const { refusal, act, latchGate, disabled, hint } = useCardWrite({
     gateRefusal: taskStatusGateRefusal,
     isConfirmed: frame.isConfirmed,
     pending:
@@ -323,13 +323,21 @@ export function TaskCard({
             proofKind,
             sentBack,
             sentBackReason: live?.sent_back_reason ?? null,
+            done: live?.stored_status === "COMPLETED",
           }}
           initialProblem={marking.problem}
           onComplete={async (proof) => {
-            await updateStatus.mutateAsync({
-              id: payload.task_id,
-              body: { status: "COMPLETED", ...proof },
-            });
+            try {
+              await updateStatus.mutateAsync({
+                id: payload.task_id,
+                body: { status: "COMPLETED", ...proof },
+              });
+            } catch (error) {
+              // The sheet says why; a gate's also withdraws the card's
+              // controls, as one through `act` does.
+              latchGate(error);
+              throw error;
+            }
           }}
           onClosed={() => setMarking(null)}
         />
@@ -340,7 +348,12 @@ export function TaskCard({
           title={payload.title}
           proofKind={proofKind}
           onSubmit={async (body) => {
-            await rejectTask.mutateAsync({ id: payload.task_id, body });
+            try {
+              await rejectTask.mutateAsync({ id: payload.task_id, body });
+            } catch (error) {
+              latchGate(error);
+              throw error;
+            }
           }}
           onClosed={() => setSendingBack(false)}
         />

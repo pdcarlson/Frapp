@@ -18,6 +18,13 @@ export const TASK_PROOF_KIND_LABELS: Record<TaskProofKind, string> = {
  * proof photos on a completion. Six keeps a proof grid readable at a glance
  * on a phone. The API refuses a 7th.
  */
+/** What the officer's proof control says under it, on both apps. */
+export const TASK_PROOF_KIND_HINTS: Record<TaskProofKind, string> = {
+  none: "Marking it done needs nothing more.",
+  photo: "Marking it done needs a photo of the finished job.",
+  link: "Marking it done needs a link, such as a doc or a post.",
+};
+
 export const TASK_PHOTOS_MAX = 6;
 
 /** An officer's reason for sending a completion back: one line. */
@@ -116,4 +123,60 @@ export function proofLinkDomain(link: string): string {
   } catch {
     return link;
   }
+}
+
+/** Send back's line for an empty reason, before it sends (#4635). */
+export const TASK_SEND_BACK_REASON_MISSING = "Say what needs to change.";
+
+/** What a Mark done form holds when it is submitted. */
+export interface TaskMarkDoneDraft {
+  photoCount: number;
+  link: string;
+  note: string;
+}
+
+/**
+ * Both apps' check before Mark done sends (#4635), mirroring the server's
+ * (`task.proof_required`, `task.resubmit_needs_change`) so neither app sends
+ * one it would refuse nor refuses one it would take: a Photo task needs at
+ * least one photo, a Link task a valid http(s) link, and a sent-back task
+ * something new, proof or a reply. On success, the link and reply to send.
+ */
+export function taskMarkDoneCheck(
+  task: { proofKind: TaskProofKind; sentBack: boolean },
+  draft: TaskMarkDoneDraft,
+):
+  | { ok: true; proof: { proofLink?: string; completionNote?: string } }
+  | { ok: false; problem: string } {
+  const typed = draft.link.trim();
+  const link = typed ? normalizeProofLink(typed) : null;
+  if (typed && !link) {
+    return {
+      ok: false,
+      problem: "Use a web link that starts with http:// or https://.",
+    };
+  }
+  if (task.proofKind === "photo" && draft.photoCount === 0) {
+    return {
+      ok: false,
+      problem: "Add at least one photo of the finished job.",
+    };
+  }
+  if (task.proofKind === "link" && !link) {
+    return { ok: false, problem: "Add a link to show it's done." };
+  }
+  const note = draft.note.trim();
+  if (task.sentBack && draft.photoCount === 0 && !link && !note) {
+    return {
+      ok: false,
+      problem: "Add proof or reply to the officer before marking it done.",
+    };
+  }
+  return {
+    ok: true,
+    proof: {
+      ...(link ? { proofLink: link } : {}),
+      ...(note ? { completionNote: note } : {}),
+    },
+  };
 }

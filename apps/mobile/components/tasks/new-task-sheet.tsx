@@ -6,11 +6,12 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { codeOf } from "@repo/api-sdk";
+import { codeOf, statusOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_SUGGESTION_COPY,
   TASK_PHOTOS_MAX,
+  TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
   TASK_PROOF_KINDS,
   aiSuggestionRefusalLine,
@@ -58,7 +59,6 @@ import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
 import { Segmented } from "@/components/segmented";
 import {
-  PROOF_KIND_HINTS,
   photoRoom,
   pickTaskPhotos,
   uploadTaskPhotos,
@@ -485,21 +485,28 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      * order, or `null` when one didn't go, having said why. A gate's refusal
      * takes the button, as a create's does.
      */
-    const uploadPicked = useCallback(async (): Promise<string[] | null> => {
-      setUploading(true);
-      setPhotoProblem(null);
-      const up = await uploadTaskPhotos(
-        pickedPhotos,
-        (request) => requestPhotoUrl.mutateAsync(request),
-        TASK_PHOTO_GATE_COPY.task,
-      );
-      setUploading(false);
-      setPickedPhotos(up.photos);
-      if (up.status === "uploaded") return up.paths;
-      if (up.final) setRefusal(up.reason);
-      else setPhotoProblem(up.reason);
-      return null;
-    }, [pickedPhotos, requestPhotoUrl]);
+    const uploadPicked = useCallback(
+      async (sentFrom: number): Promise<string[] | null> => {
+        setUploading(true);
+        setPhotoProblem(null);
+        const up = await uploadTaskPhotos(
+          pickedPhotos,
+          (request) => requestPhotoUrl.mutateAsync(request),
+          TASK_PHOTO_GATE_COPY.task,
+        );
+        setUploading(false);
+        setPickedPhotos(up.photos);
+        if (up.status === "uploaded") return up.paths;
+        // A gate's refusal belongs to the visit that asked: one landing after
+        // the sheet was closed must not hold the next visit's Create, which
+        // a reopen promises is a fresh try (`closed`).
+        if (up.final) {
+          if (isSameVisit(sentFrom)) setRefusal(up.reason);
+        } else setPhotoProblem(up.reason);
+        return null;
+      },
+      [pickedPhotos, requestPhotoUrl, isSameVisit],
+    );
 
     /** Gives the draft up, and the visit's state with it: Cancel. */
     const reset = useCallback(() => {
@@ -669,6 +676,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             setRefusal(MODULE_REFUSAL_COPY.task);
             return;
           }
+          // A 400 may be a photo path the server turned down (one a create
+          // that landed, its answer lost, already holds), which can't win
+          // again: upload anew on the retry. A 5xx or a dropped connection
+          // keeps the paths, so a retry doesn't upload twice.
+          if (statusOf(error) === 400) {
+            setPickedPhotos((current) =>
+              current.map(({ image }) => ({ image })),
+            );
+          }
           setSubmitFailed(true);
         },
       };
@@ -681,7 +697,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         dispatchBody(attachPhotos(body, uploaded), sentFrom, handlers);
         return;
       }
-      void uploadPicked().then((paths) => {
+      void uploadPicked(sentFrom).then((paths) => {
         if (!paths) {
           sending.current = false;
           return;
@@ -874,7 +890,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                     accessibilityLabel="Proof to mark it done"
                     disabled={pending}
                   />
-                  <Text style={styles.note}>{PROOF_KIND_HINTS[proofKind]}</Text>
+                  <Text style={styles.note}>
+                    {TASK_PROOF_KIND_HINTS[proofKind]}
+                  </Text>
                 </View>
               </>
             )}

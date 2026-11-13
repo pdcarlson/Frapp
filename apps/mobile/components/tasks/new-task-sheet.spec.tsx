@@ -896,4 +896,62 @@ describe("New task photos and proof (#4635)", () => {
     expect(mutate).toHaveBeenCalledTimes(2);
     act(() => tree.unmount());
   });
+
+  it("uploads the photos again after a 400, which a held path can't win", async () => {
+    // A create that landed with its answer lost holds the paths: the retry
+    // is refused "already attached", so the next one uploads anew.
+    failure = {
+      statusCode: 400,
+      error: "Bad Request",
+      message:
+        "reference_photo_paths is already attached to a task; upload the photo again",
+    };
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///mess.png",
+          fileName: "mess.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mintPhoto.mockReset();
+    mintPhoto
+      .mockResolvedValueOnce({
+        upload_url: "https://signed",
+        storage_path: "chapters/c/tasks/p1/mess.png",
+      })
+      .mockResolvedValueOnce({
+        upload_url: "https://signed",
+        storage_path: "chapters/c/tasks/p2/mess.png",
+      });
+    const tree = render();
+    await act(async () => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    await act(async () => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls.at(-1)![0]).toMatchObject({
+      reference_photo_paths: ["chapters/c/tasks/p2/mess.png"],
+    });
+    act(() => tree.unmount());
+  });
 });

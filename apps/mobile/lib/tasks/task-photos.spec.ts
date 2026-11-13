@@ -7,7 +7,6 @@ import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import {
   TASK_PHOTO_GATE_COPY,
   markDoneAsks,
-  markDoneCheck,
   markDoneLabel,
   photoRoom,
   pickTaskPhotos,
@@ -43,73 +42,6 @@ describe("photoRoom", () => {
     expect(photoRoom(0)).toBe(6);
     expect(photoRoom(4)).toBe(2);
     expect(photoRoom(9)).toBe(0);
-  });
-});
-
-describe("markDoneCheck mirrors the server's refusals (#4635)", () => {
-  const draft = { photoCount: 0, link: "", note: "" };
-
-  it("needs at least one photo on a Photo task", () => {
-    expect(
-      markDoneCheck({ proofKind: "photo", sentBack: false }, draft),
-    ).toEqual({
-      ok: false,
-      problem: "Add at least one photo of the finished job.",
-    });
-    expect(
-      markDoneCheck(
-        { proofKind: "photo", sentBack: false },
-        { ...draft, photoCount: 2 },
-      ),
-    ).toEqual({ ok: true, proof: {} });
-  });
-
-  it("needs a valid http(s) link on a Link task", () => {
-    expect(
-      markDoneCheck({ proofKind: "link", sentBack: false }, draft),
-    ).toMatchObject({ ok: false, problem: "Add a link to show it's done." });
-    expect(
-      markDoneCheck(
-        { proofKind: "link", sentBack: false },
-        { ...draft, link: "javascript:alert(1)" },
-      ),
-    ).toMatchObject({
-      ok: false,
-      problem: expect.stringMatching(/https:\/\//),
-    });
-    expect(
-      markDoneCheck(
-        { proofKind: "link", sentBack: false },
-        { ...draft, link: "  https://docs.example.com/x  " },
-      ),
-    ).toEqual({ ok: true, proof: { proofLink: "https://docs.example.com/x" } });
-  });
-
-  it("needs proof or a reply on a sent-back task", () => {
-    expect(
-      markDoneCheck({ proofKind: "none", sentBack: true }, draft),
-    ).toMatchObject({
-      ok: false,
-      problem: "Add proof or reply to the officer before marking it done.",
-    });
-    expect(
-      markDoneCheck(
-        { proofKind: "none", sentBack: true },
-        { ...draft, note: "  Mopped it again  " },
-      ),
-    ).toEqual({ ok: true, proof: { completionNote: "Mopped it again" } });
-    expect(
-      markDoneCheck(
-        { proofKind: "none", sentBack: true },
-        { ...draft, photoCount: 1 },
-      ),
-    ).toEqual({ ok: true, proof: {} });
-  });
-
-  it("lets a task that asks for nothing go with nothing", () => {
-    expect(
-      markDoneCheck({ proofKind: "none", sentBack: false }, draft),
-    ).toEqual({ ok: true, proof: {} });
   });
 });
 

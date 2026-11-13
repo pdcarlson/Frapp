@@ -9,6 +9,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { TASK_ACTION_LABELS } from "@repo/hooks";
 import {
   TASK_SEND_BACK_REASON_MAX,
+  TASK_SEND_BACK_REASON_MISSING,
   type TaskProofKind,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -40,7 +41,7 @@ export interface SendBackInput {
  * go: the server requires one line (#4635).
  */
 export function sendBackProblem(reason: string): string | null {
-  return reason.trim() ? null : "Say what needs to change.";
+  return reason.trim() ? null : TASK_SEND_BACK_REASON_MISSING;
 }
 
 /**

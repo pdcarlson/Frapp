@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Camera,
-  ImagePlus,
-  Link2,
-  Loader2,
-  X,
-} from "lucide-react";
+import { Camera, ImagePlus, Link2, Loader2, X } from "lucide-react";
 import {
   MemberFacingError,
   putSignedUpload,
@@ -19,14 +13,16 @@ import {
   MAX_UPLOAD_LABEL,
   TASK_COMPLETION_NOTE_MAX,
   TASK_PHOTOS_MAX,
+  TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
   TASK_PROOF_KINDS,
   TASK_SEND_BACK_REASON_MAX,
+  TASK_SEND_BACK_REASON_MISSING,
   acceptAttribute,
   inspectUploadFile,
-  normalizeProofLink,
   proofLinkDomain,
   readSignedUpload,
+  taskMarkDoneCheck,
   type TaskProofKind,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -333,7 +329,8 @@ function PickedPhoto({ file, className }: { file: File; className?: string }) {
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [file]);
-  if (!url) return <span className={cn("block bg-muted/40", className)} aria-hidden />;
+  if (!url)
+    return <span className={cn("block bg-muted/40", className)} aria-hidden />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" className={className} />;
 }
@@ -455,12 +452,6 @@ export const EMPTY_TASK_PHOTO_DRAFT: TaskPhotoDraft = {
   proofKind: "none",
 };
 
-const PROOF_KIND_HINTS: Record<TaskProofKind, string> = {
-  none: "Marking it done needs nothing more.",
-  photo: "Marking it done needs a photo of the finished job.",
-  link: "Marking it done needs a link, such as a doc or a post.",
-};
-
 /**
  * The create and edit forms' photo fields: reference photos to attach, view
  * or remove, and the officer's proof control (None, Photo, Link), the way
@@ -516,7 +507,7 @@ export function TaskPhotoFields({
           disabled={disabled}
         />
         <p className="text-caption text-muted-foreground">
-          {PROOF_KIND_HINTS[draft.proofKind]}
+          {TASK_PROOF_KIND_HINTS[draft.proofKind]}
         </p>
       </div>
     </div>
@@ -588,7 +579,9 @@ export function MarkDoneControl({
         className="gap-1.5"
         {...controlProps}
         disabled={disabled}
-        onClick={() => (asks ? setOpen(true) : void onComplete({}).catch(() => {}))}
+        onClick={() =>
+          asks ? setOpen(true) : void onComplete({}).catch(() => {})
+        }
       >
         {kind === "photo" ? (
           <Camera className="h-4 w-4" aria-hidden="true" />
@@ -662,23 +655,13 @@ function MarkDoneDialog({
   async function submit() {
     const photoProblem = taskPhotosProblem(files);
     if (photoProblem) return setProblem(photoProblem);
-    const trimmedLink = link.trim();
-    const proofLink = trimmedLink ? normalizeProofLink(trimmedLink) : null;
-    if (trimmedLink && !proofLink) {
-      return setProblem("Use a web link that starts with http:// or https://.");
-    }
-    if (kind === "photo" && files.length === 0) {
-      return setProblem("Add at least one photo of the finished job.");
-    }
-    if (kind === "link" && !proofLink) {
-      return setProblem("Add a link to show it's done.");
-    }
-    const reply = note.trim();
-    if (sentBack && files.length === 0 && !proofLink && !reply) {
-      return setProblem(
-        "Add proof or reply to the officer before marking it done.",
-      );
-    }
+    // The phone's sheet makes the same check (`taskMarkDoneCheck`).
+    const checked = taskMarkDoneCheck(
+      { proofKind: kind, sentBack },
+      { photoCount: files.length, link, note },
+    );
+    if (!checked.ok) return setProblem(checked.problem);
+    const { proofLink, completionNote: reply } = checked.proof;
     setProblem(null);
     setBusy(true);
     try {
@@ -822,7 +805,7 @@ export function SendBackDialog({
 
   async function submit() {
     const comment = reason.trim();
-    if (!comment) return setProblem("Say what needs to change.");
+    if (!comment) return setProblem(TASK_SEND_BACK_REASON_MISSING);
     setBusy(true);
     try {
       await onSubmit({ comment, ...(askPhoto ? { require_photo: true } : {}) });

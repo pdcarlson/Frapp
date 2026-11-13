@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -13,6 +14,7 @@ import type { TaskEditTarget } from "@/lib/tasks/create-task";
  * and says before Save when a new assignee starts the task over.
  */
 
+const mintPhoto = vi.hoisted(() => vi.fn());
 let updateOutcome: "ok" | "fail" = "ok";
 const update = vi.fn(
   (
@@ -36,7 +38,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useCreateTask: () => ({ mutate: create_, isPending: false }),
   useUpdateTask: () => ({ mutate: update, isPending: false }),
-  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: mintPhoto }),
   useTaskPhotoUrl: () => ({ data: undefined }),
 }));
 
@@ -169,6 +171,53 @@ describe("Edit task photos and proof (#4635)", () => {
     act(() => saveButton(tree).props.onPress());
     expect(update).toHaveBeenCalledWith(
       { id: "task-1", body: { proof_kind: "photo" } },
+      expect.anything(),
+    );
+  });
+
+  it("uploads a photo added on the edit and sends it after the kept ones", async () => {
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///porch.png",
+          fileName: "porch.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mintPhoto.mockResolvedValueOnce({
+      upload_url: "https://signed",
+      storage_path: "p/new.png",
+    });
+    const tree = render({
+      ...TASK,
+      referencePhotos: [
+        { id: "a", kind: "reference", storage_path: "p/a.jpg" },
+      ],
+    });
+    await act(async () => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    await act(async () => saveButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      {
+        id: "task-1",
+        body: { reference_photo_paths: ["p/a.jpg", "p/new.png"] },
+      },
       expect.anything(),
     );
   });

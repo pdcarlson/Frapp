@@ -23,7 +23,11 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import { MarkDoneSheet, type MarkDoneSheetTask } from "./mark-done-sheet";
+import {
+  MARK_DONE_ALREADY_DONE,
+  MarkDoneSheet,
+  type MarkDoneSheetTask,
+} from "./mark-done-sheet";
 
 const TASK: MarkDoneSheetTask = {
   id: "t1",
@@ -134,6 +138,89 @@ describe("MarkDoneSheet (#4635)", () => {
     expect(onComplete).toHaveBeenCalledWith({
       proof_photo_paths: ["chapters/c/tasks/p1/a.png"],
     });
+  });
+
+  /** Picks one photo through the mocked library, then presses Add photos. */
+  async function addPhoto(tree: ReactTestRenderer) {
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///a.png",
+          fileName: "a.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    await press(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Add photos",
+      ),
+    );
+  }
+
+  it("uploads anew after a refusal that dropped the photos, not after one for want of proof", async () => {
+    mint.mockReset();
+    mint.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/a.png",
+    });
+    // The task changed under the member: the server drops the photos it was
+    // sent (#4635's compare-and-set), so their paths can't be sent again.
+    const changed = {
+      statusCode: 400,
+      error: "Bad Request",
+      message:
+        "This task changed while you were marking it done. Look again and retry.",
+    };
+    const onComplete = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(changed)
+      .mockResolvedValueOnce(undefined);
+    const tree = render({ proofKind: "photo" }, onComplete);
+    await addPhoto(tree);
+    await press(markDone(tree));
+    expect(screenText(tree)).toContain("This task changed");
+    await press(markDone(tree));
+    expect(mint).toHaveBeenCalledTimes(2);
+
+    // A refusal for want of proof is checked before the photos are kept, so
+    // they stay up and a retry sends the same paths.
+    mint.mockClear();
+    const proof = {
+      statusCode: 400,
+      error: "Bad Request",
+      code: "task.resubmit_needs_change",
+      message: "Add something new.",
+    };
+    const again = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(proof)
+      .mockResolvedValueOnce(undefined);
+    const second = render({ proofKind: "photo" }, again);
+    await addPhoto(second);
+    await press(markDone(second));
+    await press(markDone(second));
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a task marked done elsewhere is done, before it uploads anything", async () => {
+    mint.mockClear();
+    const onComplete = vi.fn(async () => {});
+    const tree = render({ proofKind: "photo", done: true }, onComplete);
+    await addPhoto(tree);
+    await press(markDone(tree));
+    expect(screenText(tree)).toContain(MARK_DONE_ALREADY_DONE);
+    expect(mint).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it("takes a link on a Link task, and refuses one that isn't http(s)", async () => {

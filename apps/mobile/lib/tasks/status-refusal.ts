@@ -8,16 +8,18 @@
  * gate refusal. One copy, so the two can't drift, as `checkInFailure` does for
  * the two check-in surfaces.
  *
- * Returns `null` for every other failure. What a surface does then differs on
- * purpose: the board reverts quietly and lets the member tap again, and the
- * card relays the server's message.
+ * Returns `null` for every other failure. A Mark done refused for want of
+ * proof (`taskProofRefusal`, below) opens Mark done's sheet on both surfaces.
+ * Past that, what a surface does differs on purpose: the board says a 400's
+ * sentence (such as "This task changed…") and otherwise reverts quietly and
+ * lets the member tap again, and the card relays the server's message.
  */
 
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   TASK_PROOF_REQUIRED_CODE,
   TASK_RESUBMIT_NEEDS_CHANGE_CODE,
-  TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
+  copyForErrorCode,
 } from "@repo/validation";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
@@ -31,18 +33,14 @@ export function taskStatusGateRefusal(error: unknown): string | null {
   return null;
 }
 
-/** The line for a Mark done refused for want of proof. */
-export const TASK_PROOF_REFUSAL =
-  "This task needs proof to show it's done. Add it, then mark it done.";
-
 /**
  * Was this Mark done refused for want of proof (`TASK_PROOF_REQUIRED_CODE`,
  * #4565) or, on a task an officer sent back, of something new
  * (`TASK_RESUBMIT_NEEDS_CHANGE_CODE`, #4635)? The line to show, or `null` for
  * any other failure. Matched by the code, never the message, as an installed
- * build must be.
+ * build must be, and said in the shared copy web shows (`copyForErrorCode`).
  *
- * The phone asks for proof before it sends (`markDoneCheck`), so this is the
+ * The phone asks for proof before it sends (`taskMarkDoneCheck`), so this is the
  * case where the task changed after it was read (an officer switched it to
  * Photo, or sent it back). The board and the task card then open the Mark
  * done sheet with this line in it, so the member adds what's missing there.
@@ -50,9 +48,11 @@ export const TASK_PROOF_REFUSAL =
 export function taskProofRefusal(error: unknown): string | null {
   if (statusOf(error) !== 400) return null;
   const code = codeOf(error);
-  if (code === TASK_PROOF_REQUIRED_CODE) return TASK_PROOF_REFUSAL;
-  if (code === TASK_RESUBMIT_NEEDS_CHANGE_CODE) {
-    return TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE;
+  if (
+    code === TASK_PROOF_REQUIRED_CODE ||
+    code === TASK_RESUBMIT_NEEDS_CHANGE_CODE
+  ) {
+    return copyForErrorCode(code);
   }
   return null;
 }

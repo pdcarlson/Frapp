@@ -1,7 +1,6 @@
 import {
   MAX_UPLOAD_LABEL,
   TASK_PHOTOS_MAX,
-  normalizeProofLink,
   type TaskProofKind,
 } from "@repo/validation";
 import {
@@ -113,13 +112,6 @@ export async function uploadTaskPhotos(
   };
 }
 
-/** What the officer's proof control says under it, as web's does. */
-export const PROOF_KIND_HINTS: Record<TaskProofKind, string> = {
-  none: "Marking it done needs nothing more.",
-  photo: "Marking it done needs a photo of the finished job.",
-  link: "Marking it done needs a link, such as a doc or a post.",
-};
-
 /** The task fields Mark done reads. */
 export interface MarkDoneTask {
   proofKind: TaskProofKind;
@@ -141,60 +133,4 @@ export function markDoneLabel(base: string, proofKind: TaskProofKind): string {
   if (proofKind === "photo") return `${base} with a photo`;
   if (proofKind === "link") return `${base} with a link`;
   return base;
-}
-
-/** What the Mark done sheet holds. */
-export interface MarkDoneDraft {
-  photoCount: number;
-  link: string;
-  note: string;
-}
-
-/** What Mark done sends besides the status, before the photos are up. */
-export interface CompletionProofDraft {
-  proofLink?: string;
-  completionNote?: string;
-}
-
-/**
- * The Mark done sheet's check before it sends, mirroring the server's
- * (`task.proof_required`, `task.resubmit_needs_change`) in web's words:
- * a Photo task needs at least one photo, a Link task a valid http(s) link,
- * and a sent-back task something new, proof or a reply.
- */
-export function markDoneCheck(
-  task: MarkDoneTask,
-  draft: MarkDoneDraft,
-): { ok: true; proof: CompletionProofDraft } | { ok: false; problem: string } {
-  const typed = draft.link.trim();
-  const link = typed ? normalizeProofLink(typed) : null;
-  if (typed && !link) {
-    return {
-      ok: false,
-      problem: "Use a web link that starts with http:// or https://.",
-    };
-  }
-  if (task.proofKind === "photo" && draft.photoCount === 0) {
-    return {
-      ok: false,
-      problem: "Add at least one photo of the finished job.",
-    };
-  }
-  if (task.proofKind === "link" && !link) {
-    return { ok: false, problem: "Add a link to show it's done." };
-  }
-  const note = draft.note.trim();
-  if (task.sentBack && draft.photoCount === 0 && !link && !note) {
-    return {
-      ok: false,
-      problem: "Add proof or reply to the officer before marking it done.",
-    };
-  }
-  return {
-    ok: true,
-    proof: {
-      ...(link ? { proofLink: link } : {}),
-      ...(note ? { completionNote: note } : {}),
-    },
-  };
 }

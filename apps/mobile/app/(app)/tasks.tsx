@@ -1,4 +1,8 @@
-import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import {
+  describeLoadFailure,
+  errorCopy,
+  MemberFacingError,
+} from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -72,6 +76,7 @@ import {
 } from "@/lib/tasks/status-refusal";
 import { markDoneAsks } from "@/lib/tasks/task-photos";
 import {
+  MARK_DONE_ALREADY_DONE,
   MarkDoneSheet,
   type CompletionProof,
 } from "@/components/tasks/mark-done-sheet";
@@ -411,8 +416,11 @@ export default function TasksScreen() {
   const completeWithProof = useCallback(
     async (row: TaskRowModel, proof: CompletionProof) => {
       const sequence = checkboxSequence(row);
-      // Already done (on another device, say): nothing left to send.
-      if (sequence[sequence.length - 1] !== "COMPLETED") return;
+      // Already done (on another device, say): nothing left to send, and the
+      // sheet says so rather than closing as if it had sent the proof.
+      if (sequence[sequence.length - 1] !== "COMPLETED") {
+        throw new MemberFacingError(MARK_DONE_ALREADY_DONE);
+      }
       const { outcome, error } = await run(row.id, sequence, proof);
       if (outcome === "ok") {
         completed(row.id);
@@ -775,6 +783,7 @@ export default function TasksScreen() {
             proofKind: markingRow.proofKind,
             sentBack: rowIsSentBack(markingRow),
             sentBackReason: markingRow.sentBackReason,
+            done: markingRow.isDone,
           }}
           initialProblem={marking.problem}
           onComplete={(proof) => completeWithProof(markingRow, proof)}

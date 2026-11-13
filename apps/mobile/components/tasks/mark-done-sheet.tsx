@@ -10,6 +10,7 @@ import { TASK_ACTION_LABELS, useRequestTaskPhotoUploadUrl } from "@repo/hooks";
 import {
   TASK_COMPLETION_NOTE_MAX,
   TASK_PROOF_LINK_MAX,
+  taskMarkDoneCheck,
   type TaskProofKind,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -28,7 +29,6 @@ import {
 import { SentBackNote, TaskPhotoPicker } from "@/components/tasks/task-photos";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  markDoneCheck,
   photoRoom,
   pickTaskPhotos,
   uploadTaskPhotos,
@@ -56,7 +56,15 @@ export interface MarkDoneSheetTask {
   /** It waits on its assignee after a send-back (Needs changes). */
   sentBack: boolean;
   sentBackReason: string | null;
+  /**
+   * It is done already (marked on another device, say): Mark done says so
+   * before it uploads anything. Omitted reads as not done.
+   */
+  done?: boolean;
 }
+
+/** What the sheet says when the task was marked done somewhere else. */
+export const MARK_DONE_ALREADY_DONE = "This task is already marked done.";
 
 /**
  * Mark done with proof on the phone (#4565, #4635), web's Mark done dialog
@@ -65,12 +73,15 @@ export interface MarkDoneSheetTask {
  * officer's reason and "Reply to the officer", the way Canvas and Google
  * Classroom take a resubmission and S'moresUp a chore's photo proof.
  *
- * It checks what the server checks before it sends (`markDoneCheck`), then
+ * It checks what the server checks before it sends (`taskMarkDoneCheck`), then
  * uploads the photos and hands their paths to `onComplete`, which makes the
  * status write; a refusal from it is put in words here and the sheet stays,
  * keeping what was added. Photos go up only on Mark done, so a sheet given
- * up leaves nothing in the bucket; once up, they aren't sent again on a
- * retry.
+ * up before then leaves nothing in the bucket (one given up after a refused
+ * write leaves its uploads for the orphan sweep). Once up, they are sent
+ * again on a retry, unless the refusal dropped them: anything but a gate's
+ * or one for want of proof, such as "This task changed…", which deletes the
+ * photos it was sent, uploads anew.
  *
  * The host mounts one per Mark done (`key` on the task), and the sheet opens
  * itself on mount and calls `onClosed` once it has gone.
@@ -139,7 +150,11 @@ export function MarkDoneSheet({
 
   const submit = async () => {
     if (sending.current) return;
-    const checked = markDoneCheck(
+    if (task.done) {
+      setProblem(MARK_DONE_ALREADY_DONE);
+      return;
+    }
+    const checked = taskMarkDoneCheck(
       { proofKind: kind, sentBack: task.sentBack },
       { photoCount: photos.length, link, note },
     );

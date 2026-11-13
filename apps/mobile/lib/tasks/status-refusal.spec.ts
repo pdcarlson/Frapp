@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
-  moduleDisabledMessage,
-} from "@repo/validation";
+import { copyForErrorCode, moduleDisabledMessage } from "@repo/validation";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import {
-  TASK_PROOF_REFUSAL,
-  taskProofRefusal,
-  taskStatusGateRefusal,
-} from "./status-refusal";
+import { taskProofRefusal, taskStatusGateRefusal } from "./status-refusal";
 
 describe("taskStatusGateRefusal", () => {
   it("puts each gate's refusal in the member's words", () => {
@@ -52,8 +45,8 @@ describe("taskProofRefusal (#4565, #4635)", () => {
         code: "task.proof_required",
         message: "reworded someday",
       }),
-    ).toBe(TASK_PROOF_REFUSAL);
-    expect(TASK_PROOF_REFUSAL).not.toMatch(/web/);
+    ).toBe(copyForErrorCode("task.proof_required"));
+    expect(copyForErrorCode("task.proof_required")).not.toMatch(/web/);
   });
 
   it("asks for something new on a sent-back task", () => {
@@ -63,7 +56,7 @@ describe("taskProofRefusal (#4565, #4635)", () => {
         code: "task.resubmit_needs_change",
         message: "anything",
       }),
-    ).toBe(TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE);
+    ).toBe(copyForErrorCode("task.resubmit_needs_change"));
   });
 
   it("reads nothing into any other refusal", () => {

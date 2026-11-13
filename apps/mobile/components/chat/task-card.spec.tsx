@@ -500,6 +500,29 @@ describe("TaskCard — actions", () => {
     );
   });
 
+  it("withdraws the controls when a gate refuses Send back from its sheet (#4635)", async () => {
+    state.permissions = ["tasks:manage"];
+    state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
+    rejectTask.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message:
+        "Chapter subscription is not active; complete checkout to use this feature.",
+    });
+    const tree = render("admin-2");
+    await press(tree, "Send back");
+    // The sheet says why itself; the card withdraws its controls too.
+    await act(async () => {
+      await expect(
+        sheets.sendBack!.onSubmit({ comment: "Floor is still sticky" }),
+      ).rejects.toBeDefined();
+    });
+    expect(button(tree, "Confirm").props.disabled).toBe(true);
+    expect(button(tree, "Send back").props.accessibilityHint).toBe(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
+  });
+
   it("withdraws the controls on a module refusal too", async () => {
     updateStatus.mockRejectedValue({
       statusCode: 403,
