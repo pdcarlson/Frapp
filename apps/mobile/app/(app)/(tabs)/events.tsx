@@ -1,6 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
@@ -64,7 +64,7 @@ import {
   useEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * s06 — Events (`canvas-screens.dc.html:195`), as a List or a Calendar.
@@ -257,13 +257,12 @@ export default function EventsScreen() {
               onPress={() => setShowLater((shown) => !shown)}
               style={styles.laterToggle}
             >
-              {/* Web's fold, word for word (#4135): the label, its count and
-                  a disclosure chevron, the way a collapsed channel section
-                  draws it, rather than a Show N / Hide action. */}
-              <View style={styles.laterLabel}>
-                <SectionHeader>{EVENTS_COPY.later}</SectionHeader>
-                <Text style={styles.laterCount}>{eventsCount(laterCount)}</Text>
-              </View>
+              {/* Web's words for the fold (#4135): the label and its count,
+                  then a chevron drawn the way the phone's other folds draw
+                  one (right folded, down open), rather than Show N / Hide. */}
+              <SectionHeader count={eventsCount(laterCount)}>
+                {EVENTS_COPY.later}
+              </SectionHeader>
               <View style={styles.laterChevron}>
                 <DisclosureGlyph
                   color={tokens.color.text.mutedForeground}
@@ -483,18 +482,6 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       alignItems: "flex-end",
       minHeight: tokens.touch.minimum,
-    },
-    // The caption and its count on one baseline, as `SectionHeader`'s own
-    // counted row draws them.
-    laterLabel: {
-      flexDirection: "row",
-      alignItems: "baseline",
-      gap: tokens.spacing.sm,
-    },
-    laterCount: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      fontVariant: ["tabular-nums"],
     },
     laterChevron: {
       marginLeft: "auto",

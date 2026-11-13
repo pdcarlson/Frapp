@@ -6,7 +6,12 @@
  */
 
 export const EVENTS_COPY = {
-  /** No upcoming event at all. Not "No events yet": the past may hold some. */
+  /**
+   * Nothing to list. Web says it when the chapter has no events at all (a
+   * chapter with only past ones gets "No upcoming events." and Show all
+   * events); the phone, when nothing is upcoming. True in both, where "No
+   * events yet" would not be on the phone.
+   */
   empty: "Nothing scheduled yet.",
   /** Upcoming holds the next two weeks (#3707); the rest waits behind Later. */
   noneSoon: "Nothing in the next two weeks.",
@@ -24,6 +29,8 @@ export function eventsCount(count: number): string {
 export const DIRECTORY_COPY = {
   activesEmpty: "No actives yet.",
   activesNoFilterMatches: "No actives match these filters.",
+  alumniEmpty: "No alumni yet. Graduated members appear here.",
+  alumniNoFilterMatches: "No alumni match these filters.",
   /** The page is Directory on both apps. */
   loadError: "Couldn't load the directory",
 } as const;

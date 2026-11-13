@@ -475,7 +475,7 @@ export default function DirectoryScreen() {
               setAlumniFilterInputs({ gradYear: "", city: "", company: "" }),
           }}
         >
-          No alumni match these filters.
+          {DIRECTORY_COPY.alumniNoFilterMatches}
         </InlineNote>
       );
     }
@@ -495,7 +495,7 @@ export default function DirectoryScreen() {
       <InlineNote>
         {tab === "actives"
           ? DIRECTORY_COPY.activesEmpty
-          : "No alumni yet. Graduated members appear here."}
+          : DIRECTORY_COPY.alumniEmpty}
       </InlineNote>
     );
   }

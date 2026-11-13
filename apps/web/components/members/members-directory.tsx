@@ -19,7 +19,7 @@ import {
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { parseInstant } from "@repo/formatting";
+import { formatPoints, parseInstant } from "@repo/formatting";
 import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1171,7 +1171,7 @@ export function MembersDirectory() {
                         </span>
                       </span>
                       <span className="shrink-0 text-caption tabular-nums text-muted">
-                        {points} pts
+                        {formatPoints(points)}
                       </span>
                     </button>
                   </li>

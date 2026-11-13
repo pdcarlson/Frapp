@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
+import { DisclosureGlyph } from "@/components/control-glyphs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   EVENTS_VIEW_STORAGE_KEY,
@@ -450,6 +451,12 @@ describe("Events after the first", () => {
     act(() => later.props.onPress());
     text = screenText(tree);
     expect(text).toContain("Event d");
+    // Open now, to a screen reader and to the eye: the chevron turns down.
+    expect(later.props.accessibilityState).toEqual({ expanded: true });
+    expect(
+      later.findAll((node) => (node.type as unknown) === DisclosureGlyph)[0]
+        ?.props.direction,
+    ).toBe("down");
   });
 
   it("says when nothing falls in the next two weeks", () => {
