@@ -109,14 +109,24 @@ describe("useMarkChannelRead", () => {
     queryClient = createTestQueryClient();
   });
 
-  it("posts to the channel's read endpoint and invalidates channel queries", async () => {
+  it("posts to the channel's read endpoint and invalidates only the unread counts and previews", async () => {
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
       response: { ok: true, status: 200 },
     });
     const mockClient = { POST: mockPost };
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    // Everything that lives under the `["channels"]` prefix on an open chat.
+    const keys = {
+      unread: ["channels", "unread"],
+      latest: ["channels", "latest"],
+      list: ["channels"],
+      categories: ["channels", "categories"],
+      detail: ["channels", "chan-1"],
+      avatars: ["channels", "chan-1", "avatars", "x"],
+      attachments: ["channels", "chan-1", "messages", "m-1", "attachments"],
+    } as const;
+    for (const key of Object.values(keys)) queryClient.setQueryData(key, []);
 
     const { result } = renderHook(() => useMarkChannelRead(), {
       wrapper: createWrapper(queryClient, mockClient),
@@ -129,11 +139,24 @@ describe("useMarkChannelRead", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/channels/{id}/read", {
       params: { path: { id: "chan-1" } },
     });
-    // Badges come from the ["channels", "unread"] key; invalidating the
-    // broader ["channels"] key is what makes a mark-read clear them via
-    // React Query's prefix matching, without a second, narrower invalidation
-    // that could drift out of sync with the unread query's own key.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+    // The keys come from the hooks' own exported constants, so they cannot
+    // drift from the queries they name. The rest of the prefix stays fresh:
+    // refetching it on every open was part of the open burst (#4709).
+    const invalidated = Object.fromEntries(
+      Object.entries(keys).map(([name, key]) => [
+        name,
+        queryClient.getQueryState(key)?.isInvalidated,
+      ]),
+    );
+    expect(invalidated).toEqual({
+      unread: true,
+      latest: true,
+      list: false,
+      categories: false,
+      detail: false,
+      avatars: false,
+      attachments: false,
+    });
   });
 
   it("surfaces an error without invalidating anything", async () => {
@@ -191,12 +214,16 @@ describe("useMarkChannelRead", () => {
 
     invalidateSpy.mockClear();
     result.current.mutate("chan-1");
-    // The second success is the one that just invalidated `["channels"]`.
+    // The second success is the one that just invalidated the unread counts.
     await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] }),
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["channels", "latest"],
+        exact: true,
+      }),
     );
-    // Nothing left to clear: one invalidation (channels), no list refetch.
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    // Nothing left to clear: the unread counts and previews only, no list
+    // refetch.
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
   });
 

@@ -734,7 +734,22 @@ export function useMarkChannelRead() {
       return result.data;
     },
     onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // A read moves the caller's read cursor and nothing else, so only the
+      // unread counts change. The latest-message previews ride along because
+      // they promise to refresh whenever a row's badge does (see
+      // `useChannelLatestMessages`). Exact keys, not the `["channels"]`
+      // prefix: that prefix also holds the channel list, its categories, each
+      // channel's detail, the imported-author avatars and every mounted
+      // attachment read, and refetching those on every open (signed URLs
+      // re-minted per attachment) was part of the open burst in #4709.
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+        exact: true,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      });
       // The read also cleared this channel's chat notifications on the server
       // (#3788). Mirror that in the inbox's cache, and refetch it only when it
       // was showing one, so a busy channel's reads don't each cost a list GET.
