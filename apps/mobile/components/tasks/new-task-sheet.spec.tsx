@@ -285,18 +285,19 @@ describe("New task draft across visits", () => {
   /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
   const dismiss = vi.fn();
   const ref = React.createRef<never>();
-  const sheetAt = (now: Date) => (
+  const sheetAt = (now: Date, keptDraft?: string) => (
     <FrappThemeProvider>
-      <NewTaskSheet ref={ref} now={now} />
+      <NewTaskSheet ref={ref} now={now} keptDraft={keptDraft} />
     </FrappThemeProvider>
   );
 
   function renderWithRef(
     now = new Date("2026-09-27T12:00:00Z"),
+    keptDraft?: string,
   ): ReactTestRenderer {
     let tree!: ReactTestRenderer;
     act(() => {
-      tree = create(sheetAt(now), {
+      tree = create(sheetAt(now, keptDraft), {
         // The create sheet is the modal with `onDismiss`; the assignee
         // picker's own modal gets a stand-in of its own, so its Done is
         // never counted as the sheet closing.
@@ -337,6 +338,40 @@ describe("New task draft across visits", () => {
 
     expect(titleValue(tree)).toBe("Sweep the porch");
     act(() => tree.unmount());
+  });
+
+  it("keeps the draft past its screen, for the Tasks screen's next visit (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("Sweep the porch");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once Cancel gave the draft up (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => pressCancel(first));
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once the task saved (#4593)", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options as unknown as { onSuccess: () => void }).onSuccess(),
+    );
+    const first = renderWithRef(undefined, "tasks-create");
+    submitTask(first);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+    act(() => second.unmount());
   });
 
   it("gives the draft up on Cancel", () => {

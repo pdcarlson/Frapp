@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import { useEffect, useMemo, useRef } from "react";
 import { readAuthToken } from "./auth-token";
 import { readClientVersion } from "./client-version";
@@ -13,7 +14,7 @@ import { getSupabaseClient } from "./supabase";
 
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
-  const { chapterId, signOut } = useAuthSession();
+  const { chapterId, userId, signOut } = useAuthSession();
   const signOutRef = useRef(signOut);
   useEffect(() => {
     signOutRef.current = signOut;
@@ -74,7 +75,20 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     // A chapter switch ends Dues' hold (`spec/ui/mobile/screens.md` s11).
     forgetDuesMemory();
+    // And every form draft kept for a screen to come back to (#4593).
+    dropAllKeptDrafts();
   }, [chapterId]);
+
+  // A form draft kept for a screen to come back to (#4593) is the signed-in
+  // member's: signing out or into another account drops them all. Their keys
+  // carry the user too, so this only frees what nobody can open now.
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const previous = previousUserId.current;
+    previousUserId.current = userId;
+    if (previous === undefined || previous === userId) return;
+    dropAllKeptDrafts();
+  }, [userId]);
 
   /* eslint-disable react-hooks/refs -- getChapterId is invoked per request by SDK middleware, not while constructing the client; capturing chapterId would stale in-flight calls */
   const client = useMemo(() => {
@@ -111,7 +125,7 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <FrappClientProvider client={client} chapterId={chapterId}>
+      <FrappClientProvider client={client} chapterId={chapterId} userId={userId}>
         {children}
       </FrappClientProvider>
     </QueryClientProvider>

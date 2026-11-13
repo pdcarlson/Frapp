@@ -81,7 +81,7 @@ const ref = React.createRef<never>();
 
 function render(
   initialFolder: string | null = null,
-  { opened = true }: { opened?: boolean } = {},
+  { opened = true, keptDraft }: { opened?: boolean; keptDraft?: string } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -93,6 +93,7 @@ function render(
           initialFolder={initialFolder}
           onUploaded={onUploaded}
           onPending={onPending}
+          keptDraft={keptDraft}
         />
       </FrappThemeProvider>,
       {
@@ -419,6 +420,59 @@ describe("UploadDocumentSheet (#3399)", () => {
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
     expect(titleInput(tree).props.value).toBe("");
+  });
+
+  // Paul, 2026-11-13 (#4593): "keep the draft". Documents' own sheet goes
+  // when the member goes back, and the draft is there next time.
+  it("keeps the draft past its screen, until Cancel gives it up", async () => {
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    act(() => {
+      titleInput(first).props.onChangeText("Minutes");
+    });
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(second)).toContain("IMG_2041.jpg");
+    expect(titleInput(second).props.value).toBe("Minutes");
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+    act(() => second.unmount());
+
+    const third = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(third)).toContain("Choose a photo");
+  });
+
+  it("keeps nothing past its screen without a name, as the + sheet's", async () => {
+    const first = render();
+    await choose(first);
+    act(() => first.unmount());
+    const second = render();
+    expect(screenText(second)).toContain("Choose a photo");
+  });
+
+  it("doesn't offer an upload running when the screen was left, but keeps it if it fails", async () => {
+    let settle: (result: DocumentUploadResult) => void = () => {};
+    uploadDocumentPhoto.mockReturnValue(
+      new Promise<DocumentUploadResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    await pressUpload(first);
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(second)).toContain("Choose a photo");
+    act(() => second.unmount());
+
+    await act(async () => {
+      settle({ status: "refused", reason: "offline", final: false });
+    });
+    const third = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(third)).toContain("IMG_2041.jpg");
   });
 
   it("drops the draft on Cancel", async () => {

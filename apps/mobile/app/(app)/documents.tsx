@@ -948,6 +948,9 @@ export default function DocumentsScreen() {
           initialFolder={folder}
           onUploaded={uploaded}
           onPending={setPendingUpload}
+          // Kept past this screen (#4593): going back and coming here again
+          // opens Upload on the draft left in it.
+          keptDraft="documents-upload"
         />
       ) : null}
     </ScreenShell>
