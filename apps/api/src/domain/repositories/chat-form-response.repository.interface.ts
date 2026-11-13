@@ -24,14 +24,15 @@ export interface IChatFormResponseRepository {
   /** The member's answers to one form, or `null` before they answer. */
   findOwn(messageId: string, userId: string): Promise<ChatFormResponse | null>;
   /**
-   * Which of these forms the member has answered: the ids among
-   * `messageIds` that have a row of theirs. Reads no answers, so Activity can
-   * tell a form that still needs them without loading what they wrote.
+   * Which of these forms the member has answered, and when they first did:
+   * the ids among `messageIds` that have a row of theirs. Reads no answers,
+   * so Activity can tell a form that still needs them, and one they answered
+   * this week, without loading what they wrote.
    */
-  findAnsweredMessageIds(
+  findAnswered(
     messageIds: string[],
     userId: string,
-  ): Promise<string[]>;
+  ): Promise<Pick<ChatFormResponse, 'message_id' | 'created_at'>[]>;
   /**
    * Write the member's answers (inserted, or replacing their last ones).
    * Throws {@link FormResponseRefusedError} when the card is missing or

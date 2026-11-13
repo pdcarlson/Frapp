@@ -422,7 +422,9 @@ export interface IChatMessageActionRepository {
     messageIds: string[],
     userId: string,
     actionType: string,
-  ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
+  ): Promise<
+    Pick<ChatMessageAction, 'message_id' | 'payload' | 'created_at'>[]
+  >;
   /**
    * Every member's `actionType` rows on `messageIds`, for Activity's
    * sign-up sheets (#3926): whether the caller holds a slot, and whether a
@@ -433,7 +435,12 @@ export interface IChatMessageActionRepository {
   findAllActionsOnMessages(
     messageIds: string[],
     actionType: string,
-  ): Promise<Pick<ChatMessageAction, 'message_id' | 'user_id' | 'payload'>[]>;
+  ): Promise<
+    Pick<
+      ChatMessageAction,
+      'message_id' | 'user_id' | 'payload' | 'created_at'
+    >[]
+  >;
   /**
    * Set this member's slots on a sign-up card (#3926) in one atomic step:
    * the `claim_signup_slots` RPC locks the card's message row, refuses a slot

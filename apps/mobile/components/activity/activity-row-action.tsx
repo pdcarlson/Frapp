@@ -71,7 +71,7 @@ export function useActivityRowActions({
   /** The plan's own verdict (`activityRowActionsAllowed`). */
   allowed: boolean;
   chapterPending: boolean;
-  /** Records the read and re-reads, so the row leaves Needs you. */
+  /** Records the read and re-reads, so the row leaves its list. */
   onActed: (row: ActivityRow) => void;
 }): {
   /** `null` while the writes are refused: every row opens its sheet. */
@@ -166,11 +166,14 @@ export function ActivityRowItem({
   row,
   isFirst,
   actions,
+  onCard = false,
   onPress,
 }: {
   row: ActivityRow;
   isFirst: boolean;
   actions: ActivityRowActions | null;
+  /** The row sits in a card (the To review card): `ActivityListRow`'s. */
+  onCard?: boolean;
   onPress: () => void;
 }) {
   const action = actions ? activityRowAction(row) : null;
@@ -181,6 +184,7 @@ export function ActivityRowItem({
       row={row}
       isFirst={isFirst}
       action={control}
+      onCard={onCard}
       onPress={onPress}
     />
   );

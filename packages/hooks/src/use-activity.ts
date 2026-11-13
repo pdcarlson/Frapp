@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { localWeekStart } from "./activity-standing";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -25,7 +26,11 @@ export function useActivity(options: { enabled?: boolean } = {}) {
     // built without one.
     queryKey: activityKeys.chapter(chapterId!),
     queryFn: async () => {
-      const { data, error } = await client.GET("/v1/activity");
+      // The member's week on this device, for the read's `week`: the same
+      // Sunday the standing read counts study from.
+      const { data, error } = await client.GET("/v1/activity", {
+        params: { query: { week_start: localWeekStart().toISOString() } },
+      });
       if (error) throw error;
       return data;
     },
