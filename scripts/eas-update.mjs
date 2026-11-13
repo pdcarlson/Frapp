@@ -51,8 +51,13 @@
 // `npm run eas -- update` (`.github/workflows/_mobile-update.yml`), after its plan
 // (`scripts/ci/plan-mobile-release.mjs`) found the update can reach that platform's store build.
 //
-// NOT HERE (#2511): a staging app variant, `update:republish` promotion, staged rollout gates,
-// OTA code signing (off for 0.9.x, #2526).
+// The staging variant's channel (`staging`, #2511) goes through the same argument and env handling
+// as `preview`: its profile's eas.json `env` carries `FRAPP_APP_VARIANT`, so the bundle is exported
+// under the variant's scheme and name. Nothing here yet stops a staging update from reaching a
+// staging binary with older native code; the pipeline that publishes them owns that (#2511).
+//
+// NOT HERE (#2511): `update:republish` promotion, staged rollout gates, OTA code signing (off for
+// 0.9.x, #2526).
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
