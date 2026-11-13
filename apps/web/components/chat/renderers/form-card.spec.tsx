@@ -74,6 +74,9 @@ function wrap(node: ReactNode) {
   };
 }
 
+const nameFor = (id: string) =>
+  ({ u1: "Ann Lee", u2: "Bo Park", u3: "Cy Diaz" })[id] ?? null;
+
 const SAVED = {
   data: {
     response: { answers: { room: "single" }, updated_at: "2026-11-13" },
@@ -89,7 +92,9 @@ beforeEach(() => {
 describe("FormCard (#3926 step 3)", () => {
   it("shows the title and question count, and Fill out before the viewer answers", async () => {
     api.GET.mockResolvedValue({ data: { response: null } });
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     expect(screen.getByText("Formal housing")).toBeInTheDocument();
     expect(screen.getByText("2 questions")).toBeInTheDocument();
     expect(
@@ -103,7 +108,9 @@ describe("FormCard (#3926 step 3)", () => {
         response: { answers: { room: "single" }, updated_at: "2026-11-13" },
       },
     });
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     expect(
       await screen.findByRole("button", { name: "Edit your answers" }),
     ).toBeInTheDocument();
@@ -113,6 +120,7 @@ describe("FormCard (#3926 step 3)", () => {
     api.GET.mockResolvedValue({ data: { response: null } });
     wrap(
       <FormCard
+        nameFor={nameFor}
         message={form({ closed_at: "2026-11-12T00:00:00Z", closed_by: "u9" })}
         viewerId="u1"
         isConfirmed
@@ -128,7 +136,9 @@ describe("FormCard (#3926 step 3)", () => {
     api.PUT.mockResolvedValue({
       data: { answers: { room: "double" }, updated_at: "2026-11-13" },
     });
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(await screen.findByRole("button", { name: "Fill out" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -163,7 +173,9 @@ describe("FormCard (#3926 step 3)", () => {
     api.PUT.mockResolvedValue({
       error: { message: "This form is closed" },
     });
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(await screen.findByRole("button", { name: "Fill out" }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("radio", { name: "Single" }));
@@ -180,6 +192,7 @@ describe("FormCard (#3926 step 3)", () => {
     const onClose = vi.fn();
     const { unmount } = wrap(
       <FormCard
+        nameFor={nameFor}
         message={{ ...form(), _status: "confirmed" } as ChatMessage}
         viewerId="u1"
         isConfirmed
@@ -193,6 +206,7 @@ describe("FormCard (#3926 step 3)", () => {
 
     wrap(
       <FormCard
+        nameFor={nameFor}
         message={{ ...form(), _status: "confirmed" } as ChatMessage}
         viewerId="u9"
         isConfirmed
@@ -207,6 +221,7 @@ describe("FormCard (#3926 step 3)", () => {
     api.GET.mockResolvedValue(SAVED);
     wrap(
       <FormCard
+        nameFor={nameFor}
         message={form({ closed_at: "2026-11-12T00:00:00Z", closed_by: "u9" })}
         viewerId="u1"
         isConfirmed
@@ -234,7 +249,9 @@ describe("FormCard (#3926 step 3)", () => {
   it("opens Edit your answers with the saved answers, to update", async () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue(SAVED);
-    wrap(<FormCard message={form()} viewerId="u1" isConfirmed />);
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Edit your answers" }),
     );
@@ -251,7 +268,7 @@ describe("FormCard (#3926 step 3)", () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue({ data: { response: null } });
     const { rerender } = wrap(
-      <FormCard message={form()} viewerId="u1" isConfirmed />,
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
     );
     await user.click(await screen.findByRole("button", { name: "Fill out" }));
     const dialog = await screen.findByRole("dialog");
@@ -259,6 +276,7 @@ describe("FormCard (#3926 step 3)", () => {
 
     rerender(
       <FormCard
+        nameFor={nameFor}
         message={form({ closed_at: "2026-11-13T00:00:00Z", closed_by: "u9" })}
         viewerId="u1"
         isConfirmed
@@ -282,12 +300,13 @@ describe("FormCard (#3926 step 3)", () => {
     const user = userEvent.setup();
     api.GET.mockResolvedValue({ data: { response: null } });
     const { rerender } = wrap(
-      <FormCard message={form()} viewerId="u1" isConfirmed />,
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
     );
     await user.click(await screen.findByRole("button", { name: "Fill out" }));
     await screen.findByRole("dialog");
     rerender(
       <FormCard
+        nameFor={nameFor}
         message={{ ...form(), is_deleted: true } as ChatMessage}
         viewerId="u1"
         isConfirmed
@@ -310,8 +329,18 @@ describe("FormCard (#3926 step 3)", () => {
     } as ChatMessage;
     wrap(
       <>
-        <FormCard message={form()} viewerId="u1" isConfirmed />
-        <FormCard message={second} viewerId="u1" isConfirmed />
+        <FormCard
+          nameFor={nameFor}
+          message={form()}
+          viewerId="u1"
+          isConfirmed
+        />
+        <FormCard
+          nameFor={nameFor}
+          message={second}
+          viewerId="u1"
+          isConfirmed
+        />
       </>,
     );
     // Both cards read Fill out once their own answers have loaded.
@@ -344,6 +373,7 @@ describe("FormCard (#3926 step 3)", () => {
     api.permissions = ["channels:manage"];
     wrap(
       <FormCard
+        nameFor={nameFor}
         message={{ ...form(), _status: "confirmed" } as ChatMessage}
         viewerId="u1"
         isConfirmed
@@ -352,6 +382,102 @@ describe("FormCard (#3926 step 3)", () => {
     );
     expect(
       screen.getByRole("button", { name: "Close form" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("FormCard responses (#3926 step 4)", () => {
+  const RESPONSES = {
+    data: {
+      responses: [
+        {
+          user_id: "u1",
+          answers: { room: "single", notes: "Near the stairs" },
+          created_at: "2026-11-13T10:00:00Z",
+          updated_at: "2026-11-13T10:00:00Z",
+        },
+        {
+          user_id: "gone",
+          answers: { room: "double" },
+          created_at: "2026-11-13T11:00:00Z",
+          updated_at: "2026-11-13T11:00:00Z",
+        },
+      ],
+      not_responded: ["u2", "u3"],
+    },
+  };
+  const routeGets = () =>
+    api.GET.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith("form-responses")
+          ? RESPONSES
+          : { data: { response: null } },
+      ),
+    );
+
+  it("offers Responses only to the member who posted the form", async () => {
+    routeGets();
+    const { rerender } = wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u1" isConfirmed />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Responses" }),
+    ).not.toBeInTheDocument();
+    rerender(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    expect(screen.getByRole("button", { name: "Responses" })).toBeEnabled();
+  });
+
+  it("opens a summary, each person's answers and who hasn't answered", async () => {
+    routeGets();
+    const user = userEvent.setup();
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("2 responses")).toBeInTheDocument();
+    expect(api.GET).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}/form-responses",
+      { params: { path: { messageId: "m1" } } },
+    );
+    // Summary: each option's count, and the text answer.
+    expect(within(dialog).getAllByText("1 · 50%")).toHaveLength(2);
+    expect(within(dialog).getByText("Near the stairs")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Not answered yet (2)"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Bo Park, Cy Diaz")).toBeInTheDocument();
+    // Individual: each responder by name; one off the roster has left.
+    await user.click(within(dialog).getByRole("tab", { name: "Individual" }));
+    expect(within(dialog).getByText("Ann Lee")).toBeInTheDocument();
+    expect(within(dialog).getByText("Former member")).toBeInTheDocument();
+    expect(within(dialog).getByText("No answer")).toBeInTheDocument();
+  });
+
+  it("says why when the responses can't be read", async () => {
+    api.GET.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith("form-responses")
+          ? {
+              error: {
+                message:
+                  "Only the member who posted this form can see its responses",
+              },
+            }
+          : { data: { response: null } },
+      ),
+    );
+    const user = userEvent.setup();
+    wrap(
+      <FormCard nameFor={nameFor} message={form()} viewerId="u9" isConfirmed />,
+    );
+    await user.click(screen.getByRole("button", { name: "Responses" }));
+    expect(
+      await screen.findByText(
+        "Only the member who posted this form can see its responses",
+      ),
     ).toBeInTheDocument();
   });
 });

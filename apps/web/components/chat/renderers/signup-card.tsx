@@ -16,6 +16,7 @@ import {
   CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
   canCloseSignup,
+  canExportSignup,
   castSignupClaim,
   headcountAnswerPayload,
   headcountNotePayload,
@@ -31,8 +32,11 @@ import {
   signupSlotPercent,
   signupSlotSpoken,
   signupSlotStatus,
+  signupExportRows,
   tallySignups,
 } from "@repo/chat-core/signups";
+import { cardExportFilenamePrefix } from "@repo/chat-core/form-responses";
+import { ExportMenu } from "@/components/shared/export-menu";
 import {
   actorLabel,
   useMyPermissions,
@@ -117,6 +121,7 @@ export function SignupCard({
   const showClose =
     !!onCloseCard &&
     canCloseSignup(message, payload, viewerId, now, canManageChannels);
+  const showExport = canExportSignup(message, viewerId, canManageChannels);
   const deadline = signupDeadlineLine(payload, now);
   const myNote = tally.notes[viewerId] ?? "";
   const claim = (slotId: string) => {
@@ -259,16 +264,36 @@ export function SignupCard({
           {signupCardFooter(payload, tally)}
           {deadline ? ` · ${deadline}` : ""}
         </p>
-        {showClose ? (
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="h-auto px-0"
-            onClick={() => onCloseCard?.(message.id, "signup")}
-          >
-            {CLOSE_SIGNUP_LABEL}
-          </Button>
+        {showClose || showExport ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {showExport ? (
+              // The organizer's list to work from, as SignUpGenius reports
+              // are (#3926 step 4): every member per slot, with notes.
+              <ExportMenu
+                label="Export"
+                size="sm"
+                filenamePrefix={cardExportFilenamePrefix(
+                  "signup",
+                  payload.title,
+                )}
+                disabled={tally.people === 0}
+                getRows={() =>
+                  signupExportRows(message, payload, (id) => nameFor(id))
+                }
+              />
+            ) : null}
+            {showClose ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-0"
+                onClick={() => onCloseCard?.(message.id, "signup")}
+              >
+                {CLOSE_SIGNUP_LABEL}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </Card>

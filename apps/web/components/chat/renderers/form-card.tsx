@@ -25,13 +25,25 @@ import {
   isFormClosed,
   readFormPayload,
 } from "@repo/chat-core/forms";
-import { useFrappClient, useMyPermissions, useNow } from "@repo/hooks";
+import {
+  VIEW_RESPONSES_LABEL,
+  isFormCreator,
+} from "@repo/chat-core/form-responses";
+import {
+  useFrappClient,
+  useMyPermissions,
+  useNow,
+  type NameResolver,
+} from "@repo/hooks";
+import { FormResponsesDialog } from "../form-responses-dialog";
 import { can } from "@repo/validation";
 
 interface FormCardProps {
   message: ChatMessage;
   /** Known, never `null`: see `MessageRendererProps.viewerId`. */
   viewerId: string;
+  /** The row's roster lookup, for the names in the creator's responses. */
+  nameFor: NameResolver;
   /** A pending optimistic row has no form to answer yet. */
   isConfirmed: boolean;
   /**
@@ -48,10 +60,15 @@ interface FormCardProps {
  * sent theirs, marked done. Answers are never on the card; whether the viewer
  * has answered is their own read of the form-response route. Reading and the
  * words are `@repo/chat-core/forms`, shared with the phone's card.
+ *
+ * The member who posted it also gets **Responses** (#3926 step 4), which
+ * opens everyone's answers (`FormResponsesDialog`); no one else does, as the
+ * API decides.
  */
 export function FormCard({
   message,
   viewerId,
+  nameFor,
   isConfirmed,
   onCloseCard,
 }: FormCardProps) {
@@ -66,6 +83,7 @@ export function FormCard({
   useSyncOpenForm(message);
   // Only outside the chat shell, which hosts the form for every card.
   const [openHere, setOpenHere] = useState(false);
+  const [responsesOpen, setResponsesOpen] = useState(false);
   const own = useQuery({
     queryKey: formResponseKey(message.id),
     queryFn: () => fetchOwnFormResponse(apiClient, message.id),
@@ -108,18 +126,31 @@ export function FormCard({
         {deadline ? ` · ${deadline}` : ""}
       </p>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={action.done ? "secondary" : "default"}
-          disabled={!isConfirmed}
-          onClick={open}
-        >
-          {action.done ? (
-            <Check className="h-4 w-4" aria-hidden="true" />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={action.done ? "secondary" : "default"}
+            disabled={!isConfirmed}
+            onClick={open}
+          >
+            {action.done ? (
+              <Check className="h-4 w-4" aria-hidden="true" />
+            ) : null}
+            {action.label}
+          </Button>
+          {isFormCreator(message, viewerId) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!isConfirmed}
+              onClick={() => setResponsesOpen(true)}
+            >
+              {VIEW_RESPONSES_LABEL}
+            </Button>
           ) : null}
-          {action.label}
-        </Button>
+        </div>
         {showClose ? (
           <Button
             type="button"
@@ -132,6 +163,11 @@ export function FormCard({
           </Button>
         ) : null}
       </div>
+      <FormResponsesDialog
+        message={responsesOpen ? message : null}
+        nameFor={nameFor}
+        onOpenChange={setResponsesOpen}
+      />
       {openInHost ? null : (
         <FormFillDialog
           message={openHere ? message : null}
