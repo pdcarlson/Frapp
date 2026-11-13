@@ -21,8 +21,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `apps/web/components/chat/channel-list.tsx`). They used to be two chips
  * above the list, the first thing on the screen for something rarely used.
  *
- * The trigger sits at the end of the list's first heading and shows a dot in
- * the chapter accent while a filter is on. The screen also prints a line
+ * The trigger sits on the list's first heading (before that heading's New
+ * channel + for someone who has one, and at its end otherwise, #4679) and
+ * shows a dot in the chapter accent while a filter is on. The screen also prints a line
  * under the heading saying so, so a shortened list never reads as a chapter
  * with fewer channels. Both filters are the member's synced preferences
  * (#2877), so the menu and web's agree.
@@ -35,6 +36,29 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 
 const MENU_WIDTH = 264;
+
+/** The filter glyph's side, and how far it sits inside its 44pt target. */
+const TRIGGER_GLYPH_SIZE = 20;
+const triggerGlyphInset = (tokens: SignetTokens) =>
+  (tokens.touch.minimum - TRIGGER_GLYPH_SIZE) / 2;
+
+/**
+ * Where the menu opens for a trigger measured in the window: just under it,
+ * its right edge under the glyph's (the glyph sits inset in its 44pt
+ * target), and never off the screen's left.
+ */
+export function channelFilterMenuAnchor(
+  tokens: SignetTokens,
+  trigger: { x: number; y: number; width: number; height: number },
+): { top: number; left: number } {
+  return {
+    top: trigger.y + trigger.height + tokens.spacing.xs,
+    left: Math.max(
+      tokens.spacing.sm,
+      trigger.x + trigger.width - triggerGlyphInset(tokens) - MENU_WIDTH,
+    ),
+  };
+}
 
 export type ChannelFilterMenuState = {
   visible: boolean;
@@ -63,7 +87,13 @@ export function useChannelFilterMenu(): ChannelFilterMenuState {
 }
 
 /** Lucide's `ListFilter`, the web trigger's glyph, on the 24pt grid. */
-function FilterGlyph({ color, size = 20 }: { color: string; size?: number }) {
+function FilterGlyph({
+  color,
+  size = TRIGGER_GLYPH_SIZE,
+}: {
+  color: string;
+  size?: number;
+}) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
       <Path
@@ -79,15 +109,35 @@ function FilterGlyph({ color, size = 20 }: { color: string; size?: number }) {
 export function ChannelFilterButton({
   menu,
   active,
+  atEdge = true,
 }: {
   menu: ChannelFilterMenuState;
   /** A filter is on: the dot shows and the label says so. */
   active: boolean;
+  /**
+   * The trigger is the last thing on its heading, so its glyph's right edge
+   * sits on the gutter. False when a New channel + follows it (#4679).
+   */
+  atEdge?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
   const ref = useRef<View>(null);
+
+  const openUnderTrigger = () => {
+    const node = ref.current;
+    // No frame to measure (a renderer without layout): open at the gutter.
+    if (!node?.measureInWindow) {
+      return menu.open({ top: 0, left: tokens.spacing.sm });
+    }
+    node.measureInWindow((x, y, width, height) => {
+      // The menu's right edge under the glyph's, not the 44pt target's,
+      // which reaches past the gutter when the trigger is at the edge.
+      // Kept on screen.
+      menu.open(channelFilterMenuAnchor(tokens, { x, y, width, height }));
+    });
+  };
 
   return (
     <Pressable
@@ -98,22 +148,18 @@ export function ChannelFilterButton({
       }
       accessibilityState={{ expanded: menu.visible }}
       hitSlop={8}
-      onPress={() => {
-        if (menu.visible) return menu.close();
-        const node = ref.current;
-        // No frame to measure (a renderer without layout): open at the gutter.
-        if (!node?.measureInWindow) {
-          return menu.open({ top: 0, left: tokens.spacing.sm });
-        }
-        node.measureInWindow((x, y, width, height) => {
-          // The menu's right edge under the trigger's, kept on screen.
-          menu.open({
-            top: y + height + tokens.spacing.xs,
-            left: Math.max(tokens.spacing.sm, x + width - MENU_WIDTH),
-          });
-        });
+      onPress={() => (menu.visible ? menu.close() : openUnderTrigger())}
+      // A switch in the open menu can move the trigger: the list's first
+      // heading changes when a filter empties a section, and a heading with
+      // no + holds the trigger at its edge. Keep the menu under it.
+      onLayout={() => {
+        if (menu.visible) openUnderTrigger();
       }}
-      style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [
+        styles.trigger,
+        atEdge ? styles.triggerAtEdge : null,
+        pressed ? styles.pressed : null,
+      ]}
     >
       <FilterGlyph color={active ? brand.accent : tokens.color.text.muted} />
       {active ? (
@@ -207,9 +253,11 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
-      // The glyph's right edge sits on the gutter, like the rows' trailing
-      // badges below it.
-      marginRight: -(tokens.touch.minimum - 20) / 2,
+    },
+    // The glyph's right edge sits on the gutter, like the rows' trailing
+    // badges below it.
+    triggerAtEdge: {
+      marginRight: -triggerGlyphInset(tokens),
     },
     pressed: { opacity: 0.6 },
     dot: {
