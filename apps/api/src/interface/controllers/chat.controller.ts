@@ -83,6 +83,7 @@ import {
   GetChannelMessagesQueryDto,
   ChatMessageDto,
   ForwardMessageDto,
+  ForwardResultDto,
 } from '../dtos/chat.dto';
 import type {
   ChannelType,
@@ -782,14 +783,25 @@ export class ChatController {
     summary:
       'Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)',
   })
-  @ApiCreatedResponse({ type: ChatMessageDto })
-  // The caller's own new row, so its `content` is their comment, unmasked.
+  @ApiCreatedResponse({ type: ForwardResultDto })
+  // The caller's own new row, so its `content` is their comment, unmasked. A
+  // retry on the same `client_message_id` answers `deduplicated: true` and
+  // records nothing: the forward was counted when it was first made.
   @FeatureEvent(
     'message-forwarded',
-    ({ result }: FeatureEventInput<ForwardMessageDto, ChatMessage>) => ({
-      has_comment:
-        typeof result.content === 'string' && result.content.trim() !== '',
-    }),
+    ({
+      result,
+    }: FeatureEventInput<
+      ForwardMessageDto,
+      ChatMessage & { deduplicated: boolean }
+    >) =>
+      result.deduplicated
+        ? null
+        : {
+            has_comment:
+              typeof result.content === 'string' &&
+              result.content.trim() !== '',
+          },
   )
   async forwardMessage(
     @Param('messageId', ParseUUIDPipe) messageId: string,

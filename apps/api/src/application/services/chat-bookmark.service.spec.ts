@@ -228,7 +228,7 @@ describe('ChatBookmarkService', () => {
       // Stronger than redacting them: pin state, edits, payload, mentions and
       // metadata are not in the endpoint's projection at all, so there is no
       // value to get wrong. This asserts the redacted row is exactly the
-      // eleven-field shape rather than a wider object with blanks in it — a
+      // projection's shape rather than a wider object with blanks in it — a
       // redacted row that differed structurally from an available one would be
       // the same "carries fields its declared shape omits" problem inverted.
       mockRepo.findByUserAndChapter.mockResolvedValue([

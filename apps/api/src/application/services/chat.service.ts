@@ -1397,7 +1397,10 @@ export class ChatService {
    *   Otherwise the source itself is copied and its own copy dropped.
    * - Files are not copied: the copy counts them (`attachment_count`).
    *
-   * Answers the new message masked for the caller, as a read would serve it.
+   * Answers the new message masked for the caller, as a read would serve it,
+   * with `deduplicated` set when a retry on the same `client_message_id`
+   * answered the forward already made (so its analytics event isn't counted
+   * twice, #4875).
    */
   async forwardMessage(input: {
     message_id: string;
@@ -1407,14 +1410,14 @@ export class ChatService {
     content?: string | null;
     client_message_id?: string | null;
     mention_picks?: readonly MentionPick[] | null;
-  }): Promise<MaskedChatMessage> {
+  }): Promise<MaskedChatMessage & { deduplicated: boolean }> {
     const source = await this.assertMessageAccess(
       input.message_id,
       input.chapter_id,
       input.sender_id,
     );
     const copy = await this.forwardedCopyOf(source);
-    const { message } = await this.sendMessage({
+    const { message, deduplicated } = await this.sendMessage({
       chapter_id: input.chapter_id,
       channel_id: input.channel_id,
       sender_id: input.sender_id,
@@ -1424,7 +1427,12 @@ export class ChatService {
       mention_picks: input.mention_picks ?? null,
       forwarded_from: copy,
     });
-    return this.maskOne(message, input.chapter_id, input.sender_id);
+    const masked = await this.maskOne(
+      message,
+      input.chapter_id,
+      input.sender_id,
+    );
+    return { ...masked, deduplicated };
   }
 
   /** The copy a forward of `source` carries, or a 400 when it can't be forwarded. */

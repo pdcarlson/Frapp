@@ -129,7 +129,7 @@ function flattenMarkdown(text: string): string {
  * the kind, for a card whose body lives in `payload`.
  *
  * The argument is a structural preview source, not `ChatMessage`, because
- * the Bookmarks panel serves a nine-field projection with no `kind` or
+ * the Bookmarks panel serves a narrow projection with no `kind` or
  * `attachment_count`.
  */
 export type MessagePreviewSource = {

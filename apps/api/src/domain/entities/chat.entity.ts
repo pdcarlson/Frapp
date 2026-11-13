@@ -698,8 +698,8 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — an eleven-field projection,
- * not a whole {@link ChatMessage}.
+ * The message as the bookmarks endpoint serves it — a narrow projection, not a
+ * whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
  * size optimization: `ChatService.deleteMessage` blanked `content` and

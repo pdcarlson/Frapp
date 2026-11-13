@@ -4484,6 +4484,24 @@ describe('ChatService', () => {
       );
     });
 
+    it('says a retry on the same client_message_id answered the forward already made (#4875)', async () => {
+      const made = { ...baseMessage, id: 'fwd-1', client_message_id: 'cm-1' };
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError(DEST, 'user-1', 'cm-1'),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue(made);
+
+      const result = await forward({ client_message_id: 'cm-1' });
+
+      expect(result).toMatchObject({ id: 'fwd-1', deduplicated: true });
+    });
+
+    it('says a first forward is not a retry', async () => {
+      const result = await forward({ client_message_id: 'cm-1' });
+
+      expect(result.deduplicated).toBe(false);
+    });
+
     it('withholds the copy in its answer when the caller blocked the author', async () => {
       mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-author']);
 

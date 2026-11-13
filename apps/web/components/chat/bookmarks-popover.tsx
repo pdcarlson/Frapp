@@ -11,7 +11,7 @@ import { forwardedFromOf } from "@repo/chat-core/types";
 import { replyPreviewText } from "./reply-quote";
 
 /**
- * The message as `GET /v1/bookmarks` serves it — a nine-field projection, not
+ * The message as `GET /v1/bookmarks` serves it — a narrow projection, not
  * a `ChatMessage`.
  *
  * Typed narrowly on purpose. This was `ChatMessage` while the endpoint really

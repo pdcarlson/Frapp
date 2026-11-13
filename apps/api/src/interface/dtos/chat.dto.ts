@@ -1517,6 +1517,19 @@ export class BookmarkedMessageDto {
 }
 
 /**
+ * What `POST /v1/channels/messages/{messageId}/forward` answers (#4864): the
+ * new message as a read would serve it, and whether a retry answered it.
+ */
+export class ForwardResultDto extends ChatMessageDto {
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one.',
+  })
+  deduplicated: boolean;
+}
+
+/**
  * One of the caller's own bookmarks (#462).
  *
  * There is deliberately no `user_id` on the wire and no count of who else
