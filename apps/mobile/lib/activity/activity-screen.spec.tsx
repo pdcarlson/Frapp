@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { Alert } from "react-native";
+import { ActionSheetIOS, Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -174,6 +174,11 @@ const links = vi.hoisted(() => ({
   markRead: vi.fn(),
 }));
 
+/** Last week's recap (`GET /v1/activity/recap`), unread unless a test sets it. */
+const recap = vi.hoisted(() => ({ value: { data: undefined as unknown } }));
+/** The active chapter: the recap's dismissals are kept per chapter. */
+const activeChapter = vi.hoisted(() => ({ id: "chapter-1" }));
+
 /** The standing read (`GET /v1/activity/standing`) behind the gauges. */
 const standing = vi.hoisted(() => ({
   value: {
@@ -198,6 +203,10 @@ vi.mock("@/lib/ai/availability", () => ({
 }));
 vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
 
+const snoozeWrites = vi.hoisted(() => ({
+  snooze: vi.fn(() => Promise.resolve()),
+  unsnooze: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberNudge: (options: { enabled?: boolean }) => {
@@ -210,10 +219,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     recheck: nudge.recheck,
   }),
   useSetMemberNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
+  useActivitySnoozeWake: () => undefined,
+  useActivitySnooze: () => ({
+    snooze: snoozeWrites.snooze,
+    unsnooze: snoozeWrites.unsnooze,
+    isPending: false,
+  }),
   useActivity: () => activity.value,
   useActivityStanding: () => standing.value,
+  useActivityRecap: () => recap.value,
   useViewerUserId: () => "me",
-  useActiveChapterId: () => "chapter-1",
+  useActiveChapterId: () => activeChapter.id,
   useActivityUnread: () => ({ markRead: links.markRead }),
   // Read for the chapter's accent, its modules and its plan.
   useCurrentChapter: () => ({
@@ -263,6 +279,7 @@ vi.mock("@/components/activity/activity-sheet", () => ({
 }));
 
 import ActivityScreen from "@/app/(app)/(tabs)/activity";
+import { recapDismissal } from "@/components/activity/recap-card";
 import {
   ActivityAsk,
   ActivityAskButton,
@@ -1382,6 +1399,94 @@ describe("Activity screen (#3897)", () => {
     ).toBe("Book the venue (moved)");
   });
 
+  describe("Last week (#4983)", () => {
+    const recapRead = {
+      start: new Date(2026, 10, 8).toISOString(),
+      end: new Date(2026, 10, 15).toISOString(),
+      events_attended: 2,
+      tasks_done: 3,
+      points: null,
+      service_minutes: 0,
+      study_minutes: 90,
+      unavailable: [],
+    };
+    beforeEach(() => {
+      // A Monday morning: the card's season.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 16, 9));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      recap.value = { data: undefined };
+      activeChapter.id = "chapter-1";
+      recapDismissal.resetForTests();
+    });
+
+    it("sums up what the member did, and stays gone once dismissed", () => {
+      recap.value = { data: recapRead };
+      const tree = render();
+      const card = tree.root.findByProps({ testID: "activity-recap" });
+      expect(drawnText(card)).toContain("Last week");
+      expect(drawnText(card)).toContain("Nov 8 – Nov 14");
+      const figure = (id: string) =>
+        card.findByProps({ testID: `activity-recap-${id}`, accessible: true })
+          .props.accessibilityLabel;
+      expect(figure("events")).toBe("2 events attended");
+      expect(figure("tasks")).toBe("3 tasks done");
+      expect(figure("study")).toBe("1h 30m studied");
+      // Points are off and service is zero: neither is drawn.
+      expect(
+        card.findAll(
+          (node) =>
+            node.props.testID === "activity-recap-points" ||
+            node.props.testID === "activity-recap-service",
+        ),
+      ).toHaveLength(0);
+
+      act(() => {
+        pressable(tree, "activity-recap-dismiss").props.onPress();
+      });
+      const drawn = (tree: ReactTestRenderer) =>
+        tree.root.findAll((node) => node.props.testID === "activity-recap")
+          .length;
+      expect(drawn(tree)).toBe(0);
+
+      // Another chapter's recap that week still shows.
+      activeChapter.id = "chapter-2";
+      expect(drawn(render())).toBeGreaterThan(0);
+
+      // And so does this chapter's next week.
+      activeChapter.id = "chapter-1";
+      vi.setSystemTime(new Date(2026, 10, 23, 9));
+      recap.value = {
+        data: {
+          ...recapRead,
+          start: new Date(2026, 10, 15).toISOString(),
+          end: new Date(2026, 10, 22).toISOString(),
+        },
+      };
+      expect(drawn(render())).toBeGreaterThan(0);
+    });
+
+    it("draws nothing after Tuesday, whatever the read still holds", () => {
+      vi.setSystemTime(new Date(2026, 10, 18, 9));
+      recap.value = { data: recapRead };
+      expect(screenText(render())).not.toContain("Last week");
+    });
+
+    it("draws nothing for a week with nothing to show", () => {
+      recap.value = {
+        data: {
+          ...recapRead,
+          events_attended: 0,
+          tasks_done: 0,
+          study_minutes: null,
+        },
+      };
+      expect(screenText(render())).not.toContain("Last week");
+    });
+  });
+
   describe("This semester (the gauges)", () => {
     const standingRead = {
       points: { total: 42, rank: 5, ranked: 58, goal: null },
@@ -1599,10 +1704,10 @@ describe("Activity screen (#3897)", () => {
         button(tree, "Food bank").props.onPress();
       });
       expect(button(tree, "Food bank").props.disabled).toBe(true);
-      // Nor is it offered to a screen reader any more.
-      expect(rowPress(tree, "Food bank").props.accessibilityActions).toBe(
-        undefined,
-      );
+      // Nor is it offered to a screen reader any more; Snooze still is.
+      expect(rowPress(tree, "Food bank").props.accessibilityActions).toEqual([
+        { name: "rowMenu", label: "Snooze" },
+      ]);
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
@@ -1927,11 +2032,35 @@ describe("Activity screen (#3897)", () => {
       alert.mockRestore();
     });
 
+    it("offers Snooze on a row that waits on the member, and snoozes from the sheet", async () => {
+      // Whichever platform the test runs as: iOS's sheet or Android's dialog.
+      const sheet = vi
+        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+        .mockImplementation((_options, pick) => pick(0));
+      const dialog = vi
+        .spyOn(Alert, "alert")
+        .mockImplementation((_title, _body, buttons) => {
+          buttons?.[0]?.onPress?.();
+        });
+      const tree = render();
+      const press = rowPress(tree, "Food bank");
+      await act(async () => {
+        press.props.onLongPress();
+      });
+      expect(sheet.mock.calls.length + dialog.mock.calls.length).toBe(1);
+      dialog.mockRestore();
+      expect(snoozeWrites.snooze).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "hours_entry" }),
+        expect.any(Date),
+      );
+      sheet.mockRestore();
+    });
     it("is offered to a screen reader as the row's named action", async () => {
       const tree = render();
       const press = rowPress(tree, "Food bank");
       expect(press.props.accessibilityActions).toEqual([
         { name: "rowAction", label: "Approve" },
+        { name: "rowMenu", label: "Snooze" },
       ]);
       // The button itself is no second focus stop inside the row's.
       expect(button(tree, "Food bank").props.accessible).toBe(false);

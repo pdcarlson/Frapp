@@ -4,8 +4,9 @@ The Activity page gathers, for one member, what is waiting on them and what they
 don't have to look through channels and module pages to find it (#3897). It is an inbox beside
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
-This file owns the reads behind the page, `GET /v1/activity` and its
-[standing](#standing), `GET /v1/activity/standing`. The page itself (where it sits, how
+This file owns the reads behind the page, `GET /v1/activity`, its
+[standing](#standing), `GET /v1/activity/standing`, and its [recap](#recap),
+`GET /v1/activity/recap`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
 the phone's screen, the Activity tab (#4610), is in
@@ -100,7 +101,7 @@ member's own answer, not the event's default:
 [Links](#links).
 
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
-now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
+now and hasn't, less what the member snoozed ([Snooze](#snooze)). It is counted before the list cap, so a badge built from it does not stop at 25.
 It is what the member can act on now, and so is not the week ring's "left", which also counts
 events still ahead ([Week](#week), settled 2026-11-13).
 
@@ -216,6 +217,20 @@ judged for an average member, a committee chair and the president
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
 - **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a ring toward it, closed once the goal is met; a part without one draws no ring. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
 
+## Recap
+
+`GET /v1/activity/recap` is the member's last finished week, the "Last week" card under the week card on both clients ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week card counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
+
+- **The week** is the caller's last full week, Sunday to Sunday in their own time zone, ending at `week_start` (the start of their current week, as the standing reads it, under the same eight-days-back-to-a-day-ahead bound, refused with 400 outside it). The client also sends `last_week_start`, its own last Sunday at midnight, because a week that crosses a clock change is an hour longer or shorter than seven days; the server takes it when it is within three hours of seven days back, and counts seven days back otherwise. `start` and `end` say which week was read.
+- **Events attended:** events that started in the week, among those the caller can see, where they were marked present or late.
+- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week card counts them. One sent back since is open again and not counted.
+- **Points:** the week's ledger rows for the caller, net: an award adds, a deduction takes away.
+- **Service:** minutes on the caller's entries dated on the week's seven days, approved or waiting, never rejected. Entries are dated by day, so the client sends `first_day`, the date of its last Sunday; the server takes it when it is within a day of the day it works out from `last_week_start` (the UTC day nearest that local midnight, right from UTC−12 to UTC+12), and uses its own otherwise.
+- **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts (one rule with the standing's, `endedStudyMinutes`).
+- **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week card already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
+- **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week. A weekly push of the same line is not built yet (#4985).
+
 ## Goals
 
 What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:view` and `chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure. A member reads only their own: on the standing, or through `GET /v1/goals/mine` (`members:view`), which the phone's Study screen and More row use so they needn't read the whole standing.
@@ -267,6 +282,42 @@ gets `unread_since: null` begins the member's dots (below).
   nothing. Deleting an account deletes both ([`data-retention.md`](data-retention.md)).
 - **A hint, not a section.** When the opens can't be read, every row is served as read and the
   failure is reported; the page doesn't fail and nothing lands in `unavailable`.
+
+## Snooze
+
+A member can snooze a row that waits on them until a time they pick, and it comes back then
+([#4982](https://github.com/pdcarlson/Frapp/issues/4982), item 7 of
+[#4402](https://github.com/pdcarlson/Frapp/issues/4402); Shawn, 2026-11-14), the way Gmail's
+Snooze and Slack's Later ("Remind me") work: the thing isn't done, it just isn't for now.
+
+- **Which rows.** The rows that can be unread ([§ Unread](#unread)): everything in Needs you,
+  Coming up and Links. Nothing in Made by you, which waits on others.
+- **Gone until then.** `PUT /v1/activity/snoozes` (the item's kind and id, as a read names it, and
+  `until`) takes it off the member's list. The read still serves the row, with `snoozed_until`,
+  so a client lists it under Snoozed and brings it back on its own clock; it is not counted in
+  `needs_you_count`, so the tab's badge drops with it. The week ring still counts it: snoozing
+  something doesn't finish it. A snoozed row is served after every row still waiting, so it never
+  pushes one out of a list's 25. Three lists are capped before the snoozes are known (task
+  confirmations at 25, Coming up at 10, Links at 25), so there a snoozed row can still hold a slot,
+  and a snoozed confirmation past the 25 read is still counted.
+- **When.** In the future and at most 90 days away; anything else is a 400. A client offers a few
+  fixed times (later today, tomorrow morning, the weekend or next week) rather than a picker.
+  Snoozing again replaces the time; `DELETE /v1/activity/snoozes` with the kind and id brings it
+  back now.
+- **It comes back unread.** A snoozed row that comes back is unread unless the member opened it
+  after it came back, as Gmail brings a snoozed thread back to the top unread, except what is never
+  unread ([§ Unread](#unread): a task the member set themselves, an event they made). An ended
+  snooze counts for this for 30 days, as long as a link shows. A client with the page open reads
+  Activity again when the soonest snooze ends, so the dot and the badge come back with the row.
+- **Nothing else changes.** A snoozed poll is still open in its channel and a snoozed task still
+  falls due; snooze is a view, not a deferral. It sends no push when it ends: the row and the
+  badge are the reminder.
+- **Per member, never shared.** Snoozes live in `activity_item_snoozes`, which only the API reads,
+  filtered on the member. As with a read, nothing checks that the member can see the item: a
+  snooze changes only their own view. They go with the membership: leaving the chapter or
+  deleting the account drops them ([`data-retention.md`](data-retention.md)).
+- **A hint, not a section.** When the snoozes can't be read, nothing is served as snoozed and the
+  failure is reported; the page doesn't fail.
 
 ## Polls and channel access
 

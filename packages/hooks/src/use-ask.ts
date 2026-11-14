@@ -17,6 +17,7 @@ import {
   askHistory,
   createAskStreamReader,
   type AskAnswer,
+  type AskEffort,
   type AskStepDetail,
   type AskStreamEvent,
   type AskSuggestion,
@@ -228,10 +229,17 @@ export interface AskExchange {
   proposal: ActResponse | null;
   /** Set once the proposal was confirmed or dismissed. */
   resolution: AskProposalResolution | null;
+  /**
+   * How each card under the answer ended (`answer.proposals`, #4904), by the
+   * suggestion's id. A card not named here is still waiting.
+   */
+  cards?: Record<string, AskCardEnd>;
   /** Why it failed, in words to show, and whether asking again may work. */
   failure: { message: string; retryable: boolean } | null;
   /** Set when the turn was asked from a chat composer. */
   origin?: AskOrigin;
+  /** `more` when this is the answer to Think harder (#4904). */
+  effort?: AskEffort;
 }
 
 /** An answer no stream was opened for: the server refused before it began. */
@@ -376,9 +384,25 @@ export interface AskOptions {
   channelId?: string;
   /** With `channelId`: the newest message there now (`AskOrigin.after`). */
   afterMessage?: string | null;
+  /**
+   * `more` for Think harder (#4904): passed to `retry`, it asks the turn's
+   * question again in its place with more effort, and counts the tap against
+   * the answer it replaces. A turn asked again later keeps it.
+   */
+  effort?: AskEffort;
 }
 
 let nextExchange = 0;
+
+/**
+ * How one of an answer's cards ended. The headline is kept with it because a
+ * decided suggestion is no longer served, and the line that takes the card's
+ * place still says what it was about.
+ */
+export interface AskCardEnd {
+  resolution: AskProposalResolution;
+  headline: string | null;
+}
 
 /** The conversation, and what can be done to it. */
 export interface AskConversation {
@@ -391,6 +415,8 @@ export interface AskConversation {
   setProposal: (id: string, proposal: ActResponse) => void;
   /** Records that a turn's card was confirmed or dismissed. */
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
+  /** Records how one of the cards under a turn's answer ended. */
+  resolveCard: (id: string, suggestionId: string, end: AskCardEnd) => void;
   /**
    * Takes a turn asked from a channel out of that channel's view. It stays
    * in the conversation, so Ask's own screen still shows it.
@@ -576,7 +602,16 @@ function useAskConversation(): AskConversation {
       const abort = new AbortController();
       inFlight.current = abort;
       const id = `turn-${(nextExchange += 1)}`;
-      const earlier = latest.current.filter((exchange) => exchange.id !== drop);
+      // A turn asked again (Try again, Think harder) is answered where it
+      // stands: the turns after it keep their place, and only the turns
+      // before it are sent as the conversation so far, as they were the
+      // first time. So its answer is no more a follow-up than it was.
+      const at = drop
+        ? latest.current.findIndex((exchange) => exchange.id === drop)
+        : -1;
+      const earlier =
+        at >= 0 ? latest.current.slice(0, at) : latest.current.slice();
+      const later = at >= 0 ? latest.current.slice(at + 1) : [];
       const history = askHistoryOf(earlier);
       // A turn asked again stays where it was first asked: its place in the
       // channel, or Ask's own screen.
@@ -592,6 +627,11 @@ function useAskConversation(): AskConversation {
               after: options.afterMessage ?? null,
             }
           : undefined;
+      const effort = options?.effort ?? again?.effort;
+      // Think harder on an answer is counted against that answer's kept
+      // trace (`think_harder`), once the harder question is really sent.
+      const replaced =
+        options?.effort === "more" ? again?.answer?.ask_id : undefined;
       /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
         if (inFlight.current === abort) patch(id, change);
@@ -614,7 +654,9 @@ function useAskConversation(): AskConversation {
           resolution: null,
           failure: null,
           ...(origin ? { origin } : {}),
+          ...(effort === "more" ? { effort } : {}),
         },
+        ...later,
       ]);
 
       try {
@@ -641,12 +683,27 @@ function useAskConversation(): AskConversation {
           if (abort.signal.aborted) return;
           update((current) => ({ ...current, step: "searching" }));
         }
+        if (replaced) {
+          // One word, and a count that fails is dropped.
+          void Promise.resolve()
+            .then(() =>
+              client.POST("/v1/ai/ask/{ask_id}/signals", {
+                params: { path: { ask_id: replaced } },
+                body: { signal: "think_harder" },
+              }),
+            )
+            .catch(() => undefined);
+        }
         const result = await client.POST("/v1/ai/ask", {
           body: {
             question: trimmed,
             ...(history.length > 0 ? { history } : {}),
+            // With the card, the cards an answer can come with (#4904): both
+            // clients draw `answer.proposals`. A server from before #4980
+            // refuses the field; web deploys with the API and a phone build
+            // or update ships only after its API has.
             ...(options?.actions && !options.suggested
-              ? { actions: true }
+              ? { actions: true, answer_cards: true }
               : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
             // Only the new door is named: a server from before #4713
@@ -657,6 +714,9 @@ function useAskConversation(): AskConversation {
             // from before #4941 refuses the field; web deploys with the API
             // and a phone build or update ships only after its API has.
             ...(origin ? { from: { channel_id: origin.channelId } } : {}),
+            // Only ever sent from an answer the tool loop wrote, so the
+            // server that gets it knows the field.
+            ...(effort === "more" ? { effort } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,
@@ -764,6 +824,15 @@ function useAskConversation(): AskConversation {
     [patch],
   );
 
+  const resolveCard = useCallback(
+    (id: string, suggestionId: string, end: AskCardEnd) =>
+      patch(id, (current) => ({
+        ...current,
+        cards: { ...current.cards, [suggestionId]: end },
+      })),
+    [patch],
+  );
+
   const dismissFromChannel = useCallback(
     (id: string) =>
       patch(id, (current) =>
@@ -781,6 +850,7 @@ function useAskConversation(): AskConversation {
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     dismissFromChannel,
     stop,
     reset,

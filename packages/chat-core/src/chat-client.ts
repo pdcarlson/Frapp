@@ -29,6 +29,7 @@ import {
 import {
   CHAT_MESSAGE_KINDS,
   chatMessagesKey,
+  gifRequestBody,
   messageCacheKey,
   optimisticMessage,
   reactionActionType,
@@ -588,16 +589,7 @@ export async function sendMessage(
                   attachment.previewStoragePath ?? undefined,
               }))
             : undefined,
-          gif: args.gif
-            ? {
-                id: args.gif.id,
-                title: args.gif.title || undefined,
-                url: args.gif.url,
-                width: args.gif.width,
-                height: args.gif.height,
-                token: args.gif.token,
-              }
-            : undefined,
+          gif: args.gif ? gifRequestBody(args.gif) : undefined,
           mention_picks: intent.mentionPicks ?? undefined,
         },
       },

@@ -48,6 +48,18 @@ describe("channelPreviewLine", () => {
     );
   });
 
+  it("names a GIF as GIF, with no text of its own (#4657)", () => {
+    const gif = latest({ content: "", has_gif: true });
+    expect(channelPreviewLine(gif, channel)).toBe("Jake: GIF");
+    expect(channelPreviewLine({ ...gif, sender_id: VIEWER }, dm)).toBe(
+      "You: GIF",
+    );
+    // An older server serves no flag: the row says what it can.
+    expect(channelPreviewLine(latest({ content: "" }), channel)).toBe(
+      "Jake: Message",
+    );
+  });
+
   it("says You for the viewer's own message, in a channel and a DM", () => {
     const own = latest({ sender_id: VIEWER, content: "see you at 6" });
     expect(channelPreviewLine(own, channel)).toBe("You: see you at 6");

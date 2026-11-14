@@ -28,6 +28,8 @@ import {
   acceptableWeekStart,
 } from '../../application/services/activity-standing.service';
 import type { ActivityStanding } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
+import type { ActivityRecap } from '../../application/services/activity-recap.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -40,10 +42,14 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
+  ActivityItemRefDto,
+  ActivityRecapDto,
+  ActivityRecapQueryDto,
   ActivityStandingDto,
   ActivityWeekQueryDto,
   MarkActivityReadDto,
   SetActivityLinkStateDto,
+  SnoozeActivityItemDto,
 } from '../dtos/activity.dto';
 
 /**
@@ -74,6 +80,7 @@ export class ActivityController {
     private readonly activityService: ActivityService,
     private readonly linkService: ActivityLinkService,
     private readonly standingService: ActivityStandingService,
+    private readonly recapService: ActivityRecapService,
   ) {}
 
   @Get()
@@ -126,6 +133,33 @@ export class ActivityController {
     });
   }
 
+  @Get('recap')
+  @ApiOperation({
+    summary: 'Get what the caller did last week',
+    description:
+      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
+  })
+  @ApiOkResponse({ type: ActivityRecapDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getRecap(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityRecapQueryDto,
+  ): Promise<ActivityRecap> {
+    const now = new Date();
+    return this.recapService.getRecap(chapterId, userId, enabledModules, {
+      weekStart: weekStartOf(query, now),
+      lastWeekStart: query.last_week_start
+        ? new Date(query.last_week_start)
+        : undefined,
+      firstDay: query.first_day,
+      now,
+    });
+  }
+
   @Put('unread-since')
   @HttpCode(204)
   @ApiOperation({
@@ -156,6 +190,48 @@ export class ActivityController {
     @Body() dto: MarkActivityReadDto,
   ): Promise<void> {
     await this.activityService.markRead(chapterId, userId, dto.items);
+  }
+
+  @Put('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Snooze an item on the caller’s Activity until a time',
+    description:
+      'The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  @ApiBadRequestResponse({
+    description: '`until` is not in the future, or is more than 90 days away.',
+  })
+  async snooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SnoozeActivityItemDto,
+  ): Promise<void> {
+    await this.activityService.snooze(
+      chapterId,
+      userId,
+      { kind: dto.kind, item_id: dto.item_id },
+      new Date(dto.until),
+    );
+  }
+
+  @Delete('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Bring a snoozed item back on the caller’s Activity now',
+    description: 'Idempotent. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  async unsnooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Query() item: ActivityItemRefDto,
+  ): Promise<void> {
+    await this.activityService.unsnooze(chapterId, userId, {
+      kind: item.kind,
+      item_id: item.item_id,
+    });
   }
 
   @Put('links/:id/state')

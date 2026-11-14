@@ -213,12 +213,32 @@ export function createEvalCorpus(
     });
   }
 
-  const repository: Pick<ICorpusRepository, 'match' | 'chatWindowChannels'> = {
+  const repository: Pick<
+    ICorpusRepository,
+    'match' | 'chatWindowChannels' | 'readSourceChunks'
+  > = {
     match(input: MatchCorpusInput): Promise<CorpusCandidate[]> {
-      // The stand-in for `match_corpus_chunks`: this chapter's passages only.
+      // The stand-in for `match_corpus_chunks`: this chapter's passages only,
+      // narrowed as the SQL narrows them when a tool asks (#4900).
       const asked = words(input.query);
+      const filter = input.filter;
+      const kept = ({ candidate }: { candidate: CorpusCandidate }) =>
+        (!filter?.sourceTypes ||
+          filter.sourceTypes.includes(candidate.source_type)) &&
+        (!filter?.channelIds ||
+          candidate.channel_id === null ||
+          filter.channelIds.includes(candidate.channel_id)) &&
+        (!filter?.authorId ||
+          (candidate.author_ids ?? []).includes(filter.authorId)) &&
+        (!filter?.since ||
+          (candidate.source_at !== null &&
+            Date.parse(candidate.source_at) >= Date.parse(filter.since))) &&
+        (!filter?.until ||
+          (candidate.source_at !== null &&
+            Date.parse(candidate.source_at) < Date.parse(filter.until)));
       const scored = [...official, ...chat]
         .filter((entry) => entry.chapterId === input.chapterId)
+        .filter(kept)
         .map(({ candidate }) => {
           let shared = 0;
           // The indexed text of a passage leads with its source's title.
@@ -244,6 +264,32 @@ export function createEvalCorpus(
           sparse_rank: shared >= needed ? (wordRank += 1) : null,
         })),
       );
+    },
+    readSourceChunks(input) {
+      // A document or minutes is one passage here, so it has one part.
+      const source = official.find(
+        (entry) =>
+          entry.chapterId === input.chapterId &&
+          entry.candidate.source_type === input.sourceType &&
+          entry.candidate.source_id === input.sourceId,
+      );
+      if (!source) return Promise.resolve(null);
+      const chunks = [
+        {
+          id: source.candidate.chunk_id,
+          chunk_index: 0,
+          heading: null,
+          content: source.candidate.content,
+          page_start: null,
+          page_end: null,
+        },
+      ].slice(input.offset, input.offset + input.limit);
+      return Promise.resolve({
+        title: source.candidate.title,
+        source_at: source.candidate.source_at,
+        total: 1,
+        chunks,
+      });
     },
     chatWindowChannels(chapterId, windowIds) {
       return Promise.resolve(

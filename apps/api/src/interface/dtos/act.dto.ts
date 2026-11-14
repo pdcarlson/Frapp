@@ -16,7 +16,7 @@ import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
-import type { ActOutcome } from '../../application/services/act/act.service';
+import type { ActOutcome } from '../../application/services/act/act-tool';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { AiSuggestionDto } from './ai-suggestion.dto';
 

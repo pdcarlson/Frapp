@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, AppState } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
@@ -23,7 +23,11 @@ import {
   rowActionFailure,
   type ActivityRowActionState,
 } from "@/lib/activity/row-action";
-import { ActivityListRow, type ActivityRowActionControl } from "./activity-row";
+import {
+  ActivityListRow,
+  ActivityRowMenuContext,
+  type ActivityRowActionControl,
+} from "./activity-row";
 
 const LABELS: Record<ActivityRowAction, string> = {
   confirm: TASK_ACTION_LABELS.confirm,
@@ -276,6 +280,7 @@ export function ActivityRowItem({
     : null;
   const control: ActivityRowActionControl | null =
     action && actions ? rowActionControl(row, action, actions) : null;
+  const menuFor = useContext(ActivityRowMenuContext);
   return (
     <ActivityListRow
       row={row}
@@ -284,6 +289,7 @@ export function ActivityRowItem({
       onCard={onCard}
       solo={solo}
       onPress={onPress}
+      menu={menuFor(row)}
     />
   );
 }

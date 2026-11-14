@@ -54,7 +54,7 @@ import {
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
 import {
-  MAX_MENTION_PICKS,
+  withMentionPick,
   mentionPicksIn,
   type MentionPick,
 } from "@repo/validation";
@@ -253,10 +253,7 @@ export function useComposerStaging({
   // tried again still carries them.
   const picksRef = useRef<MentionPick[]>([]);
   const addMentionPick = useCallback((pick: MentionPick) => {
-    picksRef.current = [
-      pick,
-      ...picksRef.current.filter((held) => held.label !== pick.label),
-    ].slice(0, MAX_MENTION_PICKS);
+    picksRef.current = withMentionPick(picksRef.current, pick);
   }, []);
   const picksFor = useCallback(
     (text: string) => mentionPicksIn(text, picksRef.current),

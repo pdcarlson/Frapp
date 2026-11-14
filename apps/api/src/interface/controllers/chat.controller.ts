@@ -21,7 +21,10 @@ import {
 } from '@nestjs/swagger';
 import { GifService } from '../../application/services/gif.service';
 import { ChatService } from '../../application/services/chat.service';
-import { ChatMentionService } from '../../application/services/chat-mention.service';
+import {
+  ChatMentionService,
+  toMentionRoleEntry,
+} from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
@@ -193,13 +196,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<MentionRoleDto[]> {
     const roles = await this.mentions.listMentionRoles(chapterId, userId);
-    return roles.map(({ role_id, kind, name, color, mentionable }) => ({
-      role_id,
-      kind,
-      name,
-      color,
-      mentionable,
-    }));
+    return roles.map(toMentionRoleEntry);
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly

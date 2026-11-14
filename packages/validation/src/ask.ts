@@ -35,6 +35,9 @@ export const ASK_HISTORY_MAX_TURNS = 6;
 /** An earlier answer is cut to this before it is sent back. */
 export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
 
+/** The most cards one answer can come with. */
+export const ASK_PROPOSALS_MAX = 5;
+
 /**
  * One earlier turn of the conversation: what the member typed, and what
  * Frapp answered. `answer` is empty when the turn had no answer to carry (a
@@ -51,6 +54,13 @@ export const AskHistoryTurnSchema = z.object({
    * is shown only what the member typed, does not.
    */
   suggested: z.boolean().optional(),
+  /**
+   * How many cards this turn's answer came with (`AskAnswer.proposals`), so
+   * a follow-up such as "make it 10 instead" is read knowing cards are
+   * already in front of the member. A count and nothing a card says: the
+   * server writes the line the model reads.
+   */
+  cards: z.number().int().min(1).max(ASK_PROPOSALS_MAX).optional(),
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
@@ -98,6 +108,15 @@ export const AskRequestSchema = z.object({
    * answers, which is what every build before the conversation expects.
    */
   actions: z.boolean().optional(),
+  /**
+   * The client draws the cards an answer comes with (`AskAnswer.proposals`),
+   * so one turn can be an answer with cards under it, or several cards.
+   * Read only with `actions`, and only by a server that answers through the
+   * tool loop (#4899). Without it a turn comes with at most one card, sent
+   * as a `proposal` event in place of the answer, which is all a build from
+   * before this can draw.
+   */
+  answer_cards: z.boolean().optional(),
   /**
    * The client showed the "answers are being saved" line before this
    * question was sent. An exchange is kept by the beta diagnostics window
@@ -277,9 +296,6 @@ export const AskEntitySchema = z.object({
 });
 export type AskEntity = z.infer<typeof AskEntitySchema>;
 
-/** The most cards one answer can come with. */
-export const ASK_PROPOSALS_MAX = 5;
-
 export const AskAnswerSchema = z.object({
   status: z.enum(ASK_ANSWER_STATUSES),
   reason: z.string().nullable(),
@@ -323,8 +339,12 @@ export const AskAnswerSchema = z.object({
   entities: z.array(AskEntitySchema).nullish(),
   /**
    * Cards that came with this answer: the ids of suggestions waiting for
-   * the asker's Confirm (`GET /v1/ai/suggestions/{id}`), at most
-   * {@link ASK_PROPOSALS_MAX}. Nothing has been changed by any of them.
+   * the asker's Confirm, at most {@link ASK_PROPOSALS_MAX}. There is no
+   * read by id: a client lists the asker's waiting requests
+   * (`GET /v1/ai/suggestions?source_type=request&source_id=<asker>`) and
+   * keeps these ids. Nothing has been changed by any of them.
+   * Sent only to a client that asked with `answer_cards`. An answer that is
+   * cards and nothing else is `answered` with empty `text`: draw the cards.
    */
   proposals: z.array(z.string()).max(ASK_PROPOSALS_MAX).nullish(),
   /**
@@ -469,12 +489,14 @@ export function askHistory(
         answer.status === "answered" &&
         answer.read_chat !== true &&
         !answer.sources.some((source) => source.kind === "chat");
+      const cards = Math.min(answer?.proposals?.length ?? 0, ASK_PROPOSALS_MAX);
       return {
         question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
         answer: carried
           ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
           : "",
         ...(suggested ? { suggested: true } : {}),
+        ...(cards > 0 ? { cards } : {}),
       };
     });
 }

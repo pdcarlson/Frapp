@@ -2,14 +2,19 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Circle, CircleCheck, UsersRound } from "lucide-react";
+import { Cake, Circle, CircleCheck, UsersRound } from "lucide-react";
 import {
   CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
+  type CalendarItem,
   type CalendarLayer,
   type CalendarTask,
   type CalendarTaskState,
 } from "@repo/hooks/calendar-tasks";
+import {
+  calendarBirthdayLabel,
+  type CalendarBirthday,
+} from "@repo/hooks/calendar-birthdays";
 import { parseInstantOrBareLocalNoon } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +34,13 @@ import { cn } from "@/lib/utils";
  * check is done and waiting on an officer, a green check is confirmed.
  * Rules and words: `@repo/hooks` `calendar-tasks.ts`.
  */
+
+/**
+ * A chip's text on the month grid: the event chips' 11px (ledgered in
+ * `type-scale-call-sites.spec.ts`, #3075 decides), shared by the task and
+ * birthday chips that sit in the same day cell.
+ */
+const CHIP_TEXT = "text-[11px] font-medium";
 
 function TaskMark({
   state,
@@ -184,8 +196,71 @@ function CalendarTaskPopover({
   );
 }
 
-/** The wide month's chip for a task: no fill, a check mark, the title. */
+/**
+ * A member's birthday on the grid (#4959): a cake and their name, no fill and
+ * nothing to open, the way Google Calendar draws its birthdays calendar apart
+ * from events. The name reads "Dana Lowe's birthday" to a screen reader.
+ */
+function BirthdayItem({
+  item,
+  row,
+}: {
+  item: CalendarBirthday;
+  /** The compact month's row under the picked day, rather than a chip. */
+  row: boolean;
+}) {
+  const label = calendarBirthdayLabel(item);
+  return (
+    <div
+      title={label}
+      className={cn(
+        "flex items-center text-left",
+        row
+          ? "min-h-11 w-full gap-3 px-2 py-1.5"
+          : cn("gap-1 px-1.5 py-1", CHIP_TEXT),
+      )}
+    >
+      <span className={cn("flex shrink-0 items-center", row ? "w-16" : null)}>
+        <Cake
+          aria-hidden="true"
+          className={cn("text-muted-foreground", row ? "h-4 w-4" : "h-3 w-3")}
+        />
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-foreground",
+          row ? "text-sm font-semibold" : null,
+        )}
+      >
+        <span className="sr-only">{label}</span>
+        <span aria-hidden="true">{item.title}</span>
+      </span>
+      {row ? (
+        <span className="shrink-0 text-caption text-muted-foreground">
+          Birthday
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The wide month's chip for a task (no fill, a check mark, the title), or a
+ * birthday's.
+ */
 export function CalendarTaskChip({
+  item,
+  nameOf,
+}: {
+  item: CalendarItem;
+  nameOf: (userId: string) => string;
+}) {
+  if (item.kind === "birthdays")
+    return <BirthdayItem item={item} row={false} />;
+  return <TaskChip item={item} nameOf={nameOf} />;
+}
+
+function TaskChip({
   item,
   nameOf,
 }: {
@@ -200,7 +275,8 @@ export function CalendarTaskChip({
         title={item.title}
         aria-label={calendarTaskAccessibleLabel(item)}
         className={cn(
-          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left text-[11px] font-medium transition-colors",
+          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left transition-colors",
+          CHIP_TEXT,
           FOCUS_RING,
           "hover:bg-card-hover",
         )}
@@ -224,8 +300,19 @@ export function CalendarTaskChip({
   );
 }
 
-/** The compact month's row for a task, under the picked day. */
+/** The compact month's row for a task or a birthday, under the picked day. */
 export function CalendarTaskRow({
+  item,
+  nameOf,
+}: {
+  item: CalendarItem;
+  nameOf: (userId: string) => string;
+}) {
+  if (item.kind === "birthdays") return <BirthdayItem item={item} row />;
+  return <TaskRow item={item} nameOf={nameOf} />;
+}
+
+function TaskRow({
   item,
   nameOf,
 }: {
@@ -320,6 +407,8 @@ export function CalendarLayerToggles({
                   <span className="block h-3 w-1 rounded-full bg-primary" />
                 ) : layer.value === "mine" ? (
                   <Circle className="h-3 w-3 text-muted-foreground" />
+                ) : layer.value === "birthdays" ? (
+                  <Cake className="h-3 w-3 text-muted-foreground" />
                 ) : (
                   <UsersRound className="h-3 w-3 text-muted-foreground" />
                 )}

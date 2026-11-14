@@ -9,6 +9,7 @@ import { SupabaseModule } from './infrastructure/supabase/supabase.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { ChapterModule } from './modules/chapter/chapter.module';
 import { MemberModule } from './modules/member/member.module';
 import { MemberNudgeModule } from './modules/member-nudge/member-nudge.module';
@@ -39,6 +40,7 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { BirthdayModule } from './modules/birthday/birthday.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { AiRunsModule } from './modules/ai-runs/ai-runs.module';
 import { CorpusModule } from './modules/corpus/corpus.module';
@@ -112,6 +114,7 @@ import { validateEnv } from './config/env.validation';
     SearchModule,
     ActivityFeedModule,
     ActivityModule,
+    BirthdayModule,
     GoalsModule,
     AiRunsModule,
     CorpusModule,
@@ -139,6 +142,7 @@ import { validateEnv } from './config/env.validation';
     // the exported contract.
     MeetingDraftModule,
     MeetingRecordingModule,
+    BootstrapModule,
   ],
   providers: [
     {

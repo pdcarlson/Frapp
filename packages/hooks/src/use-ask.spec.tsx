@@ -305,6 +305,7 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[0]![1].body).toEqual({
         question: "Give Jordan points",
         actions: true,
+        answer_cards: true,
       });
       const [turn] = result.current.exchanges;
       expect(turn).toMatchObject({ phase: "done", answer: null, proposal: UNCLEAR });
@@ -330,6 +331,30 @@ describe("the Ask hooks", () => {
       ]);
     });
 
+    it("holds how each card under an answer ended, by the card (#4904)", async () => {
+      const POST = vi.fn().mockResolvedValue(
+        streamed([
+          { v, type: "done", answer: { ...ANSWER, proposals: ["s1", "s2"] } },
+        ]),
+      );
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("Thank the cleanup crew", { actions: true }));
+      const [turn] = result.current.exchanges;
+      expect(turn!.cards).toBeUndefined();
+      const end = {
+        resolution: { kind: "cancelled" as const },
+        headline: "Cleanup",
+      };
+      act(() => result.current.resolveCard(turn!.id, "s2", end));
+      expect(result.current.exchanges[0]!.cards).toEqual({ s2: end });
+      const done = {
+        resolution: { kind: "done" as const, line: "Task created", page: "tasks" },
+        headline: "Buy cups",
+      };
+      act(() => result.current.resolveCard(turn!.id, "s1", done));
+      expect(result.current.exchanges[0]!.cards).toEqual({ s1: done, s2: end });
+    });
+
     it("never asks for a card with a tapped suggestion, and marks its turn in what later questions carry", async () => {
       const POST = answering();
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
@@ -348,6 +373,7 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[1]![1].body).toEqual({
         question: "Give 5 points to everyone who came",
         actions: true,
+        answer_cards: true,
         history: [
           {
             question: "When and where is Formal on Friday?",
@@ -562,6 +588,85 @@ describe("the Ask hooks", () => {
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("What is quorum?"));
     expect(result.current.exchanges[0]?.phase).toBe("failed");
+  });
+
+  describe("Think harder (#4904)", () => {
+    const TRACED = { ...ANSWER, ask_id: "trace-1" };
+    const answering = () =>
+      vi.fn().mockImplementation((path: string) =>
+        path === "/v1/ai/ask"
+          ? Promise.resolve(streamed([{ v, type: "done", answer: TRACED }]))
+          : Promise.resolve({ data: undefined, response: { ok: true } }),
+      );
+
+    it("asks the same question again in its place with more effort, and counts the tap", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      const first = result.current.exchanges[0]!;
+      await act(() => result.current.retry(first.id, { effort: "more" }));
+      const asks = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask");
+      expect(asks).toHaveLength(2);
+      expect(asks[0]![1].body.effort).toBeUndefined();
+      expect(asks[1]![1].body).toMatchObject({
+        question: "What is quorum?",
+        effort: "more",
+      });
+      expect(POST).toHaveBeenCalledWith("/v1/ai/ask/{ask_id}/signals", {
+        params: { path: { ask_id: "trace-1" } },
+        body: { signal: "think_harder" },
+      });
+      expect(result.current.exchanges).toHaveLength(1);
+      expect(result.current.exchanges[0]!.effort).toBe("more");
+    });
+
+    it("answers an older turn where it stands, with only the turns before it as history", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("First?", { channelId: "c1" }));
+      await act(() => result.current.ask("Second?"));
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, { effort: "more" }),
+      );
+      expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
+        "First?",
+        "Second?",
+      ]);
+      const harder = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask")[2]![1].body;
+      expect(harder.question).toBe("First?");
+      expect(harder.history).toBeUndefined();
+      // Still the conversation's first question, so still one a channel can be given.
+      expect(result.current.exchanges[0]!.followedUp).toBeUndefined();
+      expect(result.current.exchanges[0]!.origin?.channelId).toBe("c1");
+    });
+
+    it("counts nothing when the member declines the AI question", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, {
+          effort: "more",
+          gate: () => Promise.resolve(false),
+        }),
+      );
+      expect(POST.mock.calls.filter(([path]) => path !== "/v1/ai/ask")).toHaveLength(0);
+    });
+
+    it("keeps the effort when the harder turn is asked again, without counting twice", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, { effort: "more" }),
+      );
+      await act(() => result.current.retry(result.current.exchanges[0]!.id));
+      const asks = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask");
+      expect(asks[2]![1].body.effort).toBe("more");
+      expect(
+        POST.mock.calls.filter(([path]) => path !== "/v1/ai/ask"),
+      ).toHaveLength(1);
+    });
   });
 
   describe("asked from a channel (#4713)", () => {

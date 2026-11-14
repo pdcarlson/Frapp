@@ -222,6 +222,7 @@ export const AskSheet = forwardRef<
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     stop,
     reset,
   } = useAsk();
@@ -294,7 +295,7 @@ export const AskSheet = forwardRef<
     closeSheet();
   }, [closeSheet]);
   const turns = useAskTurns({
-    conversation: { working, retry, setProposal, resolveProposal },
+    conversation: { working, retry, setProposal, resolveProposal, resolveCard },
     options,
     leave,
   });

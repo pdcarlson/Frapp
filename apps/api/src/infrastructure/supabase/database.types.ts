@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  ActivityItemSnooze,
   ActivityUnreadStart,
   AiReport,
   AiRun,
@@ -14,6 +15,7 @@ import type {
   BackworkDepartment,
   BackworkProfessor,
   BackworkResource,
+  BirthdayPost,
   CalendarFeed,
   ChannelReadReceipt,
   Chapter,
@@ -152,6 +154,7 @@ export interface Database {
   public: {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      activity_item_snoozes: TableDefinition<ActivityItemSnooze>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       ai_ask_feedback: TableDefinition<AskFeedbackRow>;
       ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;
@@ -165,6 +168,7 @@ export interface Database {
       backwork_departments: TableDefinition<BackworkDepartment>;
       backwork_professors: TableDefinition<BackworkProfessor>;
       backwork_resources: TableDefinition<BackworkResource>;
+      birthday_posts: TableDefinition<BirthdayPost>;
       calendar_feeds: TableDefinition<CalendarFeed>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
@@ -649,6 +653,8 @@ export interface Database {
           attachment_count: number;
           created_at: string;
           forwarded_from: ChatForwardedMessage | null;
+          /** `20261114153147`: the latest message is a GIF (#4657). */
+          has_gif: boolean;
         }[];
       };
       /**

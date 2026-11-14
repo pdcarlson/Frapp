@@ -6,6 +6,7 @@ export * from './ai-suggestion.entity';
 export * from './ask-diagnostics.entity';
 export * from './ask-trace.entity';
 export * from './backwork.entity';
+export * from './birthday-post.entity';
 export * from './calendar-feed.entity';
 export * from './chapter-activation-milestone.entity';
 export * from './chapter-audit-log.entity';

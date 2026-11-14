@@ -684,6 +684,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/members/birthdays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Birthdays members share with the chapter
+         * @description Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.
+         */
+        get: operations["MemberController_birthdays_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members/by-user/{userId}": {
         parameters: {
             query?: never;
@@ -4401,6 +4421,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller did last week
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         */
+        get: operations["ActivityController_getRecap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -4436,6 +4476,30 @@ export interface paths {
          */
         post: operations["ActivityController_markRead_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/snoozes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Snooze an item on the caller’s Activity until a time
+         * @description The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.
+         */
+        put: operations["ActivityController_snooze_v1"];
+        post?: never;
+        /**
+         * Bring a snoozed item back on the caller’s Activity now
+         * @description Idempotent. `spec/behavior/activity.md` § Snooze.
+         */
+        delete: operations["ActivityController_unsnooze_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5460,6 +5524,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a client's first screen reads, in one request
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         */
+        get: operations["BootstrapController_getBootstrap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5563,6 +5647,17 @@ export interface components {
              * @example (518) 555-0142
              */
             phone?: string | null;
+            /** @description The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year). */
+            birthday_month?: number | null;
+            /** @description The day of `birthday_month`. It must exist in that month; 29 February is taken. */
+            birthday_day?: number | null;
+            /** @description The birth year, optional. Never shown to anyone but the member. Needs a month and day. */
+            birthday_year?: number | null;
+            /**
+             * @description Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.
+             * @enum {string}
+             */
+            birthday_visibility?: "chapter" | "nobody";
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -5811,6 +5906,11 @@ export interface components {
              * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).
+             */
+            birthday_channel_id?: string | null;
         };
         CustomRoleDto: {
             id: string;
@@ -6044,6 +6144,10 @@ export interface components {
             email: string;
             /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
             phone: string | null;
+            /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
+            birthday_month: number | null;
+            /** @description The day of `birthday_month`, under the same rule. The year is never sent. */
+            birthday_day: number | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -6068,6 +6172,15 @@ export interface components {
             avatar_url: string | null;
             /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
+        };
+        MemberBirthdayDto: {
+            /** @description users.id */
+            id: string;
+            display_name: string;
+            avatar_url: string | null;
+            birthday_month: number;
+            /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
+            birthday_day: number;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -6372,6 +6485,8 @@ export interface components {
             created_at: string;
             /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
+            has_gif: boolean;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -6578,6 +6693,8 @@ export interface components {
             kind: string | null;
             /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
             attachment_count: number;
+            /** @description The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies. */
+            has_gif?: boolean;
             created_at: string;
             /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
             sender_blocked?: boolean;
@@ -6885,6 +7002,8 @@ export interface components {
             thread_root_id: string | null;
             /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked. */
+            has_gif: boolean;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };
@@ -9086,6 +9205,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -9105,6 +9229,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityPollDto: {
             /**
@@ -9138,6 +9267,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -9172,6 +9306,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
@@ -9218,6 +9357,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -9261,6 +9405,11 @@ export interface components {
             posted_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -9319,7 +9468,7 @@ export interface components {
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, less what the caller snoozed (`snoozed_until`). */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
@@ -9377,6 +9526,30 @@ export interface components {
             /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
             unavailable: ("points" | "required_events" | "service" | "study")[];
         };
+        ActivityRecapDto: {
+            /**
+             * Format: date-time
+             * @description Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Where last week ended: the `week_start` sent.
+             */
+            end: string;
+            /** @description Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read. */
+            events_attended: number | null;
+            /** @description The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read. */
+            tasks_done: number | null;
+            /** @description Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read. */
+            points: number | null;
+            /** @description Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read. */
+            service_minutes: number | null;
+            /** @description Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read. */
+            study_minutes: number | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "points" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
              * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
@@ -9389,6 +9562,20 @@ export interface components {
         MarkActivityReadDto: {
             /** @description The items the caller opened. At most 100. */
             items: components["schemas"]["ActivityItemRefDto"][];
+        };
+        SnoozeActivityItemDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * Format: date-time
+             * @description When the row comes back. In the future and at most 90 days away.
+             */
+            until: string;
         };
         SetActivityLinkStateDto: {
             /**
@@ -9830,6 +10017,8 @@ export interface components {
             answer: string;
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
+            /** @description How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member. */
+            cards?: number;
         };
         AskFromDto: {
             /**
@@ -9860,6 +10049,8 @@ export interface components {
             history?: components["schemas"]["AskHistoryTurnDto"][];
             /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
             actions?: boolean;
+            /** @description True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer. */
+            answer_cards?: boolean;
             /**
              * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.
              * @enum {string}
@@ -10327,6 +10518,70 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        BootstrapDto: {
+            /** @description As `GET /v1/users/me`. */
+            user?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description As `GET /v1/users/me/permissions`. */
+            permissions?: components["schemas"]["MyPermissionsDto"] | null;
+            /** @description As `GET /v1/users/me/legal-acceptance`. */
+            legal_acceptance?: components["schemas"]["LegalAcceptanceDto"] | null;
+            /** @description As `GET /v1/users/me/whats-new`. */
+            whats_new?: components["schemas"]["WhatsNewSeenDto"] | null;
+            /** @description As `GET /v1/chapters`. */
+            chapters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/chapters/current`. */
+            current_chapter?: components["schemas"]["CurrentChapterResponseDto"] | null;
+            /** @description As `GET /v1/settings`. */
+            settings?: components["schemas"]["UserSettingsDto"] | null;
+            /** @description As `GET /v1/channels`. */
+            channels?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/unread`. */
+            channel_unread?: components["schemas"]["ChannelUnreadCountDto"][] | null;
+            /** @description As `GET /v1/channels/categories/list`. */
+            channel_categories?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/notification-preferences`. */
+            channel_notification_preferences?: components["schemas"]["ChannelNotificationPreferenceDto"][] | null;
+            /** @description As `GET /v1/channels/mention-roles`. */
+            mention_roles?: components["schemas"]["MentionRoleDto"][] | null;
+            /** @description As `GET /v1/chat-sidebar`. */
+            chat_sidebar?: components["schemas"]["ChatSidebarDto"] | null;
+            /** @description As `GET /v1/chat/blocks`. */
+            chat_blocks?: components["schemas"]["ChatBlockListDto"] | null;
+            /** @description As `GET /v1/chat-backgrounds/default`. */
+            chat_background_default?: components["schemas"]["ChapterChatBackgroundResponseDto"] | null;
+            /** @description As `GET /v1/gifs/availability`. */
+            gif_availability?: components["schemas"]["GifAvailabilityDto"] | null;
+            /** @description As `GET /v1/bookmarks`. */
+            bookmarks?: components["schemas"]["BookmarkDto"][] | null;
+            /** @description As `GET /v1/roles`. */
+            roles?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/events`. */
+            events?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/geofences`. */
+            geofences?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/documents` with no folder or search. */
+            documents?: components["schemas"]["ChapterDocumentDto"][] | null;
+            /** @description As `GET /v1/members/roster`. */
+            member_roster?: components["schemas"]["MemberRosterEntryDto"][] | null;
+            /** @description As `GET /v1/notifications?limit=50`. */
+            notifications?: {
+                [key: string]: unknown;
+            }[] | null;
         };
     };
     responses: never;
@@ -11814,6 +12069,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_birthdays_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberBirthdayDto"][];
                 };
             };
             /** @description Error */
@@ -20434,6 +20717,48 @@ export interface operations {
             };
         };
     };
+    ActivityController_getRecap_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRecapDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ActivityController_startUnread_v1: {
         parameters: {
             query?: never;
@@ -20472,6 +20797,73 @@ export interface operations {
                 "application/json": components["schemas"]["MarkActivityReadDto"];
             };
         };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_snooze_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeActivityItemDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `until` is not in the future, or is more than 90 days away. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_unsnooze_v1: {
+        parameters: {
+            query: {
+                /** @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`). */
+                kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+                item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             204: {
                 headers: {
@@ -22833,6 +23225,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BootstrapController_getBootstrap_v1: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
+                include?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapDto"];
                 };
             };
             /** @description Error */

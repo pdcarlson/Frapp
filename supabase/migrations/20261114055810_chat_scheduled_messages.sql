@@ -72,4 +72,4 @@ create index if not exists chat_scheduled_messages_member
 alter table public.chat_scheduled_messages enable row level security;
 
 comment on table public.chat_scheduled_messages is
-  'Chat messages a member scheduled to post later; the API sweep posts each at send_at as its author. API only. See 20261113234732_chat_scheduled_messages.sql.';
+  'Chat messages a member scheduled to post later; the API sweep posts each at send_at as its author. API only. See 20261114055810_chat_scheduled_messages.sql.';

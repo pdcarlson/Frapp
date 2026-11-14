@@ -5,7 +5,10 @@ import type {
   ActivityItemRef,
   IActivityItemReadRepository,
 } from '#domain/repositories/activity-item-read.repository.interface';
-import type { ActivityItemRead } from '#domain/entities/activity-item-read.entity';
+import type {
+  ActivityItemRead,
+  ActivityItemSnooze,
+} from '#domain/entities/activity-item-read.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { chunkIds } from '#domain/utils/chunk-ids';
 
@@ -18,9 +21,12 @@ import { chunkIds } from '#domain/utils/chunk-ids';
  */
 export const ACTIVITY_ITEM_READS_CONFLICT = 'user_id,chapter_id,kind,item_id';
 export const ACTIVITY_UNREAD_STARTS_CONFLICT = 'user_id,chapter_id';
+/** The primary key of `activity_item_snoozes` (`20261114154540_activity_item_snoozes.sql`). */
+export const ACTIVITY_ITEM_SNOOZES_CONFLICT = 'user_id,chapter_id,kind,item_id';
 
 /**
- * `activity_item_reads` and `activity_unread_starts` (#4173). RLS on and no
+ * `activity_item_reads` and `activity_unread_starts` (#4173), and
+ * `activity_item_snoozes` (#4982). RLS on and no
  * policies: the API's service role is the only reader, and every query here
  * filters on `chapter_id` and `user_id` because nothing else would.
  */
@@ -107,6 +113,57 @@ export class SupabaseActivityItemReadRepository implements IActivityItemReadRepo
     const { error } = await this.supabase
       .from('activity_item_reads')
       .upsert(rows, { onConflict: ACTIVITY_ITEM_READS_CONFLICT });
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async findSnoozes(
+    chapterId: string,
+    userId: string,
+    endedAfter: string,
+  ): Promise<ActivityItemSnooze[]> {
+    const { data, error } = await this.supabase
+      .from('activity_item_snoozes')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .gt('until', endedAfter);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async snooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+    until: string,
+  ): Promise<void> {
+    const row: TablesInsert<'activity_item_snoozes'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      kind: item.kind,
+      item_id: item.item_id,
+      until,
+      // A new snooze, so it is new from now, not from the one it replaces.
+      created_at: new Date().toISOString(),
+    };
+    const { error } = await this.supabase
+      .from('activity_item_snoozes')
+      .upsert(row, { onConflict: ACTIVITY_ITEM_SNOOZES_CONFLICT });
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async unsnooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('activity_item_snoozes')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('kind', item.kind)
+      .eq('item_id', item.item_id);
     if (error) throw new SupabaseQueryError(error);
   }
 }

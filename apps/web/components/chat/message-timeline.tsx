@@ -554,6 +554,8 @@ export interface MessageTimelineProps {
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
   onBlock?: (message: ChatMessage) => void;
+  /** A row's Forward (#4907); see `MessageItemProps`. */
+  onForward?: (message: ChatMessage) => void;
   /** Opens a member's profile by `users.id` (#3726); see `MessageItemProps`. */
   onOpenProfile?: (userId: string) => void;
   isMember?: MemberLookup;
@@ -648,6 +650,7 @@ export const MessageTimeline = forwardRef<
     canManageChannel,
     onReport,
     onBlock,
+    onForward,
     onOpenProfile,
     isMember,
     hasOlder = false,
@@ -1419,6 +1422,7 @@ export const MessageTimeline = forwardRef<
                   canManageChannel={canManageChannel}
                   onReport={onReport}
                   onBlock={onBlock}
+                  onForward={onForward}
                   onOpenProfile={onOpenProfile}
                   isMember={isMember}
                   isTapRevealed={tapRevealed.isRevealed(entry.message)}

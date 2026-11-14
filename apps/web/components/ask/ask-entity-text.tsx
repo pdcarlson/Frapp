@@ -3,7 +3,7 @@
 import { Fragment, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useChannels } from "@repo/hooks";
-import { askEntityParts, type AskNamedEntity } from "@repo/validation";
+import { askEntityParts, type AskEntity } from "@repo/validation";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -61,7 +61,7 @@ export function AskEntityText({
   onFollow,
 }: {
   text: string;
-  entities: readonly AskNamedEntity[];
+  entities: readonly AskEntity[];
   canOpenChannel: (channelId: string) => boolean;
   onFollow?: () => void;
 }) {

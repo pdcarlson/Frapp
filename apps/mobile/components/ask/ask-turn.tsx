@@ -14,6 +14,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   ASK_FEEDBACK_REASONS,
   ASK_POST_COPY,
@@ -22,6 +23,7 @@ import {
   askAnswerSegments,
   askEntityParts,
   askLeftOutLine,
+  askOffersThinkHarder,
   askPostedSourceTitle,
   askReadLine,
   askSourceChip,
@@ -29,7 +31,7 @@ import {
   askUnavailableLine,
   type AiReportReason,
   type AskAnswer,
-  type AskNamedEntity,
+  type AskEntity,
   type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -37,6 +39,7 @@ import {
   CheckGlyph,
   CopyGlyph,
   FlagGlyph,
+  LightbulbGlyph,
   ThumbDownGlyph,
   ThumbUpGlyph,
 } from "@/components/control-glyphs";
@@ -107,11 +110,13 @@ export interface AskTurnReport {
 export function AskTurn({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
   onOpenChannel,
@@ -124,6 +129,8 @@ export function AskTurn({
   busy?: boolean;
   /** The card for a turn that asked for something to be done, in the answer's place. */
   proposal?: ReactNode;
+  /** The cards the answer came with (`answer.proposals`), drawn under it. */
+  cards?: ReactNode;
   /** Whether this build has a screen for the source; a chip without one is plain. */
   canOpen: (source: AskSource) => boolean;
   /** The source whose document link is being fetched, so its chip says so. */
@@ -131,6 +138,11 @@ export function AskTurn({
   onOpenSource: (source: AskSource) => void;
   /** Asks the same question again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same question again in this turn's place with more effort
+   * (#4904). Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for an answer refused because it is unanswered. */
   onAnswerConsent: () => void;
   /**
@@ -161,11 +173,13 @@ export function AskTurn({
       <AskReply
         exchange={exchange}
         proposal={proposal}
+        cards={cards}
         canOpen={canOpen}
         openingSourceId={openingSourceId}
         onOpenSource={onOpenSource}
         busy={busy}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         report={report}
         onOpenChannel={onOpenChannel}
@@ -186,11 +200,13 @@ type AskReplyProps = Parameters<typeof AskTurn>[0];
 export function AskReply({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
   onOpenChannel,
@@ -241,6 +257,8 @@ export function AskReply({
           />
         ) : null}
 
+        {exchange.phase === "done" && exchange.answer ? cards : null}
+
         {/* Anything Ask wrote, or chose not to, can be reported; what it
             wrote can be copied. An answer that was never attempted has
             nothing AI-made in it. Last in the turn, so Copy turning into
@@ -259,6 +277,12 @@ export function AskReply({
                   : null
               }
               report={exchange.askId ? (report ?? null) : null}
+              thinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? { busy, onPress: onThinkHarder }
+                  : null
+              }
             />
           ) : (
             <AnswerActions
@@ -297,7 +321,14 @@ function AnswerActions({
   thumbs,
   text,
   report,
+  thinkHarder = null,
 }: {
+  /**
+   * Think harder, where this answer offers it (`askOffersThinkHarder`): the
+   * same question again in this turn's place with more effort. It waits
+   * while another turn is being answered.
+   */
+  thinkHarder?: { busy: boolean; onPress: () => void } | null;
   /** The answer's thumbs, or null when the server kept no trace to rate. */
   thumbs: ReturnType<typeof useAskThumbs> | null;
   /** The answer's words, without the markers, or null when there are none to copy. */
@@ -386,6 +417,17 @@ function AnswerActions({
             </IconButton>
           </>
         ) : null}
+        {thinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            disabled={thinkHarder.busy}
+            onPress={thinkHarder.onPress}
+          >
+            <View style={thinkHarder.busy ? styles.dimmed : null}>
+              <LightbulbGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            </View>
+          </IconButton>
+        ) : null}
         {report ? (
           <IconButton
             // Named for what it reports, as web's icon is: there are no
@@ -427,6 +469,7 @@ function RatedAnswerActions({
   askId: string;
   text: string | null;
   report: AskTurnReport | null;
+  thinkHarder: { busy: boolean; onPress: () => void } | null;
 }) {
   return <AnswerActions thumbs={useAskThumbs(askId)} {...row} />;
 }
@@ -626,7 +669,9 @@ function AnswerBody({
   return (
     <>
       {/* The reader's channel list is only read for an answer that names one. */}
-      {onOpenChannel && entities.some((entity) => entity.type === "channel") ? (
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {!answer.text ? null : onOpenChannel &&
+        entities.some((entity) => entity.type === "channel") ? (
         <ChannelOpens>{words}</ChannelOpens>
       ) : (
         words(() => false)
@@ -670,7 +715,7 @@ function EntityText({
   onOpenChannel,
 }: {
   text: string;
-  entities: readonly AskNamedEntity[];
+  entities: readonly AskEntity[];
   mentionStyle: StyleProp<TextStyle>;
   canOpenChannel: (channelId: string) => boolean;
   onOpenChannel?: (channelId: string) => void;
