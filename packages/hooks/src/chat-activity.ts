@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 import { isChannelHeldUnread, trackActivityStamping } from "./read-cursor";
-import { invalidateChannelSummaries } from "./use-chat";
+import {
+  CHANNEL_UNREAD_COUNTS_KEY,
+  invalidateChannelSummaries,
+} from "./use-chat";
 
 /**
  * What the chat realtime manager reports about traffic outside the open
@@ -18,7 +21,8 @@ export type ChatActivity =
       channelId: string;
       senderId: string | null;
     }
-  | { type: "resync" };
+  | { type: "resync" }
+  | { type: "joined" };
 
 /**
  * How long activity is gathered before it is acted on. A burst (three quick
@@ -27,6 +31,15 @@ export type ChatActivity =
  * (#3698).
  */
 export const CHAT_ACTIVITY_COALESCE_MS = 250;
+
+/**
+ * How long after the inbox's first join the handler waits for a read of the
+ * unread counts to start before it starts one itself (#4961). A read that
+ * starts after the join counts every message the join could have missed. On a
+ * cold open one usually follows within a few hundred milliseconds: opening a
+ * thread stamps it read, and the stamp re-reads the counts.
+ */
+export const CHAT_JOIN_CHECK_MS = 1_000;
 
 /*
   The channel a thread screen is showing right now, process-wide.
@@ -70,6 +83,8 @@ export interface ChatActivityHandlerOptions {
   /** `POST /v1/channels/{id}/read`; its result is not read. */
   markRead: (channelId: string) => Promise<unknown>;
   delayMs?: number;
+  /** {@link CHAT_JOIN_CHECK_MS}, overridable for tests. */
+  joinCheckMs?: number;
 }
 
 export interface ChatActivityHandler {
@@ -92,6 +107,15 @@ export interface ChatActivityHandler {
  * - A `resync` reads both again, and first re-stamps the channel being looked
  *   at: whatever arrived in it while the app was away, the member is now
  *   looking at, and nothing else would stamp it until they leave.
+ * - A `joined` (the inbox's first join, nothing dropped) is a resync only if
+ *   the counts were read, or were being read, before the join and no read of
+ *   them starts within {@link CHAT_JOIN_CHECK_MS} after it (#4961). A message
+ *   that landed between the counts' read and the join reached no inbox, and
+ *   only a read that starts after the join is sure to count it. Counts never
+ *   read yet need nothing: their first read starts after the join. A message
+ *   in that gap in the channel being looked at may still count as unread
+ *   until the member leaves it; it is on screen, and its rail row shows no
+ *   badge while it is the active channel.
  *
  * A round's stamps wait for every earlier round's, so a slow stamp can't be
  * overtaken by a later round's re-read that would count the message as unread.
@@ -106,7 +130,10 @@ export function createChatActivityHandler(
   options: ChatActivityHandlerOptions,
 ): ChatActivityHandler {
   const delayMs = options.delayMs ?? CHAT_ACTIVITY_COALESCE_MS;
+  const joinCheckMs = options.joinCheckMs ?? CHAT_JOIN_CHECK_MS;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** Ends the pending `joined` check, if any. */
+  let stopJoinCheck = () => {};
   let refresh = false;
   const stamps = new Set<string>();
   let disposed = false;
@@ -135,8 +162,50 @@ export function createChatActivityHandler(
     trackActivityStamping(stamping);
   };
 
+  /*
+    Watches for a read of the unread counts that starts after the join. A
+    `fetch` action is dispatched only when a request really starts (a read
+    already in flight is shared, not restarted), so one seen here was sent
+    after the join, and the server answers it from after the join too.
+  */
+  const checkJoin = () => {
+    stopJoinCheck();
+    const cache = options.queryClient.getQueryCache();
+    const unread = cache.find({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+    const neverRead =
+      !unread ||
+      (unread.state.dataUpdatedAt === 0 &&
+        unread.state.fetchStatus === "idle");
+    if (neverRead) return;
+    const unsubscribe = cache.subscribe((event) => {
+      if (
+        event.type === "updated" &&
+        event.query.queryHash === unread.queryHash &&
+        event.action.type === "fetch"
+      ) {
+        stopJoinCheck();
+      }
+    });
+    const timeout = setTimeout(() => {
+      stopJoinCheck();
+      handle({ type: "resync" });
+    }, joinCheckMs);
+    stopJoinCheck = () => {
+      unsubscribe();
+      clearTimeout(timeout);
+      stopJoinCheck = () => {};
+    };
+  };
+
   const handle = (activity: ChatActivity) => {
     if (disposed) return;
+    if (activity.type === "joined") {
+      checkJoin();
+      return;
+    }
     if (activity.type === "resync") {
       refresh = true;
       const viewed = options.viewing();
@@ -156,6 +225,7 @@ export function createChatActivityHandler(
 
   const dispose = () => {
     disposed = true;
+    stopJoinCheck();
     if (timer) clearTimeout(timer);
     timer = null;
     stamps.clear();

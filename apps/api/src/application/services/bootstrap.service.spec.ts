@@ -1,9 +1,6 @@
 import { Logger } from '@nestjs/common';
-import {
-  BOOTSTRAP_NOTIFICATION_LIMIT,
-  BOOTSTRAP_SECTION_NAMES,
-  BootstrapService,
-} from './bootstrap.service';
+import { INBOX_FIRST_PAGE_SIZE } from '@repo/validation';
+import { BOOTSTRAP_SECTION_NAMES, BootstrapService } from './bootstrap.service';
 import type { ChapterDocumentService } from './chapter-document.service';
 import type { ChapterService } from './chapter.service';
 import type { ChatBackgroundService } from './chat-background.service';
@@ -215,7 +212,7 @@ describe('BootstrapService', () => {
     expect(m.notifications.listNotifications).toHaveBeenCalledWith(
       USER,
       CHAPTER,
-      { limit: BOOTSTRAP_NOTIFICATION_LIMIT },
+      { limit: INBOX_FIRST_PAGE_SIZE },
     );
     expect(m.chat.getChannelList).toHaveBeenCalledWith(CHAPTER, USER);
     expect(m.chat.getUnreadCounts).toHaveBeenCalledWith(CHAPTER, USER);
@@ -234,10 +231,6 @@ describe('BootstrapService', () => {
     expect(m.geofences.listGeofences).toHaveBeenCalledWith(CHAPTER);
     // The route's no-filter read: no folder, no search.
     expect(m.documents.findByChapter).toHaveBeenCalledWith(CHAPTER, undefined);
-  });
-
-  it('reads the inbox at the page the clients ask for by default', () => {
-    expect(BOOTSTRAP_NOTIFICATION_LIMIT).toBe(50);
   });
 
   it('reads only the sections `include` names', async () => {

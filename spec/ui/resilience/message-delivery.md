@@ -161,7 +161,13 @@ them. Being subscribed is not enough, because a mobile thread stays mounted unde
 over it. A round's stamps wait for the previous round's, so a slow stamp can't be overtaken by a
 later round's re-read, but no round waits on a re-read. A `resync` also re-stamps the channel being
 looked at, which covers what arrived in it while the app was away. Each rejoin of the inbox after a drop reports a
-`resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
+`resync`, which re-reads both. Its first join reports `joined` instead (#4961): nothing was dropped,
+but a message that landed after the summaries were read and before the join reached no inbox. The
+client re-reads, as a `resync` does, only if the counts were read before the join and no read of
+them starts within `CHAT_JOIN_CHECK_MS` (1 s) after it; on a cold open the thread's own read stamp
+usually re-reads them first. Web binds the manager before `GET /v1/users/me` answers, so the first
+viewer to resolve is the session the inbox already joined with, and keeps that join; a viewer who
+changes after one was bound (a sign-out, then a sign-in) rejoins it. Mobile binds the manager app-wide from `components/app-runtime.tsx`
 so the inbox runs from launch. Web binds it for the whole dashboard from `DashboardShell`
 (`useChatRealtimeBinding`, #3745), so the nav's Chat row lights, or its Direct messages row counts (#3774), within seconds of a
 message on any page, not only on `/chat`; `ChatProvider` never configures or tears the manager down.

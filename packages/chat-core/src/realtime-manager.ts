@@ -186,6 +186,12 @@ export interface ManagerContext {
  * - `resync`: the manager may have missed messages (the inbox rejoined after a
  *   drop, or the app came back from the background) and anything derived from
  *   them should be read again.
+ * - `joined`: the inbox's first join went straight through. Nothing was
+ *   dropped, but a message that landed after the summaries were read and
+ *   before this join reached no one (#4961). The client re-reads only if no
+ *   summary read starts after the join: on a cold open the thread's own read
+ *   stamp usually re-reads the counts just after it, and a second read would
+ *   be the redundant request #4961 removed.
  */
 export type MessageActivity =
   | {
@@ -193,7 +199,8 @@ export type MessageActivity =
       channelId: string;
       senderId: string | null;
     }
-  | { type: "resync" };
+  | { type: "resync" }
+  | { type: "joined" };
 
 /**
  * How often `resume()`'s probe looks at the socket's outstanding heartbeat. A
@@ -368,6 +375,12 @@ class ChatRealtimeManager {
    * every SUBSCRIBED after either follows a gap and owes a resync.
    */
   private inboxOwesResync = false;
+  /**
+   * Whether any `configure` since the last `destroy()` named a viewer. The
+   * first viewer to resolve is the one whose session already joined, so it
+   * owes the inbox no rejoin (#4961); any later change does.
+   */
+  private viewerBound = false;
   private inboxBackoffStep = 0;
   private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /** The second heartbeat of a `resume()` probe, pending. */
@@ -442,12 +455,22 @@ class ChatRealtimeManager {
     */
     const before = previous ? (previous.viewerId ?? null) : null;
     const after = ctx.viewerId ?? null;
+    const firstViewer = !this.viewerBound && after !== null;
+    if (after !== null) this.viewerBound = true;
     // The inbox's rows are filtered by RLS against the session that joined.
-    // A viewer resolving or changing usually means a new session (a sign-out
-    // rebinds with `null`, a sign-in with the member), so rejoin rather than
-    // trust the token refresh to re-scope a subscription made under the old
-    // one.
-    if (previous !== null && before !== after) this.reopenInbox();
+    // A viewer changing usually means a new session (a sign-out rebinds with
+    // `null`, a sign-in with the member), so rejoin rather than trust the
+    // token refresh to re-scope a subscription made under the old one.
+    //
+    // The first viewer to resolve is the exception (#4961). Web configures at
+    // mount, before `GET /v1/users/me` answers, and that read is answered for
+    // the very session the inbox joined with: nothing to re-scope. Rejoining
+    // there cost a read stamp and an unread re-read on every cold open,
+    // through the rejoin's resync. A viewer who resolves after another was
+    // bound (sign-out through `null`, then a sign-in) still rejoins.
+    if (previous !== null && before !== after && !firstViewer) {
+      this.reopenInbox();
+    }
     for (const state of this.channels.values()) {
       if (state.attachSeq === 0) {
         this.reopenChannel(state);
@@ -485,6 +508,7 @@ class ChatRealtimeManager {
     }
     this.inboxLive = false;
     this.inboxOwesResync = false;
+    this.viewerBound = false;
     this.inboxBackoffStep = 0;
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
@@ -1278,10 +1302,13 @@ class ChatRealtimeManager {
           clearTimeout(this.inboxRetryTimer);
           this.inboxRetryTimer = null;
         }
-        // A first join that went straight through has nothing to catch up on:
-        // the summaries were read when their screens mounted. A rejoin, or a
-        // first join that only landed after failing, follows a gap.
-        if (this.inboxOwesResync) this.reportActivity({ type: "resync" });
+        // A rejoin, or a first join that only landed after failing, follows a
+        // gap. A first join that went straight through dropped nothing, but
+        // the summaries may have been read before it, so it says so and the
+        // client decides whether they need reading again (#4961).
+        this.reportActivity({
+          type: this.inboxOwesResync ? "resync" : "joined",
+        });
         this.inboxOwesResync = true;
       } else if (
         status === "CHANNEL_ERROR" ||
