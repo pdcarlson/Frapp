@@ -13,10 +13,13 @@ import {
   useUpdateUser,
 } from "@repo/hooks";
 import {
+  BIRTHDAY_VISIBILITY_DEFAULT,
+  type BirthdayVisibility,
   can,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
+  isValidBirthday,
   MAJOR_MAX_LENGTH,
   PHONE_INVALID_MESSAGE,
   PHONE_MAX_LENGTH,
@@ -32,6 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
+import { BirthdayFields } from "@/components/profile/birthday-fields";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
@@ -50,6 +54,10 @@ type CurrentUser = {
   current_city?: string | null;
   current_company?: string | null;
   phone?: string | null;
+  birthday_month?: number | null;
+  birthday_day?: number | null;
+  birthday_year?: number | null;
+  birthday_visibility?: BirthdayVisibility;
 };
 
 /**
@@ -93,6 +101,8 @@ export function ProfilePanel() {
   // Set on a submit the phone refused, cleared when the member edits it
   // (validate on submit, not per keystroke: components.md § Text input).
   const [phoneError, setPhoneError] = useState(false);
+  // Set on a submit with half a birthday, or a day its month lacks (#4959).
+  const [birthdayError, setBirthdayError] = useState(false);
 
   // The server payload the draft was last seeded from, so a re-seed can tell a
   // field the member edited from one they left alone.
@@ -175,8 +185,25 @@ export function ProfilePanel() {
       setPhoneError(true);
       return;
     }
+    // Month and day go together; the year rides with them (#4959).
+    const month = profileDraft.birthday_month ?? null;
+    const day = profileDraft.birthday_day ?? null;
+    const year = profileDraft.birthday_year ?? null;
+    if (
+      (month === null) !== (day === null) ||
+      (month !== null && day !== null && !isValidBirthday(month, day, year)) ||
+      (month === null && year !== null)
+    ) {
+      setBirthdayError(true);
+      return;
+    }
     try {
       await updateUser.mutateAsync({
+        birthday_month: month,
+        birthday_day: day,
+        birthday_year: month === null ? null : year,
+        birthday_visibility:
+          profileDraft.birthday_visibility ?? BIRTHDAY_VISIBILITY_DEFAULT,
         display_name: profileDraft.display_name ?? undefined,
         // Blank clears it; the API trims and stores null.
         phone: profileDraft.phone === undefined ? undefined : phone,
@@ -454,6 +481,26 @@ export function ProfilePanel() {
                 />
               </div>
             </div>
+            <BirthdayFields
+              value={{
+                month: profile.birthday_month ?? null,
+                day: profile.birthday_day ?? null,
+                year: profile.birthday_year ?? null,
+                visibility:
+                  profile.birthday_visibility ?? BIRTHDAY_VISIBILITY_DEFAULT,
+              }}
+              invalid={birthdayError}
+              onChange={(next) => {
+                setBirthdayError(false);
+                setProfileDraft((prev) => ({
+                  ...prev,
+                  birthday_month: next.month,
+                  birthday_day: next.day,
+                  birthday_year: next.year,
+                  birthday_visibility: next.visibility,
+                }));
+              }}
+            />
             <div className="grid gap-2">
               <Label htmlFor="bio">{PROFILE_FIELD_COPY.bio.label}</Label>
               <Textarea

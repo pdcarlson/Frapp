@@ -31,6 +31,7 @@ describe('UserService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -117,6 +118,100 @@ describe('UserService', () => {
       graduation_year: 2024,
     });
     expect(result).toEqual(updatedUser);
+  });
+
+  describe('birthday (#4959)', () => {
+    beforeEach(() => {
+      mockRepo.update.mockImplementation((_id, data) =>
+        Promise.resolve(userFixture(data)),
+      );
+    });
+
+    it('saves a month and day, with or without a year', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await service.update('user-1', {
+        birthday_month: 2,
+        birthday_day: 29,
+        birthday_visibility: 'chapter',
+      });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_month: 2,
+        birthday_day: 29,
+        birthday_visibility: 'chapter',
+      });
+    });
+
+    it('refuses a day its month does not have', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_month: 4, birthday_day: 31 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a month without a day', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_month: 4 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('checks a year alone against the stored day', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ birthday_month: 2, birthday_day: 29 }),
+      );
+
+      await expect(
+        service.update('user-1', { birthday_year: 2003 }),
+      ).rejects.toThrow(BadRequestException);
+      await service.update('user-1', { birthday_year: 2004 });
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_year: 2004,
+      });
+    });
+
+    it('refuses a year when no birthday is set', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_year: 2004 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('clears the year with the month and day', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({
+          birthday_month: 3,
+          birthday_day: 4,
+          birthday_year: 2004,
+        }),
+      );
+
+      await service.update('user-1', {
+        birthday_month: null,
+        birthday_day: null,
+      });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_month: null,
+        birthday_day: null,
+        birthday_year: null,
+      });
+    });
+
+    it('takes a visibility change alone', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await service.update('user-1', { birthday_visibility: 'nobody' });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_visibility: 'nobody',
+      });
+    });
   });
 
   it('should reject profile updates on a tombstoned (deleted) account', async () => {

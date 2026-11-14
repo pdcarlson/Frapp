@@ -102,8 +102,10 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   try {
     await db.exec(`
       begin;
-      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city, phone)
-      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy', '(518) 555-0142');
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city, phone,
+                         birthday_month, birthday_day, birthday_year, birthday_visibility)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy', '(518) 555-0142',
+              3, 4, 2004, 'chapter');
       insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
       insert into members (user_id, chapter_id) values ('${U}', '${C}');
       insert into point_transactions (chapter_id, user_id, amount, category, description)
@@ -207,6 +209,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       {
         name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
         sql: `select display_name, email, bio, avatar_url, graduation_year, current_city, phone,
+                     birthday_month, birthday_day, birthday_year, birthday_visibility,
                      (deleted_at is not null) as tombstoned
                 from users where id = '${U}'`,
         ok: (rows) =>
@@ -218,6 +221,11 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows[0].graduation_year === null &&
           rows[0].current_city === null &&
           rows[0].phone === null &&
+          // The birthday (#4959), cleared by `users_clear_birthday_on_tombstone`.
+          rows[0].birthday_month === null &&
+          rows[0].birthday_day === null &&
+          rows[0].birthday_year === null &&
+          rows[0].birthday_visibility === "nobody" &&
           rows[0].tombstoned === true,
       },
       {

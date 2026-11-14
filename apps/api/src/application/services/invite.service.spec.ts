@@ -169,6 +169,7 @@ describe('InviteService', () => {
       findByIds: jest.fn().mockResolvedValue([]),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

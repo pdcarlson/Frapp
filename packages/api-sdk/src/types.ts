@@ -644,6 +644,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/members/birthdays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Birthdays members share with the chapter
+         * @description Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.
+         */
+        get: operations["MemberController_birthdays_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members/by-user/{userId}": {
         parameters: {
             query?: never;
@@ -5523,6 +5543,17 @@ export interface components {
              * @example (518) 555-0142
              */
             phone?: string | null;
+            /** @description The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year). */
+            birthday_month?: number | null;
+            /** @description The day of `birthday_month`. It must exist in that month; 29 February is taken. */
+            birthday_day?: number | null;
+            /** @description The birth year, optional. Never shown to anyone but the member. Needs a month and day. */
+            birthday_year?: number | null;
+            /**
+             * @description Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.
+             * @enum {string}
+             */
+            birthday_visibility?: "chapter" | "nobody";
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -5998,6 +6029,10 @@ export interface components {
             email: string;
             /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
             phone: string | null;
+            /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
+            birthday_month: number | null;
+            /** @description The day of `birthday_month`, under the same rule. The year is never sent. */
+            birthday_day: number | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -6022,6 +6057,15 @@ export interface components {
             avatar_url: string | null;
             /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
+        };
+        MemberBirthdayDto: {
+            /** @description users.id */
+            id: string;
+            display_name: string;
+            avatar_url: string | null;
+            birthday_month: number;
+            /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
+            birthday_day: number;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -11708,6 +11752,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_birthdays_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberBirthdayDto"][];
                 };
             };
             /** @description Error */

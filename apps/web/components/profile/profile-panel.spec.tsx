@@ -338,6 +338,42 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     });
   });
 
+  it("keeps a stored birthday and sends who can see it (#4959)", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      birthday_month: 3,
+      birthday_day: 4,
+      birthday_year: 2004,
+      birthday_visibility: "nobody",
+    } as typeof mocks.userQuery.data;
+    render(<ProfilePanel />);
+
+    await userEvent.click(screen.getByRole("radio", { name: "Your chapter" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
+      birthday_month: 3,
+      birthday_day: 4,
+      birthday_year: 2004,
+      birthday_visibility: "chapter",
+    });
+  });
+
+  it("refuses a birth year with no month and day (#4959)", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Year (optional)"), "2004");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Pick a month and a day",
+    );
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("refuses something that isn't a phone number, and says so", async () => {
     render(<ProfilePanel />);
 

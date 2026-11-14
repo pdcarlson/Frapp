@@ -1,7 +1,9 @@
 import type { components } from "@repo/api-sdk";
 import {
+  BIRTHDAY_COPY,
   GRADUATION_YEAR_MESSAGE,
   isPhoneNumber,
+  isValidBirthday,
   MAJOR_MAX_LENGTH,
   parseGraduationYear,
   PHONE_INVALID_MESSAGE,
@@ -24,6 +26,12 @@ export type ProfileDraft = {
   bio: string;
   city: string;
   company: string;
+  /** The birthday (#4959), typed as digits: month, day, optional year. */
+  birthdayMonth: string;
+  birthdayDay: string;
+  birthdayYear: string;
+  /** `chapter` or `nobody`, set by the sheet's segmented control. */
+  birthdayVisibility: string;
 };
 
 /**
@@ -56,7 +64,22 @@ export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
         : String(profile.graduationYear),
     city: profile?.currentCity ?? "",
     company: profile?.currentCompany ?? "",
+    birthdayMonth: digits(profile?.birthdayMonth),
+    birthdayDay: digits(profile?.birthdayDay),
+    birthdayYear: digits(profile?.birthdayYear),
+    birthdayVisibility: profile?.birthdayVisibility ?? "nobody",
   };
+}
+
+function digits(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/** A typed whole number, `null` for blank, `undefined` for anything else. */
+function typedInt(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
 }
 
 /**
@@ -118,6 +141,39 @@ export function profilePatch(
       return { ok: false, field: "major", message: MAJOR_TOO_LONG_MESSAGE };
     }
     patch.major = major;
+  }
+
+  // The birthday (#4959): month and day together, or both blank to clear
+  // it (and its year). Sent whole whenever any part changed, so the API checks
+  // the day against the month and year as one.
+  const birthdayChanged = (
+    ["birthdayMonth", "birthdayDay", "birthdayYear"] as const
+  ).some((key) => draft[key].trim() !== original[key].trim());
+  if (birthdayChanged) {
+    const month = typedInt(draft.birthdayMonth);
+    const day = typedInt(draft.birthdayDay);
+    const year = typedInt(draft.birthdayYear);
+    const cleared = month === null && day === null && year === null;
+    if (
+      !cleared &&
+      (month == null ||
+        day == null ||
+        year === undefined ||
+        !isValidBirthday(month, day, year))
+    ) {
+      return {
+        ok: false,
+        field: "birthdayMonth",
+        message: BIRTHDAY_COPY.invalid,
+      };
+    }
+    patch.birthday_month = cleared ? null : month;
+    patch.birthday_day = cleared ? null : day;
+    patch.birthday_year = cleared ? null : year;
+  }
+  if (draft.birthdayVisibility !== original.birthdayVisibility) {
+    patch.birthday_visibility =
+      draft.birthdayVisibility === "chapter" ? "chapter" : "nobody";
   }
 
   const bio = draft.bio.trim();

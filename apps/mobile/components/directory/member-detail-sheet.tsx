@@ -531,6 +531,13 @@ export const MemberDetailSheet = forwardRef<
                     }
                   />
                 ) : null}
+                {detail.birthday ? (
+                  <ListRow
+                    variant="detail"
+                    label="Birthday"
+                    value={detail.birthday}
+                  />
+                ) : null}
                 <ListRow
                   variant="detail"
                   label="Member since"

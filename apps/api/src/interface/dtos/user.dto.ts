@@ -11,11 +11,16 @@ import {
   ValidatorConstraint,
   type ValidatorConstraintInterface,
   Matches,
+  IsIn,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  BIRTH_YEAR_MAX,
+  BIRTH_YEAR_MIN,
+  BIRTHDAY_VISIBILITIES,
+  type BirthdayVisibility,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
@@ -239,4 +244,58 @@ export class UpdateUserDto {
   @IsString()
   @Validate(PhoneNumberConstraint)
   phone?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 12,
+    description:
+      "The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year).",
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  birthday_month?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 31,
+    description:
+      'The day of `birthday_month`. It must exist in that month; 29 February is taken.',
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  birthday_day?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: BIRTH_YEAR_MIN,
+    maximum: BIRTH_YEAR_MAX,
+    description:
+      'The birth year, optional. Never shown to anyone but the member. Needs a month and day.',
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(BIRTH_YEAR_MIN)
+  @Max(BIRTH_YEAR_MAX)
+  birthday_year?: number | null;
+
+  @ApiPropertyOptional({
+    enum: BIRTHDAY_VISIBILITIES,
+    description:
+      "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.",
+  })
+  @IsOptional()
+  @IsIn(BIRTHDAY_VISIBILITIES)
+  birthday_visibility?: BirthdayVisibility;
 }
