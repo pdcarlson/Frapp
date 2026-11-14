@@ -25,6 +25,7 @@ const message = (
   is_deleted: false,
   thread_root_id: null,
   forwarded_from: null,
+  has_gif: false,
   created_at: '2026-11-13T00:00:00.000Z',
   ...overrides,
 });
