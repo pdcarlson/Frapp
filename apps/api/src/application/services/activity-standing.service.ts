@@ -90,7 +90,7 @@ export interface ActivityStanding {
 }
 
 /** Study statuses a session cannot leave: its minutes are final. */
-const ENDED_STUDY: ReadonlySet<StudySessionStatus> = new Set([
+export const ENDED_STUDY: ReadonlySet<StudySessionStatus> = new Set([
   'COMPLETED',
   'EXPIRED',
   'PAUSED_EXPIRED',

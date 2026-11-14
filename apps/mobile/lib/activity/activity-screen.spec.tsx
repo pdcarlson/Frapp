@@ -174,6 +174,9 @@ const links = vi.hoisted(() => ({
   markRead: vi.fn(),
 }));
 
+/** Last week's recap (`GET /v1/activity/recap`), unread unless a test sets it. */
+const recap = vi.hoisted(() => ({ value: { data: undefined as unknown } }));
+
 /** The standing read (`GET /v1/activity/standing`) behind the gauges. */
 const standing = vi.hoisted(() => ({
   value: {
@@ -212,6 +215,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useSetMemberNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
   useActivity: () => activity.value,
   useActivityStanding: () => standing.value,
+  useActivityRecap: () => recap.value,
   useViewerUserId: () => "me",
   useActiveChapterId: () => "chapter-1",
   useActivityUnread: () => ({ markRead: links.markRead }),
@@ -263,6 +267,7 @@ vi.mock("@/components/activity/activity-sheet", () => ({
 }));
 
 import ActivityScreen from "@/app/(app)/(tabs)/activity";
+import { recapDismissal } from "@/components/activity/recap-card";
 import {
   ActivityAsk,
   ActivityAskButton,
@@ -1380,6 +1385,64 @@ describe("Activity screen (#3897)", () => {
     expect(
       (sheet.props?.row as unknown as { title: string } | null)?.title,
     ).toBe("Book the venue (moved)");
+  });
+
+  describe("Last week (#4983)", () => {
+    const recapRead = {
+      start: new Date(2026, 10, 8).toISOString(),
+      end: new Date(2026, 10, 15).toISOString(),
+      events_attended: 2,
+      tasks_done: 3,
+      points: null,
+      service_minutes: 0,
+      study_minutes: 90,
+      unavailable: [],
+    };
+    afterEach(() => {
+      recap.value = { data: undefined };
+      recapDismissal.resetForTests();
+    });
+
+    it("sums up what the member did, and stays gone once dismissed", () => {
+      recap.value = { data: recapRead };
+      const tree = render();
+      const card = tree.root.findByProps({ testID: "activity-recap" });
+      expect(drawnText(card)).toContain("Last week");
+      expect(drawnText(card)).toContain("Nov 8 – 14");
+      const figure = (id: string) =>
+        card.findByProps({ testID: `activity-recap-${id}`, accessible: true })
+          .props.accessibilityLabel;
+      expect(figure("events")).toBe("2 events attended");
+      expect(figure("tasks")).toBe("3 tasks done");
+      expect(figure("study")).toBe("1h 30m studied");
+      // Points are off and service is zero: neither is drawn.
+      expect(
+        card.findAll(
+          (node) =>
+            node.props.testID === "activity-recap-points" ||
+            node.props.testID === "activity-recap-service",
+        ),
+      ).toHaveLength(0);
+
+      act(() => {
+        pressable(tree, "activity-recap-dismiss").props.onPress();
+      });
+      expect(
+        tree.root.findAll((node) => node.props.testID === "activity-recap"),
+      ).toHaveLength(0);
+    });
+
+    it("draws nothing for a week with nothing to show", () => {
+      recap.value = {
+        data: {
+          ...recapRead,
+          events_attended: 0,
+          tasks_done: 0,
+          study_minutes: null,
+        },
+      };
+      expect(screenText(render())).not.toContain("Last week");
+    });
   });
 
   describe("This semester (the gauges)", () => {

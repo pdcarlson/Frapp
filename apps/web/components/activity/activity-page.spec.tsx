@@ -6,6 +6,9 @@ const mockActivity = vi.fn();
 const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
   () => ({ isPending: false, data: undefined }),
 );
+const mockRecap = vi.fn<() => { data?: unknown }>(() => ({
+  data: undefined,
+}));
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
@@ -59,6 +62,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
     useActivityStanding: () => mockStanding(),
+    useActivityRecap: () => mockRecap(),
+    activityRecapCard: actual.activityRecapCard,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
@@ -170,6 +175,8 @@ vi.mock("./activity-link-row", () => ({
 }));
 
 const { ActivityPage } = await import("./activity-page");
+const { RECAP_DISMISSED_STORAGE_KEY, resetRecapDismissalForTests } =
+  await import("./recap-card");
 
 const task = {
   id: "t1",
@@ -235,6 +242,9 @@ beforeEach(() => {
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
   mockStanding.mockReturnValue({ isPending: false, data: undefined });
+  mockRecap.mockReturnValue({ data: undefined });
+  window.localStorage.clear();
+  resetRecapDismissalForTests();
   mockGate.mockReturnValue({
     allowed: true,
     isOffline: false,
@@ -723,6 +733,56 @@ describe("ActivityPage", () => {
     });
   });
 
+  describe("Last week (#4983)", () => {
+    const recap = {
+      start: new Date(2026, 10, 8).toISOString(),
+      end: new Date(2026, 10, 15).toISOString(),
+      events_attended: 2,
+      tasks_done: 0,
+      points: 15,
+      service_minutes: null,
+      study_minutes: 90,
+      unavailable: ["service"],
+    };
+
+    it("sums up last week with only what the member did, and stays gone once dismissed", () => {
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({ data: recap });
+      const { unmount } = render(<ActivityPage />);
+
+      const card = screen.getByRole("region", { name: "Last week" });
+      expect(within(card).getByText("Nov 8 – 14")).toBeInTheDocument();
+      expect(
+        within(card)
+          .getAllByRole("listitem")
+          .map((item) => item.getAttribute("aria-label")),
+      ).toEqual(["2 events attended", "15 points earned", "1h 30m studied"]);
+
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Dismiss last week's recap" }),
+      );
+      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
+      expect(window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY)).toBe(
+        recap.end,
+      );
+
+      // Remembered across visits, until next week's recap.
+      unmount();
+      resetRecapDismissalForTests();
+      render(<ActivityPage />);
+      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
+    });
+
+    it("draws nothing for a week with nothing to show", () => {
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({
+        data: { ...recap, events_attended: 0, points: 0, study_minutes: 0 },
+      });
+      render(<ActivityPage />);
+      expect(screen.queryByText("Last week")).toBeNull();
+    });
+  });
+
   describe("This semester (#4766)", () => {
     it("draws a gauge per number, each linking to the page that owns it, with a ring only toward a target", () => {
       mockActivity.mockReturnValue(loaded());
@@ -1125,7 +1185,7 @@ describe("ActivityPage", () => {
     }
   });
 
-  it("orders the page: the week, this semester, to review, to do, waiting on others, links", () => {
+  it("orders the page: the week, last week, this semester, to review, to do, waiting on others, links", () => {
     mockPermissions.mockReturnValue({
       data: { permissions: ["tasks:manage"] },
     });
@@ -1136,6 +1196,18 @@ describe("ActivityPage", () => {
         required_events: { required: 8, attended: 6, excused: 1 },
         service: null,
         study: null,
+        unavailable: [],
+      },
+    });
+    mockRecap.mockReturnValue({
+      data: {
+        start: new Date(2026, 10, 8).toISOString(),
+        end: new Date(2026, 10, 15).toISOString(),
+        events_attended: 1,
+        tasks_done: null,
+        points: null,
+        service_minutes: null,
+        study_minutes: null,
         unavailable: [],
       },
     });
@@ -1179,6 +1251,7 @@ describe("ActivityPage", () => {
         .map((heading) => heading.textContent),
     ).toEqual([
       "2 left this week",
+      "Last week",
       "This semester",
       "To review",
       "To do",

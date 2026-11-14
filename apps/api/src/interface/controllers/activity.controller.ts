@@ -28,6 +28,8 @@ import {
   acceptableWeekStart,
 } from '../../application/services/activity-standing.service';
 import type { ActivityStanding } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
+import type { ActivityRecap } from '../../application/services/activity-recap.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -40,6 +42,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
+  ActivityRecapDto,
   ActivityStandingDto,
   ActivityWeekQueryDto,
   MarkActivityReadDto,
@@ -74,6 +77,7 @@ export class ActivityController {
     private readonly activityService: ActivityService,
     private readonly linkService: ActivityLinkService,
     private readonly standingService: ActivityStandingService,
+    private readonly recapService: ActivityRecapService,
   ) {}
 
   @Get()
@@ -121,6 +125,29 @@ export class ActivityController {
   ): Promise<ActivityStanding> {
     const now = new Date();
     return this.standingService.getStanding(chapterId, userId, enabledModules, {
+      weekStart: weekStartOf(query, now),
+      now,
+    });
+  }
+
+  @Get('recap')
+  @ApiOperation({
+    summary: 'Get what the caller did last week',
+    description:
+      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the seven days before `week_start` (the start of their current week, as the standing reads it). Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
+  })
+  @ApiOkResponse({ type: ActivityRecapDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getRecap(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityWeekQueryDto,
+  ): Promise<ActivityRecap> {
+    const now = new Date();
+    return this.recapService.getRecap(chapterId, userId, enabledModules, {
       weekStart: weekStartOf(query, now),
       now,
     });

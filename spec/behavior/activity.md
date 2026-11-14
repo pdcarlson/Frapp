@@ -216,6 +216,19 @@ judged for an average member, a committee chair and the president
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
 - **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a ring toward it, closed once the goal is met; a part without one draws no ring. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
 
+## Recap
+
+`GET /v1/activity/recap` is the member's last finished week, the "Last week" card at the top of Activity on both clients ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week card counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
+
+- **The week** is the seven days before `week_start`, the start of the caller's current week as the standing reads it (Sunday at local midnight; the same eight-days-back-to-a-day-ahead bound, refused with 400 outside it). `start` and `end` say which week was read.
+- **Events attended:** events that started in the week, among those the caller can see, where they were marked present or late.
+- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week card counts them. One sent back since is open again and not counted.
+- **Points:** the week's ledger rows for the caller, net: an award adds, a deduction takes away.
+- **Service:** minutes on the caller's entries dated on the week's seven days, approved or waiting, never rejected. The server takes the days from the local midnight it was sent, which is right from UTC−12 to UTC+12.
+- **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
+- **The card** shows on Sunday, Monday and Tuesday of the member's week, and the clients read the recap only then. It draws only what the member did: a part that is off, couldn't be read, or is zero is left out, and a week with nothing to show draws no card. Its close button hides it until the next week's recap, remembered per browser on the web and per phone in the app (no server state), as the Get the app card is. A weekly push of the same line is not built yet.
+
 ## Goals
 
 What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:view` and `chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure. A member reads only their own: on the standing, or through `GET /v1/goals/mine` (`members:view`), which the phone's Study screen and More row use so they needn't read the whole standing.
