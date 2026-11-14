@@ -497,6 +497,11 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
+/** Remind me about this (#4957): the set, seen and answered. */
+const reminderWrites = vi.hoisted(() => ({
+  set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
+}));
+
 /** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
 const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 
@@ -522,6 +527,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useBookmarkedMessageIds: () => SAVED,
     useBookmarkMessage: () => bookmarkWrites.save,
     useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    // Remind me about this (#4957): writes that succeed.
+    useSetMessageReminder: () => reminderWrites.set,
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
     useChannel: (id: string) =>
@@ -2917,6 +2924,21 @@ describe("chat thread Pin and Save from the actions sheet", () => {
     expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
     expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
     SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("sets a reminder on the sheet's message (#4957)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree, 0);
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() =>
+      (sheet.props.onRemind as (id: string, at: Date) => void)("m1", at),
+    );
+    expect(reminderWrites.set.mutateAsync).toHaveBeenCalledWith({
+      messageId: "m1",
+      remindAt: at,
+    });
     act(() => tree.unmount());
   });
 

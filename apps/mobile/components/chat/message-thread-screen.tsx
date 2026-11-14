@@ -117,6 +117,7 @@ import {
 import { useThreadRowWrites } from "@/lib/chat/use-thread-row-writes";
 import { selectionHaptic } from "@/lib/haptics";
 import { useSaveMessage } from "@/lib/chat/save-message";
+import { useRemindMessage } from "@/lib/chat/message-reminder";
 import { useConnection } from "@/lib/connection/use-connection";
 import { goBackTo } from "@/lib/href";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -672,6 +673,8 @@ export function MessageThreadScreen({
   // Save message on the root and on replies (#3723), as web's thread panel
   // offers it. Pin stays on the channel's sheet: no client pins a reply.
   const { savedIds, setSaved } = useSaveMessage();
+  // "Remind me about this" (#4957), on the root and on replies alike.
+  const remind = useRemindMessage();
   // The viewer's reactions on the sheet's message, and whether it is saved,
   // read live, as the channel's sheet reads them.
   const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
@@ -1025,6 +1028,7 @@ export function MessageThreadScreen({
         onReact={onReact}
         onUnreact={onUnreact}
         onSetSaved={setSaved}
+        onRemind={remind}
       />
       <FormFillPage state={formFill} message={filledRow} nameFor={nameFor} />
     </SafeAreaView>

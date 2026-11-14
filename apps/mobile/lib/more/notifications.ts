@@ -99,7 +99,9 @@ function toRow(
     title,
     body: str(row, "body"),
     data: row.data,
-    target: resolveNotificationTarget(row.data),
+    // A reminder's row opens chat at its message (#4957), which the row
+    // names in `chat_message_id` rather than in its `data`.
+    target: resolveNotificationTarget(row.data, str(row, "chat_message_id")),
     time: when.time,
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.

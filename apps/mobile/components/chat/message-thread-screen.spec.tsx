@@ -201,6 +201,12 @@ const save = vi.hoisted(() => ({
   setSaved: vi.fn(),
 }));
 vi.mock("@/lib/chat/save-message", () => ({ useSaveMessage: () => save }));
+// Remind me about this (#4957): the set is seen, not sent.
+const remind = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/chat/message-reminder", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/message-reminder")>()),
+  useRemindMessage: () => remind,
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -905,6 +911,10 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     expect(target.save).toEqual({ saved: true });
     act(() => sheet(tree).props.onSetSaved("r2", false));
     expect(save.setSaved).toHaveBeenCalledWith("r2", false);
+    // Remind me about this, on replies as on the channel (#4957).
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() => sheet(tree).props.onRemind("r2", at));
+    expect(remind).toHaveBeenCalledWith("r2", at);
     // Not offered here: the channel timeline's Reply, Start thread, Mention
     // and Important.
     expect(sheet(tree).props.onReply).toBeUndefined();

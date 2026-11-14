@@ -28,6 +28,7 @@ import {
   useSetActivityLinkState,
   useViewerUserId,
   useActivityFaces,
+  useClearMessageReminder,
   type ActivityAgendaDay,
   type ActivityAgendaFilter,
   type ActivityGroup,
@@ -35,6 +36,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { messageReminderPresetTime } from "@repo/hooks/use-message-reminders";
 import { can, isModuleEnabled, memberNudgeAskPrompt } from "@repo/validation";
 import {
   ActivityFaces,
@@ -49,6 +51,7 @@ import {
 import {
   ActivitySheet,
   type LinkSheetActions,
+  type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
 import { NudgeCard } from "@/components/activity/nudge-card";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -69,6 +72,7 @@ import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useRemindMessage } from "@/lib/chat/message-reminder";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -91,7 +95,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * 4. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
  *    week card narrows it to one kind.
- * 5. Waiting on others, then Links: what the member made and what was posted
+ * 5. Reminders, Waiting on others, then Links: the chat messages the member
+ *    asked to be reminded about (#4957), what they made, and what was posted
  *    for them, each left out when it has nothing.
  *
  * It is drawn and checked for four people (`principles.md` § Three people):
@@ -143,7 +148,9 @@ export default function ActivityScreen() {
     }
   };
   const refresh = useRefetchAll([activity, standing]);
-  const { linkActions, undo, rereadOnClose } = useLinkActions();
+  const { linkActions, undo, rereadOnClose, skipNextCloseReread } =
+    useLinkActions();
+  const reminderActions = useReminderActions(skipNextCloseReread);
 
   const permissions = useMyPermissions().data?.permissions;
   const summary = useMemo(
@@ -226,7 +233,7 @@ export default function ActivityScreen() {
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
   const open = (row: ActivityRow) => {
-    if (row.unread) markRead([row.readRef]);
+    if (row.unread && row.readRef) markRead([row.readRef]);
     // A sign-up or form (#3926) is answered on its card: the row goes to
     // the message in chat rather than a sheet, as a link row goes to its
     // link.
@@ -252,7 +259,7 @@ export default function ActivityScreen() {
       allowed: activityRowActionsAllowed(chapter),
       chapterPending: chapterRead.isPending === true,
       onActed: (row) => {
-        if (row.unread) markRead([row.readRef]);
+        if (row.unread && row.readRef) markRead([row.readRef]);
         reread();
       },
     });
@@ -276,7 +283,7 @@ export default function ActivityScreen() {
         ? findActivityTaskRow(result.data, reviewTaskId, new Date())
         : null;
       if (row) {
-        if (row.unread) markRead([row.readRef]);
+        if (row.unread && row.readRef) markRead([row.readRef]);
         setOpened(row);
         setOpenedKey(row.key);
       }
@@ -423,6 +430,7 @@ export default function ActivityScreen() {
             if (nudge) void nudgeActions.recheck();
           }}
           linkActions={linkActions}
+          reminderActions={reminderActions}
         />
         {askDraft !== null ? (
           <AskSheet
@@ -565,7 +573,59 @@ function useLinkActions() {
     skipCloseReread.current = false;
     return !skip;
   };
-  return { linkActions, undo, rereadOnClose };
+  /** For another write that re-reads Activity itself as it settles. */
+  const skipNextCloseReread = () => {
+    skipCloseReread.current = true;
+  };
+  return { linkActions, undo, rereadOnClose, skipNextCloseReread };
+}
+
+/**
+ * A message reminder's writes (#4957). Open goes to the message in chat, in
+ * its thread when it is a reply, as Saved opens one. Snooze moves the
+ * reminder to a preset and confirms it as the message menu's set does; Done
+ * clears it, and the row leaves at once (`useClearMessageReminder`). Either
+ * write re-reads Activity as it settles, so the sheet's close doesn't.
+ */
+function useReminderActions(
+  skipNextCloseReread: () => void,
+): ReminderSheetActions {
+  const router = useRouter();
+  const remind = useRemindMessage();
+  const clear = useClearMessageReminder();
+  const done = (messageId: string) => {
+    clear.mutateAsync(messageId).catch((error: unknown) =>
+      alertFailure({
+        title: "Couldn't clear the reminder",
+        error,
+        retry: () => done(messageId),
+      }),
+    );
+  };
+  return {
+    open: ({ reminder }) =>
+      router.push({
+        pathname: "/chat-thread",
+        params: reminder.thread_root_id
+          ? {
+              channelId: reminder.channel_id,
+              threadRootId: reminder.thread_root_id,
+              focusMessageId: reminder.message_id,
+            }
+          : {
+              channelId: reminder.channel_id,
+              focusMessageId: reminder.message_id,
+            },
+      }),
+    snooze: ({ reminder }, preset) => {
+      skipNextCloseReread();
+      remind(reminder.message_id, messageReminderPresetTime(preset));
+    },
+    done: ({ reminder }) => {
+      skipNextCloseReread();
+      done(reminder.message_id);
+    },
+  };
 }
 
 /**
