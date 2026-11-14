@@ -26,6 +26,16 @@ describe("selectPickableRoles (#4958)", () => {
     ]);
   });
 
+  it("offers an alum nothing, as the API refuses them", () => {
+    const alumni = { ...row("r-alum", "Alumni", false), system_key: "ALUMNI" };
+    expect(
+      selectPickableRoles(
+        [alumni, row("r-im", "Intramurals", true)],
+        ["r-alum"],
+      ),
+    ).toEqual([]);
+  });
+
   it("reads a missing flag or payload as nothing to pick", () => {
     expect(selectPickableRoles([{ id: "a", name: "A" }], [])).toEqual([]);
     expect(selectPickableRoles(undefined, undefined)).toEqual([]);

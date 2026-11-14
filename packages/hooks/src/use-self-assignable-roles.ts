@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters } from "./use-chapters";
 import { useRoles } from "./use-roles";
+import { alumniRoleIdOf } from "@repo/validation";
 import { parseChapterRoles, type ChapterRole } from "./chapter-roles";
 
 /*
@@ -19,7 +20,7 @@ export type PickableRole = ChapterRole & { held: boolean };
 
 /**
  * The chapter's self-assignable roles, by name, each with whether the viewer
- * holds it. The viewer's roles come from their membership summary
+ * holds it; none for an alum. The viewer's roles come from their membership summary
  * (`GET /v1/chapters`), which every member can read; the roles list needs
  * `members:view`, which every member who can open the picker holds.
  */
@@ -28,6 +29,10 @@ export function selectPickableRoles(
   heldRoleIds: readonly string[] | undefined,
 ): PickableRole[] {
   const held = new Set((heldRoleIds ?? []).map((id) => id.toLowerCase()));
+  // Alumni don't pick roles: the API refuses them, since a picked role an
+  // event lists would let them check in past the alumni rule.
+  const alumniRoleId = alumniRoleIdOf(rolesData);
+  if (alumniRoleId && held.has(alumniRoleId.toLowerCase())) return [];
   return parseChapterRoles(rolesData)
     .filter((role) => role.selfAssignable)
     .map((role) => ({ ...role, held: held.has(role.id.toLowerCase()) }))
