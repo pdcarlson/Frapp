@@ -18,8 +18,8 @@ export function useBackworkResources() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["backwork", chapterId, "list"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork", { signal });
       if (error) throw error;
       return data;
     },
@@ -45,8 +45,9 @@ export function useFetchBackworkResource() {
     (id: string) =>
       queryClient.fetchQuery({
         queryKey: ["backwork", id],
-        queryFn: async () => {
+        queryFn: async ({ signal }) => {
           const { data, error } = await client.GET("/v1/backwork/{id}", {
+            signal,
             params: { path: { id } },
           });
           if (error) throw error;
@@ -74,8 +75,10 @@ export function useDepartments(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "departments"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/departments");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/departments", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -93,8 +96,10 @@ export function useBackworkCourses(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "courses"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/courses");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/courses", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -165,8 +170,10 @@ export function useProfessors() {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "professors"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/professors");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/professors", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

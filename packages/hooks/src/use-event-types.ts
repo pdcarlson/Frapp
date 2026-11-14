@@ -27,8 +27,8 @@ export function useEventTypes(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: eventTypesKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/event-types");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/event-types", { signal });
       if (error) throw error;
       return data;
     },

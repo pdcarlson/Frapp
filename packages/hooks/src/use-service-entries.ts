@@ -36,8 +36,9 @@ export function useServiceEntries(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["service-entries", chapterId, userId, filters],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/service-entries", {
+        signal,
         params: {
           query: {
             userId,
@@ -133,10 +134,11 @@ export function useServiceLeaderboard(
       range?.start_date ?? null,
       range?.end_date ?? null,
     ],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/service-entries/leaderboard",
         {
+          signal,
           params: {
             query: {
               start_date: range?.start_date,
@@ -168,9 +170,10 @@ export function useServicePointsRate(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["service-entries", chapterId, "points-rate"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/service-entries/points-rate",
+        { signal },
       );
       if (error) throw error;
       return data;
@@ -206,8 +209,9 @@ export function useServiceEntry(id: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["service-entries", chapterId, "detail", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/service-entries/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) {

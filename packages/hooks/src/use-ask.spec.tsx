@@ -97,7 +97,11 @@ const refusedWith = (error: { statusCode: number; code?: string }) => ({
 
 describe("applyAskEvent", () => {
   it("names the step, then gathers the text as a preview", () => {
-    let exchange = applyAskEvent(WORKING, { v, type: "status", step: "writing" });
+    let exchange = applyAskEvent(WORKING, {
+      v,
+      type: "status",
+      step: "writing",
+    });
     exchange = applyAskEvent(exchange, { v, type: "text", delta: "Quorum " });
     exchange = applyAskEvent(exchange, { v, type: "text", delta: "is" });
     expect(exchange).toMatchObject({
@@ -119,7 +123,11 @@ describe("applyAskEvent", () => {
       step: "reading",
       stepDetail: { reads: ["events"], found: 2 },
     });
-    const writing = applyAskEvent(reading, { v, type: "status", step: "writing" });
+    const writing = applyAskEvent(reading, {
+      v,
+      type: "status",
+      step: "writing",
+    });
     expect(writing.stepDetail).toEqual({
       reads: undefined,
       found: undefined,
@@ -159,7 +167,10 @@ describe("applyAskEvent", () => {
   });
 
   it("replaces the preview with the checked answer on done", () => {
-    const streaming = { ...WORKING, preview: "Quorum is three people, I think" };
+    const streaming = {
+      ...WORKING,
+      preview: "Quorum is three people, I think",
+    };
     expect(
       applyAskEvent(streaming, { v, type: "done", answer: ANSWER }),
     ).toMatchObject({ phase: "done", preview: "", step: null, answer: ANSWER });
@@ -183,7 +194,11 @@ describe("applyAskEvent", () => {
 
   it("ends the turn with the proposal when the member asked for something to be done", () => {
     const streaming = { ...WORKING, preview: "" };
-    const turn = applyAskEvent(streaming, { v, type: "proposal", act: UNCLEAR });
+    const turn = applyAskEvent(streaming, {
+      v,
+      type: "proposal",
+      act: UNCLEAR,
+    });
     expect(turn).toMatchObject({
       phase: "done",
       step: null,
@@ -204,7 +219,10 @@ describe("the Ask hooks", () => {
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
   });
 
@@ -214,7 +232,9 @@ describe("the Ask hooks", () => {
         client={client as ReturnType<typeof createFrappClient>}
         chapterId="chapter-1"
       >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "AskHookWrapper";
@@ -230,7 +250,9 @@ describe("the Ask hooks", () => {
         { v, type: "done", answer: ANSWER },
       ]),
     );
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+    const { result } = renderHook(() => useAsk(), {
+      wrapper: wrapper({ POST }),
+    });
     await act(() => result.current.ask("  What is quorum?  "));
     expect(POST).toHaveBeenCalledWith(
       "/v1/ai/ask",
@@ -258,14 +280,18 @@ describe("the Ask hooks", () => {
 
     it("keeps every turn, and sends the turns before a question with it", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       await act(() => result.current.ask("And to expel a member?"));
       expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
         "What is quorum?",
         "And to expel a member?",
       ]);
-      expect(POST.mock.calls[0]![1].body).toEqual({ question: "What is quorum?" });
+      expect(POST.mock.calls[0]![1].body).toEqual({
+        question: "What is quorum?",
+      });
       expect(POST.mock.calls[1]![1].body).toEqual({
         question: "And to expel a member?",
         history: [{ question: "What is quorum?", answer: ANSWER.text }],
@@ -288,7 +314,9 @@ describe("the Ask hooks", () => {
         .mockImplementation(() =>
           Promise.resolve(streamed([{ v, type: "done", answer: fromChat }])),
         );
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("Who is driving Saturday?"));
       await act(() => result.current.ask("What time?"));
       expect(POST.mock.calls[1]![1].body.history).toEqual([
@@ -300,15 +328,23 @@ describe("the Ask hooks", () => {
       const POST = vi
         .fn()
         .mockResolvedValue(streamed([{ v, type: "proposal", act: UNCLEAR }]));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
-      await act(() => result.current.ask("Give Jordan points", { actions: true }));
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
+      await act(() =>
+        result.current.ask("Give Jordan points", { actions: true }),
+      );
       expect(POST.mock.calls[0]![1].body).toEqual({
         question: "Give Jordan points",
         actions: true,
         answer_cards: true,
       });
       const [turn] = result.current.exchanges;
-      expect(turn).toMatchObject({ phase: "done", answer: null, proposal: UNCLEAR });
+      expect(turn).toMatchObject({
+        phase: "done",
+        answer: null,
+        proposal: UNCLEAR,
+      });
 
       // The card ends; its turn says how, and the next question carries the
       // member's words from it and no answer.
@@ -332,13 +368,19 @@ describe("the Ask hooks", () => {
     });
 
     it("holds how each card under an answer ended, by the card (#4904)", async () => {
-      const POST = vi.fn().mockResolvedValue(
-        streamed([
-          { v, type: "done", answer: { ...ANSWER, proposals: ["s1", "s2"] } },
-        ]),
+      const POST = vi
+        .fn()
+        .mockResolvedValue(
+          streamed([
+            { v, type: "done", answer: { ...ANSWER, proposals: ["s1", "s2"] } },
+          ]),
+        );
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
+      await act(() =>
+        result.current.ask("Thank the cleanup crew", { actions: true }),
       );
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
-      await act(() => result.current.ask("Thank the cleanup crew", { actions: true }));
       const [turn] = result.current.exchanges;
       expect(turn!.cards).toBeUndefined();
       const end = {
@@ -348,7 +390,11 @@ describe("the Ask hooks", () => {
       act(() => result.current.resolveCard(turn!.id, "s2", end));
       expect(result.current.exchanges[0]!.cards).toEqual({ s2: end });
       const done = {
-        resolution: { kind: "done" as const, line: "Task created", page: "tasks" },
+        resolution: {
+          kind: "done" as const,
+          line: "Task created",
+          page: "tasks",
+        },
         headline: "Buy cups",
       };
       act(() => result.current.resolveCard(turn!.id, "s1", done));
@@ -357,7 +403,9 @@ describe("the Ask hooks", () => {
 
     it("never asks for a card with a tapped suggestion, and marks its turn in what later questions carry", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() =>
         result.current.ask("When and where is Formal on Friday?", {
           actions: true,
@@ -369,7 +417,11 @@ describe("the Ask hooks", () => {
         question: "When and where is Formal on Friday?",
       });
       expect(result.current.exchanges[0]!.suggested).toBe(true);
-      await act(() => result.current.ask("Give 5 points to everyone who came", { actions: true }));
+      await act(() =>
+        result.current.ask("Give 5 points to everyone who came", {
+          actions: true,
+        }),
+      );
       expect(POST.mock.calls[1]![1].body).toEqual({
         question: "Give 5 points to everyone who came",
         actions: true,
@@ -388,15 +440,23 @@ describe("the Ask hooks", () => {
       const POST = vi
         .fn()
         .mockResolvedValueOnce(
-          streamed([{ v, type: "error", code: "ai.ask.failed", retryable: true }]),
+          streamed([
+            { v, type: "error", code: "ai.ask.failed", retryable: true },
+          ]),
         )
         .mockResolvedValue(streamed([{ v, type: "done", answer: ANSWER }]));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() =>
-        result.current.ask("When and where is Formal on Friday?", { suggested: true }),
+        result.current.ask("When and where is Formal on Friday?", {
+          suggested: true,
+        }),
       );
       await act(() =>
-        result.current.retry(result.current.exchanges[0]!.id, { actions: true }),
+        result.current.retry(result.current.exchanges[0]!.id, {
+          actions: true,
+        }),
       );
       expect(POST.mock.calls[1]![1].body).toEqual({
         question: "When and where is Formal on Friday?",
@@ -408,11 +468,16 @@ describe("the Ask hooks", () => {
       const POST = vi
         .fn()
         .mockResolvedValue(streamed([{ v, type: "proposal", act: UNCLEAR }]));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("Give points", { actions: true }));
       const picked = { ...UNCLEAR, status: "proposed" };
       act(() =>
-        result.current.setProposal(result.current.exchanges[0]!.id, picked as never),
+        result.current.setProposal(
+          result.current.exchanges[0]!.id,
+          picked as never,
+        ),
       );
       expect(result.current.exchanges[0]!.proposal).toEqual(picked);
     });
@@ -424,7 +489,9 @@ describe("the Ask hooks", () => {
         .mockImplementation(() =>
           Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
         );
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       expect(result.current.exchanges[0]!.phase).toBe("failed");
       await act(() => result.current.retry(result.current.exchanges[0]!.id));
@@ -433,7 +500,9 @@ describe("the Ask hooks", () => {
         question: "What is quorum?",
         phase: "done",
       });
-      expect(POST.mock.calls[1]![1].body).toEqual({ question: "What is quorum?" });
+      expect(POST.mock.calls[1]![1].body).toEqual({
+        question: "What is quorum?",
+      });
     });
 
     it("does not ask an earlier turn again while another is being answered: it would take that turn's place", async () => {
@@ -441,7 +510,9 @@ describe("the Ask hooks", () => {
         .fn()
         .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
         .mockImplementationOnce(() => new Promise(() => undefined));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       act(() => {
         void result.current.ask("And to expel a member?");
@@ -459,7 +530,9 @@ describe("the Ask hooks", () => {
 
     it("shows the question at once, then ends the turn without a request when the gate says no", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       let release: (agreed: boolean) => void = () => undefined;
       const gate = () => new Promise<boolean>((resolve) => (release = resolve));
       let asking: Promise<void> = Promise.resolve();
@@ -484,13 +557,17 @@ describe("the Ask hooks", () => {
       });
       // A turn that never reached the server is not part of the conversation sent.
       await act(() => result.current.ask("What is quorum?"));
-      expect(POST.mock.calls[0]![1].body).toEqual({ question: "What is quorum?" });
+      expect(POST.mock.calls[0]![1].body).toEqual({
+        question: "What is quorum?",
+      });
     });
 
     it("says it is searching once the gate says yes and the question is sent, and at once with no gate", async () => {
       // A request that never comes back, so the turn stays as it was sent.
       const POST = vi.fn(() => new Promise<never>(() => undefined));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       act(() => {
         void result.current.ask("What is quorum?", { gate: async () => true });
       });
@@ -510,7 +587,9 @@ describe("the Ask hooks", () => {
 
     it("fails the turn in words when the gate itself breaks", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() =>
         result.current.ask("What is quorum?", {
           gate: () => Promise.reject(new Error("offline")),
@@ -522,7 +601,9 @@ describe("the Ask hooks", () => {
 
     it("stop takes the waiting turn away and keeps the rest; reset starts over", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       POST.mockImplementationOnce(() => new Promise(() => undefined));
       act(() => {
@@ -544,7 +625,9 @@ describe("the Ask hooks", () => {
       .mockImplementation(() =>
         Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
       );
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+    const { result } = renderHook(() => useAsk(), {
+      wrapper: wrapper({ POST }),
+    });
     await act(() => result.current.ask("One?"));
     await act(() => result.current.ask("Two?", { savedNoticeShown: true }));
     expect(POST.mock.calls[0]![1].body).toEqual({ question: "One?" });
@@ -558,23 +641,30 @@ describe("the Ask hooks", () => {
     ["ai.consent.required", "consent_required"],
     ["ai.chapter_off", "chapter_off"],
     ["ai.not_available", "not_available"],
-  ])("turns the refusal %s into an unavailable answer", async (code, reason) => {
-    const POST = vi
-      .fn()
-      .mockResolvedValue(refusedWith({ statusCode: 403, code }));
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
-    await act(() => result.current.ask("Anything?"));
-    expect(result.current.exchanges[0]).toMatchObject({
-      phase: "done",
-      answer: { status: "unavailable", reason },
-    });
-  });
+  ])(
+    "turns the refusal %s into an unavailable answer",
+    async (code, reason) => {
+      const POST = vi
+        .fn()
+        .mockResolvedValue(refusedWith({ statusCode: 403, code }));
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
+      await act(() => result.current.ask("Anything?"));
+      expect(result.current.exchanges[0]).toMatchObject({
+        phase: "done",
+        answer: { status: "unavailable", reason },
+      });
+    },
+  );
 
   it("fails, and can be retried, when the stream ends without an answer", async () => {
     const POST = vi
       .fn()
       .mockResolvedValue(streamed([{ v, type: "text", delta: "Quor" }]));
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+    const { result } = renderHook(() => useAsk(), {
+      wrapper: wrapper({ POST }),
+    });
     await act(() => result.current.ask("What is quorum?"));
     expect(result.current.exchanges[0]).toMatchObject({
       phase: "failed",
@@ -585,7 +675,9 @@ describe("the Ask hooks", () => {
 
   it("fails in words when the request never connects", async () => {
     const POST = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+    const { result } = renderHook(() => useAsk(), {
+      wrapper: wrapper({ POST }),
+    });
     await act(() => result.current.ask("What is quorum?"));
     expect(result.current.exchanges[0]?.phase).toBe("failed");
   });
@@ -593,15 +685,19 @@ describe("the Ask hooks", () => {
   describe("Think harder (#4904)", () => {
     const TRACED = { ...ANSWER, ask_id: "trace-1" };
     const answering = () =>
-      vi.fn().mockImplementation((path: string) =>
-        path === "/v1/ai/ask"
-          ? Promise.resolve(streamed([{ v, type: "done", answer: TRACED }]))
-          : Promise.resolve({ data: undefined, response: { ok: true } }),
-      );
+      vi
+        .fn()
+        .mockImplementation((path: string) =>
+          path === "/v1/ai/ask"
+            ? Promise.resolve(streamed([{ v, type: "done", answer: TRACED }]))
+            : Promise.resolve({ data: undefined, response: { ok: true } }),
+        );
 
     it("asks the same question again in its place with more effort, and counts the tap", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       const first = result.current.exchanges[0]!;
       await act(() => result.current.retry(first.id, { effort: "more" }));
@@ -622,17 +718,23 @@ describe("the Ask hooks", () => {
 
     it("answers an older turn where it stands, with only the turns before it as history", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("First?", { channelId: "c1" }));
       await act(() => result.current.ask("Second?"));
       await act(() =>
-        result.current.retry(result.current.exchanges[0]!.id, { effort: "more" }),
+        result.current.retry(result.current.exchanges[0]!.id, {
+          effort: "more",
+        }),
       );
       expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
         "First?",
         "Second?",
       ]);
-      const harder = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask")[2]![1].body;
+      const harder = POST.mock.calls.filter(
+        ([path]) => path === "/v1/ai/ask",
+      )[2]![1].body;
       expect(harder.question).toBe("First?");
       expect(harder.history).toBeUndefined();
       // Still the conversation's first question, so still one a channel can be given.
@@ -642,7 +744,9 @@ describe("the Ask hooks", () => {
 
     it("counts nothing when the member declines the AI question", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       await act(() =>
         result.current.retry(result.current.exchanges[0]!.id, {
@@ -650,15 +754,21 @@ describe("the Ask hooks", () => {
           gate: () => Promise.resolve(false),
         }),
       );
-      expect(POST.mock.calls.filter(([path]) => path !== "/v1/ai/ask")).toHaveLength(0);
+      expect(
+        POST.mock.calls.filter(([path]) => path !== "/v1/ai/ask"),
+      ).toHaveLength(0);
     });
 
     it("keeps the effort when the harder turn is asked again, without counting twice", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("What is quorum?"));
       await act(() =>
-        result.current.retry(result.current.exchanges[0]!.id, { effort: "more" }),
+        result.current.retry(result.current.exchanges[0]!.id, {
+          effort: "more",
+        }),
       );
       await act(() => result.current.retry(result.current.exchanges[0]!.id));
       const asks = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask");
@@ -679,10 +789,16 @@ describe("the Ask hooks", () => {
 
     it("names the chat door, and only then", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("From the screen?"));
-      await act(() => result.current.ask("From a channel?", { channelId: "c1" }));
-      expect(POST.mock.calls[0]![1].body).toEqual({ question: "From the screen?" });
+      await act(() =>
+        result.current.ask("From a channel?", { channelId: "c1" }),
+      );
+      expect(POST.mock.calls[0]![1].body).toEqual({
+        question: "From the screen?",
+      });
       expect(POST.mock.calls[1]![1].body).toMatchObject({
         question: "From a channel?",
         door: "chat_private",
@@ -692,7 +808,9 @@ describe("the Ask hooks", () => {
 
     it("keeps where the turn was asked, and lists it for that channel only", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("From the screen?"));
       await act(() => result.current.ask("In general?", { channelId: "c1" }));
       await act(() =>
@@ -700,19 +818,27 @@ describe("the Ask hooks", () => {
       );
       const { exchanges } = result.current;
       expect(exchanges[0]!.origin).toBeUndefined();
-      expect(exchanges[1]!.origin).toMatchObject({ channelId: "c1", after: null });
+      expect(exchanges[1]!.origin).toMatchObject({
+        channelId: "c1",
+        after: null,
+      });
       expect(Number.isNaN(Date.parse(exchanges[1]!.origin!.at))).toBe(false);
-      expect(askTurnsInChannel(exchanges, "c1").map((turn) => turn.question)).toEqual([
-        "In general?",
-      ]);
-      expect(exchanges[2]!.origin).toMatchObject({ channelId: "c2", after: "m9" });
+      expect(
+        askTurnsInChannel(exchanges, "c1").map((turn) => turn.question),
+      ).toEqual(["In general?"]);
+      expect(exchanges[2]!.origin).toMatchObject({
+        channelId: "c2",
+        after: "m9",
+      });
       expect(askTurnsInChannel(exchanges, "c3")).toEqual([]);
       expect(askTurnsInChannel(exchanges, null)).toEqual([]);
     });
 
     it("dismisses a turn from its channel and keeps it in the conversation", async () => {
       const POST = answering();
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("In general?", { channelId: "c1" }));
       const id = result.current.exchanges[0]!.id;
       act(() => result.current.dismissFromChannel(id));
@@ -730,7 +856,9 @@ describe("the Ask hooks", () => {
         .fn()
         .mockResolvedValueOnce(streamed([{ v, type: "text", delta: "Quor" }]))
         .mockResolvedValueOnce(streamed([{ v, type: "done", answer: ANSWER }]));
-      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      const { result } = renderHook(() => useAsk(), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.ask("In general?", { channelId: "c1" }));
       const first = result.current.exchanges[0]!;
       expect(first.phase).toBe("failed");
@@ -748,14 +876,20 @@ describe("the Ask hooks", () => {
       { key: "m2", at: "2026-11-13T10:05:00.000Z" },
       { key: "m3", at: "2026-11-13T10:10:00.000Z" },
     ];
-    const turn = (id: string, at: string, after?: string | null): AskExchange => ({
+    const turn = (
+      id: string,
+      at: string,
+      after?: string | null,
+    ): AskExchange => ({
       ...WORKING,
       id,
       origin: { channelId: "c1", at, after },
     });
 
     it("sits under the message that was newest when it was asked", () => {
-      const placed = placeAskTurns(rows, [turn("t1", "2026-11-13T09:00:00.000Z", "m2")]);
+      const placed = placeAskTurns(rows, [
+        turn("t1", "2026-11-13T09:00:00.000Z", "m2"),
+      ]);
       expect([...placed.keys()]).toEqual(["m2"]);
     });
 
@@ -772,7 +906,10 @@ describe("the Ask hooks", () => {
         ...placeAskTurns(rows, [turn("t1", "2026-11-13T09:00:00.000Z")]).keys(),
       ]).toEqual([ASK_TURNS_ABOVE_ALL]);
       expect([
-        ...placeAskTurns([], [turn("t1", "2026-11-13T09:00:00.000Z", "m1")]).keys(),
+        ...placeAskTurns(
+          [],
+          [turn("t1", "2026-11-13T09:00:00.000Z", "m1")],
+        ).keys(),
       ]).toEqual([ASK_TURNS_ABOVE_ALL]);
     });
 
@@ -798,10 +935,14 @@ describe("the Ask hooks", () => {
       let scope = "user-1:chapter-1";
       const Shared = ({ children }: { children: React.ReactNode }) => (
         <Outer>
-          <AskConversationProvider scope={scope}>{children}</AskConversationProvider>
+          <AskConversationProvider scope={scope}>
+            {children}
+          </AskConversationProvider>
         </Outer>
       );
-      const { result, rerender } = renderHook(() => useAsk(), { wrapper: Shared });
+      const { result, rerender } = renderHook(() => useAsk(), {
+        wrapper: Shared,
+      });
       await act(() => result.current.ask("Mine?"));
       rerender();
       expect(result.current.exchanges).toHaveLength(1);
@@ -826,10 +967,12 @@ describe("the Ask hooks", () => {
         () => ({ screen: useAsk(), channel: useAsk() }),
         { wrapper: Shared },
       );
-      await act(() => result.current.channel.ask("In general?", { channelId: "c1" }));
-      expect(result.current.screen.exchanges.map((turn) => turn.question)).toEqual([
-        "In general?",
-      ]);
+      await act(() =>
+        result.current.channel.ask("In general?", { channelId: "c1" }),
+      );
+      expect(
+        result.current.screen.exchanges.map((turn) => turn.question),
+      ).toEqual(["In general?"]);
       act(() => result.current.screen.reset());
       expect(result.current.channel.exchanges).toEqual([]);
     });
@@ -840,10 +983,9 @@ describe("the Ask hooks", () => {
         .mockImplementation(() =>
           Promise.resolve(streamed([{ v, type: "done", answer: ANSWER }])),
         );
-      const { result } = renderHook(
-        () => ({ one: useAsk(), two: useAsk() }),
-        { wrapper: wrapper({ POST }) },
-      );
+      const { result } = renderHook(() => ({ one: useAsk(), two: useAsk() }), {
+        wrapper: wrapper({ POST }),
+      });
       await act(() => result.current.one.ask("Mine?"));
       expect(result.current.one.exchanges).toHaveLength(1);
       expect(result.current.two.exchanges).toEqual([]);
@@ -852,7 +994,9 @@ describe("the Ask hooks", () => {
 
   it("asks nothing for an empty question", async () => {
     const POST = vi.fn();
-    const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+    const { result } = renderHook(() => useAsk(), {
+      wrapper: wrapper({ POST }),
+    });
     await act(() => result.current.ask("   "));
     expect(POST).not.toHaveBeenCalled();
     expect(result.current.exchanges).toEqual([]);
@@ -867,7 +1011,11 @@ describe("the Ask hooks", () => {
 
     it("reads what the server built for this member", async () => {
       const suggestions = [
-        { kind: "event", text: "When and where is Formal on Friday?", request: false },
+        {
+          kind: "event",
+          text: "When and where is Formal on Friday?",
+          request: false,
+        },
       ];
       const GET = vi.fn().mockResolvedValue(ok({ suggestions }));
       const { result } = renderHook(() => useAskSuggestions(), {
@@ -875,14 +1023,26 @@ describe("the Ask hooks", () => {
       });
       // Nothing to show while it loads: the screen opens plain.
       expect(result.current.suggestions).toEqual([]);
-      await waitFor(() => expect(result.current.suggestions).toEqual(suggestions));
-      expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions");
+      await waitFor(() =>
+        expect(result.current.suggestions).toEqual(suggestions),
+      );
+      expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions", {
+        signal: expect.any(AbortSignal),
+      });
     });
 
     it("shows nothing while a reopened screen reads again, so rows never swap in place", async () => {
       const first = [
-        { kind: "tasks", text: 'When is my task "Book the hall" due?', request: false },
-        { kind: "points", text: "How many points do I have this semester?", request: false },
+        {
+          kind: "tasks",
+          text: 'When is my task "Book the hall" due?',
+          request: false,
+        },
+        {
+          kind: "points",
+          text: "How many points do I have this semester?",
+          request: false,
+        },
       ];
       const second = [first[1]];
       let release: (value: unknown) => void = () => {};
@@ -931,7 +1091,9 @@ describe("the Ask hooks", () => {
   it("reads a server with AI off as no status, not as a failure", async () => {
     const GET = vi
       .fn()
-      .mockResolvedValue(refusedWith({ statusCode: 404, code: "ai.not_available" }));
+      .mockResolvedValue(
+        refusedWith({ statusCode: 404, code: "ai.not_available" }),
+      );
     const { result } = renderHook(() => useAskStatus(), {
       wrapper: wrapper({ GET }),
     });
@@ -948,7 +1110,9 @@ describe("the Ask hooks", () => {
       response: { status: 200, ok: true },
     });
     const client = {
-      GET: vi.fn().mockResolvedValue(ok({ saved_until: null, diagnostics: off })),
+      GET: vi
+        .fn()
+        .mockResolvedValue(ok({ saved_until: null, diagnostics: off })),
       POST: vi.fn().mockResolvedValue(ok(on)),
       DELETE: vi.fn().mockResolvedValue(ok(off)),
     };

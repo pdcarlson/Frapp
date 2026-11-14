@@ -77,7 +77,9 @@ describe("useMembers", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
+    expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT, {
+      signal: expect.any(AbortSignal),
+    });
     expect(mockGet).toHaveBeenCalledTimes(1);
     expect(result.current.data).toEqual(members);
 
@@ -110,7 +112,9 @@ describe("useMembers", () => {
       expect(result.current.isError).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
+    expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT, {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.error).toBe(mockError);
   });
 
@@ -174,6 +178,7 @@ describe("useMemberSearch", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/members/search", {
+      signal: expect.any(AbortSignal),
       params: { query: { q: query } },
     });
     expect(mockGet).toHaveBeenCalledTimes(1);
@@ -232,7 +237,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockGet).toHaveBeenCalledWith(ROSTER_ENDPOINT);
+    expect(mockGet).toHaveBeenCalledWith(ROSTER_ENDPOINT, {
+      signal: expect.any(AbortSignal),
+    });
     expect(mockGet).not.toHaveBeenCalledWith(MEMBERS_ENDPOINT);
     expect(result.current.data).toEqual(roster);
   });

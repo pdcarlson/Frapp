@@ -85,8 +85,9 @@ export function useAiSuggestions(options?: {
   const source = options?.source;
   return useQuery({
     queryKey: aiSuggestionKeys.list(chapterId, source),
-    queryFn: async (): Promise<AiSuggestionList> => {
+    queryFn: async ({ signal }): Promise<AiSuggestionList> => {
       const result = await client.GET("/v1/ai/suggestions", {
+        signal,
         params: {
           query: source
             ? { source_type: source.type, source_id: source.id }

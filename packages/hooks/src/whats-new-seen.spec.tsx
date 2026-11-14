@@ -31,14 +31,19 @@ describe("What's new on the account (#4043)", () => {
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: { queries: { retryDelay: 0 }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retryDelay: 0 },
+        mutations: { retry: false },
+      },
     });
   });
   afterEach(() => vi.useRealTimers());
 
   it("settles with the account's version, or null when none is recorded", async () => {
     const client = {
-      GET: vi.fn().mockResolvedValue({ data: { seen_version: null }, error: undefined }),
+      GET: vi
+        .fn()
+        .mockResolvedValue({ data: { seen_version: null }, error: undefined }),
     };
     const { result } = renderHook(() => useAccountWhatsNewSeen(), {
       wrapper: wrapperFor(queryClient, client),
@@ -46,12 +51,16 @@ describe("What's new on the account (#4043)", () => {
     expect(result.current.settled).toBe(false);
     await waitFor(() => expect(result.current.settled).toBe(true));
     expect(result.current.seen).toBeNull();
-    expect(client.GET).toHaveBeenCalledWith("/v1/users/me/whats-new");
+    expect(client.GET).toHaveBeenCalledWith("/v1/users/me/whats-new", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("settles as unknown when the read fails, so the device goes by its own marker", async () => {
     const client = {
-      GET: vi.fn().mockResolvedValue({ data: undefined, error: { status: 500 } }),
+      GET: vi
+        .fn()
+        .mockResolvedValue({ data: undefined, error: { status: 500 } }),
     };
     const { result } = renderHook(() => useAccountWhatsNewSeen(), {
       wrapper: wrapperFor(queryClient, client),
@@ -78,7 +87,10 @@ describe("What's new on the account (#4043)", () => {
     const client = {
       PUT: vi
         .fn()
-        .mockResolvedValue({ data: { seen_version: "2026-11-10#6" }, error: undefined }),
+        .mockResolvedValue({
+          data: { seen_version: "2026-11-10#6" },
+          error: undefined,
+        }),
     };
     const { result } = renderHook(() => useRecordWhatsNewSeen(), {
       wrapper: wrapperFor(queryClient, client),

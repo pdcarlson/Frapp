@@ -38,8 +38,8 @@ export function useChannels(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels", { signal });
       if (error) throw error;
       return data;
     },
@@ -76,8 +76,10 @@ export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/unread");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/unread", {
+        signal,
+      });
       if (error) throw error;
       return (data ?? []) as ChannelUnreadCount[];
     },
@@ -109,8 +111,10 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/latest");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/latest", {
+        signal,
+      });
       if (error) throw error;
       return data ?? [];
     },
@@ -140,8 +144,9 @@ export function useChannel(id: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -156,8 +161,9 @@ export function usePinnedMessages(channelId: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", channelId, "pins"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}/pins", {
+        signal,
         params: { path: { id: channelId } },
       });
       if (error) throw error;
@@ -189,8 +195,9 @@ export function useChannelMembers(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId, "channel", channelId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}/members", {
+        signal,
         params: { path: { id: channelId as string } },
       });
       if (error) throw error;
@@ -206,8 +213,10 @@ export function useCategories() {
   const scope = useChapterScope();
   return useQuery({
     queryKey: ["channels", "categories"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/categories/list");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/categories/list", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -329,9 +338,10 @@ export function useChannelNotificationPreferences() {
     // invalidated by one. The channel-list refetch a read still causes is what
     // re-reads it when the channel set changes (the fingerprint above).
     queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences",
+        { signal },
       );
       if (error) throw error;
       return (data ?? []) as ChannelNotificationPreference[];
@@ -399,9 +409,10 @@ export function useChapterChatLevel() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: chapterChatLevelKeys.chapter(chapterId ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences/chapter",
+        { signal },
       );
       if (error) throw error;
       return (data as { level: ChatChapterLevel }).level;
@@ -917,10 +928,10 @@ export function useMessageAttachments(
     // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
     // DOM is still live when it is used.
     staleTime: 10 * 60_000,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/{id}/messages/{messageId}/attachments",
-        { params: { path: { id: channelId, messageId } } },
+        { signal, params: { path: { id: channelId, messageId } } },
       );
       if (error) throw error;
       return (data ?? []) as MessageAttachment[];
@@ -1002,11 +1013,12 @@ export function useAuthorAvatars(
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const chunks = chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE);
       const settled = await Promise.allSettled(
         chunks.map((ids) =>
           client.POST("/v1/channels/{id}/messages/avatars", {
+            signal,
             params: { path: { id: channelId! } },
             body: { message_ids: ids },
           }),
@@ -1326,8 +1338,8 @@ export function useBookmarks() {
     // `chapterId!` is safe under `enabled` below: the factory refuses a null
     // chapter by design, and the query never runs without one.
     queryKey: bookmarkKeys.list(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/bookmarks");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/bookmarks", { signal });
       if (error) throw error;
       return data;
     },
@@ -1486,8 +1498,10 @@ export function useChannelAccessOptions(enabled = true) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "channel-access-options"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/access-options");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/access-options", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

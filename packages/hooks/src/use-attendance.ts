@@ -32,8 +32,9 @@ export function useAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance", {
+        signal,
         params: { path: { eventId } },
       });
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied 5xx
@@ -66,8 +67,9 @@ export function useMyAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "me"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance/me", {
+        signal,
         params: { path: { eventId } },
       });
       throwUnlessOk(result);
@@ -384,11 +386,11 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "check-in-token"],
-    queryFn: async (): Promise<MintedCheckInTokenResult> => {
+    queryFn: async ({ signal }): Promise<MintedCheckInTokenResult> => {
       const requestedAt = deviceNow();
       const result = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
-        { params: { path: { eventId } } },
+        { signal, params: { path: { eventId } } },
       );
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied
       // 5xx read as a success would replace the code on screen, which still

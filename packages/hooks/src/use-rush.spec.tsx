@@ -61,6 +61,7 @@ describe("useRushCandidate", () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(GET).toHaveBeenCalledWith("/v1/rush/candidates/{id}", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "cand-1" } },
     });
     expect(result.current.data).toEqual(VIEW);
@@ -131,14 +132,21 @@ describe("useRushCandidate", () => {
 });
 
 describe.each([
-  ["useVoteRushCandidate", useVoteRushCandidate, "/v1/rush/candidates/{id}/vote"],
+  [
+    "useVoteRushCandidate",
+    useVoteRushCandidate,
+    "/v1/rush/candidates/{id}/vote",
+  ],
   ["useBidRushCandidate", useBidRushCandidate, "/v1/rush/candidates/{id}/bid"],
 ] as const)("%s", (_name, useWrite, route) => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
   });
 

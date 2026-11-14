@@ -159,13 +159,17 @@ describe("useChatCatchUp", () => {
     const client = {
       POST: vi
         .fn()
-        .mockImplementationOnce(() => new Promise((resolve) => (first = resolve)))
+        .mockImplementationOnce(
+          () => new Promise((resolve) => (first = resolve)),
+        )
         .mockResolvedValueOnce(ok({ ...SUMMARY, messages_read: 7 })),
     };
     const { result } = renderHook(() => useChatCatchUp(), harness(client));
 
     act(() => void result.current.run("channel-1", TARGET));
-    await act(() => result.current.run("channel-1", { since: "2026-11-09T00:00:00.000Z" }));
+    await act(() =>
+      result.current.run("channel-1", { since: "2026-11-09T00:00:00.000Z" }),
+    );
     await act(async () => first?.(ok(SUMMARY)));
 
     expect(result.current.current?.summary?.messages_read).toBe(7);
@@ -209,9 +213,11 @@ describe("useChatCatchUpAvailable", () => {
 
   it("stays false on a server with no AI", async () => {
     const api = {
-      GET: vi.fn().mockResolvedValue(
-        refusedWith({ statusCode: 404, code: "ai.not_available" }),
-      ),
+      GET: vi
+        .fn()
+        .mockResolvedValue(
+          refusedWith({ statusCode: 404, code: "ai.not_available" }),
+        ),
     };
     const { result } = renderHook(
       () => useChatCatchUpAvailable(),

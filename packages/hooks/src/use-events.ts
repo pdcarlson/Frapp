@@ -9,8 +9,8 @@ export function useEvents(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["events", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/events");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/events", { signal });
       if (error) throw error;
       return data;
     },
@@ -24,8 +24,9 @@ export function useEvent(id: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["events", chapterId, id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/events/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;

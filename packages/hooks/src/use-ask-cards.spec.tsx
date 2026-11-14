@@ -35,10 +35,13 @@ describe("useAskCards", () => {
   it("reads the asker's own waiting requests and keeps the ones the answer named", async () => {
     client.GET.mockResolvedValue(listOf("s1", "s2", "other"));
     const ids = ["s1", "s2"];
-    const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAskCards(ids), {
+      wrapper: wrapper(),
+    });
     expect(result.current.settled).toBe(false);
     await waitFor(() => expect(result.current.settled).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/v1/ai/suggestions", {
+      signal: expect.any(AbortSignal),
       params: { query: { source_type: "request", source_id: "user-1" } },
     });
     expect([...result.current.byId.keys()]).toEqual(["s1", "s2"]);
@@ -46,9 +49,13 @@ describe("useAskCards", () => {
   });
 
   it("reads the list once more for a card it does not hold, then calls it gone", async () => {
-    client.GET.mockResolvedValueOnce(listOf("s1")).mockResolvedValue(listOf("s1"));
+    client.GET.mockResolvedValueOnce(listOf("s1")).mockResolvedValue(
+      listOf("s1"),
+    );
     const ids = ["s1", "s2"];
-    const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAskCards(ids), {
+      wrapper: wrapper(),
+    });
     await waitFor(() => expect(result.current.settled).toBe(true));
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(result.current.byId.has("s2")).toBe(false);
@@ -57,14 +64,18 @@ describe("useAskCards", () => {
   it("finds a card made after the list was first read", async () => {
     client.GET.mockResolvedValueOnce(listOf()).mockResolvedValue(listOf("s9"));
     const ids = ["s9"];
-    const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAskCards(ids), {
+      wrapper: wrapper(),
+    });
     await waitFor(() => expect(result.current.byId.has("s9")).toBe(true));
     expect(result.current.settled).toBe(true);
   });
 
   it("asks for nothing when no card is waiting", () => {
     const none: string[] = [];
-    const { result } = renderHook(() => useAskCards(none), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAskCards(none), {
+      wrapper: wrapper(),
+    });
     expect(client.GET).not.toHaveBeenCalled();
     expect(result.current.settled).toBe(false);
   });
@@ -75,7 +86,9 @@ describe("useAskCards", () => {
       response: { ok: false, status: 500 },
     });
     const ids = ["s1"];
-    const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    const { result } = renderHook(() => useAskCards(ids), {
+      wrapper: wrapper(),
+    });
     await waitFor(() => expect(result.current.failed).toBe(true));
     expect(result.current.settled).toBe(false);
   });

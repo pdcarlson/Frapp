@@ -25,10 +25,11 @@ export function useActivity(options: { enabled?: boolean } = {}) {
     // `enabled` holds the query until there is a chapter, so the key is never
     // built without one.
     queryKey: activityKeys.chapter(chapterId!),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       // The member's week on this device, for the read's `week`: the same
       // Sunday the standing read counts study from.
       const { data, error } = await client.GET("/v1/activity", {
+        signal,
         params: { query: { week_start: localWeekStart().toISOString() } },
       });
       if (error) throw error;

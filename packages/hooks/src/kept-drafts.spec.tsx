@@ -54,8 +54,9 @@ describe("kept drafts (#4593)", () => {
 
   it("holds a draft out of the store while a save runs, and puts it back if it fails", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value }: { value: { text: string } }) =>
         useKeptFormDraft("note", true, value),
@@ -74,8 +75,9 @@ describe("kept drafts (#4593)", () => {
 
   it("reopens on what it sent while the save is in flight, and the outcome settles it", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value, open }: { value: { text: string }; open: boolean }) =>
         useKeptFormDraft("note", open, value),
@@ -133,8 +135,9 @@ describe("kept drafts (#4593)", () => {
 
   it("keeps an edited form, and nothing for one left as it opened", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value }: { value: { text: string } }) => {
         const kept = useKeptFormDraft("note", true, value);

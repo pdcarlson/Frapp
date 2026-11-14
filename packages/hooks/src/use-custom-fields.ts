@@ -26,8 +26,8 @@ export function useCustomFields() {
 
   return useQuery({
     queryKey: ["custom-fields", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/custom-fields");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/custom-fields", { signal });
       if (error) throw error;
       // The SDK response (CustomFieldDto[]) is structurally the shared
       // ChapterCustomField; surface the shared type to consumers.

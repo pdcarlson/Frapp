@@ -55,7 +55,9 @@ describe("usePendingInvites (#3776)", () => {
       wrapper: wrapperFor({ GET }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/invites/mine");
+    expect(GET).toHaveBeenCalledWith("/v1/invites/mine", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual(PENDING);
   });
 
@@ -74,12 +76,10 @@ describe("usePendingInvites (#3776)", () => {
 describe("redeeming drops the offers (#3776)", () => {
   it("re-reads the pending list once a join lands, so a joined chapter's card goes", async () => {
     const GET = vi.fn().mockResolvedValue({ data: PENDING, error: undefined });
-    const POST = vi
-      .fn()
-      .mockResolvedValue({
-        data: { chapterId: "ch-1", memberId: "m-1" },
-        error: undefined,
-      });
+    const POST = vi.fn().mockResolvedValue({
+      data: { chapterId: "ch-1", memberId: "m-1" },
+      error: undefined,
+    });
     const { result } = renderHook(
       () => ({
         pending: usePendingInvites("user-1"),

@@ -68,6 +68,7 @@ describe("Terms acceptance hooks (#2302)", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/v1/users/me/legal-acceptance",
+      { signal: expect.any(AbortSignal) },
     );
     expect(result.current.data?.required).toBe(true);
   });
@@ -110,9 +111,7 @@ describe("Terms acceptance hooks (#2302)", () => {
   it("leaves an empty cache empty rather than inventing a status", () => {
     markLegalAcceptanceRecorded(queryClient);
 
-    expect(
-      queryClient.getQueryData(legalAcceptanceQueryKey()),
-    ).toBeUndefined();
+    expect(queryClient.getQueryData(legalAcceptanceQueryKey())).toBeUndefined();
   });
 
   it("marks the status accepted after a join with the box ticked", async () => {

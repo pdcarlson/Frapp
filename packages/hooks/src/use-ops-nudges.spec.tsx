@@ -48,18 +48,23 @@ describe("useDismissOpsNudge serialization", () => {
     let releaseFirst: (() => void) | undefined;
     const started: string[] = [];
 
-    const PATCH = vi.fn((path: string, init: { body: { module_key: string } }) => {
-      started.push(init.body.module_key);
-      if (path === DISMISS_PATH && started.length === 1) {
-        return new Promise((resolve) => {
-          releaseFirst = () => resolve({ data: {}, error: undefined });
-        });
-      }
-      return Promise.resolve({ data: {}, error: undefined });
-    });
+    const PATCH = vi.fn(
+      (path: string, init: { body: { module_key: string } }) => {
+        started.push(init.body.module_key);
+        if (path === DISMISS_PATH && started.length === 1) {
+          return new Promise((resolve) => {
+            releaseFirst = () => resolve({ data: {}, error: undefined });
+          });
+        }
+        return Promise.resolve({ data: {}, error: undefined });
+      },
+    );
 
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     const { result } = renderHook(() => useDismissOpsNudge(), {
       wrapper: makeWrapper(queryClient, { PATCH }),
@@ -83,11 +88,12 @@ describe("useDismissOpsNudge serialization", () => {
   });
 
   it("sends the module key to the dismiss route", async () => {
-    const PATCH = vi
-      .fn()
-      .mockResolvedValue({ data: {}, error: undefined });
+    const PATCH = vi.fn().mockResolvedValue({ data: {}, error: undefined });
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     const { result } = renderHook(() => useDismissOpsNudge(), {
       wrapper: makeWrapper(queryClient, { PATCH }),
