@@ -27,6 +27,7 @@ const thumbs = vi.hoisted(() => ({
   askId: undefined as string | null | undefined,
   rate: vi.fn(),
   giveReason: vi.fn(),
+  signal: vi.fn(),
 }));
 const reportDialog = vi.hoisted(() => ({ opened: vi.fn() }));
 vi.mock("@/components/ai/report-ai", async (importOriginal) => ({
@@ -60,6 +61,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // The hook has its own spec (`use-ask-feedback.spec.tsx`); here it is what
   // the row draws from.
+  useAskSignal: () => thumbs.signal,
   useAskThumbs: (askId: string | null | undefined) => {
     thumbs.askId = askId;
     return {
@@ -694,6 +696,29 @@ describe("AskTurn", () => {
       );
       expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
       expect(reportDialog.opened).not.toHaveBeenCalled();
+    });
+
+    it("count a source opened from its chip or its marker, against the kept trace", () => {
+      kept(null);
+      thumbs.signal.mockClear();
+      const first = screen.getAllByRole("link", { name: /^Source 1:/ });
+      // The marker in the sentence and the chip under it.
+      expect(first.length).toBeGreaterThan(1);
+      for (const link of first) {
+        link.addEventListener("click", (event) => event.preventDefault());
+        fireEvent.click(link);
+      }
+      expect(thumbs.signal).toHaveBeenCalledTimes(first.length);
+      expect(thumbs.signal).toHaveBeenCalledWith("trace-1", "source_opened");
+    });
+
+    it("count nothing under an answer with no kept trace", () => {
+      thumbs.signal.mockClear();
+      show(exchange({ askId: "a-1" }));
+      const link = screen.getAllByRole("link", { name: /^Source 1:/ })[0]!;
+      link.addEventListener("click", (event) => event.preventDefault());
+      fireEvent.click(link);
+      expect(thumbs.signal).not.toHaveBeenCalled();
     });
 
     it("say so when a rating did not send", () => {

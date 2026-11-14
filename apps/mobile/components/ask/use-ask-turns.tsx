@@ -6,6 +6,7 @@ import {
   type AskConversation,
   type AskExchange,
   type AskOptions,
+  useAskSignal,
 } from "@repo/hooks";
 import type { AiReportReason, AskSource } from "@repo/validation";
 import {
@@ -64,6 +65,7 @@ export function useAskTurns({
 } {
   const router = useRouter();
   const reporting = useAiReport();
+  const signal = useAskSignal();
   const { kept, keep, forget } = useAskKept();
   const { working, retry, setProposal, resolveProposal } = conversation;
 
@@ -97,7 +99,13 @@ export function useAskTurns({
     openingSourceId: openingSourceId?.startsWith(`${exchange.id}:`)
       ? openingSourceId.slice(exchange.id.length + 1)
       : null,
-    onOpenSource: (source: AskSource) => void openSource(exchange.id, source),
+    onOpenSource: (source: AskSource) => {
+      // Counted against the answer's kept trace, where there is one (#4904).
+      // Not while a document's link is still being fetched: that tap opens
+      // nothing, so it is not a second open.
+      if (!openingSourceId) signal(exchange.answer?.ask_id, "source_opened");
+      void openSource(exchange.id, source);
+    },
     busy: working && exchange.phase !== "working",
     onRetry: () => void retry(exchange.id, options()),
     onAnswerConsent: () => void retry(exchange.id, options()),

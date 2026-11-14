@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Check, Copy } from "lucide-react";
 import {
+  useAskSignal,
   useAskThumbs,
   type ActResponse,
   type AskExchange,
@@ -350,7 +351,7 @@ function AskAnswerBody({
       </div>
     );
   }
-  return (
+  const body = (
     <>
       <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
       {/* Where the step line was while it worked, in the same tone. */}
@@ -371,6 +372,37 @@ function AskAnswerBody({
         </ol>
       ) : null}
     </>
+  );
+  return answer.ask_id ? (
+    <CountSourceOpens askId={answer.ask_id}>{body}</CountSourceOpens>
+  ) : (
+    body
+  );
+}
+
+/**
+ * Called when a source under this answer is opened, by its chip or by a
+ * marker; null where there is nothing to count against.
+ */
+const SourceOpened = createContext<(() => void) | null>(null);
+
+/**
+ * Counts each source opened under an answer the server kept a trace of
+ * (`source_opened`, `spec/behavior/ai.md` § Feedback on an answer). One word
+ * against the answer's id; which source, and what it says, are not sent.
+ */
+function CountSourceOpens({
+  askId,
+  children,
+}: {
+  askId: string;
+  children: ReactNode;
+}) {
+  const signal = useAskSignal();
+  return (
+    <SourceOpened.Provider value={() => signal(askId, "source_opened")}>
+      {children}
+    </SourceOpened.Provider>
   );
 }
 
@@ -530,6 +562,7 @@ function CitationMarker({
   quote: string;
   onFollowMessage?: () => void;
 }) {
+  const opened = useContext(SourceOpened);
   if (!source) return null;
   const href = askSourceHref(source);
   const { name } = askSourceChip(source);
@@ -550,9 +583,10 @@ function CitationMarker({
       className={cn(MARKER, "hover:bg-gold-ask-border/30", FOCUS_RING)}
       aria-label={label}
       title={title}
-      onClick={
-        askSourceIsMessage(source) ? onPlainClick(onFollowMessage) : undefined
-      }
+      onClick={(event) => {
+        opened?.();
+        if (askSourceIsMessage(source)) onPlainClick(onFollowMessage)?.(event);
+      }}
     >
       {number}
     </Link>
@@ -573,6 +607,7 @@ function SourceChip({
   source: AskSource;
   onFollowMessage?: () => void;
 }) {
+  const opened = useContext(SourceOpened);
   const href = askSourceHref(source);
   // A quoted message says whose it is and when (`askSourceChip`, #4904).
   const { name: words, when, meta } = askSourceChip(source);
@@ -602,11 +637,12 @@ function SourceChip({
           href={href}
           aria-label={name}
           title={meta}
-          onClick={
-            askSourceIsMessage(source)
-              ? onPlainClick(onFollowMessage)
-              : undefined
-          }
+          onClick={(event) => {
+            opened?.();
+            if (askSourceIsMessage(source)) {
+              onPlainClick(onFollowMessage)?.(event);
+            }
+          }}
           className={cn(
             chip,
             "transition-colors hover:bg-card-hover",
