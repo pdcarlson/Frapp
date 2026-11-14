@@ -26,6 +26,7 @@ export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
 // People and channels named in an Ask answer (#4904).
+export * from "./ask-effort";
 export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";

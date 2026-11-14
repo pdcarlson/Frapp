@@ -17,6 +17,7 @@ import {
   askHistory,
   createAskStreamReader,
   type AskAnswer,
+  type AskEffort,
   type AskStepDetail,
   type AskStreamEvent,
   type AskSuggestion,
@@ -232,6 +233,8 @@ export interface AskExchange {
   failure: { message: string; retryable: boolean } | null;
   /** Set when the turn was asked from a chat composer. */
   origin?: AskOrigin;
+  /** `more` when this is the answer to Think harder (#4904). */
+  effort?: AskEffort;
 }
 
 /** An answer no stream was opened for: the server refused before it began. */
@@ -376,6 +379,12 @@ export interface AskOptions {
   channelId?: string;
   /** With `channelId`: the newest message there now (`AskOrigin.after`). */
   afterMessage?: string | null;
+  /**
+   * `more` for Think harder (#4904): passed to `retry`, it asks the turn's
+   * question again in its place with more effort, and counts the tap against
+   * the answer it replaces. A turn asked again later keeps it.
+   */
+  effort?: AskEffort;
 }
 
 let nextExchange = 0;
@@ -592,6 +601,20 @@ function useAskConversation(): AskConversation {
               after: options.afterMessage ?? null,
             }
           : undefined;
+      const effort = options?.effort ?? again?.effort;
+      // Think harder on an answer is counted against that answer's kept
+      // trace (`think_harder`): one word, and a count that fails is dropped.
+      const replaced = again?.answer?.ask_id;
+      if (options?.effort === "more" && replaced) {
+        void Promise.resolve()
+          .then(() =>
+            client.POST("/v1/ai/ask/{ask_id}/signals", {
+              params: { path: { ask_id: replaced } },
+              body: { signal: "think_harder" },
+            }),
+          )
+          .catch(() => undefined);
+      }
       /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
         if (inFlight.current === abort) patch(id, change);
@@ -614,6 +637,7 @@ function useAskConversation(): AskConversation {
           resolution: null,
           failure: null,
           ...(origin ? { origin } : {}),
+          ...(effort === "more" ? { effort } : {}),
         },
       ]);
 
@@ -657,6 +681,9 @@ function useAskConversation(): AskConversation {
             // from before #4941 refuses the field; web deploys with the API
             // and a phone build or update ships only after its API has.
             ...(origin ? { from: { channel_id: origin.channelId } } : {}),
+            // Only ever sent from an answer the tool loop wrote, so the
+            // server that gets it knows the field.
+            ...(effort === "more" ? { effort } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,

@@ -367,6 +367,12 @@ export function AskCard({
                         exchange={exchange}
                         busy={working && exchange.phase !== "working"}
                         onRetry={() => void retry(exchange.id, options())}
+                        onThinkHarder={() =>
+                          void retry(exchange.id, {
+                            ...options(),
+                            effort: "more",
+                          })
+                        }
                         onAnswerConsent={() =>
                           void retry(exchange.id, options())
                         }

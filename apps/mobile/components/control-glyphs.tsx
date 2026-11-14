@@ -215,6 +215,24 @@ export function ThumbDownGlyph({
   );
 }
 
+/** Think harder under an Ask answer (#4904): web draws Lucide's `Lightbulb`. */
+export function LightbulbGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 006 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"
+        {...detail}
+      />
+      <Path d="M9 18h6" {...detail} />
+      <Path d="M10 22h4" {...detail} />
+    </Frame>
+  );
+}
+
 /** Mark all read: web draws Lucide's `CheckCheck` for the same intent. */
 export function CheckAllGlyph({
   color,

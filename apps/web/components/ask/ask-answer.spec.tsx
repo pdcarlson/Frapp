@@ -12,6 +12,7 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   askReadLine,
   type AskAnswer,
@@ -142,11 +143,15 @@ const show = (
     retry?: () => void;
     consent?: () => void;
     followMessage?: () => void;
+    thinkHarder?: () => void;
+    busy?: boolean;
   } = {},
 ) =>
   render(
     <AskTurn
       exchange={value}
+      busy={handlers.busy}
+      onThinkHarder={handlers.thinkHarder}
       onRetry={handlers.retry ?? (() => undefined)}
       onAnswerConsent={handlers.consent ?? (() => undefined)}
       onFollowMessage={handlers.followMessage}
@@ -719,6 +724,41 @@ describe("AskTurn", () => {
       link.addEventListener("click", (event) => event.preventDefault());
       fireEvent.click(link);
       expect(thumbs.signal).not.toHaveBeenCalled();
+    });
+
+    it("sit beside Think harder, which asks again once and waits while another turn is answered", async () => {
+      thumbs.state = { rating: null, reason: null };
+      const traced = { ...ANSWER, ask_id: "trace-1" };
+      const thinkHarder = vi.fn();
+      const { unmount } = show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+      });
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      );
+      expect(thinkHarder).toHaveBeenCalledTimes(1);
+      unmount();
+
+      // Not on the harder answer itself, not without a trace, not where the
+      // host offers none.
+      const none = (value: AskExchange, on = true) => {
+        const view = show(value, on ? { thinkHarder } : {});
+        expect(
+          screen.queryByRole("button", { name: ASK_EFFORT_COPY.action }),
+        ).toBeNull();
+        view.unmount();
+      };
+      none(exchange({ askId: "a-1", answer: traced, effort: "more" }));
+      none(exchange({ askId: "a-1" }));
+      none(exchange({ askId: "a-1", answer: traced }), false);
+
+      show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+        busy: true,
+      });
+      expect(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      ).toBeDisabled();
     });
 
     it("say so when a rating did not send", () => {

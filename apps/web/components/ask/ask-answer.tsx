@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Lightbulb } from "lucide-react";
 import {
   useAskSignal,
   useAskThumbs,
@@ -12,10 +12,12 @@ import {
 } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_POST_COPY,
   askAnswerEntities,
   askAnswerSegments,
   askLeftOutLine,
+  askOffersThinkHarder,
   askPostedSourceTitle,
   askReadLine,
   askSourceChip,
@@ -87,6 +89,7 @@ export function AskTurn({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
@@ -104,6 +107,11 @@ export function AskTurn({
   busy?: boolean;
   /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same thing again in this turn's place with more effort (#4904).
+   * Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for a turn refused because it is unanswered. */
   onAnswerConsent: () => void;
   /** An event pick answered with a new proposal for this turn. */
@@ -121,6 +129,7 @@ export function AskTurn({
         busy={busy}
         onFollowMessage={onFollowMessage}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         onProposal={onProposal}
         onResolved={onResolved}
@@ -142,6 +151,7 @@ export function AskReply({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
@@ -150,6 +160,7 @@ export function AskReply({
   busy?: boolean;
   onFollowMessage?: () => void;
   onRetry: () => void;
+  onThinkHarder?: () => void;
   onAnswerConsent: () => void;
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
@@ -210,6 +221,13 @@ export function AskReply({
               key={exchange.askId}
               askId={exchange.askId}
               answer={exchange.answer}
+              busy={busy}
+              onThinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? onThinkHarder
+                  : undefined
+              }
             />
           ) : null}
         </>
@@ -227,7 +245,7 @@ const QUIET_ACTION =
   "h-8 w-8 text-muted-foreground/70 hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11";
 
 /**
- * Copy, the thumbs and Report under a finished answer, and under them what a
+ * Copy, the thumbs, Think harder and Report under a finished answer, and under them what a
  * thumbs down opens (`ask-thumbs.tsx`). The thumbs are drawn only for an
  * answer whose turn the server kept a trace of (`answer.ask_id`): a rating
  * has nothing to be recorded against otherwise.
@@ -235,10 +253,16 @@ const QUIET_ACTION =
 function AnswerActions({
   askId,
   answer,
+  busy = false,
+  onThinkHarder,
 }: {
   /** The turn's id, which Report this names. */
   askId: string;
   answer: AskAnswer;
+  /** Another turn is being answered, so asking this one again waits. */
+  busy?: boolean;
+  /** Set where this answer offers Think harder (`askOffersThinkHarder`). */
+  onThinkHarder?: () => void;
 }) {
   const target = {
     subject: "ask_answer" as const,
@@ -260,6 +284,16 @@ function AnswerActions({
             onRate={thumbs.rate}
             className={QUIET_ACTION}
           />
+        ) : null}
+        {onThinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            className={QUIET_ACTION}
+            disabled={busy}
+            onClick={onThinkHarder}
+          >
+            <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+          </IconButton>
         ) : null}
         <ReportAiButton
           iconOnly
