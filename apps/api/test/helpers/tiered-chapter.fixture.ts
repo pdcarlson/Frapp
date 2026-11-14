@@ -86,6 +86,7 @@ const role = (
     mentionable: true,
     tier_id: tierId,
     permission_overrides: overrides,
+    self_assignable: false,
     created_at: '2026-11-11T00:00:00Z',
   };
 };

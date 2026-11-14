@@ -88,6 +88,15 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // The New Member or Alumni role moved into a tier above Everyone's
   // (#4548). A role page's tier picker offers every tier below the officer.
   "role.below_everyone",
+  // Self-assignable roles (#4958). Marking a role members can't safely pick
+  // (keyed, in a tier, or holding a real permission), or editing a picked
+  // role so it would be; the Roles page explains and lets the officer try.
+  "role.self_assignable_keyed",
+  "role.self_assignable_tiered",
+  "role.self_assignable_permissions",
+  // Joining or leaving a role an officer unmarked or changed since the
+  // picker loaded it.
+  "role.not_self_assignable",
   "chat.since_not_found",
   // An AI route while `AI_ENABLED` is off on the server (#4310, and
   // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a

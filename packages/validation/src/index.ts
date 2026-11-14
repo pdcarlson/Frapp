@@ -192,6 +192,8 @@ export {
 export * from "./repeat-draft";
 export * from "./role-colors";
 export * from "./screen-copy";
+// Roles members pick themselves (#4958): the safety rule and its words.
+export * from "./self-assignable-roles";
 export * from "./service-points";
 export * from "./service-receipt";
 // The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).

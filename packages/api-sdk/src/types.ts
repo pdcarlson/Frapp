@@ -477,6 +477,46 @@ export interface paths {
         patch: operations["RbacController_update_v1"];
         trace?: never;
     };
+    "/v1/roles/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join a self-assignable role
+         * @description Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.
+         */
+        post: operations["RbacController_join_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a self-assignable role
+         * @description Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.
+         */
+        post: operations["RbacController_leave_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/roles/transfer-presidency": {
         parameters: {
             query?: never;
@@ -4381,6 +4421,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller did last week
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         */
+        get: operations["ActivityController_getRecap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -5976,6 +6036,12 @@ export interface components {
             permission_overrides?: {
                 [key: string]: boolean | null;
             };
+            /** @description Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false. */
+            self_assignable?: boolean;
+        };
+        SelfAssignRoleResultDto: {
+            /** @description The caller's role ids after the change, the role added (join) or taken off (leave). */
+            role_ids: string[];
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -6395,6 +6461,8 @@ export interface components {
             created_at: string;
             /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
+            has_gif: boolean;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -6601,6 +6669,8 @@ export interface components {
             kind: string | null;
             /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
             attachment_count: number;
+            /** @description The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies. */
+            has_gif?: boolean;
             created_at: string;
             /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
             sender_blocked?: boolean;
@@ -6908,6 +6978,8 @@ export interface components {
             thread_root_id: string | null;
             /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked. */
+            has_gif: boolean;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };
@@ -9400,6 +9472,30 @@ export interface components {
             /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
             unavailable: ("points" | "required_events" | "service" | "study")[];
         };
+        ActivityRecapDto: {
+            /**
+             * Format: date-time
+             * @description Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Where last week ended: the `week_start` sent.
+             */
+            end: string;
+            /** @description Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read. */
+            events_attended: number | null;
+            /** @description The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read. */
+            tasks_done: number | null;
+            /** @description Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read. */
+            points: number | null;
+            /** @description Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read. */
+            service_minutes: number | null;
+            /** @description Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read. */
+            study_minutes: number | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "points" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
              * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
@@ -9853,6 +9949,8 @@ export interface components {
             answer: string;
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
+            /** @description How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member. */
+            cards?: number;
         };
         AskFromDto: {
             /**
@@ -11519,6 +11617,66 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RbacController_join_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RbacController_leave_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -20471,6 +20629,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityStandingDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getRecap_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRecapDto"];
                 };
             };
             /** @description `week_start` is more than eight days back or a day ahead. */
