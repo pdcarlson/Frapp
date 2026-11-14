@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  askAnswerEntities,
-  askEntityParts,
-  type AskEntity,
-} from "./ask-entities";
+import type { AskEntity } from "./ask";
+import { askAnswerEntities, askEntityParts } from "./ask-entities";
 
 const sam: AskEntity = { type: "member", id: "m-sam", name: "Sam" };
 const samA: AskEntity = {
