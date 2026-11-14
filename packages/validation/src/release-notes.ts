@@ -120,6 +120,19 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-14",
+    title: "New in this update",
+    changes: [
+      "A Threads button at the top of Chat lists every thread you started, replied in or were mentioned in, across channels, with new replies marked; tap one to open it.",
+    ],
+    web: [
+      "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+    ],
+    phone: [
+      "Schedule a message to send later: hold Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+    ],
+  },
+  {
     date: "2026-11-13",
     title: "New in this update",
     changes: [
