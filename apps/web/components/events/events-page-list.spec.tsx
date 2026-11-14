@@ -101,6 +101,7 @@ vi.mock("@repo/hooks", () => ({
   GOOGLE_CALENDAR_RETURN_PARAMS: [],
   useActiveChapterId: () => "chap-1",
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useCalendarBirthdays: () => [],
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => ({
     data: { subscription_status: "active", past_due_since: null },

@@ -6,6 +6,7 @@ import {
   calendarTasksByDay,
   selectCalendarTasks,
 } from "@repo/hooks/calendar-tasks";
+import { selectCalendarBirthdays } from "@repo/hooks/calendar-birthdays";
 import { useState, type ComponentProps } from "react";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
 
@@ -505,5 +506,59 @@ describe("EventsCalendar with tasks (#4144)", () => {
         name: "Clean the kitchen, your task, overdue",
       }),
     ).toHaveTextContent("Overdue");
+  });
+});
+
+describe("EventsCalendar with birthdays (#4959)", () => {
+  const birthdays = selectCalendarBirthdays(
+    [
+      {
+        id: "u-dana",
+        display_name: "Dana Lowe",
+        avatar_url: null,
+        birthday_month: 11,
+        birthday_day: 12,
+      },
+    ],
+    [2026],
+  );
+
+  function renderWithBirthdays() {
+    return render(
+      <ControlledCalendar
+        events={[]}
+        tasksByDay={calendarTasksByDay(birthdays, ALL_CALENDAR_LAYERS)}
+        nameOf={() => "A member"}
+        anchor={anchor}
+        onAnchorChange={vi.fn()}
+        view="month"
+        onViewChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate={false}
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+  }
+
+  it("draws a birthday on its day as a name, not an event to open", () => {
+    stubCalendarWidth(900);
+    renderWithBirthdays();
+
+    const item = screen.getByTitle("Dana Lowe's birthday");
+    expect(item).toHaveTextContent("Dana Lowe");
+    expect(item.closest("button")).toBeNull();
+  });
+
+  it("names the day's birthday on the compact month's day", () => {
+    stubCalendarWidth(360);
+    renderWithBirthdays();
+
+    expect(
+      screen.getByRole("button", {
+        name: /November 12, no events, 1 birthday/,
+      }),
+    ).toBeInTheDocument();
   });
 });

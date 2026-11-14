@@ -2,6 +2,7 @@ export * from "./activity-agenda";
 export * from "./activity-faces";
 export * from "./activity-rows";
 export * from "./activity-standing";
+export * from "./calendar-birthdays";
 export * from "./calendar-tasks";
 export * from "./calendar-time-grid";
 export * from "./channel-members";

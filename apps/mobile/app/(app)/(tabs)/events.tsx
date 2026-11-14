@@ -7,6 +7,7 @@ import { startOfMonth } from "@repo/formatting";
 import { EVENTS_COPY, eventsCount } from "@repo/validation";
 import {
   useActiveChapterId,
+  useCalendarBirthdays,
   useCalendarTasks,
   useChapterRoster,
   useEvents,
@@ -172,17 +173,27 @@ export default function EventsScreen() {
     () => parseCalendarLayers(layersRaw) ?? ALL_CALENDAR_LAYERS,
     [layersRaw],
   );
+  // Members' shared birthdays (#4959), all-day on their day, with a chip.
+  const calendarBirthdays = useCalendarBirthdays(selectedDay);
+  const hasBirthdays = calendarBirthdays.length > 0;
   const offeredLayers = useMemo(() => {
     const offered = new Set<CalendarLayer>();
-    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned) return offered;
+    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned && !hasBirthdays) {
+      return offered;
+    }
     offered.add("events");
     if (calendarTasks.hasMine) offered.add("mine");
     if (calendarTasks.hasAssigned) offered.add("assigned");
+    if (hasBirthdays) offered.add("birthdays");
     return offered;
-  }, [calendarTasks.hasMine, calendarTasks.hasAssigned]);
+  }, [calendarTasks.hasMine, calendarTasks.hasAssigned, hasBirthdays]);
   const tasksByDay = useMemo(
-    () => calendarTasksByDay(calendarTasks.items, shownLayers),
-    [calendarTasks.items, shownLayers],
+    () =>
+      calendarTasksByDay(
+        [...calendarTasks.items, ...calendarBirthdays],
+        shownLayers,
+      ),
+    [calendarTasks.items, calendarBirthdays, shownLayers],
   );
   const nameOf = useMemo(() => {
     const names = new Map(

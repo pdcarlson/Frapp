@@ -8,6 +8,7 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   TASK_STATUS_LABELS,
 } from "./task-card";
+import type { CalendarBirthday } from "./calendar-birthdays";
 import { useTasks } from "./use-tasks";
 import { useViewerUserId } from "./use-user";
 
@@ -35,7 +36,7 @@ import { useViewerUserId } from "./use-user";
 export type CalendarTaskState = "open" | "overdue" | "waiting" | "confirmed";
 
 /** Which kinds of thing the calendar is showing. */
-export type CalendarLayer = "events" | "mine" | "assigned";
+export type CalendarLayer = "events" | "mine" | "assigned" | "birthdays";
 
 export const CALENDAR_LAYERS: ReadonlyArray<{
   value: CalendarLayer;
@@ -44,6 +45,8 @@ export const CALENDAR_LAYERS: ReadonlyArray<{
   { value: "events", label: "Events" },
   { value: "mine", label: "My tasks" },
   { value: "assigned", label: "Assigned by me" },
+  // Members' shared birthdays (#4959, `calendar-birthdays.ts`).
+  { value: "birthdays", label: "Birthdays" },
 ];
 
 export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set(
@@ -109,6 +112,13 @@ export interface CalendarAssignedTask extends CalendarTaskBase {
 }
 
 export type CalendarTask = CalendarOwnTask | CalendarAssignedTask;
+
+/**
+ * Anything on the calendar that isn't an event, filed by day: a task, or a
+ * member's birthday (#4959). The day lists and the layer toggles take them
+ * together, so every view that draws a task draws a birthday beside it.
+ */
+export type CalendarItem = CalendarTask | CalendarBirthday;
 
 function str(row: Record<string, unknown>, key: string): string | null {
   const value = row[key];
@@ -261,15 +271,29 @@ export function selectCalendarTasks(
 }
 
 /**
- * The tasks shown, by due day, in the order a day lists them: the viewer's
- * own before what they assigned, then most in need of attention first
- * (overdue, open, waiting, confirmed), then by title.
+ * A day's birthdays first, all-day as Google Calendar lists them, then the
+ * viewer's own tasks, then what they assigned.
+ */
+const KIND_ORDER: Record<CalendarItem["kind"], number> = {
+  birthdays: 0,
+  mine: 1,
+  assigned: 2,
+};
+
+function itemStateOrder(item: CalendarItem): number {
+  return item.kind === "birthdays" ? 0 : STATE_ORDER[item.state];
+}
+
+/**
+ * The items shown, by day, in the order a day lists them: birthdays, then
+ * the viewer's own tasks before what they assigned, each most in need of
+ * attention first (overdue, open, waiting, confirmed), then by title.
  */
 export function calendarTasksByDay(
-  items: CalendarTask[],
+  items: readonly CalendarItem[],
   layers: ReadonlySet<CalendarLayer>,
-): Map<string, CalendarTask[]> {
-  const map = new Map<string, CalendarTask[]>();
+): Map<string, CalendarItem[]> {
+  const map = new Map<string, CalendarItem[]>();
   for (const item of items) {
     if (!layers.has(item.kind)) continue;
     const bucket = map.get(item.day);
@@ -279,8 +303,8 @@ export function calendarTasksByDay(
   for (const bucket of map.values()) {
     bucket.sort(
       (first, second) =>
-        (first.kind === second.kind ? 0 : first.kind === "mine" ? -1 : 1) ||
-        STATE_ORDER[first.state] - STATE_ORDER[second.state] ||
+        KIND_ORDER[first.kind] - KIND_ORDER[second.kind] ||
+        itemStateOrder(first) - itemStateOrder(second) ||
         first.title.localeCompare(second.title),
     );
   }

@@ -79,6 +79,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch,
   }),
   useTasks: () => ({ ...query, data: tasks, refetch: tasksRefetch }),
+  useCalendarBirthdays: () => [],
   useCalendarTasks: () => {
     const items = selectCalendarTasks(tasks, "me");
     return {
@@ -912,7 +913,8 @@ describe("Tasks on the Calendar", () => {
     expect(screenText(tree)).toContain("Dues form");
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
       "frapp.events.calendar-layers",
-      JSON.stringify(["events", "assigned"]),
+      // Birthdays (#4959) stay on: every layer starts shown.
+      JSON.stringify(["events", "assigned", "birthdays"]),
     );
   });
 

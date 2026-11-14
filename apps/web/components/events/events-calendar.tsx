@@ -17,7 +17,7 @@ import {
   attendanceFieldsOf,
   type EventAttendanceFields,
 } from "@repo/validation";
-import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import {
   CalendarTaskChip,
   CalendarTaskRow,
@@ -91,14 +91,14 @@ type EventsCalendarProps = {
    * narrowed to the kinds switched on (#4144). A day lists them after its
    * events.
    */
-  tasksByDay?: Map<string, CalendarTask[]>;
+  tasksByDay?: Map<string, CalendarItem[]>;
   /** A member's name, for who assigned a task and who it went to. */
   nameOf?: (userId: string) => string;
   /** The Events / My tasks / Assigned by me toggles, under the month. */
   layerToggles?: ReactNode;
 };
 
-const NO_TASKS = new Map<string, CalendarTask[]>();
+const NO_TASKS = new Map<string, CalendarItem[]>();
 const fallbackName = () => "A member";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -587,7 +587,7 @@ type CompactMonthProps = {
   monthAnchor: Date;
   todayKey: string;
   eventsByDay: Map<string, EventRow[]>;
-  tasksByDay: Map<string, CalendarTask[]>;
+  tasksByDay: Map<string, CalendarItem[]>;
   nameOf: (userId: string) => string;
   shownDayKey: string;
   onPickDay: (day: Date) => void;
@@ -653,10 +653,13 @@ function CompactMonth({
           {days.map((day) => {
             const key = localDayKey(day);
             const count = eventsByDay.get(key)?.length ?? 0;
-            const dayTasks = tasksByDay.get(key) ?? [];
-            const taskCount = dayTasks.length;
-            const hasOverdue = dayTasks.some(
-              (item) => item.state === "overdue",
+            const dayItems = tasksByDay.get(key) ?? [];
+            const birthdayCount = dayItems.filter(
+              (item) => item.kind === "birthdays",
+            ).length;
+            const taskCount = dayItems.length - birthdayCount;
+            const hasOverdue = dayItems.some(
+              (item) => item.kind !== "birthdays" && item.state === "overdue",
             );
             const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
             const isToday = key === todayKey;
@@ -670,7 +673,7 @@ function CompactMonth({
                 key={key}
                 type="button"
                 aria-pressed={isPicked}
-                aria-label={`${dayLabel}, ${count === 0 ? "no events" : `${count} event${count > 1 ? "s" : ""}`}${taskCount === 0 ? "" : `, ${taskCount} task${taskCount > 1 ? "s" : ""}`}`}
+                aria-label={`${dayLabel}, ${count === 0 ? "no events" : `${count} event${count > 1 ? "s" : ""}`}${taskCount === 0 ? "" : `, ${taskCount} task${taskCount > 1 ? "s" : ""}`}${birthdayCount === 0 ? "" : `, ${birthdayCount} birthday${birthdayCount > 1 ? "s" : ""}`}`}
                 className={cn(
                   "flex min-h-11 flex-col items-center gap-1 py-1.5 transition-colors",
                   FOCUS_RING,
@@ -705,6 +708,11 @@ function CompactMonth({
                     a dot is an event, a ring is something due. Red while
                     any of the day's tasks is overdue.
                   */}
+                  {/* A birthday (#4959) is a muted dot, apart from the
+                      events' accent dots and the tasks' ring. */}
+                  {birthdayCount > 0 ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                  ) : null}
                   {taskCount > 0 ? (
                     <span
                       className={cn(
