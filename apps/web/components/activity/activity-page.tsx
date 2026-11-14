@@ -806,7 +806,7 @@ export function ActivityPage() {
               onFilter={setPicked}
             />
           ) : null}
-          {recap.data ? <RecapCard recap={recap.data} /> : null}
+          {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
           {standing.isPending ? (
             <SemesterStripSkeleton />
           ) : standing.data ? (

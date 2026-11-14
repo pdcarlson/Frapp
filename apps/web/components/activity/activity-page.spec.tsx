@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
@@ -9,6 +9,7 @@ const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
 const mockRecap = vi.fn<() => { data?: unknown }>(() => ({
   data: undefined,
 }));
+const mockChapterId = vi.fn(() => "chap-1");
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
@@ -59,11 +60,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
     useNowDate: actual.useNowDate,
-    useActiveChapterId: () => "chap-1",
+    useActiveChapterId: () => mockChapterId(),
     useActivity: () => mockActivity(),
     useActivityStanding: () => mockStanding(),
     useActivityRecap: () => mockRecap(),
     activityRecapCard: actual.activityRecapCard,
+    recapDismissalKey: actual.recapDismissalKey,
+    recapDismissed: actual.recapDismissed,
+    withRecapDismissal: actual.withRecapDismissal,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
@@ -235,6 +239,7 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
   mockSearch = new URLSearchParams();
   mockModuleGate.mockReturnValue(undefined);
@@ -243,6 +248,7 @@ beforeEach(() => {
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
   mockStanding.mockReturnValue({ isPending: false, data: undefined });
   mockRecap.mockReturnValue({ data: undefined });
+  mockChapterId.mockReturnValue("chap-1");
   window.localStorage.clear();
   resetRecapDismissalForTests();
   mockGate.mockReturnValue({
@@ -734,6 +740,14 @@ describe("ActivityPage", () => {
   });
 
   describe("Last week (#4983)", () => {
+    beforeEach(() => {
+      // A Monday morning: the card's season.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 16, 9));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
     const recap = {
       start: new Date(2026, 10, 8).toISOString(),
       end: new Date(2026, 10, 15).toISOString(),
@@ -751,7 +765,7 @@ describe("ActivityPage", () => {
       const { unmount } = render(<ActivityPage />);
 
       const card = screen.getByRole("region", { name: "Last week" });
-      expect(within(card).getByText("Nov 8 – 14")).toBeInTheDocument();
+      expect(within(card).getByText("Nov 8 – Nov 14")).toBeInTheDocument();
       expect(
         within(card)
           .getAllByRole("listitem")
@@ -763,14 +777,46 @@ describe("ActivityPage", () => {
       );
       expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
       expect(window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY)).toBe(
-        recap.end,
+        `chap-1@${recap.end}`,
       );
 
       // Remembered across visits, until next week's recap.
       unmount();
       resetRecapDismissalForTests();
-      render(<ActivityPage />);
+      const again = render(<ActivityPage />);
       expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
+
+      // Another chapter's recap that week still shows.
+      again.unmount();
+      mockChapterId.mockReturnValue("chap-2");
+      const other = render(<ActivityPage />);
+      expect(
+        screen.getByRole("region", { name: "Last week" }),
+      ).toBeInTheDocument();
+
+      // And so does this chapter's next week.
+      other.unmount();
+      mockChapterId.mockReturnValue("chap-1");
+      vi.setSystemTime(new Date(2026, 10, 23, 9));
+      mockRecap.mockReturnValue({
+        data: {
+          ...recap,
+          start: new Date(2026, 10, 15).toISOString(),
+          end: new Date(2026, 10, 22).toISOString(),
+        },
+      });
+      render(<ActivityPage />);
+      expect(
+        screen.getByRole("region", { name: "Last week" }),
+      ).toBeInTheDocument();
+    });
+
+    it("draws nothing after Tuesday, whatever the read still holds", () => {
+      vi.setSystemTime(new Date(2026, 10, 18, 9));
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({ data: recap });
+      render(<ActivityPage />);
+      expect(screen.queryByText("Last week")).toBeNull();
     });
 
     it("draws nothing for a week with nothing to show", () => {
@@ -1186,6 +1232,8 @@ describe("ActivityPage", () => {
   });
 
   it("orders the page: the week, last week, this semester, to review, to do, waiting on others, links", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 16, 9));
     mockPermissions.mockReturnValue({
       data: { permissions: ["tasks:manage"] },
     });

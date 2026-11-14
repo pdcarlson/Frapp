@@ -1,5 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { activityRecapCard, type ActivityRecap } from "@repo/hooks";
+import {
+  activityRecapCard,
+  recapDismissalKey,
+  recapDismissed,
+  useActiveChapterId,
+  withRecapDismissal,
+  type ActivityRecap,
+} from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { SectionHeader } from "@/components/list-section";
@@ -8,9 +15,11 @@ import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The last week this phone dismissed the recap for, by the recap's
- * `dismissKey` (the end of the week it sums up); "" for none. One value, so
- * next week's recap, with its own key, shows again.
+ * The recaps this phone dismissed, by chapter and week
+ * (`recapDismissalKey`), space-separated; "" for none. A few keys, so next
+ * week's recap, and another chapter's, still show. The Activity screen
+ * hydrates it when it mounts, so a dismissed card isn't drawn for a frame
+ * while the stored read is still on its way.
  */
 export const recapDismissal = createStoredPreference<string>({
   key: "frapp.activity-recap-dismissed",
@@ -19,7 +28,7 @@ export const recapDismissal = createStoredPreference<string>({
 });
 
 /**
- * Last week, at the top of Activity on Sunday to Tuesday (#4983): what the
+ * Last week, under the week card on Activity on Sunday to Tuesday (#4983): what the
  * member did in their last finished week, as Slack's and Linear's weekly
  * digests sum one up, from `GET /v1/activity/recap`. The web page's card
  * (`apps/web/components/activity/recap-card.tsx`) on the phone, from the
@@ -28,15 +37,19 @@ export const recapDismissal = createStoredPreference<string>({
  * gone until next week's.
  *
  * Only what the member did is drawn: a module that is off, a part that
- * couldn't be read and a zero are left out, and a week with nothing to show
- * draws no card at all.
+ * couldn't be read and a zero are left out, a week with nothing to show
+ * draws no card at all, and neither does a day after Tuesday, whatever the
+ * cache still holds.
  */
-export function RecapCard({ recap }: { recap: ActivityRecap }) {
+export function RecapCard({ recap, now }: { recap: ActivityRecap; now: Date }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const dismissed = recapDismissal.use();
-  const card = activityRecapCard(recap);
-  if (!card || dismissed === card.dismissKey) return null;
+  const chapterId = useActiveChapterId();
+  const card = activityRecapCard(recap, now);
+  if (!card || !chapterId) return null;
+  const key = recapDismissalKey(chapterId, card);
+  if (recapDismissed(dismissed, key)) return null;
   return (
     <View style={styles.block} testID="activity-recap">
       <View style={styles.head}>
@@ -44,7 +57,7 @@ export function RecapCard({ recap }: { recap: ActivityRecap }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss last week's recap"
-          onPress={() => recapDismissal.set(card.dismissKey)}
+          onPress={() => recapDismissal.set(withRecapDismissal(dismissed, key))}
           hitSlop={12}
           testID="activity-recap-dismiss"
           style={({ pressed }) => (pressed ? styles.pressed : null)}

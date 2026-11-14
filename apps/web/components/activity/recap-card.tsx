@@ -2,69 +2,96 @@
 
 import { useSyncExternalStore } from "react";
 import { X } from "lucide-react";
-import { activityRecapCard, type ActivityRecap } from "@repo/hooks";
+import {
+  activityRecapCard,
+  recapDismissalKey,
+  recapDismissed,
+  useActiveChapterId,
+  withRecapDismissal,
+  type ActivityRecap,
+} from "@repo/hooks";
 import { SectionLabel } from "@/components/shared/section-label";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 
 /**
- * The last week this browser dismissed the recap for, by the recap's
- * `dismissKey` (the end of the week it sums up). Per browser, like the Get
- * the app card (`lib/get-the-app.ts`): one value, so next week's recap,
- * with its own key, shows again.
+ * The recaps this browser dismissed, by chapter and week
+ * (`recapDismissalKey`). Per browser, like the Get the app card
+ * (`lib/get-the-app.ts`): a few keys, so next week's recap, and another
+ * chapter's, still show.
  */
 export const RECAP_DISMISSED_STORAGE_KEY = "frapp.web.activity-recap-dismissed";
 
 const listeners = new Set<() => void>();
-/** Set once dismissed in this page, so blocked storage still hides it until reload. */
-let dismissedHere: string | null = null;
+/** Dismissed in this page, so blocked storage still hides it until reload. */
+let dismissedHere = "";
 
-function readDismissed(): string | null {
-  if (dismissedHere) return dismissedHere;
+function notify() {
+  for (const listener of listeners) listener();
+}
+
+function readDismissed(): string {
   try {
-    return window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY);
+    const stored = window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY);
+    return stored ?? dismissedHere;
   } catch {
-    return null;
+    return dismissedHere;
   }
 }
 
 function dismissRecap(key: string): void {
-  dismissedHere = key;
+  const next = withRecapDismissal(readDismissed(), key);
+  dismissedHere = next;
   try {
-    window.localStorage.setItem(RECAP_DISMISSED_STORAGE_KEY, key);
+    window.localStorage.setItem(RECAP_DISMISSED_STORAGE_KEY, next);
   } catch {
     // Hidden for this page load only.
   }
-  for (const listener of listeners) listener();
+  notify();
+}
+
+/** A dismissal in another tab (the page often sits beside chat in two). */
+function onStorage(event: StorageEvent) {
+  if (event.key === RECAP_DISMISSED_STORAGE_KEY || event.key === null) {
+    notify();
+  }
 }
 
 function subscribe(listener: () => void) {
+  if (listeners.size === 0) window.addEventListener("storage", onStorage);
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) window.removeEventListener("storage", onStorage);
   };
 }
 
-/** Test seam: forget a dismissal made in this module. */
+/** Test seam: back to a fresh page. */
 export function resetRecapDismissalForTests(): void {
-  dismissedHere = null;
+  dismissedHere = "";
+  listeners.clear();
+  window.removeEventListener("storage", onStorage);
 }
 
 /**
- * Last week, at the top of Activity on Sunday to Tuesday (#4983): what the
- * member did in their last finished week, as Slack's and Linear's weekly
- * digests sum one up, from `GET /v1/activity/recap`. The week card says this
- * week in progress; this says the week that just closed, once, and then
- * gets out of the way: dismissed, it stays gone until next week's.
+ * Last week, under the week card on Activity on Sunday to Tuesday (#4983):
+ * what the member did in their last finished week, as Slack's and Linear's
+ * weekly digests sum one up, from `GET /v1/activity/recap`. The week card
+ * says this week in progress; this says the week that just closed, once,
+ * and then gets out of the way: dismissed, it stays gone until next week's.
  *
  * Only what the member did is drawn (`activityRecapCard`): a module that is
- * off, a part that couldn't be read and a zero are left out, and a week with
- * nothing to show draws no card at all.
+ * off, a part that couldn't be read and a zero are left out, a week with
+ * nothing to show draws no card at all, and neither does a day after
+ * Tuesday, whatever the cache still holds.
  */
-export function RecapCard({ recap }: { recap: ActivityRecap }) {
-  const dismissed = useSyncExternalStore(subscribe, readDismissed, () => null);
-  const card = activityRecapCard(recap);
-  if (!card || dismissed === card.dismissKey) return null;
+export function RecapCard({ recap, now }: { recap: ActivityRecap; now: Date }) {
+  const dismissed = useSyncExternalStore(subscribe, readDismissed, () => "");
+  const chapterId = useActiveChapterId();
+  const card = activityRecapCard(recap, now);
+  if (!card || !chapterId) return null;
+  const key = recapDismissalKey(chapterId, card);
+  if (recapDismissed(dismissed, key)) return null;
   return (
     <section
       aria-labelledby="activity-recap"
@@ -77,7 +104,7 @@ export function RecapCard({ recap }: { recap: ActivityRecap }) {
         </SectionLabel>
         <button
           type="button"
-          onClick={() => dismissRecap(card.dismissKey)}
+          onClick={() => dismissRecap(key)}
           aria-label="Dismiss last week's recap"
           className={cn(
             "-my-2 inline-flex h-9 w-9 items-center justify-center rounded-md pointer-coarse:h-11 pointer-coarse:w-11",

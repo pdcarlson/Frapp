@@ -208,26 +208,97 @@ describe('ActivityRecapService', () => {
     expect(recap.study_minutes).toBe(45);
   });
 
-  it('serves null for a module that is off, without reading it', async () => {
-    const recap = await read({
-      events: false,
-      tasks: false,
-      points: false,
-      hours: false,
+  it.each([
+    ['events', 'events_attended', () => eventService.findByChapter],
+    ['tasks', 'tasks_done', () => taskService.count],
+    ['points', 'points', () => pointsService.listTransactions],
+  ] as const)(
+    'serves null for %s off, without reading it, and reads the rest',
+    async (moduleKey, field, reader) => {
+      const recap = await read({ [moduleKey]: false });
+
+      expect(recap[field]).toBeNull();
+      expect(reader()).not.toHaveBeenCalled();
+      for (const other of [
+        'events_attended',
+        'tasks_done',
+        'points',
+        'service_minutes',
+        'study_minutes',
+      ] as const) {
+        if (other !== field) expect(recap[other]).toBe(0);
+      }
+      expect(recap.unavailable).toEqual([]);
+    },
+  );
+
+  it('serves service and study null with Hours off, without reading either', async () => {
+    const recap = await read({ hours: false });
+
+    expect(recap.service_minutes).toBeNull();
+    expect(recap.study_minutes).toBeNull();
+    expect(serviceEntryService.findByChapterFiltered).not.toHaveBeenCalled();
+    expect(studyService.listSessionsStartedSince).not.toHaveBeenCalled();
+    expect(recap.events_attended).toBe(0);
+    expect(recap.tasks_done).toBe(0);
+    expect(recap.points).toBe(0);
+  });
+
+  it('takes the client’s last Sunday and first day across a clock change', async () => {
+    // New York, spring forward on 14 Mar 2027: the week ending Sunday 21
+    // Mar 00:00 EDT began Sunday 14 Mar 00:00 EST, 167 hours earlier.
+    const end = new Date('2027-03-21T04:00:00.000Z');
+    const lastSunday = new Date('2027-03-14T05:00:00.000Z');
+
+    const recap = await service.getRecap(CHAPTER, ME, null, {
+      weekStart: end,
+      lastWeekStart: lastSunday,
+      firstDay: '2027-03-14',
+      now: NOW,
     });
 
-    expect(recap).toMatchObject({
-      events_attended: null,
-      tasks_done: null,
-      points: null,
-      service_minutes: null,
-      study_minutes: null,
-      unavailable: [],
+    expect(recap.start).toBe(lastSunday.toISOString());
+    expect(studyService.listSessionsStartedSince).toHaveBeenCalledWith(
+      ME,
+      CHAPTER,
+      lastSunday,
+    );
+    expect(serviceEntryService.findByChapterFiltered).toHaveBeenCalledWith(
+      CHAPTER,
+      { userId: ME, startDate: '2027-03-14', endDate: '2027-03-20' },
+    );
+  });
+
+  it('takes the client’s first day east of UTC+12', async () => {
+    // Auckland in summer (UTC+13): Sunday 15 Nov 00:00 is Saturday 11:00Z.
+    const end = new Date('2026-11-21T11:00:00.000Z');
+
+    await service.getRecap(CHAPTER, ME, null, {
+      weekStart: end,
+      lastWeekStart: new Date('2026-11-14T11:00:00.000Z'),
+      firstDay: '2026-11-15',
+      now: NOW,
     });
-    expect(eventService.findByChapter).not.toHaveBeenCalled();
-    expect(taskService.count).not.toHaveBeenCalled();
-    expect(pointsService.listTransactions).not.toHaveBeenCalled();
-    expect(serviceEntryService.findByChapterFiltered).not.toHaveBeenCalled();
+
+    expect(serviceEntryService.findByChapterFiltered).toHaveBeenCalledWith(
+      CHAPTER,
+      { userId: ME, startDate: '2026-11-15', endDate: '2026-11-21' },
+    );
+  });
+
+  it('ignores a last week or first day that is not the week before', async () => {
+    const recap = await service.getRecap(CHAPTER, ME, null, {
+      weekStart: THIS_WEEK,
+      lastWeekStart: new Date('2026-10-01T00:00:00.000Z'),
+      firstDay: '2026-10-01',
+      now: NOW,
+    });
+
+    expect(recap.start).toBe(LAST_WEEK.toISOString());
+    expect(serviceEntryService.findByChapterFiltered).toHaveBeenCalledWith(
+      CHAPTER,
+      { userId: ME, startDate: '2026-11-08', endDate: '2026-11-14' },
+    );
   });
 
   it('names a part that failed, serves it null and keeps the rest', async () => {

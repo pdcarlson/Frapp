@@ -9,6 +9,7 @@ import {
   IsISO8601,
   IsOptional,
   IsUUID,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { ACTIVITY_ITEM_KINDS } from '#domain/entities/activity-item-read.entity';
@@ -717,6 +718,34 @@ export class ActivityWeekQueryDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   week_start?: string;
+}
+
+/**
+ * The recap's week, named by the client's clock (#4983). Only `week_start`
+ * is the standing's; the two below let the client say where its last week
+ * began and on which day, which the server can't work out across a clock
+ * change or east of UTC+12.
+ */
+export class ActivityRecapQueryDto extends ActivityWeekQueryDto {
+  @ApiProperty({
+    required: false,
+    format: 'date-time',
+    description:
+      'Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`.',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  last_week_start?: string;
+
+  @ApiProperty({
+    required: false,
+    example: '2026-11-08',
+    description:
+      'The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  first_day?: string;
 }
 
 export class StandingPointsDto implements StandingPoints {

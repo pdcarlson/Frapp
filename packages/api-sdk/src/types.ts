@@ -4370,7 +4370,7 @@ export interface paths {
         };
         /**
          * Get what the caller did last week
-         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the seven days before `week_start` (the start of their current week, as the standing reads it). Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
          */
         get: operations["ActivityController_getRecap_v1"];
         put?: never;
@@ -20377,6 +20377,10 @@ export interface operations {
             query?: {
                 /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
                 week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
             };
             header?: never;
             path?: never;

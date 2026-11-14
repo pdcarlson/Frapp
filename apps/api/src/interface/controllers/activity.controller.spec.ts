@@ -161,18 +161,31 @@ describe('ActivityController', () => {
       const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
       const enabledModules = { tasks: false };
 
+      const lastWeekStart = new Date(
+        weekStart.getTime() - 167 * 60 * 60 * 1000,
+      );
+
       const result = await controller.getRecap(
         'chapter-1',
         'user-1',
         enabledModules,
-        { week_start: weekStart.toISOString() },
+        {
+          week_start: weekStart.toISOString(),
+          last_week_start: lastWeekStart.toISOString(),
+          first_day: '2026-11-08',
+        },
       );
 
       expect(recapService.getRecap).toHaveBeenCalledWith(
         'chapter-1',
         'user-1',
         enabledModules,
-        { weekStart, now: expect.any(Date) },
+        {
+          weekStart,
+          lastWeekStart,
+          firstDay: '2026-11-08',
+          now: expect.any(Date),
+        },
       );
       expect(result).toBe(recap);
     });

@@ -176,6 +176,8 @@ const links = vi.hoisted(() => ({
 
 /** Last week's recap (`GET /v1/activity/recap`), unread unless a test sets it. */
 const recap = vi.hoisted(() => ({ value: { data: undefined as unknown } }));
+/** The active chapter: the recap's dismissals are kept per chapter. */
+const activeChapter = vi.hoisted(() => ({ id: "chapter-1" }));
 
 /** The standing read (`GET /v1/activity/standing`) behind the gauges. */
 const standing = vi.hoisted(() => ({
@@ -217,7 +219,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActivityStanding: () => standing.value,
   useActivityRecap: () => recap.value,
   useViewerUserId: () => "me",
-  useActiveChapterId: () => "chapter-1",
+  useActiveChapterId: () => activeChapter.id,
   useActivityUnread: () => ({ markRead: links.markRead }),
   // Read for the chapter's accent, its modules and its plan.
   useCurrentChapter: () => ({
@@ -1398,8 +1400,15 @@ describe("Activity screen (#3897)", () => {
       study_minutes: 90,
       unavailable: [],
     };
+    beforeEach(() => {
+      // A Monday morning: the card's season.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 16, 9));
+    });
     afterEach(() => {
+      vi.useRealTimers();
       recap.value = { data: undefined };
+      activeChapter.id = "chapter-1";
       recapDismissal.resetForTests();
     });
 
@@ -1408,7 +1417,7 @@ describe("Activity screen (#3897)", () => {
       const tree = render();
       const card = tree.root.findByProps({ testID: "activity-recap" });
       expect(drawnText(card)).toContain("Last week");
-      expect(drawnText(card)).toContain("Nov 8 – 14");
+      expect(drawnText(card)).toContain("Nov 8 – Nov 14");
       const figure = (id: string) =>
         card.findByProps({ testID: `activity-recap-${id}`, accessible: true })
           .props.accessibilityLabel;
@@ -1427,9 +1436,32 @@ describe("Activity screen (#3897)", () => {
       act(() => {
         pressable(tree, "activity-recap-dismiss").props.onPress();
       });
-      expect(
-        tree.root.findAll((node) => node.props.testID === "activity-recap"),
-      ).toHaveLength(0);
+      const drawn = (tree: ReactTestRenderer) =>
+        tree.root.findAll((node) => node.props.testID === "activity-recap")
+          .length;
+      expect(drawn(tree)).toBe(0);
+
+      // Another chapter's recap that week still shows.
+      activeChapter.id = "chapter-2";
+      expect(drawn(render())).toBeGreaterThan(0);
+
+      // And so does this chapter's next week.
+      activeChapter.id = "chapter-1";
+      vi.setSystemTime(new Date(2026, 10, 23, 9));
+      recap.value = {
+        data: {
+          ...recapRead,
+          start: new Date(2026, 10, 15).toISOString(),
+          end: new Date(2026, 10, 22).toISOString(),
+        },
+      };
+      expect(drawn(render())).toBeGreaterThan(0);
+    });
+
+    it("draws nothing after Tuesday, whatever the read still holds", () => {
+      vi.setSystemTime(new Date(2026, 10, 18, 9));
+      recap.value = { data: recapRead };
+      expect(screenText(render())).not.toContain("Last week");
     });
 
     it("draws nothing for a week with nothing to show", () => {

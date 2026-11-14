@@ -5,7 +5,10 @@ import type { IAttendanceRepository } from '#domain/repositories/attendance.repo
 import { TaskStatus } from '#domain/entities/task.entity';
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
-import { ENDED_STUDY, defaultWeekStart } from './activity-standing.service';
+import {
+  defaultWeekStart,
+  endedStudyMinutes,
+} from './activity-standing.service';
 import { EventService } from './event.service';
 import type { EnabledModules } from './module-gate';
 import { PointsService } from './points.service';
@@ -30,7 +33,7 @@ export type RecapPart = (typeof RECAP_PARTS)[number];
  * (then it is also named in `unavailable`).
  */
 export interface ActivityRecap {
-  /** Where last week began: seven days before the week the client named. */
+  /** Where last week began: the client's last Sunday, or seven days before `end`. */
   start: string;
   /** Where it ended: the start of the client's current week. */
   end: string;
@@ -52,16 +55,57 @@ const WEEK_MS = 7 * DAY_MS;
 /** A week's ledger is read in pages of the list maximum, at most this many. */
 const MAX_POINT_PAGES = 10;
 
+/** How far the client's last-week start may sit from seven days before its week start. */
+const LAST_WEEK_SLACK_MS = 3 * 60 * 60 * 1000;
+
+/** A date as `YYYY-MM-DD`, read in UTC. */
+const isoDay = (at: Date) => at.toISOString().slice(0, 10);
+
 /**
- * The calendar day a local midnight falls on. The server doesn't know the
- * member's time zone, and a midnight anywhere from UTC−12 to UTC+12 lies
- * within twelve hours of that day's UTC midnight, so the day is the one
- * nearest the instant.
+ * The calendar day a local midnight falls on, when the client didn't say. The
+ * server doesn't know the member's time zone; a midnight from UTC−12 to
+ * UTC+12 lies within twelve hours of that day's UTC midnight, so the day is
+ * the one nearest the instant. Further east the client's `first_day` is what
+ * gets it right.
  */
 function calendarDay(localMidnight: Date): string {
-  return new Date(localMidnight.getTime() + DAY_MS / 2)
-    .toISOString()
-    .slice(0, 10);
+  return isoDay(new Date(localMidnight.getTime() + DAY_MS / 2));
+}
+
+/** `YYYY-MM-DD` plus `days`. */
+function addDays(day: string, days: number): string {
+  return isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS));
+}
+
+/**
+ * The recap's week from what the client sent. A week that crosses a clock
+ * change is an hour longer or shorter than seven days, so the client's own
+ * last Sunday is taken when it is near enough to seven days back; anything
+ * further is not a week before this one, and the server's count stands. The
+ * same for the first day, which a client east of UTC+12 knows better.
+ */
+export function recapWindow(
+  end: Date,
+  lastWeekStart: Date | undefined,
+  firstDay: string | undefined,
+): { start: Date; end: Date; firstDay: string } {
+  const fixed = new Date(end.getTime() - WEEK_MS);
+  const start =
+    lastWeekStart &&
+    !Number.isNaN(lastWeekStart.getTime()) &&
+    Math.abs(lastWeekStart.getTime() - fixed.getTime()) <= LAST_WEEK_SLACK_MS
+      ? lastWeekStart
+      : fixed;
+  const guessed = calendarDay(start);
+  const day =
+    firstDay &&
+    !Number.isNaN(Date.parse(`${firstDay}T00:00:00Z`)) &&
+    Math.abs(
+      Date.parse(`${firstDay}T00:00:00Z`) - Date.parse(`${guessed}T00:00:00Z`),
+    ) <= DAY_MS
+      ? firstDay
+      : guessed;
+  return { start, end, firstDay: day };
 }
 
 /**
@@ -88,12 +132,20 @@ export class ActivityRecapService {
     chapterId: string,
     userId: string,
     enabledModules: EnabledModules,
-    options: { weekStart?: Date; now?: Date } = {},
+    options: {
+      weekStart?: Date;
+      lastWeekStart?: Date;
+      firstDay?: string;
+      now?: Date;
+    } = {},
   ): Promise<ActivityRecap> {
     const now = options.now ?? new Date();
-    const end = options.weekStart ?? defaultWeekStart(now);
-    const start = new Date(end.getTime() - WEEK_MS);
-    const window = { start, end };
+    const window = recapWindow(
+      options.weekStart ?? defaultWeekStart(now),
+      options.lastWeekStart,
+      options.firstDay,
+    );
+    const { start, end } = window;
     const on = (moduleKey: string) =>
       isModuleEnabled(enabledModules, moduleKey);
 
@@ -229,10 +281,10 @@ export class ActivityRecapService {
   private async readService(
     chapterId: string,
     userId: string,
-    { start }: Window,
+    { firstDay }: Window,
   ): Promise<number> {
-    const startDate = calendarDay(start);
-    const endDate = calendarDay(new Date(start.getTime() + 6 * DAY_MS));
+    const startDate = firstDay;
+    const endDate = addDays(firstDay, 6);
     const entries = await this.serviceEntryService.findByChapterFiltered(
       chapterId,
       { userId, startDate, endDate },
@@ -257,17 +309,8 @@ export class ActivityRecapService {
       chapterId,
       start,
     );
-    return sessions
-      .filter(
-        (session) =>
-          ENDED_STUDY.has(session.status) &&
-          new Date(session.start_time).getTime() < end.getTime(),
-      )
-      .reduce((sum, session) => sum + session.total_foreground_minutes, 0);
+    return endedStudyMinutes(sessions, end);
   }
 }
 
-interface Window {
-  start: Date;
-  end: Date;
-}
+type Window = ReturnType<typeof recapWindow>;

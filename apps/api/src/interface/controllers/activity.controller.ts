@@ -43,6 +43,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
   ActivityRecapDto,
+  ActivityRecapQueryDto,
   ActivityStandingDto,
   ActivityWeekQueryDto,
   MarkActivityReadDto,
@@ -134,7 +135,7 @@ export class ActivityController {
   @ApiOperation({
     summary: 'Get what the caller did last week',
     description:
-      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the seven days before `week_start` (the start of their current week, as the standing reads it). Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
+      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
   })
   @ApiOkResponse({ type: ActivityRecapDto })
   @ApiBadRequestResponse({
@@ -144,11 +145,15 @@ export class ActivityController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
-    @Query() query: ActivityWeekQueryDto,
+    @Query() query: ActivityRecapQueryDto,
   ): Promise<ActivityRecap> {
     const now = new Date();
     return this.recapService.getRecap(chapterId, userId, enabledModules, {
       weekStart: weekStartOf(query, now),
+      lastWeekStart: query.last_week_start
+        ? new Date(query.last_week_start)
+        : undefined,
+      firstDay: query.first_day,
       now,
     });
   }
