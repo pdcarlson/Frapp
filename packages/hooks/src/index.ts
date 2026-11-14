@@ -33,6 +33,7 @@ export * from "./profile-stats";
 export * from "./put-signed-upload";
 export * from "./read-cursor";
 export * from "./rush-card";
+export * from "./scheduled-message-times";
 export * from "./search-analytics";
 export * from "./service-entry-card";
 export * from "./setup-checklist";
@@ -61,8 +62,6 @@ export * from "./use-chat-background";
 export * from "./use-chat-catch-up";
 export * from "./use-chat-reports";
 export * from "./use-chat-safety";
-export * from "./use-scheduled-messages";
-export * from "./scheduled-message-times";
 // `useChatSidebar` and its query keys stay module-private: every surface reads
 // the arrangement through `useSidebarPreferences`.
 export {
@@ -107,6 +106,7 @@ export * from "./use-reports";
 export * from "./use-role-tiers";
 export * from "./use-roles";
 export * from "./use-rush";
+export * from "./use-scheduled-messages";
 export * from "./use-search";
 export * from "./use-semesters";
 export * from "./use-service-entries";
