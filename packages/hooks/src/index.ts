@@ -106,6 +106,7 @@ export * from "./use-query-online";
 export * from "./use-reports";
 export * from "./use-role-tiers";
 export * from "./use-roles";
+export * from "./use-self-assignable-roles";
 export * from "./use-rush";
 export * from "./use-scheduled-messages";
 export * from "./use-search";

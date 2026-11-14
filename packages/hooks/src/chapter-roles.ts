@@ -37,6 +37,8 @@ export type ChapterRole = {
    * `members:view` (or `*`), the shared rule in `memberAccessRoleIds`.
    */
   grantsBase: boolean;
+  /** Members add and remove it themselves (#4958). */
+  selfAssignable: boolean;
 };
 
 /**
@@ -81,6 +83,7 @@ export function parseChapterRoles(data: unknown): ChapterRole[] {
         locked: isLockedRole(permissions),
         everyone: isEveryoneRole(role),
         grantsBase: can("members:view", permissions),
+        selfAssignable: role.self_assignable === true,
       },
     ];
   });

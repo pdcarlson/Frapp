@@ -372,9 +372,13 @@ function TierList({
     );
   };
 
-  const outside = shown(null);
+  // Non-chapter business (#4958, Shawn 2026-11-14): the roles members pick
+  // themselves are outside the tiers by rule, and listed apart from the rest.
+  const outsideAll = shown(null);
+  const outside = outsideAll.filter((role) => !role.self_assignable);
+  const pickable = outsideAll.filter((role) => role.self_assignable);
   const anyShown =
-    outside.length > 0 || tiers.some((tier) => shown(tier.id).length > 0);
+    outsideAll.length > 0 || tiers.some((tier) => shown(tier.id).length > 0);
 
   return (
     <div className="space-y-8">
@@ -448,6 +452,32 @@ function TierList({
                 <AddRoleRow placement={null} />
               ) : null
             }
+          />
+        </section>
+      ) : null}
+
+      {pickable.length > 0 || (canManage && !filtering) ? (
+        <section
+          className="space-y-2"
+          aria-labelledby="roles-non-chapter-business"
+        >
+          <div>
+            <h3
+              id="roles-non-chapter-business"
+              className="text-base font-semibold text-foreground"
+            >
+              Non-chapter business
+            </h3>
+            <p className="text-caption text-muted-foreground">
+              Members add and remove these themselves, like intramurals or a
+              study group. Each opens its channels and nothing else. Turn it on
+              from a role outside the {words.plural}.
+            </p>
+          </div>
+          <RoleList
+            rows={pickable.map(roleRow)}
+            empty="No roles here yet."
+            addRole={null}
           />
         </section>
       ) : null}

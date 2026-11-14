@@ -12,6 +12,11 @@
 import { askPostRefusalCopy } from "./ask-post";
 import { moduleRefusalFromServerMessage } from "./module-refusal";
 import { subscriptionRefusalFromServerMessage } from "./subscription";
+import {
+  NOT_SELF_ASSIGNABLE_CODE,
+  SELF_ASSIGNABLE_REFUSAL_COPY,
+  type SelfAssignableRefusal,
+} from "./self-assignable-roles";
 
 /** The default "what next" when nothing more specific is known. */
 export const TRY_AGAIN = "Try again in a moment.";
@@ -63,6 +68,14 @@ export function copyForErrorCode(code: string | null): string | null {
   if (code.startsWith("chapter.subscription.")) return SUBSCRIPTION_LAPSED;
   if (code.startsWith("chapter.context.")) {
     return "Your chapter changed in another tab. Refresh and try again.";
+  }
+  // Self-assignable roles (#4958): marking a role members can't safely pick,
+  // or picking one an officer changed since the list loaded.
+  if (code in SELF_ASSIGNABLE_REFUSAL_COPY) {
+    return SELF_ASSIGNABLE_REFUSAL_COPY[code as SelfAssignableRefusal];
+  }
+  if (code === NOT_SELF_ASSIGNABLE_CODE) {
+    return "Officers changed this role. Reload to see the roles you can pick.";
   }
   if (code === "service_entry.receipt_required") {
     return "Add a photo of your proof, then submit.";

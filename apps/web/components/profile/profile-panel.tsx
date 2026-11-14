@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
+import { PickRolesSection } from "@/components/roles/pick-roles-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { anyReadUncached } from "@/components/shared/async-states";
@@ -349,6 +350,9 @@ export function ProfilePanel() {
             canEdit={false}
           />
         </section>
+
+        {/* Non-chapter business roles you pick yourself (#4958). */}
+        {canViewMembers ? <PickRolesSection /> : null}
 
         <ProfileSection
           id="directory-profile"
