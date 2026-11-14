@@ -8,6 +8,7 @@ import {
   useAskThumbs,
   type ActResponse,
   type AskExchange,
+  type AskCardEnd,
   type AskProposalResolution,
 } from "@repo/hooks";
 import {
@@ -37,7 +38,7 @@ import {
   AskChannelOpens,
   onPlainClick,
 } from "@/components/ask/ask-entity-text";
-import { AskProposal } from "@/components/ask/ask-proposal";
+import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
 import {
   askSourceHref,
   askSourceIsMessage,
@@ -93,6 +94,7 @@ export function AskTurn({
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   /**
@@ -118,6 +120,8 @@ export function AskTurn({
   onProposal: (proposal: ActResponse) => void;
   /** This turn's card was confirmed or dismissed. */
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <article className="space-y-3">
@@ -133,6 +137,7 @@ export function AskTurn({
         onAnswerConsent={onAnswerConsent}
         onProposal={onProposal}
         onResolved={onResolved}
+        onCardEnded={onCardEnded}
       />
     </article>
   );
@@ -155,6 +160,7 @@ export function AskReply({
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   busy?: boolean;
@@ -164,6 +170,8 @@ export function AskReply({
   onAnswerConsent: () => void;
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
@@ -214,6 +222,14 @@ export function AskReply({
             onAnswerConsent={onAnswerConsent}
             onFollowMessage={onFollowMessage}
           />
+          {exchange.answer.proposals?.length ? (
+            <CountedAnswerCards
+              askId={exchange.answer.ask_id ?? null}
+              ids={exchange.answer.proposals}
+              ended={exchange.cards ?? NO_CARDS_ENDED}
+              onEnded={onCardEnded}
+            />
+          ) : null}
           {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
           {exchange.answer.status !== "unavailable" && exchange.askId ? (
@@ -233,6 +249,33 @@ export function AskReply({
         </>
       ) : null}
     </div>
+  );
+}
+
+const NO_CARDS_ENDED: Readonly<Record<string, AskCardEnd>> = {};
+
+/**
+ * The cards under an answer, each one's end counted against the answer that
+ * proposed it (`card_confirmed`, `card_dismissed`). A card that had stopped
+ * waiting was neither.
+ */
+function CountedAnswerCards({
+  askId,
+  onEnded,
+  ...cards
+}: Parameters<typeof AskAnswerCards>[0] & { askId: string | null }) {
+  const signal = useAskSignal();
+  return (
+    <AskAnswerCards
+      {...cards}
+      onEnded={(suggestionId, end) => {
+        if (end.resolution.kind === "done") signal(askId, "card_confirmed");
+        else if (end.resolution.kind === "cancelled") {
+          signal(askId, "card_dismissed");
+        }
+        onEnded(suggestionId, end);
+      }}
+    />
   );
 }
 
@@ -387,7 +430,10 @@ function AskAnswerBody({
   }
   const body = (
     <>
-      <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {answer.text ? (
+        <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
+      ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>
