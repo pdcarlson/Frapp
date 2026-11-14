@@ -2,7 +2,11 @@ import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActResponse, AskProposalResolution } from "@repo/hooks";
+import type {
+  ActResponse,
+  AskCardEnd,
+  AskProposalResolution,
+} from "@repo/hooks";
 import { ACT_COPY } from "@repo/validation";
 
 /**
@@ -20,6 +24,11 @@ const state = vi.hoisted(() => ({
   audience: vi.fn(),
   accept: vi.fn(),
   dismiss: vi.fn(),
+  cards: {
+    byId: new Map<string, unknown>(),
+    settled: true,
+    asked: [] as string[][],
+  },
 }));
 
 vi.mock("@/components/ai/report-ai", () => ({
@@ -40,6 +49,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: state.dismiss,
     isPending: false,
   }),
+  // The hook has its own spec (`use-ask-cards.spec.tsx`).
+  useAskCards: (ids: readonly string[]) => {
+    state.cards.asked.push([...ids]);
+    return { byId: state.cards.byId, settled: state.cards.settled };
+  },
   useCurrentUser: () => ({ data: { id: ME } }),
   useMembers: () => ({
     isSuccess: true,
@@ -52,7 +66,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-const { AskProposal, AskCardEditsContext } = await import("./ask-proposal");
+const { AskAnswerCards, AskProposal, AskCardEditsContext } = await import(
+  "./ask-proposal"
+);
 type AskCardEditsStore = import("./ask-proposal").AskCardEditsStore;
 
 const base = {
@@ -484,5 +500,71 @@ describe("AskProposal", () => {
         .getByRole("link", { name: ACT_COPY.open_tasks })
         .getAttribute("href"),
     ).toBe("/tasks");
+  });
+});
+
+/** The cards an answer came with (`answer.proposals`, #4904). */
+describe("AskAnswerCards", () => {
+  const task = (id: string, title: string) => ({
+    ...suggestion("task", {
+      title,
+      description: null,
+      assignee_id: JORDAN,
+      due_date: "2026-11-20",
+      due_at: null,
+    }),
+    id,
+  });
+
+  function Cards({ ids }: { ids: string[] }) {
+    const [ended, setEnded] = useState<Record<string, AskCardEnd>>({});
+    return (
+      <AskAnswerCards
+        ids={ids}
+        ended={ended}
+        onEnded={(id, end) => setEnded((now) => ({ ...now, [id]: end }))}
+      />
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.cards.byId = new Map();
+    state.cards.settled = true;
+    state.cards.asked = [];
+  });
+
+  it("draws each card, and one that ends becomes a line while the other waits", async () => {
+    state.cards.byId = new Map<string, unknown>([
+      ["s1", task("s1", "Buy cups")],
+      ["s2", task("s2", "Book the hall")],
+    ]);
+    state.dismiss.mockResolvedValue({});
+    render(<Cards ids={["s1", "s2"]} />);
+    expect(screen.getByText("Buy cups")).toBeDefined();
+    expect(screen.getByText("Book the hall")).toBeDefined();
+    const cancels = screen.getAllByRole("button", { name: ACT_COPY.cancel });
+    expect(cancels).toHaveLength(2);
+    await userEvent.click(cancels[0]!);
+    expect(state.dismiss).toHaveBeenCalledWith("s1");
+    expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
+    // The line still says what the card was about.
+    expect(screen.getByText("Buy cups")).toBeDefined();
+    expect(
+      screen.getAllByRole("button", { name: ACT_COPY.confirm }),
+    ).toHaveLength(1);
+    // Only the card still waiting is asked for again.
+    expect(state.cards.asked.at(-1)).toEqual(["s2"]);
+  });
+
+  it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {
+    state.cards.settled = false;
+    const view = render(<Cards ids={["s1"]} />);
+    expect(view.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByText(ACT_COPY.gone)).toBeNull();
+    state.cards.settled = true;
+    view.rerender(<Cards ids={["s1"]} />);
+    expect(view.container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText(ACT_COPY.gone)).toBeDefined();
   });
 });

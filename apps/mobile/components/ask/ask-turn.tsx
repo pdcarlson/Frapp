@@ -110,6 +110,7 @@ export interface AskTurnReport {
 export function AskTurn({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -128,6 +129,8 @@ export function AskTurn({
   busy?: boolean;
   /** The card for a turn that asked for something to be done, in the answer's place. */
   proposal?: ReactNode;
+  /** The cards the answer came with (`answer.proposals`), drawn under it. */
+  cards?: ReactNode;
   /** Whether this build has a screen for the source; a chip without one is plain. */
   canOpen: (source: AskSource) => boolean;
   /** The source whose document link is being fetched, so its chip says so. */
@@ -170,6 +173,7 @@ export function AskTurn({
       <AskReply
         exchange={exchange}
         proposal={proposal}
+        cards={cards}
         canOpen={canOpen}
         openingSourceId={openingSourceId}
         onOpenSource={onOpenSource}
@@ -196,6 +200,7 @@ type AskReplyProps = Parameters<typeof AskTurn>[0];
 export function AskReply({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -251,6 +256,8 @@ export function AskReply({
             onOpenChannel={onOpenChannel}
           />
         ) : null}
+
+        {exchange.phase === "done" && exchange.answer ? cards : null}
 
         {/* Anything Ask wrote, or chose not to, can be reported; what it
             wrote can be copied. An answer that was never attempted has
@@ -662,7 +669,9 @@ function AnswerBody({
   return (
     <>
       {/* The reader's channel list is only read for an answer that names one. */}
-      {onOpenChannel && entities.some((entity) => entity.type === "channel") ? (
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {!answer.text ? null : onOpenChannel &&
+        entities.some((entity) => entity.type === "channel") ? (
         <ChannelOpens>{words}</ChannelOpens>
       ) : (
         words(() => false)

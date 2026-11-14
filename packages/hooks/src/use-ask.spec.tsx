@@ -305,6 +305,7 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[0]![1].body).toEqual({
         question: "Give Jordan points",
         actions: true,
+        answer_cards: true,
       });
       const [turn] = result.current.exchanges;
       expect(turn).toMatchObject({ phase: "done", answer: null, proposal: UNCLEAR });
@@ -330,12 +331,37 @@ describe("the Ask hooks", () => {
       ]);
     });
 
+    it("holds how each card under an answer ended, by the card (#4904)", async () => {
+      const POST = vi.fn().mockResolvedValue(
+        streamed([
+          { v, type: "done", answer: { ...ANSWER, proposals: ["s1", "s2"] } },
+        ]),
+      );
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("Thank the cleanup crew", { actions: true }));
+      const [turn] = result.current.exchanges;
+      expect(turn!.cards).toBeUndefined();
+      const end = {
+        resolution: { kind: "cancelled" as const },
+        headline: "Cleanup",
+      };
+      act(() => result.current.resolveCard(turn!.id, "s2", end));
+      expect(result.current.exchanges[0]!.cards).toEqual({ s2: end });
+      const done = {
+        resolution: { kind: "done" as const, line: "Task created", page: "tasks" },
+        headline: "Buy cups",
+      };
+      act(() => result.current.resolveCard(turn!.id, "s1", done));
+      expect(result.current.exchanges[0]!.cards).toEqual({ s1: done, s2: end });
+    });
+
     it("never asks for a card with a tapped suggestion, and marks its turn in what later questions carry", async () => {
       const POST = answering();
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
       await act(() =>
         result.current.ask("When and where is Formal on Friday?", {
           actions: true,
+        answer_cards: true,
           suggested: true,
         }),
       );
@@ -348,6 +374,7 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[1]![1].body).toEqual({
         question: "Give 5 points to everyone who came",
         actions: true,
+        answer_cards: true,
         history: [
           {
             question: "When and where is Formal on Friday?",

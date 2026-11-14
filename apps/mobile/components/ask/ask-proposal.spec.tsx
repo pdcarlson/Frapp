@@ -2,7 +2,11 @@
 import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActResponse, AskProposalResolution } from "@repo/hooks";
+import type {
+  ActResponse,
+  AskCardEnd,
+  AskProposalResolution,
+} from "@repo/hooks";
 import {
   ACT_COPY,
   AI_REPORT_COPY,
@@ -25,6 +29,7 @@ const hooks = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   seed: undefined as unknown,
+  cards: { byId: new Map<string, unknown>(), settled: true },
 }));
 // A purple chapter: Confirm takes its solid accent pair (#4702).
 vi.mock("@/lib/chapter-branding", () => ({
@@ -56,6 +61,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useCurrentUser: () => ({ data: { id: "me" } }),
+  // The hook has its own spec (`use-ask-cards.spec.tsx`).
+  useAskCards: () => hooks.cards,
 }));
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const { forwardRef } = await import("react");
@@ -69,7 +76,12 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
-import { AskProposal, type ActLink, type KeptTargets } from "./ask-proposal";
+import {
+  AskAnswerCards,
+  AskProposal,
+  type ActLink,
+  type KeptTargets,
+} from "./ask-proposal";
 
 const reporting = {
   offered: true,
@@ -525,5 +537,87 @@ describe("a proposal in the Ask conversation", () => {
       subject: "ai_suggestion",
       subjectId: "sg-1",
     });
+  });
+});
+
+/** The cards an answer came with (`answer.proposals`, #4904). */
+describe("AskAnswerCards", () => {
+  const task = (id: string, title: string) => ({
+    ...TASK.suggestion,
+    id,
+    task: { ...TASK.suggestion.task, title },
+  });
+
+  function Cards({ ids }: { ids: string[] }) {
+    const [ended, setEnded] = useState<Record<string, AskCardEnd>>({});
+    return (
+      <AskAnswerCards
+        ids={ids}
+        ended={ended}
+        onEnded={(id, end) => setEnded((now) => ({ ...now, [id]: end }))}
+        kept={{}}
+        onKeep={() => undefined}
+        report={reporting as never}
+        onOpen={onOpen}
+      />
+    );
+  }
+  const showCards = (ids: string[]): ReactTestRenderer => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <Cards ids={ids} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  };
+  const labelled = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === label,
+    );
+
+  beforeEach(() => {
+    hooks.cards = { byId: new Map(), settled: true };
+  });
+
+  it("draws each card, and one that ends becomes a line while the other waits", async () => {
+    hooks.cards = {
+      byId: new Map<string, unknown>([
+        ["s1", task("s1", "Buy cups")],
+        ["s2", task("s2", "Book the hall")],
+      ]),
+      settled: true,
+    };
+    hooks.dismiss.mockResolvedValue({});
+    const tree = showCards(["s1", "s2"]);
+    expect(screenText(tree)).toContain("Buy cups");
+    expect(screenText(tree)).toContain("Book the hall");
+    expect(labelled(tree, ACT_COPY.cancel)).toHaveLength(2);
+    await act(async () => labelled(tree, ACT_COPY.cancel)[0]!.props.onPress());
+    expect(hooks.dismiss).toHaveBeenCalledWith("s1");
+    const text = screenText(tree);
+    expect(text).toContain(ACT_COPY.cancelled);
+    // The line still says what the card was about.
+    expect(text).toContain("Buy cups");
+    expect(labelled(tree, ACT_COPY.confirm)).toHaveLength(1);
+  });
+
+  it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {
+    hooks.cards = { byId: new Map(), settled: false };
+    const waiting = showCards(["s1"]);
+    expect(screenText(waiting)).not.toContain(ACT_COPY.gone);
+    expect(
+      waiting.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityState?.busy === true,
+      ),
+    ).toHaveLength(1);
+    hooks.cards = { byId: new Map(), settled: true };
+    expect(screenText(showCards(["s1"]))).toContain(ACT_COPY.gone);
   });
 });

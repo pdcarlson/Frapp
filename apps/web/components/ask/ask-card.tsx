@@ -130,6 +130,7 @@ export function AskCard({
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     stop,
     reset,
   } = useAsk();
@@ -381,6 +382,9 @@ export function AskCard({
                         }
                         onResolved={(resolution) =>
                           resolveProposal(exchange.id, resolution)
+                        }
+                        onCardEnded={(suggestionId, end) =>
+                          resolveCard(exchange.id, suggestionId, end)
                         }
                       />
                     ))
