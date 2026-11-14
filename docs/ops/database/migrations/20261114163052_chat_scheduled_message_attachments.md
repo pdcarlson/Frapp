@@ -1,4 +1,4 @@
-# 20261114160212_chat_scheduled_message_attachments.sql
+# 20261114163052_chat_scheduled_message_attachments.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
