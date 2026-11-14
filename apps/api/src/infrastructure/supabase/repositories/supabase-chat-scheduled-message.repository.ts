@@ -118,7 +118,11 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
     userId: string,
     id: string,
     now: string,
-  ): Promise<'deleted' | 'held' | 'missing'> {
+  ): Promise<
+    | { outcome: 'deleted'; row: ChatScheduledMessage }
+    | { outcome: 'held' }
+    | { outcome: 'missing' }
+  > {
     const { data, error } = await this.supabase
       .from(TABLE)
       .delete()
@@ -126,13 +130,37 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
       .eq('user_id', userId)
       .eq('id', id)
       .or(`lease_until.is.null,lease_until.lt."${now}"`)
-      .select('id');
+      .select('*');
     if (error) throw new SupabaseQueryError(error);
-    if ((data ?? []).length > 0) return 'deleted';
+    const [row] = data ?? [];
+    if (row) return { outcome: 'deleted', row };
     // Nothing deleted: either no such row, or a send holds it.
     return (await this.findForAuthor(chapterId, userId, id))
-      ? 'held'
-      : 'missing';
+      ? { outcome: 'held' }
+      : { outcome: 'missing' };
+  }
+
+  async findPathsInUse(
+    chapterId: string,
+    paths: readonly string[],
+    excludingId: string,
+  ): Promise<string[]> {
+    // One containment probe per path: `contains` sends the value as JSON, so
+    // a path with quotes or commas can't break a list syntax and be read as
+    // unused (the reason `findSharedObjects` probes one by one).
+    const inUse: string[] = [];
+    for (const path of new Set(paths)) {
+      const { data, error } = await this.supabase
+        .from(TABLE)
+        .select('id')
+        .eq('chapter_id', chapterId)
+        .neq('id', excludingId)
+        .contains('attachments', JSON.stringify([{ storage_path: path }]))
+        .limit(1);
+      if (error) throw new SupabaseQueryError(error);
+      if ((data ?? []).length > 0) inUse.push(path);
+    }
+    return inUse;
   }
 
   async findDue(now: string, limit: number): Promise<ChatScheduledMessage[]> {

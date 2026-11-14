@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { isDirectChannel, withoutObjectReplacement } from '@repo/validation';
+import { channelAllowsThreads } from '#domain/utils/channel-access';
 import {
   CHAT_SCHEDULED_MESSAGE_REPOSITORY,
   type ChatScheduledMessagePatch,
@@ -26,11 +27,13 @@ import {
 } from '#domain/repositories/chapter.repository.interface';
 import { freeTierWriteAllowed } from '#domain/constants/subscription-grace';
 import type {
+  ChatScheduledAttachment,
   ChatScheduledMessage,
   ChatScheduledMessageFailure,
 } from '#domain/entities/chat-scheduled-message.entity';
-import type { ChatMessage } from '#domain/entities/chat.entity';
+import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatAttachmentService } from './chat-attachment.service';
 import { ChatService } from './chat.service';
 import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -53,6 +56,12 @@ export interface ScheduleMessageInput {
   channel_id: string;
   content: string;
   mention_picks?: { user_id: string; label: string }[] | null;
+  /** Files uploaded through the channel's upload-url, as a live send takes them. */
+  attachments?: ChatScheduledAttachment[] | null;
+  /** Quote this message, as a live send's `reply_to_id`. */
+  reply_to_id?: string | null;
+  /** Post inside this message's thread, as a live send's `thread_root_id`. */
+  thread_root_id?: string | null;
   send_at: string;
 }
 
@@ -71,8 +80,10 @@ export type ScheduledSendOutcome =
  * gets. The row's id is the message's `client_message_id`, so a send retried
  * after a crash answers the message already posted.
  *
- * Only text (with `@` picks) can be scheduled for now: no attachments, GIFs,
- * cards, replies or thread replies.
+ * A scheduled message is what the composer holds: text with `@` picks, files
+ * already uploaded (#4971), and a quote or a thread. No GIFs or cards. Files
+ * live in storage from the moment they are scheduled: the row's message takes
+ * them when it posts, and deleting the row deletes them.
  */
 @Injectable()
 export class ChatScheduledMessageService {
@@ -88,6 +99,7 @@ export class ChatScheduledMessageService {
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
     private readonly channelAccess: ChannelAccessService,
+    private readonly attachmentService: ChatAttachmentService,
     private readonly chat: ChatService,
     private readonly notifications: NotificationService,
   ) {}
@@ -107,14 +119,28 @@ export class ChatScheduledMessageService {
     input: ScheduleMessageInput,
     now = Date.now(),
   ): Promise<ChatScheduledMessage> {
-    const content = cleanContent(input.content);
+    const attachments = this.attachmentService.validateAttachmentInputs(
+      input.attachments ?? [],
+      chapterId,
+      input.channel_id,
+    );
+    const content = cleanContent(input.content, attachments.length > 0);
     const sendAt = checkSendAt(input.send_at, now);
-    await this.channelAccess.assertChannelAccess(
+    const replyToId = input.reply_to_id ?? null;
+    const threadRootId = input.thread_root_id ?? null;
+    if (replyToId && threadRootId) {
+      throw new BadRequestException(
+        'A thread reply cannot also quote-reply; send one or the other',
+      );
+    }
+    // A thread reply authorizes as `thread`, as the live send does (#3785).
+    const channel = await this.channelAccess.assertChannelAccess(
       input.channel_id,
       chapterId,
       userId,
-      'post',
+      threadRootId ? 'thread' : 'post',
     );
+    await this.checkTargets(channel, replyToId, threadRootId);
     // A soft cap: two requests at once may land one over it.
     const pending = await this.repo.countPending(chapterId, userId);
     if (pending >= SCHEDULE_MAX_PENDING) {
@@ -129,8 +155,50 @@ export class ChatScheduledMessageService {
       member_id: memberId,
       content,
       mention_picks: input.mention_picks ?? null,
+      attachments,
+      reply_to_id: replyToId,
+      thread_root_id: threadRootId,
       send_at: sendAt,
     });
+  }
+
+  /**
+   * The live send's rules for a quote and a thread root, checked when it is
+   * scheduled so a mistake is said now, not by a failed row later. The send
+   * checks them again at the time.
+   */
+  private async checkTargets(
+    channel: ChatChannel,
+    replyToId: string | null,
+    threadRootId: string | null,
+  ): Promise<void> {
+    if (replyToId) {
+      const parent = await this.messageRepo.findById(replyToId);
+      if (!parent || parent.channel_id !== channel.id) {
+        throw new BadRequestException(
+          'reply_to_id must reference a message in the same channel',
+        );
+      }
+      if (parent.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
+        );
+      }
+    }
+    if (threadRootId) {
+      if (!channelAllowsThreads(channel)) {
+        throw new BadRequestException('This channel does not take threads');
+      }
+      const root = await this.messageRepo.findById(threadRootId);
+      if (!root || root.channel_id !== channel.id) {
+        throw new BadRequestException(
+          'thread_root_id must reference a message in the same channel',
+        );
+      }
+      if (root.thread_root_id || root.kind === 'imported') {
+        throw new BadRequestException('This message cannot be threaded');
+      }
+    }
   }
 
   /**
@@ -148,10 +216,12 @@ export class ChatScheduledMessageService {
     },
     now = Date.now(),
   ): Promise<ChatScheduledMessage> {
-    if (input.content === null) {
+    const row = await this.requireOwn(chapterId, userId, id);
+    // Files can't be changed here; with files, the text may go.
+    const hasFiles = row.attachments.length > 0;
+    if (input.content === null && !hasFiles) {
       throw new BadRequestException('A scheduled message needs text');
     }
-    const row = await this.requireOwn(chapterId, userId, id);
     // A send that posted and then died before deleting the row leaves it
     // here; an edit to it would be lost to the post's replay.
     if (await this.alreadyPosted(row)) {
@@ -159,7 +229,7 @@ export class ChatScheduledMessageService {
     }
     const patch: ChatScheduledMessagePatch = {};
     if (input.content !== undefined) {
-      patch.content = cleanContent(input.content);
+      patch.content = cleanContent(input.content ?? '', hasFiles);
       // New text means new picks: the old ones were for the old text.
       patch.mention_picks = input.mention_picks ?? null;
     }
@@ -175,7 +245,7 @@ export class ChatScheduledMessageService {
       row.channel_id,
       chapterId,
       userId,
-      'post',
+      row.thread_root_id ? 'thread' : 'post',
     );
     const updated = await this.repo.updateForAuthor(
       chapterId,
@@ -192,27 +262,61 @@ export class ChatScheduledMessageService {
     return updated;
   }
 
-  /** Refused (409) while a send holds it: it may already be posting. */
+  /**
+   * Refused (409) while a send holds it: it may already be posting. Its
+   * uploaded files go with it, unless a message posted from an earlier send
+   * of it already has them (a send that posted and died before deleting the
+   * row), or something else names them.
+   */
   async remove(
     chapterId: string,
     userId: string,
     id: string,
     now = Date.now(),
   ): Promise<void> {
-    const outcome = await this.repo.deleteForAuthor(
+    const deleted = await this.repo.deleteForAuthor(
       chapterId,
       userId,
       id,
       new Date(now).toISOString(),
     );
-    if (outcome === 'missing') {
+    if (deleted.outcome === 'missing') {
       throw new NotFoundException('Scheduled message not found');
     }
-    if (outcome === 'held') {
+    if (deleted.outcome === 'held') {
       throw new ConflictException(
         'This message is being sent right now and can no longer be deleted',
       );
     }
+    await this.discardFiles(deleted.row);
+  }
+
+  private async discardFiles(row: ChatScheduledMessage): Promise<void> {
+    if (row.attachments.length === 0) return;
+    const context = { scheduledMessageId: row.id };
+    let keep: string[];
+    try {
+      keep = await this.repo.findPathsInUse(
+        row.chapter_id,
+        row.attachments.map((attachment) => attachment.storage_path),
+        row.id,
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-scheduled-message-discard-files',
+        message: `Could not check the files of deleted scheduled message ${row.id}; keeping them`,
+        error,
+      });
+      return;
+    }
+    // `findSharedObjects` finds the files of a message an earlier send of
+    // this row posted, so those are kept too.
+    await this.attachmentService.discardUnsentAttachments(
+      row.attachments,
+      keep,
+      context,
+    );
   }
 
   /**
@@ -284,7 +388,10 @@ export class ChatScheduledMessageService {
         content: row.content,
         client_message_id: row.id,
         mention_picks: row.mention_picks,
-        // A text message: no card kind is module-gated, so the chapter's
+        attachments: row.attachments,
+        reply_to_id: await this.quoteStillThere(row.reply_to_id),
+        thread_root_id: row.thread_root_id,
+        // A plain message: no card kind is module-gated, so the chapter's
         // module toggles cannot refuse it.
         enabled_modules: null,
       }));
@@ -350,6 +457,20 @@ export class ChatScheduledMessageService {
     }
   }
 
+  /**
+   * The quote, while the quoted message still exists. One removed since it
+   * was scheduled (an imported archive purged) costs the message only its
+   * quote: the text was the point, and failing it would hold back a message
+   * the author wrote to go out at a time. A message deleted by its author is
+   * a tombstone that still exists, and is quoted as a live reply quotes it.
+   */
+  private async quoteStillThere(
+    replyToId: string | null,
+  ): Promise<string | null> {
+    if (!replyToId) return null;
+    return (await this.messageRepo.findById(replyToId)) ? replyToId : null;
+  }
+
   /** The message an earlier send of this row posted, if one did. */
   private alreadyPosted(
     row: ChatScheduledMessage,
@@ -374,9 +495,10 @@ export class ChatScheduledMessageService {
   }
 }
 
-function cleanContent(raw: string): string {
+/** The text, which may be empty only when files go with it. */
+function cleanContent(raw: string, hasFiles: boolean): string {
   const content = withoutObjectReplacement(raw);
-  if (!content.trim()) {
+  if (!content.trim() && !hasFiles) {
     throw new BadRequestException('A scheduled message needs text');
   }
   return content;

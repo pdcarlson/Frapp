@@ -6,7 +6,6 @@ import {
   IsString,
   IsUUID,
   MaxLength,
-  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,19 +14,56 @@ import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   MAX_MENTION_PICKS,
 } from '@repo/validation';
-import { MentionPickDto } from './chat.dto';
+import { MentionPickDto, MessageAttachmentDto } from './chat.dto';
 
-/** `POST /v1/scheduled-messages` (#4956): a text message to post later. */
+/**
+ * `POST /v1/scheduled-messages` (#4956): a message to post later, as the
+ * composer holds it: text, files already uploaded, and a quote or a thread
+ * (#4971).
+ */
 export class CreateScheduledMessageDto {
   @ApiProperty({ format: 'uuid', description: 'The channel or DM to post in.' })
   @IsUUID()
   channel_id: string;
 
-  @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
+  @ApiProperty({
+    minLength: 0,
+    maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+    description: 'May be empty only when `attachments` is not, as on a send.',
+  })
   @IsString()
-  @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  @ApiPropertyOptional({
+    type: [MessageAttachmentDto],
+    description:
+      'Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => MessageAttachmentDto)
+  attachments?: MessageAttachmentDto[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote.',
+  })
+  @IsOptional()
+  @IsUUID()
+  reply_to_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  thread_root_id?: string;
 
   @ApiProperty({
     format: 'date-time',
@@ -52,12 +88,13 @@ export class CreateScheduledMessageDto {
  */
 export class UpdateScheduledMessageDto {
   @ApiPropertyOptional({
-    minLength: 1,
+    minLength: 0,
     maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+    description:
+      'May be empty only on a message with files. Files, the quote and the thread can’t be changed.',
   })
   @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content?: string;
 
@@ -88,6 +125,15 @@ export class ListScheduledMessagesQueryDto {
   channel_id?: string;
 }
 
+/** A file a scheduled message carries, as its list shows it. */
+export class ScheduledAttachmentDto {
+  @ApiProperty()
+  filename: string;
+
+  @ApiProperty()
+  content_type: string;
+}
+
 export class ScheduledMessageDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -100,6 +146,26 @@ export class ScheduledMessageDto {
 
   @ApiProperty({ type: [MentionPickDto], nullable: true })
   mention_picks: MentionPickDto[] | null;
+
+  @ApiProperty({
+    type: [ScheduledAttachmentDto],
+    description: 'The files it carries; empty for a text message.',
+  })
+  attachments: ScheduledAttachmentDto[];
+
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'The message it quotes.',
+  })
+  reply_to_id: string | null;
+
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'The thread it posts into.',
+  })
+  thread_root_id: string | null;
 
   @ApiProperty({ format: 'date-time' })
   send_at: string;

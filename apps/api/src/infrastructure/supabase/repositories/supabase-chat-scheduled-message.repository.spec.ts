@@ -29,6 +29,8 @@ const ROW_B_FAILED = '0b000000-0000-4000-8000-000000004959';
 const CHANNEL_A = '0a000000-0000-4000-8000-0000000c4956';
 const CHANNEL_B = '0b000000-0000-4000-8000-0000000c4956';
 
+const SHARED_PATH = 'chapters/x/chat/y/a.jpg';
+
 const NOW = '2026-11-14T13:00:00.000Z';
 const DUE = '2026-11-14T12:59:00.000Z';
 const LATER = '2026-11-15T13:00:00.000Z';
@@ -37,6 +39,9 @@ const row = (columns: Record<string, unknown>) => ({
   member_id: 'member-1',
   content: 'Chapter at 8',
   mention_picks: null,
+  attachments: [],
+  reply_to_id: null,
+  thread_root_id: null,
   status: 'pending',
   failure_reason: null,
   attempts: 0,
@@ -67,6 +72,13 @@ const seed = () => ({
     inA(
       row({
         id: ROW_A_OTHERS,
+        attachments: [
+          {
+            storage_path: SHARED_PATH,
+            filename: 'a.jpg',
+            content_type: 'image/jpeg',
+          },
+        ],
         user_id: USER_A,
         channel_id: CHANNEL_A,
         send_at: DUE,
@@ -83,6 +95,13 @@ const seed = () => ({
     inB(
       row({
         id: ROW_B_OTHERS,
+        attachments: [
+          {
+            storage_path: SHARED_PATH,
+            filename: 'a.jpg',
+            content_type: 'image/jpeg',
+          },
+        ],
         user_id: USER_A,
         channel_id: CHANNEL_B,
         send_at: DUE,
@@ -173,6 +192,9 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
         member_id: 'member-1',
         content: 'Dues are due',
         mention_picks: null,
+        attachments: [],
+        reply_to_id: null,
+        thread_root_id: null,
         send_at: LATER,
       }),
     );
@@ -243,13 +265,13 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
       harness.expectTenantScoped(CHAPTER_A, () =>
         repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_B, NOW),
       ),
-    ).resolves.toBe('missing');
+    ).resolves.toEqual({ outcome: 'missing' });
     await expect(
       repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A_OTHERS, NOW),
-    ).resolves.toBe('missing');
+    ).resolves.toEqual({ outcome: 'missing' });
     await expect(
       repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A, NOW),
-    ).resolves.toBe('deleted');
+    ).resolves.toMatchObject({ outcome: 'deleted' });
     expect(stored(ROW_A)).toBeUndefined();
     expect(stored(ROW_B)).toBeDefined();
   });
@@ -262,7 +284,7 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
     );
     await expect(
       repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A, NOW),
-    ).resolves.toBe('held');
+    ).resolves.toEqual({ outcome: 'held' });
     expect(stored(ROW_A)).toBeDefined();
   });
 
@@ -272,6 +294,18 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
         repo.countPending(CHAPTER_A, USER_SHARED),
       ),
     ).resolves.toBe(2);
+  });
+
+  it('findPathsInUse finds a path another row in the chapter names, never one in another chapter', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.findPathsInUse(CHAPTER_A, [SHARED_PATH, 'nobody.jpg'], ROW_A),
+      ),
+    ).resolves.toEqual([SHARED_PATH]);
+    // Chapter B's row names it too, and is not read.
+    await expect(
+      repo.findPathsInUse(CHAPTER_A, [SHARED_PATH], ROW_A_OTHERS),
+    ).resolves.toEqual([]);
   });
 
   it('findDue reads due, unheld pending rows from every chapter, never a failed one', async () => {

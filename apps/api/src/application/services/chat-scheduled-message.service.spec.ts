@@ -17,6 +17,7 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import type { ChannelAccessService } from './channel-access.service';
+import type { ChatAttachmentService } from './chat-attachment.service';
 import type { ChatService } from './chat.service';
 import type { NotificationService } from './notification.service';
 
@@ -34,6 +35,9 @@ const row = (
   member_id: 'm-1',
   content: 'Chapter at 8',
   mention_picks: null,
+  attachments: [],
+  reply_to_id: null,
+  thread_root_id: null,
   send_at: new Date(NOW - 1000).toISOString(),
   status: 'pending',
   failure_reason: null,
@@ -50,7 +54,11 @@ describe('ChatScheduledMessageService', () => {
   let access: { assertChannelAccess: jest.Mock };
   let chat: { sendMessage: jest.Mock };
   let notifications: { notifyUser: jest.Mock };
-  let messageRepo: { findByClientMessageId: jest.Mock };
+  let messageRepo: { findByClientMessageId: jest.Mock; findById: jest.Mock };
+  let attachmentService: {
+    validateAttachmentInputs: jest.Mock;
+    discardUnsentAttachments: jest.Mock;
+  };
   let chapterRepo: { findById: jest.Mock };
   let service: ChatScheduledMessageService;
 
@@ -63,7 +71,10 @@ describe('ChatScheduledMessageService', () => {
         row({ id, ...patch }),
       ),
       countPending: jest.fn().mockResolvedValue(0),
-      deleteForAuthor: jest.fn().mockResolvedValue('deleted'),
+      deleteForAuthor: jest
+        .fn()
+        .mockResolvedValue({ outcome: 'deleted', row: row() }),
+      findPathsInUse: jest.fn().mockResolvedValue([]),
       findDue: jest.fn(),
       claim: jest.fn(async (r, _lease: string, _now: string, _due?: string) =>
         row({ ...r, attempts: r.attempts + 1 }),
@@ -83,7 +94,14 @@ describe('ChatScheduledMessageService', () => {
         .mockResolvedValue({ message: { id: 'msg-1' }, deduplicated: false }),
     };
     notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
-    messageRepo = { findByClientMessageId: jest.fn().mockResolvedValue(null) };
+    messageRepo = {
+      findByClientMessageId: jest.fn().mockResolvedValue(null),
+      findById: jest.fn().mockResolvedValue(null),
+    };
+    attachmentService = {
+      validateAttachmentInputs: jest.fn((claims: unknown[]) => claims),
+      discardUnsentAttachments: jest.fn().mockResolvedValue(undefined),
+    };
     chapterRepo = {
       findById: jest.fn().mockResolvedValue({
         subscription_status: 'active',
@@ -96,6 +114,7 @@ describe('ChatScheduledMessageService', () => {
       messageRepo as unknown as IChatMessageRepository,
       chapterRepo as unknown as IChapterRepository,
       access as unknown as ChannelAccessService,
+      attachmentService as unknown as ChatAttachmentService,
       chat as unknown as ChatService,
       notifications as unknown as NotificationService,
     );
@@ -227,14 +246,14 @@ describe('ChatScheduledMessageService', () => {
   });
 
   it('remove is a 404 when there was nothing to delete', async () => {
-    repo.deleteForAuthor.mockResolvedValue('missing');
+    repo.deleteForAuthor.mockResolvedValue({ outcome: 'missing' });
     await expect(service.remove('ch-1', 'u-1', 'x')).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
   it('remove is a 409 while a send holds it, since it may already be posting', async () => {
-    repo.deleteForAuthor.mockResolvedValue('held');
+    repo.deleteForAuthor.mockResolvedValue({ outcome: 'held' });
     await expect(service.remove('ch-1', 'u-1', 'x')).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -255,6 +274,7 @@ describe('ChatScheduledMessageService', () => {
   });
 
   it('update refuses null text with a 400', async () => {
+    repo.findForAuthor.mockResolvedValue(row());
     await expect(
       service.update('ch-1', 'u-1', 'sched-1', { content: null }, NOW),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -281,6 +301,9 @@ describe('ChatScheduledMessageService', () => {
         content: 'Chapter at 8',
         client_message_id: 'sched-1',
         mention_picks: picks,
+        attachments: [],
+        reply_to_id: null,
+        thread_root_id: null,
         enabled_modules: null,
       });
       expect(repo.removeSent).toHaveBeenCalledWith(
@@ -433,6 +456,199 @@ describe('ChatScheduledMessageService', () => {
       await expect(
         service.sendNow('ch-1', 'u-1', 'sched-1', NOW),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('files, quotes and threads (#4971)', () => {
+    const photo = {
+      storage_path: 'chapters/ch-1/chat/chan-1/a/IMG_1.jpg',
+      filename: 'IMG_1.jpg',
+      content_type: 'image/jpeg',
+    };
+    const input = (over: Record<string, unknown> = {}) => ({
+      channel_id: 'chan-1',
+      content: 'Chapter at 8',
+      send_at: new Date(NOW + DAY).toISOString(),
+      ...over,
+    });
+
+    it('stores checked files, and lets a file go without text', async () => {
+      await service.schedule(
+        'ch-1',
+        'u-1',
+        'm-1',
+        input({ content: '  ', attachments: [photo] }),
+        NOW,
+      );
+      expect(attachmentService.validateAttachmentInputs).toHaveBeenCalledWith(
+        [photo],
+        'ch-1',
+        'chan-1',
+      );
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ attachments: [photo], content: '  ' }),
+      );
+    });
+
+    it('refuses a file outside the channel, as a send does', async () => {
+      attachmentService.validateAttachmentInputs.mockImplementation(() => {
+        throw new BadRequestException('Attachment does not belong');
+      });
+      await expect(
+        service.schedule(
+          'ch-1',
+          'u-1',
+          'm-1',
+          input({ attachments: [photo] }),
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('stores a quote of a timeline message in the channel', async () => {
+      access.assertChannelAccess.mockResolvedValue({ id: 'chan-1' });
+      messageRepo.findById.mockResolvedValue({
+        id: 'msg-9',
+        channel_id: 'chan-1',
+        thread_root_id: null,
+      });
+      await service.schedule(
+        'ch-1',
+        'u-1',
+        'm-1',
+        input({ reply_to_id: 'msg-9' }),
+        NOW,
+      );
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ reply_to_id: 'msg-9', thread_root_id: null }),
+      );
+    });
+
+    it('refuses a quote of a message in another channel', async () => {
+      access.assertChannelAccess.mockResolvedValue({ id: 'chan-1' });
+      messageRepo.findById.mockResolvedValue({
+        id: 'msg-9',
+        channel_id: 'chan-2',
+        thread_root_id: null,
+      });
+      await expect(
+        service.schedule(
+          'ch-1',
+          'u-1',
+          'm-1',
+          input({ reply_to_id: 'msg-9' }),
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('authorizes a thread reply as a thread write and checks the root', async () => {
+      access.assertChannelAccess.mockResolvedValue({
+        id: 'chan-1',
+        type: 'PUBLIC',
+      });
+      messageRepo.findById.mockResolvedValue({
+        id: 'root-1',
+        channel_id: 'chan-1',
+        thread_root_id: null,
+        kind: 'text',
+      });
+      await service.schedule(
+        'ch-1',
+        'u-1',
+        'm-1',
+        input({ thread_root_id: 'root-1' }),
+        NOW,
+      );
+      expect(access.assertChannelAccess).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'u-1',
+        'thread',
+      );
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_root_id: 'root-1' }),
+      );
+    });
+
+    it('refuses a quote and a thread together', async () => {
+      await expect(
+        service.schedule(
+          'ch-1',
+          'u-1',
+          'm-1',
+          input({ reply_to_id: 'a', thread_root_id: 'b' }),
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('posts with its files, quote and thread', async () => {
+      messageRepo.findById.mockResolvedValue({ id: 'msg-9' });
+      await service.deliver(
+        row({ attachments: [photo], reply_to_id: 'msg-9' }),
+      );
+      expect(chat.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachments: [photo],
+          reply_to_id: 'msg-9',
+          thread_root_id: null,
+        }),
+      );
+    });
+
+    it('posts without the quote when the quoted message is gone', async () => {
+      messageRepo.findById.mockResolvedValue(null);
+      await service.deliver(row({ reply_to_id: 'msg-9' }));
+      expect(chat.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ reply_to_id: null }),
+      );
+    });
+
+    it('deletes the uploads of a message deleted before it posts, keeping ones another names', async () => {
+      const other = {
+        ...photo,
+        storage_path: 'chapters/ch-1/chat/chan-1/b/2.jpg',
+      };
+      repo.deleteForAuthor.mockResolvedValue({
+        outcome: 'deleted',
+        row: row({ attachments: [photo, other] }),
+      });
+      repo.findPathsInUse.mockResolvedValue([other.storage_path]);
+      await service.remove('ch-1', 'u-1', 'sched-1', NOW);
+      expect(repo.findPathsInUse).toHaveBeenCalledWith(
+        'ch-1',
+        [photo.storage_path, other.storage_path],
+        'sched-1',
+      );
+      expect(attachmentService.discardUnsentAttachments).toHaveBeenCalledWith(
+        [photo, other],
+        [other.storage_path],
+        { scheduledMessageId: 'sched-1' },
+      );
+    });
+
+    it('keeps the uploads when it cannot tell whether another names them', async () => {
+      repo.deleteForAuthor.mockResolvedValue({
+        outcome: 'deleted',
+        row: row({ attachments: [photo] }),
+      });
+      repo.findPathsInUse.mockRejectedValue(new Error('down'));
+      await service.remove('ch-1', 'u-1', 'sched-1', NOW);
+      expect(attachmentService.discardUnsentAttachments).not.toHaveBeenCalled();
+    });
+
+    it('lets an edit empty the text of a message with files', async () => {
+      repo.findForAuthor.mockResolvedValue(row({ attachments: [photo] }));
+      await service.update('ch-1', 'u-1', 'sched-1', { content: '' }, NOW);
+      expect(repo.updateForAuthor).toHaveBeenCalledWith(
+        'ch-1',
+        'u-1',
+        'sched-1',
+        expect.objectContaining({ content: '' }),
+        expect.any(String),
+      );
     });
   });
 });

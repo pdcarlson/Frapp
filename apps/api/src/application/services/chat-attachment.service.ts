@@ -859,6 +859,63 @@ export class ChatAttachmentService {
   }
 
   /**
+   * Deletes the uploads of a message that will never post: a scheduled
+   * message deleted before its time (#4971). Its files were uploaded when it
+   * was scheduled and no message row names them, so nothing else will.
+   *
+   * Best effort, as the purge above: failures are logged, never thrown, and
+   * an unanswerable "does a message use this?" keeps the objects. A claim's
+   * path is checked only against the channel prefix (#1622), so a path some
+   * posted message also names is kept, and so is one `keep` names (another
+   * scheduled message's). Each photo's preview goes with it.
+   */
+  async discardUnsentAttachments(
+    attachments: readonly { storage_path: string; content_type: string }[],
+    keep: readonly string[],
+    context: Record<string, unknown>,
+  ): Promise<void> {
+    const kept = new Set(keep);
+    const candidates = uniqueObjects(
+      attachments
+        .filter((attachment) => !kept.has(attachment.storage_path))
+        .flatMap((attachment) => {
+          const original = {
+            bucket: CHAT_BUCKET,
+            storage_path: attachment.storage_path,
+          };
+          return attachment.content_type.startsWith('image/')
+            ? [
+                original,
+                {
+                  bucket: CHAT_BUCKET,
+                  storage_path: chatPreviewPathFor(attachment.storage_path),
+                },
+              ]
+            : [original];
+        }),
+    );
+    if (candidates.length === 0) return;
+    let shared: Set<string>;
+    try {
+      shared = objectKeys(
+        await this.attachmentRepo.findSharedObjects(candidates, null),
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check whether unsent uploads are in use ${JSON.stringify(context)}; keeping them`,
+        error,
+      );
+      return;
+    }
+    await this.deleteChatObjects(
+      candidates.filter((object) => !shared.has(objectKey(object))),
+      context,
+    );
+  }
+
+  /**
    * Delete chat objects, grouped per bucket, and answer the buckets whose
    * delete failed. Failures are logged, never thrown: both callers are
    * best-effort, and a `chat` outage must not skip the `chat-archive` deletes.
