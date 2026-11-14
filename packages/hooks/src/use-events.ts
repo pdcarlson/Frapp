@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import type { components } from "@repo/api-sdk";
+import { serverMessageOf, type components } from "@repo/api-sdk";
 
 export function useEvents(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -90,10 +90,12 @@ export function useCreateEvent() {
       // unconfirmed rather than "failed", which invites a duplicate (#1717).
       // Two shapes: a gateway's own 502/503/504, whatever body it carries (an
       // HTML or text page is a truthy `error`), and any non-2xx with no body,
-      // which openapi-fetch hands back as `error: undefined` (or "").
+      // which the client hands back as a bare `{ statusCode }` with no
+      // message (#3394; openapi-fetch alone gives `undefined` or "").
       if (
         !response.ok &&
-        (LOST_ANSWER_STATUSES.has(response.status) || !error)
+        (LOST_ANSWER_STATUSES.has(response.status) ||
+          serverMessageOf(error) === null)
       ) {
         throw new Error(EVENT_CREATE_UNCONFIRMED);
       }

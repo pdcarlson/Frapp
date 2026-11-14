@@ -24,7 +24,9 @@ function wrapperFor(
   }),
 ) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider client={client as ReturnType<typeof createFrappClient>}>
+    <FrappClientProvider
+      client={client as ReturnType<typeof createFrappClient>}
+    >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
   );
@@ -105,9 +107,27 @@ describe("useCreateEvent", () => {
 
     expect(
       invalidate.mock.calls.some(
-        ([filters]) => (filters?.queryKey as unknown[] | undefined)?.[0] === "events",
+        ([filters]) =>
+          (filters?.queryKey as unknown[] | undefined)?.[0] === "events",
       ),
     ).toBe(true);
+  });
+
+  it("rejects as unconfirmed on an empty-bodied 4xx the client settled to a bare status (#3394)", async () => {
+    const POST = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { statusCode: 499, message: undefined },
+      response: { status: 499, ok: false },
+    });
+    const { result } = renderHook(() => useCreateEvent(), {
+      wrapper: wrapperFor({ POST }),
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync(body)).rejects.toThrow(
+        EVENT_CREATE_UNCONFIRMED,
+      );
+    });
   });
 
   it.each([undefined, ""])(
