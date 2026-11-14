@@ -1,3 +1,4 @@
+import { isBirthdayPostChannel } from '../workers/birthday-post-sweep.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
@@ -427,7 +428,8 @@ export class ChapterConfigService {
   /**
    * #4959. The channel is caller-supplied, so it must be one of this
    * chapter's own, read chapter-first: another chapter's id comes back as not
-   * found. It must be a public channel that isn't archived.
+   * found. It must be a public channel that isn't archived or the audit
+   * feed (`isBirthdayPostChannel`, which the sweep checks again).
    */
   private async assertBirthdayChannel(
     chapterId: string,
@@ -435,12 +437,13 @@ export class ChapterConfigService {
   ): Promise<void> {
     const channel = await this.channelRepo.findById(channelId, chapterId);
     // Public only: a DM or a private channel is a conversation the officer
-    // may not even be in, and a birthday post is for the whole chapter.
-    if (!channel || channel.archived_at || channel.type !== 'PUBLIC') {
+    // may not even be in, and a birthday post is for the whole chapter. Never
+    // the audit feed, which only the system writes.
+    if (!channel || !isBirthdayPostChannel(channel)) {
       throw new BadRequestException({
         code: 'chapter.config.invalid_birthday_channel',
         message:
-          "birthday_channel_id must name one of this chapter's public channels that isn't archived.",
+          "birthday_channel_id must name one of this chapter's public channels that isn't archived or the audit log.",
       });
     }
   }

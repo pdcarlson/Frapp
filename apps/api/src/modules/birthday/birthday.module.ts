@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BirthdayPostSweepService } from '../../application/workers/birthday-post-sweep.service';
+import { BIRTHDAY_POST_REPOSITORY } from '#domain/repositories/birthday-post.repository.interface';
+import { SupabaseBirthdayPostRepository } from '../../infrastructure/supabase/repositories/supabase-birthday-post.repository';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -30,6 +32,10 @@ import { SupabaseUserSettingsRepository } from '../../infrastructure/supabase/re
     },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
+    {
+      provide: BIRTHDAY_POST_REPOSITORY,
+      useClass: SupabaseBirthdayPostRepository,
+    },
     {
       provide: USER_SETTINGS_REPOSITORY,
       useClass: SupabaseUserSettingsRepository,

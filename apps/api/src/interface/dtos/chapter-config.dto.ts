@@ -404,7 +404,7 @@ export class PatchChapterConfigDto {
     format: 'uuid',
     nullable: true,
     description:
-      "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived (400 otherwise).",
+      "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).",
   })
   @ValidateIf((_object, value) => value !== null)
   @IsOptional()

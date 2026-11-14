@@ -19,15 +19,31 @@ type ChannelRow = {
   name?: string;
   type?: string;
   archived_at?: string | null;
+  is_audit_log?: boolean;
 };
 
 /**
- * Settings → Organization → Birthday posts (#4959). On each member's
- * birthday, for members who share theirs with the chapter, Frapp posts
- * "Happy birthday, Name!" in the channel picked here, the way a Discord
- * birthday bot posts where a server admin points it. Off until an officer
- * picks one. Only the chapter's public, live channels are offered; the API
- * refuses anything else.
+ * Whether a channel can take the birthday posts: the chapter's public,
+ * unarchived channels, never the audit feed. The API's check
+ * (`isBirthdayPostChannel`) refuses anything else.
+ */
+export function offersBirthdayPosts(
+  channel: ChannelRow,
+): channel is ChannelRow & { id: string; name: string } {
+  return (
+    !!channel.id &&
+    !!channel.name &&
+    !channel.archived_at &&
+    !channel.is_audit_log &&
+    channel.type === "PUBLIC"
+  );
+}
+
+/**
+ * Settings → Chapter → Birthday posts (#4959). On each member's birthday,
+ * for members who share theirs with the chapter, Frapp posts "Happy birthday,
+ * Name!" in the channel picked here, the way a Discord birthday bot posts
+ * where a server admin points it. Off until an officer picks one.
  */
 export function SettingsBirthdayPosts({
   channelId,
@@ -41,16 +57,15 @@ export function SettingsBirthdayPosts({
   onChange: (channelId: string | null) => void;
 }) {
   const channelsQuery = useChannels();
-  const channels = ((channelsQuery.data ?? []) as ChannelRow[]).filter(
-    (channel): channel is ChannelRow & { id: string; name: string } =>
-      !!channel.id &&
-      !!channel.name &&
-      !channel.archived_at &&
-      channel.type === "PUBLIC",
-  );
-  // A picked channel the list no longer offers still shows as picked, so
-  // the control never claims the posts are off when they aren't.
-  const known = channelId === null || channels.some((c) => c.id === channelId);
+  const rows = (channelsQuery.data ?? []) as ChannelRow[];
+  const channels = rows.filter(offersBirthdayPosts);
+  const loaded = channelsQuery.data !== undefined;
+  // A saved channel the list no longer offers (archived, made private, gone)
+  // still shows as picked, and says the posts are paused, since the sweep
+  // skips it. Only once the list has loaded: before then it isn't known.
+  const paused =
+    loaded && channelId !== null && !channels.some((c) => c.id === channelId);
+  const pausedName = rows.find((c) => c.id === channelId)?.name;
 
   return (
     <ProfileSection
@@ -62,7 +77,7 @@ export function SettingsBirthdayPosts({
         <Label htmlFor="birthday-channel">Post in</Label>
         <Select
           value={channelId ?? OFF}
-          disabled={!canManage || isSaving}
+          disabled={!canManage || isSaving || !loaded}
           onValueChange={(next) => onChange(next === OFF ? null : next)}
         >
           <SelectTrigger
@@ -78,20 +93,24 @@ export function SettingsBirthdayPosts({
                 #{channel.name}
               </SelectItem>
             ))}
-            {known || channelId === null ? null : (
+            {paused && channelId !== null ? (
               <SelectItem value={channelId}>
-                A channel you can&apos;t see
+                {pausedName ? `#${pausedName}` : "A removed channel"} (paused)
               </SelectItem>
-            )}
+            ) : null}
           </SelectContent>
         </Select>
         <p
           id="birthday-channel-hint"
           className="text-caption text-muted-foreground"
         >
-          {canManage
-            ? "Posts go out from 9 AM in each member's own time zone, once."
-            : "Your role can't change this."}
+          {channelsQuery.isError && !loaded
+            ? "Couldn't load the channels. Reload the page to change this."
+            : paused
+              ? "Paused: that channel can't take them now. Pick another, or turn them off."
+              : canManage
+                ? "Posts go out from 9 AM in each member's own time zone, once."
+                : "Your role can't change this."}
         </p>
       </div>
     </ProfileSection>

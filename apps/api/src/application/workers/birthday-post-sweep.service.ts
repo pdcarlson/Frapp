@@ -26,6 +26,15 @@ import {
 } from '#domain/repositories/notification.repository.interface';
 import type { UserSharedBirthday } from '#domain/entities/user.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import { freeTierWriteAllowed } from '#domain/constants/subscription-grace';
+import {
+  BIRTHDAY_POST_REPOSITORY,
+  type IBirthdayPostRepository,
+} from '#domain/repositories/birthday-post.repository.interface';
+import type { ChapterBirthdayChannel } from '#domain/repositories/chapter.repository.interface';
+import type { ChatChannel } from '#domain/entities/chat.entity';
+import { recipientTimeZone } from '../services/notification.service';
+import { DEFAULT_PUSH_TIME_ZONE } from '../services/push-copy';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
@@ -34,8 +43,11 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  * each member's zone.
  */
 export const BIRTHDAY_POST_HOUR = 9;
-/** Where a member who never reported a time zone is placed. */
-export const BIRTHDAY_FALLBACK_TIME_ZONE = 'America/New_York';
+/**
+ * Where a member who never reported a time zone is placed: the zone their
+ * pushes fall back to as well.
+ */
+export const BIRTHDAY_FALLBACK_TIME_ZONE = DEFAULT_PUSH_TIME_ZONE;
 
 /** A birthday whose post is due now: who, and their local date. */
 export interface DueBirthday {
@@ -116,11 +128,16 @@ export function birthdayPostContent(name: string): string {
  * the channel an officer picked (`chapters.birthday_channel_id`), sent as
  * Frapp. A chapter with no channel picked posts nothing.
  *
- * Runs on every API replica. Each post is written with a `client_message_id`
- * of the member and their local date, and the message table's dedupe key
- * (`insertIdempotent`) lets exactly one replica's write land, so a member is
- * congratulated once however many replicas tick, and a tick that fails part
- * way is simply finished by the next. Ticks on one replica don't overlap.
+ * Runs on every API replica. Before it posts, a sweep claims the member's
+ * day for the chapter (`birthday_posts`, keyed by chapter, member and local
+ * date): only the claim that lands posts, so a member is congratulated once
+ * however many replicas tick, and an officer switching the channel on the
+ * day doesn't post it again. A post that fails gives its claim back, so the
+ * next tick tries again. Ticks on one replica don't overlap.
+ *
+ * A chapter that is read-only for billing (`freeTierWriteAllowed`, as the
+ * scheduled-message sweep checks) posts nothing: its members can't post, and
+ * its officers can't turn this off.
  */
 @Injectable()
 export class BirthdayPostSweepService {
@@ -139,6 +156,8 @@ export class BirthdayPostSweepService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(USER_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IUserSettingsRepository,
+    @Inject(BIRTHDAY_POST_REPOSITORY)
+    private readonly claims: IBirthdayPostRepository,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_30_MINUTES)
@@ -158,11 +177,7 @@ export class BirthdayPostSweepService {
     let posted = 0;
     for (const chapter of chapters) {
       try {
-        posted += await this.sweepChapter(
-          chapter.id,
-          chapter.birthday_channel_id,
-          now,
-        );
+        posted += await this.sweepChapter(chapter, now);
       } catch (error) {
         // One chapter's failure doesn't hold back the rest; its posts are
         // tried again next tick.
@@ -178,16 +193,25 @@ export class BirthdayPostSweepService {
   }
 
   private async sweepChapter(
-    chapterId: string,
-    channelId: string,
+    chapter: ChapterBirthdayChannel,
     now: Date,
   ): Promise<number> {
-    const channel = await this.channelRepo.findById(channelId, chapterId);
-    // Saved as a public channel; one made private or archived since stops
-    // the posts rather than sending them somewhere the chapter can't see.
-    if (!channel || channel.archived_at || channel.type !== 'PUBLIC') return 0;
+    if (
+      !freeTierWriteAllowed(
+        chapter.subscription_status,
+        chapter.past_due_since,
+        now.getTime(),
+      )
+    ) {
+      return 0;
+    }
+    const channel = await this.channelRepo.findById(
+      chapter.birthday_channel_id,
+      chapter.id,
+    );
+    if (!channel || !isBirthdayPostChannel(channel)) return 0;
 
-    const members = await this.memberRepo.findByChapter(chapterId);
+    const members = await this.memberRepo.findByChapter(chapter.id);
     if (!members.length) return 0;
     const userIds = [...new Set(members.map((member) => member.user_id))];
     const birthdays = await this.userRepo.findSharedBirthdaysByIds(userIds);
@@ -196,20 +220,44 @@ export class BirthdayPostSweepService {
     const settings = await this.settingsRepo.findByUserIds(
       birthdays.map((birthday) => birthday.id),
     );
+    // The zone a push to the member would use (`recipientTimeZone`).
     const zones = new Map(
-      settings.map((row) => [row.user_id, row.time_zone ?? null]),
+      settings.map((row) => [row.user_id, recipientTimeZone(row)]),
     );
     let posted = 0;
     for (const due of dueBirthdays(birthdays, (id) => zones.get(id), now)) {
-      const result = await this.messageRepo.insertIdempotent({
-        channel_id: channel.id,
-        sender_id: SYSTEM_SENDER_ID,
-        content: birthdayPostContent(due.name),
-        kind: 'text',
-        client_message_id: `birthday:${due.userId}:${due.localDate}`,
-      });
-      if (result === 'inserted') posted += 1;
+      if (!(await this.claims.claim(chapter.id, due.userId, due.localDate))) {
+        continue;
+      }
+      try {
+        const result = await this.messageRepo.insertIdempotent({
+          channel_id: channel.id,
+          sender_id: SYSTEM_SENDER_ID,
+          content: birthdayPostContent(due.name),
+          kind: 'text',
+          client_message_id: `birthday:${due.userId}:${due.localDate}`,
+        });
+        if (result === 'inserted') posted += 1;
+      } catch (error) {
+        // Unposted, so the claim goes back and the next tick tries again.
+        await this.claims.release(chapter.id, due.userId, due.localDate);
+        throw error;
+      }
     }
     return posted;
   }
+}
+
+/**
+ * Whether a channel can take the chapter's birthday posts: one of its public
+ * channels, not archived, and not the audit feed (`is_audit_log`, which only
+ * the system writes and the audit mirror reads). The API checks the same when
+ * an officer picks one; a channel that changes since stops the posts.
+ */
+export function isBirthdayPostChannel(
+  channel: Pick<ChatChannel, 'type' | 'archived_at' | 'is_audit_log'>,
+): boolean {
+  return (
+    channel.type === 'PUBLIC' && !channel.archived_at && !channel.is_audit_log
+  );
 }

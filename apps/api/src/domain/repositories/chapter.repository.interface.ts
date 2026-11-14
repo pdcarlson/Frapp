@@ -29,6 +29,14 @@ export type AppliedSubscriptionWebhook = Chapter & {
   previous_subscription_status?: SubscriptionStatus;
 };
 
+/** A chapter's birthday post channel, and whether it may still write (#4959). */
+export interface ChapterBirthdayChannel {
+  id: string;
+  birthday_channel_id: string;
+  subscription_status: Chapter['subscription_status'];
+  past_due_since: string | null;
+}
+
 export interface IChapterRepository {
   findById(id: string): Promise<Chapter | null>;
   /**
@@ -39,12 +47,11 @@ export interface IChapterRepository {
   findByIds(ids: string[]): Promise<Chapter[]>;
   /**
    * Every chapter that picked a birthday post channel (#4959), with that
-   * channel: the birthday sweep's work list, across chapters by design. Only
-   * the two columns.
+   * channel and its billing state: the birthday sweep's work list, across
+   * chapters by design, read in pages so none is cut off at PostgREST's row
+   * cap.
    */
-  findWithBirthdayChannel(): Promise<
-    { id: string; birthday_channel_id: string }[]
-  >;
+  findWithBirthdayChannel(): Promise<ChapterBirthdayChannel[]>;
   /**
    * Whether the chapter has opted out of product analytics
    * (`chapters.analytics_opt_out`). Reads that one column, because analytics

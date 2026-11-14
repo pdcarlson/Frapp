@@ -108,6 +108,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
               3, 4, 2004, 'chapter');
       insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
       insert into members (user_id, chapter_id) values ('${U}', '${C}');
+      insert into birthday_posts (chapter_id, user_id, local_date) values ('${C}', '${U}', '2026-03-04');
       insert into point_transactions (chapter_id, user_id, amount, category, description)
       values ('${C}', '${U}', 5, 'SERVICE', 'helped');
       insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
@@ -236,8 +237,9 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 && rows[0].points === 1 && rows[0].messages === 5,
       },
       {
-        name: "current-state purged: membership, settings, push token",
+        name: "current-state purged: membership, settings, push token, birthday post claims",
         sql: `select (select count(*)::int from members where user_id = '${U}')
+                   + (select count(*)::int from birthday_posts where user_id = '${U}')
                    + (select count(*)::int from user_settings where user_id = '${U}')
                    + (select count(*)::int from push_tokens where user_id = '${U}') as leftovers`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
