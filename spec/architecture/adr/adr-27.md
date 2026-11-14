@@ -14,7 +14,7 @@
      - `/join`, `/start` (a new chapter or council), `/no-access`, `/new-account`, sign-in and sign-up.
    - Public pages need no account: `/f/<form-slug>` is a chapter's interest form and the target of its QR code.
      - The route has no session and no `ChapterGuard`. The page reads only the form's public fields: the chapter's name and crest, and the questions.
-     - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter becomes a school member with status `pnm`.
+     - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter is recorded as a PNM for the school. They become a school member (status `pnm`) when they create an account. A `school_members` row needs an account; the data-model design (`spec/architecture/school-layer.md`, #4222) owns that rule.
      - Requests are rate-limited per IP and per address. A form lives under `/f/`, not `/c/`, so a printed code survives a chapter rename and a form can be replaced without renaming anything.
 2. **The URL supplies each request's chapter context.** The client resolves the slug in its path to a chapter id, using the person's own membership list, and sends it as `x-chapter-id` on every request from that page. The value is per tab: it is read from the tab's URL, never from storage that tabs share.
 3. **`ChapterGuard` treats an explicit header as authoritative and the JWT claim as a default, and it checks the tenant's kind.**
@@ -53,7 +53,7 @@
    - The switcher is a rail on web and a sheet on mobile, and it navigates to `/c/<slug>`. Because a choice made there is explicit, it also writes `active_chapter_id`.
    - The tenant layout (`app/c/[slug]/layout.tsx`) owns everything keyed to one tenant: the query cache, realtime subscriptions and the chat shell's state. It is keyed on the chapter id.
    - **A switch can be a soft navigation once step 4 lands.** Because the URL carries the context and the tenant layout is keyed on the chapter id, a remount drops the query cache and tears down realtime with no reload. Rollout step 2 keeps today's full page load until a test proves no module-level singleton outlives the remount; step 4 then switches to the soft navigation. Microsoft Teams reloads the whole app on every org switch, which is what this avoids.
-   - **Unread counts span every space.** A per-user `GET /v1/me/unread` (auth only, scoped to the caller's own memberships) returns counts per tenant for the switcher's mention dot, and one per-user realtime channel keeps them live. A tab doesn't subscribe to every space it isn't showing.
+   - **Unread counts span every space.** A per-user `GET /v1/me/unread` (auth only, scoped to the caller's own memberships) returns counts per tenant for the switcher's mention dot, and one per-user realtime channel keeps them live. A tab doesn't subscribe to every space it isn't showing. The response also carries one campus entry, computed from the school tables and `campus_read_state` rather than per tenant; the campus spaces design (#4276) owns it.
 
 **Rollout steps** (each its own PR or short series; none ships a UI change before step 2):
 
