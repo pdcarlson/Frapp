@@ -1001,7 +1001,7 @@ describe("ChannelFilters (#2877)", () => {
     );
 
     const trigger = screen.getByRole("button", {
-      name: "Sort and filter channels, filters on",
+      name: "Filter channels, filters on",
     });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("switch", { name: "Unread only" }));
@@ -1020,7 +1020,7 @@ describe("ChannelFilters (#2877)", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Sort and filter channels" }),
+      screen.getByRole("button", { name: "Filter channels" }),
     ).toBeInTheDocument();
   });
 });
@@ -1119,16 +1119,14 @@ describe("ChannelFilters sort (#2877)", () => {
     expect(onChange).toHaveBeenCalledWith({ sort: "recent" });
   });
 
-  it("offers no sort without one, as on the Direct messages panel", () => {
+  it("offers no sort without one, and says so in its name, as on the Direct messages panel", () => {
     render(
       <ChannelFilters
         filters={{ unreadOnly: false, hideMuted: false }}
         onChange={vi.fn()}
       />,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Sort and filter channels" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter channels" }));
 
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   });

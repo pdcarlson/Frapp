@@ -2214,7 +2214,8 @@ export function ChatShell({
     conversation first, each with its last line, worded by the rule both
     clients share (`channelPreviewLine`; spec/behavior/chat/README.md
     § Channel list previews). The channels rail draws neither, so the read
-    runs only while the panel shows direct messages.
+    runs there only while the member sorts by Recent (#2877), which orders
+    the rail by the same times and draws no line from them.
 
     The list waits for the read's first answer behind its skeleton, as the
     phone's does, so the rows never re-sort under the pointer. After that the
@@ -2222,8 +2223,6 @@ export function ChatShell({
     and so the order and the lines. A hidden DM has no latest row (the server
     leaves it out), so it gets no line rather than a false "No messages yet".
   */
-  // The channels rail reads the same times when the member sorts by Recent
-  // (#2877), and draws no preview line from them.
   const recentSort = !directView && sidebarPreferences.sort === "recent";
   const latestQuery = useChannelLatestMessages({
     enabled: directView || recentSort,
@@ -3248,15 +3247,10 @@ export function ChatShell({
               sidebar={sidebarControls}
               // The chapter's order is for channels: a DM is never placed in
               // it, and the empty categories an officer drags onto would sit
-              // in a list of conversations (#3774). Nor does anything drag
-              // while the member sorts by Recent or A–Z (#2877): the rows
-              // aren't drawn in the chapter's order then, so a drop would
-              // save an order nobody sees.
-              reorder={
-                directView || sidebarPreferences.sort !== "chapter"
-                  ? undefined
-                  : railReorder
-              }
+              // in a list of conversations (#3774). Under Recent or A–Z the
+              // list keeps categories draggable and turns off channel-row
+              // drag itself (#2877).
+              reorder={directView ? undefined : railReorder}
               onCreateChannel={
                 canManageChannel && !directView
                   ? (categoryId) => setCreateChannelIn(categoryId)

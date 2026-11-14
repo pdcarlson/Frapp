@@ -21,6 +21,8 @@ import {
   HIDDEN_CONVERSATIONS_LABEL,
   FILTER_CHANNELS_LABEL,
   FILTER_CHANNELS_ON_LABEL,
+  FILTER_ONLY_CHANNELS_LABEL,
+  FILTER_ONLY_CHANNELS_ON_LABEL,
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
@@ -646,6 +648,12 @@ export function ChannelList({
   ]);
 
   // ── Drag to reorder (#4178) ──────────────────────────────────────────────
+  // Channel rows drag only while the member sorts by Chapter order (#2877):
+  // under Recent or A–Z the rows aren't drawn in the chapter's order, so a
+  // drop would save an order nobody sees. Categories still draw in the
+  // chapter's order under every sort, so they keep dragging, and an empty
+  // category keeps its heading and its +.
+  const rowsInChapterOrder = preferences.sort === "chapter";
   const [announcement, setAnnouncement] = useState("");
   // Which row or heading to give focus back to once a keyboard move redraws
   // it: React moves the node, and moving a focused node blurs it.
@@ -665,6 +673,7 @@ export function ChannelList({
     ): { position: number; of: number; label: string } | null => {
       if (!reorder) return null;
       if (drag.kind === "channel") {
+        if (!rowsInChapterOrder) return null;
         const section =
           drop.kind === "row" || drop.kind === "header" ? drop.section : null;
         if (!section || !isOrderableSection(section)) return null;
@@ -700,7 +709,7 @@ export function ChannelList({
       reorder.onReorderCategories(next);
       return { position: at + 1, of: next.length, label: "categories" };
     },
-    [reorder, sectionOrder, categories, sectionLabel],
+    [reorder, rowsInChapterOrder, sectionOrder, categories, sectionLabel],
   );
 
   const nameOfDrag = useCallback(
@@ -819,9 +828,13 @@ export function ChannelList({
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
     // A row an officer can drag (#4178): one in the default group or a
-    // category, never Pinned, Direct messages, System or Hidden.
+    // category, never Pinned, Direct messages, System or Hidden, and only
+    // while the rows are drawn in the chapter's order (#2877).
     const draggable =
-      !!reorder && sectionKey !== undefined && isOrderableSection(sectionKey);
+      !!reorder &&
+      rowsInChapterOrder &&
+      sectionKey !== undefined &&
+      isOrderableSection(sectionKey);
     const drag: RailDrag | null = draggable
       ? { kind: "channel", id: channel.id, section: sectionKey }
       : null;
@@ -1501,7 +1514,15 @@ export function ChannelFilters({
           variant="ghost"
           size="icon"
           className={cn(compactControlClassName, "relative ml-auto")}
-          aria-label={active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL}
+          aria-label={
+            sort
+              ? active
+                ? FILTER_CHANNELS_ON_LABEL
+                : FILTER_CHANNELS_LABEL
+              : active
+                ? FILTER_ONLY_CHANNELS_ON_LABEL
+                : FILTER_ONLY_CHANNELS_LABEL
+          }
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
           {active ? (

@@ -508,6 +508,9 @@ export const HIDE_MUTED_LABEL = "Hide muted";
  */
 export const FILTER_CHANNELS_LABEL = "Sort and filter channels";
 export const FILTER_CHANNELS_ON_LABEL = "Sort and filter channels, filters on";
+/** The same control where it offers no sort: web's Direct messages panel. */
+export const FILTER_ONLY_CHANNELS_LABEL = "Filter channels";
+export const FILTER_ONLY_CHANNELS_ON_LABEL = "Filter channels, filters on";
 
 export const NO_MATCHING_CHANNELS = "No channels match your filters.";
 export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";

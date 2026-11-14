@@ -319,8 +319,10 @@ vi.mock("@repo/hooks", async () => {
     FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
     useChannelLatestMessages: (options?: { enabled?: boolean }) => {
       latestCalls(options);
+      // A disabled read never answers, as TanStack's doesn't.
+      const enabled = options?.enabled ?? true;
       return {
-        ...query(latestData.value, refetches.latest),
+        ...query(enabled ? latestData.value : undefined, refetches.latest),
         isSuccess: latestData.answered,
       };
     },

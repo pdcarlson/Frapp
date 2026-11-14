@@ -87,8 +87,10 @@ export class ChatSidebarService {
     return {
       unread_only: preferences?.unread_only ?? false,
       hide_muted: preferences?.hide_muted ?? false,
-      // The check constraint holds the column to the list, so the fallback is
-      // only for a row written before the column existed being read mid-deploy.
+      // The default for a member with no row (one who never changed a
+      // setting), and for an API that runs ahead of the migration, whose
+      // `select('*')` has no `sort`. The check constraint holds a stored value
+      // to the list.
       sort: isSidebarSort(preferences?.sort)
         ? preferences.sort
         : DEFAULT_SIDEBAR_SORT,
