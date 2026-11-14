@@ -39,3 +39,61 @@ export function scriptedRealAnswer(
     .join(' ');
   return { text, citations: [{ sourceId: source.id, quote }] };
 }
+
+const QUESTIONS = new Map(
+  REAL_QUESTIONS.map((question) => [question.question, question]),
+);
+
+/** The two searches a first round always makes, with the question as the query. */
+const SEARCHES = ['search_records', 'search_messages'];
+
+/**
+ * The scripted "model" for the tool loop (`ask.agent`). Its first round
+ * searches documents and chat for the question and asks for each read the
+ * question expects that takes no argument it would have to make up; its
+ * second answers with the question's reference answer, citing the opening
+ * words of one source a read returned.
+ *
+ * As with {@link scriptedRealAnswer}, a run on it proves the path: that the
+ * product's tools run against the term chapter as the asker, that the loop
+ * hands their results back, and that nothing a question forbids was in a
+ * request. It proposes no card: a card's content is a model's to write.
+ */
+export function scriptedRealLoop(request: LanguageModelRequest): ScriptedReply {
+  if (request.kind !== 'agent') return { text: 'I do not know.' };
+  const asked = (request.messages.at(-1)?.content ?? '').trim();
+  const question = QUESTIONS.get(asked);
+  if (request.rounds.length === 0 && !request.mustAnswer) {
+    const offered = new Set(request.tools.map((tool) => tool.name));
+    const reads = (question?.expect.tools ?? []).flatMap((need) => {
+      const read = need.find(
+        (tool) => offered.has(tool) && !SEARCHES.includes(tool),
+      );
+      return read ? [read] : [];
+    });
+    const names = [
+      ...SEARCHES.filter((name) => offered.has(name)),
+      ...new Set(reads),
+    ];
+    return {
+      text: '',
+      toolCalls: names.map((name, index) => ({
+        id: `scripted-call-${index + 1}`,
+        name,
+        input: SEARCHES.includes(name) ? { query: asked.slice(0, 200) } : {},
+      })),
+    };
+  }
+  const text = question?.reference ?? 'I do not know.';
+  const source = request.rounds
+    .flatMap((round) => round.results.flatMap((result) => result.sources))
+    .find((candidate) => candidate.text.trim().length > 0);
+  if (!source) return { text, citations: [] };
+  const quote = source.text
+    .trim()
+    .split('\n')[0]
+    .split(' ')
+    .slice(0, 8)
+    .join(' ');
+  return { text, citations: [{ sourceId: source.id, quote }] };
+}
