@@ -32,12 +32,12 @@ describe("FaceWithBadge", () => {
     expect(face.style.width).toBe("36px");
     expect(badge.style.width).toBe("18px");
     expect(badge.style.getPropertyValue("--face-badge-glyph")).toBe("11px");
-    // The hairline recipe, 2px past the corner, neutral by default.
+    // The hairline recipe, 4px past the corner, neutral by default.
     expect(badge).toHaveClass(
       "border",
       "border-border",
-      "-bottom-0.5",
-      "-right-0.5",
+      "-bottom-1",
+      "-right-1",
       ...FACE_BADGE_NEUTRAL.split(" "),
     );
     expect(badge.querySelector("svg")).not.toBeNull();

@@ -8,7 +8,7 @@ import { cn, initials } from "@/lib/utils";
 /**
  * The badge's measurements, one recipe for every face that wears one
  * (`iconography.md` §6.2.5b, #4476): a disc half the face's size, the glyph
- * inside at three fifths of the disc, its edge 2px past the face's lower
+ * inside at three fifths of the disc, its edge 4px past the face's lower
  * corner, with a 1px `--border` hairline. The hairline, not a ring cut in the
  * ground's colour, so the disc reads on every ground a face sits on (the
  * page, a card, the notifications popover, a hovered row) without a halo.
@@ -76,7 +76,7 @@ export function FaceWithBadge({
       <span
         {...badgeProps}
         className={cn(
-          "absolute -bottom-0.5 -right-0.5 grid place-items-center rounded-full border border-border text-caption font-bold leading-none [&>svg]:size-[var(--face-badge-glyph)]",
+          "absolute -bottom-1 -right-1 grid place-items-center rounded-full border border-border text-caption font-bold leading-none [&>svg]:size-[var(--face-badge-glyph)]",
           tone,
         )}
         style={

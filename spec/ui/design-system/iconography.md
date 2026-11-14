@@ -685,13 +685,14 @@ badge is measured from it:
 | Badge | A disc half the face's diameter (18 on a 36 face, 20 on a 40) |
 | Glyph or mark | Three fifths of the disc (11 on 18, 12 on 20); a mark (`@`, `#`, `+`) at the caption size, bold |
 | Edge | A 1px `--border` hairline (the phone's hairline in `border.hairline`) |
-| Offset | The disc's edge 2px (2pt) past the face's lower right corner |
+| Offset | The disc's edge 4px (4pt) past the face's lower right corner, so it clears the initials on the smaller 36 face |
 | Colour | Neutral: `--surface-1` with the glyph in `--muted-foreground`. A kind with a hue passes its own fill and ink (a mention's fixed gold, a join's success green; components.md § In-body mention chip) |
 
-It keeps Activity's recipe, not the notifications list's. The list drew an
-18px badge 4px past the corner, cut out of the face by a 2px ring in the
+It keeps Activity's hairline disc with the notifications list's offset. The
+list drew an 18px badge 4px past the corner, cut out of the face by a 2px ring in the
 popover's colour (on the phone, the screen's background); Activity drew the
-hairline disc above. A ring cut in one ground's colour shows as a halo on any
+hairline disc 2px past the corner. Activity's 2px offset lands the badge on
+the initials of a 36 face, so the shared recipe takes the list's 4px. A ring cut in one ground's colour shows as a halo on any
 other ground, and the face sits on several: the popover, the page, a card,
 and a hovered or pressed row whose fill changes under it. The hairline reads
 on all of them. The neutral fill moved with it: the list's neutral badge was

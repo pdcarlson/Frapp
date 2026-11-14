@@ -60,8 +60,8 @@ describe("FaceWithBadge", () => {
     });
     expect(flatStyle(badge.props.style)).toMatchObject({
       position: "absolute",
-      right: -2,
-      bottom: -2,
+      right: -4,
+      bottom: -4,
       width: 18,
       height: 18,
       borderColor: signetDarkTokens.color.border.hairline,

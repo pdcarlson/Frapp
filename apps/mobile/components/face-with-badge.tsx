@@ -9,7 +9,7 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The badge's measurements, one recipe for every face that wears one
  * (`iconography.md` §6.2.5b, #4476), web's in points: a disc half the face's
- * size, the glyph inside at three fifths of the disc, its edge 2pt past the
+ * size, the glyph inside at three fifths of the disc, its edge 4pt past the
  * face's lower corner, with a hairline border. The hairline, not a ring in
  * the ground's colour, so the disc reads on every ground a face sits on (the
  * screen, a card, a pressed row) without a halo.
@@ -96,6 +96,9 @@ export function FaceWithBadge({
   );
 }
 
+/** How far the disc sits past the face's corner: clear of the initials. */
+const BADGE_OFFSET = 4;
+
 function createStyles(tokens: SignetTokens, size: number) {
   const badge = faceBadgeSize(size);
   return StyleSheet.create({
@@ -122,8 +125,8 @@ function createStyles(tokens: SignetTokens, size: number) {
     },
     badge: {
       position: "absolute",
-      right: -2,
-      bottom: -2,
+      right: -BADGE_OFFSET,
+      bottom: -BADGE_OFFSET,
       width: badge,
       height: badge,
       borderRadius: badge / 2,
