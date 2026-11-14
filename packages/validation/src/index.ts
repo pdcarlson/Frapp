@@ -37,6 +37,8 @@ export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";
 export * from "./beta-off-modules";
+// A member's birthday (#4959): its rules, its words, and where it falls.
+export * from "./birthday";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";

@@ -2005,6 +2005,47 @@
         ]
       }
     },
+    "/v1/members/birthdays": {
+      "get": {
+        "description": "Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.",
+        "operationId": "MemberController_birthdays_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberBirthdayDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Birthdays members share with the chapter",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/by-user/{userId}": {
       "get": {
         "operationId": "MemberController_getByUser_v1",
@@ -18486,6 +18527,35 @@
             "maxLength": 32,
             "description": "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
             "example": "(518) 555-0142"
+          },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 12,
+            "description": "The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year)."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of `birthday_month`. It must exist in that month; 29 February is taken."
+          },
+          "birthday_year": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "The birth year, optional. Never shown to anyone but the member. Needs a month and day."
+          },
+          "birthday_visibility": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "nobody"
+            ],
+            "description": "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default."
           }
         }
       },
@@ -19848,6 +19918,16 @@
             "nullable": true,
             "description": "The member's own phone number (#3711), as they typed it, or null. Only they set it."
           },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "description": "The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "description": "The day of `birthday_month`, under the same rule. The year is never sent."
+          },
           "pledge_class_id": {
             "type": "string",
             "format": "uuid",
@@ -19897,6 +19977,8 @@
           "current_company",
           "email",
           "phone",
+          "birthday_month",
+          "birthday_day",
           "pledge_class_id",
           "order_number",
           "is_alumni"
@@ -19928,6 +20010,40 @@
           "display_name",
           "avatar_url",
           "role_color"
+        ]
+      },
+      "MemberBirthdayDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "users.id"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "birthday_month": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`)."
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "avatar_url",
+          "birthday_month",
+          "birthday_day"
         ]
       },
       "UpdateMemberRolesDto": {
