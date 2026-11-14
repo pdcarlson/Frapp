@@ -324,6 +324,27 @@ channel rules (#3926 step 4):
   (Changed in #4766 by `pdcarlson`, 2026-11-13: until then they were Now within a day of their
   end time, and showed under the All and Needs you chips with no chip or tile of their own).
 
+## Reminders
+
+The member's own reminders on chat messages ("Remind me about this", #4957; the rule is
+[`chat/README.md` § Reminders (personal)](chat/README.md)), served as `reminders` on
+`GET /v1/activity` (`ChatReminderService.listFor`) and drawn as the page's first group under the
+To do list, Reminders, the way Slack's Later tab holds a member's reminders beside what they saved.
+
+- **What is listed.** Every reminder the member set in this chapter, soonest first, at most 50:
+  ones still waiting and ones whose time came (`due`), until the member marks one Done. A due one
+  carries a Due badge and counts in `needs_you_count`.
+- **What a row says.** The message as a push quotes it, who wrote it and where, and when the
+  reminder is for. Channel access and the member's block list are applied on every read, as for
+  Saved: a reminder in a channel the member can no longer read stays listed with its words
+  withheld (`message_available: false`) so they can clear it, and a blocked author's message reads
+  as the timeline's tombstone. A channel an officer left out of Activity still lists reminders: the
+  member asked for each one.
+- **What a row does.** Opening it opens chat at the message (its thread for a reply). Snooze moves
+  it to a preset time (`PUT /v1/reminders/messages/:messageId`) and Done clears it
+  (`DELETE`). A row carries no unread dot: the member set it themselves, and a due one is marked by
+  its badge.
+
 ## Links
 
 Sign-up links posted in chat, gathered so a member stops scrolling channels for them (#3897:

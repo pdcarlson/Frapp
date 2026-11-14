@@ -54,7 +54,7 @@ export class SupabaseChatMessageReminderRepository implements IChatMessageRemind
       .select(REMINDER_COLUMNS)
       .single();
     if (error) throw new SupabaseQueryError(error);
-    return data as ChatMessageReminder;
+    return data;
   }
 
   /**
