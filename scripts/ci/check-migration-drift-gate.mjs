@@ -267,8 +267,9 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  * taken right after a failed apply is current, and both may predate the
  * migration's grace window.
  *
- * One more split, only with `deployInFlight` (a Deploy staging run is running,
- * or finished with its publish still to come, not merely `unknown`):
+ * One more split, only while a Deploy staging run may still be bringing the
+ * migration in (`mayStillApply`: one is running, or one that finished after
+ * the migration merged has its publish still to come; never `unknown`):
  *
  *   applying     — unverifiable, but merged less than `allowanceMs` ago. The
  *                  run that is landing is the likely applier, so this is the
@@ -288,7 +289,7 @@ export function classifyGateDrift({
   nowMs,
   graceMs,
   snapshotBehind = false,
-  deployInFlight = false,
+  stagingDeploy = null,
   allowanceMs = DEFAULT_DEPLOY_ALLOWANCE_MINUTES * 60 * 1000,
 }) {
   const appliedVersions = new Set(applied.map((m) => m.version));
@@ -305,7 +306,7 @@ export function classifyGateDrift({
     const age = migration.landedMs === null ? Infinity : nowMs - migration.landedMs;
     if (age < graceMs) withinGrace.push(migration);
     else if (!snapshotBehind) overdue.push(migration);
-    else if (deployInFlight && age < allowanceMs) applying.push(migration);
+    else if (age < allowanceMs && mayStillApply(stagingDeploy, migration.landedMs)) applying.push(migration);
     else unverifiable.push(migration);
   }
 
@@ -368,15 +369,36 @@ function staleReason({ capturedMs, stagingDeploy }) {
   };
 }
 
-/** Whether `stagingDeploy` says a Deploy staging run is landing right now. */
-export function isDeployInFlight(stagingDeploy) {
-  return stagingDeploy === "running" || isTimestamp(stagingDeploy);
+/**
+ * Whether the Deploy staging run `stagingDeploy` describes may be the one
+ * applying a migration that landed at `landedMs`. `running` may be. A finished
+ * run may only if it finished after the merge: one that finished before it
+ * cannot hold it, and a timestamp that outlives the merge is a publisher that
+ * keeps failing, not a deploy landing. `none` and `unknown` never are.
+ */
+export function mayStillApply(stagingDeploy, landedMs) {
+  if (stagingDeploy === "running") return true;
+  return isTimestamp(stagingDeploy) && landedMs !== null && Date.parse(stagingDeploy) >= landedMs;
 }
 
 function applyingReason({ stagingDeploy }) {
   return isTimestamp(stagingDeploy)
-    ? `a Deploy staging run on main finished at ${stagingDeploy} and the snapshot publish it triggers has not landed yet`
+    ? `a Deploy staging run on main finished at ${stagingDeploy} and the snapshot publish it triggers has not landed yet ` +
+        "(if Migration snapshot, `.github/workflows/migration-snapshot.yml`, failed, fix it and re-run it on `main`)"
     : "a Deploy staging run on main is in progress and the snapshot predates what it applies";
+}
+
+function applyingSection(result, stagingDeploy) {
+  const applying = result.applying ?? [];
+  if (applying.length === 0) return [];
+  return [
+    `### ${applying.length} migration(s) a deploy still landing may hold`,
+    "",
+    bullets(applying, describeLanded),
+    "",
+    `${sentence(applyingReason({ stagingDeploy }))}`,
+    "",
+  ];
 }
 
 const sentence = (clause) => `${clause[0].toUpperCase()}${clause.slice(1)}.`;
@@ -414,6 +436,13 @@ export function buildGateSummary({
       "",
       bullets(result.applying, describeLanded),
     );
+    if (result.withinGrace.length > 0) {
+      lines.push(
+        "",
+        "Also applying now (inside the grace window):",
+        bullets(result.withinGrace, (m) => `\`${m.version}_${m.name}\``),
+      );
+    }
     return lines.join("\n");
   }
 
@@ -428,6 +457,8 @@ export function buildGateSummary({
       "",
       bullets(unverifiable, describeLanded),
     );
+    const landing = applyingSection(result, stagingDeploy);
+    if (landing.length > 0) lines.push("", ...landing);
     return lines.join("\n");
   }
 
@@ -460,6 +491,8 @@ export function buildGateSummary({
       "",
     );
   }
+
+  lines.push(...applyingSection(result, stagingDeploy));
 
   if (result.foreign.length > 0) {
     lines.push(
@@ -594,7 +627,7 @@ export async function runDriftGate({
     nowMs,
     graceMs: graceMinutes * 60 * 1000,
     snapshotBehind,
-    deployInFlight: isDeployInFlight(stagingDeploy),
+    stagingDeploy,
     allowanceMs: allowanceMinutes * 60 * 1000,
   });
 

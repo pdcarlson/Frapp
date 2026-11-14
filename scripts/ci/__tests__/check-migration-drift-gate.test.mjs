@@ -500,14 +500,14 @@ test("a deploy still landing reads as applying, not stale, until the allowance r
   // 2026-11-14: migrations merged at 15:43Z and 15:45Z, applied by the Deploy
   // staging run that finished at 16:16Z. Between 16:13Z and the publish, every
   // PR's drift check went red with "Cannot verify" over an ordinary deploy.
-  const classify = (landedAgo, { snapshotBehind = true, deployInFlight = true } = {}) =>
+  const classify = (landedAgo, { snapshotBehind = true, stagingDeploy = "running" } = {}) =>
     classifyGateDrift({
       main: [migration("20261114153147", "gif", NOW - landedAgo)],
       applied: [],
       nowMs: NOW,
       graceMs,
       snapshotBehind,
-      deployInFlight,
+      stagingDeploy,
     });
 
   const landing = classify(40 * 60 * 1000);
@@ -521,7 +521,15 @@ test("a deploy still landing reads as applying, not stale, until the allowance r
   assert.equal(late.unverifiable.length, 1);
 
   // `unknown` deploy state is not a deploy in flight: no allowance.
-  assert.equal(classify(40 * 60 * 1000, { deployInFlight: false }).status, "stale");
+  assert.equal(classify(40 * 60 * 1000, { stagingDeploy: "unknown" }).status, "stale");
+
+  // A run that finished after the merge, publish pending: may hold it.
+  const after = new Date(NOW - 5 * 60 * 1000).toISOString();
+  assert.equal(classify(40 * 60 * 1000, { stagingDeploy: after }).status, "applying");
+  // One that finished BEFORE the merge cannot hold it: a publisher that keeps
+  // failing, so no allowance.
+  const before = new Date(NOW - 60 * 60 * 1000).toISOString();
+  assert.equal(classify(40 * 60 * 1000, { stagingDeploy: before }).status, "stale");
 
   // A current snapshot (the publish after a failed apply): drift, allowance or
   // not. This is the shape of the 2026-11-14 ordering race that stuck staging.
@@ -534,7 +542,7 @@ test("a deploy still landing reads as applying, not stale, until the allowance r
     nowMs: NOW,
     graceMs,
     snapshotBehind: true,
-    deployInFlight: true,
+    stagingDeploy: "running",
   });
   assert.equal(undatable.status, "stale");
 
@@ -545,9 +553,44 @@ test("a deploy still landing reads as applying, not stale, until the allowance r
     nowMs: NOW,
     graceMs,
     snapshotBehind: true,
-    deployInFlight: true,
+    stagingDeploy: "running",
   });
   assert.equal(withForeign.status, "drift");
+  assert.equal(withForeign.applying.length, 1);
+  const summary = buildGateSummary({
+    result: withForeign,
+    graceMinutes: DEFAULT_GRACE_MINUTES,
+    projectRef: "examplestagingref01",
+    mainRef: "origin/main",
+    stagingDeploy: "running",
+  });
+  assert.match(summary, /Drift detected/);
+  assert.match(summary, /a deploy still landing may hold/);
+  assert.match(summary, /20261114153147_gif/);
+
+  // Stale beside applying lists both.
+  const mixed = classifyGateDrift({
+    main: [
+      migration("20261114100000", "old", NOW - 2 * HOUR),
+      migration("20261114153147", "gif", NOW - 40 * 60 * 1000),
+    ],
+    applied: [],
+    nowMs: NOW,
+    graceMs,
+    snapshotBehind: true,
+    stagingDeploy: "running",
+  });
+  assert.equal(mixed.status, "stale");
+  const mixedSummary = buildGateSummary({
+    result: mixed,
+    graceMinutes: DEFAULT_GRACE_MINUTES,
+    projectRef: "examplestagingref01",
+    mainRef: "origin/main",
+    stagingDeploy: "running",
+  });
+  assert.match(mixedSummary, /Cannot verify/);
+  assert.match(mixedSummary, /20261114100000_old/);
+  assert.match(mixedSummary, /20261114153147_gif/);
 });
 
 function snapshotOf(capturedMs, migrations) {
@@ -666,6 +709,18 @@ test("a deploy still landing exits 0 with a warning, for a running run and a fin
   });
   assert.equal(unknown.code, 1);
   assert.match(unknown.summary, /Cannot verify/);
+  // The allowance reaches the classifier: shorter than the migration's age, red.
+  const short = await runAgainstSnapshot(snapshotOf(NOW - 50 * 60 * 1000, applied(MAIN.slice(0, 2))), {
+    runGit: makeGit({
+      paths: recent.map((m) => m.path),
+      times: Object.fromEntries(recent.map((m) => [m.path, m.landedMs / 1000])),
+    }),
+    snapshotBehind: true,
+    stagingDeploy: "running",
+    allowanceMinutes: 35,
+  });
+  assert.equal(short.code, 1);
+  assert.match(short.summary, /Cannot verify/);
 });
 
 test("a snapshot no Deploy staging run has overtaken reports a missing migration as drift", async () => {
