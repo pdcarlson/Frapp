@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { WORKFLOW_DIR, workflowFiles, workflowJobs, workflowKeys } from "./helpers/workflow-yaml.mjs";
+import { WORKFLOW_DIR, workflowFiles, workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 import { ALL_REQUIRED_CHECKS, MERGE_QUEUE } from "../lib/required-checks.mjs";
 
 // The merge queue on `main` (#4795) waits for every required check to report
@@ -90,4 +90,53 @@ describe("a queue run is not a pull_request run", () => {
       assert.deepEqual(bare, [], "pair each with `|| github.event.merge_group.base_sha`");
     });
   }
+});
+
+describe("queue runs take the full and diff arms", () => {
+  it("every path-gated job runs whenever the event is not a pull request", () => {
+    // Exact form, not a denylist: `github.ref == 'refs/heads/main' || <filter>`
+    // or `event_name == 'pull_request' && …` would also skip in the queue, where
+    // the filter's outputs are empty, and a skipped required job reports Success.
+    for (const file of emitting) {
+      for (const job of workflowJobs(file.path)) {
+        if (job.if === null || !/needs\.changes\.outputs/.test(job.if)) continue;
+        assert.match(
+          job.if,
+          /^\$\{\{ github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true' \}\}$/,
+          `${file.name} ${job.jobId}`,
+        );
+      }
+    }
+  });
+
+  it("a job with a PR-only diff step also runs it in the queue", () => {
+    // Otherwise both its PR step and its push step skip in the queue and the
+    // job reports green having checked nothing. The `changes` job's filters are
+    // PR-only on purpose: the gated jobs run in full instead (above).
+    for (const file of emitting) {
+      for (const step of workflowSteps(file.path)) {
+        if (step.jobId === "changes") continue;
+        const cond = step.body.match(/^\s*if:\s*(.+)$/m)?.[1] ?? "";
+        if (!/event_name == 'pull_request'/.test(cond)) continue;
+        assert.match(cond, /merge_group/, `${file.name} ${step.jobId}: "${step.name}" skips in the queue`);
+      }
+    }
+  });
+
+  it("the drift gate's did-migrations-change steps diff from a queue base", () => {
+    // Without a merge_group arm the shell falls to the push branch with an empty
+    // `before`, diffs `..HEAD` to nothing, and both required checks skip their work.
+    const steps = workflowSteps(join(WORKFLOW_DIR, "migration-drift-gate.yml")).filter(
+      (step) => step.name === "Does this change touch migrations?",
+    );
+    assert.deepEqual(steps.map((s) => s.jobId).sort(), ["migration-order", "migration-replay"]);
+    for (const step of steps) {
+      assert.match(step.body, /\[ "\$EVENT_NAME" = "merge_group" \]/, step.jobId);
+    }
+    // migration-order measures introduced migrations from main's tip in the
+    // queue, so its touched diff must start there too, not at the entry ahead.
+    const order = steps.find((s) => s.jobId === "migration-order");
+    assert.match(order.body, /ORDER_BASE: \$\{\{ steps\.base\.outputs\.ref \}\}/);
+    assert.match(order.body, /RANGE="\$ORDER_BASE\.\.\$HEAD_SHA"/);
+  });
 });

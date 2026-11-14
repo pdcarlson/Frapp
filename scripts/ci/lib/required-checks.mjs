@@ -169,7 +169,8 @@ export const REQUIRE_UP_TO_DATE = false;
 // ROLLOUT: every workflow emitting a required check listens for `merge_group`
 // (merge-queue-triggers.test.mjs). Turn the queue on only after the PR adding
 // those triggers merges, or every queued PR waits out the timeout below on
-// checks nobody reports.
+// checks nobody reports. Until it is on, `--verify` fails with "merge queue is
+// OFF": that red is the pending human step, not drift to file.
 //
 // Only the settings this repo depends on are declared; the rest (group sizes,
 // build concurrency) are tuning, left to whoever turns it on.
@@ -179,8 +180,9 @@ export const MERGE_QUEUE = {
   // A failing entry is dropped and the ones behind it rebuilt without it, so one
   // red PR never merges on the strength of a later entry's green.
   grouping_strategy: "ALLGREEN",
-  // Longer than the slowest required job can take, including a runner wait:
-  // `migration-replay` may wait 25 minutes for the snapshot and has a 50-minute
-  // timeout (migration-drift-gate.yml).
+  // Longer than the slowest required job's own timeout: `migration-replay` may
+  // wait 25 minutes for the snapshot inside its 50-minute timeout
+  // (migration-drift-gate.yml). A runner backlog longer than this still drops
+  // entries from the queue; they are re-queued by hand.
   check_response_timeout_minutes: 60,
 };

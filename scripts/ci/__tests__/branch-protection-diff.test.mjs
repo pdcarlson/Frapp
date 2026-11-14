@@ -571,6 +571,14 @@ describe("merge queue read-back", () => {
     assert.equal(diff.unexpected, true);
   });
 
+  it("--verify fails on an unreadable or drifted queue", () => {
+    const src = read("../../configure-branch-protection.mjs");
+    assert.match(src, /if \(rulesFailure\) \{[\s\S]*?if \(verify\) \{\s*throw new Error/);
+    assert.match(src, /if \(verify\) queueDriftedBranches\.push\(branch\)/);
+    assert.match(src, /if \(queueDriftedBranches\.length > 0\) \{\s*failures\.push/);
+    assert.match(src, /if \(failures\.length > 0\) throw/);
+  });
+
   it("the writer never sends the queue anywhere", () => {
     // Only the classic protection route is ever PUT; the rules route is read.
     const src = read("../../configure-branch-protection.mjs");

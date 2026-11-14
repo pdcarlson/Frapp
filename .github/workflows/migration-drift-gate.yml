@@ -274,9 +274,9 @@ jobs:
       # Production's applied state, because this gate is about the database
       # the migrations are heading for. Not needed for a fixture run, which
       # replays a recorded state instead.
-      # `wait` on anything but main (a pull request, or a dispatch on a PR's
-      # branch, whose checks land on the PR's head too), where the snapshot gates
-      # a merge. A push to main has already merged: waiting there would only
+      # `wait` on anything but main (a pull request, a merge queue entry, or a
+      # dispatch on a PR's branch, whose checks land on the PR's head too), where
+      # the snapshot gates a merge. A push to main has already merged: waiting there would only
       # risk a red required check on a main commit (see the action's header).
       - name: Download the migration snapshot
         if: steps.touched.outputs.run == 'true' && !inputs.replay_fixture
@@ -485,6 +485,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          # What the check itself measures against (the step above). In the
+          # queue it is main's tip, which can sit below `merge_group.base_sha`
+          # (the entry ahead), so this diff must start there too: diffing from
+          # the entry ahead would miss that entry's migrations, skip the
+          # snapshot, and fail the check on migrations this PR doesn't carry.
+          ORDER_BASE: ${{ steps.base.outputs.ref }}
         run: |
           set -euo pipefail
           # The changed-file list goes to a FILE and grep reads the file. Never
@@ -508,7 +514,9 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            RANGE="$ORDER_BASE..$HEAD_SHA"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
             RANGE="$BASE_SHA...$HEAD_SHA"
           else
             RANGE="$BEFORE_SHA..$HEAD_SHA"
