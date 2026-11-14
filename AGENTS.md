@@ -155,6 +155,12 @@ Scheduled routines are exempt and follow their own skill's PR rules ([`routines.
 4. Babysit until green: fix real CI failures, and address and resolve review threads. A `PR base sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (`npm run merge:main`), or do what it says. A PR need not be up to date with `main` to merge (Paul, 2026-11-11), so a clean behind-PR gets no comment and is left as it is: don't merge `main` into it only because it is behind, which restarts its CI for nothing. Judge by the PR's mergeability ([base-branch sync](docs/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
 5. Stop when the PR is green and review-clean, when what's left is out of scope (file an issue, report, stop), or when the user says to stop. Once it is green and review-clean with auto-merge on, call `unsubscribe_pr_activity` and end there (Paul, 2026-11-09): each later wake re-reads the whole session, which cost more than the work itself, and a PR that goes red after that gets a fresh session.
 
-Merge conflicts are what slow development most (Paul, 2026-11-10), so as guidance, not a gate: finish and merge a screen's open PR before starting another on the same screen; keep each PR small enough that Paul can merge it the day it goes green (he merges; a session never does); and run one session per screen or shared file at a time.
+Merge conflicts are what slow development most (Paul, 2026-11-10). **One open PR per screen is a rule** (Paul, 2026-11-14), because guidance alone left four Activity PRs open at once on the same 11 files, and each merge re-conflicted the rest. A screen here means its web page, its phone screen, the DTO and service behind it, and its spec section.
+
+- Before starting a branch, list the open PRs (`list_pull_requests`) and check whether any touches the screen you're about to change (`pull_request_read` `get_files` on any that might).
+- If one does, don't open a second PR on that screen. If the open PR is yours, add the work to it. Otherwise wait for it to merge, or build on its head branch and open your PR only once it has merged (then `npm run merge:main`). Say which in chat.
+- Keep each PR small enough that Paul can merge it the day it goes green (he merges; a session never does), and run one session per screen or shared file at a time.
+
+A barrel `index.ts` or a generated file doesn't count as a shared screen: `npm run merge:main` settles those.
 
 A `/next` session may hold up to two open PRs ([`next.md`](.claude/commands/next.md) Phase 4 pipelining); every obligation above applies to each.
