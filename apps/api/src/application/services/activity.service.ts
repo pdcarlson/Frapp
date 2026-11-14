@@ -55,6 +55,8 @@ import {
   defaultWeekStart,
 } from './activity-standing.service';
 import type { ActivityLink, ChatReads } from './activity-link.service';
+import { ChatReminderService } from './chat-reminder.service';
+import type { ActivityReminder } from './chat-reminder.service';
 import { displayNamesById } from './display-names';
 import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
@@ -76,6 +78,7 @@ export const ACTIVITY_SECTIONS = [
   'coming_up',
   'made_events',
   'links',
+  'reminders',
 ] as const;
 export type ActivitySection = (typeof ACTIVITY_SECTIONS)[number];
 
@@ -317,6 +320,11 @@ export interface ActivityView {
    * (`ActivityLinkService.listFor`). Not counted in `needs_you_count`.
    */
   links: ActivityLink[];
+  /**
+   * The caller's reminders on chat messages (#4957), soonest first
+   * (`ChatReminderService.listFor`). Due ones count in `needs_you_count`.
+   */
+  reminders: ActivityReminder[];
   made_by_you: {
     /**
      * The caller's poll cards, newest first: up to 25 open and the 25 most
@@ -521,6 +529,7 @@ export class ActivityService {
     private readonly chatBlocks: ChatBlockService,
     private readonly rbacService: RbacService,
     private readonly linkService: ActivityLinkService,
+    private readonly reminderService: ChatReminderService,
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
     @Inject(CHAT_MESSAGE_ACTION_REPOSITORY)
@@ -598,62 +607,77 @@ export class ActivityService {
         ).toISOString(),
       }));
 
-    const [tasks, hours, polls, cards, events, madeEvents, links, weekEvents] =
-      await Promise.all([
-        this.settle('tasks', chapterId, () =>
-          on('tasks')
-            ? this.readTasks(chapterId, userId, permissions, weekStart)
-            : Promise.resolve({
-                mine: [],
-                confirmations: [],
-                confirmationsWaiting: 0,
-                assigned: [],
-                doneThisWeek: 0,
-              }),
+    const [
+      tasks,
+      hours,
+      polls,
+      cards,
+      events,
+      madeEvents,
+      links,
+      reminders,
+      weekEvents,
+    ] = await Promise.all([
+      this.settle('tasks', chapterId, () =>
+        on('tasks')
+          ? this.readTasks(chapterId, userId, permissions, weekStart)
+          : Promise.resolve({
+              mine: [],
+              confirmations: [],
+              confirmationsWaiting: 0,
+              assigned: [],
+              doneThisWeek: 0,
+            }),
+      ),
+      this.settle('hours_approvals', chapterId, () =>
+        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+          ? this.readHoursApprovals(chapterId, userId)
+          : Promise.resolve([]),
+      ),
+      this.settle('polls', chapterId, () =>
+        on('polls')
+          ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
+          : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
+      ),
+      // Sign-ups and forms are chat cards with no module switch, as a
+      // message has none (#3926).
+      this.settle('cards', chapterId, () =>
+        this.readCards(chapterId, userId, now, chatReads, weekStart),
+      ),
+      this.settle('coming_up', chapterId, () =>
+        on('events')
+          ? this.readComingUp(userId, now, viewer, invitedEvents)
+          : Promise.resolve([]),
+      ),
+      this.settle('made_events', chapterId, () =>
+        on('events')
+          ? this.readMadeEvents(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
+      ),
+      // Chat has no module switch, so neither does this section.
+      this.settle('links', chapterId, () =>
+        chatReads().then((reads) =>
+          this.linkService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('hours_approvals', chapterId, () =>
-          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-            ? this.readHoursApprovals(chapterId, userId)
-            : Promise.resolve([]),
+      ),
+      // The member's own, and chat has no module switch.
+      this.settle('reminders', chapterId, () =>
+        chatReads().then((reads) =>
+          this.reminderService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('polls', chapterId, () =>
-          on('polls')
-            ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
-            : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
-        ),
-        // Sign-ups and forms are chat cards with no module switch, as a
-        // message has none (#3926).
-        this.settle('cards', chapterId, () =>
-          this.readCards(chapterId, userId, now, chatReads, weekStart),
-        ),
-        this.settle('coming_up', chapterId, () =>
-          on('events')
-            ? this.readComingUp(userId, now, viewer, invitedEvents)
-            : Promise.resolve([]),
-        ),
-        this.settle('made_events', chapterId, () =>
-          on('events')
-            ? this.readMadeEvents(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        // Chat has no module switch, so neither does this section.
-        this.settle('links', chapterId, () =>
-          chatReads().then((reads) =>
-            this.linkService.listFor(chapterId, userId, now, reads),
-          ),
-        ),
-        this.settle('week_events', chapterId, () =>
-          on('events')
-            ? this.readWeekEvents(
-                userId,
-                now,
-                { start: weekStart, end: weekEnd },
-                viewer,
-                invitedEvents,
-              )
-            : Promise.resolve(null),
-        ),
-      ]);
+      ),
+      this.settle('week_events', chapterId, () =>
+        on('events')
+          ? this.readWeekEvents(
+              userId,
+              now,
+              { start: weekStart, end: weekEnd },
+              viewer,
+              invitedEvents,
+            )
+          : Promise.resolve(null),
+      ),
+    ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -687,6 +711,7 @@ export class ActivityService {
     const comingUp = valueOf('coming_up', events, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
+    const myReminders = valueOf('reminders', reminders, []);
 
     const needsYouCount =
       taskLists.mine.length +
@@ -695,7 +720,8 @@ export class ActivityService {
       pollLists.unvoted.length +
       openCards.length +
       comingUp.filter((event) => event.check_in_open && !event.checked_in)
-        .length;
+        .length +
+      myReminders.filter((reminder) => reminder.due).length;
 
     return this.withUnread(chapterId, userId, {
       needs_you: {
@@ -707,6 +733,7 @@ export class ActivityService {
       },
       coming_up: comingUp,
       links: myLinks,
+      reminders: myReminders,
       made_by_you: {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,

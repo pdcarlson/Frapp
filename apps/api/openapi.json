@@ -14935,6 +14935,101 @@
         ]
       }
     },
+    "/v1/reminders/messages/{messageId}": {
+      "put": {
+        "description": "One reminder per member per message: setting it again moves it, and one already sent fires again at the new time (Activity’s snooze). Needs read access to the message’s channel.",
+        "operationId": "ChatReminderController_setReminder_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChatReminderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReminderRefDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remind the caller about a message at a time, or move the reminder",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "description": "Done on Activity, or cancel. Works after the caller lost the channel, and answers 204 whether or not there was one.",
+        "operationId": "ChatReminderController_clearReminder_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller’s reminder on a message (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/goals": {
       "get": {
         "operationId": "GoalsController_getGoals_v1",
@@ -28216,6 +28311,92 @@
           "unread"
         ]
       },
+      "ActivityReminderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`."
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED",
+              "DM",
+              "GROUP_DM"
+            ],
+            "nullable": true,
+            "description": "Null when the caller can no longer read the channel."
+          },
+          "author_name": {
+            "type": "string",
+            "description": "Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read."
+          },
+          "preview": {
+            "type": "string",
+            "description": "What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel."
+          },
+          "message_created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message_available": {
+            "type": "boolean",
+            "description": "False when the caller can no longer read the channel: the row can’t be opened, only cleared."
+          },
+          "remind_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fired_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the reminder’s push went out; null while it is still waiting."
+          },
+          "due": {
+            "type": "boolean",
+            "description": "Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it."
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "thread_root_id",
+          "channel_id",
+          "channel_name",
+          "channel_type",
+          "author_name",
+          "preview",
+          "message_created_at",
+          "message_available",
+          "remind_at",
+          "fired_at",
+          "due"
+        ]
+      },
       "ActivityFileDto": {
         "type": "object",
         "properties": {
@@ -28399,12 +28580,19 @@
               "$ref": "#/components/schemas/ActivityLinkDto"
             }
           },
+          "reminders": {
+            "description": "Reminders the caller set on chat messages (#4957), soonest first, at most 50: waiting ones and due ones they haven’t cleared. Private to the caller. Due ones are counted in `needs_you_count`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityReminderDto"
+            }
+          },
           "made_by_you": {
             "$ref": "#/components/schemas/ActivityMadeByYouDto"
           },
           "needs_you_count": {
             "type": "number",
-            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t."
+            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`."
           },
           "unavailable": {
             "type": "array",
@@ -28418,7 +28606,8 @@
                 "cards",
                 "coming_up",
                 "made_events",
-                "links"
+                "links",
+                "reminders"
               ]
             }
           },
@@ -28441,6 +28630,7 @@
           "needs_you",
           "coming_up",
           "links",
+          "reminders",
           "made_by_you",
           "needs_you_count",
           "unavailable",
@@ -28667,6 +28857,48 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "SetChatReminderDto": {
+        "type": "object",
+        "properties": {
+          "remind_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time."
+          }
+        },
+        "required": [
+          "remind_at"
+        ]
+      },
+      "ChatReminderRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remind_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fired_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Always null after a set: a new time is a new reminder."
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "remind_at",
+          "fired_at"
         ]
       },
       "RoleGoalDto": {

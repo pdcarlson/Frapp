@@ -4376,6 +4376,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reminders/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remind the caller about a message at a time, or move the reminder
+         * @description One reminder per member per message: setting it again moves it, and one already sent fires again at the new time (Activity’s snooze). Needs read access to the message’s channel.
+         */
+        put: operations["ChatReminderController_setReminder_v1"];
+        post?: never;
+        /**
+         * Clear the caller’s reminder on a message (idempotent)
+         * @description Done on Activity, or cancel. Works after the caller lost the channel, and answers 204 whether or not there was one.
+         */
+        delete: operations["ChatReminderController_clearReminder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals": {
         parameters: {
             query?: never;
@@ -8992,6 +9016,46 @@ export interface components {
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
         };
+        ActivityReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.
+             */
+            thread_root_id: string | null;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string | null;
+            /**
+             * @description Null when the caller can no longer read the channel.
+             * @enum {string|null}
+             */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM" | null;
+            /** @description Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read. */
+            author_name: string;
+            /** @description What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel. */
+            preview: string;
+            /** Format: date-time */
+            message_created_at: string;
+            /** @description False when the caller can no longer read the channel: the row can’t be opened, only cleared. */
+            message_available: boolean;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description When the reminder’s push went out; null while it is still waiting.
+             */
+            fired_at: string | null;
+            /** @description Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it. */
+            due: boolean;
+        };
         ActivityFileDto: {
             /** Format: uuid */
             id: string;
@@ -9048,11 +9112,13 @@ export interface components {
             coming_up: components["schemas"]["ActivityEventDto"][];
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
+            /** @description Reminders the caller set on chat messages (#4957), soonest first, at most 50: waiting ones and due ones they haven’t cleared. Private to the caller. Due ones are counted in `needs_you_count`. */
+            reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links" | "reminders")[];
             /** @description How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted. */
             week: components["schemas"]["ActivityWeekDto"];
             /**
@@ -9126,6 +9192,26 @@ export interface components {
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        SetChatReminderDto: {
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.
+             */
+            remind_at: string;
+        };
+        ChatReminderRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description Always null after a set: a new time is a new reminder.
+             */
+            fired_at: string | null;
         };
         RoleGoalDto: {
             /** Format: uuid */
@@ -20067,6 +20153,68 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_setReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChatReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReminderRefDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_clearReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
             };
             cookie?: never;
         };

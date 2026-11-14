@@ -43,6 +43,7 @@ export * from "./use-act";
 export * from "./use-activity";
 export * from "./use-activity-feed";
 export * from "./use-activity-links";
+export * from "./use-message-reminders";
 export * from "./use-activity-unread";
 export * from "./use-ai";
 export * from "./use-ai-report";
