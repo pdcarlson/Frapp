@@ -3,7 +3,8 @@
  * (member, chapter) in `chat_sidebar_preferences`
  * (`20260929213000_chat_sidebar_preferences.sql`).
  *
- * No row means every default: both filters off, nothing collapsed. The rule is
+ * No row means every default: both filters off, the chapter's order, nothing
+ * collapsed. The rule is
  * `spec/behavior/chat/README.md` § Sidebar arrangement.
  */
 export interface ChatSidebarPreferences {
@@ -13,6 +14,12 @@ export interface ChatSidebarPreferences {
   unread_only: boolean;
   /** Leave out channels whose notification level is `off`. */
   hide_muted: boolean;
+  /**
+   * How channels sort inside each section: `chapter` (the default), `recent`
+   * or `alpha`, per `SIDEBAR_SORTS` in `@repo/validation`. Text in the
+   * database, held to that list by a check constraint.
+   */
+  sort: string;
   /**
    * Section keys the member folded, per `isSidebarSectionKey` in
    * `@repo/validation`. Written only through

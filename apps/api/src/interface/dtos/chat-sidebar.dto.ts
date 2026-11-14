@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ValidateIf } from 'class-validator';
+import { IsIn, ValidateIf } from 'class-validator';
+import { SIDEBAR_SORTS, type SidebarSort } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**
@@ -19,6 +20,14 @@ export class ChatSidebarDto {
       'Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows.',
   })
   hide_muted: boolean;
+
+  @ApiProperty({
+    enum: SIDEBAR_SORTS,
+    enumName: 'ChatSidebarSort',
+    description:
+      "How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows).",
+  })
+  sort: SidebarSort;
 
   @ApiProperty({
     type: [String],
@@ -42,7 +51,7 @@ const whenSent = ValidateIf(
 );
 
 /**
- * Switch one or both filters. A filter left out keeps its stored value.
+ * Switch a filter or the sort. A setting left out keeps its stored value.
  *
  * Each filter takes only a real boolean. `@IsOptional()` would let `null`
  * through to a `not null` column (a 500), and `@IsStrictBoolean()` stops
@@ -58,4 +67,9 @@ export class UpdateChatSidebarDto {
   @whenSent
   @IsStrictBoolean()
   hide_muted?: boolean;
+
+  @ApiPropertyOptional({ enum: SIDEBAR_SORTS, enumName: 'ChatSidebarSort' })
+  @whenSent
+  @IsIn(SIDEBAR_SORTS)
+  sort?: SidebarSort;
 }

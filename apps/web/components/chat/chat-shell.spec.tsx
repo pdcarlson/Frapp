@@ -793,6 +793,7 @@ vi.mock("@repo/hooks", async () => ({
     pinnedIds: sidebarState.pinnedIds,
     collapsed: new Set<string>(),
     filters: { unreadOnly: false, hideMuted: false },
+    sort: "chapter" as const,
   }),
   useSetChannelPinned: (options?: { onError?: () => void }) => {
     sidebarState.pinOptions = options;

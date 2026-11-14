@@ -28,6 +28,7 @@ const CHANNEL_A_OTHER = '0a000000-0000-4000-8000-000000012877';
 const prefs = (overrides: Record<string, unknown>) => ({
   unread_only: false,
   hide_muted: true,
+  sort: 'chapter',
   collapsed_sections: ['direct'],
   created_at: '2026-09-29T00:00:00.000Z',
   updated_at: '2026-09-29T00:00:00.000Z',
