@@ -8,11 +8,7 @@ import { memberAvatarTint } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { flatStyle } from "@/test/flat-style";
 import { FrappThemeProvider } from "@/lib/theme";
-import {
-  FaceWithBadge,
-  faceBadgeGlyphSize,
-  faceBadgeSize,
-} from "./face-with-badge";
+import { FaceWithBadge } from "./face-with-badge";
 
 /**
  * #4476: the one face-with-a-kind-badge the Notifications screen and the
@@ -51,8 +47,6 @@ function render(props: Partial<React.ComponentProps<typeof FaceWithBadge>>) {
 
 describe("FaceWithBadge", () => {
   it("sizes the badge from the face: half of it, glyph at three fifths", () => {
-    expect([faceBadgeSize(36), faceBadgeGlyphSize(36)]).toEqual([18, 11]);
-    expect([faceBadgeSize(40), faceBadgeGlyphSize(40)]).toEqual([20, 12]);
     const { face, badge } = render({ size: 36 });
     expect(flatStyle(face.props.style)).toMatchObject({
       width: 36,
@@ -64,6 +58,9 @@ describe("FaceWithBadge", () => {
       bottom: -4,
       width: 18,
       height: 18,
+      // 1pt, as web's 1px and Activity's disc before it; not hairlineWidth,
+      // which is a third of that on a 3x screen.
+      borderWidth: 1,
       borderColor: signetDarkTokens.color.border.hairline,
     });
   });

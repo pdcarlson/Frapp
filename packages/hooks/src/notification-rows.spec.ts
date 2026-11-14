@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  NOTIFICATION_BADGE,
   groupNotificationsBySource,
   isTileKind,
   notificationConversation,
@@ -323,5 +324,22 @@ describe("notificationConversation (#3948)", () => {
       notificationConversation({ target: { screen: "events" } }),
     ).toBeNull();
     expect(notificationConversation(null)).toBeNull();
+  });
+});
+
+describe("NOTIFICATION_BADGE (#4476)", () => {
+  it("gives each person kind one badge, read by web and the phone", () => {
+    expect(NOTIFICATION_BADGE.mention).toEqual({ mark: "@" });
+    expect(NOTIFICATION_BADGE.channel).toEqual({ mark: "#" });
+    expect(NOTIFICATION_BADGE.join).toEqual({ mark: "+" });
+    expect(NOTIFICATION_BADGE.announcement).toEqual({ announcement: true });
+    // A DM wears Direct messages' glyph on both clients; until #4476 the
+    // phone drew the chat bubble for it.
+    expect(NOTIFICATION_BADGE.dm).toEqual({ glyph: "direct" });
+    expect(NOTIFICATION_BADGE.chat).toEqual({ glyph: "chat" });
+    // Every person kind has one, and no tile kind does.
+    for (const kind of Object.keys(NOTIFICATION_BADGE)) {
+      expect(isTileKind(kind as never)).toBe(false);
+    }
   });
 });

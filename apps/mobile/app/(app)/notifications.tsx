@@ -22,6 +22,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import {
+  NOTIFICATION_BADGE,
   NOTIFICATION_KIND_LABEL,
   NOTIFICATION_TILE_GLYPH,
   NOTIFICATION_TILE_HUE,
@@ -455,6 +456,8 @@ function NotificationPicture({
     );
   }
   const names = people.names;
+  // What the badge holds, from the map web reads too (#4476).
+  const badge = NOTIFICATION_BADGE[kind];
   // The mention is the badge in gold: the in-body mention chip's fixed pair
   // (`components.md` § In-body mention chip), inverted so it reads at 18pt.
   // Fixed, never the chapter accent, so a mention looks alike in every
@@ -481,27 +484,23 @@ function NotificationPicture({
       tone={tone}
       badgeTestID={`notification-badge-${kind}`}
       badge={
-        kind === "mention"
-          ? "@"
-          : kind === "channel"
-            ? "#"
-            : kind === "join"
-              ? "+"
-              : (glyph) =>
-                  kind === "announcement" ? (
-                    <AnnouncementGlyph
-                      focused
-                      accent={glyph.color}
-                      muted={glyph.color}
-                      size={glyph.size}
-                    />
-                  ) : (
-                    <NavGlyph
-                      paths={NAV_GLYPHS.chat}
-                      color={glyph.color}
-                      size={glyph.size}
-                    />
-                  )
+        "mark" in badge
+          ? badge.mark
+          : (glyph) =>
+              "glyph" in badge ? (
+                <NavGlyph
+                  paths={NAV_GLYPHS[badge.glyph]}
+                  color={glyph.color}
+                  size={glyph.size}
+                />
+              ) : (
+                <AnnouncementGlyph
+                  focused
+                  accent={glyph.color}
+                  muted={glyph.color}
+                  size={glyph.size}
+                />
+              )
       }
     />
   );

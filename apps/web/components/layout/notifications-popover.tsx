@@ -27,6 +27,7 @@ import {
   useNowDate,
 } from "@repo/hooks";
 import {
+  NOTIFICATION_BADGE,
   NOTIFICATION_KIND_LABEL,
   NOTIFICATION_TILE_GLYPH,
   NOTIFICATION_TILE_HUE,
@@ -42,6 +43,7 @@ import {
   type NotificationEntry,
   type NotificationFilter,
   type NotificationKind,
+  type NotificationPersonKind,
 } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
@@ -49,10 +51,7 @@ import {
   FaceWithBadge,
 } from "@/components/shared/face-with-badge";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
-import {
-  AnnouncementGlyph,
-  DirectMessageGlyph,
-} from "@/components/chat/chat-glyphs";
+import { AnnouncementGlyph } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -672,23 +671,17 @@ function NotificationPicture({
       tint={personId ? names.avatarTintFor(personId) : null}
       tone={BADGE_TONE[kind] ?? FACE_BADGE_NEUTRAL}
       badgeProps={{ "data-kind-badge": kind }}
-      badge={
-        kind === "mention" ? (
-          "@"
-        ) : kind === "channel" ? (
-          "#"
-        ) : kind === "join" ? (
-          "+"
-        ) : kind === "announcement" ? (
-          <AnnouncementGlyph />
-        ) : kind === "dm" ? (
-          <DirectMessageGlyph />
-        ) : (
-          <NavGlyph paths={NAV_GLYPHS.chat} />
-        )
-      }
+      badge={<NotificationBadgeContent kind={kind} />}
     />
   );
+}
+
+/** The badge's content, from the map both clients read (#4476). */
+function NotificationBadgeContent({ kind }: { kind: NotificationPersonKind }) {
+  const badge = NOTIFICATION_BADGE[kind];
+  if ("mark" in badge) return <>{badge.mark}</>;
+  if ("glyph" in badge) return <NavGlyph paths={NAV_GLYPHS[badge.glyph]} />;
+  return <AnnouncementGlyph />;
 }
 
 const BADGE_TONE: Partial<Record<NotificationKind, string>> = {

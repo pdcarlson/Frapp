@@ -4,8 +4,6 @@ import { memberAvatarTint } from "@repo/hooks";
 import {
   FACE_BADGE_NEUTRAL,
   FaceWithBadge,
-  faceBadgeGlyphSize,
-  faceBadgeSize,
 } from "@/components/shared/face-with-badge";
 
 /**
@@ -14,8 +12,6 @@ import {
  */
 describe("FaceWithBadge", () => {
   it("sizes the badge from the face: half of it, glyph at three fifths", () => {
-    expect([faceBadgeSize(36), faceBadgeGlyphSize(36)]).toEqual([18, 11]);
-    expect([faceBadgeSize(40), faceBadgeGlyphSize(40)]).toEqual([20, 12]);
     const { container } = render(
       <FaceWithBadge
         size={36}
@@ -32,14 +28,16 @@ describe("FaceWithBadge", () => {
     expect(face.style.width).toBe("36px");
     expect(badge.style.width).toBe("18px");
     expect(badge.style.getPropertyValue("--face-badge-glyph")).toBe("11px");
+    // The class that hands that size to the glyph: callers pass a bare
+    // `<svg>`, which without it draws at the browser's default size.
+    expect(badge).toHaveClass("[&>svg]:size-[var(--face-badge-glyph)]");
     // The hairline recipe, 4px past the corner, neutral by default.
     expect(badge).toHaveClass(
       "border",
       "border-border",
-      "-bottom-1",
-      "-right-1",
       ...FACE_BADGE_NEUTRAL.split(" "),
     );
+    expect([badge.style.right, badge.style.bottom]).toEqual(["-4px", "-4px"]);
     expect(badge.querySelector("svg")).not.toBeNull();
   });
 

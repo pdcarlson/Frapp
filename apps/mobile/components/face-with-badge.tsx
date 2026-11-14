@@ -1,27 +1,23 @@
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { MemberAvatarTint } from "@repo/hooks";
+import {
+  FACE_BADGE_OFFSET,
+  faceBadgeGlyphSize,
+  faceBadgeSize,
+} from "@repo/hooks/face-badge";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The badge's measurements, one recipe for every face that wears one
- * (`iconography.md` §6.2.5b, #4476), web's in points: a disc half the face's
- * size, the glyph inside at three fifths of the disc, its edge 4pt past the
- * face's lower corner, with a hairline border. The hairline, not a ring in
+ * The badge recipe (`iconography.md` §6.2.5b, #4476), web's in points: its
+ * sizes and offset are `@repo/hooks/face-badge`'s, shared with web; its edge
+ * is a 1pt `border.hairline` border, as web's 1px. The hairline, not a ring in
  * the ground's colour, so the disc reads on every ground a face sits on (the
  * screen, a card, a pressed row) without a halo.
  */
-export function faceBadgeSize(faceSize: number): number {
-  return Math.round(faceSize / 2);
-}
-
-export function faceBadgeGlyphSize(faceSize: number): number {
-  return Math.round((faceBadgeSize(faceSize) * 3) / 5);
-}
-
 /** What a glyph inside the badge is drawn at. */
 export interface FaceBadgeGlyph {
   size: number;
@@ -96,9 +92,6 @@ export function FaceWithBadge({
   );
 }
 
-/** How far the disc sits past the face's corner: clear of the initials. */
-const BADGE_OFFSET = 4;
-
 function createStyles(tokens: SignetTokens, size: number) {
   const badge = faceBadgeSize(size);
   return StyleSheet.create({
@@ -125,12 +118,12 @@ function createStyles(tokens: SignetTokens, size: number) {
     },
     badge: {
       position: "absolute",
-      right: -BADGE_OFFSET,
-      bottom: -BADGE_OFFSET,
+      right: -FACE_BADGE_OFFSET,
+      bottom: -FACE_BADGE_OFFSET,
       width: badge,
       height: badge,
       borderRadius: badge / 2,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       alignItems: "center",
       justifyContent: "center",
