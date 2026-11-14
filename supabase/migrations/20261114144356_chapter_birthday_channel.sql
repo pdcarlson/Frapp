@@ -36,7 +36,7 @@ alter table public.birthday_posts enable row level security;
 
 -- Account deletion: a claim names a member and their birthday's date, so the
 -- scrub that tombstones the users row drops them, as the birthday columns'
--- own trigger (20261114040620) clears those.
+-- own trigger (20261114144355) clears those.
 create or replace function public.users_clear_birthday_posts_on_tombstone()
 returns trigger
 language plpgsql
