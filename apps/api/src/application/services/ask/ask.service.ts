@@ -801,7 +801,16 @@ export class AskService {
         },
         input.effort === 'more',
       ),
-      messages: askAnswerMessages(input.question, input.history),
+      messages: askAnswerMessages(
+        input.question,
+        // A question tapped from the opening suggestions is not the
+        // member's own words: it can name a record another member wrote.
+        // So it is not among the earlier turns of a model that may propose
+        // (C3), as it never was for the request reading.
+        proposable.length > 0
+          ? input.history?.filter((turn) => turn.suggested !== true)
+          : input.history,
+      ),
       context,
       tools: [...offered, ...proposable],
       // A client that draws a card only in place of an answer gets one.
@@ -915,6 +924,10 @@ export class AskService {
     // proposed and nothing written stands, and a propose call came back
     // asking which event or for a detail left unsaid: the member is asked
     // on the card, in the app's own words, not in a model's uncited ones.
+    // Beside an answer that stands, the model was told to say what it
+    // needs, and that sentence is in the answer. Beside other cards with no
+    // answer that stands, the ask is not shown: the cards are (#4899 notes
+    // this as a gap for the client that draws cards on an answer).
     const inPlace: AgentCard | undefined =
       (input.cards === 'many' ? undefined : waiting[0]) ??
       (waiting.length === 0 && answer.status !== 'answered'

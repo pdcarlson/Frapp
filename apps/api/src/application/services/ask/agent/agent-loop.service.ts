@@ -395,9 +395,19 @@ export class AgentLoopService {
           ),
         );
       }
-      try {
-        ran.push(...(await Promise.all(pending)));
-      } catch (error) {
+      // Every call is waited for, even when one of them ends the turn: a
+      // card saved beside a read that was refused is still the member's to
+      // see, so it is counted before the turn ends.
+      const settled = await Promise.allSettled(pending);
+      let failed: { why: unknown } | null = null;
+      for (const call of settled) {
+        if (call.status === 'fulfilled') {
+          ran.push(call.value);
+          if (call.value.card) cards.push(call.value.card);
+        } else failed ??= { why: call.reason as unknown };
+      }
+      if (failed) {
+        const error = failed.why;
         if (!(error instanceof AgentToolUnavailableError)) throw error;
         // A read the gateway would not make ends the turn with its reason,
         // as a round it would not make does.
@@ -413,7 +423,6 @@ export class AgentLoopService {
 
       for (const call of ran) {
         trace.calls.push(call.trace);
-        if (call.card) cards.push(call.card);
         leftOut.set(
           call.trace.tool,
           Math.max(leftOut.get(call.trace.tool) ?? 0, call.leftOutMessages),
@@ -589,7 +598,8 @@ export class AgentLoopService {
         tool.name,
       );
     }
-    // Nothing is saved for a member who has left.
+    // No card is started for a member who has already left. One who leaves
+    // while it is made may leave a card waiting, unseen, for its one day.
     if (input.signal?.aborted) {
       return notRun(call, 'failed', 'The card was not made.', tool.name);
     }

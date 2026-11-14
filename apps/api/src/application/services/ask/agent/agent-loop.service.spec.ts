@@ -913,7 +913,33 @@ describe('AgentLoopService: cards', () => {
     expect(outcome?.stop).toBe('answered');
   });
 
-  it('saves no card for a member who has left', async () => {
+  it('still returns a card made beside a read the gateway refused', async () => {
+    const task = proposer(() => Promise.resolve(made('s1')));
+    const capped = tool('search_messages', () =>
+      Promise.reject(
+        new AgentToolUnavailableError({
+          status: 'unavailable',
+          reason: 'spend_cap',
+          detail: 'member_cap',
+        }),
+      ),
+    );
+    const { loop } = build([
+      round({
+        toolCalls: [
+          call('search_messages'),
+          call('create_task', { title: 'a' }),
+        ],
+      }),
+    ]);
+
+    const { outcome } = await run(loop, input({ tools: [capped, task] }));
+
+    expect(outcome?.stop).toBe('unavailable');
+    expect(outcome?.cards).toEqual([card('s1')]);
+  });
+
+  it('starts no card for a member who has left', async () => {
     const task = proposer(() => Promise.resolve(made('s1')));
     const gone = new AbortController();
     gone.abort();

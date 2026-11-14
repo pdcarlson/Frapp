@@ -37,8 +37,9 @@ export type AskConversationEvent = AskTurnEvent;
  * types one thing in one place, and Frapp either answers it or proposes a
  * card, without the member choosing a mode first.
  *
- * **There is no model that can both read the chapter's text and pick an
- * action.** A turn runs two lanes that share nothing but the member's own
+ * **On the one-shot path there is no model that can both read the chapter's
+ * text and pick an action** (the tool loop is different, below). A turn
+ * runs two lanes that share nothing but the member's own
  * words, and this class only decides which lane's result is shown
  * (`docs/security/ai-prompt-injection.md` C3, C5):
  *

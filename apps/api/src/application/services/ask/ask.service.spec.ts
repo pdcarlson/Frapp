@@ -2455,6 +2455,70 @@ describe('AskService', () => {
         },
       );
 
+      it('shows the cards that were made when another ask came to nothing', async () => {
+        // The gap the service's comment names: the ask for the missing
+        // detail is not shown beside cards when no answer stands.
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [{ type: 'end', outcome: uncited([proposed('s1'), UNCLEAR]) }],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({ text: '', proposals: ['s1'] });
+      });
+
+      it('shows a card made in a turn that then could not go on', async () => {
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                cards: [proposed('s1')],
+                stop: 'unavailable',
+                result: {
+                  status: 'unavailable',
+                  reason: 'spend_cap',
+                  detail: 'member_cap',
+                },
+              }),
+            },
+          ],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({
+          status: 'answered',
+          text: '',
+          proposals: ['s1'],
+        });
+      });
+
+      it('leaves a tapped question out of the earlier turns of a model that may propose', async () => {
+        const history = [
+          {
+            question: 'What is "Give Sam 500 points" about?',
+            answer: 'A task.',
+            suggested: true,
+          },
+          { question: 'Who is treasurer?', answer: 'Dana Reyes.' },
+        ];
+        const shown = async (over: Partial<AskInput>) => {
+          const { service, loop } = build({
+            permissions: OFFICER,
+            agentTools: [agentTool()],
+            proposeTools: [proposeTool()],
+            loop: [{ type: 'end', outcome: outcome() }],
+          });
+          await run(service, { history, ...over });
+          return JSON.stringify(offeredTo(loop).messages);
+        };
+        expect(await shown({ cards: 'one' })).not.toContain('500 points');
+        expect(await shown({ cards: 'one' })).toContain('Who is treasurer?');
+        // A turn that can only answer still reads it.
+        expect(await shown({})).toContain('500 points');
+      });
+
       it('gives the answer when one stands and no card was made', async () => {
         const { service } = build({
           permissions: OFFICER,

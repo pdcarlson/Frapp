@@ -210,7 +210,7 @@ export function proposalNote(outcome: ActOutcome): string {
       ].join(' ');
     }
     case 'needs_event':
-      return 'The member is being asked which event they mean. Make no other card for this, and say nothing about which event it might be.';
+      return 'No card was made: it is not clear which event is meant. If the member or a source names the event and its day, call again with them. Otherwise tell the member in one sentence that you need to know which event.';
     case 'unclear': {
       if (outcome.missing === 'attendance_access') {
         return 'No card was made: this member cannot read who attended an event.';
@@ -223,7 +223,7 @@ export function proposalNote(outcome: ActOutcome): string {
       }
       const what = MISSING[outcome.missing];
       return what
-        ? `No card was made: ${what} is missing. If the member said it or a source gives it, call again with it. Otherwise the member is asked.`
+        ? `No card was made: ${what} is missing. If the member said it or a source gives it, call again with it. Otherwise tell the member in one sentence what you need.`
         : 'No card was made: the request was not clear enough.';
     }
     case 'no_action':
