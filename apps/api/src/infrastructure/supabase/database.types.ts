@@ -651,7 +651,7 @@ export interface Database {
           attachment_count: number;
           created_at: string;
           forwarded_from: ChatForwardedMessage | null;
-          /** `20261114003444`: the latest message is a GIF (#4657). */
+          /** `20261114153147`: the latest message is a GIF (#4657). */
           has_gif: boolean;
         }[];
       };

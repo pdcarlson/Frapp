@@ -458,7 +458,7 @@ export interface ChatThreadLastReply {
   attachment_count: number;
   /**
    * The reply is a GIF (#4657). Absent on a preview written before
-   * `20261114003444`, which reads as no GIF.
+   * `20261114153147`, which reads as no GIF.
    */
   has_gif?: boolean;
   created_at: string;
