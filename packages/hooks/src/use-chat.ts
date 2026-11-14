@@ -6,6 +6,7 @@ import {
   isDirectChannel,
   type ChatChapterLevel,
   type ChatNotificationLevel,
+  type MentionPick,
 } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
@@ -1405,6 +1406,12 @@ export interface ForwardMessageInput {
    * made instead of posting a second; a fresh one is drawn when omitted.
    */
   clientMessageId?: string;
+  /**
+   * The members picked from the comment's `@` list (#4907), as a post's
+   * `mention_picks`: each reaches its member while the comment still writes
+   * its label. Sent only with a comment.
+   */
+  mentionPicks?: readonly MentionPick[];
 }
 
 /**
@@ -1432,8 +1439,13 @@ export function useForwardMessage() {
       channelId,
       content,
       clientMessageId,
+      mentionPicks,
     }: ForwardMessageInput) => {
       const comment = content?.trim() ? content : undefined;
+      const picks =
+        comment !== undefined && mentionPicks && mentionPicks.length > 0
+          ? [...mentionPicks]
+          : undefined;
       const result = await client.POST(
         "/v1/channels/messages/{messageId}/forward",
         {
@@ -1441,6 +1453,7 @@ export function useForwardMessage() {
           body: {
             channel_id: channelId,
             ...(comment !== undefined ? { content: comment } : {}),
+            ...(picks !== undefined ? { mention_picks: picks } : {}),
             client_message_id: clientMessageId ?? randomClientId(),
           },
         },

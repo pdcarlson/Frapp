@@ -329,12 +329,10 @@ describe("useMarkChannelRead", () => {
 describe("useSetChannelDisplayLock (#3787)", () => {
   it("puts the lock and refetches the channel list", async () => {
     const queryClient = createTestQueryClient();
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({
-        data: { id: "c-1", display_locked: true },
-        error: null,
-      });
+    const mockPut = vi.fn().mockResolvedValue({
+      data: { id: "c-1", display_locked: true },
+      error: null,
+    });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useSetChannelDisplayLock(), {
       wrapper: createWrapper(queryClient, { PUT: mockPut }),
@@ -951,6 +949,42 @@ describe("useForwardMessage (#4864)", () => {
     expect(body.client_message_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+  });
+
+  it("sends the comment's @ picks as mention_picks, and none without a comment (#4907)", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+    const picks = [{ user_id: "u-jane", label: "Jane Doe" }];
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "@Jane Doe look",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[0]![1].body.mention_picks).toEqual(picks);
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: " ",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[1]![1].body).not.toHaveProperty("mention_picks");
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "look",
+      mentionPicks: [],
+    });
+    expect(mockPost.mock.calls[2]![1].body).not.toHaveProperty("mention_picks");
   });
 
   it("throws with the status on a refusal and re-reads nothing", async () => {

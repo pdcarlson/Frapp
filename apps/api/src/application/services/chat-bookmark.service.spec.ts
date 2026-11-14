@@ -22,7 +22,8 @@ const MESSAGE = 'msg-1';
 const message = (
   overrides: Partial<StoredBookmarkedMessage> = {},
 ): StoredBookmarkedMessage => ({
-  // Exactly what the repository reads — the eleven-column projection. The
+  // Exactly what the repository reads — the eleven-column projection, plus
+  // the `has_gif` it derives from `metadata.gif` (#4657). The
   // service adds the per-viewer `sender_blocked`; a wider fixture would let a
   // test assert redaction of a field production never sends.
   id: MESSAGE,
@@ -35,6 +36,7 @@ const message = (
   is_deleted: false,
   thread_root_id: null,
   forwarded_from: null,
+  has_gif: false,
   created_at: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
@@ -246,6 +248,7 @@ describe('ChatBookmarkService', () => {
         'content',
         'created_at',
         'forwarded_from',
+        'has_gif',
         'id',
         'is_deleted',
         'sender_blocked',
@@ -389,6 +392,45 @@ describe('ChatBookmarkService', () => {
 
         expect(row.message.forwarded_from).toBeNull();
         expect(JSON.stringify(row)).not.toContain('the forwarded words');
+      });
+    });
+
+    describe('a GIF (#4657)', () => {
+      it('serves has_gif on a readable row', async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          { ...bookmark, message: message({ content: '', has_gif: true }) },
+        ]);
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.has_gif).toBe(true);
+      });
+
+      it('withholds it when the caller blocked the sender', async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          {
+            ...bookmark,
+            message: message({ sender_id: 'user-blocked', has_gif: true }),
+          },
+        ]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.has_gif).toBe(false);
+      });
+
+      it("withholds it from a row whose channel the caller can't read", async () => {
+        mockRepo.findByUserAndChapter.mockResolvedValue([
+          { ...bookmark, message: message({ has_gif: true }) },
+        ]);
+        mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(
+          new Set(),
+        );
+
+        const [row] = await service.listBookmarks(CHAPTER, USER);
+
+        expect(row.message.has_gif).toBe(false);
       });
     });
 

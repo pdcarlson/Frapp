@@ -125,6 +125,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     changes: [
       "A Threads button at the top of Chat lists every thread you started, replied in or were mentioned in, across channels, with new replies marked; tap one to open it.",
       "You can add your birthday to your profile, with the year optional and never shown, and choose whether your chapter sees it.",
+      "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
+      "An officer can pick a channel where Frapp wishes members a happy birthday on the day, for members who share their birthday.",
     ],
     web: [
       "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",

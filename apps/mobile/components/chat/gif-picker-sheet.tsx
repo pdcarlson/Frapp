@@ -20,6 +20,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useReduceMotion } from "@/lib/use-reduce-motion";
 
 /** How tall each grid tile draws; GIFs fill it, cropped to the tile. */
 const TILE_HEIGHT = 120;
@@ -53,6 +54,7 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
   function GifPickerSheet({ provider, onPick }, ref) {
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
+    const reduceMotion = useReduceMotion();
     const styles = useMemo(
       () => createStyles(tokens, accent),
       [tokens, accent],
@@ -95,6 +97,9 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
                 style={styles.image}
                 contentFit="cover"
                 recyclingKey={gif.id}
+                // Still for a member with Reduce Motion on (#4657); a tap
+                // sends, so the tile has no play of its own.
+                autoplay={!reduceMotion}
                 accessible={false}
               />
             </Pressable>
@@ -102,7 +107,7 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
           {item.gifs.length === 1 ? <View style={styles.pad} /> : null}
         </View>
       ),
-      [pick, styles],
+      [pick, styles, reduceMotion],
     );
 
     const footer = search.isFetchingNextPage ? (

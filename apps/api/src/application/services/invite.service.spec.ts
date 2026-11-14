@@ -122,6 +122,7 @@ describe('InviteService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -191,6 +192,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),

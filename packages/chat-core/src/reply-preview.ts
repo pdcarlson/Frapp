@@ -143,6 +143,11 @@ export type MessagePreviewSource = {
   /** A GIF message (#4631) has no text, and quotes as "GIF". */
   gif?: MessageGif | null;
   /**
+   * The same, from a read that serves the flag rather than the GIF: Chat
+   * home's latest message and a Bookmarks row (#4657).
+   */
+  has_gif?: boolean | null;
+  /**
    * A forward's copy of its original (#4864). With no comment of its own the
    * message previews as the copy: "Forwarded: <text>", "Forwarded a GIF", or
    * "Forwarded a message" (a file-only original, a deleted one, or one the
@@ -184,7 +189,7 @@ export function replyPreviewText(message: MessagePreviewSource): string {
     return forwardedPreviewText(message.forwarded_from);
   }
 
-  if (message.gif) return "GIF";
+  if (message.gif || message.has_gif) return "GIF";
 
   const attachments = message.attachment_count ?? 0;
   if (attachments > 0) {

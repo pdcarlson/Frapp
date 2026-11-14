@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
@@ -33,20 +33,26 @@ vi.mock("@/components/ai/suggested-events", () => ({
 vi.mock("@repo/hooks", () => ({
   // A viewer with no roles: the event's default decides (#4132). The rule
   // itself is the hook's own spec.
-  useRequiredOfViewer:
-    () => (fields: { is_mandatory?: boolean | null }) =>
-      fields.is_mandatory === true,
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
   // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
   useCalendarFeedLink: () => ({ data: undefined, isError: false }),
   useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
   calendarAppLinks: () => null,
   useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useStartGoogleCalendarConnect: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDisconnectGoogleCalendar: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   readGoogleCalendarReturn: () => null,
   GOOGLE_CALENDAR_RETURN_PARAMS: [],
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useCalendarBirthdays: () => [],
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -285,7 +291,15 @@ describe("AttendancePanel subscription gating", () => {
 });
 
 describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Local noon, so check-in's close (15 minutes after an end five minutes
+    // ago) is "Today" whenever the suite runs; at 23:50 it read "Tomorrow".
+    // Only `Date` is faked, so the query and render timers still run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 13, 12, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
 
   it("waits for check-in to close, which is when the API accepts it", () => {
     chapter.active();

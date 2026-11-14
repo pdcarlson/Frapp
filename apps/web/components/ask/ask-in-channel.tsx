@@ -21,6 +21,7 @@ import {
   type ActResponse,
   type AskExchange,
   type AskOptions,
+  type AskCardEnd,
   type AskProposalResolution,
 } from "@repo/hooks";
 import {
@@ -92,6 +93,7 @@ interface AskInChannel {
   retry: (id: string, harder?: boolean) => void;
   setProposal: (id: string, proposal: ActResponse) => void;
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
+  resolveCard: (id: string, suggestionId: string, end: AskCardEnd) => void;
   dismiss: (id: string) => void;
   /** What was changed on waiting cards, shared with the Ask card. */
   edits: AskCardEditsStore;
@@ -152,6 +154,7 @@ export function AskInChannelBridge({
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     dismissFromChannel,
   } = useAsk();
   const { ensureConsent, consentDialog } = useAiConsentGate();
@@ -191,6 +194,7 @@ export function AskInChannelBridge({
             retry: retryTurn,
             setProposal,
             resolveProposal,
+            resolveCard,
             dismiss: dismissFromChannel,
             edits,
           }
@@ -202,6 +206,7 @@ export function AskInChannelBridge({
       retryTurn,
       setProposal,
       resolveProposal,
+      resolveCard,
       dismissFromChannel,
       edits,
     ],
@@ -344,6 +349,9 @@ export function AskChannelTurn({ id }: { id: string }) {
             }
             onResolved={(resolution) =>
               channel.resolveProposal(exchange.id, resolution)
+            }
+            onCardEnded={(suggestionId, end) =>
+              channel.resolveCard(exchange.id, suggestionId, end)
             }
           />
         </AskCardEditsContext.Provider>

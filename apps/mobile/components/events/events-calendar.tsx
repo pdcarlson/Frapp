@@ -18,7 +18,7 @@ import { CalendarTaskRow } from "@/components/events/calendar-tasks";
 import { EventsTimeGrid } from "@/components/events/events-time-grid";
 import { Segmented } from "@/components/segmented";
 import { consecutiveDays } from "@repo/hooks/calendar-time-grid";
-import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   CALENDAR_RANGE_DAYS,
@@ -59,7 +59,7 @@ const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 /** How far a finger travels sideways before a swipe turns the month. */
 const SWIPE_DISTANCE = 48;
 
-const NO_TASKS = new Map<string, CalendarTask[]>();
+const NO_TASKS = new Map<string, CalendarItem[]>();
 const fallbackName = () => "A member";
 
 export function EventsCalendar({
@@ -99,14 +99,15 @@ export function EventsCalendar({
    */
   emptyNote?: string | null;
   /**
-   * The member's tasks and the ones they assigned, by due day, narrowed to
-   * the kinds switched on (#4144). Listed under the day's events.
+   * Everything that isn't an event, by day, narrowed to the kinds switched
+   * on: the member's tasks and the ones they assigned (#4144), and members'
+   * shared birthdays (#4959). Listed under the day's events.
    */
-  tasksByDay?: Map<string, CalendarTask[]>;
+  tasksByDay?: Map<string, CalendarItem[]>;
   nameOf?: (userId: string) => string;
   /** The member's own task, opened on the task board. */
   onOpenTask?: (taskId: string) => void;
-  /** The Events / My tasks / Assigned by me chips, under the month. */
+  /** The Events / My tasks / Assigned by me / Birthdays chips, under the month. */
   layerChips?: ReactNode;
   /** Month, 3 days or Day; the switch shows only with `onRangeChange`. */
   range?: CalendarRange;
@@ -258,10 +259,14 @@ export function EventsCalendar({
                   {week.map((day) => {
                     const key = localIsoDate(day);
                     const count = byDay.get(key)?.length ?? 0;
-                    const cellTasks = tasksByDay.get(key) ?? [];
-                    const taskCount = cellTasks.length;
-                    const hasOverdue = cellTasks.some(
-                      (item) => item.state === "overdue",
+                    const cellItems = tasksByDay.get(key) ?? [];
+                    const birthdayCount = cellItems.filter(
+                      (item) => item.kind === "birthdays",
+                    ).length;
+                    const taskCount = cellItems.length - birthdayCount;
+                    const hasOverdue = cellItems.some(
+                      (item) =>
+                        item.kind !== "birthdays" && item.state === "overdue",
                     );
                     const counts = [
                       count === 0
@@ -270,6 +275,9 @@ export function EventsCalendar({
                       taskCount === 0
                         ? null
                         : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`,
+                      birthdayCount === 0
+                        ? null
+                        : `${birthdayCount} ${birthdayCount === 1 ? "birthday" : "birthdays"}`,
                     ].filter(Boolean);
                     const inMonth = day.getMonth() === month.getMonth();
                     const isToday = key === todayKey;
@@ -325,6 +333,19 @@ export function EventsCalendar({
                                   backgroundColor:
                                     tokens.color.text.mutedForeground,
                                 },
+                              ]}
+                            />
+                          ) : null}
+                          {birthdayCount > 0 ? (
+                            // A birthday (#4959): a square in the chapter
+                            // accent, apart from an event's grey dot and a
+                            // task's ring by colour as well as shape.
+                            <View
+                              testID={`birthday-mark-${key}`}
+                              style={[
+                                styles.dot,
+                                styles.birthdayMark,
+                                { backgroundColor: accent },
                               ]}
                             />
                           ) : null}
@@ -498,6 +519,9 @@ function createStyles(tokens: SignetTokens) {
     ring: {
       borderWidth: 1,
       borderColor: tokens.color.text.mutedForeground,
+    },
+    birthdayMark: {
+      borderRadius: 1,
     },
   });
 }

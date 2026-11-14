@@ -32,7 +32,7 @@ import {
   withForwardedMasked,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { forwardTargetOf } from "@/lib/chat/forward";
+import { forwardTargetOf } from "@repo/chat-core/forward";
 import {
   channelAllowsReplies,
   channelAllowsThreads,

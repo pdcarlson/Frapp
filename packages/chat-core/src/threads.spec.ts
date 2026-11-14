@@ -8,6 +8,7 @@ import {
   fetchThread,
   fetchThreadUnread,
   loadThreadReplies,
+  outgoingGifOf,
   sendThreadReply,
   threadCardLabel,
   threadChipLabel,
@@ -17,6 +18,7 @@ import {
 } from "./threads";
 import { emptyCache } from "./cache";
 import type { ChannelCache, ChatMessage, RawChatMessage } from "./types";
+import { normalizeRow } from "./types";
 import type { FrappApiClient } from "./chat-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -291,6 +293,72 @@ describe("sendThreadReply (#3785)", () => {
   });
 });
 
+describe("a GIF as a thread reply (#4657)", () => {
+  const GIF = {
+    provider: "klipy",
+    id: "g1",
+    title: "wave",
+    url: "https://static.klipy.com/g1.webp",
+    width: 200,
+    height: 150,
+    token: "signed",
+  };
+
+  test("posts the GIF with its token and no text, drawn at once", async () => {
+    const queryClient = new QueryClient();
+    let seen: ChannelCache | undefined;
+    const POST = vi.fn<
+      (
+        path: string,
+        init: unknown,
+      ) => Promise<{
+        data: undefined;
+        error: { message: string };
+        response: { status: number };
+      }>
+    >(async () => {
+      seen = cacheOf(queryClient);
+      return {
+        data: undefined,
+        error: { message: "offline" },
+        response: { status: 503 },
+      };
+    });
+    const api = { POST } as unknown as FrappApiClient;
+    await sendThreadReply(queryClient, api, {
+      channelId: CH,
+      rootId: ROOT,
+      senderId: "me",
+      content: "",
+      gif: GIF,
+      clientMessageId: "client-gif",
+    });
+    expect(POST.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        content: "",
+        thread_root_id: ROOT,
+        gif: {
+          id: "g1",
+          url: GIF.url,
+          width: 200,
+          height: 150,
+          token: "signed",
+        },
+      },
+    });
+    expect(seen?.byId["client-gif"]?.gif?.url).toBe(GIF.url);
+    // The failed row keeps the token, so Retry can send the GIF again.
+    const failed = cacheOf(queryClient)?.byId["client-gif"];
+    expect(outgoingGifOf(failed?.gif)).toEqual(GIF);
+  });
+
+  test("a confirmed GIF, which carries no token, is nothing to resend", () => {
+    const stored = { ...GIF, token: undefined };
+    expect(outgoingGifOf(stored)).toBeNull();
+    expect(outgoingGifOf(undefined)).toBeNull();
+  });
+});
+
 /**
  * A thread's reads bring the reactions and votes on what they read (#4034),
  * the way the timeline's pages do, so they show on first paint.
@@ -474,6 +542,7 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
     content,
     kind: "text" as const,
     attachment_count: 0,
+    has_gif: false,
     created_at: "2026-11-11T20:00:00.000Z",
     sender_blocked: false,
   });
@@ -499,6 +568,22 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
         names,
       ).text,
     ).toBe("2 attachments");
+  });
+
+  test("reads a GIF reply as GIF (#4657)", () => {
+    // As the parent row carries it, through the defensive read.
+    const parent = normalizeRow({
+      ...reply("p0"),
+      id: "p0",
+      channel_id: CH,
+      thread_reply_count: 1,
+      thread_last_reply: { ...reply("u1", ""), has_gif: true },
+    } as unknown as RawChatMessage);
+    expect(parent.thread?.last_reply?.has_gif).toBe(true);
+    expect(
+      threadPreviewParts({ ...reply("u1", ""), has_gif: true }, null, names)
+        .text,
+    ).toBe("GIF");
   });
 
   test("says only what the card draws", () => {

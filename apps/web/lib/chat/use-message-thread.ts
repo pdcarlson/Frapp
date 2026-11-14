@@ -19,6 +19,7 @@ import {
   fetchThread,
   loadThreadReplies,
   markThreadRead,
+  outgoingGifOf,
   sendThreadReply,
   setThreadFollow,
   type ThreadFollowChoice,
@@ -28,6 +29,7 @@ import {
   normalizeRow,
   type ChannelCache,
   type ChatMessage,
+  type OutgoingGif,
 } from "@repo/chat-core/types";
 import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
@@ -255,7 +257,11 @@ export function useMessageThread(
   );
 
   const send = useCallback(
-    async (content: string, clientMessageId?: string) => {
+    async (
+      content: string,
+      clientMessageId?: string,
+      gif?: OutgoingGif | null,
+    ) => {
       if (!viewerId) return { error: "You're signed out." };
       const result = await sendThreadReply(queryClient, api, {
         channelId,
@@ -263,6 +269,7 @@ export function useMessageThread(
         senderId: viewerId,
         content,
         clientMessageId,
+        gif,
       });
       // Replying follows the thread (the server's rule); show it now.
       if (!result.error && !meta.data?.follow_state) patchFollow("following");
@@ -271,15 +278,22 @@ export function useMessageThread(
     [viewerId, queryClient, api, channelId, rootId, meta.data, patchFollow],
   );
 
-  // A failed reply's Retry, by the row's client id: the same content under
-  // the same id, so the server dedupes a send that did land.
+  /** A GIF from the picker as its own reply (#4657); the draft stays. */
+  const sendGif = useCallback(
+    (gif: OutgoingGif) => send("", undefined, gif),
+    [send],
+  );
+
+  // A failed reply's Retry, by the row's client id: the same content (or
+  // GIF, whose optimistic row kept the picker's token) under the same id, so
+  // the server dedupes a send that did land.
   const retry = useCallback(
     (clientMessageId: string) => {
       const row = messages.find(
         (message) => message.client_message_id === clientMessageId,
       );
       if (!row) return Promise.resolve({ error: null as string | null });
-      return send(row.content, clientMessageId);
+      return send(row.content, clientMessageId, outgoingGifOf(row.gif));
     },
     [messages, send],
   );
@@ -321,8 +335,10 @@ export function useMessageThread(
     typingUsers,
     setFollow,
     send,
+    sendGif,
     retry,
     discard,
     emitTyping,
   };
 }
+
