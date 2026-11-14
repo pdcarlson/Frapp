@@ -1141,28 +1141,10 @@ export class ChatService {
       threadRootId ? 'thread' : 'post',
     );
 
-    const threadRoot = threadRootId
-      ? await this.assertThreadRoot(channel, threadRootId, input)
-      : null;
-
-    let replyTo: ChatMessage | null = null;
-    if (input.reply_to_id) {
-      // A quote reply is a post: whoever may post here may quote (#3722),
-      // which `assertChannelAccess` above already decided.
-      replyTo = await this.messageRepo.findById(input.reply_to_id);
-      if (!replyTo || replyTo.channel_id !== input.channel_id) {
-        throw new BadRequestException(
-          'reply_to_id must reference a message in the same channel',
-        );
-      }
-      // A quote in the timeline cannot point into a thread, whose replies the
-      // timeline never shows (#3785).
-      if (replyTo.thread_root_id) {
-        throw new BadRequestException(
-          'reply_to_id cannot reference a reply inside a thread',
-        );
-      }
-    }
+    const { threadRoot, replyTo } = await this.assertSendTargets(channel, {
+      reply_to_id: input.reply_to_id ?? null,
+      thread_root_id: threadRootId,
+    });
 
     const kind: ChatMessageKind = input.kind ?? 'text';
     // A refusal below that only exists because something changed after the
@@ -1510,10 +1492,46 @@ export class ChatService {
    * threads). A thread never nests, a 1:1 DM has no threads in slice 1, and a
    * thread reply is never also a quote-reply.
    */
+  /**
+   * A send's quote and thread, checked against the channel it posts in: the
+   * one place their rules live, for a send now and a send scheduled for later
+   * (#4971), which checks when it is scheduled and the send checks again.
+   * The caller has already authorized the channel (as `thread` for a thread
+   * reply). Answers the messages the targets name.
+   */
+  async assertSendTargets(
+    channel: ChatChannel,
+    targets: { reply_to_id: string | null; thread_root_id: string | null },
+  ): Promise<{ threadRoot: ChatMessage | null; replyTo: ChatMessage | null }> {
+    const threadRoot = targets.thread_root_id
+      ? await this.assertThreadRoot(channel, targets.thread_root_id, targets)
+      : null;
+
+    let replyTo: ChatMessage | null = null;
+    if (targets.reply_to_id) {
+      // A quote reply is a post: whoever may post here may quote (#3722),
+      // which the caller's channel check already decided.
+      replyTo = await this.messageRepo.findById(targets.reply_to_id);
+      if (!replyTo || replyTo.channel_id !== channel.id) {
+        throw new BadRequestException(
+          'reply_to_id must reference a message in the same channel',
+        );
+      }
+      // A quote in the timeline cannot point into a thread, whose replies the
+      // timeline never shows (#3785).
+      if (replyTo.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
+        );
+      }
+    }
+    return { threadRoot, replyTo };
+  }
+
   private async assertThreadRoot(
     channel: ChatChannel,
     rootId: string,
-    input: SendMessageInput,
+    input: { reply_to_id?: string | null },
   ): Promise<ChatMessage> {
     if (!channelAllowsThreads(channel)) {
       throw new BadRequestException('This channel does not take threads');

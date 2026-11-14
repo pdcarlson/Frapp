@@ -2256,7 +2256,7 @@ export interface paths {
         /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
         get: operations["ChatScheduledMessageController_list_v1"];
         put?: never;
-        /** Schedule a text message to post later */
+        /** Schedule a message to post later: text, uploaded files, and a quote or a thread */
         post: operations["ChatScheduledMessageController_create_v1"];
         delete?: never;
         options?: never;
@@ -7357,6 +7357,10 @@ export interface components {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
         };
+        ScheduledAttachmentDto: {
+            filename: string;
+            content_type: string;
+        };
         ScheduledMessageDto: {
             /** Format: uuid */
             id: string;
@@ -7364,6 +7368,18 @@ export interface components {
             channel_id: string;
             content: string;
             mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** @description The files it carries; empty for a text message. */
+            attachments: components["schemas"]["ScheduledAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description The message it quotes.
+             */
+            reply_to_id: string | null;
+            /**
+             * Format: uuid
+             * @description The thread it posts into.
+             */
+            thread_root_id: string | null;
             /** Format: date-time */
             send_at: string;
             /**
@@ -7387,7 +7403,20 @@ export interface components {
              * @description The channel or DM to post in.
              */
             channel_id: string;
+            /** @description May be empty only when `attachments` is not, as on a send. */
             content: string;
+            /** @description Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts. */
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote.
+             */
+            reply_to_id?: string;
+            /**
+             * Format: uuid
+             * @description Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`.
+             */
+            thread_root_id?: string;
             /**
              * Format: date-time
              * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
@@ -7396,6 +7425,7 @@ export interface components {
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         UpdateScheduledMessageDto: {
+            /** @description May be empty only on a message with files. Files, the quote and the thread can’t be changed. */
             content?: string;
             /** Format: date-time */
             send_at?: string;

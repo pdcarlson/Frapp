@@ -81,6 +81,7 @@ import {
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { attachmentRequestBody } from "@repo/chat-core/adapters";
 import {
   channelPreviewLine,
   NO_MESSAGES_PREVIEW,
@@ -4067,16 +4068,27 @@ export function ChatShell({
                 mentionPicks,
               });
             }}
-            // Text scheduled to post later (#4956), where the member may post.
+            // Scheduled to post later (#4956), where the member may post:
+            // the text, its files and the staged reply (#4971). The reply is
+            // read and cleared as a send does, only once it is scheduled.
             onSchedule={
               activeChannel.can_post !== false
-                ? async (body, mentionPicks, at) => {
+                ? async (body, attachments, mentionPicks, at) => {
+                    const target = replyTo?.id ?? null;
                     await scheduleMessage.mutateAsync({
                       channelId: activeChannel.id,
                       content: body,
                       sendAt: at,
                       mentionPicks,
+                      attachments: attachments.map(attachmentRequestBody),
+                      replyToId: target,
                     });
+                    // Unless another reply was staged while it was out.
+                    if (target) {
+                      setReplyTarget((current) =>
+                        current?.messageId === target ? null : current,
+                      );
+                    }
                   }
                 : undefined
             }

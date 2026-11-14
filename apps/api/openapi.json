@@ -7374,7 +7374,7 @@
             "bearer": []
           }
         ],
-        "summary": "Schedule a text message to post later",
+        "summary": "Schedule a message to post later: text, uploaded files, and a quote or a thread",
         "tags": [
           "Chat"
         ]
@@ -23763,6 +23763,21 @@
           "next_page"
         ]
       },
+      "ScheduledAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
       "ScheduledMessageDto": {
         "type": "object",
         "properties": {
@@ -23783,6 +23798,25 @@
             "items": {
               "$ref": "#/components/schemas/MentionPickDto"
             }
+          },
+          "attachments": {
+            "description": "The files it carries; empty for a text message.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledAttachmentDto"
+            }
+          },
+          "reply_to_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The message it quotes."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The thread it posts into."
           },
           "send_at": {
             "type": "string",
@@ -23821,6 +23855,9 @@
           "channel_id",
           "content",
           "mention_picks",
+          "attachments",
+          "reply_to_id",
+          "thread_root_id",
           "send_at",
           "status",
           "failure_reason",
@@ -23838,8 +23875,26 @@
           },
           "content": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 10000
+            "minLength": 0,
+            "maxLength": 10000,
+            "description": "May be empty only when `attachments` is not, as on a send."
+          },
+          "attachments": {
+            "description": "Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentDto"
+            }
+          },
+          "reply_to_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`."
           },
           "send_at": {
             "type": "string",
@@ -23864,8 +23919,9 @@
         "properties": {
           "content": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 10000
+            "minLength": 0,
+            "maxLength": 10000,
+            "description": "May be empty only on a message with files. Files, the quote and the thread can’t be changed."
           },
           "send_at": {
             "type": "string",

@@ -16,6 +16,21 @@ export type ChatScheduledMessageStatus = 'pending' | 'failed';
 export type ChatScheduledMessageFailure =
   'no_access' | 'chapter_locked' | 'not_sendable' | 'send_failed';
 
+/**
+ * One uploaded file a scheduled message carries: the claim a live send takes
+ * (`SendMessageAttachmentInput`), stored as it was checked.
+ */
+export interface ChatScheduledAttachment {
+  storage_path: string;
+  filename: string;
+  content_type: string;
+  byte_size?: number | null;
+  width?: number | null;
+  height?: number | null;
+  thumbhash?: string | null;
+  preview_storage_path?: string | null;
+}
+
 export interface ChatScheduledMessage {
   id: string;
   chapter_id: string;
@@ -26,6 +41,16 @@ export interface ChatScheduledMessage {
   content: string;
   /** The composer's `@` picks (#3835), as `{ user_id, label }[]`. */
   mention_picks: { user_id: string; label: string }[] | null;
+  /**
+   * Files already uploaded for it (#4971), as the live send's claims. Empty
+   * for a text message. `ChatScheduledMessageService.remove` deletes them from
+   * storage with the row; a row removed by a cascade leaves them (#2197).
+   */
+  attachments: ChatScheduledAttachment[];
+  /** The message it quotes (#4971); dropped at send time if that is gone. */
+  reply_to_id: string | null;
+  /** The thread it posts into (#4971); never with `reply_to_id`. */
+  thread_root_id: string | null;
   send_at: string;
   status: ChatScheduledMessageStatus;
   failure_reason: ChatScheduledMessageFailure | null;
