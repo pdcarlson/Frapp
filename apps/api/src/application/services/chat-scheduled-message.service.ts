@@ -9,7 +9,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { isDirectChannel, withoutObjectReplacement } from '@repo/validation';
-import { channelAllowsThreads } from '#domain/utils/channel-access';
 import {
   CHAT_SCHEDULED_MESSAGE_REPOSITORY,
   type ChatScheduledMessagePatch,
@@ -31,7 +30,7 @@ import type {
   ChatScheduledMessage,
   ChatScheduledMessageFailure,
 } from '#domain/entities/chat-scheduled-message.entity';
-import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
+import type { ChatMessage } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatAttachmentService } from './chat-attachment.service';
 import { ChatService } from './chat.service';
@@ -128,11 +127,6 @@ export class ChatScheduledMessageService {
     const sendAt = checkSendAt(input.send_at, now);
     const replyToId = input.reply_to_id ?? null;
     const threadRootId = input.thread_root_id ?? null;
-    if (replyToId && threadRootId) {
-      throw new BadRequestException(
-        'A thread reply cannot also quote-reply; send one or the other',
-      );
-    }
     // A thread reply authorizes as `thread`, as the live send does (#3785).
     const channel = await this.channelAccess.assertChannelAccess(
       input.channel_id,
@@ -140,7 +134,12 @@ export class ChatScheduledMessageService {
       userId,
       threadRootId ? 'thread' : 'post',
     );
-    await this.checkTargets(channel, replyToId, threadRootId);
+    // The live send's own rules, so a mistake is said now rather than by a
+    // failed row later; the send checks them again at the time.
+    await this.chat.assertSendTargets(channel, {
+      reply_to_id: replyToId,
+      thread_root_id: threadRootId,
+    });
     // A soft cap: two requests at once may land one over it.
     const pending = await this.repo.countPending(chapterId, userId);
     if (pending >= SCHEDULE_MAX_PENDING) {
@@ -160,45 +159,6 @@ export class ChatScheduledMessageService {
       thread_root_id: threadRootId,
       send_at: sendAt,
     });
-  }
-
-  /**
-   * The live send's rules for a quote and a thread root, checked when it is
-   * scheduled so a mistake is said now, not by a failed row later. The send
-   * checks them again at the time.
-   */
-  private async checkTargets(
-    channel: ChatChannel,
-    replyToId: string | null,
-    threadRootId: string | null,
-  ): Promise<void> {
-    if (replyToId) {
-      const parent = await this.messageRepo.findById(replyToId);
-      if (!parent || parent.channel_id !== channel.id) {
-        throw new BadRequestException(
-          'reply_to_id must reference a message in the same channel',
-        );
-      }
-      if (parent.thread_root_id) {
-        throw new BadRequestException(
-          'reply_to_id cannot reference a reply inside a thread',
-        );
-      }
-    }
-    if (threadRootId) {
-      if (!channelAllowsThreads(channel)) {
-        throw new BadRequestException('This channel does not take threads');
-      }
-      const root = await this.messageRepo.findById(threadRootId);
-      if (!root || root.channel_id !== channel.id) {
-        throw new BadRequestException(
-          'thread_root_id must reference a message in the same channel',
-        );
-      }
-      if (root.thread_root_id || root.kind === 'imported') {
-        throw new BadRequestException('This message cannot be threaded');
-      }
-    }
   }
 
   /**
@@ -293,29 +253,12 @@ export class ChatScheduledMessageService {
 
   private async discardFiles(row: ChatScheduledMessage): Promise<void> {
     if (row.attachments.length === 0) return;
-    const context = { scheduledMessageId: row.id };
-    let keep: string[];
-    try {
-      keep = await this.repo.findPathsInUse(
-        row.chapter_id,
-        row.attachments.map((attachment) => attachment.storage_path),
-        row.id,
-      );
-    } catch (error) {
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'chat-scheduled-message-discard-files',
-        message: `Could not check the files of deleted scheduled message ${row.id}; keeping them`,
-        error,
-      });
-      return;
-    }
-    // `findSharedObjects` finds the files of a message an earlier send of
-    // this row posted, so those are kept too.
+    // Keeps what another message, a report or another scheduled message
+    // still needs, the posted copy of this one included.
     await this.attachmentService.discardUnsentAttachments(
+      row.chapter_id,
+      row.id,
       row.attachments,
-      keep,
-      context,
     );
   }
 

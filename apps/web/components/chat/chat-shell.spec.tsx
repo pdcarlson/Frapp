@@ -78,7 +78,10 @@ const {
   mockSendReturned,
   mockUseMyPermissions,
   searchHit,
+  mockScheduleMutate,
 } = vi.hoisted(() => ({
+  /** `useScheduleMessage().mutateAsync`: what a schedule sends (#4971). */
+  mockScheduleMutate: vi.fn(async () => ({})),
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
   mockUseChatChannel: vi.fn(),
@@ -743,7 +746,7 @@ vi.mock("@repo/hooks", async () => ({
   useBookmarks: () => mockBookmarks(),
   // Scheduled messages (#4956): the composer's chevron and the bar above it.
   // None scheduled, so the bar draws nothing.
-  useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+  useScheduleMessage: () => ({ mutateAsync: mockScheduleMutate }),
   useScheduledMessages: () => ({ data: [] }),
   useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
@@ -1128,9 +1131,16 @@ vi.mock("./composer", () => ({
     onSendGif,
     ask,
     askUnknown,
+    onSchedule,
   }: {
     channelId: string;
     onSendGif?: unknown;
+    onSchedule?: (
+      body: string,
+      attachments: unknown[],
+      picks: unknown[],
+      at: Date,
+    ) => Promise<void>;
     ask?: { busy: boolean; send: (question: string) => void } | null;
     askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
@@ -1232,6 +1242,28 @@ vi.mock("./composer", () => ({
         >
           send
         </button>
+        {onSchedule ? (
+          <button
+            data-testid="composer-schedule"
+            onClick={() =>
+              void onSchedule(
+                "Agenda",
+                [
+                  {
+                    storagePath: "chapters/c/chat/chan-general/a/agenda.pdf",
+                    filename: "agenda.pdf",
+                    contentType: "application/pdf",
+                    byteSize: 15,
+                  },
+                ],
+                [],
+                new Date("2026-11-15T14:00:00.000Z"),
+              ).catch(() => {})
+            }
+          >
+            schedule
+          </button>
+        ) : null}
         {/* The command-form seam (#3773): what the shell answers when the
             real composer offers it a command before dispatching. */}
         {[
@@ -3960,6 +3992,53 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("schedules the text, its files and the staged reply, then clears the strip (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Agenda",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        mentionPicks: [],
+        attachments: [
+          {
+            storage_path: "chapters/c/chat/chan-general/a/agenda.pdf",
+            filename: "agenda.pdf",
+            content_type: "application/pdf",
+            byte_size: 15,
+            width: undefined,
+            height: undefined,
+            thumbhash: undefined,
+            preview_storage_path: undefined,
+          },
+        ],
+        replyToId: "msg-1",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none"),
+    );
+  });
+
+  it("keeps the reply staged when scheduling fails (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    mockScheduleMutate.mockRejectedValueOnce(new Error("down"));
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() => expect(mockScheduleMutate).toHaveBeenCalled());
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {
@@ -6788,4 +6867,3 @@ describe("ChatShell All threads (#4960)", () => {
     }
   });
 });
-

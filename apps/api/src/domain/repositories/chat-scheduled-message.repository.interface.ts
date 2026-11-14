@@ -77,13 +77,15 @@ export interface IChatScheduledMessageRepository {
     | { outcome: 'missing' }
   >;
   /**
-   * Of these storage paths, the ones another scheduled row in the chapter
-   * still names as an attachment, so deleting this row must keep them.
+   * Of these `chat` storage paths, the ones a scheduled row in the chapter
+   * still names, as an attachment or as a photo's preview: storage that a
+   * message not yet posted needs, so no delete may take it (#4971). With
+   * `excludingId`, that row doesn't count (the one being deleted).
    */
   findPathsInUse(
     chapterId: string,
     paths: readonly string[],
-    excludingId: string,
+    excludingId: string | null,
   ): Promise<string[]>;
   /** Pending rows due by `now` that no send holds, soonest first. */
   findDue(now: string, limit: number): Promise<ChatScheduledMessage[]>;

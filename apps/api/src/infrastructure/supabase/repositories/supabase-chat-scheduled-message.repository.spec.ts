@@ -30,6 +30,7 @@ const CHANNEL_A = '0a000000-0000-4000-8000-0000000c4956';
 const CHANNEL_B = '0b000000-0000-4000-8000-0000000c4956';
 
 const SHARED_PATH = 'chapters/x/chat/y/a.jpg';
+const SHARED_PREVIEW = 'chapters/x/chat/y/preview/preview.jpg';
 
 const NOW = '2026-11-14T13:00:00.000Z';
 const DUE = '2026-11-14T12:59:00.000Z';
@@ -77,6 +78,7 @@ const seed = () => ({
             storage_path: SHARED_PATH,
             filename: 'a.jpg',
             content_type: 'image/jpeg',
+            preview_storage_path: SHARED_PREVIEW,
           },
         ],
         user_id: USER_A,
@@ -100,6 +102,7 @@ const seed = () => ({
             storage_path: SHARED_PATH,
             filename: 'a.jpg',
             content_type: 'image/jpeg',
+            preview_storage_path: SHARED_PREVIEW,
           },
         ],
         user_id: USER_A,
@@ -271,7 +274,11 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
     ).resolves.toEqual({ outcome: 'missing' });
     await expect(
       repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A, NOW),
-    ).resolves.toMatchObject({ outcome: 'deleted' });
+    ).resolves.toMatchObject({
+      outcome: 'deleted',
+      // The whole row: the service discards the files it names.
+      row: { id: ROW_A, attachments: [], content: 'Chapter at 8' },
+    });
     expect(stored(ROW_A)).toBeUndefined();
     expect(stored(ROW_B)).toBeDefined();
   });
@@ -306,6 +313,12 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
     await expect(
       repo.findPathsInUse(CHAPTER_A, [SHARED_PATH], ROW_A_OTHERS),
     ).resolves.toEqual([]);
+  });
+
+  it('findPathsInUse finds a photo’s preview, and with no row left out reads every row', async () => {
+    await expect(
+      repo.findPathsInUse(CHAPTER_A, [SHARED_PREVIEW, SHARED_PATH], null),
+    ).resolves.toEqual([SHARED_PREVIEW, SHARED_PATH]);
   });
 
   it('findDue reads due, unheld pending rows from every chapter, never a failed one', async () => {

@@ -52,7 +52,7 @@ describe('ChatScheduledMessageService', () => {
   let repo: jest.Mocked<IChatScheduledMessageRepository>;
   let channelRepo: { findById: jest.Mock };
   let access: { assertChannelAccess: jest.Mock };
-  let chat: { sendMessage: jest.Mock };
+  let chat: { sendMessage: jest.Mock; assertSendTargets: jest.Mock };
   let notifications: { notifyUser: jest.Mock };
   let messageRepo: { findByClientMessageId: jest.Mock; findById: jest.Mock };
   let attachmentService: {
@@ -89,6 +89,9 @@ describe('ChatScheduledMessageService', () => {
     };
     access = { assertChannelAccess: jest.fn().mockResolvedValue({}) };
     chat = {
+      assertSendTargets: jest
+        .fn()
+        .mockResolvedValue({ threadRoot: null, replyTo: null }),
       sendMessage: jest
         .fn()
         .mockResolvedValue({ message: { id: 'msg-1' }, deduplicated: false }),
@@ -506,13 +509,8 @@ describe('ChatScheduledMessageService', () => {
       expect(repo.create).not.toHaveBeenCalled();
     });
 
-    it('stores a quote of a timeline message in the channel', async () => {
+    it('checks a quote by the live send’s own rules, and stores it', async () => {
       access.assertChannelAccess.mockResolvedValue({ id: 'chan-1' });
-      messageRepo.findById.mockResolvedValue({
-        id: 'msg-9',
-        channel_id: 'chan-1',
-        thread_root_id: null,
-      });
       await service.schedule(
         'ch-1',
         'u-1',
@@ -520,40 +518,34 @@ describe('ChatScheduledMessageService', () => {
         input({ reply_to_id: 'msg-9' }),
         NOW,
       );
+      expect(chat.assertSendTargets).toHaveBeenCalledWith(
+        { id: 'chan-1' },
+        { reply_to_id: 'msg-9', thread_root_id: null },
+      );
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ reply_to_id: 'msg-9', thread_root_id: null }),
       );
     });
 
-    it('refuses a quote of a message in another channel', async () => {
-      access.assertChannelAccess.mockResolvedValue({ id: 'chan-1' });
-      messageRepo.findById.mockResolvedValue({
-        id: 'msg-9',
-        channel_id: 'chan-2',
-        thread_root_id: null,
-      });
+    it('refuses what the live send’s rules refuse, storing nothing', async () => {
+      chat.assertSendTargets.mockRejectedValue(
+        new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
+        ),
+      );
       await expect(
         service.schedule(
           'ch-1',
           'u-1',
           'm-1',
-          input({ reply_to_id: 'msg-9' }),
+          input({ reply_to_id: 'reply-1' }),
           NOW,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.create).not.toHaveBeenCalled();
     });
 
-    it('authorizes a thread reply as a thread write and checks the root', async () => {
-      access.assertChannelAccess.mockResolvedValue({
-        id: 'chan-1',
-        type: 'PUBLIC',
-      });
-      messageRepo.findById.mockResolvedValue({
-        id: 'root-1',
-        channel_id: 'chan-1',
-        thread_root_id: null,
-        kind: 'text',
-      });
+    it('authorizes a thread reply as a thread write', async () => {
       await service.schedule(
         'ch-1',
         'u-1',
@@ -570,18 +562,6 @@ describe('ChatScheduledMessageService', () => {
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ thread_root_id: 'root-1' }),
       );
-    });
-
-    it('refuses a quote and a thread together', async () => {
-      await expect(
-        service.schedule(
-          'ch-1',
-          'u-1',
-          'm-1',
-          input({ reply_to_id: 'a', thread_root_id: 'b' }),
-          NOW,
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('posts with its files, quote and thread', async () => {
@@ -606,35 +586,20 @@ describe('ChatScheduledMessageService', () => {
       );
     });
 
-    it('deletes the uploads of a message deleted before it posts, keeping ones another names', async () => {
-      const other = {
-        ...photo,
-        storage_path: 'chapters/ch-1/chat/chan-1/b/2.jpg',
-      };
-      repo.deleteForAuthor.mockResolvedValue({
-        outcome: 'deleted',
-        row: row({ attachments: [photo, other] }),
-      });
-      repo.findPathsInUse.mockResolvedValue([other.storage_path]);
-      await service.remove('ch-1', 'u-1', 'sched-1', NOW);
-      expect(repo.findPathsInUse).toHaveBeenCalledWith(
-        'ch-1',
-        [photo.storage_path, other.storage_path],
-        'sched-1',
-      );
-      expect(attachmentService.discardUnsentAttachments).toHaveBeenCalledWith(
-        [photo, other],
-        [other.storage_path],
-        { scheduledMessageId: 'sched-1' },
-      );
-    });
-
-    it('keeps the uploads when it cannot tell whether another names them', async () => {
+    it('hands the uploads of a message deleted before it posts to the discard', async () => {
       repo.deleteForAuthor.mockResolvedValue({
         outcome: 'deleted',
         row: row({ attachments: [photo] }),
       });
-      repo.findPathsInUse.mockRejectedValue(new Error('down'));
+      await service.remove('ch-1', 'u-1', 'sched-1', NOW);
+      expect(attachmentService.discardUnsentAttachments).toHaveBeenCalledWith(
+        'ch-1',
+        'sched-1',
+        [photo],
+      );
+    });
+
+    it('discards nothing for a text message', async () => {
       await service.remove('ch-1', 'u-1', 'sched-1', NOW);
       expect(attachmentService.discardUnsentAttachments).not.toHaveBeenCalled();
     });

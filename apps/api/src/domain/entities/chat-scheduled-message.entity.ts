@@ -43,7 +43,8 @@ export interface ChatScheduledMessage {
   mention_picks: { user_id: string; label: string }[] | null;
   /**
    * Files already uploaded for it (#4971), as the live send's claims. Empty
-   * for a text message. Deleted from storage when the row is deleted unsent.
+   * for a text message. `ChatScheduledMessageService.remove` deletes them from
+   * storage with the row; a row removed by a cascade leaves them (#2197).
    */
   attachments: ChatScheduledAttachment[];
   /** The message it quotes (#4971); dropped at send time if that is gone. */

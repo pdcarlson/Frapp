@@ -1639,6 +1639,7 @@ export function Composer({
       // member hasn't staged anything new in since, as a refused send's do.
       const sentDoc = editor.getJSON();
       const sentPending = pending;
+      const sentUploads = uploadsStartedRef.current;
       schedulingRef.current = true;
       editor.commands.clearContent(true);
       onChangeDraft("");
@@ -1646,19 +1647,26 @@ export function Composer({
       try {
         await onSchedule(text, sentPending, picks, at);
       } catch (error) {
+        // A file started since would land beside the restored ones, over
+        // the cap the composer counted against an empty tray.
+        // All or nothing, as a refused send: otherwise the message is gone,
+        // and the toast says so.
         const staged = stagedRef.current;
-        if (
+        const untouched =
           !editor.isDestroyed &&
           editor.isEmpty &&
-          (staged.pending.length === 0 || staged.pending === sentPending)
-        ) {
+          (staged.pending.length === 0 || staged.pending === sentPending) &&
+          uploadsStartedRef.current === sentUploads;
+        if (untouched) {
           editor.commands.setContent(sentDoc, { emitUpdate: false });
           onChangeDraft(chatText(editor));
           setPending(sentPending);
         }
         toast({
           title: "Couldn't schedule it",
-          description: errorCopy(error),
+          description: untouched
+            ? errorCopy(error)
+            : `${errorCopy(error)} It couldn't be put back in the composer.`,
           variant: "destructive",
         });
         throw error;

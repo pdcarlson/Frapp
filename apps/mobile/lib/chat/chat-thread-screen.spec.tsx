@@ -901,6 +901,36 @@ describe("chat thread in the audit log", () => {
     act(() => tree.unmount());
   });
 
+  it("takes scheduled photos out of the tray once scheduled (#4971)", async () => {
+    channel = channelState({
+      draft: "Agenda",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: {
+            storagePath: "chapters/c/chat/ch/a/a.jpg",
+            filename: "a.jpg",
+            contentType: "image/jpeg",
+          },
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    const sheet = tree.root.findByType(ScheduleSendSheet);
+    expect(sheet.props.refusal).toBeNull();
+    await act(async () => {
+      await sheet.props.onSchedule(new Date(Date.now() + 3_600_000));
+    });
+    expect(channel.removePhoto).toHaveBeenCalledWith("p1");
+    act(() => tree.unmount());
+  });
+
   it("keeps the Scheduled list where the member can't post (#4956)", () => {
     channelIsReadOnly = true;
     scheduledListFor.mockClear();

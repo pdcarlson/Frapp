@@ -3223,4 +3223,102 @@ describe("Composer schedule (#4956)", () => {
     );
     expect(editor.getText()).toBe("Chapter at 8");
   });
+
+  function stage(container: HTMLElement, name: string) {
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [new File(["%PDF-1.4"], name, { type: "application/pdf" })],
+        },
+      },
+    );
+    return screen.findByRole("button", { name: `Remove ${name}` });
+  }
+
+  async function pickTomorrow() {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+  }
+
+  it("puts the files back with the text when scheduling fails (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    const onSchedule = vi.fn(async () => {
+      throw new Error("down");
+    });
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    expect(editor.getText()).toBe("Agenda");
+    expect(
+      await screen.findByRole("button", { name: "Remove notes.pdf" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts nothing back when a file was started while it was out, and says so (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    let reject!: (error: Error) => void;
+    const onSchedule = vi.fn(
+      () =>
+        new Promise<void>((_, no) => {
+          reject = no;
+        }),
+    );
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    // A second file still uploading when the schedule fails.
+    let finishUpload!: () => void;
+    const uploadsBefore = mockUploadSignedUrl.mock.calls.length;
+    mockUploadSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((done) => {
+          finishUpload = () => done(undefined);
+        }),
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "later.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(mockUploadSignedUrl.mock.calls.length).toBe(uploadsBefore + 1),
+    );
+    await act(async () => {
+      reject(new Error("down"));
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      finishUpload();
+    });
+    expect(
+      await screen.findByRole("button", { name: "Remove later.pdf" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringMatching(/couldn't be put back/),
+      }),
+    );
+  });
 });
