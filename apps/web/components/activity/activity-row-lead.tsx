@@ -11,10 +11,10 @@ import {
 } from "@repo/hooks/activity-rows";
 import type { ActivityFace } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { FaceWithBadge } from "@/components/shared/face-with-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
-import { cn, initials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The page
@@ -50,30 +50,16 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
         {row.kind === "poll" && face.name ? (
           <span className="sr-only">From {face.name}. </span>
         ) : null}
-        <span
-          className="relative h-10 w-10 shrink-0"
-          aria-hidden="true"
+        <FaceWithBadge
+          size={40}
+          avatarUrl={face.avatarUrl}
+          name={face.name}
+          tint={face.tint}
           data-glyph={row.glyph}
           data-testid="activity-face"
-        >
-          <Avatar className="h-10 w-10">
-            {face.avatarUrl ? (
-              <AvatarImage src={face.avatarUrl} alt="" />
-            ) : null}
-            <AvatarFallback tint={face.tint}>
-              {initials(face.name)}
-            </AvatarFallback>
-          </Avatar>
-          <span
-            data-testid="activity-face-glyph"
-            className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground"
-          >
-            <NavGlyph
-              paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
-              className="h-3 w-3"
-            />
-          </span>
-        </span>
+          badgeProps={{ "data-testid": "activity-face-glyph" }}
+          badge={<NavGlyph paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]} />}
+        />
       </>
     );
   }

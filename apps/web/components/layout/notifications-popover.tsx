@@ -44,7 +44,10 @@ import {
   type NotificationKind,
 } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  FACE_BADGE_NEUTRAL,
+  FaceWithBadge,
+} from "@/components/shared/face-with-badge";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import {
   AnnouncementGlyph,
@@ -65,7 +68,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { asArray, cn, initials } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -661,16 +664,30 @@ function NotificationPicture({
       </span>
     );
   }
-  const photo = personId ? names.avatarFor(personId) : null;
-  const tint = personId ? names.avatarTintFor(personId) : null;
   return (
-    <span aria-hidden="true" className="relative size-9">
-      <Avatar className="size-9">
-        {photo ? <AvatarImage src={photo} alt="" /> : null}
-        <AvatarFallback tint={tint}>{initials(personName)}</AvatarFallback>
-      </Avatar>
-      <KindBadge kind={kind} />
-    </span>
+    <FaceWithBadge
+      size={36}
+      avatarUrl={personId ? names.avatarFor(personId) : null}
+      name={personName}
+      tint={personId ? names.avatarTintFor(personId) : null}
+      tone={BADGE_TONE[kind] ?? FACE_BADGE_NEUTRAL}
+      badgeProps={{ "data-kind-badge": kind }}
+      badge={
+        kind === "mention" ? (
+          "@"
+        ) : kind === "channel" ? (
+          "#"
+        ) : kind === "join" ? (
+          "+"
+        ) : kind === "announcement" ? (
+          <AnnouncementGlyph />
+        ) : kind === "dm" ? (
+          <DirectMessageGlyph />
+        ) : (
+          <NavGlyph paths={NAV_GLYPHS.chat} />
+        )
+      }
+    />
   );
 }
 
@@ -682,29 +699,3 @@ const BADGE_TONE: Partial<Record<NotificationKind, string>> = {
   mention: "bg-mention-chip-text text-mention-chip",
   join: "bg-success text-success-foreground",
 };
-
-function KindBadge({ kind }: { kind: NotificationKind }) {
-  return (
-    <span
-      data-kind-badge={kind}
-      className={cn(
-        "absolute -bottom-1 -right-1 grid size-[18px] place-items-center rounded-full text-caption font-bold leading-none ring-2 ring-popover",
-        BADGE_TONE[kind] ?? "bg-card-hover text-muted-foreground",
-      )}
-    >
-      {kind === "mention" ? (
-        "@"
-      ) : kind === "channel" ? (
-        "#"
-      ) : kind === "join" ? (
-        "+"
-      ) : kind === "announcement" ? (
-        <AnnouncementGlyph className="size-3" />
-      ) : kind === "dm" ? (
-        <DirectMessageGlyph className="size-3" />
-      ) : (
-        <NavGlyph paths={NAV_GLYPHS.chat} className="size-3" />
-      )}
-    </span>
-  );
-}
